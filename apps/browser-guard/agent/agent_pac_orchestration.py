@@ -39,7 +39,7 @@ def apply_pac_with_bust(silent: bool = False, force_new: bool = False) -> bool:
         agent_state._LAST_PAC_BUST = pac_url
         return set_system_proxy_pac_and_browsers(enable=True, pac_url=pac_url, silent=silent)
     except Exception as e:
-        print(f"[Raksha Guard WARNING] PAC apply failed: {e}")
+        print(f"[Gateway Guard WARNING] PAC apply failed: {e}")
         return set_system_proxy_pac_and_browsers(enable=True, pac_url=pac_http_url(), silent=silent)
 
 
@@ -51,7 +51,7 @@ def ensure_pac_still_on(silent: bool = True) -> bool:
     try:
         return set_system_proxy_pac_and_browsers(enable=True, pac_url=url, silent=silent)
     except Exception as e:
-        print(f"[Raksha Guard WARNING] PAC re-assert failed: {e}")
+        print(f"[Gateway Guard WARNING] PAC re-assert failed: {e}")
         return False
 
 
@@ -59,11 +59,11 @@ def pac_fail_open_direct(reason: str = "") -> None:
     """Temporary all-DIRECT so browsers stay online while local proxy restarts."""
     note = reason or "local proxy restarting"
     write_local_pac(
-        f"// Raksha Guard — {note}\n"
+        f"// Gateway Guard — {note}\n"
         'function FindProxyForURL(url, host) { return "DIRECT"; }\n'
     )
     apply_pac_with_bust(silent=True, force_new=True)
-    print(f"[Raksha Guard] PAC fail-open DIRECT ({note})")
+    print(f"[Gateway Guard] PAC fail-open DIRECT ({note})")
 
 
 def pac_restore_strict_proxy() -> None:
@@ -75,7 +75,7 @@ def pac_restore_strict_proxy() -> None:
         if built:
             write_local_pac(built)
     apply_pac_with_bust(silent=True, force_new=True)
-    print("[Raksha Guard] PAC restored to strict PROXY (monitored hosts).")
+    print("[Gateway Guard] PAC restored to strict PROXY (monitored hosts).")
 
 
 def clear_guard_runtime(clear_startup: bool = True) -> None:
@@ -101,5 +101,5 @@ def sync_pac_loop(stop_event: threading.Event) -> None:
             apply_pac_with_bust(silent=False, force_new=(last != ""))
             last = pac
             n = pac.count('",') if "aiHosts" in pac else 0
-            print(f"[Raksha Guard] PAC refreshed (~{n} domain entries).")
+            print(f"[Gateway Guard] PAC refreshed (~{n} domain entries).")
         stop_event.wait(agent_config.PAC_SYNC_SECONDS)

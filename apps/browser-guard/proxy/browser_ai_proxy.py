@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Raksha Browser AI Live Proxy Interceptor & DLP Guardrail Addon for mitmproxy.
+Gateway Browser AI Live Proxy Interceptor & DLP Guardrail Addon for mitmproxy.
 
 This file is the mitmproxy entrypoint (`-s browser_ai_proxy.py`).
-Implementation is split across `raksha_proxy_parts/*.py` and loaded into ONE
+Implementation is split across `gateway_proxy_parts/*.py` and loaded into ONE
 shared module namespace (same behavior as the former monolith — no import cycles).
 
 Parts (load order in MANIFEST.txt):
@@ -23,7 +23,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PARTS_DIR_NAME = "raksha_proxy_parts"
+_PARTS_DIR_NAME = "gateway_proxy_parts"
 
 
 def _parts_dir() -> Path:
@@ -48,9 +48,9 @@ def _load_parts() -> None:
     ns = globals()
 
     # 1. Prefer encrypted bundle if present (Production / Client build - zero plain text code)
-    enc_path = parts / "raksha_proxy_parts.enc"
+    enc_path = parts / "gateway_proxy_parts.enc"
     if not enc_path.is_file():
-        enc_path = parts.parent / "raksha_proxy_parts.enc"
+        enc_path = parts.parent / "gateway_proxy_parts.enc"
 
     if enc_path.is_file():
         try:
@@ -74,15 +74,15 @@ def _load_parts() -> None:
                     exec(code_map[name], ns)
                     loaded_count += 1
 
-            print(f"[Raksha Proxy] Secure in-memory bundle loaded: {loaded_count} encrypted parts active (zero disk leak).")
+            print(f"[Gateway Proxy] Secure in-memory bundle loaded: {loaded_count} encrypted parts active (zero disk leak).")
             return
         except Exception as e:
             if getattr(sys, "frozen", False):
                 raise RuntimeError(f"Encrypted proxy bundle failed to load: {e}") from e
-            print(f"[Raksha Proxy WARNING] Failed to load encrypted bundle: {e}, attempting source fallback...")
+            print(f"[Gateway Proxy WARNING] Failed to load encrypted bundle: {e}, attempting source fallback...")
 
     if getattr(sys, "frozen", False):
-        raise RuntimeError("Frozen Guard requires raksha_proxy_parts.enc; plain proxy sources are not loaded.")
+        raise RuntimeError("Frozen Guard requires gateway_proxy_parts.enc; plain proxy sources are not loaded.")
 
     # 2. Source fallback (Development / unit testing)
     manifest = parts / "MANIFEST.txt"

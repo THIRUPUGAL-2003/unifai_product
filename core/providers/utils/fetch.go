@@ -75,7 +75,7 @@ func FetchAndEncodeURL(ctx context.Context, resourceURL string) (mediaType strin
 	if err != nil {
 		return "", "", fmt.Errorf("invalid resource URL %q: %w", resourceURL, err)
 	}
-	req.Header.Set("User-Agent", "raksha-fetch/1")
+	req.Header.Set("User-Agent", "gateway-fetch/1")
 
 	resp, err := client.Do(req)
 	if err != nil {

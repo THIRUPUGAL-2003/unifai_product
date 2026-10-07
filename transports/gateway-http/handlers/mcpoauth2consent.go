@@ -11,11 +11,11 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	configtables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/temptoken"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	configtables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/temptoken"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -76,7 +76,7 @@ func NewOAuth2ConsentHandler(store *lib.Config, tempTokens *temptoken.Service, i
 }
 
 // RegisterRoutes wires the two consent routes with the provided middlewares.
-func (h *OAuth2ConsentHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *OAuth2ConsentHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/oauth2/consent/flows/{id}", lib.ChainMiddlewares(h.flowDetail, middlewares...))
 	r.PUT("/api/oauth2/consent/flows/{id}", lib.ChainMiddlewares(h.flowSubmit, middlewares...))
 }

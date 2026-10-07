@@ -4,24 +4,24 @@ import (
 	"context"
 	"errors"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/providers/cohere"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/providers/cohere"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
 // hydrateCohereRequestFromLargePayloadMetadata populates model + stream from
 // LargePayloadMetadata when body parsing is skipped under large payload mode.
-func hydrateCohereRequestFromLargePayloadMetadata(rakshaCtx *schemas.RakshaContext, req interface{}) {
-	if rakshaCtx == nil {
+func hydrateCohereRequestFromLargePayloadMetadata(gatewayCtx *schemas.GatewayContext, req interface{}) {
+	if gatewayCtx == nil {
 		return
 	}
-	isLargePayload, _ := rakshaCtx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool)
+	isLargePayload, _ := gatewayCtx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool)
 	if !isLargePayload {
 		return
 	}
-	metadata := resolveLargePayloadMetadata(rakshaCtx)
+	metadata := resolveLargePayloadMetadata(gatewayCtx)
 	if metadata == nil {
 		return
 	}
@@ -51,8 +51,8 @@ func hydrateCohereRequestFromLargePayloadMetadata(rakshaCtx *schemas.RakshaConte
 
 // cohereLargePayloadPreHook populates model + stream from LargePayloadMetadata
 // when body parsing is skipped under large payload mode.
-func cohereLargePayloadPreHook(_ *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-	hydrateCohereRequestFromLargePayloadMetadata(rakshaCtx, req)
+func cohereLargePayloadPreHook(_ *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+	hydrateCohereRequestFromLargePayloadMetadata(gatewayCtx, req)
 	return nil
 }
 
@@ -62,8 +62,8 @@ type CohereRouter struct {
 	*GenericRouter
 }
 
-// NewCohereRouter creates a new CohereRouter with the given raksha client.
-func NewCohereRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *CohereRouter {
+// NewCohereRouter creates a new CohereRouter with the given gateway client.
+func NewCohereRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *CohereRouter {
 	return &CohereRouter{
 		GenericRouter: NewGenericRouter(client, handlerStore, CreateCohereRouteConfigs("/cohere"), nil, logger),
 	}
@@ -85,15 +85,15 @@ func CreateCohereRouteConfigs(pathPrefix string) []RouteConfig {
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &cohere.CohereChatRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if cohereReq, ok := req.(*cohere.CohereChatRequest); ok {
-				return &schemas.RakshaRequest{
-					ChatRequest: cohereReq.ToRakshaChatRequest(ctx),
+				return &schemas.GatewayRequest{
+					ChatRequest: cohereReq.ToGatewayChatRequest(ctx),
 				}, nil
 			}
 			return nil, errors.New("invalid request type")
 		},
-		ChatResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaChatResponse) (interface{}, error) {
+		ChatResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayChatResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Cohere {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -101,11 +101,11 @@ func CreateCohereRouteConfigs(pathPrefix string) []RouteConfig {
 			}
 			return resp, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return err
 		},
 		StreamConfig: &StreamConfig{
-			ChatStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaChatResponse) (string, interface{}, error) {
+			ChatStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayChatResponse) (string, interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.Cohere {
 					if resp.ExtraFields.RawResponse != nil {
 						return "", resp.ExtraFields.RawResponse, nil
@@ -113,7 +113,7 @@ func CreateCohereRouteConfigs(pathPrefix string) []RouteConfig {
 				}
 				return "", resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		},
@@ -131,15 +131,15 @@ func CreateCohereRouteConfigs(pathPrefix string) []RouteConfig {
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &cohere.CohereEmbeddingRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if cohereReq, ok := req.(*cohere.CohereEmbeddingRequest); ok {
-				return &schemas.RakshaRequest{
-					EmbeddingRequest: cohereReq.ToRakshaEmbeddingRequest(ctx),
+				return &schemas.GatewayRequest{
+					EmbeddingRequest: cohereReq.ToGatewayEmbeddingRequest(ctx),
 				}, nil
 			}
 			return nil, errors.New("invalid embedding request type")
 		},
-		EmbeddingResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaEmbeddingResponse) (interface{}, error) {
+		EmbeddingResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayEmbeddingResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Cohere {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -147,7 +147,7 @@ func CreateCohereRouteConfigs(pathPrefix string) []RouteConfig {
 			}
 			return resp, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return err
 		},
 	})
@@ -164,15 +164,15 @@ func CreateCohereRouteConfigs(pathPrefix string) []RouteConfig {
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &cohere.CohereRerankRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if cohereReq, ok := req.(*cohere.CohereRerankRequest); ok {
-				return &schemas.RakshaRequest{
-					RerankRequest: cohereReq.ToRakshaRerankRequest(ctx),
+				return &schemas.GatewayRequest{
+					RerankRequest: cohereReq.ToGatewayRerankRequest(ctx),
 				}, nil
 			}
 			return nil, errors.New("invalid rerank request type")
 		},
-		RerankResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaRerankResponse) (interface{}, error) {
+		RerankResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayRerankResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Cohere {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -180,7 +180,7 @@ func CreateCohereRouteConfigs(pathPrefix string) []RouteConfig {
 			}
 			return resp, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return err
 		},
 	})
@@ -197,15 +197,15 @@ func CreateCohereRouteConfigs(pathPrefix string) []RouteConfig {
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &cohere.CohereCountTokensRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if cohereReq, ok := req.(*cohere.CohereCountTokensRequest); ok {
-				return &schemas.RakshaRequest{
-					CountTokensRequest: cohereReq.ToRakshaResponsesRequest(ctx),
+				return &schemas.GatewayRequest{
+					CountTokensRequest: cohereReq.ToGatewayResponsesRequest(ctx),
 				}, nil
 			}
 			return nil, errors.New("invalid count tokens request type")
 		},
-		CountTokensResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCountTokensResponse) (interface{}, error) {
+		CountTokensResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCountTokensResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Cohere {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -213,7 +213,7 @@ func CreateCohereRouteConfigs(pathPrefix string) []RouteConfig {
 			}
 			return resp, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return err
 		},
 	})

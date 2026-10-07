@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunTranscriptionStreamTest executes the streaming transcription test scenario
-func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunTranscriptionStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.TranscriptionStream {
 		t.Logf("Transcription streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -43,14 +43,14 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 				text:           TTSTestTextMedium,
 				voiceType:      "secondary",
 				format:         "mp3",
-				responseFormat: raksha.Ptr("json"),
+				responseFormat: gateway.Ptr("json"),
 			},
 			{
 				name:           "StreamRoundTrip_Technical_MP3",
 				text:           TTSTestTextTechnical,
 				voiceType:      "tertiary",
 				format:         "mp3",
-				responseFormat: raksha.Ptr("json"),
+				responseFormat: gateway.Ptr("json"),
 			},
 		}
 
@@ -70,7 +70,7 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 
 				// Step 1: Generate TTS audio
 				voice := GetProviderVoice(speechSynthesisProvider, tc.voiceType)
-				ttsRequest := &schemas.RakshaSpeechRequest{
+				ttsRequest := &schemas.GatewaySpeechRequest{
 					Provider: speechSynthesisProvider,
 					Model:    speechSynthesisModel,
 					Input: &schemas.SpeechInput{
@@ -109,8 +109,8 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 					OnFinalFail: ttsRetryConfig.OnFinalFail,
 				}
 
-				ttsResponse, err := WithSpeechTestRetry(t, ttsSpeechRetryConfig, ttsRetryContext, ttsExpectations, "TranscriptionStream_TTS", func() (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				ttsResponse, err := WithSpeechTestRetry(t, ttsSpeechRetryConfig, ttsRetryContext, ttsExpectations, "TranscriptionStream_TTS", func() (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.SpeechRequest(bfCtx, ttsRequest)
 				})
 				if err != nil {
@@ -136,15 +136,15 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 				t.Logf("Generated TTS audio for stream round-trip: %s (%d bytes)", audioFileName, len(ttsResponse.Audio))
 
 				// Step 2: Test streaming transcription
-				streamRequest := &schemas.RakshaTranscriptionRequest{
+				streamRequest := &schemas.GatewayTranscriptionRequest{
 					Provider: testConfig.Provider,
 					Model:    testConfig.TranscriptionModel,
 					Input: &schemas.TranscriptionInput{
 						File: ttsResponse.Audio,
 					},
 					Params: &schemas.TranscriptionParameters{
-						Language:       raksha.Ptr("en"),
-						Format:         raksha.Ptr(tc.format),
+						Language:       gateway.Ptr("en"),
+						Format:         gateway.Ptr(tc.format),
 						ResponseFormat: tc.responseFormat,
 					},
 					Fallbacks: testConfig.TranscriptionFallbacks,
@@ -167,8 +167,8 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 					},
 				}
 
-				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.TranscriptionStreamRequest(bfCtx, streamRequest)
 				})
 
@@ -181,7 +181,7 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 				defer cancel()
 
 				fullTranscriptionText := ""
-				lastResponse := &schemas.RakshaStreamChunk{}
+				lastResponse := &schemas.GatewayStreamChunk{}
 				streamErrors := []string{}
 				lastTokenLatency := int64(0)
 
@@ -200,34 +200,34 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 						}
 
 						// Check for errors in stream
-						if response.RakshaError != nil {
-							streamErrors = append(streamErrors, FormatErrorConcise(ParseRakshaError(response.RakshaError)))
+						if response.GatewayError != nil {
+							streamErrors = append(streamErrors, FormatErrorConcise(ParseGatewayError(response.GatewayError)))
 							continue
 						}
 
-						if response.RakshaTranscriptionStreamResponse == nil {
+						if response.GatewayTranscriptionStreamResponse == nil {
 							streamErrors = append(streamErrors, "Stream response missing transcription stream payload")
 							continue
 						}
 
-						if response.RakshaTranscriptionStreamResponse != nil {
-							lastTokenLatency = response.RakshaTranscriptionStreamResponse.ExtraFields.Latency
+						if response.GatewayTranscriptionStreamResponse != nil {
+							lastTokenLatency = response.GatewayTranscriptionStreamResponse.ExtraFields.Latency
 						}
 
-						if response.RakshaTranscriptionStreamResponse.Text == "" && response.RakshaTranscriptionStreamResponse.Delta == nil {
+						if response.GatewayTranscriptionStreamResponse.Text == "" && response.GatewayTranscriptionStreamResponse.Delta == nil {
 							streamErrors = append(streamErrors, "Stream response missing transcription data")
 							continue
 						}
 
-						chunkIndex := response.RakshaTranscriptionStreamResponse.ExtraFields.ChunkIndex
+						chunkIndex := response.GatewayTranscriptionStreamResponse.ExtraFields.ChunkIndex
 
 						// Log latency for each chunk (can be 0 for inter-chunks)
-						t.Logf("📊 Transcription chunk %d latency: %d ms", chunkIndex, response.RakshaTranscriptionStreamResponse.ExtraFields.Latency)
+						t.Logf("📊 Transcription chunk %d latency: %d ms", chunkIndex, response.GatewayTranscriptionStreamResponse.ExtraFields.Latency)
 
 						// Collect transcription chunks
-						transcribeData := response.RakshaTranscriptionStreamResponse
+						transcribeData := response.GatewayTranscriptionStreamResponse
 						if transcribeData.Text != "" {
-							t.Logf("✅ Received transcription text chunk %d with latency %d ms: '%s'", chunkIndex, response.RakshaTranscriptionStreamResponse.ExtraFields.Latency, transcribeData.Text)
+							t.Logf("✅ Received transcription text chunk %d with latency %d ms: '%s'", chunkIndex, response.GatewayTranscriptionStreamResponse.ExtraFields.Latency, transcribeData.Text)
 						}
 
 						// Handle delta vs complete text chunks
@@ -235,14 +235,14 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 							// This is a delta chunk
 							deltaText := *transcribeData.Delta
 							fullTranscriptionText += deltaText
-							t.Logf("✅ Received transcription delta chunk %d with latency %d ms: '%s'", chunkIndex, response.RakshaTranscriptionStreamResponse.ExtraFields.Latency, deltaText)
+							t.Logf("✅ Received transcription delta chunk %d with latency %d ms: '%s'", chunkIndex, response.GatewayTranscriptionStreamResponse.ExtraFields.Latency, deltaText)
 						}
 
 						// Validate chunk structure
-						if response.RakshaTranscriptionStreamResponse.Type != schemas.TranscriptionStreamResponseTypeDelta {
-							t.Logf("⚠️ Unexpected object type in stream: %s", response.RakshaTranscriptionStreamResponse.Type)
+						if response.GatewayTranscriptionStreamResponse.Type != schemas.TranscriptionStreamResponseTypeDelta {
+							t.Logf("⚠️ Unexpected object type in stream: %s", response.GatewayTranscriptionStreamResponse.Type)
 						}
-						gotModel := response.RakshaTranscriptionStreamResponse.ExtraFields.OriginalModelRequested
+						gotModel := response.GatewayTranscriptionStreamResponse.ExtraFields.OriginalModelRequested
 						if gotModel == "" {
 							t.Fatal("❌ Stream chunk missing extra_fields.original_model_requested")
 						}
@@ -250,7 +250,7 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 							t.Fatalf("❌ Unexpected original_model_requested in stream: got %q want %q", gotModel, testConfig.TranscriptionModel)
 						}
 
-						lastResponse = DeepCopyRakshaStreamChunk(response)
+						lastResponse = DeepCopyGatewayStreamChunk(response)
 
 					case <-streamCtx.Done():
 						streamErrors = append(streamErrors, "Stream reading timed out")
@@ -335,7 +335,7 @@ func RunTranscriptionStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 }
 
 // RunTranscriptionStreamAdvancedTest executes advanced streaming transcription test scenarios
-func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunTranscriptionStreamAdvancedTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.TranscriptionStream {
 		t.Logf("Transcription streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -359,16 +359,16 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx
 			audioData, _ := GenerateTTSAudioForTest(ctx, t, client, speechSynthesisProvider, speechSynthesisModel, TTSTestTextBasic, "primary", "mp3")
 
 			// Test streaming with JSON format
-			request := &schemas.RakshaTranscriptionRequest{
+			request := &schemas.GatewayTranscriptionRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.TranscriptionModel,
 				Input: &schemas.TranscriptionInput{
 					File: audioData,
 				},
 				Params: &schemas.TranscriptionParameters{
-					Language:       raksha.Ptr("en"),
-					Format:         raksha.Ptr("mp3"),
-					ResponseFormat: raksha.Ptr("json"),
+					Language:       gateway.Ptr("en"),
+					Format:         gateway.Ptr("mp3"),
+					ResponseFormat: gateway.Ptr("json"),
 				},
 				Fallbacks: testConfig.TranscriptionFallbacks,
 			}
@@ -387,8 +387,8 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx
 				},
 			}
 
-			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.TranscriptionStreamRequest(bfCtx, request)
 			})
 
@@ -403,16 +403,16 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx
 					continue
 				}
 
-				if response.RakshaError != nil {
-					streamErrors = append(streamErrors, FormatErrorConcise(ParseRakshaError(response.RakshaError)))
+				if response.GatewayError != nil {
+					streamErrors = append(streamErrors, FormatErrorConcise(ParseGatewayError(response.GatewayError)))
 					continue
 				}
 
-				if response.RakshaTranscriptionStreamResponse != nil {
+				if response.GatewayTranscriptionStreamResponse != nil {
 					receivedResponse = true
 
 					// Check for JSON streaming specific fields
-					transcribeData := response.RakshaTranscriptionStreamResponse
+					transcribeData := response.GatewayTranscriptionStreamResponse
 					if transcribeData.Type != "" {
 						t.Logf("✅ Stream type: %v", transcribeData.Type)
 						if transcribeData.Delta != nil {
@@ -459,7 +459,7 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx
 					ShouldRunParallel(t, testConfig, "Transcription")
 
 					langCopy := lang
-					request := &schemas.RakshaTranscriptionRequest{
+					request := &schemas.GatewayTranscriptionRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.TranscriptionModel,
 						Input: &schemas.TranscriptionInput{
@@ -484,8 +484,8 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx
 						},
 					}
 
-					responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-						bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+					responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+						bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 						return client.TranscriptionStreamRequest(bfCtx, request)
 					})
 
@@ -501,16 +501,16 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx
 							continue
 						}
 
-						if response.RakshaError != nil {
-							streamErrors = append(streamErrors, fmt.Sprintf("Error in stream for language %s: %s", lang, FormatErrorConcise(ParseRakshaError(response.RakshaError))))
+						if response.GatewayError != nil {
+							streamErrors = append(streamErrors, fmt.Sprintf("Error in stream for language %s: %s", lang, FormatErrorConcise(ParseGatewayError(response.GatewayError))))
 							continue
 						}
 
-						if response.RakshaTranscriptionStreamResponse != nil {
+						if response.GatewayTranscriptionStreamResponse != nil {
 							receivedData = true
 							t.Logf("✅ Received transcription data for language %s", lang)
-							if response.RakshaTranscriptionStreamResponse != nil {
-								lastTokenLatency = response.RakshaTranscriptionStreamResponse.ExtraFields.Latency
+							if response.GatewayTranscriptionStreamResponse != nil {
+								lastTokenLatency = response.GatewayTranscriptionStreamResponse.ExtraFields.Latency
 							}
 						}
 					}
@@ -549,15 +549,15 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx
 			audioData, _ := GenerateTTSAudioForTest(ctx, t, client, speechSynthesisProvider, speechSynthesisModel, TTSTestTextTechnical, "tertiary", "mp3")
 
 			// Test streaming with custom prompt for context
-			request := &schemas.RakshaTranscriptionRequest{
+			request := &schemas.GatewayTranscriptionRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.TranscriptionModel,
 				Input: &schemas.TranscriptionInput{
 					File: audioData,
 				},
 				Params: &schemas.TranscriptionParameters{
-					Language: raksha.Ptr("en"),
-					Prompt:   raksha.Ptr("This audio contains technical terms, proper nouns, and streaming-related vocabulary."),
+					Language: gateway.Ptr("en"),
+					Prompt:   gateway.Ptr("This audio contains technical terms, proper nouns, and streaming-related vocabulary."),
 				},
 				Fallbacks: testConfig.TranscriptionFallbacks,
 			}
@@ -577,8 +577,8 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx
 				},
 			}
 
-			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.TranscriptionStreamRequest(bfCtx, request)
 			})
 
@@ -595,18 +595,18 @@ func RunTranscriptionStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx
 					continue
 				}
 
-				if response.RakshaError != nil {
-					streamErrors = append(streamErrors, FormatErrorConcise(ParseRakshaError(response.RakshaError)))
+				if response.GatewayError != nil {
+					streamErrors = append(streamErrors, FormatErrorConcise(ParseGatewayError(response.GatewayError)))
 					continue
 				}
 
-				if response.RakshaTranscriptionStreamResponse != nil {
-					lastTokenLatency = response.RakshaTranscriptionStreamResponse.ExtraFields.Latency
+				if response.GatewayTranscriptionStreamResponse != nil {
+					lastTokenLatency = response.GatewayTranscriptionStreamResponse.ExtraFields.Latency
 				}
 
-				if response.RakshaTranscriptionStreamResponse != nil && response.RakshaTranscriptionStreamResponse.Text != "" {
+				if response.GatewayTranscriptionStreamResponse != nil && response.GatewayTranscriptionStreamResponse.Text != "" {
 					chunkCount++
-					chunkText := response.RakshaTranscriptionStreamResponse.Text
+					chunkText := response.GatewayTranscriptionStreamResponse.Text
 					receivedText += chunkText
 					t.Logf("✅ Custom prompt chunk %d: '%s'", chunkCount, chunkText)
 				}

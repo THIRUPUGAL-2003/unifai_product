@@ -3,17 +3,17 @@ package huggingface
 import (
 	"fmt"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToHuggingFaceResponsesRequest converts a Raksha Responses request into the Hugging Face
+// ToHuggingFaceResponsesRequest converts a Gateway Responses request into the Hugging Face
 // chat-completions payload that the provider already understands.
-func ToHuggingFaceResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*HuggingFaceChatRequest, error) {
-	if rakshaReq == nil {
+func ToHuggingFaceResponsesRequest(gatewayReq *schemas.GatewayResponsesRequest) (*HuggingFaceChatRequest, error) {
+	if gatewayReq == nil {
 		return nil, nil
 	}
 
-	chatReq := rakshaReq.ToChatRequest()
+	chatReq := gatewayReq.ToChatRequest()
 	if chatReq == nil {
 		return nil, fmt.Errorf("failed to convert responses request to chat request")
 	}
@@ -29,9 +29,9 @@ func ToHuggingFaceResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*
 	return hfReq, nil
 }
 
-// ToRakshaResponsesResponseFromHuggingFace converts a Raksha chat response into the
-// Raksha Responses response shape, preserving provider metadata.
-func ToRakshaResponsesResponseFromHuggingFace(resp *schemas.RakshaChatResponse, requestedModel string) (*schemas.RakshaResponsesResponse, error) {
+// ToGatewayResponsesResponseFromHuggingFace converts a Gateway chat response into the
+// Gateway Responses response shape, preserving provider metadata.
+func ToGatewayResponsesResponseFromHuggingFace(resp *schemas.GatewayChatResponse, requestedModel string) (*schemas.GatewayResponsesResponse, error) {
 	if resp == nil {
 		return nil, nil
 	}
@@ -41,7 +41,7 @@ func ToRakshaResponsesResponseFromHuggingFace(resp *schemas.RakshaChatResponse, 
 		resp.Model = requestedModel
 	}
 
-	responsesResp := resp.ToRakshaResponsesResponse()
+	responsesResp := resp.ToGatewayResponsesResponse()
 	if responsesResp != nil {
 	}
 

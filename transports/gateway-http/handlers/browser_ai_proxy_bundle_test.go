@@ -39,7 +39,7 @@ func writeFakeAgentSource(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"raksha_agent.py":         "def main(): pass\n",
+		"gateway_agent.py":         "def main(): pass\n",
 		"agent_config.py":         "AGENT_VERSION_BAKED = '1.1.14'\n",
 		"guard_bootstrap.py":      "# frozen entry, never shipped\n",
 		"agent-notes.py":          "not a module name",
@@ -78,8 +78,8 @@ func TestGuardCodeBundleIsDeterministicAndShipsAgentAndProxyCode(t *testing.T) {
 		got[f.Name] = true
 	}
 	for _, want := range []string{
-		"browser_ai_proxy.py", "raksha_proxy_parts/MANIFEST.txt", "raksha_proxy_parts/a.py", "raksha_proxy_parts/b.py",
-		"agent/raksha_agent.py", "agent/agent_config.py",
+		"browser_ai_proxy.py", "gateway_proxy_parts/MANIFEST.txt", "gateway_proxy_parts/a.py", "gateway_proxy_parts/b.py",
+		"agent/gateway_agent.py", "agent/agent_config.py",
 	} {
 		if !got[want] {
 			t.Errorf("bundle missing %s", want)
@@ -89,7 +89,7 @@ func TestGuardCodeBundleIsDeterministicAndShipsAgentAndProxyCode(t *testing.T) {
 		t.Error("the frozen bootstrap must never be shipped in the bundle")
 	}
 
-	if err := os.WriteFile(filepath.Join(agent, "raksha_agent.py"), []byte("def main(): return 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(agent, "gateway_agent.py"), []byte("def main(): return 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	changed, _, _ := buildGuardProxyBundle(src, agent)
@@ -142,7 +142,7 @@ func TestPublishedProxyBundleIsServedAndAdvertised(t *testing.T) {
 		t.Fatalf("download status %d", ctx.Response.StatusCode())
 	}
 	sum := sha256.Sum256(ctx.Response.Body())
-	if hex.EncodeToString(sum[:]) != meta.SHA256 || string(ctx.Response.Header.Peek("X-Raksha-Bundle-SHA256")) != meta.SHA256 {
+	if hex.EncodeToString(sum[:]) != meta.SHA256 || string(ctx.Response.Header.Peek("X-Gateway-Bundle-SHA256")) != meta.SHA256 {
 		t.Fatal("served bytes must match the advertised SHA-256")
 	}
 }

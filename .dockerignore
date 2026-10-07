@@ -23,8 +23,9 @@ ui/out/
 *.pyc
 
 # Local server binaries (the image builds its own)
+/gateway_server.exe
 /raksha_server.exe
-transports/raksha-http/*.exe
+transports/gateway-http/*.exe
 
 # Guard build intermediates (only release/ files are copied into the image)
 apps/browser-guard/build/

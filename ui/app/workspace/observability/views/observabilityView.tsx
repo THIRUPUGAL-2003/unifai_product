@@ -117,8 +117,20 @@ const supportedPlatformsList = (_resolvedTheme: string): SupportedPlatform[] => 
 
 export default function ObservabilityView() {
 	const dispatch = useAppDispatch();
-	const { data: plugins, isLoading: isLoadingPlugins } = useGetPluginsQuery();
-	const { data: connectors, isLoading: isLoadingConnectors } = useGetConnectorsQuery();
+	const {
+		data: plugins,
+		isLoading: isLoadingPlugins,
+		isError: isPluginsError,
+		error: pluginsError,
+		refetch: refetchPlugins,
+	} = useGetPluginsQuery();
+	const {
+		data: connectors,
+		isLoading: isLoadingConnectors,
+		isError: isConnectorsError,
+		error: connectorsError,
+		refetch: refetchConnectors,
+	} = useGetConnectorsQuery();
 	const [createPlugin] = useCreatePluginMutation();
 	const [deletePlugin, { isLoading: isDeletingPlugin }] = useDeletePluginMutation();
 	const [updateConnector] = useUpdateConnectorMutation();
@@ -228,9 +240,32 @@ export default function ObservabilityView() {
 
 	const isDeleting = isDeletingConnector || isDeletingPlugin;
 	const isLoading = isLoadingPlugins || isLoadingConnectors;
+	const loadFailed = isPluginsError || isConnectorsError;
 
 	if (isLoading) {
 		return <FullPageLoader />;
+	}
+
+	if (loadFailed) {
+		return (
+			<div className="flex min-h-[50vh] w-full flex-col items-center justify-center gap-3 text-center">
+				<p className="text-destructive text-sm font-semibold">Failed to load connectors</p>
+				<p className="text-muted-foreground max-w-md text-xs">
+					{getErrorMessage(pluginsError || connectorsError)}
+				</p>
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					onClick={() => {
+						void refetchPlugins();
+						void refetchConnectors();
+					}}
+				>
+					Retry
+				</Button>
+			</div>
+		);
 	}
 
 	const addDropdown = (

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/framework/encrypt"
+	"github.com/gateway/gateway/framework/encrypt"
 	"gorm.io/gorm"
 )
 

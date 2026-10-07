@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // chunkTiming tracks the arrival time of each streaming chunk
@@ -60,7 +60,7 @@ func detectBatchedStream(chunkTimings []chunkTiming, minChunks int) (bool, strin
 }
 
 // RunChatCompletionStreamTest executes the chat completion stream test scenario
-func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunChatCompletionStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.CompletionStream {
 		t.Logf("Chat completion stream not supported for provider %s", testConfig.Provider)
 		return
@@ -75,12 +75,12 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 			CreateBasicChatMessage("Tell me a short story about a robot learning to paint the city which has the eiffel tower. Keep it under 200 words and include the city's name."),
 		}
 
-		request := &schemas.RakshaChatRequest{
+		request := &schemas.GatewayChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    messages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: raksha.Ptr(1000),
+				MaxCompletionTokens: gateway.Ptr(1000),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -101,8 +101,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 		}
 
 		// Use proper streaming retry wrapper for the stream request
-		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionStreamRequest(bfCtx, request)
 		})
 
@@ -114,7 +114,7 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 
 		var fullContent strings.Builder
 		var responseCount int
-		var lastResponse *schemas.RakshaStreamChunk
+		var lastResponse *schemas.GatewayStreamChunk
 
 		// Chunk timing tracking for batch detection
 		var chunkTimings []chunkTiming
@@ -153,31 +153,31 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 				})
 				lastChunkTime = now
 
-				lastResponse = DeepCopyRakshaStreamChunk(response)
+				lastResponse = DeepCopyGatewayStreamChunk(response)
 
 				// Basic validation of streaming response structure
-				if response.RakshaChatResponse != nil {
-					if response.RakshaChatResponse.ExtraFields.Provider != testConfig.Provider {
-						t.Logf("⚠️ Warning: Provider mismatch - expected %s, got %s", testConfig.Provider, response.RakshaChatResponse.ExtraFields.Provider)
+				if response.GatewayChatResponse != nil {
+					if response.GatewayChatResponse.ExtraFields.Provider != testConfig.Provider {
+						t.Logf("⚠️ Warning: Provider mismatch - expected %s, got %s", testConfig.Provider, response.GatewayChatResponse.ExtraFields.Provider)
 					}
-					if response.RakshaChatResponse.ID == "" {
+					if response.GatewayChatResponse.ID == "" {
 						t.Logf("⚠️ Warning: Response ID is empty")
 					}
 
-					// Per-chunk Object validation: raksha normalizes every streaming chunk
+					// Per-chunk Object validation: gateway normalizes every streaming chunk
 					// to the OpenAI shape with Object="chat.completion.chunk", whether the
-					// upstream provider natively emits it (OpenAI family) or raksha
+					// upstream provider natively emits it (OpenAI family) or gateway
 					// synthesizes it during translation (e.g., Anthropic's type-keyed events).
 					// A missing/wrong Object here indicates a provider translation regression.
-					if response.RakshaChatResponse.Object != "chat.completion.chunk" {
-						t.Errorf("Chunk %d: Object field must be 'chat.completion.chunk', got %q", responseCount+1, response.RakshaChatResponse.Object)
+					if response.GatewayChatResponse.Object != "chat.completion.chunk" {
+						t.Errorf("Chunk %d: Object field must be 'chat.completion.chunk', got %q", responseCount+1, response.GatewayChatResponse.Object)
 					}
 
 					// Log latency for each chunk (can be 0 for inter-chunks)
-					t.Logf("📊 Chunk %d latency: %d ms", responseCount+1, response.RakshaChatResponse.ExtraFields.Latency)
+					t.Logf("📊 Chunk %d latency: %d ms", responseCount+1, response.GatewayChatResponse.ExtraFields.Latency)
 
 					// Process each choice in the response
-					for _, choice := range response.RakshaChatResponse.Choices {
+					for _, choice := range response.GatewayChatResponse.Choices {
 						// Validate that this is a stream response
 						if choice.ChatStreamResponseChoice == nil {
 							t.Logf("⚠️ Warning: Stream response choice is nil for choice %d", choice.Index)
@@ -229,8 +229,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 		finalContent := strings.TrimSpace(fullContent.String())
 
 		// Create a consolidated response for validation
-		consolidatedResponse := &schemas.RakshaChatResponse{
-			Choices: []schemas.RakshaResponseChoice{
+		consolidatedResponse := &schemas.GatewayChatResponse{
+			Choices: []schemas.GatewayResponseChoice{
 				{
 					Index: 0,
 					ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -243,23 +243,23 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 					},
 				},
 			},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Provider: testConfig.Provider,
 			},
 		}
 
 		// Copy usage and other metadata from last response if available
-		if lastResponse != nil && lastResponse.RakshaChatResponse != nil {
-			consolidatedResponse.Usage = lastResponse.RakshaChatResponse.Usage
-			consolidatedResponse.Model = lastResponse.RakshaChatResponse.Model
-			consolidatedResponse.ID = lastResponse.RakshaChatResponse.ID
-			consolidatedResponse.Created = lastResponse.RakshaChatResponse.Created
+		if lastResponse != nil && lastResponse.GatewayChatResponse != nil {
+			consolidatedResponse.Usage = lastResponse.GatewayChatResponse.Usage
+			consolidatedResponse.Model = lastResponse.GatewayChatResponse.Model
+			consolidatedResponse.ID = lastResponse.GatewayChatResponse.ID
+			consolidatedResponse.Created = lastResponse.GatewayChatResponse.Created
 
 			// Copy finish reason from last choice if available
-			if len(lastResponse.RakshaChatResponse.Choices) > 0 && lastResponse.RakshaChatResponse.Choices[0].FinishReason != nil {
-				consolidatedResponse.Choices[0].FinishReason = lastResponse.RakshaChatResponse.Choices[0].FinishReason
+			if len(lastResponse.GatewayChatResponse.Choices) > 0 && lastResponse.GatewayChatResponse.Choices[0].FinishReason != nil {
+				consolidatedResponse.Choices[0].FinishReason = lastResponse.GatewayChatResponse.Choices[0].FinishReason
 			}
-			consolidatedResponse.ExtraFields = lastResponse.RakshaChatResponse.ExtraFields
+			consolidatedResponse.ExtraFields = lastResponse.GatewayChatResponse.ExtraFields
 		}
 
 		// Enhanced validation expectations for streaming
@@ -306,12 +306,12 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 
 			tool := GetSampleChatTool(SampleToolTypeWeather)
 
-			request := &schemas.RakshaChatRequest{
+			request := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    messages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(1000),
+					MaxCompletionTokens: gateway.Ptr(1000),
 					Tools:               []schemas.ChatTool{*tool},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -338,11 +338,11 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 				t,
 				retryConfig,
 				retryContext,
-				func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.ChatCompletionStreamRequest(bfCtx, request)
 				},
-				func(responseChannel chan *schemas.RakshaStreamChunk) ChatStreamValidationResult {
+				func(responseChannel chan *schemas.GatewayStreamChunk) ChatStreamValidationResult {
 					var toolCallDetected bool
 					var responseCount int
 					var streamErrors []string
@@ -363,7 +363,7 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 								goto toolStreamComplete
 							}
 
-							if response == nil || response.RakshaChatResponse == nil {
+							if response == nil || response.GatewayChatResponse == nil {
 								streamErrors = append(streamErrors, "❌ Streaming response should not be nil")
 								continue
 							}
@@ -383,8 +383,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 
 							responseCount++
 
-							if response.RakshaChatResponse.Choices != nil {
-								for _, choice := range response.RakshaChatResponse.Choices {
+							if response.GatewayChatResponse.Choices != nil {
+								for _, choice := range response.GatewayChatResponse.Choices {
 									if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
 										delta := choice.ChatStreamResponseChoice.Delta
 
@@ -472,15 +472,15 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 				CreateBasicChatMessage(problemPrompt),
 			}
 
-			request := &schemas.RakshaChatRequest{
+			request := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ReasoningModel,
 				Input:    messages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(1800),
+					MaxCompletionTokens: gateway.Ptr(1800),
 					Reasoning: &schemas.ChatReasoning{
-						Effort:    raksha.Ptr("high"),
-						MaxTokens: raksha.Ptr(1500),
+						Effort:    gateway.Ptr("high"),
+						MaxTokens: gateway.Ptr(1500),
 					},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -503,8 +503,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 			}
 
 			// Use proper streaming retry wrapper for the stream request
-			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.ChatCompletionStreamRequest(bfCtx, request)
 			})
 
@@ -553,8 +553,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 
 					responseCount++
 
-					if response.RakshaChatResponse != nil {
-						chatResp := response.RakshaChatResponse
+					if response.GatewayChatResponse != nil {
+						chatResp := response.GatewayChatResponse
 
 						// Check for reasoning in choices
 						if len(chatResp.Choices) > 0 {
@@ -576,7 +576,7 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 										for _, detail := range delta.ReasoningDetails {
 											t.Logf("  - Type: %s, Index: %d", detail.Type, detail.Index)
 											switch detail.Type {
-											case schemas.RakshaReasoningDetailsTypeText:
+											case schemas.GatewayReasoningDetailsTypeText:
 												if detail.Text != nil && *detail.Text != "" {
 													maxLen := 100
 													text := *detail.Text
@@ -585,11 +585,11 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 													}
 													t.Logf("    Text preview: %q", text[:maxLen])
 												}
-											case schemas.RakshaReasoningDetailsTypeSummary:
+											case schemas.GatewayReasoningDetailsTypeSummary:
 												if detail.Summary != nil {
 													t.Logf("    Summary length: %d", len(*detail.Summary))
 												}
-											case schemas.RakshaReasoningDetailsTypeEncrypted:
+											case schemas.GatewayReasoningDetailsTypeEncrypted:
 												if detail.Data != nil {
 													t.Logf("    Encrypted data length: %d", len(*detail.Data))
 												}
@@ -668,15 +668,15 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 				CreateBasicChatMessage(problemPrompt),
 			}
 
-			request := &schemas.RakshaChatRequest{
+			request := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ReasoningModel,
 				Input:    messages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(1800),
+					MaxCompletionTokens: gateway.Ptr(1800),
 					Reasoning: &schemas.ChatReasoning{
-						Effort:    raksha.Ptr("high"),
-						MaxTokens: raksha.Ptr(1500),
+						Effort:    gateway.Ptr("high"),
+						MaxTokens: gateway.Ptr(1500),
 					},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -704,11 +704,11 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 				t,
 				retryConfig,
 				retryContext,
-				func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.ChatCompletionStreamRequest(bfCtx, request)
 				},
-				func(responseChannel chan *schemas.RakshaStreamChunk) ChatStreamValidationResult {
+				func(responseChannel chan *schemas.GatewayStreamChunk) ChatStreamValidationResult {
 					var reasoningDetected bool
 					var reasoningDetailsDetected bool
 					var reasoningTokensDetected bool
@@ -752,8 +752,8 @@ func RunChatCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 
 							responseCount++
 
-							if response.RakshaChatResponse != nil {
-								chatResp := response.RakshaChatResponse
+							if response.GatewayChatResponse != nil {
+								chatResp := response.GatewayChatResponse
 
 								// Check for reasoning in choices
 								if len(chatResp.Choices) > 0 {

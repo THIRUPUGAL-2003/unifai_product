@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/migrator"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/migrator"
 	"gorm.io/gorm"
 )
 
@@ -126,7 +126,7 @@ func acquireAdvisoryLock(ctx context.Context, db *gorm.DB, logger schemas.Logger
 			conn.Close()
 			return nil, fmt.Errorf(
 				"failed to acquire logstore %s lock (key=%d) after %d attempts over %s\n\n"+
-					"This usually means another Raksha pod (or a previous crashed pod's lingering\n"+
+					"This usually means another Gateway pod (or a previous crashed pod's lingering\n"+
 					"database session) is still holding the lock. To diagnose and resolve:\n\n"+
 					"1. Find who holds the lock:\n"+
 					"   SELECT pid, usename, application_name, client_addr, backend_start, state, query\n"+
@@ -261,7 +261,7 @@ var logstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"logs_add_user_name_column"}, run: migrationAddUserNameColumn},
 	{IDs: []string{"logs_add_ocr_input_column"}, run: migrationAddOCRInputColumn},
 	{IDs: []string{"logs_add_stop_reason_column"}, run: migrationAddStopReasonColumn},
-	{IDs: []string{"logs_add_raksha_safe_jsonb_function"}, run: migrationAddSafeJsonbFunction},
+	{IDs: []string{"logs_add_gateway_safe_jsonb_function"}, run: migrationAddSafeJsonbFunction},
 	{IDs: []string{"mcp_tool_logs_add_dac_columns"}, run: migrationAddDACColumnsToMCPToolLogs},
 	{IDs: []string{"logs_add_cluster_governance_columns"}, run: migrationAddClusterGovernanceColumns},
 	{IDs: []string{"logs_add_inc_number_column"}, run: migrationAddLogIncNumberColumn},
@@ -3194,7 +3194,7 @@ func migrationAddStopReasonColumn(ctx context.Context, db *gorm.DB, logger schem
 //
 // Postgres-only; SQLite is guarded inline in listSelectColumns via json_valid().
 func migrationAddSafeJsonbFunction(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
-	migrationName := "logs_add_raksha_safe_jsonb_function"
+	migrationName := "logs_add_gateway_safe_jsonb_function"
 	logger.Info("[logstore] starting migration %s", migrationName)
 	defer logger.Info("[logstore] finished migration %s", migrationName)
 	opts := *migrator.DefaultOptions
@@ -3207,23 +3207,23 @@ func migrationAddSafeJsonbFunction(ctx context.Context, db *gorm.DB, logger sche
 			}
 			tx = tx.WithContext(ctx)
 			if err := tx.Exec(safeJsonbFunctionSQL).Error; err != nil {
-				return fmt.Errorf("failed to create raksha_safe_jsonb: %w", err)
+				return fmt.Errorf("failed to create gateway_safe_jsonb: %w", err)
 			}
 			return nil
 		},
 		Rollback: func(tx *gorm.DB) error {
 			tx = tx.WithContext(ctx)
-			return tx.Exec("DROP FUNCTION IF EXISTS raksha_safe_jsonb(text)").Error
+			return tx.Exec("DROP FUNCTION IF EXISTS gateway_safe_jsonb(text)").Error
 		},
 	}})
 	if err := m.Migrate(); err != nil {
-		return fmt.Errorf("error while adding raksha_safe_jsonb function: %s", err.Error())
+		return fmt.Errorf("error while adding gateway_safe_jsonb function: %s", err.Error())
 	}
 	return nil
 }
 
 const safeJsonbFunctionSQL = `
-CREATE OR REPLACE FUNCTION raksha_safe_jsonb(t text) RETURNS text
+CREATE OR REPLACE FUNCTION gateway_safe_jsonb(t text) RETURNS text
 LANGUAGE plpgsql IMMUTABLE AS $$
 DECLARE
     j jsonb;

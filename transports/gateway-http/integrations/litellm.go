@@ -1,9 +1,9 @@
 package integrations
 
 import (
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 )
 
 // LiteLLMRouter holds route registrations for LiteLLM endpoints.
@@ -14,8 +14,8 @@ type LiteLLMRouter struct {
 	*GenericRouter
 }
 
-// NewLiteLLMRouter creates a new LiteLLMRouter with the given raksha client.
-func NewLiteLLMRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *LiteLLMRouter {
+// NewLiteLLMRouter creates a new LiteLLMRouter with the given gateway client.
+func NewLiteLLMRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *LiteLLMRouter {
 	routes := []RouteConfig{}
 
 	// Add OpenAI routes to LiteLLM for OpenAI API compatibility

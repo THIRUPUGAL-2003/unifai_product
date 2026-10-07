@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
 )
 
 // SupportsRealtimeAPI returns true since ElevenLabs supports Conversational AI via WebSocket.
@@ -26,7 +26,7 @@ func (provider *ElevenlabsProvider) RealtimeWebSocketURL(key schemas.Key, model 
 }
 
 // RealtimeHeaders returns the headers required for the ElevenLabs Conversational AI WebSocket.
-func (provider *ElevenlabsProvider) RealtimeHeaders(_ *schemas.RakshaContext, key schemas.Key) (map[string]string, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) RealtimeHeaders(_ *schemas.GatewayContext, key schemas.Key) (map[string]string, *schemas.GatewayError) {
 	headers := map[string]string{
 		"xi-api-key": key.Value.GetValue(),
 	}
@@ -45,15 +45,15 @@ func (provider *ElevenlabsProvider) SupportsRealtimeWebRTC() bool {
 }
 
 // ExchangeRealtimeWebRTCSDP is not yet implemented for ElevenLabs.
-func (provider *ElevenlabsProvider) ExchangeRealtimeWebRTCSDP(_ *schemas.RakshaContext, _ schemas.Key, _ string, _ string, _ json.RawMessage) (string, *schemas.RakshaError) {
-	return "", &schemas.RakshaError{
-		IsRakshaError: true,
+func (provider *ElevenlabsProvider) ExchangeRealtimeWebRTCSDP(_ *schemas.GatewayContext, _ schemas.Key, _ string, _ string, _ json.RawMessage) (string, *schemas.GatewayError) {
+	return "", &schemas.GatewayError{
+		IsGatewayError: true,
 		StatusCode:     schemas.Ptr(400),
 		Error:          &schemas.ErrorField{Type: schemas.Ptr("invalid_request_error"), Message: "WebRTC SDP exchange is not yet implemented for ElevenLabs"},
 	}
 }
 
-func (provider *ElevenlabsProvider) ShouldStartRealtimeTurn(event *schemas.RakshaRealtimeEvent) bool {
+func (provider *ElevenlabsProvider) ShouldStartRealtimeTurn(event *schemas.GatewayRealtimeEvent) bool {
 	return false
 }
 
@@ -69,7 +69,7 @@ func (provider *ElevenlabsProvider) RealtimeWebSocketSubprotocol() string {
 	return ""
 }
 
-func (provider *ElevenlabsProvider) ShouldForwardRealtimeEvent(event *schemas.RakshaRealtimeEvent) bool {
+func (provider *ElevenlabsProvider) ShouldForwardRealtimeEvent(event *schemas.GatewayRealtimeEvent) bool {
 	return true
 }
 
@@ -130,14 +130,14 @@ type elevenlabsCorrectionEvent struct {
 	CorrectedAgentResponse string `json:"corrected_agent_response,omitempty"`
 }
 
-// ToRakshaRealtimeEvent converts an ElevenLabs Conversational AI event to the unified Raksha format.
-func (provider *ElevenlabsProvider) ToRakshaRealtimeEvent(providerEvent json.RawMessage) (*schemas.RakshaRealtimeEvent, error) {
+// ToGatewayRealtimeEvent converts an ElevenLabs Conversational AI event to the unified Gateway format.
+func (provider *ElevenlabsProvider) ToGatewayRealtimeEvent(providerEvent json.RawMessage) (*schemas.GatewayRealtimeEvent, error) {
 	var raw elevenlabsEvent
 	if err := json.Unmarshal(providerEvent, &raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal ElevenLabs realtime event: %w", err)
 	}
 
-	event := &schemas.RakshaRealtimeEvent{
+	event := &schemas.GatewayRealtimeEvent{
 		RawData: providerEvent,
 	}
 
@@ -230,16 +230,16 @@ func (provider *ElevenlabsProvider) ToRakshaRealtimeEvent(providerEvent json.Raw
 	return event, nil
 }
 
-// ToProviderRealtimeEvent converts a unified Raksha Realtime event to ElevenLabs' native JSON.
-func (provider *ElevenlabsProvider) ToProviderRealtimeEvent(rakshaEvent *schemas.RakshaRealtimeEvent) (json.RawMessage, error) {
-	switch rakshaEvent.Type {
+// ToProviderRealtimeEvent converts a unified Gateway Realtime event to ElevenLabs' native JSON.
+func (provider *ElevenlabsProvider) ToProviderRealtimeEvent(gatewayEvent *schemas.GatewayRealtimeEvent) (json.RawMessage, error) {
+	switch gatewayEvent.Type {
 	case schemas.RTEventInputAudioAppend:
-		if rakshaEvent.Delta == nil {
+		if gatewayEvent.Delta == nil {
 			return nil, fmt.Errorf("delta must be set for input_audio_buffer.append events")
 		}
 		out := map[string]interface{}{
 			"type":             elUserAudioChunk,
-			"user_audio_chunk": rakshaEvent.Delta.Audio,
+			"user_audio_chunk": gatewayEvent.Delta.Audio,
 		}
 		return schemas.MarshalSorted(out)
 
@@ -250,7 +250,7 @@ func (provider *ElevenlabsProvider) ToProviderRealtimeEvent(rakshaEvent *schemas
 
 	default:
 		out := map[string]interface{}{
-			"type": string(rakshaEvent.Type),
+			"type": string(gatewayEvent.Type),
 		}
 		return schemas.MarshalSorted(out)
 	}

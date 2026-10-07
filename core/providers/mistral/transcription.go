@@ -6,33 +6,33 @@ import (
 	"mime/multipart"
 	"strconv"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToMistralTranscriptionRequest converts a Raksha transcription request to Mistral format.
-func ToMistralTranscriptionRequest(rakshaReq *schemas.RakshaTranscriptionRequest) *MistralTranscriptionRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil || len(rakshaReq.Input.File) == 0 {
+// ToMistralTranscriptionRequest converts a Gateway transcription request to Mistral format.
+func ToMistralTranscriptionRequest(gatewayReq *schemas.GatewayTranscriptionRequest) *MistralTranscriptionRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil || len(gatewayReq.Input.File) == 0 {
 		return nil
 	}
 
 	req := &MistralTranscriptionRequest{
-		Model:    rakshaReq.Model,
-		File:     rakshaReq.Input.File,
-		Filename: rakshaReq.Input.Filename,
+		Model:    gatewayReq.Model,
+		File:     gatewayReq.Input.File,
+		Filename: gatewayReq.Input.Filename,
 	}
 
-	if rakshaReq.Params != nil {
-		req.Language = rakshaReq.Params.Language
-		req.Prompt = rakshaReq.Params.Prompt
-		req.ResponseFormat = rakshaReq.Params.ResponseFormat
+	if gatewayReq.Params != nil {
+		req.Language = gatewayReq.Params.Language
+		req.Prompt = gatewayReq.Params.Prompt
+		req.ResponseFormat = gatewayReq.Params.ResponseFormat
 
 		// Handle extra params for Mistral-specific fields
-		if rakshaReq.Params.ExtraParams != nil {
-			if temp, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["temperature"]); ok {
+		if gatewayReq.Params.ExtraParams != nil {
+			if temp, ok := schemas.SafeExtractFloat64Pointer(gatewayReq.Params.ExtraParams["temperature"]); ok {
 				req.Temperature = temp
 			}
-			if granularities, ok := rakshaReq.Params.ExtraParams["timestamp_granularities"].([]string); ok {
+			if granularities, ok := gatewayReq.Params.ExtraParams["timestamp_granularities"].([]string); ok {
 				req.TimestampGranularities = granularities
 			}
 		}
@@ -41,13 +41,13 @@ func ToMistralTranscriptionRequest(rakshaReq *schemas.RakshaTranscriptionRequest
 	return req
 }
 
-// ToRakshaTranscriptionResponse converts a Mistral transcription response to Raksha format.
-func (r *MistralTranscriptionResponse) ToRakshaTranscriptionResponse() *schemas.RakshaTranscriptionResponse {
+// ToGatewayTranscriptionResponse converts a Mistral transcription response to Gateway format.
+func (r *MistralTranscriptionResponse) ToGatewayTranscriptionResponse() *schemas.GatewayTranscriptionResponse {
 	if r == nil {
 		return nil
 	}
 
-	response := &schemas.RakshaTranscriptionResponse{
+	response := &schemas.GatewayTranscriptionResponse{
 		Text:     r.Text,
 		Duration: r.Duration,
 		Language: r.Language,
@@ -89,7 +89,7 @@ func (r *MistralTranscriptionResponse) ToRakshaTranscriptionResponse() *schemas.
 }
 
 // createMistralTranscriptionMultipartBody creates the multipart form body for a transcription request.
-func createMistralTranscriptionMultipartBody(req *MistralTranscriptionRequest, providerName schemas.ModelProvider) (*bytes.Buffer, string, *schemas.RakshaError) {
+func createMistralTranscriptionMultipartBody(req *MistralTranscriptionRequest, providerName schemas.ModelProvider) (*bytes.Buffer, string, *schemas.GatewayError) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -101,47 +101,47 @@ func createMistralTranscriptionMultipartBody(req *MistralTranscriptionRequest, p
 }
 
 // parseTranscriptionFormDataBodyFromRequest writes the transcription request to a multipart form.
-func parseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, req *MistralTranscriptionRequest, providerName schemas.ModelProvider) *schemas.RakshaError {
+func parseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, req *MistralTranscriptionRequest, providerName schemas.ModelProvider) *schemas.GatewayError {
 	// Add model field (required) before the file so upstreams can route without buffering audio bytes.
 	if err := writer.WriteField("model", req.Model); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to write model field",  err)
+		return providerUtils.NewGatewayOperationError("failed to write model field",  err)
 	}
 
 	// Add stream field if streaming
 	if req.Stream != nil && *req.Stream {
 		if err := writer.WriteField("stream", "true"); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write stream field",  err)
+			return providerUtils.NewGatewayOperationError("failed to write stream field",  err)
 		}
 	}
 
 	// Add optional fields
 	if req.Language != nil {
 		if err := writer.WriteField("language", *req.Language); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write language field",  err)
+			return providerUtils.NewGatewayOperationError("failed to write language field",  err)
 		}
 	}
 
 	if req.Prompt != nil {
 		if err := writer.WriteField("prompt", *req.Prompt); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write prompt field",  err)
+			return providerUtils.NewGatewayOperationError("failed to write prompt field",  err)
 		}
 	}
 
 	if req.ResponseFormat != nil {
 		if err := writer.WriteField("response_format", *req.ResponseFormat); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write response_format field",  err)
+			return providerUtils.NewGatewayOperationError("failed to write response_format field",  err)
 		}
 	}
 
 	if req.Temperature != nil {
 		if err := writer.WriteField("temperature", formatFloat64(*req.Temperature)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write temperature field",  err)
+			return providerUtils.NewGatewayOperationError("failed to write temperature field",  err)
 		}
 	}
 
 	for _, granularity := range req.TimestampGranularities {
 		if err := writer.WriteField("timestamp_granularities[]", granularity); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write timestamp_granularities field",  err)
+			return providerUtils.NewGatewayOperationError("failed to write timestamp_granularities field",  err)
 		}
 	}
 
@@ -152,15 +152,15 @@ func parseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, req *Mi
 	}
 	fileWriter, err := writer.CreateFormFile("file", filename)
 	if err != nil {
-		return providerUtils.NewRakshaOperationError("failed to create form file",  err)
+		return providerUtils.NewGatewayOperationError("failed to create form file",  err)
 	}
 	if _, err := fileWriter.Write(req.File); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to write file data",  err)
+		return providerUtils.NewGatewayOperationError("failed to write file data",  err)
 	}
 
 	// Close the multipart writer to finalize the form
 	if err := writer.Close(); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to close multipart writer",  err)
+		return providerUtils.NewGatewayOperationError("failed to close multipart writer",  err)
 	}
 
 	return nil
@@ -171,13 +171,13 @@ func formatFloat64(f float64) string {
 	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
-// ToRakshaTranscriptionStreamResponse converts a Mistral streaming event to Raksha format.
-func (e *MistralTranscriptionStreamEvent) ToRakshaTranscriptionStreamResponse() *schemas.RakshaTranscriptionStreamResponse {
+// ToGatewayTranscriptionStreamResponse converts a Mistral streaming event to Gateway format.
+func (e *MistralTranscriptionStreamEvent) ToGatewayTranscriptionStreamResponse() *schemas.GatewayTranscriptionStreamResponse {
 	if e == nil {
 		return nil
 	}
 
-	response := &schemas.RakshaTranscriptionStreamResponse{}
+	response := &schemas.GatewayTranscriptionStreamResponse{}
 
 	switch MistralTranscriptionStreamEventType(e.Event) {
 	case MistralTranscriptionStreamEventTextDelta:

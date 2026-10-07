@@ -1,12 +1,14 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { resetDurationLabels } from "@/lib/constants/governance";
-import { useGetProviderGovernanceQuery } from "@/lib/store";
+import { getErrorMessage, useGetProviderGovernanceQuery } from "@/lib/store";
 import { ModelProvider } from "@/lib/types/config";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils/governance";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { useEffect, useState } from "react";
 
 interface Props {
 	className?: string;
@@ -154,10 +156,15 @@ function MetricCard({
 
 export default function ProviderGovernanceTable({ provider, className }: Props) {
 	const hasViewAccess = useRbac(RbacResource.Governance, RbacOperation.View);
-	const { data: providerGovernanceData, isLoading } = useGetProviderGovernanceQuery(undefined, {
+	const [govPollMs, setGovPollMs] = useState(5000);
+	const { data: providerGovernanceData, isLoading, isError, error } = useGetProviderGovernanceQuery(undefined, {
 		skip: !hasViewAccess,
-		pollingInterval: 5000,
+		pollingInterval: govPollMs,
 	});
+
+	useEffect(() => {
+		setGovPollMs(isError ? 0 : 5000);
+	}, [isError]);
 
 	// Find governance data for this provider
 	const providerGovernance = providerGovernanceData?.providers?.find((p) => p.provider === provider.name);
@@ -176,6 +183,22 @@ export default function ProviderGovernanceTable({ provider, className }: Props) 
 				<div className="flex items-center justify-center py-12">
 					<div className="border-primary h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" />
 				</div>
+			</div>
+		);
+	}
+
+	if (isError) {
+		return (
+			<div className={cn("w-full", className)}>
+				<CardHeader className="mb-4 px-0">
+					<CardTitle className="flex items-center justify-between">
+						<div className="flex items-center gap-2">Governance</div>
+					</CardTitle>
+				</CardHeader>
+				<QueryErrorBanner
+					message={getErrorMessage(error) || "Failed to load governance."}
+					testId="provider-governance-query-error"
+				/>
 			</div>
 		);
 	}

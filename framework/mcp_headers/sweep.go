@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // CredentialSweepWorker periodically purges stale per-user header credentials

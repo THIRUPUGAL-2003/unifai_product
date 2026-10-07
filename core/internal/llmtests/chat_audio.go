@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunChatAudioTest executes the chat audio test scenario
-func RunChatAudioTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunChatAudioTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ChatAudio || testConfig.ChatAudioModel == "" {
 		t.Logf("Chat audio not supported for provider %s", testConfig.Provider)
 		return
@@ -59,8 +59,8 @@ func RunChatAudioTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 		}
 
 		// Test Chat Completions API with audio
-		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatAudioModel,
 				Input:    chatMessages,
@@ -70,11 +70,11 @@ func RunChatAudioTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 						Voice:  "alloy",
 						Format: "wav", // output format
 					},
-					MaxCompletionTokens: raksha.Ptr(200),
+					MaxCompletionTokens: gateway.Ptr(200),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			response, err := client.ChatCompletionRequest(bfCtx, chatReq)
 			if err != nil {
 				return nil, err
@@ -82,8 +82,8 @@ func RunChatAudioTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 			if response != nil {
 				return response, nil
 			}
-			return nil, &schemas.RakshaError{
-				IsRakshaError: true,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: true,
 				Error: &schemas.ErrorField{
 					Message: "No chat response returned",
 				},
@@ -150,7 +150,7 @@ func RunChatAudioTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 }
 
 // RunChatAudioStreamTest executes the chat audio streaming test scenario
-func RunChatAudioStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunChatAudioStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ChatAudio || testConfig.ChatAudioModel == "" {
 		t.Logf("Chat audio streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -188,7 +188,7 @@ func RunChatAudioStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 		}
 
 		// Test Chat Completions Stream API with audio
-		chatReq := &schemas.RakshaChatRequest{
+		chatReq := &schemas.GatewayChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatAudioModel,
 			Input:    chatMessages,
@@ -202,37 +202,37 @@ func RunChatAudioStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 			Fallbacks: testConfig.Fallbacks,
 		}
 
-		responseChannel, rakshaErr := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		responseChannel, gatewayErr := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionStreamRequest(bfCtx, chatReq)
 		})
 
 		// Enhanced error handling
-		if rakshaErr != nil {
-			t.Fatalf("Chat audio stream request failed: %v", rakshaErr)
+		if gatewayErr != nil {
+			t.Fatalf("Chat audio stream request failed: %v", gatewayErr)
 		}
 		if responseChannel == nil {
 			t.Fatal("Response channel should not be nil")
 		}
 
 		// Accumulate stream chunks
-		var chunks []*schemas.RakshaStreamChunk
+		var chunks []*schemas.GatewayStreamChunk
 		var audioData strings.Builder
 		var audioTranscript strings.Builder
 		var audioID string
 		var audioExpiresAt int
-		var lastUsage *schemas.RakshaLLMUsage
+		var lastUsage *schemas.GatewayLLMUsage
 
 		for chunk := range responseChannel {
 			chunks = append(chunks, chunk)
 
-			if chunk.RakshaError != nil && chunk.RakshaError.Error != nil {
-				t.Fatalf("Stream error: %v", chunk.RakshaError.Error)
+			if chunk.GatewayError != nil && chunk.GatewayError.Error != nil {
+				t.Fatalf("Stream error: %v", chunk.GatewayError.Error)
 			}
 
-			if chunk.RakshaChatResponse != nil {
-				if len(chunk.RakshaChatResponse.Choices) > 0 {
-					choice := chunk.RakshaChatResponse.Choices[0]
+			if chunk.GatewayChatResponse != nil {
+				if len(chunk.GatewayChatResponse.Choices) > 0 {
+					choice := chunk.GatewayChatResponse.Choices[0]
 
 					// Accumulate text content
 					if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
@@ -257,8 +257,8 @@ func RunChatAudioStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 				}
 
 				// Capture final usage
-				if chunk.RakshaChatResponse.Usage != nil {
-					lastUsage = chunk.RakshaChatResponse.Usage
+				if chunk.GatewayChatResponse.Usage != nil {
+					lastUsage = chunk.GatewayChatResponse.Usage
 				}
 			}
 		}

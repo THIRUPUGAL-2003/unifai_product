@@ -4,8 +4,8 @@ package connectors
 import (
 	"context"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/connectors"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/connectors"
 )
 
 const PluginName = "connectors"

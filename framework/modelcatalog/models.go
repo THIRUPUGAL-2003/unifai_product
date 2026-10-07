@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
 )
 
 // providersWithPartialListModels enumerates providers whose /v1/models response
@@ -318,7 +318,7 @@ func (mc *ModelCatalog) RefineModelForProvider(provider schemas.ModelProvider, m
 
 // refineNestedProviderModel resolves provider-native model slugs such as
 // "openai/gpt-5-nano" from a base model request like "gpt-5-nano". Only
-// considers catalog entries whose leading segment is a known Raksha
+// considers catalog entries whose leading segment is a known Gateway
 // provider so Replicate owner/model identifiers like "meta/llama-3-8b" are
 // left untouched.
 func (mc *ModelCatalog) refineNestedProviderModel(provider schemas.ModelProvider, model string) (string, error) {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build Raksha Guard with PyInstaller (Windows .exe or macOS .app)."""
+"""Build Gateway Guard with PyInstaller (Windows .exe or macOS .app)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
 RELEASE = ROOT / "release"
-CONFIG = ROOT / "config" / "raksha_guard_config.json"
+CONFIG = ROOT / "config" / "gateway_guard_config.json"
 
 
 def run(cmd: list[str]) -> None:
@@ -26,31 +26,31 @@ def run(cmd: list[str]) -> None:
 def copy_config_into_app(app_path: Path) -> None:
     resources = app_path / "Contents" / "Resources"
     resources.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(CONFIG, resources / "raksha_guard_config.json")
+    shutil.copy2(CONFIG, resources / "gateway_guard_config.json")
     version_file = ROOT / "release" / "VERSION.txt"
     if version_file.is_file():
         shutil.copy2(version_file, resources / "VERSION.txt")
 
 
 def build_windows() -> Path:
-    spec = ROOT / "Raksha_Guard.spec"
+    spec = ROOT / "Gateway_Guard.spec"
     if not spec.is_file():
         raise SystemExit(f"Missing {spec}")
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", str(spec)])
-    exe = DIST / "Raksha_Guard.exe"
+    exe = DIST / "Gateway_Guard.exe"
     if not exe.is_file():
         raise SystemExit(f"Expected {exe} after PyInstaller")
     RELEASE.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(exe, RELEASE / "Raksha_Guard.exe")
-    shutil.copy2(CONFIG, RELEASE / "raksha_guard_config.json")
+    shutil.copy2(exe, RELEASE / "Gateway_Guard.exe")
+    shutil.copy2(CONFIG, RELEASE / "gateway_guard_config.json")
     return exe
 
 
 def strip_plain_text_sources_from_bundle(app_path: Path) -> None:
     """Ensure release bundle contains ONLY the encrypted container, removing plain text .py files."""
-    enc_src = ROOT / "proxy" / "raksha_proxy_parts" / "raksha_proxy_parts.enc"
-    crypto_src = ROOT / "proxy" / "raksha_proxy_parts" / "bundle_crypto.py"
-    manifest_src = ROOT / "proxy" / "raksha_proxy_parts" / "MANIFEST.txt"
+    enc_src = ROOT / "proxy" / "gateway_proxy_parts" / "gateway_proxy_parts.enc"
+    crypto_src = ROOT / "proxy" / "gateway_proxy_parts" / "bundle_crypto.py"
+    manifest_src = ROOT / "proxy" / "gateway_proxy_parts" / "MANIFEST.txt"
     proxy_src = ROOT / "proxy" / "browser_ai_proxy.py"
     if not enc_src.is_file():
         return
@@ -62,9 +62,9 @@ def strip_plain_text_sources_from_bundle(app_path: Path) -> None:
 
     # Check Frameworks, Resources, and app root
     for base in [app_path / "Contents" / "Frameworks", app_path / "Contents" / "Resources", app_path]:
-        parts_target = base / "raksha_proxy_parts"
+        parts_target = base / "gateway_proxy_parts"
         if parts_target.is_dir():
-            shutil.copy2(enc_src, parts_target / "raksha_proxy_parts.enc")
+            shutil.copy2(enc_src, parts_target / "gateway_proxy_parts.enc")
             if crypto_src.is_file():
                 shutil.copy2(crypto_src, parts_target / "bundle_crypto.py")
             if manifest_src.is_file():
@@ -97,18 +97,18 @@ def build_macos() -> Path:
     if enc_script.is_file():
         subprocess.run([sys.executable, str(enc_script)], check=True)
 
-    spec = ROOT / "Raksha_Guard.macos.spec"
+    spec = ROOT / "Gateway_Guard.macos.spec"
     if not spec.is_file():
         raise SystemExit(f"Missing {spec}")
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", str(spec)])
-    app = DIST / "Raksha_Guard.app"
+    app = DIST / "Gateway_Guard.app"
     if not app.is_dir():
         raise SystemExit(f"Expected {app} after PyInstaller")
     copy_config_into_app(app)
     strip_plain_text_sources_from_bundle(app)
 
     RELEASE.mkdir(parents=True, exist_ok=True)
-    release_app = RELEASE / "Raksha_Guard.app"
+    release_app = RELEASE / "Gateway_Guard.app"
     if release_app.exists():
         if platform.system().lower() == "darwin":
             subprocess.run(["chflags", "-R", "nouchg", str(release_app)], check=False)
@@ -119,14 +119,14 @@ def build_macos() -> Path:
 
 
 def main() -> int:
-    if not (ROOT / "agent" / "raksha_agent.py").is_file():
-        print("Missing agent/raksha_agent.py", file=sys.stderr)
+    if not (ROOT / "agent" / "gateway_agent.py").is_file():
+        print("Missing agent/gateway_agent.py", file=sys.stderr)
         return 1
     if not (ROOT / "proxy" / "browser_ai_proxy.py").is_file():
         print("Missing proxy/browser_ai_proxy.py", file=sys.stderr)
         return 1
     if not CONFIG.is_file():
-        print("Missing config/raksha_guard_config.json", file=sys.stderr)
+        print("Missing config/gateway_guard_config.json", file=sys.stderr)
         return 1
 
     # Always sync configs from .env before building

@@ -4,12 +4,12 @@ import (
 	"net/http"
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-func parseBedrockHTTPError(statusCode int, headers http.Header, body []byte) *schemas.RakshaError {
+func parseBedrockHTTPError(statusCode int, headers http.Header, body []byte) *schemas.GatewayError {
 	fastResp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(fastResp)
 
@@ -22,16 +22,16 @@ func parseBedrockHTTPError(statusCode int, headers http.Header, body []byte) *sc
 	fastResp.SetBody(body)
 
 	var errorResp BedrockError
-	rakshaErr := providerUtils.HandleProviderAPIError(fastResp, &errorResp)
+	gatewayErr := providerUtils.HandleProviderAPIError(fastResp, &errorResp)
 	if errorResp.Message != "" {
-		if rakshaErr.Error == nil {
-			rakshaErr.Error = &schemas.ErrorField{}
+		if gatewayErr.Error == nil {
+			gatewayErr.Error = &schemas.ErrorField{}
 		}
-		rakshaErr.Error.Message = errorResp.Message
-		rakshaErr.Error.Code = errorResp.Code
+		gatewayErr.Error.Message = errorResp.Message
+		gatewayErr.Error.Code = errorResp.Code
 	}
 
-	if rakshaErr.Type == nil {
+	if gatewayErr.Type == nil {
 		exceptionType := errorResp.Type
 		if exceptionType == "" {
 			if hv := headers.Get("X-Amzn-Errortype"); hv != "" {
@@ -42,9 +42,9 @@ func parseBedrockHTTPError(statusCode int, headers http.Header, body []byte) *sc
 			}
 		}
 		if exceptionType != "" {
-			rakshaErr.Type = &exceptionType
+			gatewayErr.Type = &exceptionType
 		}
 	}
 
-	return rakshaErr
+	return gatewayErr
 }

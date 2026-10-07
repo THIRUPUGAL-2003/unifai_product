@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // S3ObjectStore implements ObjectStore using an S3-compatible backend.

@@ -13,11 +13,11 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/providers/openai"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/providers/openai"
+	"github.com/gateway/gateway/core/schemas"
 
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -58,15 +58,15 @@ func isAzureSDKRequest(ctx *fasthttp.RequestCtx) bool {
 	return strings.Contains(string(ctx.UserAgent()), "AzureOpenAI")
 }
 
-func hydrateOpenAIRequestFromLargePayloadMetadata(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) {
-	if rakshaCtx == nil {
+func hydrateOpenAIRequestFromLargePayloadMetadata(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) {
+	if gatewayCtx == nil {
 		return
 	}
-	isLargePayload, _ := rakshaCtx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool)
+	isLargePayload, _ := gatewayCtx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool)
 	if !isLargePayload {
 		return
 	}
-	metadata := resolveLargePayloadMetadata(rakshaCtx)
+	metadata := resolveLargePayloadMetadata(gatewayCtx)
 	if metadata == nil {
 		return
 	}
@@ -148,16 +148,16 @@ func hydrateOpenAIRequestFromLargePayloadMetadata(ctx *fasthttp.RequestCtx, raks
 
 // openAILargePayloadPreHook populates model + stream from LargePayloadMetadata
 // when body parsing is skipped under large payload mode.
-func openAILargePayloadPreHook(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-	hydrateOpenAIRequestFromLargePayloadMetadata(ctx, rakshaCtx, req)
-	schemas.ExtractAndSetUserAgentFromHeaders(extractHeadersFromRequest(ctx), rakshaCtx)
+func openAILargePayloadPreHook(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+	hydrateOpenAIRequestFromLargePayloadMetadata(ctx, gatewayCtx, req)
+	schemas.ExtractAndSetUserAgentFromHeaders(extractHeadersFromRequest(ctx), gatewayCtx)
 	return nil
 }
 
-func AzureEndpointPreHook(handlerStore lib.HandlerStore) func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-		hydrateOpenAIRequestFromLargePayloadMetadata(ctx, rakshaCtx, req)
-		schemas.ExtractAndSetUserAgentFromHeaders(extractHeadersFromRequest(ctx), rakshaCtx)
+func AzureEndpointPreHook(handlerStore lib.HandlerStore) func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+		hydrateOpenAIRequestFromLargePayloadMetadata(ctx, gatewayCtx, req)
+		schemas.ExtractAndSetUserAgentFromHeaders(extractHeadersFromRequest(ctx), gatewayCtx)
 
 		// -----------------------------
 		// Parse deploymentPath wildcard
@@ -258,7 +258,7 @@ func AzureEndpointPreHook(handlerStore lib.HandlerStore) func(ctx *fasthttp.Requ
 		case *openai.OpenAIImageVariationRequest:
 			r.Model = setModel(r.Model)
 
-		case *schemas.RakshaListModelsRequest:
+		case *schemas.GatewayListModelsRequest:
 			if deploymentProviderStr != "" {
 				r.Provider = schemas.ModelProvider(deploymentProviderStr)
 			} else {
@@ -270,8 +270,8 @@ func AzureEndpointPreHook(handlerStore lib.HandlerStore) func(ctx *fasthttp.Requ
 	}
 }
 
-// openAIResponsesWireConverter maps a Raksha responses payload to the OpenAI wire JSON shape.
-func openAIResponsesWireConverter(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
+// openAIResponsesWireConverter maps a Gateway responses payload to the OpenAI wire JSON shape.
+func openAIResponsesWireConverter(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesResponse) (interface{}, error) {
 	if resp != nil && resp.ExtraFields.Provider == schemas.OpenAI {
 		if resp.ExtraFields.RawResponse != nil {
 			return resp.ExtraFields.RawResponse, nil
@@ -333,7 +333,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			return schemas.UnknownRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			if requestType, ok := ctx.Value(schemas.RakshaContextKeyHTTPRequestType).(schemas.RequestType); ok {
+			if requestType, ok := ctx.Value(schemas.GatewayContextKeyHTTPRequestType).(schemas.RequestType); ok {
 				switch requestType {
 				case schemas.ChatCompletionRequest:
 					return &openai.OpenAIChatRequest{}
@@ -380,52 +380,52 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return nil
 			}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if openaiReq, ok := req.(*openai.OpenAIChatRequest); ok {
-				return &schemas.RakshaRequest{
-					ChatRequest: openaiReq.ToRakshaChatRequest(ctx),
+				return &schemas.GatewayRequest{
+					ChatRequest: openaiReq.ToGatewayChatRequest(ctx),
 				}, nil
 			} else if openaiReq, ok := req.(*openai.OpenAIResponsesRequest); ok {
-				if reqType, _ := ctx.Value(schemas.RakshaContextKeyHTTPRequestType).(schemas.RequestType); reqType == schemas.CountTokensRequest {
-					return &schemas.RakshaRequest{
-						CountTokensRequest: openaiReq.ToRakshaResponsesRequest(ctx),
+				if reqType, _ := ctx.Value(schemas.GatewayContextKeyHTTPRequestType).(schemas.RequestType); reqType == schemas.CountTokensRequest {
+					return &schemas.GatewayRequest{
+						CountTokensRequest: openaiReq.ToGatewayResponsesRequest(ctx),
 					}, nil
 				}
-				return &schemas.RakshaRequest{
-					ResponsesRequest: openaiReq.ToRakshaResponsesRequest(ctx),
+				return &schemas.GatewayRequest{
+					ResponsesRequest: openaiReq.ToGatewayResponsesRequest(ctx),
 				}, nil
 			} else if openaiReq, ok := req.(*openai.OpenAITextCompletionRequest); ok {
-				return &schemas.RakshaRequest{
-					TextCompletionRequest: openaiReq.ToRakshaTextCompletionRequest(ctx),
+				return &schemas.GatewayRequest{
+					TextCompletionRequest: openaiReq.ToGatewayTextCompletionRequest(ctx),
 				}, nil
 			} else if openaiReq, ok := req.(*openai.OpenAIEmbeddingRequest); ok {
-				return &schemas.RakshaRequest{
-					EmbeddingRequest: openaiReq.ToRakshaEmbeddingRequest(ctx),
+				return &schemas.GatewayRequest{
+					EmbeddingRequest: openaiReq.ToGatewayEmbeddingRequest(ctx),
 				}, nil
 			} else if openaiReq, ok := req.(*openai.OpenAISpeechRequest); ok {
-				return &schemas.RakshaRequest{
-					SpeechRequest: openaiReq.ToRakshaSpeechRequest(ctx),
+				return &schemas.GatewayRequest{
+					SpeechRequest: openaiReq.ToGatewaySpeechRequest(ctx),
 				}, nil
 			} else if openaiReq, ok := req.(*openai.OpenAITranscriptionRequest); ok {
-				return &schemas.RakshaRequest{
-					TranscriptionRequest: openaiReq.ToRakshaTranscriptionRequest(ctx),
+				return &schemas.GatewayRequest{
+					TranscriptionRequest: openaiReq.ToGatewayTranscriptionRequest(ctx),
 				}, nil
 			} else if openaiReq, ok := req.(*openai.OpenAIImageGenerationRequest); ok {
-				return &schemas.RakshaRequest{
-					ImageGenerationRequest: openaiReq.ToRakshaImageGenerationRequest(ctx),
+				return &schemas.GatewayRequest{
+					ImageGenerationRequest: openaiReq.ToGatewayImageGenerationRequest(ctx),
 				}, nil
 			} else if openaiReq, ok := req.(*openai.OpenAIImageEditRequest); ok {
-				return &schemas.RakshaRequest{
-					ImageEditRequest: openaiReq.ToRakshaImageEditRequest(ctx),
+				return &schemas.GatewayRequest{
+					ImageEditRequest: openaiReq.ToGatewayImageEditRequest(ctx),
 				}, nil
 			} else if openaiReq, ok := req.(*openai.OpenAIImageVariationRequest); ok {
-				return &schemas.RakshaRequest{
-					ImageVariationRequest: openaiReq.ToRakshaImageVariationRequest(ctx),
+				return &schemas.GatewayRequest{
+					ImageVariationRequest: openaiReq.ToGatewayImageVariationRequest(ctx),
 				}, nil
 			}
 			return nil, errors.New("invalid request type")
 		},
-		ChatResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaChatResponse) (interface{}, error) {
+		ChatResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayChatResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.OpenAI {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -433,7 +433,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			}
 			return resp, nil
 		},
-		TextResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTextCompletionResponse) (interface{}, error) {
+		TextResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTextCompletionResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.OpenAI {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -441,7 +441,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			}
 			return resp, nil
 		},
-		EmbeddingResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaEmbeddingResponse) (interface{}, error) {
+		EmbeddingResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayEmbeddingResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.OpenAI {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -449,7 +449,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			}
 			return resp, nil
 		},
-		SpeechResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaSpeechResponse) (interface{}, error) {
+		SpeechResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewaySpeechResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.OpenAI {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -457,7 +457,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			}
 			return resp, nil
 		},
-		TranscriptionResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTranscriptionResponse) (interface{}, error) {
+		TranscriptionResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTranscriptionResponse) (interface{}, error) {
 			if schemas.IsPlainTextTranscriptionFormat(resp.ResponseFormat) {
 				return []byte(resp.Text), nil
 			}
@@ -468,7 +468,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			}
 			return resp, nil
 		},
-		ImageGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationResponse) (interface{}, error) {
+		ImageGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.OpenAI {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -476,7 +476,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			}
 			return resp, nil
 		},
-		ResponsesResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
+		ResponsesResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.OpenAI {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -485,7 +485,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			return resp.WithDefaults(), nil
 		},
 		StreamConfig: &StreamConfig{
-			ChatStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaChatResponse) (string, interface{}, error) {
+			ChatStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayChatResponse) (string, interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return "", resp.ExtraFields.RawResponse, nil
@@ -493,7 +493,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return "", resp, nil
 			},
-			TextStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTextCompletionResponse) (string, interface{}, error) {
+			TextStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTextCompletionResponse) (string, interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return "", resp.ExtraFields.RawResponse, nil
@@ -501,7 +501,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return "", resp, nil
 			},
-			SpeechStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaSpeechStreamResponse) (string, interface{}, error) {
+			SpeechStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewaySpeechStreamResponse) (string, interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return "", resp.ExtraFields.RawResponse, nil
@@ -509,7 +509,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return "", resp, nil
 			},
-			TranscriptionStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTranscriptionStreamResponse) (string, interface{}, error) {
+			TranscriptionStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTranscriptionStreamResponse) (string, interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return "", resp.ExtraFields.RawResponse, nil
@@ -517,7 +517,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return "", resp, nil
 			},
-			ImageGenerationStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationStreamResponse) (string, interface{}, error) {
+			ImageGenerationStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationStreamResponse) (string, interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return "", resp.ExtraFields.RawResponse, nil
@@ -525,7 +525,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return "", resp, nil
 			},
-			ResponsesStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
+			ResponsesStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return string(resp.Type), resp.ExtraFields.RawResponse, nil
@@ -537,11 +537,11 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return string(resp.Type), converted, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return err
 		},
 		PreCallback: AzureEndpointPreHook(handlerStore),
@@ -563,16 +563,16 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &openai.OpenAIChatRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if openaiReq, ok := req.(*openai.OpenAIChatRequest); ok {
-					br := &schemas.RakshaRequest{
-						ChatRequest: openaiReq.ToRakshaChatRequest(ctx),
+					br := &schemas.GatewayRequest{
+						ChatRequest: openaiReq.ToGatewayChatRequest(ctx),
 					}
 					return br, nil
 				}
 				return nil, errors.New("invalid request type")
 			},
-			ChatResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaChatResponse) (interface{}, error) {
+			ChatResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayChatResponse) (interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return resp.ExtraFields.RawResponse, nil
@@ -624,11 +624,11 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				message.Content.ContentBlocks = nil
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			StreamConfig: &StreamConfig{
-				ChatStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaChatResponse) (string, interface{}, error) {
+				ChatStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayChatResponse) (string, interface{}, error) {
 					if resp.ExtraFields.Provider == schemas.OpenAI {
 						if resp.ExtraFields.RawResponse != nil {
 							return "", resp.ExtraFields.RawResponse, nil
@@ -636,7 +636,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 					}
 					return "", resp, nil
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return err
 				},
 			},
@@ -659,15 +659,15 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &openai.OpenAITextCompletionRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if openaiReq, ok := req.(*openai.OpenAITextCompletionRequest); ok {
-					return &schemas.RakshaRequest{
-						TextCompletionRequest: openaiReq.ToRakshaTextCompletionRequest(ctx),
+					return &schemas.GatewayRequest{
+						TextCompletionRequest: openaiReq.ToGatewayTextCompletionRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid request type")
 			},
-			TextResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTextCompletionResponse) (interface{}, error) {
+			TextResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTextCompletionResponse) (interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return resp.ExtraFields.RawResponse, nil
@@ -675,11 +675,11 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			StreamConfig: &StreamConfig{
-				TextStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTextCompletionResponse) (string, interface{}, error) {
+				TextStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTextCompletionResponse) (string, interface{}, error) {
 					if resp.ExtraFields.Provider == schemas.OpenAI {
 						if resp.ExtraFields.RawResponse != nil {
 							return "", resp.ExtraFields.RawResponse, nil
@@ -687,7 +687,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 					}
 					return "", resp, nil
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return err
 				},
 			},
@@ -710,38 +710,38 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &openai.OpenAIResponsesRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if openaiReq, ok := req.(*openai.OpenAIResponsesRequest); ok {
-					return &schemas.RakshaRequest{
-						ResponsesRequest: openaiReq.ToRakshaResponsesRequest(ctx),
+					return &schemas.GatewayRequest{
+						ResponsesRequest: openaiReq.ToGatewayResponsesRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid request type")
 			},
 			ResponsesResponseConverter: openAIResponsesWireConverter,
-			AsyncResponsesResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.AsyncJobResponse, responsesResponseConverter ResponsesResponseConverter) (interface{}, map[string]string, error) {
-				rakshaResponse := &schemas.RakshaResponsesResponse{
+			AsyncResponsesResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.AsyncJobResponse, responsesResponseConverter ResponsesResponseConverter) (interface{}, map[string]string, error) {
+				gatewayResponse := &schemas.GatewayResponsesResponse{
 					ID:     &resp.ID,
-					Status: raksha.Ptr(string(resp.Status)),
+					Status: gateway.Ptr(string(resp.Status)),
 				}
 				if resp.Status == schemas.AsyncJobStatusCompleted {
-					responsesResp, ok := resp.Result.(*schemas.RakshaResponsesResponse)
+					responsesResp, ok := resp.Result.(*schemas.GatewayResponsesResponse)
 					if !ok {
 						return nil, nil, errors.New("invalid responses response type")
 					}
-					rakshaResponse = responsesResp
+					gatewayResponse = responsesResp
 				}
-				response, err := responsesResponseConverter(ctx, rakshaResponse)
+				response, err := responsesResponseConverter(ctx, gatewayResponse)
 				if err != nil {
 					return nil, nil, err
 				}
 				return response, nil, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			StreamConfig: &StreamConfig{
-				ResponsesStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
+				ResponsesStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
 					if resp.ExtraFields.Provider == schemas.OpenAI {
 						if resp.ExtraFields.RawResponse != nil {
 							return string(resp.Type), resp.ExtraFields.RawResponse, nil
@@ -753,15 +753,15 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 					}
 					return string(resp.Type), converted, nil
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return err
 				},
 			},
-			PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-				hydrateOpenAIRequestFromLargePayloadMetadata(ctx, rakshaCtx, req)
-				schemas.ExtractAndSetUserAgentFromHeaders(extractHeadersFromRequest(ctx), rakshaCtx)
+			PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+				hydrateOpenAIRequestFromLargePayloadMetadata(ctx, gatewayCtx, req)
+				schemas.ExtractAndSetUserAgentFromHeaders(extractHeadersFromRequest(ctx), gatewayCtx)
 				if isAzureSDKRequest(ctx) {
-					rakshaCtx.SetValue(schemas.RakshaContextKeyIsAzureUserAgent, true)
+					gatewayCtx.SetValue(schemas.GatewayContextKeyIsAzureUserAgent, true)
 				}
 				return nil
 			},
@@ -785,15 +785,15 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &openai.OpenAIResponsesRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if openaiReq, ok := req.(*openai.OpenAIResponsesRequest); ok {
-					return &schemas.RakshaRequest{
-						CountTokensRequest: openaiReq.ToRakshaResponsesRequest(ctx),
+					return &schemas.GatewayRequest{
+						CountTokensRequest: openaiReq.ToGatewayResponsesRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid request type for input tokens")
 			},
-			CountTokensResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCountTokensResponse) (interface{}, error) {
+			CountTokensResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCountTokensResponse) (interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return resp.ExtraFields.RawResponse, nil
@@ -801,7 +801,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		})
@@ -821,12 +821,12 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return schemas.ResponsesRetrieveRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaResponsesRetrieveRequest{}
+				return &schemas.GatewayResponsesRetrieveRequest{}
 			},
 			PreCallback:     extractResponsesLifecycleFromPath(handlerStore),
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if rr, ok := req.(*schemas.RakshaResponsesRetrieveRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if rr, ok := req.(*schemas.GatewayResponsesRetrieveRequest); ok {
+					return &schemas.GatewayRequest{
 						RequestType:              schemas.ResponsesRetrieveRequest,
 						ResponsesRetrieveRequest: rr,
 					}, nil
@@ -834,7 +834,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return nil, errors.New("invalid responses retrieve request")
 			},
 			ResponsesResponseConverter: openAIResponsesWireConverter,
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		})
@@ -854,19 +854,19 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return schemas.ResponsesDeleteRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaResponsesDeleteRequest{}
+				return &schemas.GatewayResponsesDeleteRequest{}
 			},
 			PreCallback:     extractResponsesLifecycleFromPath(handlerStore),
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if dr, ok := req.(*schemas.RakshaResponsesDeleteRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if dr, ok := req.(*schemas.GatewayResponsesDeleteRequest); ok {
+					return &schemas.GatewayRequest{
 						RequestType:            schemas.ResponsesDeleteRequest,
 						ResponsesDeleteRequest: dr,
 					}, nil
 				}
 				return nil, errors.New("invalid responses delete request")
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		})
@@ -886,12 +886,12 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return schemas.ResponsesCancelRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaResponsesCancelRequest{}
+				return &schemas.GatewayResponsesCancelRequest{}
 			},
 			PreCallback:     extractResponsesLifecycleFromPath(handlerStore),
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if cr, ok := req.(*schemas.RakshaResponsesCancelRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if cr, ok := req.(*schemas.GatewayResponsesCancelRequest); ok {
+					return &schemas.GatewayRequest{
 						RequestType:            schemas.ResponsesCancelRequest,
 						ResponsesCancelRequest: cr,
 					}, nil
@@ -899,7 +899,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return nil, errors.New("invalid responses cancel request")
 			},
 			ResponsesResponseConverter: openAIResponsesWireConverter,
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		})
@@ -919,19 +919,19 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return schemas.ResponsesInputItemsRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaResponsesInputItemsRequest{}
+				return &schemas.GatewayResponsesInputItemsRequest{}
 			},
 			PreCallback:     extractResponsesLifecycleFromPath(handlerStore),
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if ir, ok := req.(*schemas.RakshaResponsesInputItemsRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if ir, ok := req.(*schemas.GatewayResponsesInputItemsRequest); ok {
+					return &schemas.GatewayRequest{
 						RequestType:                schemas.ResponsesInputItemsRequest,
 						ResponsesInputItemsRequest: ir,
 					}, nil
 				}
 				return nil, errors.New("invalid responses input items request")
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		})
@@ -947,11 +947,11 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			Type:   RouteConfigTypeOpenAI,
 			Path:   pathPrefix + path,
 			Method: "POST",
-			PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-				hydrateOpenAIRequestFromLargePayloadMetadata(ctx, rakshaCtx, req)
-				schemas.ExtractAndSetUserAgentFromHeaders(extractHeadersFromRequest(ctx), rakshaCtx)
+			PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+				hydrateOpenAIRequestFromLargePayloadMetadata(ctx, gatewayCtx, req)
+				schemas.ExtractAndSetUserAgentFromHeaders(extractHeadersFromRequest(ctx), gatewayCtx)
 				if isAzureSDKRequest(ctx) {
-					rakshaCtx.SetValue(schemas.RakshaContextKeyIsAzureUserAgent, true)
+					gatewayCtx.SetValue(schemas.GatewayContextKeyIsAzureUserAgent, true)
 				}
 				return nil
 			},
@@ -961,15 +961,15 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &openai.OpenAICompactionRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if r, ok := req.(*openai.OpenAICompactionRequest); ok {
-					return &schemas.RakshaRequest{
-						CompactionRequest: r.ToRakshaCompactionRequest(ctx),
+					return &schemas.GatewayRequest{
+						CompactionRequest: r.ToGatewayCompactionRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid compaction request type")
 			},
-			CompactionResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCompactionResponse) (interface{}, error) {
+			CompactionResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCompactionResponse) (interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return resp.ExtraFields.RawResponse, nil
@@ -977,7 +977,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		})
@@ -999,15 +999,15 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &openai.OpenAIEmbeddingRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if embeddingReq, ok := req.(*openai.OpenAIEmbeddingRequest); ok {
-					return &schemas.RakshaRequest{
-						EmbeddingRequest: embeddingReq.ToRakshaEmbeddingRequest(ctx),
+					return &schemas.GatewayRequest{
+						EmbeddingRequest: embeddingReq.ToGatewayEmbeddingRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid embedding request type")
 			},
-			EmbeddingResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaEmbeddingResponse) (interface{}, error) {
+			EmbeddingResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayEmbeddingResponse) (interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return resp.ExtraFields.RawResponse, nil
@@ -1015,7 +1015,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		})
@@ -1037,19 +1037,19 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &openai.OpenAISpeechRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if speechReq, ok := req.(*openai.OpenAISpeechRequest); ok {
-					return &schemas.RakshaRequest{
-						SpeechRequest: speechReq.ToRakshaSpeechRequest(ctx),
+					return &schemas.GatewayRequest{
+						SpeechRequest: speechReq.ToGatewaySpeechRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid speech request type")
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			StreamConfig: &StreamConfig{
-				SpeechStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaSpeechStreamResponse) (string, interface{}, error) {
+				SpeechStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewaySpeechStreamResponse) (string, interface{}, error) {
 					if resp.ExtraFields.Provider == schemas.OpenAI {
 						if resp.ExtraFields.RawResponse != nil {
 							return "", resp.ExtraFields.RawResponse, nil
@@ -1057,7 +1057,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 					}
 					return "", resp, nil
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return err
 				},
 			},
@@ -1081,15 +1081,15 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return &openai.OpenAITranscriptionRequest{}
 			},
 			RequestParser: parseTranscriptionMultipartRequest, // Handle multipart form parsing
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if transcriptionReq, ok := req.(*openai.OpenAITranscriptionRequest); ok {
-					return &schemas.RakshaRequest{
-						TranscriptionRequest: transcriptionReq.ToRakshaTranscriptionRequest(ctx),
+					return &schemas.GatewayRequest{
+						TranscriptionRequest: transcriptionReq.ToGatewayTranscriptionRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid transcription request type")
 			},
-			TranscriptionResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTranscriptionResponse) (interface{}, error) {
+			TranscriptionResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTranscriptionResponse) (interface{}, error) {
 				if schemas.IsPlainTextTranscriptionFormat(resp.ResponseFormat) {
 					return []byte(resp.Text), nil
 				}
@@ -1100,11 +1100,11 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			StreamConfig: &StreamConfig{
-				TranscriptionStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTranscriptionStreamResponse) (string, interface{}, error) {
+				TranscriptionStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTranscriptionStreamResponse) (string, interface{}, error) {
 					if resp.ExtraFields.Provider == schemas.OpenAI {
 						if resp.ExtraFields.RawResponse != nil {
 							return "", resp.ExtraFields.RawResponse, nil
@@ -1112,7 +1112,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 					}
 					return "", resp, nil
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return err
 				},
 			},
@@ -1135,15 +1135,15 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &openai.OpenAIImageGenerationRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if imageGenReq, ok := req.(*openai.OpenAIImageGenerationRequest); ok {
-					return &schemas.RakshaRequest{
-						ImageGenerationRequest: imageGenReq.ToRakshaImageGenerationRequest(ctx),
+					return &schemas.GatewayRequest{
+						ImageGenerationRequest: imageGenReq.ToGatewayImageGenerationRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid image generation request type")
 			},
-			ImageGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationResponse) (interface{}, error) {
+			ImageGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationResponse) (interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return resp.ExtraFields.RawResponse, nil
@@ -1151,11 +1151,11 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			StreamConfig: &StreamConfig{
-				ImageGenerationStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationStreamResponse) (string, interface{}, error) {
+				ImageGenerationStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationStreamResponse) (string, interface{}, error) {
 					if resp.ExtraFields.Provider == schemas.OpenAI {
 						if resp.ExtraFields.RawResponse != nil {
 							return string(resp.Type), resp.ExtraFields.RawResponse, nil
@@ -1163,7 +1163,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 					}
 					return string(resp.Type), resp, nil
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return err
 				},
 			},
@@ -1186,15 +1186,15 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return &openai.OpenAIImageEditRequest{}
 			},
 			RequestParser: parseOpenAIImageEditMultipartRequest, // Handle multipart form parsing
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if imageEditReq, ok := req.(*openai.OpenAIImageEditRequest); ok {
-					return &schemas.RakshaRequest{
-						ImageEditRequest: imageEditReq.ToRakshaImageEditRequest(ctx),
+					return &schemas.GatewayRequest{
+						ImageEditRequest: imageEditReq.ToGatewayImageEditRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid image edit request type")
 			},
-			ImageGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationResponse) (interface{}, error) {
+			ImageGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationResponse) (interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return resp.ExtraFields.RawResponse, nil
@@ -1202,11 +1202,11 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			StreamConfig: &StreamConfig{
-				ImageGenerationStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationStreamResponse) (string, interface{}, error) {
+				ImageGenerationStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationStreamResponse) (string, interface{}, error) {
 					if resp.ExtraFields.Provider == schemas.OpenAI {
 						if resp.ExtraFields.RawResponse != nil {
 							return string(resp.Type), resp.ExtraFields.RawResponse, nil
@@ -1214,7 +1214,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 					}
 					return string(resp.Type), resp, nil
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return err
 				},
 			},
@@ -1236,15 +1236,15 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return &openai.OpenAIImageVariationRequest{}
 			},
 			RequestParser: parseOpenAIImageVariationMultipartRequest,
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if imageVariationReq, ok := req.(*openai.OpenAIImageVariationRequest); ok {
-					return &schemas.RakshaRequest{
-						ImageVariationRequest: imageVariationReq.ToRakshaImageVariationRequest(ctx),
+					return &schemas.GatewayRequest{
+						ImageVariationRequest: imageVariationReq.ToGatewayImageVariationRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid image variation request type")
 			},
-			ImageGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationResponse) (interface{}, error) {
+			ImageGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationResponse) (interface{}, error) {
 				if resp.ExtraFields.Provider == schemas.OpenAI {
 					if resp.ExtraFields.RawResponse != nil {
 						return resp.ExtraFields.RawResponse, nil
@@ -1252,11 +1252,11 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			StreamConfig: &StreamConfig{
-				ImageGenerationStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationStreamResponse) (string, interface{}, error) {
+				ImageGenerationStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationStreamResponse) (string, interface{}, error) {
 					if resp.ExtraFields.Provider == schemas.OpenAI {
 						if resp.ExtraFields.RawResponse != nil {
 							return string(resp.Type), resp.ExtraFields.RawResponse, nil
@@ -1264,7 +1264,7 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 					}
 					return string(resp.Type), resp, nil
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return err
 				},
 			},
@@ -1288,24 +1288,24 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return &openai.OpenAIVideoGenerationRequest{}
 			},
 			RequestParser: parseOpenAIVideoGenerationMultipartRequest,
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if videoGenerationReq, ok := req.(*openai.OpenAIVideoGenerationRequest); ok {
-					return &schemas.RakshaRequest{
-						VideoGenerationRequest: videoGenerationReq.ToRakshaVideoGenerationRequest(ctx),
+					return &schemas.GatewayRequest{
+						VideoGenerationRequest: videoGenerationReq.ToGatewayVideoGenerationRequest(ctx),
 					}, nil
 				}
 				return nil, errors.New("invalid video generation request type")
 			},
-			VideoGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaVideoGenerationResponse) (interface{}, error) {
+			VideoGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayVideoGenerationResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
-			PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-				hydrateOpenAIRequestFromLargePayloadMetadata(ctx, rakshaCtx, req)
+			PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+				hydrateOpenAIRequestFromLargePayloadMetadata(ctx, gatewayCtx, req)
 				if isAzureSDKRequest(ctx) {
-					rakshaCtx.SetValue(schemas.RakshaContextKeyIsAzureUserAgent, true)
+					gatewayCtx.SetValue(schemas.GatewayContextKeyIsAzureUserAgent, true)
 				}
 				return nil
 			},
@@ -1326,20 +1326,20 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return schemas.VideoRetrieveRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaVideoRetrieveRequest{}
+				return &schemas.GatewayVideoRetrieveRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if videoRetrieveReq, ok := req.(*schemas.RakshaVideoRetrieveRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if videoRetrieveReq, ok := req.(*schemas.GatewayVideoRetrieveRequest); ok {
+					return &schemas.GatewayRequest{
 						VideoRetrieveRequest: videoRetrieveReq,
 					}, nil
 				}
 				return nil, errors.New("invalid video retrieve request type")
 			},
-			VideoGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaVideoGenerationResponse) (interface{}, error) {
+			VideoGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayVideoGenerationResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractVideoIDFromPath(handlerStore),
@@ -1360,20 +1360,20 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return schemas.VideoDownloadRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaVideoDownloadRequest{}
+				return &schemas.GatewayVideoDownloadRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if videoDownloadReq, ok := req.(*schemas.RakshaVideoDownloadRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if videoDownloadReq, ok := req.(*schemas.GatewayVideoDownloadRequest); ok {
+					return &schemas.GatewayRequest{
 						VideoDownloadRequest: videoDownloadReq,
 					}, nil
 				}
 				return nil, errors.New("invalid video retrieve request type")
 			},
-			VideoDownloadResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaVideoDownloadResponse) (interface{}, error) {
+			VideoDownloadResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayVideoDownloadResponse) (interface{}, error) {
 				return resp.Content, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractVideoIDFromPath(handlerStore),
@@ -1394,20 +1394,20 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return schemas.VideoDeleteRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaVideoDeleteRequest{}
+				return &schemas.GatewayVideoDeleteRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if videoDeleteReq, ok := req.(*schemas.RakshaVideoDeleteRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if videoDeleteReq, ok := req.(*schemas.GatewayVideoDeleteRequest); ok {
+					return &schemas.GatewayRequest{
 						VideoDeleteRequest: videoDeleteReq,
 					}, nil
 				}
 				return nil, errors.New("invalid video delete request type")
 			},
-			VideoDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaVideoDeleteResponse) (interface{}, error) {
+			VideoDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayVideoDeleteResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractVideoIDFromPath(handlerStore),
@@ -1430,18 +1430,18 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &openai.OpenAIVideoRemixRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if videoRemixReq, ok := req.(*openai.OpenAIVideoRemixRequest); ok {
-					return &schemas.RakshaRequest{
-						VideoRemixRequest: openai.ToRakshaVideoRemixRequest(videoRemixReq),
+					return &schemas.GatewayRequest{
+						VideoRemixRequest: openai.ToGatewayVideoRemixRequest(videoRemixReq),
 					}, nil
 				}
 				return nil, errors.New("invalid video remix request type")
 			},
-			VideoGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaVideoGenerationResponse) (interface{}, error) {
+			VideoGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayVideoGenerationResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractVideoIDFromPath(handlerStore),
@@ -1462,20 +1462,20 @@ func CreateOpenAIRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) 
 				return schemas.VideoListRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaVideoListRequest{}
+				return &schemas.GatewayVideoListRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if videoListReq, ok := req.(*schemas.RakshaVideoListRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if videoListReq, ok := req.(*schemas.GatewayVideoListRequest); ok {
+					return &schemas.GatewayRequest{
 						VideoListRequest: videoListReq,
 					}, nil
 				}
 				return nil, errors.New("invalid video list request type")
 			},
-			VideoListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaVideoListResponse) (interface{}, error) {
+			VideoListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayVideoListResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		})
@@ -1502,20 +1502,20 @@ func CreateOpenAIListModelsRouteConfigs(pathPrefix string, handlerStore lib.Hand
 				return schemas.ListModelsRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaListModelsRequest{}
+				return &schemas.GatewayListModelsRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if listModelsReq, ok := req.(*schemas.RakshaListModelsRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if listModelsReq, ok := req.(*schemas.GatewayListModelsRequest); ok {
+					return &schemas.GatewayRequest{
 						ListModelsRequest: listModelsReq,
 					}, nil
 				}
 				return nil, errors.New("invalid request type")
 			},
-			ListModelsResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaListModelsResponse) (interface{}, error) {
+			ListModelsResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayListModelsResponse) (interface{}, error) {
 				return openai.ToOpenAIListModelsResponse(resp), nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 		})
@@ -1542,10 +1542,10 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				return schemas.BatchCreateRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaBatchCreateRequest{}
+				return &schemas.GatewayBatchCreateRequest{}
 			},
-			BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-				if openaiReq, ok := req.(*schemas.RakshaBatchCreateRequest); ok {
+			BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+				if openaiReq, ok := req.(*schemas.GatewayBatchCreateRequest); ok {
 					switch openaiReq.Provider {
 					case schemas.Gemini:
 						if openaiReq.InputFileID != "" {
@@ -1572,7 +1572,7 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				}
 				return nil, errors.New("invalid batch create request type")
 			},
-			BatchCreateResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCreateResponse) (interface{}, error) {
+			BatchCreateResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCreateResponse) (interface{}, error) {
 				switch resp.ExtraFields.Provider {
 				case schemas.Gemini:
 					resp.ID = strings.Replace(resp.ID, "batches/", "batches-", 1)
@@ -1589,12 +1589,12 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
-			PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+			PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 				// Provider is parsed from JSON body (extra_body), default to OpenAI if not set
-				if createReq, ok := req.(*schemas.RakshaBatchCreateRequest); ok {
+				if createReq, ok := req.(*schemas.GatewayBatchCreateRequest); ok {
 					if createReq.Provider == "" {
 						if isAzureSDKRequest(ctx) {
 							createReq.Provider = schemas.Azure
@@ -1693,10 +1693,10 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				return schemas.BatchListRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaBatchListRequest{}
+				return &schemas.GatewayBatchListRequest{}
 			},
-			BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-				if listReq, ok := req.(*schemas.RakshaBatchListRequest); ok {
+			BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+				if listReq, ok := req.(*schemas.GatewayBatchListRequest); ok {
 					if listReq.Provider == "" {
 						listReq.Provider = schemas.OpenAI
 					}
@@ -1707,7 +1707,7 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				}
 				return nil, errors.New("invalid batch list request type")
 			},
-			BatchListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchListResponse) (interface{}, error) {
+			BatchListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchListResponse) (interface{}, error) {
 				switch resp.ExtraFields.Provider {
 				case schemas.Gemini:
 					for i, batch := range resp.Data {
@@ -1727,7 +1727,7 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractBatchListQueryParams(handlerStore),
@@ -1748,10 +1748,10 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				return schemas.BatchRetrieveRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaBatchRetrieveRequest{}
+				return &schemas.GatewayBatchRetrieveRequest{}
 			},
-			BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-				if retrieveReq, ok := req.(*schemas.RakshaBatchRetrieveRequest); ok {
+			BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+				if retrieveReq, ok := req.(*schemas.GatewayBatchRetrieveRequest); ok {
 					if retrieveReq.Provider == "" {
 						retrieveReq.Provider = schemas.OpenAI
 					}
@@ -1776,7 +1776,7 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				}
 				return nil, errors.New("invalid batch retrieve request type")
 			},
-			BatchRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchRetrieveResponse) (interface{}, error) {
+			BatchRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchRetrieveResponse) (interface{}, error) {
 				switch resp.ExtraFields.Provider {
 				case schemas.Gemini:
 					resp.ID = strings.Replace(resp.ID, "batches/", "batches-", 1)
@@ -1790,7 +1790,7 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractBatchIDFromPath(handlerStore),
@@ -1811,10 +1811,10 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				return schemas.BatchCancelRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaBatchCancelRequest{}
+				return &schemas.GatewayBatchCancelRequest{}
 			},
-			BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-				if cancelReq, ok := req.(*schemas.RakshaBatchCancelRequest); ok {
+			BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+				if cancelReq, ok := req.(*schemas.GatewayBatchCancelRequest); ok {
 					if cancelReq.Provider == "" {
 						cancelReq.Provider = schemas.OpenAI
 					}
@@ -1839,7 +1839,7 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				}
 				return nil, errors.New("invalid batch cancel request type")
 			},
-			BatchCancelResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCancelResponse) (interface{}, error) {
+			BatchCancelResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCancelResponse) (interface{}, error) {
 				switch resp.ExtraFields.Provider {
 				case schemas.Gemini:
 					resp.ID = strings.Replace(resp.ID, "batches/", "batches-", 1)
@@ -1850,7 +1850,7 @@ func CreateOpenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSt
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractBatchIDFromPath(handlerStore),
@@ -1877,11 +1877,11 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				return schemas.FileUploadRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaFileUploadRequest{}
+				return &schemas.GatewayFileUploadRequest{}
 			},
 			RequestParser: parseOpenAIFileUploadMultipartRequest,
-			FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
-				if uploadReq, ok := req.(*schemas.RakshaFileUploadRequest); ok {
+			FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
+				if uploadReq, ok := req.(*schemas.GatewayFileUploadRequest); ok {
 					return &FileRequest{
 						Type:          schemas.FileUploadRequest,
 						UploadRequest: uploadReq,
@@ -1889,7 +1889,7 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				}
 				return nil, errors.New("invalid file upload request type")
 			},
-			FileUploadResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileUploadResponse) (interface{}, error) {
+			FileUploadResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileUploadResponse) (interface{}, error) {
 				if resp.ExtraFields.RawResponse != nil && resp.ExtraFields.Provider == schemas.OpenAI {
 					return resp.ExtraFields.RawResponse, nil
 				}
@@ -1909,17 +1909,17 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
-			PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+			PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 				// Default to OpenAI if provider not set from extra_body
-				if rakshaReq, ok := req.(*schemas.RakshaFileUploadRequest); ok {
-					if rakshaReq.Provider == "" {
+				if gatewayReq, ok := req.(*schemas.GatewayFileUploadRequest); ok {
+					if gatewayReq.Provider == "" {
 						if isAzureSDKRequest(ctx) {
-							rakshaReq.Provider = schemas.Azure
+							gatewayReq.Provider = schemas.Azure
 						} else {
-							rakshaReq.Provider = schemas.OpenAI
+							gatewayReq.Provider = schemas.OpenAI
 						}
 					}
 				}
@@ -1942,10 +1942,10 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				return schemas.FileListRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaFileListRequest{}
+				return &schemas.GatewayFileListRequest{}
 			},
-			FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
-				if listReq, ok := req.(*schemas.RakshaFileListRequest); ok {
+			FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
+				if listReq, ok := req.(*schemas.GatewayFileListRequest); ok {
 					if listReq.Provider == "" {
 						listReq.Provider = schemas.OpenAI
 					}
@@ -1956,7 +1956,7 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				}
 				return nil, errors.New("invalid file list request type")
 			},
-			FileListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileListResponse) (interface{}, error) {
+			FileListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileListResponse) (interface{}, error) {
 				if resp.ExtraFields.RawResponse != nil && resp.ExtraFields.Provider == schemas.OpenAI {
 					return resp.ExtraFields.RawResponse, nil
 				}
@@ -1976,7 +1976,7 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractFileListQueryParams(handlerStore),
@@ -1997,10 +1997,10 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				return schemas.FileRetrieveRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaFileRetrieveRequest{}
+				return &schemas.GatewayFileRetrieveRequest{}
 			},
-			FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
-				if retrieveReq, ok := req.(*schemas.RakshaFileRetrieveRequest); ok {
+			FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
+				if retrieveReq, ok := req.(*schemas.GatewayFileRetrieveRequest); ok {
 					if retrieveReq.Provider == "" {
 						retrieveReq.Provider = schemas.OpenAI
 					}
@@ -2014,7 +2014,7 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				}
 				return nil, errors.New("invalid file content request type")
 			},
-			FileRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileRetrieveResponse) (interface{}, error) {
+			FileRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileRetrieveResponse) (interface{}, error) {
 				// Raw response is invalid even for OpenAI
 				switch resp.ExtraFields.Provider {
 				case schemas.Gemini:
@@ -2032,7 +2032,7 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractFileIDFromPath(handlerStore),
@@ -2053,10 +2053,10 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				return schemas.FileDeleteRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaFileDeleteRequest{}
+				return &schemas.GatewayFileDeleteRequest{}
 			},
-			FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
-				if deleteReq, ok := req.(*schemas.RakshaFileDeleteRequest); ok {
+			FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
+				if deleteReq, ok := req.(*schemas.GatewayFileDeleteRequest); ok {
 					if deleteReq.Provider == "" {
 						deleteReq.Provider = schemas.OpenAI
 					}
@@ -2070,7 +2070,7 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				}
 				return nil, errors.New("invalid file delete request type")
 			},
-			FileDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileDeleteResponse) (interface{}, error) {
+			FileDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileDeleteResponse) (interface{}, error) {
 				if resp.ExtraFields.RawResponse != nil && resp.ExtraFields.Provider == schemas.OpenAI {
 					return resp.ExtraFields.RawResponse, nil
 				}
@@ -2090,7 +2090,7 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				}
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractFileIDFromPath(handlerStore),
@@ -2111,10 +2111,10 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				return schemas.FileContentRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaFileContentRequest{}
+				return &schemas.GatewayFileContentRequest{}
 			},
-			FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
-				if contentReq, ok := req.(*schemas.RakshaFileContentRequest); ok {
+			FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
+				if contentReq, ok := req.(*schemas.GatewayFileContentRequest); ok {
 					if contentReq.Provider == "" {
 						contentReq.Provider = schemas.OpenAI
 					}
@@ -2129,7 +2129,7 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 				}
 				return nil, errors.New("invalid file content request type")
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractFileIDFromPath(handlerStore),
@@ -2141,8 +2141,8 @@ func CreateOpenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 
 // extractBatchListQueryParams extracts query parameters for batch list requests
 func extractBatchListQueryParams(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-		if listReq, ok := req.(*schemas.RakshaBatchListRequest); ok {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+		if listReq, ok := req.(*schemas.GatewayBatchListRequest); ok {
 			// Extract provider from extra_query
 			if provider := string(ctx.QueryArgs().Peek("provider")); provider != "" {
 				listReq.Provider = schemas.ModelProvider(provider)
@@ -2177,7 +2177,7 @@ func extractBatchListQueryParams(_ lib.HandlerStore) PreRequestCallback {
 
 // extractBatchIDFromPath extracts batch_id from path parameters and provider from query params
 func extractBatchIDFromPath(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		batchID := ctx.UserValue("batch_id")
 		if batchID == nil {
 			return errors.New("batch_id is required")
@@ -2199,16 +2199,16 @@ func extractBatchIDFromPath(_ lib.HandlerStore) PreRequestCallback {
 		}
 
 		switch r := req.(type) {
-		case *schemas.RakshaBatchRetrieveRequest:
+		case *schemas.GatewayBatchRetrieveRequest:
 			r.BatchID = batchIDStr
 			r.Provider = provider
-		case *schemas.RakshaBatchCancelRequest:
+		case *schemas.GatewayBatchCancelRequest:
 			r.BatchID = batchIDStr
 			// For POST cancel, provider comes from body, only set if empty
 			if r.Provider == "" {
 				r.Provider = provider
 			}
-		case *schemas.RakshaBatchResultsRequest:
+		case *schemas.GatewayBatchResultsRequest:
 			r.BatchID = batchIDStr
 			r.Provider = provider
 		}
@@ -2219,7 +2219,7 @@ func extractBatchIDFromPath(_ lib.HandlerStore) PreRequestCallback {
 
 // extractVideoIDFromPath extracts video_id from path parameters in provider:id format.
 func extractVideoIDFromPath(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		videoID := ctx.UserValue("video_id")
 		if videoID == nil {
 			return errors.New("video_id is required")
@@ -2247,10 +2247,10 @@ func extractVideoIDFromPath(_ lib.HandlerStore) PreRequestCallback {
 		}
 
 		switch r := req.(type) {
-		case *schemas.RakshaVideoReferenceRequest:
+		case *schemas.GatewayVideoReferenceRequest:
 			r.Provider = providerName
 			r.ID = rawVideoID
-		case *schemas.RakshaVideoDownloadRequest:
+		case *schemas.GatewayVideoDownloadRequest:
 			r.Provider = providerName
 			r.ID = rawVideoID
 			r.Variant = schemas.Ptr(schemas.VideoDownloadVariant(variant))
@@ -2265,8 +2265,8 @@ func extractVideoIDFromPath(_ lib.HandlerStore) PreRequestCallback {
 
 // extractFileListQueryParams extracts query parameters for file list requests
 func extractFileListQueryParams(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-		if listReq, ok := req.(*schemas.RakshaFileListRequest); ok {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+		if listReq, ok := req.(*schemas.GatewayFileListRequest); ok {
 			// Extract provider from extra_query
 			if provider := string(ctx.QueryArgs().Peek("provider")); provider != "" {
 				listReq.Provider = schemas.ModelProvider(provider)
@@ -2362,7 +2362,7 @@ func extractFileListQueryParams(_ lib.HandlerStore) PreRequestCallback {
 
 // extractFileIDFromPath extracts file_id from path parameters and provider/S3 config from query params
 func extractFileIDFromPath(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		fileID := ctx.UserValue("file_id")
 		if fileID == nil {
 			return errors.New("file_id is required")
@@ -2424,19 +2424,19 @@ func extractFileIDFromPath(_ lib.HandlerStore) PreRequestCallback {
 		}
 
 		switch r := req.(type) {
-		case *schemas.RakshaFileRetrieveRequest:
+		case *schemas.GatewayFileRetrieveRequest:
 			r.FileID = fileIDStr
 			r.Provider = provider
 			if storageConfig != nil {
 				r.StorageConfig = storageConfig
 			}
-		case *schemas.RakshaFileDeleteRequest:
+		case *schemas.GatewayFileDeleteRequest:
 			r.FileID = fileIDStr
 			r.Provider = provider
 			if storageConfig != nil {
 				r.StorageConfig = storageConfig
 			}
-		case *schemas.RakshaFileContentRequest:
+		case *schemas.GatewayFileContentRequest:
 			r.FileID = fileIDStr
 			r.Provider = provider
 			if storageConfig != nil {
@@ -2450,7 +2450,7 @@ func extractFileIDFromPath(_ lib.HandlerStore) PreRequestCallback {
 
 // extractResponsesLifecycleFromPath fills response_id, provider, and query-derived fields for Responses lifecycle routes.
 func extractResponsesLifecycleFromPath(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		rid := ctx.UserValue("response_id")
 		if rid == nil {
 			return errors.New("response_id is required")
@@ -2468,7 +2468,7 @@ func extractResponsesLifecycleFromPath(_ lib.HandlerStore) PreRequestCallback {
 			}
 		}
 		switch r := req.(type) {
-		case *schemas.RakshaResponsesRetrieveRequest:
+		case *schemas.GatewayResponsesRetrieveRequest:
 			r.ResponseID = idStr
 			r.Provider = provider
 			ctx.QueryArgs().VisitAll(func(key, value []byte) {
@@ -2491,13 +2491,13 @@ func extractResponsesLifecycleFromPath(_ lib.HandlerStore) PreRequestCallback {
 				}
 				r.IncludeObfuscation = &b
 			}
-		case *schemas.RakshaResponsesDeleteRequest:
+		case *schemas.GatewayResponsesDeleteRequest:
 			r.ResponseID = idStr
 			r.Provider = provider
-		case *schemas.RakshaResponsesCancelRequest:
+		case *schemas.GatewayResponsesCancelRequest:
 			r.ResponseID = idStr
 			r.Provider = provider
-		case *schemas.RakshaResponsesInputItemsRequest:
+		case *schemas.GatewayResponsesInputItemsRequest:
 			r.ResponseID = idStr
 			r.Provider = provider
 			ctx.QueryArgs().VisitAll(func(key, value []byte) {
@@ -2526,7 +2526,7 @@ func extractResponsesLifecycleFromPath(_ lib.HandlerStore) PreRequestCallback {
 
 // parseOpenAIFileUploadMultipartRequest parses multipart/form-data for file upload requests
 func parseOpenAIFileUploadMultipartRequest(ctx *fasthttp.RequestCtx, req interface{}) error {
-	uploadReq, ok := req.(*schemas.RakshaFileUploadRequest)
+	uploadReq, ok := req.(*schemas.GatewayFileUploadRequest)
 	if !ok {
 		return errors.New("invalid request type for file upload")
 	}
@@ -2663,11 +2663,11 @@ func CreateOpenAIContainerRouteConfigs(pathPrefix string, handlerStore lib.Handl
 				return schemas.ContainerCreateRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaContainerCreateRequest{}
+				return &schemas.GatewayContainerCreateRequest{}
 			},
-			ContainerRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*ContainerRequest, error) {
+			ContainerRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*ContainerRequest, error) {
 				enableRawRequestResponseForContainer(ctx)
-				if createReq, ok := req.(*schemas.RakshaContainerCreateRequest); ok {
+				if createReq, ok := req.(*schemas.GatewayContainerCreateRequest); ok {
 					return &ContainerRequest{
 						Type:          schemas.ContainerCreateRequest,
 						CreateRequest: createReq,
@@ -2675,14 +2675,14 @@ func CreateOpenAIContainerRouteConfigs(pathPrefix string, handlerStore lib.Handl
 				}
 				return nil, errors.New("invalid container create request type")
 			},
-			ContainerCreateResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaContainerCreateResponse) (interface{}, error) {
+			ContainerCreateResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayContainerCreateResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
-			PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-				if createReq, ok := req.(*schemas.RakshaContainerCreateRequest); ok {
+			PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+				if createReq, ok := req.(*schemas.GatewayContainerCreateRequest); ok {
 					if createReq.Provider == "" {
 						createReq.Provider = schemas.OpenAI
 					}
@@ -2705,11 +2705,11 @@ func CreateOpenAIContainerRouteConfigs(pathPrefix string, handlerStore lib.Handl
 				return schemas.ContainerListRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaContainerListRequest{}
+				return &schemas.GatewayContainerListRequest{}
 			},
-			ContainerRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*ContainerRequest, error) {
+			ContainerRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*ContainerRequest, error) {
 				enableRawRequestResponseForContainer(ctx)
-				if listReq, ok := req.(*schemas.RakshaContainerListRequest); ok {
+				if listReq, ok := req.(*schemas.GatewayContainerListRequest); ok {
 					if listReq.Provider == "" {
 						listReq.Provider = schemas.OpenAI
 					}
@@ -2720,10 +2720,10 @@ func CreateOpenAIContainerRouteConfigs(pathPrefix string, handlerStore lib.Handl
 				}
 				return nil, errors.New("invalid container list request type")
 			},
-			ContainerListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaContainerListResponse) (interface{}, error) {
+			ContainerListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayContainerListResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractContainerListQueryParams(handlerStore),
@@ -2743,11 +2743,11 @@ func CreateOpenAIContainerRouteConfigs(pathPrefix string, handlerStore lib.Handl
 				return schemas.ContainerRetrieveRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaContainerRetrieveRequest{}
+				return &schemas.GatewayContainerRetrieveRequest{}
 			},
-			ContainerRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*ContainerRequest, error) {
+			ContainerRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*ContainerRequest, error) {
 				enableRawRequestResponseForContainer(ctx)
-				if retrieveReq, ok := req.(*schemas.RakshaContainerRetrieveRequest); ok {
+				if retrieveReq, ok := req.(*schemas.GatewayContainerRetrieveRequest); ok {
 					if retrieveReq.Provider == "" {
 						retrieveReq.Provider = schemas.OpenAI
 					}
@@ -2758,10 +2758,10 @@ func CreateOpenAIContainerRouteConfigs(pathPrefix string, handlerStore lib.Handl
 				}
 				return nil, errors.New("invalid container retrieve request type")
 			},
-			ContainerRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaContainerRetrieveResponse) (interface{}, error) {
+			ContainerRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayContainerRetrieveResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractContainerIDFromPath(handlerStore),
@@ -2781,11 +2781,11 @@ func CreateOpenAIContainerRouteConfigs(pathPrefix string, handlerStore lib.Handl
 				return schemas.ContainerDeleteRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaContainerDeleteRequest{}
+				return &schemas.GatewayContainerDeleteRequest{}
 			},
-			ContainerRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*ContainerRequest, error) {
+			ContainerRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*ContainerRequest, error) {
 				enableRawRequestResponseForContainer(ctx)
-				if deleteReq, ok := req.(*schemas.RakshaContainerDeleteRequest); ok {
+				if deleteReq, ok := req.(*schemas.GatewayContainerDeleteRequest); ok {
 					if deleteReq.Provider == "" {
 						deleteReq.Provider = schemas.OpenAI
 					}
@@ -2796,10 +2796,10 @@ func CreateOpenAIContainerRouteConfigs(pathPrefix string, handlerStore lib.Handl
 				}
 				return nil, errors.New("invalid container delete request type")
 			},
-			ContainerDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaContainerDeleteResponse) (interface{}, error) {
+			ContainerDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayContainerDeleteResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractContainerIDFromPath(handlerStore),
@@ -2811,8 +2811,8 @@ func CreateOpenAIContainerRouteConfigs(pathPrefix string, handlerStore lib.Handl
 
 // extractContainerListQueryParams extracts query parameters for container list requests
 func extractContainerListQueryParams(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-		if listReq, ok := req.(*schemas.RakshaContainerListRequest); ok {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+		if listReq, ok := req.(*schemas.GatewayContainerListRequest); ok {
 			// Extract provider from query
 			if provider := string(ctx.QueryArgs().Peek("provider")); provider != "" {
 				listReq.Provider = schemas.ModelProvider(provider)
@@ -2845,7 +2845,7 @@ func extractContainerListQueryParams(_ lib.HandlerStore) PreRequestCallback {
 
 // extractContainerIDFromPath extracts container_id from path parameters and provider from query params
 func extractContainerIDFromPath(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		containerID := ctx.UserValue("container_id")
 		if containerID == nil {
 			return errors.New("container_id is required")
@@ -2863,10 +2863,10 @@ func extractContainerIDFromPath(_ lib.HandlerStore) PreRequestCallback {
 		}
 
 		switch r := req.(type) {
-		case *schemas.RakshaContainerRetrieveRequest:
+		case *schemas.GatewayContainerRetrieveRequest:
 			r.ContainerID = containerIDStr
 			r.Provider = provider
-		case *schemas.RakshaContainerDeleteRequest:
+		case *schemas.GatewayContainerDeleteRequest:
 			r.ContainerID = containerIDStr
 			r.Provider = provider
 		}
@@ -2896,12 +2896,12 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				return schemas.ContainerFileCreateRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaContainerFileCreateRequest{}
+				return &schemas.GatewayContainerFileCreateRequest{}
 			},
 			RequestParser: parseContainerFileCreateMultipartRequest,
-			ContainerFileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*ContainerFileRequest, error) {
+			ContainerFileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*ContainerFileRequest, error) {
 				enableRawRequestResponseForContainer(ctx)
-				if createReq, ok := req.(*schemas.RakshaContainerFileCreateRequest); ok {
+				if createReq, ok := req.(*schemas.GatewayContainerFileCreateRequest); ok {
 					return &ContainerFileRequest{
 						Type:          schemas.ContainerFileCreateRequest,
 						CreateRequest: createReq,
@@ -2909,10 +2909,10 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				}
 				return nil, errors.New("invalid container file create request type")
 			},
-			ContainerFileCreateResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaContainerFileCreateResponse) (interface{}, error) {
+			ContainerFileCreateResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayContainerFileCreateResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractContainerFileCreateParams(handlerStore),
@@ -2932,11 +2932,11 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				return schemas.ContainerFileListRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaContainerFileListRequest{}
+				return &schemas.GatewayContainerFileListRequest{}
 			},
-			ContainerFileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*ContainerFileRequest, error) {
+			ContainerFileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*ContainerFileRequest, error) {
 				enableRawRequestResponseForContainer(ctx)
-				if listReq, ok := req.(*schemas.RakshaContainerFileListRequest); ok {
+				if listReq, ok := req.(*schemas.GatewayContainerFileListRequest); ok {
 					return &ContainerFileRequest{
 						Type:        schemas.ContainerFileListRequest,
 						ListRequest: listReq,
@@ -2944,10 +2944,10 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				}
 				return nil, errors.New("invalid container file list request type")
 			},
-			ContainerFileListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaContainerFileListResponse) (interface{}, error) {
+			ContainerFileListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayContainerFileListResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractContainerFileListQueryParams(handlerStore),
@@ -2967,11 +2967,11 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				return schemas.ContainerFileRetrieveRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaContainerFileRetrieveRequest{}
+				return &schemas.GatewayContainerFileRetrieveRequest{}
 			},
-			ContainerFileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*ContainerFileRequest, error) {
+			ContainerFileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*ContainerFileRequest, error) {
 				enableRawRequestResponseForContainer(ctx)
-				if retrieveReq, ok := req.(*schemas.RakshaContainerFileRetrieveRequest); ok {
+				if retrieveReq, ok := req.(*schemas.GatewayContainerFileRetrieveRequest); ok {
 					return &ContainerFileRequest{
 						Type:            schemas.ContainerFileRetrieveRequest,
 						RetrieveRequest: retrieveReq,
@@ -2979,10 +2979,10 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				}
 				return nil, errors.New("invalid container file retrieve request type")
 			},
-			ContainerFileRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaContainerFileRetrieveResponse) (interface{}, error) {
+			ContainerFileRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayContainerFileRetrieveResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractContainerAndFileIDFromPath(handlerStore),
@@ -3002,11 +3002,11 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				return schemas.ContainerFileContentRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaContainerFileContentRequest{}
+				return &schemas.GatewayContainerFileContentRequest{}
 			},
-			ContainerFileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*ContainerFileRequest, error) {
+			ContainerFileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*ContainerFileRequest, error) {
 				enableRawRequestResponseForContainer(ctx)
-				if contentReq, ok := req.(*schemas.RakshaContainerFileContentRequest); ok {
+				if contentReq, ok := req.(*schemas.GatewayContainerFileContentRequest); ok {
 					return &ContainerFileRequest{
 						Type:           schemas.ContainerFileContentRequest,
 						ContentRequest: contentReq,
@@ -3014,10 +3014,10 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				}
 				return nil, errors.New("invalid container file content request type")
 			},
-			ContainerFileContentResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaContainerFileContentResponse) (interface{}, error) {
+			ContainerFileContentResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayContainerFileContentResponse) (interface{}, error) {
 				return resp.Content, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractContainerAndFileIDFromPath(handlerStore),
@@ -3037,11 +3037,11 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				return schemas.ContainerFileDeleteRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaContainerFileDeleteRequest{}
+				return &schemas.GatewayContainerFileDeleteRequest{}
 			},
-			ContainerFileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*ContainerFileRequest, error) {
+			ContainerFileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*ContainerFileRequest, error) {
 				enableRawRequestResponseForContainer(ctx)
-				if deleteReq, ok := req.(*schemas.RakshaContainerFileDeleteRequest); ok {
+				if deleteReq, ok := req.(*schemas.GatewayContainerFileDeleteRequest); ok {
 					return &ContainerFileRequest{
 						Type:          schemas.ContainerFileDeleteRequest,
 						DeleteRequest: deleteReq,
@@ -3049,10 +3049,10 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 				}
 				return nil, errors.New("invalid container file delete request type")
 			},
-			ContainerFileDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaContainerFileDeleteResponse) (interface{}, error) {
+			ContainerFileDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayContainerFileDeleteResponse) (interface{}, error) {
 				return resp, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			PreCallback: extractContainerAndFileIDFromPath(handlerStore),
@@ -3064,7 +3064,7 @@ func CreateOpenAIContainerFileRouteConfigs(pathPrefix string, handlerStore lib.H
 
 // extractContainerFileCreateParams extracts container_id from path and provider from query for file create
 func extractContainerFileCreateParams(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		containerID := ctx.UserValue("container_id")
 		if containerID == nil {
 			return errors.New("container_id is required")
@@ -3080,7 +3080,7 @@ func extractContainerFileCreateParams(_ lib.HandlerStore) PreRequestCallback {
 			provider = schemas.OpenAI
 		}
 
-		if createReq, ok := req.(*schemas.RakshaContainerFileCreateRequest); ok {
+		if createReq, ok := req.(*schemas.GatewayContainerFileCreateRequest); ok {
 			createReq.ContainerID = containerIDStr
 			if createReq.Provider == "" {
 				createReq.Provider = provider
@@ -3093,7 +3093,7 @@ func extractContainerFileCreateParams(_ lib.HandlerStore) PreRequestCallback {
 
 // extractContainerFileListQueryParams extracts query parameters for container file list requests
 func extractContainerFileListQueryParams(_ lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		containerID := ctx.UserValue("container_id")
 		if containerID == nil {
 			return errors.New("container_id is required")
@@ -3104,7 +3104,7 @@ func extractContainerFileListQueryParams(_ lib.HandlerStore) PreRequestCallback 
 			return errors.New("container_id must be a non-empty string")
 		}
 
-		if listReq, ok := req.(*schemas.RakshaContainerFileListRequest); ok {
+		if listReq, ok := req.(*schemas.GatewayContainerFileListRequest); ok {
 			listReq.ContainerID = containerIDStr
 
 			// Extract provider from query
@@ -3139,7 +3139,7 @@ func extractContainerFileListQueryParams(_ lib.HandlerStore) PreRequestCallback 
 
 // extractContainerAndFileIDFromPath extracts container_id and file_id from path parameters and provider from query params
 func extractContainerAndFileIDFromPath(handlerStore lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		containerID := ctx.UserValue("container_id")
 		if containerID == nil {
 			return errors.New("container_id is required")
@@ -3167,15 +3167,15 @@ func extractContainerAndFileIDFromPath(handlerStore lib.HandlerStore) PreRequest
 		}
 
 		switch r := req.(type) {
-		case *schemas.RakshaContainerFileRetrieveRequest:
+		case *schemas.GatewayContainerFileRetrieveRequest:
 			r.ContainerID = containerIDStr
 			r.FileID = fileIDStr
 			r.Provider = provider
-		case *schemas.RakshaContainerFileContentRequest:
+		case *schemas.GatewayContainerFileContentRequest:
 			r.ContainerID = containerIDStr
 			r.FileID = fileIDStr
 			r.Provider = provider
-		case *schemas.RakshaContainerFileDeleteRequest:
+		case *schemas.GatewayContainerFileDeleteRequest:
 			r.ContainerID = containerIDStr
 			r.FileID = fileIDStr
 			r.Provider = provider
@@ -3246,8 +3246,8 @@ func OpenAIRealtimeClientSecretPaths(pathPrefix string) []string {
 	return paths
 }
 
-// NewOpenAIRouter creates a new OpenAIRouter with the given raksha client.
-func NewOpenAIRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *OpenAIRouter {
+// NewOpenAIRouter creates a new OpenAIRouter with the given gateway client.
+func NewOpenAIRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *OpenAIRouter {
 	routes := CreateOpenAIRouteConfigs("/openai", handlerStore)
 	routes = append(routes, CreateOpenAIListModelsRouteConfigs("/openai", handlerStore)...)
 	routes = append(routes, CreateOpenAIBatchRouteConfigs("/openai", handlerStore)...)
@@ -3714,15 +3714,15 @@ func parseOpenAIVideoGenerationMultipartRequest(ctx *fasthttp.RequestCtx, req in
 // enableRawRequestResponseForContainer sets per-request overrides to always capture and
 // send back raw request/response for container operations. Container operations don't have
 // model-specific content, so raw data is useful for debugging and should be enabled by default.
-func enableRawRequestResponseForContainer(rakshaCtx *schemas.RakshaContext) {
-	rakshaCtx.SetValue(schemas.RakshaContextKeySendBackRawRequest, true)
-	rakshaCtx.SetValue(schemas.RakshaContextKeySendBackRawResponse, true)
-	rakshaCtx.SetValue(schemas.RakshaContextKeyStoreRawRequestResponse, true)
+func enableRawRequestResponseForContainer(gatewayCtx *schemas.GatewayContext) {
+	gatewayCtx.SetValue(schemas.GatewayContextKeySendBackRawRequest, true)
+	gatewayCtx.SetValue(schemas.GatewayContextKeySendBackRawResponse, true)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyStoreRawRequestResponse, true)
 }
 
 // parseContainerFileCreateMultipartRequest is a RequestParser that handles multipart/form-data for container file create requests
 func parseContainerFileCreateMultipartRequest(ctx *fasthttp.RequestCtx, req interface{}) error {
-	createReq, ok := req.(*schemas.RakshaContainerFileCreateRequest)
+	createReq, ok := req.(*schemas.GatewayContainerFileCreateRequest)
 	if !ok {
 		return errors.New("invalid request type for container file create")
 	}

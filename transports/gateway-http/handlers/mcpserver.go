@@ -1,4 +1,4 @@
-// Package handlers provides HTTP request handlers for the Raksha HTTP transport.
+// Package handlers provides HTTP request handlers for the Gateway HTTP transport.
 // This file contains MCP (Model Context Protocol) server implementation for HTTP streaming.
 package handlers
 
@@ -14,11 +14,11 @@ import (
 	"github.com/fasthttp/router"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/plugins/governance"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/plugins/governance"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -31,8 +31,8 @@ const sseHeartbeatInterval = 15 * time.Second
 // MCPToolExecutor interface defines the method needed for executing MCP tools
 type MCPToolManager interface {
 	GetAvailableMCPTools(ctx context.Context) []schemas.ChatTool
-	ExecuteChatMCPTool(ctx context.Context, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.RakshaError)
-	ExecuteResponsesMCPTool(ctx context.Context, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.RakshaError)
+	ExecuteChatMCPTool(ctx context.Context, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.GatewayError)
+	ExecuteResponsesMCPTool(ctx context.Context, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.GatewayError)
 }
 
 // VirtualKeyCache resolves a virtual key by its row ID from an in-memory cache,
@@ -129,7 +129,7 @@ func NewMCPServerHandler(ctx context.Context, config *lib.Config, toolManager MC
 }
 
 // RegisterRoutes registers the MCP server routes.
-func (h *MCPServerHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *MCPServerHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	// MCP server endpoint - supports both POST (JSON-RPC) and GET (SSE)
 	r.POST("/mcp", lib.ChainMiddlewares(h.handleMCPServer, middlewares...))
 	r.GET("/mcp", lib.ChainMiddlewares(h.handleMCPServerSSE, middlewares...))
@@ -142,15 +142,15 @@ func (h *MCPServerHandler) handleMCPServer(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	rakshaCtx.SetValue(schemas.RakshaContextKeyIsMCPGateway, true)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyIsMCPGateway, true)
 	defer cancel()
 
-	// Inject JWT identity into RakshaContext so downstream resolvers
+	// Inject JWT identity into GatewayContext so downstream resolvers
 	// (per-user OAuth, governance, tool-group filtering) see the same context
 	// keys as header-based auth paths.
 	if authResult.jwtClaims != nil {
-		if injErr := injectJWTContext(rakshaCtx, authResult.jwtClaims, authResult.jwtVK); injErr != nil {
+		if injErr := injectJWTContext(gatewayCtx, authResult.jwtClaims, authResult.jwtVK); injErr != nil {
 			SendError(ctx, fasthttp.StatusUnauthorized, injErr.Error())
 			return
 		}
@@ -159,7 +159,7 @@ func (h *MCPServerHandler) handleMCPServer(ctx *fasthttp.RequestCtx) {
 
 	// Use mcp-go server to handle the request
 	// HandleMessage processes JSON-RPC messages and returns appropriate responses
-	response := mcpServer.HandleMessage(rakshaCtx, ctx.PostBody())
+	response := mcpServer.HandleMessage(gatewayCtx, ctx.PostBody())
 
 	// Check if response is nil (notification - no response needed)
 	if response == nil {
@@ -190,19 +190,19 @@ func (h *MCPServerHandler) handleMCPServerSSE(ctx *fasthttp.RequestCtx) {
 	// response. Without this, fasthttpResponseToHTTPResponse calls ctx.Response.Body()
 	// during post-hook processing, which materializes the SSE body stream and
 	// deadlocks waiting for an EOF that only arrives after the goroutine exits.
-	ctx.SetUserValue(schemas.RakshaContextKeyDeferTraceCompletion, true)
+	ctx.SetUserValue(schemas.GatewayContextKeyDeferTraceCompletion, true)
 
 	// Pre-allocate atomic.Value slot for the transport post-hook completer.
 	// TransportInterceptorMiddleware stores the completer into this slot after next(ctx)
 	// returns. The goroutine reads from the closure-captured pointer, avoiding any ctx
 	// access after the handler returns (fasthttp recycles RequestCtx).
 	var completerSlot atomic.Value
-	ctx.SetUserValue(schemas.RakshaContextKeyTransportPostHookCompleter, &completerSlot)
+	ctx.SetUserValue(schemas.GatewayContextKeyTransportPostHookCompleter, &completerSlot)
 
 	// Get the trace completer function for use in the streaming callback.
 	// Signature: func([]schemas.PluginLogEntry) — accepts transport plugin logs so it
 	// never needs to read from ctx.UserValue (ctx may be recycled).
-	traceCompleter, _ := ctx.UserValue(schemas.RakshaContextKeyTraceCompleter).(func([]schemas.PluginLogEntry))
+	traceCompleter, _ := ctx.UserValue(schemas.GatewayContextKeyTraceCompleter).(func([]schemas.PluginLogEntry))
 
 	// Set SSE headers
 	ctx.SetContentType("text/event-stream")
@@ -211,11 +211,11 @@ func (h *MCPServerHandler) handleMCPServerSSE(ctx *fasthttp.RequestCtx) {
 	ctx.Response.Header.Set("X-Accel-Buffering", "no")
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	rakshaCtx.SetValue(schemas.RakshaContextKeyIsMCPGateway, true)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyIsMCPGateway, true)
 
 	if authResult.jwtClaims != nil {
-		if injErr := injectJWTContext(rakshaCtx, authResult.jwtClaims, authResult.jwtVK); injErr != nil {
+		if injErr := injectJWTContext(gatewayCtx, authResult.jwtClaims, authResult.jwtVK); injErr != nil {
 			cancel()
 			SendError(ctx, fasthttp.StatusUnauthorized, injErr.Error())
 			return
@@ -306,7 +306,7 @@ func (h *MCPServerHandler) handleMCPServerSSE(ctx *fasthttp.RequestCtx) {
 
 		// Periodic SSE comment heartbeats keep idle connections alive through
 		// proxies and let us detect client disconnect via reader.Send() returning
-		// false — fasthttp.RequestCtx never cancels rakshaCtx on its own.
+		// false — fasthttp.RequestCtx never cancels gatewayCtx on its own.
 		ticker := time.NewTicker(sseHeartbeatInterval)
 		defer ticker.Stop()
 		ping := []byte(": ping\n\n")
@@ -316,7 +316,7 @@ func (h *MCPServerHandler) handleMCPServerSSE(ctx *fasthttp.RequestCtx) {
 				if !reader.Send(ping) {
 					return
 				}
-			case <-(*rakshaCtx).Done():
+			case <-(*gatewayCtx).Done():
 				return
 			}
 		}
@@ -391,7 +391,7 @@ func (h *MCPServerHandler) syncServer(server *server.MCPServer, availableTools [
 			if toolFilter != nil {
 				ctx = context.WithValue(ctx, schemas.MCPContextKeyIncludeTools, toolFilter)
 			}
-			// Convert to Raksha tool call format
+			// Convert to Gateway tool call format
 			toolCallType := "function"
 			toolCallID := fmt.Sprintf("mcp-%s", toolName)
 			argsJSON, jsonErr := sonic.Marshal(request.GetArguments())
@@ -427,7 +427,7 @@ func (h *MCPServerHandler) syncServer(server *server.MCPServer, availableTools [
 						authReq.MCPClientName, action, url,
 					)), nil
 				}
-				return mcp.NewToolResultError(fmt.Sprintf("Tool execution failed: %v", raksha.GetErrorMessage(err))), nil
+				return mcp.NewToolResultError(fmt.Sprintf("Tool execution failed: %v", gateway.GetErrorMessage(err))), nil
 			}
 
 			// Extract content from tool message
@@ -458,7 +458,7 @@ func (h *MCPServerHandler) syncServer(server *server.MCPServer, availableTools [
 
 		inputSchema := convertToolFunctionParametersToMCPInputSchema(tool.Function.Parameters)
 
-		// Map Raksha annotations back to MCP tool annotations
+		// Map Gateway annotations back to MCP tool annotations
 		var toolAnnotation mcp.ToolAnnotation
 		if tool.Annotations != nil {
 			toolAnnotation = mcp.ToolAnnotation{
@@ -677,7 +677,7 @@ type mcpAuthResult struct {
 
 // getMCPServerForRequest authenticates the /mcp request and returns the
 // appropriate scoped MCP server alongside any JWT claims that must be injected
-// into the RakshaContext after it is created.
+// into the GatewayContext after it is created.
 //
 // Authentication priority:
 //  1. JWT Bearer token (when MCPServerAuthMode is both or oauth)
@@ -698,10 +698,10 @@ func (h *MCPServerHandler) getMCPServerForRequest(ctx *fasthttp.RequestCtx) (*mc
 	// user id onto the request context. In headers/both modes, scope the request
 	// to that user's virtual key — the same representative-VK scoping a user-mode
 	// token gets — so a user authenticated by a bearer token is treated like a
-	// virtual key. oauth-strict accepts only Raksha-issued tokens and is excluded.
+	// virtual key. oauth-strict accepts only Gateway-issued tokens and is excluded.
 	if h.identityResolver != nil &&
 		(authMode == tables.MCPServerAuthModeHeaders || authMode == tables.MCPServerAuthModeBoth) {
-		if userID, _ := ctx.UserValue(schemas.RakshaContextKeyUserID).(string); userID != "" {
+		if userID, _ := ctx.UserValue(schemas.GatewayContextKeyUserID).(string); userID != "" {
 			// The user identity is the sole credential; reject a stray virtual key
 			// header so it is not also attributed to the request.
 			if headerVK := getVKFromRequest(ctx); headerVK != "" {
@@ -764,13 +764,13 @@ func (h *MCPServerHandler) getMCPServerForRequest(ctx *fasthttp.RequestCtx) (*mc
 		}
 
 		// For user-mode JWTs, if a dashboard session is present on the request
-		// (RakshaContextKeyUserID, set by the auth middleware) it must match
+		// (GatewayContextKeyUserID, set by the auth middleware) it must match
 		// uf_sub — a mismatch means the session and the token disagree on
 		// identity. Its absence is not fatal: the JWT itself proves identity, and
 		// initiating a new upstream per-user flow is verified later at the
 		// session-bearing UI step (flowStart → canAccessUserFlow).
 		if schemas.MCPAuthMode(claims.BfMode) == schemas.MCPAuthModeUser {
-			sessionUserID, _ := ctx.UserValue(schemas.RakshaContextKeyUserID).(string)
+			sessionUserID, _ := ctx.UserValue(schemas.GatewayContextKeyUserID).(string)
 			if sessionUserID != "" && sessionUserID != claims.Subject {
 				ctx.Response.Header.Set("WWW-Authenticate", wwwAuthenticateValue(ctx, h.config))
 				return nil, fmt.Errorf("session user does not match the authenticated token")
@@ -948,11 +948,11 @@ func (h *MCPServerHandler) ensureVKMCPServer(ctx context.Context, vkValue string
 //  4. x-goog-api-key — must start with the VK prefix
 //
 // The prefix gate (governance.VirtualKeyPrefix) on the latter three lets real
-// provider credentials pass through untouched, so only Raksha virtual keys are
+// provider credentials pass through untouched, so only Gateway virtual keys are
 // picked up here. This header set mirrors the inference path, keeping MCP and
 // inference at parity. Returns "" when no header carries a virtual key.
 func getVKFromRequest(ctx *fasthttp.RequestCtx) string {
-	if value := strings.TrimSpace(string(ctx.Request.Header.Peek(string(schemas.RakshaContextKeyVirtualKey)))); value != "" {
+	if value := strings.TrimSpace(string(ctx.Request.Header.Peek(string(schemas.GatewayContextKeyVirtualKey)))); value != "" {
 		return value
 	}
 

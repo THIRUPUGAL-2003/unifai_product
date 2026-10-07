@@ -6,7 +6,7 @@ import (
 )
 
 // LiteLLMVirtualKey mirrors a row from GET /key/list (return_full_object=true).
-// Only the fields a Raksha virtual key can carry are decoded.
+// Only the fields a Gateway virtual key can carry are decoded.
 type LiteLLMVirtualKey struct {
 	KeyAlias       *string  `json:"key_alias"`
 	KeyName        *string  `json:"key_name"` // masked token, used as a name fallback

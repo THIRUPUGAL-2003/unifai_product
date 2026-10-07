@@ -1,17 +1,17 @@
 package gemini
 
 import (
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToGeminiEmbeddingRequest converts a RakshaRequest with embedding input to Gemini's batch embedding request format
+// ToGeminiEmbeddingRequest converts a GatewayRequest with embedding input to Gemini's batch embedding request format
 // GeminiGenerationRequest contains requests array for batch embed content endpoint
-func ToGeminiEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *GeminiBatchEmbeddingRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil || (rakshaReq.Input.Text == nil && rakshaReq.Input.Texts == nil) {
+func ToGeminiEmbeddingRequest(gatewayReq *schemas.GatewayEmbeddingRequest) *GeminiBatchEmbeddingRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil || (gatewayReq.Input.Text == nil && gatewayReq.Input.Texts == nil) {
 		return nil
 	}
 
-	embeddingInput := rakshaReq.Input
+	embeddingInput := gatewayReq.Input
 
 	// Collect all texts to embed
 	var texts []string
@@ -30,14 +30,14 @@ func ToGeminiEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Gemini
 	batchRequest := &GeminiBatchEmbeddingRequest{
 		Requests: make([]GeminiEmbeddingRequest, len(texts)),
 	}
-	if rakshaReq.Params != nil {
-		batchRequest.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		batchRequest.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 
 	// Create individual embedding requests for each text
 	for i, text := range texts {
 		embeddingReq := GeminiEmbeddingRequest{
-			Model: "models/" + rakshaReq.Model,
+			Model: "models/" + gatewayReq.Model,
 			Content: &Content{
 				Parts: []*Part{
 					{
@@ -48,18 +48,18 @@ func ToGeminiEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Gemini
 		}
 
 		// Add parameters if available
-		if rakshaReq.Params != nil {
-			if rakshaReq.Params.Dimensions != nil {
-				embeddingReq.OutputDimensionality = rakshaReq.Params.Dimensions
+		if gatewayReq.Params != nil {
+			if gatewayReq.Params.Dimensions != nil {
+				embeddingReq.OutputDimensionality = gatewayReq.Params.Dimensions
 			}
 
 			// Handle extra parameters
-			if rakshaReq.Params.ExtraParams != nil {
-				if taskType, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["taskType"]); ok {
+			if gatewayReq.Params.ExtraParams != nil {
+				if taskType, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["taskType"]); ok {
 					delete(batchRequest.ExtraParams, "taskType")
 					embeddingReq.TaskType = taskType
 				}
-				if title, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["title"]); ok {
+				if title, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["title"]); ok {
 					delete(batchRequest.ExtraParams, "title")
 					embeddingReq.Title = title
 				}
@@ -72,41 +72,41 @@ func ToGeminiEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Gemini
 	return batchRequest
 }
 
-// ToGeminiEmbedContentResponse converts a RakshaEmbeddingResponse to the single :embedContent wire format.
-func ToGeminiEmbedContentResponse(rakshaResp *schemas.RakshaEmbeddingResponse) *GeminiEmbedContentResponse {
-	if rakshaResp == nil || len(rakshaResp.Data) == 0 {
+// ToGeminiEmbedContentResponse converts a GatewayEmbeddingResponse to the single :embedContent wire format.
+func ToGeminiEmbedContentResponse(gatewayResp *schemas.GatewayEmbeddingResponse) *GeminiEmbedContentResponse {
+	if gatewayResp == nil || len(gatewayResp.Data) == 0 {
 		return nil
 	}
-	values := rakshaResp.Data[0].Embedding.EmbeddingArray
-	if values == nil && len(rakshaResp.Data[0].Embedding.Embedding2DArray) > 0 {
-		values = rakshaResp.Data[0].Embedding.Embedding2DArray[0]
+	values := gatewayResp.Data[0].Embedding.EmbeddingArray
+	if values == nil && len(gatewayResp.Data[0].Embedding.Embedding2DArray) > 0 {
+		values = gatewayResp.Data[0].Embedding.Embedding2DArray[0]
 	}
 	embedding := GeminiEmbedding{
 		Values: append([]float64(nil), values...),
 	}
-	if rakshaResp.Usage != nil {
+	if gatewayResp.Usage != nil {
 		embedding.Statistics = &ContentEmbeddingStatistics{
-			TokenCount: int32(rakshaResp.Usage.PromptTokens),
+			TokenCount: int32(gatewayResp.Usage.PromptTokens),
 		}
 	}
 	return &GeminiEmbedContentResponse{Embedding: embedding}
 }
 
-// ToGeminiEmbeddingResponse converts a RakshaResponse with embedding data to Gemini's embedding response format
-func ToGeminiEmbeddingResponse(rakshaResp *schemas.RakshaEmbeddingResponse) *GeminiEmbeddingResponse {
-	if rakshaResp == nil || len(rakshaResp.Data) == 0 {
+// ToGeminiEmbeddingResponse converts a GatewayResponse with embedding data to Gemini's embedding response format
+func ToGeminiEmbeddingResponse(gatewayResp *schemas.GatewayEmbeddingResponse) *GeminiEmbeddingResponse {
+	if gatewayResp == nil || len(gatewayResp.Data) == 0 {
 		return nil
 	}
 
 	geminiResp := &GeminiEmbeddingResponse{
-		Embeddings: make([]GeminiEmbedding, len(rakshaResp.Data)),
+		Embeddings: make([]GeminiEmbedding, len(gatewayResp.Data)),
 	}
 
-	// Convert each embedding from Raksha format to Gemini format
-	for i, embedding := range rakshaResp.Data {
+	// Convert each embedding from Gateway format to Gemini format
+	for i, embedding := range gatewayResp.Data {
 		var values []float64
 
-		// Extract embedding values from RakshaEmbeddingResponse
+		// Extract embedding values from GatewayEmbeddingResponse
 		if embedding.Embedding.EmbeddingArray != nil {
 			values = append([]float64(nil), embedding.Embedding.EmbeddingArray...)
 		} else if len(embedding.Embedding.Embedding2DArray) > 0 {
@@ -119,9 +119,9 @@ func ToGeminiEmbeddingResponse(rakshaResp *schemas.RakshaEmbeddingResponse) *Gem
 		}
 
 		// Add statistics if available (token count from usage metadata)
-		if rakshaResp.Usage != nil {
+		if gatewayResp.Usage != nil {
 			geminiEmbedding.Statistics = &ContentEmbeddingStatistics{
-				TokenCount: int32(rakshaResp.Usage.PromptTokens),
+				TokenCount: int32(gatewayResp.Usage.PromptTokens),
 			}
 		}
 
@@ -129,28 +129,28 @@ func ToGeminiEmbeddingResponse(rakshaResp *schemas.RakshaEmbeddingResponse) *Gem
 	}
 
 	// Set metadata if available (for Vertex API compatibility)
-	if rakshaResp.Usage != nil {
+	if gatewayResp.Usage != nil {
 		geminiResp.Metadata = &EmbedContentMetadata{
-			BillableCharacterCount: int32(rakshaResp.Usage.PromptTokens),
+			BillableCharacterCount: int32(gatewayResp.Usage.PromptTokens),
 		}
 	}
 
 	return geminiResp
 }
 
-// ToRakshaEmbeddingResponse converts a Gemini embedding response to RakshaEmbeddingResponse format
-func ToRakshaEmbeddingResponse(geminiResp *GeminiEmbeddingResponse, model string) *schemas.RakshaEmbeddingResponse {
+// ToGatewayEmbeddingResponse converts a Gemini embedding response to GatewayEmbeddingResponse format
+func ToGatewayEmbeddingResponse(geminiResp *GeminiEmbeddingResponse, model string) *schemas.GatewayEmbeddingResponse {
 	if geminiResp == nil || len(geminiResp.Embeddings) == 0 {
 		return nil
 	}
 
-	rakshaResp := &schemas.RakshaEmbeddingResponse{
+	gatewayResp := &schemas.GatewayEmbeddingResponse{
 		Data:   make([]schemas.EmbeddingData, len(geminiResp.Embeddings)),
 		Model:  model,
 		Object: "list",
 	}
 
-	// Convert each embedding from Gemini format to Raksha format
+	// Convert each embedding from Gemini format to Gateway format
 	for i, geminiEmbedding := range geminiResp.Embeddings {
 		embeddingData := schemas.EmbeddingData{
 			Index:  i,
@@ -160,30 +160,30 @@ func ToRakshaEmbeddingResponse(geminiResp *GeminiEmbeddingResponse, model string
 			},
 		}
 
-		rakshaResp.Data[i] = embeddingData
+		gatewayResp.Data[i] = embeddingData
 	}
 
 	// Convert usage metadata if available
 	if geminiResp.Metadata != nil || (len(geminiResp.Embeddings) > 0 && geminiResp.Embeddings[0].Statistics != nil) {
-		rakshaResp.Usage = &schemas.RakshaLLMUsage{}
+		gatewayResp.Usage = &schemas.GatewayLLMUsage{}
 
 		// Use statistics from the first embedding if available
 		if geminiResp.Embeddings[0].Statistics != nil {
-			rakshaResp.Usage.PromptTokens = int(geminiResp.Embeddings[0].Statistics.TokenCount)
+			gatewayResp.Usage.PromptTokens = int(geminiResp.Embeddings[0].Statistics.TokenCount)
 		} else if geminiResp.Metadata != nil {
 			// Fall back to metadata if statistics are not available
-			rakshaResp.Usage.PromptTokens = int(geminiResp.Metadata.BillableCharacterCount)
+			gatewayResp.Usage.PromptTokens = int(geminiResp.Metadata.BillableCharacterCount)
 		}
 
 		// Set total tokens same as prompt tokens for embeddings
-		rakshaResp.Usage.TotalTokens = rakshaResp.Usage.PromptTokens
+		gatewayResp.Usage.TotalTokens = gatewayResp.Usage.PromptTokens
 	}
 
-	return rakshaResp
+	return gatewayResp
 }
 
-// ToRakshaEmbeddingRequest converts a GeminiGenerationRequest to RakshaEmbeddingRequest format
-func (request *GeminiGenerationRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaContext) *schemas.RakshaEmbeddingRequest {
+// ToGatewayEmbeddingRequest converts a GeminiGenerationRequest to GatewayEmbeddingRequest format
+func (request *GeminiGenerationRequest) ToGatewayEmbeddingRequest(ctx *schemas.GatewayContext) *schemas.GatewayEmbeddingRequest {
 	if request == nil {
 		return nil
 	}
@@ -191,7 +191,7 @@ func (request *GeminiGenerationRequest) ToRakshaEmbeddingRequest(ctx *schemas.Ra
 	provider, model := schemas.ParseModelString(request.Model, "")
 
 	// Create the embedding request
-	rakshaReq := &schemas.RakshaEmbeddingRequest{
+	gatewayReq := &schemas.GatewayEmbeddingRequest{
 		Provider:  provider,
 		Model:     model,
 		Fallbacks: schemas.ParseFallbacks(request.Fallbacks),
@@ -210,11 +210,11 @@ func (request *GeminiGenerationRequest) ToRakshaEmbeddingRequest(ctx *schemas.Ra
 			}
 		}
 		if len(texts) > 0 {
-			rakshaReq.Input = &schemas.EmbeddingInput{}
+			gatewayReq.Input = &schemas.EmbeddingInput{}
 			if len(texts) == 1 {
-				rakshaReq.Input.Text = &texts[0]
+				gatewayReq.Input.Text = &texts[0]
 			} else {
-				rakshaReq.Input.Texts = texts
+				gatewayReq.Input.Texts = texts
 			}
 		}
 
@@ -222,20 +222,20 @@ func (request *GeminiGenerationRequest) ToRakshaEmbeddingRequest(ctx *schemas.Ra
 
 		// Convert parameters
 		if embeddingRequest.OutputDimensionality != nil || embeddingRequest.TaskType != nil || embeddingRequest.Title != nil {
-			rakshaReq.Params = &schemas.EmbeddingParameters{}
+			gatewayReq.Params = &schemas.EmbeddingParameters{}
 
 			if embeddingRequest.OutputDimensionality != nil {
-				rakshaReq.Params.Dimensions = embeddingRequest.OutputDimensionality
+				gatewayReq.Params.Dimensions = embeddingRequest.OutputDimensionality
 			}
 
 			// Handle extra parameters
 			if embeddingRequest.TaskType != nil || embeddingRequest.Title != nil {
-				rakshaReq.Params.ExtraParams = make(map[string]interface{})
+				gatewayReq.Params.ExtraParams = make(map[string]interface{})
 				if embeddingRequest.TaskType != nil {
-					rakshaReq.Params.ExtraParams["taskType"] = embeddingRequest.TaskType
+					gatewayReq.Params.ExtraParams["taskType"] = embeddingRequest.TaskType
 				}
 				if embeddingRequest.Title != nil {
-					rakshaReq.Params.ExtraParams["title"] = embeddingRequest.Title
+					gatewayReq.Params.ExtraParams["title"] = embeddingRequest.Title
 				}
 			}
 		}
@@ -243,7 +243,7 @@ func (request *GeminiGenerationRequest) ToRakshaEmbeddingRequest(ctx *schemas.Ra
 
 	// Generation-style requests (e.g., non-Imagen :predict) carry text in contents[].parts[].
 	// If no SDK requests[] were provided, derive embedding input from contents.
-	if rakshaReq.Input == nil {
+	if gatewayReq.Input == nil {
 		var texts []string
 		for _, content := range request.Contents {
 			for _, part := range content.Parts {
@@ -253,14 +253,14 @@ func (request *GeminiGenerationRequest) ToRakshaEmbeddingRequest(ctx *schemas.Ra
 			}
 		}
 		if len(texts) > 0 {
-			rakshaReq.Input = &schemas.EmbeddingInput{}
+			gatewayReq.Input = &schemas.EmbeddingInput{}
 			if len(texts) == 1 {
-				rakshaReq.Input.Text = &texts[0]
+				gatewayReq.Input.Text = &texts[0]
 			} else {
-				rakshaReq.Input.Texts = texts
+				gatewayReq.Input.Texts = texts
 			}
 		}
 	}
 
-	return rakshaReq
+	return gatewayReq
 }

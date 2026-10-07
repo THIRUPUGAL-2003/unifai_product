@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function ClusterPage() {
-	const { data, isLoading: loading } = useGetClusterConfigQuery();
+	const { data, isLoading: loading, isError, error, refetch } = useGetClusterConfigQuery();
 	const [updateCluster, { isLoading: saving }] = useUpdateClusterConfigMutation();
 	const [config, setConfig] = useState<ClusterConfig>({
 		enabled: false,
@@ -113,6 +114,17 @@ export default function ClusterPage() {
 
 	if (loading) {
 		return <div className="text-muted-foreground p-6 text-sm">Loading cluster config…</div>;
+	}
+
+	if (isError) {
+		return (
+			<div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-6">
+				<QueryErrorBanner testId="cluster-query-error" message={getErrorMessage(error) || "Failed to load cluster configuration."} />
+				<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetch()}>
+					Retry
+				</Button>
+			</div>
+		);
 	}
 
 	return (

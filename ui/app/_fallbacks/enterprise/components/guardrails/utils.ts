@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import type { GuardrailProvider, GuardrailRule } from "@/lib/store/apis/guardrailsApi";
 
 export type GuardrailPromptScope = "all" | "prompts" | "custom";
@@ -97,7 +98,7 @@ export function formatRuleConnectionPreview(opts: {
 	const phase =
 		opts.applyTo === "both" ? "user input and model output" : opts.applyTo === "output" ? "model output" : "user input";
 	const providers = opts.providerLabels.length > 0 ? opts.providerLabels.join(", ") : "no providers selected";
-	let when = "every chat/completions request through Raksha";
+	let when = `every chat/completions request through ${PRODUCT_NAME}`;
 	if (opts.promptScope === "prompts") {
 		const names = opts.selectedPromptIds.map((id) => opts.promptNameById.get(id) || id).filter(Boolean);
 		when = names.length

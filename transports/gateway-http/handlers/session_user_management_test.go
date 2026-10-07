@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
 
@@ -54,7 +54,7 @@ func TestUserManagement_CreateUser_Admin_Success(t *testing.T) {
 
 	ctx := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
 		"username":         "alice_engineer",
-		"email":            "alice@rakshatech.io",
+		"email":            "alice@gatewaytech.io",
 		"password":         "ComplexPass2026!",
 		"role":             "user",
 		"budget":           100.5,
@@ -107,7 +107,7 @@ func TestUserManagement_CreateUser_NonAdmin_Forbidden(t *testing.T) {
 	userToken := getUserSessionToken(t, store, handler, "admin", "AdminPass123!") // get admin first to seed a normal user
 	ctxSeed := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
 		"username": "bob_regular",
-		"email":    "bob@rakshatech.io",
+		"email":    "bob@gatewaytech.io",
 		"password": "Password123!",
 		"role":     "user",
 	}, "192.168.1.1")
@@ -150,7 +150,7 @@ func TestUserManagement_CreateUser_WeakPassword_Policy(t *testing.T) {
 	for _, weak := range weakPasswords {
 		ctx := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
 			"username": "user_" + weak[:4],
-			"email":    "test@rakshatech.io",
+			"email":    "test@gatewaytech.io",
 			"password": weak,
 			"role":     "user",
 		}, "192.168.1.1")
@@ -218,7 +218,7 @@ func TestUserManagement_GetUsers_Admin_Success(t *testing.T) {
 	// Seed 2 users
 	ctx1 := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
 		"username": "engineer_one",
-		"email":    "one@rakshatech.io",
+		"email":    "one@gatewaytech.io",
 		"password": "StrongPassword123!",
 		"role":     "user",
 	}, "192.168.1.1")
@@ -227,7 +227,7 @@ func TestUserManagement_GetUsers_Admin_Success(t *testing.T) {
 
 	ctx2 := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
 		"username": "engineer_two",
-		"email":    "two@rakshatech.io",
+		"email":    "two@gatewaytech.io",
 		"password": "StrongPassword123!",
 		"role":     "user",
 	}, "192.168.1.1")
@@ -284,7 +284,7 @@ func TestUserManagement_DeleteUser_Admin(t *testing.T) {
 	// Create user
 	createCtx := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
 		"username": "delete_me_user",
-		"email":    "delete@rakshatech.io",
+		"email":    "delete@gatewaytech.io",
 		"password": "StrongPassword123!",
 		"role":     "user",
 	}, "192.168.1.1")
@@ -331,7 +331,7 @@ func TestUserManagement_ApproveUser_Workflow(t *testing.T) {
 	// Step 1: Self registration
 	regCtx := makeFastHTTPCtx("POST", "/api/session/register", map[string]string{
 		"username": "candidate_dev",
-		"email":    "candidate@rakshatech.io",
+		"email":    "candidate@gatewaytech.io",
 		"password": "StrongPassword123!",
 	}, "192.168.1.20")
 	handler.register(regCtx)
@@ -395,7 +395,7 @@ func TestCreateUserWithoutPasswordRequiresSMTP(t *testing.T) {
 
 	ctx := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
 		"username": "temp_user",
-		"email":    "temp.user@rakshatech.io",
+		"email":    "temp.user@gatewaytech.io",
 		"role":     "user",
 	}, "192.168.1.1")
 	ctx.Request.Header.Set("Authorization", "Bearer "+adminToken)
@@ -415,7 +415,7 @@ func TestLoginAcceptsEmail(t *testing.T) {
 
 	ctx := makeFastHTTPCtx("POST", "/api/session/users", map[string]any{
 		"username": "mail_login_user",
-		"email":    "mail.login@rakshatech.io",
+		"email":    "mail.login@gatewaytech.io",
 		"password": "ComplexPass2026!",
 		"role":     "user",
 	}, "192.168.1.1")
@@ -426,7 +426,7 @@ func TestLoginAcceptsEmail(t *testing.T) {
 	}
 
 	loginCtx := makeFastHTTPCtx("POST", "/api/session/login", map[string]string{
-		"username": "mail.login@rakshatech.io",
+		"username": "mail.login@gatewaytech.io",
 		"password": "ComplexPass2026!",
 	}, "192.168.1.40")
 	handler.login(loginCtx)

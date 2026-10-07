@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/tidwall/sjson"
 )
 
@@ -31,7 +31,7 @@ type OpenAITextCompletionRequest struct {
 	// PromptCacheIsolationKey is the Fireworks completions field for cache isolation.
 	PromptCacheIsolationKey *string `json:"prompt_cache_isolation_key,omitempty"`
 
-	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
+	// Gateway specific field (only parsed when converting from Provider -> Gateway request)
 	Fallbacks   []string               `json:"fallbacks,omitempty"`
 	ExtraParams map[string]interface{} `json:"-"` // Optional: Extra parameters
 }
@@ -59,7 +59,7 @@ type OpenAIEmbeddingRequest struct {
 
 	schemas.EmbeddingParameters
 
-	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
+	// Gateway specific field (only parsed when converting from Provider -> Gateway request)
 	Fallbacks   []string               `json:"fallbacks,omitempty"`
 	ExtraParams map[string]interface{} `json:"-"` // Optional: Extra parameters
 }
@@ -92,7 +92,7 @@ type OpenAIChatRequest struct {
 	// (e.g. preserving cache_control for OpenRouter). Not serialized to wire.
 	Provider schemas.ModelProvider `json:"-"`
 
-	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
+	// Gateway specific field (only parsed when converting from Provider -> Gateway request)
 	Fallbacks   []string               `json:"fallbacks,omitempty"`
 	ExtraParams map[string]interface{} `json:"-"` // Optional: Extra parameters
 }
@@ -532,7 +532,7 @@ func (r *OpenAIResponsesRequestInput) MarshalJSON() ([]byte, error) {
 
 // stripCompactionItemSummary removes the "summary" field from compaction input items.
 // OpenAI's Responses API rejects "summary" on a compaction item ("Unknown parameter:
-// input[N].summary"). Raksha has no first-class compaction item model, so the item's
+// input[N].summary"). Gateway has no first-class compaction item model, so the item's
 // encrypted_content rides the embedded *ResponsesReasoning, whose (no-omitempty) Summary
 // re-injects "summary": null. Reasoning items legitimately carry summary and are left intact.
 func stripCompactionItemSummary(data []byte, items []schemas.ResponsesMessage) []byte {
@@ -750,7 +750,7 @@ type OpenAIResponsesRequest struct {
 	schemas.ResponsesParameters
 	Stream *bool `json:"stream,omitempty"`
 
-	// Raksha specific fields (not serialized to wire)
+	// Gateway specific fields (not serialized to wire)
 	Provider    schemas.ModelProvider  `json:"-"` // originating provider, used for provider-specific filtering
 	Fallbacks   []string               `json:"fallbacks,omitempty"`
 	ExtraParams map[string]interface{} `json:"-"` // Optional: Extra parameters
@@ -864,7 +864,7 @@ type OpenAISpeechRequest struct {
 	schemas.SpeechParameters
 	StreamFormat *string `json:"stream_format,omitempty"`
 
-	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
+	// Gateway specific field (only parsed when converting from Provider -> Gateway request)
 	Fallbacks   []string               `json:"fallbacks,omitempty"`
 	ExtraParams map[string]interface{} `json:"-"` // Optional: Extra parameters
 }
@@ -888,7 +888,7 @@ type OpenAITranscriptionRequest struct {
 	schemas.TranscriptionParameters
 	Stream *bool `json:"stream,omitempty"`
 
-	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
+	// Gateway specific field (only parsed when converting from Provider -> Gateway request)
 	Fallbacks []string `json:"fallbacks,omitempty"`
 }
 
@@ -934,7 +934,7 @@ type OpenAIImageGenerationRequest struct {
 	Stream    *bool    `json:"stream,omitempty"`
 	Fallbacks []string `json:"fallbacks,omitempty"`
 
-	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
+	// Gateway specific field (only parsed when converting from Provider -> Gateway request)
 	ExtraParams map[string]interface{} `json:"-"` // Optional: Extra parameters
 }
 

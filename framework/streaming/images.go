@@ -6,18 +6,18 @@ import (
 	"strings"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	schemas "github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/modelcatalog"
+	gateway "github.com/gateway/gateway/core"
+	schemas "github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/modelcatalog"
 )
 
 // buildCompleteImageFromImageStreamChunks builds a complete image generation response from accumulated chunks
-func (a *Accumulator) buildCompleteImageFromImageStreamChunks(chunks []*ImageStreamChunk) *schemas.RakshaImageGenerationResponse {
+func (a *Accumulator) buildCompleteImageFromImageStreamChunks(chunks []*ImageStreamChunk) *schemas.GatewayImageGenerationResponse {
 
 	// Special case for final chunk, return the complete image response
 	for i := range len(chunks) {
 		if chunks[i].Delta != nil && (chunks[i].FinishReason != nil || chunks[i].Delta.Type == schemas.ImageGenerationEventTypeCompleted || chunks[i].Delta.Type == schemas.ImageEditEventTypeCompleted) {
-			finalResponse := &schemas.RakshaImageGenerationResponse{
+			finalResponse := &schemas.GatewayImageGenerationResponse{
 				ID:      chunks[i].Delta.ID,
 				Created: chunks[i].Delta.CreatedAt,
 				Model:   chunks[i].Delta.ExtraFields.OriginalModelRequested,
@@ -103,7 +103,7 @@ func (a *Accumulator) buildCompleteImageFromImageStreamChunks(chunks []*ImageStr
 		}
 	}
 
-	finalResponse := &schemas.RakshaImageGenerationResponse{
+	finalResponse := &schemas.GatewayImageGenerationResponse{
 		ID:      responseID,
 		Created: time.Now().Unix(),
 		Model:   model,
@@ -114,7 +114,7 @@ func (a *Accumulator) buildCompleteImageFromImageStreamChunks(chunks []*ImageStr
 }
 
 // processAccumulatedImageStreamingChunks processes all accumulated image chunks in order
-func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, rakshaErr *schemas.RakshaError, isFinalChunk bool) (*AccumulatedData, error) {
+func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, gatewayErr *schemas.GatewayError, isFinalChunk bool) (*AccumulatedData, error) {
 	acc := a.getOrCreateStreamAccumulator(requestID)
 	// Lock the accumulator
 	acc.mu.Lock()
@@ -151,7 +151,7 @@ func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, r
 
 	// Update database with complete message
 	data.Status = "success"
-	if rakshaErr != nil {
+	if gatewayErr != nil {
 		data.Status = "error"
 	}
 	if len(acc.ImageStreamChunks) > 0 {
@@ -167,7 +167,7 @@ func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, r
 	}
 	data.EndTimestamp = acc.FinalTimestamp
 	data.ImageGenerationOutput = completeImage
-	data.ErrorDetails = rakshaErr
+	data.ErrorDetails = gatewayErr
 
 	// Update token usage from final chunk if available
 	if len(acc.ImageStreamChunks) > 0 {
@@ -177,7 +177,7 @@ func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, r
 			if lastChunk.Delta.Usage.InputTokensDetails != nil {
 				promptTokens = lastChunk.Delta.Usage.InputTokensDetails.TextTokens
 			}
-			data.TokenUsage = &schemas.RakshaLLMUsage{
+			data.TokenUsage = &schemas.GatewayLLMUsage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: 0, // Image generation doesn't have completion tokens
 				TotalTokens:      lastChunk.Delta.Usage.TotalTokens,
@@ -209,21 +209,21 @@ func (a *Accumulator) processAccumulatedImageStreamingChunks(requestID string, r
 }
 
 // processImageStreamingResponse processes an image streaming response
-func (a *Accumulator) processImageStreamingResponse(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*ProcessedStreamResponse, error) {
+func (a *Accumulator) processImageStreamingResponse(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*ProcessedStreamResponse, error) {
 	// Extract request ID from context
 	requestID, ok := getAccumulatorID(ctx)
 	if !ok || requestID == "" {
 		// Log error but don't fail the request
 		return nil, fmt.Errorf("accumulator-id not found in context or is empty")
 	}
-	_, provider, requestedModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
+	_, provider, requestedModel, resolvedModel := gateway.GetResponseFields(result, gatewayErr)
 
-	isFinalChunk := raksha.IsFinalChunk(ctx)
+	isFinalChunk := gateway.IsFinalChunk(ctx)
 	chunk := a.getImageStreamChunk()
 	chunk.Timestamp = time.Now()
-	chunk.ErrorDetails = rakshaErr
-	if rakshaErr != nil {
-		chunk.FinishReason = raksha.Ptr("error")
+	chunk.ErrorDetails = gatewayErr
+	if gatewayErr != nil {
+		chunk.FinishReason = gateway.Ptr("error")
 	} else if result != nil && result.ImageGenerationStreamResponse != nil {
 		// Create a deep copy of the delta to avoid pointing to stack memory
 		var partialImageIndex *int
@@ -231,7 +231,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.RakshaContext, 
 			idx := *result.ImageGenerationStreamResponse.PartialImageIndex
 			partialImageIndex = &idx
 		}
-		newDelta := &schemas.RakshaImageGenerationStreamResponse{
+		newDelta := &schemas.GatewayImageGenerationStreamResponse{
 			ID:                result.ImageGenerationStreamResponse.ID,
 			Type:              result.ImageGenerationStreamResponse.Type,
 			SequenceNumber:    result.ImageGenerationStreamResponse.SequenceNumber,
@@ -265,7 +265,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.RakshaContext, 
 
 		// Extract raw response if available
 		if result.ImageGenerationStreamResponse.ExtraFields.RawResponse != nil {
-			chunk.RawResponse = raksha.Ptr(fmt.Sprintf("%v", result.ImageGenerationStreamResponse.ExtraFields.RawResponse))
+			chunk.RawResponse = gateway.Ptr(fmt.Sprintf("%v", result.ImageGenerationStreamResponse.ExtraFields.RawResponse))
 		}
 
 		// Extract usage if available
@@ -276,10 +276,10 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.RakshaContext, 
 		if isFinalChunk {
 			if a.pricingManager != nil {
 				cost := a.pricingManager.CalculateCost(result, modelcatalog.PricingLookupScopesFromContext(ctx, string(result.GetExtraFields().Provider)))
-				chunk.Cost = raksha.Ptr(cost)
+				chunk.Cost = gateway.Ptr(cost)
 			}
 			chunk.SemanticCacheDebug = result.GetExtraFields().CacheDebug
-			chunk.FinishReason = raksha.Ptr("completed")
+			chunk.FinishReason = gateway.Ptr("completed")
 		}
 	}
 
@@ -301,7 +301,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.RakshaContext, 
 		}
 		accumulator.mu.Unlock()
 		if shouldProcess {
-			data, processErr := a.processAccumulatedImageStreamingChunks(requestID, rakshaErr, isFinalChunk)
+			data, processErr := a.processAccumulatedImageStreamingChunks(requestID, gatewayErr, isFinalChunk)
 			if processErr != nil {
 				a.logger.Error(fmt.Sprintf("failed to process accumulated chunks for request %s: %v", requestID, processErr))
 				return nil, processErr
@@ -316,7 +316,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.RakshaContext, 
 				Provider:       provider,
 				RequestedModel: requestedModel,
 				ResolvedModel:  resolvedModel,
-				RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
+				RoutingInfo:    gateway.GetResponseRoutingInfo(result, gatewayErr),
 				Data:           data,
 				RawRequest:     &rawRequest,
 			}, nil
@@ -333,7 +333,7 @@ func (a *Accumulator) processImageStreamingResponse(ctx *schemas.RakshaContext, 
 		Provider:       provider,
 		RequestedModel: requestedModel,
 		ResolvedModel:  resolvedModel,
-		RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
+		RoutingInfo:    gateway.GetResponseRoutingInfo(result, gatewayErr),
 		Data:           nil,
 	}, nil
 }

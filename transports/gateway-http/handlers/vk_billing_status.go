@@ -3,8 +3,8 @@ package handlers
 import (
 	"context"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
 	"github.com/valyala/fasthttp"
 )
 
@@ -60,7 +60,7 @@ func (h *GovernanceHandler) getVirtualKeyBillingBlocks(ctx *fasthttp.RequestCtx)
 
 // sessionUserID resolves the dashboard session's user row ID, or "" without one.
 func (h *GovernanceHandler) sessionUserID(ctx *fasthttp.RequestCtx) string {
-	token, _ := ctx.UserValue(schemas.RakshaContextKeySessionToken).(string)
+	token, _ := ctx.UserValue(schemas.GatewayContextKeySessionToken).(string)
 	if token == "" {
 		token = sessionToken(ctx)
 	}

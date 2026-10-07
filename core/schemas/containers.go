@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the Raksha system.
+// Package schemas defines the core schemas and types used by the Gateway system.
 package schemas
 
 // ContainerStatus represents the status of a container.
@@ -27,8 +27,8 @@ type ContainerObject struct {
 	Metadata     map[string]string      `json:"metadata,omitempty"`
 }
 
-// RakshaContainerCreateRequest represents a request to create a container.
-type RakshaContainerCreateRequest struct {
+// GatewayContainerCreateRequest represents a request to create a container.
+type GatewayContainerCreateRequest struct {
 	Provider ModelProvider `json:"provider"`
 
 	// Required fields
@@ -44,8 +44,8 @@ type RakshaContainerCreateRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaContainerCreateResponse represents the response from creating a container.
-type RakshaContainerCreateResponse struct {
+// GatewayContainerCreateResponse represents the response from creating a container.
+type GatewayContainerCreateResponse struct {
 	ID           string                 `json:"id"`
 	Object       string                 `json:"object,omitempty"` // "container"
 	Name         string                 `json:"name"`
@@ -56,11 +56,11 @@ type RakshaContainerCreateResponse struct {
 	MemoryLimit  string                 `json:"memory_limit,omitempty"`
 	Metadata     map[string]string      `json:"metadata,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaContainerListRequest represents a request to list containers.
-type RakshaContainerListRequest struct {
+// GatewayContainerListRequest represents a request to list containers.
+type GatewayContainerListRequest struct {
 	Provider ModelProvider `json:"provider"`
 
 	// Pagination
@@ -72,8 +72,8 @@ type RakshaContainerListRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaContainerListResponse represents the response from listing containers.
-type RakshaContainerListResponse struct {
+// GatewayContainerListResponse represents the response from listing containers.
+type GatewayContainerListResponse struct {
 	Object  string            `json:"object,omitempty"` // "list"
 	Data    []ContainerObject `json:"data"`
 	FirstID *string           `json:"first_id,omitempty"`
@@ -81,11 +81,11 @@ type RakshaContainerListResponse struct {
 	HasMore bool              `json:"has_more,omitempty"`
 	After   *string           `json:"after,omitempty"` // Encoded cursor for next page (includes key index for multi-key pagination)
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaContainerRetrieveRequest represents a request to retrieve a container.
-type RakshaContainerRetrieveRequest struct {
+// GatewayContainerRetrieveRequest represents a request to retrieve a container.
+type GatewayContainerRetrieveRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container to retrieve
 
@@ -93,8 +93,8 @@ type RakshaContainerRetrieveRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaContainerRetrieveResponse represents the response from retrieving a container.
-type RakshaContainerRetrieveResponse struct {
+// GatewayContainerRetrieveResponse represents the response from retrieving a container.
+type GatewayContainerRetrieveResponse struct {
 	ID           string                 `json:"id"`
 	Object       string                 `json:"object,omitempty"` // "container"
 	Name         string                 `json:"name"`
@@ -105,11 +105,11 @@ type RakshaContainerRetrieveResponse struct {
 	MemoryLimit  string                 `json:"memory_limit,omitempty"`
 	Metadata     map[string]string      `json:"metadata,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaContainerDeleteRequest represents a request to delete a container.
-type RakshaContainerDeleteRequest struct {
+// GatewayContainerDeleteRequest represents a request to delete a container.
+type GatewayContainerDeleteRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container to delete
 
@@ -117,13 +117,13 @@ type RakshaContainerDeleteRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaContainerDeleteResponse represents the response from deleting a container.
-type RakshaContainerDeleteResponse struct {
+// GatewayContainerDeleteResponse represents the response from deleting a container.
+type GatewayContainerDeleteResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object,omitempty"` // "container.deleted"
 	Deleted bool   `json:"deleted"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
 // =============================================================================
@@ -141,8 +141,8 @@ type ContainerFileObject struct {
 	Source      string `json:"source"` // "user" typically
 }
 
-// RakshaContainerFileCreateRequest represents a request to create a file in a container.
-type RakshaContainerFileCreateRequest struct {
+// GatewayContainerFileCreateRequest represents a request to create a file in a container.
+type GatewayContainerFileCreateRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 
@@ -155,8 +155,8 @@ type RakshaContainerFileCreateRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaContainerFileCreateResponse represents the response from creating a container file.
-type RakshaContainerFileCreateResponse struct {
+// GatewayContainerFileCreateResponse represents the response from creating a container file.
+type GatewayContainerFileCreateResponse struct {
 	ID          string `json:"id"`
 	Object      string `json:"object,omitempty"` // "container.file"
 	Bytes       int64  `json:"bytes"`
@@ -165,11 +165,11 @@ type RakshaContainerFileCreateResponse struct {
 	Path        string `json:"path"`
 	Source      string `json:"source"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaContainerFileListRequest represents a request to list files in a container.
-type RakshaContainerFileListRequest struct {
+// GatewayContainerFileListRequest represents a request to list files in a container.
+type GatewayContainerFileListRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 
@@ -182,8 +182,8 @@ type RakshaContainerFileListRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaContainerFileListResponse represents the response from listing container files.
-type RakshaContainerFileListResponse struct {
+// GatewayContainerFileListResponse represents the response from listing container files.
+type GatewayContainerFileListResponse struct {
 	Object  string                `json:"object,omitempty"` // "list"
 	Data    []ContainerFileObject `json:"data"`
 	FirstID *string               `json:"first_id,omitempty"`
@@ -191,11 +191,11 @@ type RakshaContainerFileListResponse struct {
 	HasMore bool                  `json:"has_more,omitempty"`
 	After   *string               `json:"after,omitempty"` // Encoded cursor for next page (includes key index for multi-key pagination)
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaContainerFileRetrieveRequest represents a request to retrieve a container file.
-type RakshaContainerFileRetrieveRequest struct {
+// GatewayContainerFileRetrieveRequest represents a request to retrieve a container file.
+type GatewayContainerFileRetrieveRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 	FileID      string        `json:"file_id"`      // ID of the file to retrieve
@@ -204,8 +204,8 @@ type RakshaContainerFileRetrieveRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaContainerFileRetrieveResponse represents the response from retrieving a container file.
-type RakshaContainerFileRetrieveResponse struct {
+// GatewayContainerFileRetrieveResponse represents the response from retrieving a container file.
+type GatewayContainerFileRetrieveResponse struct {
 	ID          string `json:"id"`
 	Object      string `json:"object,omitempty"` // "container.file"
 	Bytes       int64  `json:"bytes"`
@@ -214,11 +214,11 @@ type RakshaContainerFileRetrieveResponse struct {
 	Path        string `json:"path"`
 	Source      string `json:"source"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaContainerFileContentRequest represents a request to retrieve the content of a container file.
-type RakshaContainerFileContentRequest struct {
+// GatewayContainerFileContentRequest represents a request to retrieve the content of a container file.
+type GatewayContainerFileContentRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 	FileID      string        `json:"file_id"`      // ID of the file
@@ -227,16 +227,16 @@ type RakshaContainerFileContentRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaContainerFileContentResponse represents the response from retrieving container file content.
-type RakshaContainerFileContentResponse struct {
+// GatewayContainerFileContentResponse represents the response from retrieving container file content.
+type GatewayContainerFileContentResponse struct {
 	Content     []byte `json:"content"`      // Raw file content
 	ContentType string `json:"content_type"` // MIME type of the content
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaContainerFileDeleteRequest represents a request to delete a container file.
-type RakshaContainerFileDeleteRequest struct {
+// GatewayContainerFileDeleteRequest represents a request to delete a container file.
+type GatewayContainerFileDeleteRequest struct {
 	Provider    ModelProvider `json:"provider"`
 	ContainerID string        `json:"container_id"` // ID of the container
 	FileID      string        `json:"file_id"`      // ID of the file to delete
@@ -245,11 +245,11 @@ type RakshaContainerFileDeleteRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaContainerFileDeleteResponse represents the response from deleting a container file.
-type RakshaContainerFileDeleteResponse struct {
+// GatewayContainerFileDeleteResponse represents the response from deleting a container file.
+type GatewayContainerFileDeleteResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object,omitempty"` // "container.file.deleted"
 	Deleted bool   `json:"deleted"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }

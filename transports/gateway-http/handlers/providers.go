@@ -1,4 +1,4 @@
-// Package handlers provides HTTP request handlers for the Raksha HTTP transport.
+// Package handlers provides HTTP request handlers for the Gateway HTTP transport.
 // This file contains all provider management functionality including CRUD operations.
 package handlers
 
@@ -14,13 +14,13 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/modelcatalog"
-	governanceplugin "github.com/raksha/raksha/plugins/governance"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/modelcatalog"
+	governanceplugin "github.com/gateway/gateway/plugins/governance"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -48,12 +48,12 @@ type ModelPricingAttributesEntry struct {
 type ProviderHandler struct {
 	dbStore       configstore.ConfigStore
 	inMemoryStore *lib.Config
-	client        *raksha.Raksha
+	client        *gateway.Gateway
 	modelsManager ModelsManager
 }
 
 // NewProviderHandler creates a new provider handler instance
-func NewProviderHandler(modelsManager ModelsManager, inMemoryStore *lib.Config, client *raksha.Raksha) *ProviderHandler {
+func NewProviderHandler(modelsManager ModelsManager, inMemoryStore *lib.Config, client *gateway.Gateway) *ProviderHandler {
 	return &ProviderHandler{
 		dbStore:       inMemoryStore.ConfigStore,
 		inMemoryStore: inMemoryStore,
@@ -76,8 +76,8 @@ type ProviderResponse struct {
 	NetworkConfig            schemas.NetworkConfig            `json:"network_config"`                   // Network-related settings
 	ConcurrencyAndBufferSize schemas.ConcurrencyAndBufferSize `json:"concurrency_and_buffer_size"`      // Concurrency settings
 	ProxyConfig              *schemas.ProxyConfig             `json:"proxy_config"`                     // Proxy configuration
-	SendBackRawRequest       bool                             `json:"send_back_raw_request"`            // Include raw request in RakshaResponse
-	SendBackRawResponse      bool                             `json:"send_back_raw_response"`           // Include raw response in RakshaResponse
+	SendBackRawRequest       bool                             `json:"send_back_raw_request"`            // Include raw request in GatewayResponse
+	SendBackRawResponse      bool                             `json:"send_back_raw_response"`           // Include raw response in GatewayResponse
 	StoreRawRequestResponse  bool                             `json:"store_raw_request_response"`       // Capture raw request/response for internal logging only
 	CustomProviderConfig     *schemas.CustomProviderConfig    `json:"custom_provider_config,omitempty"` // Custom provider configuration
 	OpenAIConfig             *schemas.OpenAIConfig            `json:"openai_config,omitempty"`          // OpenAI-specific configuration
@@ -123,7 +123,7 @@ type providerUpdatePayload struct {
 }
 
 // RegisterRoutes registers all provider management routes
-func (h *ProviderHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *ProviderHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	// Provider CRUD operations
 	r.GET("/api/providers", lib.ChainMiddlewares(h.listProviders, middlewares...))
 	r.GET("/api/providers/{provider}", lib.ChainMiddlewares(h.getProvider, middlewares...))
@@ -251,7 +251,7 @@ func (h *ProviderHandler) addProvider(ctx *fasthttp.RequestCtx) {
 	}
 	if payload.CustomProviderConfig != nil {
 		// custom provider key should not be same as standard provider names
-		if raksha.IsStandardProvider(payload.Provider) {
+		if gateway.IsStandardProvider(payload.Provider) {
 			SendError(ctx, fasthttp.StatusBadRequest, "Custom provider cannot be same as a standard provider")
 			return
 		}
@@ -260,7 +260,7 @@ func (h *ProviderHandler) addProvider(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		// check if base provider is a supported base provider
-		if !raksha.IsSupportedBaseProvider(payload.CustomProviderConfig.BaseProviderType) {
+		if !gateway.IsSupportedBaseProvider(payload.CustomProviderConfig.BaseProviderType) {
 			SendError(ctx, fasthttp.StatusBadRequest, "BaseProviderType must be a standard provider")
 			return
 		}
@@ -286,7 +286,7 @@ func (h *ProviderHandler) addProvider(ctx *fasthttp.RequestCtx) {
 			return
 		}
 		if payload.NetworkConfig.BaseURL != "" {
-			if err := raksha.ValidateExternalURL(payload.NetworkConfig.BaseURL, payload.NetworkConfig.AllowPrivateNetwork); err != nil {
+			if err := gateway.ValidateExternalURL(payload.NetworkConfig.BaseURL, payload.NetworkConfig.AllowPrivateNetwork); err != nil {
 				SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("Invalid base URL: %v", err))
 				return
 			}
@@ -475,7 +475,7 @@ func (h *ProviderHandler) updateProvider(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if nc.BaseURL != "" {
-		if err := raksha.ValidateExternalURL(nc.BaseURL, nc.AllowPrivateNetwork); err != nil {
+		if err := gateway.ValidateExternalURL(nc.BaseURL, nc.AllowPrivateNetwork); err != nil {
 			SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("Invalid base URL: %v", err))
 			return
 		}

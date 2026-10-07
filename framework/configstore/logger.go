@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	gormLibLogger "gorm.io/gorm/logger"
 )
 

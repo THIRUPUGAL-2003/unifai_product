@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { ConfigSyncAlert } from "@/components/ui/configSyncAlert";
 import { Form } from "@/components/ui/form";
@@ -33,7 +34,7 @@ export default function ProviderKeyForm({ provider, keyId, onCancel, onSave }: P
 	const hasUpdateProviderAccess = useRbac(RbacResource.ModelProvider, RbacOperation.Update);
 	const [createProviderKey, { isLoading: isCreatingProviderKey }] = useCreateProviderKeyMutation();
 	const [updateProviderKey, { isLoading: isUpdatingProviderKey }] = useUpdateProviderKeyMutation();
-	const { data: keys = [] } = useGetProviderKeysQuery(provider.name);
+	const { data: keys = [], isError: keysFailed, error: keysError } = useGetProviderKeysQuery(provider.name);
 	const isEditing = keyId !== null;
 	const currentKey = keyId ? keys.find((k) => k.id === keyId) : undefined;
 
@@ -131,6 +132,14 @@ export default function ProviderKeyForm({ provider, keyId, onCancel, onSave }: P
 		<Form {...form}>
 			<form onSubmit={form.handleSubmit(onSubmit)} className="flex grow flex-col gap-6 pt-4">
 				<div className="grow px-8">
+					{keysFailed ? (
+						<div className="mb-4">
+							<QueryErrorBanner
+								message={getErrorMessage(keysError) || "Failed to load provider keys."}
+								testId="provider-key-form-query-error"
+							/>
+						</div>
+					) : null}
 					<ApiKeyFormFragment
 						control={form.control}
 						providerName={provider.name}

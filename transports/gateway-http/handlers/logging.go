@@ -1,4 +1,4 @@
-// Package handlers provides HTTP request handlers for the Raksha HTTP transport.
+// Package handlers provides HTTP request handlers for the Gateway HTTP transport.
 // This file contains logging-related handlers for log search, stats, and management.
 package handlers
 
@@ -14,12 +14,12 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/queryscope"
-	"github.com/raksha/raksha/plugins/logging"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/queryscope"
+	"github.com/gateway/gateway/plugins/logging"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 	"golang.org/x/sync/errgroup"
 )
@@ -220,7 +220,7 @@ func (h *LoggingHandler) shouldHideDeletedVirtualKeysInFilters() bool {
 }
 
 // RegisterRoutes registers all logging-related routes
-func (h *LoggingHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *LoggingHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	// LLM Log retrieval with filtering, search, and pagination
 	// Non-admin sessions are limited to their own virtual keys (see logs_vk_scope.go).
 	q := h.scopeVKQuery

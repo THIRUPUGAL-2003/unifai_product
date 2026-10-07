@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunImageGenerationTest executes the end-to-end image generation test (non-streaming)
-func RunImageGenerationTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageGenerationTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ImageGeneration {
 		t.Logf("Image generation not supported for provider %s", testConfig.Provider)
 		return
@@ -58,29 +58,29 @@ func RunImageGenerationTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 		// Test basic image generation
-		imageGenerationOperation := func() (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
-			request := &schemas.RakshaImageGenerationRequest{
+		imageGenerationOperation := func() (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
+			request := &schemas.GatewayImageGenerationRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ImageGenerationModel,
 				Input: &schemas.ImageGenerationInput{
 					Prompt: "A serene Japanese garden with cherry blossoms in spring",
 				},
 				Params: &schemas.ImageGenerationParameters{
-					Size: raksha.Ptr("1024x1024"),
-					N:    raksha.Ptr(1),
+					Size: gateway.Ptr("1024x1024"),
+					N:    gateway.Ptr(1),
 				},
 				Fallbacks: testConfig.ImageGenerationFallbacks,
 			}
 
-			response, err := client.ImageGenerationRequest(schemas.NewRakshaContext(ctx, schemas.NoDeadline), request)
+			response, err := client.ImageGenerationRequest(schemas.NewGatewayContext(ctx, schemas.NoDeadline), request)
 			if err != nil {
 				return nil, err
 			}
 			if response != nil {
 				return response, nil
 			}
-			return nil, &schemas.RakshaError{
-				IsRakshaError: true,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: true,
 				Error: &schemas.ErrorField{
 					Message: "No image generation response returned",
 				},
@@ -155,7 +155,7 @@ func RunImageGenerationTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 }
 
 // RunImageGenerationStreamTest executes the end-to-end streaming image generation test
-func RunImageGenerationStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageGenerationStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ImageGenerationStream {
 		t.Logf("Image generation streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -183,15 +183,15 @@ func RunImageGenerationStreamTest(t *testing.T, client *raksha.Raksha, ctx conte
 			},
 		}
 
-		request := &schemas.RakshaImageGenerationRequest{
+		request := &schemas.GatewayImageGenerationRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ImageGenerationModel,
 			Input: &schemas.ImageGenerationInput{
 				Prompt: "A futuristic cityscape at sunset with flying cars",
 			},
 			Params: &schemas.ImageGenerationParameters{
-				Size:    raksha.Ptr("1024x1024"),
-				Quality: raksha.Ptr("low"),
+				Size:    gateway.Ptr("1024x1024"),
+				Quality: gateway.Ptr("low"),
 			},
 			Fallbacks: testConfig.ImageGenerationFallbacks,
 		}
@@ -202,10 +202,10 @@ func RunImageGenerationStreamTest(t *testing.T, client *raksha.Raksha, ctx conte
 			t,
 			retryConfig,
 			retryContext,
-			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				return client.ImageGenerationStreamRequest(schemas.NewRakshaContext(streamCtx, schemas.NoDeadline), request)
+			func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				return client.ImageGenerationStreamRequest(schemas.NewGatewayContext(streamCtx, schemas.NoDeadline), request)
 			},
-			func(responseChannel chan *schemas.RakshaStreamChunk) ImageGenerationStreamValidationResult {
+			func(responseChannel chan *schemas.GatewayStreamChunk) ImageGenerationStreamValidationResult {
 				// Validate stream content
 				var receivedData bool
 				var streamErrors []string
@@ -224,14 +224,14 @@ func RunImageGenerationStreamTest(t *testing.T, client *raksha.Raksha, ctx conte
 							continue
 						}
 
-						if response.RakshaError != nil {
-							streamErrors = append(streamErrors, fmt.Sprintf("Error in stream: %s", GetErrorMessage(response.RakshaError)))
+						if response.GatewayError != nil {
+							streamErrors = append(streamErrors, fmt.Sprintf("Error in stream: %s", GetErrorMessage(response.GatewayError)))
 							continue
 						}
 
-						if response.RakshaImageGenerationStreamResponse != nil {
+						if response.GatewayImageGenerationStreamResponse != nil {
 							receivedData = true
-							imgResp := response.RakshaImageGenerationStreamResponse
+							imgResp := response.GatewayImageGenerationStreamResponse
 
 							if imgResp.Type == schemas.ImageGenerationEventTypeCompleted {
 								hasCompleted = true

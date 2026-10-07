@@ -1,13 +1,13 @@
 services:
-  # Production path for employees = Guard EXE on each laptop (local MitM via RAKSHA_PROXY_ADDR) → this Raksha backend.
+  # Production path for employees = Guard EXE on each laptop (local MitM via GATEWAY_PROXY_ADDR) → this backend.
   # Optional shared/network proxy (lab/office PAC) — enable with:
-  #   docker compose --profile network-proxy up -d raksha_browser_ai_proxy
+  #   docker compose --profile network-proxy up -d gateway_browser_ai_proxy
   # Secrets and environment-specific hosts MUST come from .env — no hardcoded fallbacks.
-  raksha_tech:
+  gateway_tech:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile.local
-    image: raksha-local:latest
+    image: gateway-local:latest
     container_name: ${CONTAINER_NAME:?set CONTAINER_NAME in .env}
     user: "0:0"
     env_file:
@@ -30,16 +30,17 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
       - BROWSER_AI_OLLAMA_URL=${OLLAMA_URL:?set OLLAMA_URL in .env}
       - OLLAMA_URL=${OLLAMA_URL:?set OLLAMA_URL in .env}
-      - RAKSHA_GUARD_SECRET=${RAKSHA_GUARD_SECRET:?set RAKSHA_GUARD_SECRET in .env}
-      - RAKSHA_GUARD_REQUIRE_SECRET=${RAKSHA_GUARD_REQUIRE_SECRET:-1}
-      - RAKSHA_PAC_ALLOW_QUERY_PROXY=${RAKSHA_PAC_ALLOW_QUERY_PROXY:-0}
-      - RAKSHA_PRODUCT_NAME=${RAKSHA_PRODUCT_NAME:-Raksha}
-      - RAKSHA_PRODUCT_SUBTITLE=${RAKSHA_PRODUCT_SUBTITLE:-Real-time AI Knowledge Screening & Hazard Audit}
-      - RAKSHA_COMPANY_NAME=${RAKSHA_COMPANY_NAME:-YesPanchi Group of Companies}
-      - RAKSHA_COMPANY_SHORT_NAME=${RAKSHA_COMPANY_SHORT_NAME:-YesPanchi}
-      - RAKSHA_COMPANY_LOGO=${RAKSHA_COMPANY_LOGO:-/yes-panchi-logo.png}
-      - RAKSHA_FOOTER_COPYRIGHT=${RAKSHA_FOOTER_COPYRIGHT:-}
-      - RAKSHA_FOOTER_SUBTITLE=${RAKSHA_FOOTER_SUBTITLE:-Raksha - Real-time AI Knowledge Screening & Hazard Audit}
+      - GATEWAY_BRAND_NAME=${GATEWAY_BRAND_NAME:-Gateway}
+      - GATEWAY_GUARD_SECRET=${GATEWAY_GUARD_SECRET:?set GATEWAY_GUARD_SECRET in .env}
+      - GATEWAY_GUARD_REQUIRE_SECRET=${GATEWAY_GUARD_REQUIRE_SECRET:-1}
+      - GATEWAY_PAC_ALLOW_QUERY_PROXY=${GATEWAY_PAC_ALLOW_QUERY_PROXY:-0}
+      - GATEWAY_PRODUCT_NAME=${GATEWAY_PRODUCT_NAME:-Gateway}
+      - GATEWAY_PRODUCT_SUBTITLE=${GATEWAY_PRODUCT_SUBTITLE:-Real-time AI Knowledge Screening & Hazard Audit}
+      - GATEWAY_COMPANY_NAME=${GATEWAY_COMPANY_NAME:-YesPanchi Group of Companies}
+      - GATEWAY_COMPANY_SHORT_NAME=${GATEWAY_COMPANY_SHORT_NAME:-YesPanchi}
+      - GATEWAY_COMPANY_LOGO=${GATEWAY_COMPANY_LOGO:-/yes-panchi-logo.png}
+      - GATEWAY_FOOTER_COPYRIGHT=${GATEWAY_FOOTER_COPYRIGHT:-}
+      - GATEWAY_FOOTER_SUBTITLE=${GATEWAY_FOOTER_SUBTITLE:-Gateway - Real-time AI Knowledge Screening & Hazard Audit}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -63,29 +64,29 @@ services:
 
   # LAB / optional network Guard proxy — OFF by default (laptop Guard EXE is enough).
   # Enable only when you need office PAC/GPO → shared proxy:
-  #   docker compose --profile network-proxy up -d raksha_browser_ai_proxy
+  #   docker compose --profile network-proxy up -d gateway_browser_ai_proxy
   # Point PAC to: https://<backend>/api/browser-ai/pac?proxy=<this-host>:${PROXY_PORT}
   # Container name: NETWORK_PROXY_CONTAINER_NAME in .env (default raksha_browser_ai_proxy).
-  raksha_browser_ai_proxy:
+  gateway_browser_ai_proxy:
     profiles:
       - network-proxy
     image: mitmproxy/mitmproxy:latest
     container_name: ${NETWORK_PROXY_CONTAINER_NAME:-raksha_browser_ai_proxy}
     command: mitmdump -s /app/proxy/browser_ai_proxy.py -p ${PROXY_PORT:?set PROXY_PORT in .env} --set listen_host=0.0.0.0 --set block_global=false --set ssl_insecure=true --set ignore_hosts='^(localhost|127\.0\.0\.1|${CONTAINER_NAME:?set CONTAINER_NAME in .env})'
     environment:
-      - RAKSHA_BACKEND_URL=http://${CONTAINER_NAME:?set CONTAINER_NAME in .env}:${APP_PORT:?set APP_PORT in .env}
-      - RAKSHA_GUARD_SECRET=${RAKSHA_GUARD_SECRET:?set RAKSHA_GUARD_SECRET in .env}
-      - RAKSHA_FAIL_OPEN=0
-      - RAKSHA_SERVER_MODE=1
-      - RAKSHA_AGENT_TYPE=network
-      - RAKSHA_AGENT_ID=${RAKSHA_NETWORK_AGENT_ID:-network-proxy-1}
-      - RAKSHA_AGENT_HOSTNAME=${RAKSHA_NETWORK_AGENT_HOSTNAME:-corp-network-proxy}
+      - GATEWAY_BACKEND_URL=http://${CONTAINER_NAME:?set CONTAINER_NAME in .env}:${APP_PORT:?set APP_PORT in .env}
+      - GATEWAY_GUARD_SECRET=${GATEWAY_GUARD_SECRET:?set GATEWAY_GUARD_SECRET in .env}
+      - GATEWAY_FAIL_OPEN=0
+      - GATEWAY_SERVER_MODE=1
+      - GATEWAY_AGENT_TYPE=network
+      - GATEWAY_AGENT_ID=${GATEWAY_NETWORK_AGENT_ID:-network-proxy-1}
+      - GATEWAY_AGENT_HOSTNAME=${GATEWAY_NETWORK_AGENT_HOSTNAME:-corp-network-proxy}
     ports:
       - "${PROXY_PORT:?set PROXY_PORT in .env}:${PROXY_PORT:?set PROXY_PORT in .env}"
     volumes:
       - ./apps/browser-guard/proxy:/app/proxy
     depends_on:
-      - raksha_tech
+      - gateway_tech
     restart: unless-stopped
 
 networks:

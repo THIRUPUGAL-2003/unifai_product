@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
-	"github.com/raksha/raksha/framework/mailer"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/gateway/gateway/framework/mailer"
 )
 
 var sixDigits = regexp.MustCompile(`\b\d{6}\b`)

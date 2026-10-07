@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"strings"
 
-	openaiProvider "github.com/raksha/raksha/core/providers/openai"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	openaiProvider "github.com/gateway/gateway/core/providers/openai"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -38,7 +38,7 @@ func (provider *AzureProvider) RealtimeWebSocketURL(key schemas.Key, model strin
 		endpoint, url.QueryEscape(model))
 }
 
-func (provider *AzureProvider) RealtimeHeaders(ctx *schemas.RakshaContext, key schemas.Key) (map[string]string, *schemas.RakshaError) {
+func (provider *AzureProvider) RealtimeHeaders(ctx *schemas.GatewayContext, key schemas.Key) (map[string]string, *schemas.GatewayError) {
 	value := key.Value.GetValue()
 
 	// Ephemeral tokens from /client_secrets use Bearer auth.
@@ -67,12 +67,12 @@ func (provider *AzureProvider) SupportsRealtimeWebRTC() bool {
 }
 
 func (provider *AzureProvider) ExchangeRealtimeWebRTCSDP(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
 	model string,
 	sdp string,
 	session json.RawMessage,
-) (string, *schemas.RakshaError) {
+) (string, *schemas.GatewayError) {
 	endpoint := strings.TrimRight(key.AzureKeyConfig.Endpoint.GetValue(), "/")
 
 	upstreamURL := fmt.Sprintf("%s/openai/v1/realtime?model=%s",
@@ -121,10 +121,10 @@ func (provider *AzureProvider) ExchangeRealtimeWebRTCSDP(
 	}
 	req.SetBody(bodyBuf.Bytes())
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return "", rakshaErr
+	if gatewayErr != nil {
+		return "", gatewayErr
 	}
 
 	answerBody := resp.Body()
@@ -139,19 +139,19 @@ func (provider *AzureProvider) ExchangeRealtimeWebRTCSDP(
 // Event conversion — delegates to OpenAI (same wire protocol)
 // ---------------------------------------------------------------------------
 
-func (provider *AzureProvider) ToRakshaRealtimeEvent(providerEvent json.RawMessage) (*schemas.RakshaRealtimeEvent, error) {
-	return openAIEventHelper.ToRakshaRealtimeEvent(providerEvent)
+func (provider *AzureProvider) ToGatewayRealtimeEvent(providerEvent json.RawMessage) (*schemas.GatewayRealtimeEvent, error) {
+	return openAIEventHelper.ToGatewayRealtimeEvent(providerEvent)
 }
 
-func (provider *AzureProvider) ToProviderRealtimeEvent(rakshaEvent *schemas.RakshaRealtimeEvent) (json.RawMessage, error) {
-	return openAIEventHelper.ToProviderRealtimeEvent(rakshaEvent)
+func (provider *AzureProvider) ToProviderRealtimeEvent(gatewayEvent *schemas.GatewayRealtimeEvent) (json.RawMessage, error) {
+	return openAIEventHelper.ToProviderRealtimeEvent(gatewayEvent)
 }
 
 // ---------------------------------------------------------------------------
 // Turn lifecycle — delegates to OpenAI
 // ---------------------------------------------------------------------------
 
-func (provider *AzureProvider) ShouldStartRealtimeTurn(event *schemas.RakshaRealtimeEvent) bool {
+func (provider *AzureProvider) ShouldStartRealtimeTurn(event *schemas.GatewayRealtimeEvent) bool {
 	return openAIEventHelper.ShouldStartRealtimeTurn(event)
 }
 
@@ -159,7 +159,7 @@ func (provider *AzureProvider) RealtimeTurnFinalEvent() schemas.RealtimeEventTyp
 	return openAIEventHelper.RealtimeTurnFinalEvent()
 }
 
-func (provider *AzureProvider) ShouldForwardRealtimeEvent(event *schemas.RakshaRealtimeEvent) bool {
+func (provider *AzureProvider) ShouldForwardRealtimeEvent(event *schemas.GatewayRealtimeEvent) bool {
 	return true
 }
 
@@ -179,7 +179,7 @@ func (provider *AzureProvider) RealtimeWebSocketSubprotocol() string {
 // RealtimeUsageExtractor — delegates to OpenAI
 // ---------------------------------------------------------------------------
 
-func (provider *AzureProvider) ExtractRealtimeTurnUsage(terminalEventRaw []byte) *schemas.RakshaLLMUsage {
+func (provider *AzureProvider) ExtractRealtimeTurnUsage(terminalEventRaw []byte) *schemas.GatewayLLMUsage {
 	return openAIEventHelper.ExtractRealtimeTurnUsage(terminalEventRaw)
 }
 
@@ -192,30 +192,30 @@ func (provider *AzureProvider) ExtractRealtimeTurnOutput(terminalEventRaw []byte
 // ---------------------------------------------------------------------------
 
 func (provider *AzureProvider) CreateRealtimeClientSecret(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
 	endpointType schemas.RealtimeSessionEndpointType,
 	rawRequest json.RawMessage,
-) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	// Azure does not support the legacy /sessions endpoint.
 	if endpointType == schemas.RealtimeSessionEndpointSessions {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: true,
 			StatusCode:     schemas.Ptr(fasthttp.StatusBadRequest),
 			Error: &schemas.ErrorField{
 				Type:    schemas.Ptr("invalid_request_error"),
 				Message: "Azure does not support the legacy /sessions endpoint; use /v1/realtime/client_secrets instead",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.RealtimeRequest,
 				Provider:    provider.GetProviderKey(),
 			},
 		}
 	}
 
-	normalizedBody, _, rakshaErr := openaiProvider.NormalizeRealtimeClientSecretRequest(rawRequest, schemas.Azure, endpointType)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	normalizedBody, _, gatewayErr := openaiProvider.NormalizeRealtimeClientSecretRequest(rawRequest, schemas.Azure, endpointType)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	endpoint := strings.TrimRight(key.AzureKeyConfig.Endpoint.GetValue(), "/")
@@ -242,14 +242,14 @@ func (provider *AzureProvider) CreateRealtimeClientSecret(
 	}
 	req.SetBody(normalizedBody)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	headers := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	if resp.StatusCode() < fasthttp.StatusOK || resp.StatusCode() >= fasthttp.StatusMultipleChoices {
 		return nil, providerUtils.SetErrorLatency(provider.parseRealtimeClientSecretError(ctx, resp), latency)
@@ -257,14 +257,14 @@ func (provider *AzureProvider) CreateRealtimeClientSecret(
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to decode response body", err)
 	}
 
-	out := &schemas.RakshaPassthroughResponse{
+	out := &schemas.GatewayPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 		},
@@ -280,7 +280,7 @@ func (provider *AzureProvider) CreateRealtimeClientSecret(
 // Helpers
 // ---------------------------------------------------------------------------
 
-func (provider *AzureProvider) realtimeWebRTCUpstreamError(ctx *schemas.RakshaContext, statusCode int, body []byte) *schemas.RakshaError {
+func (provider *AzureProvider) realtimeWebRTCUpstreamError(ctx *schemas.GatewayContext, statusCode int, body []byte) *schemas.GatewayError {
 	message := fmt.Sprintf("upstream realtime handshake failed for %s", provider.GetProviderKey())
 	var parsed struct {
 		Error struct {
@@ -291,47 +291,47 @@ func (provider *AzureProvider) realtimeWebRTCUpstreamError(ctx *schemas.RakshaCo
 		message = parsed.Error.Message
 	}
 
-	rakshaErr := &schemas.RakshaError{
-		IsRakshaError: false,
+	gatewayErr := &schemas.GatewayError{
+		IsGatewayError: false,
 		StatusCode:     schemas.Ptr(statusCode),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr("upstream_error"),
 			Message: message,
 		},
-		ExtraFields: schemas.RakshaErrorExtraFields{
+		ExtraFields: schemas.GatewayErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 			Provider:    provider.GetProviderKey(),
 		},
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaErr.ExtraFields.RawResponse = map[string]any{
+		gatewayErr.ExtraFields.RawResponse = map[string]any{
 			"status": statusCode,
 			"body":   string(body),
 		}
 	}
-	return rakshaErr
+	return gatewayErr
 }
 
-func newAzureRealtimeError(status int, errorType, message string, err error) *schemas.RakshaError {
-	rakshaErr := &schemas.RakshaError{
-		IsRakshaError: true,
+func newAzureRealtimeError(status int, errorType, message string, err error) *schemas.GatewayError {
+	gatewayErr := &schemas.GatewayError{
+		IsGatewayError: true,
 		StatusCode:     schemas.Ptr(status),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr(errorType),
 			Message: message,
 		},
-		ExtraFields: schemas.RakshaErrorExtraFields{
+		ExtraFields: schemas.GatewayErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 			Provider:    schemas.Azure,
 		},
 	}
 	if err != nil {
-		rakshaErr.Error.Error = err
+		gatewayErr.Error.Error = err
 	}
-	return rakshaErr
+	return gatewayErr
 }
 
-func (provider *AzureProvider) parseRealtimeClientSecretError(ctx *schemas.RakshaContext, resp *fasthttp.Response) *schemas.RakshaError {
+func (provider *AzureProvider) parseRealtimeClientSecretError(ctx *schemas.GatewayContext, resp *fasthttp.Response) *schemas.GatewayError {
 	body, _ := providerUtils.CheckAndDecodeBody(resp)
 	var parsed struct {
 		Error struct {
@@ -343,23 +343,23 @@ func (provider *AzureProvider) parseRealtimeClientSecretError(ctx *schemas.Raksh
 	if json.Unmarshal(body, &parsed) == nil && parsed.Error.Message != "" {
 		msg = parsed.Error.Message
 	}
-	rakshaErr := &schemas.RakshaError{
-		IsRakshaError: false,
+	gatewayErr := &schemas.GatewayError{
+		IsGatewayError: false,
 		StatusCode:     schemas.Ptr(resp.StatusCode()),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr("upstream_error"),
 			Message: msg,
 		},
-		ExtraFields: schemas.RakshaErrorExtraFields{
+		ExtraFields: schemas.GatewayErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 			Provider:    provider.GetProviderKey(),
 		},
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaErr.ExtraFields.RawResponse = map[string]any{
+		gatewayErr.ExtraFields.RawResponse = map[string]any{
 			"status": resp.StatusCode(),
 			"body":   string(body),
 		}
 	}
-	return rakshaErr
+	return gatewayErr
 }

@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
 	"github.com/valyala/fasthttp"
 )
 
@@ -283,7 +283,7 @@ var (
 
 func padPasswordCompare(password string) {
 	padHashOnce.Do(func() {
-		h, err := encrypt.Hash("raksha-login-timing-pad-v1")
+		h, err := encrypt.Hash("gateway-login-timing-pad-v1")
 		if err != nil {
 			// Fixed bcrypt cost-10 hash of a known string (never a real password).
 			padHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"

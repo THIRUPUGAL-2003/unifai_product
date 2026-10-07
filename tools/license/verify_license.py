@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Offline License Verification Tool for Raksha / UnifAI.
+Offline License Verification Tool for Gateway / UnifAI.
 Verifies digital signature against the Master Public Key.
 """
 
@@ -69,7 +69,7 @@ def verify_license_file(license_file_path: str, public_key_path: str = None) -> 
     }
 
 def main():
-    parser = argparse.ArgumentParser(description="Verify a Raksha Enterprise License file.")
+    parser = argparse.ArgumentParser(description="Verify a Gateway Enterprise License file.")
     parser.add_argument("file", help="Path to .lic file")
     parser.add_argument("--key", default=None, help="Path to master_public.key")
     args = parser.parse_args()
@@ -85,7 +85,7 @@ def main():
         print(f" Overall Status:  {'[OK] VALID & OPERATIONAL' if res['is_valid'] else '[FAIL] REJECTED'}")
         print("-" * 60)
         print(f" Issuer:          {p.get('issuer', 'YesPanchi Group of Companies')}")
-        print(f" Product:         {p.get('product', 'Raksha - Real-time AI Knowledge Screening & Hazard Audit')}")
+        print(f" Product:         {p.get('product', 'Gateway - Real-time AI Knowledge Screening & Hazard Audit')}")
         print(f" License ID:      {p.get('license_id', 'N/A')}")
         print(f" Issued To:       {p.get('client_name')}")
         print(f" Seats:           {p.get('max_seats')} Laptops")

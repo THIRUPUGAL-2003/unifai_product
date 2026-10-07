@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/cluster"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/kvstore"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/cluster"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/kvstore"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 

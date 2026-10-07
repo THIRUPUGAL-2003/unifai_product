@@ -35,7 +35,7 @@ type MetricsExporter struct {
 	provider *sdkmetric.MeterProvider
 	meter    metric.Meter
 
-	// Raksha metrics - counters
+	// Gateway metrics - counters
 	upstreamRequestsTotal *syncInt64Counter
 	successRequestsTotal  *syncInt64Counter
 	errorRequestsTotal    *syncInt64Counter
@@ -44,16 +44,16 @@ type MetricsExporter struct {
 	cacheHitsTotal        *syncInt64Counter
 
 	// Provider-side prompt cache token counters (distinct from cacheHitsTotal, which
-	// counts Raksha's own semantic-cache hits).
+	// counts Gateway's own semantic-cache hits).
 	cacheReadInputTokensTotal    *syncInt64Counter
 	cacheWriteInputTokensTotal   *syncInt64Counter
 	cacheWriteInputTokens5mTotal *syncInt64Counter
 	cacheWriteInputTokens1hTotal *syncInt64Counter
 
-	// Raksha metrics - float counters (for cost)
+	// Gateway metrics - float counters (for cost)
 	costTotal *syncFloat64Counter
 
-	// Raksha metrics - histograms
+	// Gateway metrics - histograms
 	upstreamLatencySeconds         *syncFloat64Histogram
 	streamFirstTokenLatencySeconds *syncFloat64Histogram
 	streamInterTokenLatencySeconds *syncFloat64Histogram
@@ -192,7 +192,7 @@ func NewMetricsExporter(ctx context.Context, config *MetricsConfig) (*MetricsExp
 	// Generate a unique instance ID for this node
 	instanceID, err := os.Hostname()
 	if err != nil {
-		instanceID = fmt.Sprintf("raksha-%d", time.Now().UnixNano())
+		instanceID = fmt.Sprintf("gateway-%d", time.Now().UnixNano())
 	}
 
 	// Create resource with service info
@@ -233,7 +233,7 @@ func NewMetricsExporter(ctx context.Context, config *MetricsConfig) (*MetricsExp
 	otel.SetMeterProvider(provider)
 
 	// Create meter
-	meter := provider.Meter("raksha",
+	meter := provider.Meter("gateway",
 		metric.WithInstrumentationVersion("1.0.0"),
 	)
 
@@ -297,94 +297,94 @@ func createGRPCExporter(ctx context.Context, config *MetricsConfig) (sdkmetric.E
 }
 
 func (m *MetricsExporter) initMetrics() {
-	// Raksha upstream metrics
+	// Gateway upstream metrics
 	m.upstreamRequestsTotal = &syncInt64Counter{
-		name:  "raksha_upstream_requests_total",
-		desc:  "Total number of requests forwarded to upstream providers by Raksha",
+		name:  "gateway_upstream_requests_total",
+		desc:  "Total number of requests forwarded to upstream providers by Gateway",
 		unit:  "{request}",
 		meter: m.meter,
 	}
 
 	m.successRequestsTotal = &syncInt64Counter{
-		name:  "raksha_success_requests_total",
-		desc:  "Total number of successful requests forwarded to upstream providers by Raksha",
+		name:  "gateway_success_requests_total",
+		desc:  "Total number of successful requests forwarded to upstream providers by Gateway",
 		unit:  "{request}",
 		meter: m.meter,
 	}
 
 	m.errorRequestsTotal = &syncInt64Counter{
-		name:  "raksha_error_requests_total",
-		desc:  "Total number of error requests forwarded to upstream providers by Raksha",
+		name:  "gateway_error_requests_total",
+		desc:  "Total number of error requests forwarded to upstream providers by Gateway",
 		unit:  "{request}",
 		meter: m.meter,
 	}
 
 	m.inputTokensTotal = &syncInt64Counter{
-		name:  "raksha_input_tokens_total",
-		desc:  "Total number of input tokens forwarded to upstream providers by Raksha",
+		name:  "gateway_input_tokens_total",
+		desc:  "Total number of input tokens forwarded to upstream providers by Gateway",
 		unit:  "{token}",
 		meter: m.meter,
 	}
 
 	m.outputTokensTotal = &syncInt64Counter{
-		name:  "raksha_output_tokens_total",
-		desc:  "Total number of output tokens forwarded to upstream providers by Raksha",
+		name:  "gateway_output_tokens_total",
+		desc:  "Total number of output tokens forwarded to upstream providers by Gateway",
 		unit:  "{token}",
 		meter: m.meter,
 	}
 
 	m.cacheHitsTotal = &syncInt64Counter{
-		name:  "raksha_cache_hits_total",
-		desc:  "Total number of cache hits forwarded to upstream providers by Raksha",
+		name:  "gateway_cache_hits_total",
+		desc:  "Total number of cache hits forwarded to upstream providers by Gateway",
 		unit:  "{hit}",
 		meter: m.meter,
 	}
 
 	m.cacheReadInputTokensTotal = &syncInt64Counter{
-		name:  "raksha_cache_read_input_tokens_total",
+		name:  "gateway_cache_read_input_tokens_total",
 		desc:  "Total provider-side prompt-cache read (cached) input tokens. Billed at a reduced rate by the provider",
 		unit:  "{token}",
 		meter: m.meter,
 	}
 
 	m.cacheWriteInputTokensTotal = &syncInt64Counter{
-		name:  "raksha_cache_write_input_tokens_total",
+		name:  "gateway_cache_write_input_tokens_total",
 		desc:  "Total provider-side prompt-cache creation (write) input tokens",
 		unit:  "{token}",
 		meter: m.meter,
 	}
 
 	m.cacheWriteInputTokens5mTotal = &syncInt64Counter{
-		name:  "raksha_cache_write_input_tokens_5m_total",
-		desc:  "Provider-side prompt-cache write input tokens with a 5-minute TTL (Anthropic only). Subset of raksha_cache_write_input_tokens_total — do not sum with it",
+		name:  "gateway_cache_write_input_tokens_5m_total",
+		desc:  "Provider-side prompt-cache write input tokens with a 5-minute TTL (Anthropic only). Subset of gateway_cache_write_input_tokens_total — do not sum with it",
 		unit:  "{token}",
 		meter: m.meter,
 	}
 
 	m.cacheWriteInputTokens1hTotal = &syncInt64Counter{
-		name:  "raksha_cache_write_input_tokens_1h_total",
-		desc:  "Provider-side prompt-cache write input tokens with a 1-hour TTL (Anthropic only). Subset of raksha_cache_write_input_tokens_total — do not sum with it",
+		name:  "gateway_cache_write_input_tokens_1h_total",
+		desc:  "Provider-side prompt-cache write input tokens with a 1-hour TTL (Anthropic only). Subset of gateway_cache_write_input_tokens_total — do not sum with it",
 		unit:  "{token}",
 		meter: m.meter,
 	}
 
 	m.costTotal = &syncFloat64Counter{
-		name:  "raksha_cost_total",
+		name:  "gateway_cost_total",
 		desc:  "Total cost in USD for requests to upstream providers",
 		unit:  "USD",
 		meter: m.meter,
 	}
 
 	m.upstreamLatencySeconds = &syncFloat64Histogram{
-		name:       "raksha_upstream_latency_seconds",
-		desc:       "Latency of requests forwarded to upstream providers by Raksha",
+		name:       "gateway_upstream_latency_seconds",
+		desc:       "Latency of requests forwarded to upstream providers by Gateway",
 		unit:       "s",
 		meter:      m.meter,
 		boundaries: upstreamLatencyBuckets,
 	}
 
 	m.streamFirstTokenLatencySeconds = &syncFloat64Histogram{
-		name:       "raksha_stream_first_token_latency_seconds",
+		name:       "gateway_stream_first_token_latency_seconds",
 		desc:       "Latency of the first token of a stream response",
 		unit:       "s",
 		meter:      m.meter,
@@ -392,7 +392,7 @@ func (m *MetricsExporter) initMetrics() {
 	}
 
 	m.streamInterTokenLatencySeconds = &syncFloat64Histogram{
-		name:       "raksha_stream_inter_token_latency_seconds",
+		name:       "gateway_stream_inter_token_latency_seconds",
 		desc:       "Latency of the intermediate tokens of a stream response",
 		unit:       "s",
 		meter:      m.meter,
@@ -400,7 +400,7 @@ func (m *MetricsExporter) initMetrics() {
 	}
 
 	m.requestRetries = &syncFloat64Histogram{
-		name:       "raksha_request_retries",
+		name:       "gateway_request_retries",
 		desc:       "Number of retries used per request (observed once per request)",
 		unit:       "{retry}",
 		meter:      m.meter,
@@ -544,11 +544,11 @@ func (m *MetricsExporter) RecordHTTPResponseSize(ctx context.Context, sizeBytes 
 	m.httpResponseSizeBytes.Record(ctx, sizeBytes, metric.WithAttributes(attrs...))
 }
 
-// BuildRakshaAttributes builds common Raksha metric attributes.
+// BuildGatewayAttributes builds common Gateway metric attributes.
 // Retry depth is intentionally NOT included here; it is reported via the dedicated
-// raksha_request_retries histogram (recorded once per request) rather than as a label
+// gateway_request_retries histogram (recorded once per request) rather than as a label
 // on every per-attempt counter.
-func BuildRakshaAttributes(provider, model, method, virtualKeyID, virtualKeyName, selectedKeyID, selectedKeyName string, fallbackIndex int, teamID, teamName, customerID, customerName string) []attribute.KeyValue {
+func BuildGatewayAttributes(provider, model, method, virtualKeyID, virtualKeyName, selectedKeyID, selectedKeyName string, fallbackIndex int, teamID, teamName, customerID, customerName string) []attribute.KeyValue {
 	return []attribute.KeyValue{
 		attribute.String("provider", provider),
 		attribute.String("model", model),

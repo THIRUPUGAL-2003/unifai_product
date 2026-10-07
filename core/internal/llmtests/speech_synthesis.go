@@ -8,12 +8,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunSpeechSynthesisTest executes the speech synthesis test scenario
-func RunSpeechSynthesisTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunSpeechSynthesisTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.SpeechSynthesis {
 		t.Logf("Speech synthesis not supported for provider %s", testConfig.Provider)
 		return
@@ -66,7 +66,7 @@ func RunSpeechSynthesisTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 				}
 
 				voice := GetProviderVoice(testConfig.Provider, tc.voiceType)
-				request := &schemas.RakshaSpeechRequest{
+				request := &schemas.GatewaySpeechRequest{
 					Provider: testConfig.Provider,
 					Model:    testConfig.SpeechSynthesisModel, // Use configured model
 					Input: &schemas.SpeechInput{
@@ -111,13 +111,13 @@ func RunSpeechSynthesisTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 					OnFinalFail: retryConfig.OnFinalFail,
 				}
 
-				speechResponse, rakshaErr := WithSpeechTestRetry(t, speechRetryConfig, retryContext, expectations, "SpeechSynthesis_"+tc.name, func() (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
-					requestCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				speechResponse, gatewayErr := WithSpeechTestRetry(t, speechRetryConfig, retryContext, expectations, "SpeechSynthesis_"+tc.name, func() (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
+					requestCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.SpeechRequest(requestCtx, request)
 				})
 
-				if rakshaErr != nil {
-					t.Fatalf("❌ SpeechSynthesis_"+tc.name+" request failed after retries: %v", GetErrorMessage(rakshaErr))
+				if gatewayErr != nil {
+					t.Fatalf("❌ SpeechSynthesis_"+tc.name+" request failed after retries: %v", GetErrorMessage(gatewayErr))
 				}
 
 				// Additional speech-specific validations (complementary to main validation)
@@ -147,7 +147,7 @@ func RunSpeechSynthesisTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 }
 
 // RunSpeechSynthesisAdvancedTest executes advanced speech synthesis test scenarios
-func RunSpeechSynthesisAdvancedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunSpeechSynthesisAdvancedTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.SpeechSynthesis {
 		t.Logf("Speech synthesis not supported for provider %s", testConfig.Provider)
 		return
@@ -172,7 +172,7 @@ func RunSpeechSynthesisAdvancedTest(t *testing.T, client *raksha.Raksha, ctx con
 			`
 
 			voice := GetProviderVoice(testConfig.Provider, "tertiary")
-			request := &schemas.RakshaSpeechRequest{
+			request := &schemas.GatewaySpeechRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.SpeechSynthesisModel,
 				Input: &schemas.SpeechInput{
@@ -222,12 +222,12 @@ func RunSpeechSynthesisAdvancedTest(t *testing.T, client *raksha.Raksha, ctx con
 				OnFinalFail: retryConfig.OnFinalFail,
 			}
 
-			speechResponse, rakshaErr := WithSpeechTestRetry(t, speechRetryConfig, retryContext, expectations, "SpeechSynthesis_HD", func() (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
-				requestCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			speechResponse, gatewayErr := WithSpeechTestRetry(t, speechRetryConfig, retryContext, expectations, "SpeechSynthesis_HD", func() (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
+				requestCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.SpeechRequest(requestCtx, request)
 			})
-			if rakshaErr != nil {
-				t.Fatalf("❌ SpeechSynthesis_HD request failed after retries: %v", GetErrorMessage(rakshaErr))
+			if gatewayErr != nil {
+				t.Fatalf("❌ SpeechSynthesis_HD request failed after retries: %v", GetErrorMessage(gatewayErr))
 			}
 
 			if speechResponse == nil || speechResponse.Audio == nil {
@@ -262,7 +262,7 @@ func RunSpeechSynthesisAdvancedTest(t *testing.T, client *raksha.Raksha, ctx con
 					}
 
 					voice := GetProviderVoice(testConfig.Provider, voiceType)
-					request := &schemas.RakshaSpeechRequest{
+					request := &schemas.GatewaySpeechRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.SpeechSynthesisModel,
 						Input: &schemas.SpeechInput{
@@ -304,13 +304,13 @@ func RunSpeechSynthesisAdvancedTest(t *testing.T, client *raksha.Raksha, ctx con
 						OnFinalFail: voiceRetryConfig.OnFinalFail,
 					}
 
-					speechResponse, rakshaErr := WithSpeechTestRetry(t, voiceSpeechRetryConfig, voiceRetryContext, expectations, "SpeechSynthesis_VoiceType_"+voiceType, func() (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
-						requestCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+					speechResponse, gatewayErr := WithSpeechTestRetry(t, voiceSpeechRetryConfig, voiceRetryContext, expectations, "SpeechSynthesis_VoiceType_"+voiceType, func() (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
+						requestCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 						return client.SpeechRequest(requestCtx, request)
 					})
 
-					if rakshaErr != nil {
-						t.Fatalf("❌ SpeechSynthesis_Voice_"+voiceType+" request failed after retries: %v", GetErrorMessage(rakshaErr))
+					if gatewayErr != nil {
+						t.Fatalf("❌ SpeechSynthesis_Voice_"+voiceType+" request failed after retries: %v", GetErrorMessage(gatewayErr))
 					}
 
 					if speechResponse == nil || speechResponse.Audio == nil {
@@ -330,7 +330,7 @@ func RunSpeechSynthesisAdvancedTest(t *testing.T, client *raksha.Raksha, ctx con
 
 // validateSpeechSynthesisSpecific performs speech-specific validation
 // This is complementary to the main validation framework and focuses on speech synthesis concerns
-func validateSpeechSynthesisSpecific(t *testing.T, response *schemas.RakshaSpeechResponse, expectMinBytes int, expectedModel string) {
+func validateSpeechSynthesisSpecific(t *testing.T, response *schemas.GatewaySpeechResponse, expectMinBytes int, expectedModel string) {
 	if response == nil {
 		t.Fatal("Invalid speech synthesis response structure")
 	}

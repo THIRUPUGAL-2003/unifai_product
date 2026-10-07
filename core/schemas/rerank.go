@@ -16,8 +16,8 @@ type RerankParameters struct {
 	ExtraParams     map[string]interface{} `json:"-"`
 }
 
-// RakshaRerankRequest represents a request to rerank documents by relevance to a query.
-type RakshaRerankRequest struct {
+// GatewayRerankRequest represents a request to rerank documents by relevance to a query.
+type GatewayRerankRequest struct {
 	Provider       ModelProvider     `json:"provider"`
 	Model          string            `json:"model"`
 	Query          string            `json:"query"`
@@ -28,7 +28,7 @@ type RakshaRerankRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body for the rerank request.
-func (r *RakshaRerankRequest) GetRawRequestBody() []byte {
+func (r *GatewayRerankRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
@@ -39,11 +39,11 @@ type RerankResult struct {
 	Document       *RerankDocument `json:"document,omitempty"`
 }
 
-// RakshaRerankResponse represents the response from a rerank request.
-type RakshaRerankResponse struct {
+// GatewayRerankResponse represents the response from a rerank request.
+type GatewayRerankResponse struct {
 	ID          string                     `json:"id,omitempty"`
 	Results     []RerankResult             `json:"results"`
 	Model       string                     `json:"model"`
-	Usage       *RakshaLLMUsage           `json:"usage,omitempty"`
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	Usage       *GatewayLLMUsage           `json:"usage,omitempty"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }

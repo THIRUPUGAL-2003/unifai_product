@@ -7,16 +7,16 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 const ClientSafeInternalErrorMessage = "internal server error"
 
 var mcpHTTPStatusRe = regexp.MustCompile(`(?i)(?:status|http)[^\d]{0,12}(\d{3})`)
 
-// SanitizeRakshaErrorForClient returns a copy safe to serialize to API clients.
+// SanitizeGatewayErrorForClient returns a copy safe to serialize to API clients.
 // Internal errors can contain stack traces or database details; keep those in logs only.
-func SanitizeRakshaErrorForClient(err *schemas.RakshaError) *schemas.RakshaError {
+func SanitizeGatewayErrorForClient(err *schemas.GatewayError) *schemas.GatewayError {
 	if err == nil {
 		return nil
 	}
@@ -163,7 +163,7 @@ func mapMCPRootCause(root string) string {
 	case strings.Contains(lower, "executable file not found"),
 		strings.Contains(lower, "command not found"),
 		strings.Contains(lower, "no such file"):
-		return "stdio command not found — install the MCP binary/npx package on the Raksha host"
+		return "stdio command not found — install the MCP binary/npx package on the Gateway host"
 	case strings.Contains(lower, "401"), strings.Contains(lower, "unauthorized"):
 		return "unauthorized — switch Authentication to Headers or OAuth and add a valid API key / token"
 	case strings.Contains(lower, "403"), strings.Contains(lower, "forbidden"):
@@ -253,7 +253,7 @@ func truncateRunes(s string, max int) string {
 	return strings.TrimSpace(string(runes[:max])) + "…"
 }
 
-func shouldHideErrorDetails(_ *schemas.RakshaError, field *schemas.ErrorField) bool {
+func shouldHideErrorDetails(_ *schemas.GatewayError, field *schemas.ErrorField) bool {
 	message := field.Message
 	if field.Error != nil {
 		message += " " + field.Error.Error()

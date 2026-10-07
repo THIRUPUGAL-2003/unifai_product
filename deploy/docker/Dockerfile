@@ -35,7 +35,7 @@
   # Copy source code and dependencies
   COPY transports/ ./
 
-  COPY --from=ui-builder /app/out ./raksha-http/ui
+  COPY --from=ui-builder /app/out ./gateway-http/ui
 
   # Build the binary with CGO enabled and static SQLite linking
   ENV GOWORK=off
@@ -45,7 +45,7 @@
     -a -trimpath \
     -tags "sqlite_static" \
     -o /app/main \
-    ./raksha-http
+    ./gateway-http
 
   # Verify build succeeded
   RUN test -f /app/main || (echo "Build failed" && exit 1)
@@ -68,10 +68,10 @@
   # Guard binaries are not in git; upload them with tools/upload_guard_release.ps1 (or mount the folder).
   COPY apps/browser-guard/release/ /app/release/
   COPY apps/browser-guard/proxy/browser_ai_proxy.py /app/guard-proxy/browser_ai_proxy.py
-  COPY apps/browser-guard/proxy/raksha_proxy_parts/ /app/guard-proxy/raksha_proxy_parts/
+  COPY apps/browser-guard/proxy/gateway_proxy_parts/ /app/guard-proxy/gateway_proxy_parts/
   COPY apps/browser-guard/agent/*.py /app/guard-agent/
   COPY apps/browser-guard/installer/EMPLOYEE_README.txt /app/installer/EMPLOYEE_README.txt
-  COPY apps/browser-guard/config/raksha_guard_config.json /app/raksha_guard_config.json
+  COPY apps/browser-guard/config/gateway_guard_config.json /app/gateway_guard_config.json
 
   # Getting arguments
   ARG ARG_APP_PORT=8001

@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -11,7 +12,7 @@ import { ModelParams, PromptSession } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
 import { Check, Eye, GitCommit, MoreHorizontal, PencilIcon, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { parseAsInteger, useQueryStates } from "nuqs";
-import { useCallback, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
 import { usePromptContext } from "../context";
@@ -41,10 +42,23 @@ export default function PromptsViewHeader() {
 		selectedSession: fullSelectedSession,
 	} = usePromptContext();
 
-	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
+	const POLL_MS = 5000;
+	const [authPollMs, setAuthPollMs] = useState(POLL_MS);
+	const [vkPollMs, setVkPollMs] = useState(POLL_MS);
+	const { data: authStatus, error: authError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
 	const isUserRole = isPromptMemberRole(authStatus?.role);
 
-	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { skip: !isUserRole, pollingInterval: 5000 });
+	const { data: virtualKeysData, error: vkError } = useGetVirtualKeysQuery(undefined, {
+		skip: !isUserRole,
+		pollingInterval: vkPollMs,
+	});
+
+	useEffect(() => {
+		setAuthPollMs(authError ? 0 : POLL_MS);
+	}, [authError]);
+	useEffect(() => {
+		setVkPollMs(vkError ? 0 : POLL_MS);
+	}, [vkError]);
 	const selectedVK = useMemo(
 		() => (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId),
 		[virtualKeysData, apiKeyId],
@@ -87,8 +101,16 @@ export default function PromptsViewHeader() {
 	);
 
 	// Fetch versions and sessions for selected prompt
-	const { data: versionsData } = useGetVersionsQuery(selectedPrompt?.id ?? "", { skip: !selectedPrompt?.id });
-	const { data: sessionsData } = useGetSessionsQuery(selectedPrompt?.id ?? "", { skip: !selectedPrompt?.id });
+	const {
+		data: versionsData,
+		isError: versionsFailed,
+		error: versionsError,
+	} = useGetVersionsQuery(selectedPrompt?.id ?? "", { skip: !selectedPrompt?.id });
+	const {
+		data: sessionsData,
+		isError: sessionsFailed,
+		error: sessionsError,
+	} = useGetSessionsQuery(selectedPrompt?.id ?? "", { skip: !selectedPrompt?.id });
 
 	// Mutations
 	const [createSession, { isLoading: isCreatingSession }] = useCreateSessionMutation();
@@ -238,7 +260,18 @@ export default function PromptsViewHeader() {
 	const displayVersion = selectedVersion ?? latestVersion;
 
 	return (
-		<div className="flex items-center justify-between border-b px-4 py-3">
+		<div className="flex flex-col border-b">
+			{versionsFailed || sessionsFailed ? (
+				<div className="px-4 pt-2">
+					<QueryErrorBanner
+						testId="prompts-header-query-error"
+						message={
+							getErrorMessage(versionsError || sessionsError) || "Failed to load versions or sessions."
+						}
+					/>
+				</div>
+			) : null}
+		<div className="flex items-center justify-between px-4 py-3">
 			<div className="flex min-w-0 items-center gap-4">
 				<h3 className="truncate font-semibold">
 					{selectedPrompt?.name || "Playground"}

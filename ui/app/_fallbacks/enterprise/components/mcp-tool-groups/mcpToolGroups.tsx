@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -69,11 +70,13 @@ function parseToolsFromGroup(group: MCPToolGroup): { clientId: string; toolNames
 }
 
 export default function MCPToolGroups() {
-	const { data } = useGetMCPClientsQuery({ limit: 200, offset: 0 });
+	const { data, isError: clientsFailed, error: clientsError } = useGetMCPClientsQuery({ limit: 200, offset: 0 });
 	const clients = data?.clients || [];
-	const { data: vkData } = useGetVirtualKeysQuery({ limit: 200, offset: 0 });
+	const { data: vkData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery({ limit: 200, offset: 0 });
 	const virtualKeys = vkData?.virtual_keys || [];
-	const { data: groupData } = useGetMCPToolGroupsQuery();
+	const { data: groupData, isError: groupsFailed, error: groupsError, refetch: refetchGroups } = useGetMCPToolGroupsQuery();
+	const listQueryFailed = clientsFailed || vkFailed || groupsFailed;
+	const listQueryError = clientsError || vkError || groupsError;
 	const [createGroup] = useCreateMCPToolGroupMutation();
 	const [updateGroup] = useUpdateMCPToolGroupMutation();
 	const [deleteGroup] = useDeleteMCPToolGroupMutation();
@@ -195,7 +198,21 @@ export default function MCPToolGroups() {
 				</Button>
 			</div>
 
-			{groups.length === 0 ? (
+			{listQueryFailed ? (
+				<div className="flex flex-col gap-2">
+					<QueryErrorBanner
+						testId="mcp-tool-groups-query-error"
+						message={getErrorMessage(listQueryError) || "Failed to load tool groups or related data."}
+					/>
+					{groupsFailed ? (
+						<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetchGroups()}>
+							Retry
+						</Button>
+					) : null}
+				</div>
+			) : null}
+
+			{groups.length === 0 && !groupsFailed ? (
 				<div className="rounded-xl border border-dashed p-10 text-center">
 					<p className="font-medium">No tool groups</p>
 					<p className="text-muted-foreground mt-1 text-sm">Create a group to share a curated tool set.</p>

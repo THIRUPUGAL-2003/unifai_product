@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/mailer"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/mailer"
 	"github.com/valyala/fasthttp"
 )
 
@@ -547,7 +547,7 @@ func (h *BrowserAIHandler) sendWarningEmail(ctx *fasthttp.RequestCtx) {
 	}
 	subject := strings.TrimSpace(payload.Subject)
 	if subject == "" {
-		subject = "Raksha Security Policy Warning"
+		subject = "Gateway Security Policy Warning"
 	}
 	message := strings.TrimSpace(payload.Message)
 	if message == "" {
@@ -635,13 +635,13 @@ func (h *BrowserAIHandler) sendWarningEmail(ctx *fasthttp.RequestCtx) {
 	}
 
 	body := fmt.Sprintf(
-		"Raksha Browser Guard — Security Warning Report\n"+
+		"Gateway Browser Guard — Security Warning Report\n"+
 			"==================================================\n\n"+
 			"%s"+
 			"%s"+
 			"%s\n\n"+
 			"==================================================\n"+
-			"Sent via Raksha Enterprise Security Console\n"+
+			"Sent via Gateway Enterprise Security Console\n"+
 			"(SMTP: Settings → Security)\n",
 		message,
 		deviceInfo,

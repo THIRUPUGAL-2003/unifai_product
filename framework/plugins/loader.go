@@ -1,6 +1,6 @@
 package plugins
 
-import "github.com/raksha/raksha/core/schemas"
+import "github.com/gateway/gateway/core/schemas"
 
 // PluginLoader is the contract for a plugin loader
 type PluginLoader interface {

@@ -5,13 +5,13 @@ import (
 	"os"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunCountTokenTest validates the CountTokens API for the configured provider/model.
 // It sends a simple prompt as Responses messages and asserts token counts and metadata.
-func RunCountTokenTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunCountTokenTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.CountTokens {
 		t.Logf("Count tokens not supported for provider %s", testConfig.Provider)
 		return
@@ -26,7 +26,7 @@ func RunCountTokenTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 			CreateBasicResponsesMessage("Hello! What's the capital of France?"),
 		}
 
-		countTokensReq := &schemas.RakshaResponsesRequest{
+		countTokensReq := &schemas.GatewayResponsesRequest{
 			Provider:  testConfig.Provider,
 			Model:     testConfig.ChatModel,
 			Input:     messages,
@@ -69,8 +69,8 @@ func RunCountTokenTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 			retryContext,
 			expectations,
 			"CountTokens",
-			func() (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			func() (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.CountTokensRequest(bfCtx, countTokensReq)
 			},
 		)

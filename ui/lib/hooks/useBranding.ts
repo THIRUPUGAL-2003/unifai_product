@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import {
+	BRAND_NAME,
 	PRODUCT_NAME,
 	PRODUCT_FULL_NAME,
 	COMPANY_NAME,
@@ -11,6 +12,9 @@ import {
 import { getApiBaseUrl } from "@/lib/utils/port";
 
 export interface BrandingInfo {
+	/** Home-page hero brand (Gateway). */
+	brandName: string;
+	/** In-app / email product label (Gateway by default). */
 	productName: string;
 	productFullName: string;
 	companyName: string;
@@ -22,6 +26,7 @@ export interface BrandingInfo {
 
 export function useBranding(): BrandingInfo {
 	const [branding, setBranding] = useState<BrandingInfo>({
+		brandName: BRAND_NAME,
 		productName: PRODUCT_NAME,
 		productFullName: PRODUCT_FULL_NAME,
 		companyName: COMPANY_NAME,
@@ -37,12 +42,13 @@ export function useBranding(): BrandingInfo {
 			.then((data) => {
 				if (!data) return;
 				setBranding({
+					brandName: data.brand_name || BRAND_NAME,
 					productName: data.product_name || PRODUCT_NAME,
 					productFullName: data.product_subtitle || PRODUCT_FULL_NAME,
 					companyName: data.company_name || COMPANY_NAME,
 					companyShortName: data.company_short_name || COMPANY_SHORT_NAME,
 					companyLogo: data.company_logo || COMPANY_LOGO,
-					footerText: (data.footer_copyright || DEFAULT_FOOTER_TEXT).replace(/\uFFFD/g, '©'),
+					footerText: (data.footer_copyright || DEFAULT_FOOTER_TEXT).replace(/\uFFFD/g, "©"),
 					footerSubtitle: data.footer_subtitle || FOOTER_SUBTITLE,
 				});
 			})

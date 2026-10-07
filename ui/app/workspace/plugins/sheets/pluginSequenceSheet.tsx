@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -168,7 +169,7 @@ export default function PluginSequenceSheet({ open, onClose, plugins }: PluginSe
 					<Alert variant="info">
 						<AlertDescription>
 							If your config.json file has plugin sequence configured, it will take precedence over the sequence configured in the UI after
-							restarting Raksha.
+							restarting {PRODUCT_NAME}.
 						</AlertDescription>
 					</Alert>
 					<div className="flex justify-end gap-2 pt-4">

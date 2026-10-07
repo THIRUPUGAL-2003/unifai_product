@@ -10,8 +10,8 @@ import (
 )
 
 // LiteLLMUser mirrors a row from GET /user/list (LiteLLM_UserTable). Only the
-// fields relevant to a Raksha user are decoded. teams holds the LiteLLM
-// team_ids the user belongs to; the migration links the user to the Raksha
+// fields relevant to a Gateway user are decoded. teams holds the LiteLLM
+// team_ids the user belongs to; the migration links the user to the Gateway
 // team of the same name (resolved by the caller).
 type LiteLLMUser struct {
 	UserID         string   `json:"user_id"`

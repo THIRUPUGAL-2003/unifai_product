@@ -5,10 +5,10 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/featureflags"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/featureflags"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -34,7 +34,7 @@ func NewFeatureFlagsHandler(store *featureflags.Store, configStore configstore.C
 // nothing to "create" or "delete" via the API. Stale DB rows for
 // unregistered flags surface in the list with registered=false so
 // operators can see them, but they cannot be toggled or removed.
-func (h *FeatureFlagsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *FeatureFlagsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/feature-flags", lib.ChainMiddlewares(h.listFlags, middlewares...))
 	r.PUT("/api/feature-flags/{id}", lib.ChainMiddlewares(h.updateFlag, middlewares...))
 }

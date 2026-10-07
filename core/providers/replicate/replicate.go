@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -27,8 +27,8 @@ type ReplicateProvider struct {
 	client               *fasthttp.Client      // HTTP client for unary API requests (ReadTimeout bounds overall response)
 	streamingClient      *fasthttp.Client      // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig        schemas.NetworkConfig // Network configuration including extra headers
-	sendBackRawRequest   bool                  // Whether to include raw request in RakshaResponse
-	sendBackRawResponse  bool                  // Whether to include raw response in RakshaResponse
+	sendBackRawRequest   bool                  // Whether to include raw request in GatewayResponse
+	sendBackRawResponse  bool                  // Whether to include raw response in GatewayResponse
 	customProviderConfig *schemas.CustomProviderConfig
 }
 
@@ -77,7 +77,7 @@ func (provider *ReplicateProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // buildRequestURL builds the request URL with custom provider config support
-func (provider *ReplicateProvider) buildRequestURL(ctx *schemas.RakshaContext, defaultPath string, requestType schemas.RequestType) string {
+func (provider *ReplicateProvider) buildRequestURL(ctx *schemas.GatewayContext, defaultPath string, requestType schemas.RequestType) string {
 	path, isCompleteURL := providerUtils.GetRequestPath(ctx, defaultPath, provider.customProviderConfig, requestType)
 	if isCompleteURL {
 		return path
@@ -100,7 +100,7 @@ const (
 // (e.g. experimental versioned models).
 //
 // Nil ReplicateKeyConfig and missing alias both default to false (predictions).
-func useDeploymentsEndpoint(ctx *schemas.RakshaContext, key schemas.Key) bool {
+func useDeploymentsEndpoint(ctx *schemas.GatewayContext, key schemas.Key) bool {
 	if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.ReplicateAliasCfg != nil && ra.Config.ReplicateAliasCfg.UseDeploymentsEndpoint != nil {
 		return *ra.Config.ReplicateAliasCfg.UseDeploymentsEndpoint
 	}
@@ -111,7 +111,7 @@ func useDeploymentsEndpoint(ctx *schemas.RakshaContext, key schemas.Key) bool {
 // Supports both sync (with Prefer: wait header) and async modes
 // stripPrefer should be true for streaming requests to exclude the Prefer header
 func createPrediction(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	jsonBody []byte,
 	key schemas.Key,
@@ -121,7 +121,7 @@ func createPrediction(
 	logger schemas.Logger,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-) (*ReplicatePredictionResponse, interface{}, time.Duration, map[string]string, *schemas.RakshaError) {
+) (*ReplicatePredictionResponse, interface{}, time.Duration, map[string]string, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -151,10 +151,10 @@ func createPrediction(
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, nil, latency, nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, nil, latency, nil, gatewayErr
 	}
 
 	// Extract provider response headers before releasing the response
@@ -169,13 +169,13 @@ func createPrediction(
 	// Parse response
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, nil, latency, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, nil, latency, providerResponseHeaders, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var prediction ReplicatePredictionResponse
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &prediction, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, nil, latency, providerResponseHeaders, rakshaErr
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &prediction, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, nil, latency, providerResponseHeaders, gatewayErr
 	}
 
 	return &prediction, rawResponse, latency, providerResponseHeaders, nil
@@ -183,13 +183,13 @@ func createPrediction(
 
 // getPrediction retrieves the current state of a prediction
 func getPrediction(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	predictionURL string,
 	key schemas.Key,
 	logger schemas.Logger,
 	sendBackRawResponse bool,
-) (*ReplicatePredictionResponse, interface{}, map[string]string, *schemas.RakshaError) {
+) (*ReplicatePredictionResponse, interface{}, map[string]string, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -206,10 +206,10 @@ func getPrediction(
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, nil, nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, nil, nil, gatewayErr
 	}
 
 	// Extract provider response headers before releasing the response
@@ -224,13 +224,13 @@ func getPrediction(
 	// Parse response
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, nil, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, nil, providerResponseHeaders, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	prediction := &ReplicatePredictionResponse{}
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, prediction, nil, false, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, nil, providerResponseHeaders, rakshaErr
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, prediction, nil, false, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, nil, providerResponseHeaders, gatewayErr
 	}
 
 	return prediction, rawResponse, providerResponseHeaders, nil
@@ -238,16 +238,16 @@ func getPrediction(
 
 // pollPrediction polls a prediction URL until it reaches a terminal state or timeout
 func pollPrediction(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	predictionURL string,
 	key schemas.Key,
 	timeoutSeconds int,
 	logger schemas.Logger,
 	sendBackRawResponse bool,
-) (*ReplicatePredictionResponse, interface{}, map[string]string, *schemas.RakshaError) {
+) (*ReplicatePredictionResponse, interface{}, map[string]string, *schemas.GatewayError) {
 	// Create context with timeout
-	pollCtx, cancel := schemas.NewRakshaContextWithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	pollCtx, cancel := schemas.NewGatewayContextWithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
 	ticker := time.NewTicker(pollingInterval)
@@ -270,7 +270,7 @@ func pollPrediction(
 	for {
 		select {
 		case <-pollCtx.Done():
-			return nil, nil, providerResponseHeaders, providerUtils.NewRakshaOperationError(
+			return nil, nil, providerResponseHeaders, providerUtils.NewGatewayOperationError(
 				schemas.ErrProviderRequestTimedOut,
 				fmt.Errorf("prediction polling timed out after %d seconds", timeoutSeconds))
 		case <-ticker.C:
@@ -290,13 +290,13 @@ func pollPrediction(
 
 // listDeploymentsByKey performs a list deployments request for a single key.
 // Deployments are account-specific, so this needs to be called per key.
-func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 	client := provider.client
 	extraHeaders := provider.networkConfig.ExtraHeaders
 
 	if !useDeploymentsEndpoint(ctx, key) {
-		return ToRakshaListModelsResponse(
+		return ToGatewayListModelsResponse(
 			&ReplicateDeploymentListResponse{},
 			providerName,
 			key.Models,
@@ -333,15 +333,15 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.RakshaConte
 		providerUtils.SetExtraHeaders(ctx, req, extraHeaders, nil)
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 
 		// Release resources
 		wait()
 		fasthttp.ReleaseRequest(req)
 
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseResponse(resp)
-			return nil, rakshaErr
+			return nil, gatewayErr
 		}
 
 		// Handle error response
@@ -351,7 +351,7 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.RakshaConte
 			return nil, errorResponse
 		}
 
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 		// Make a copy of the response body before releasing
 		bodyCopy := make([]byte, len(resp.Body()))
@@ -362,7 +362,7 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.RakshaConte
 		// Parse response from the copy
 		var pageResponse ReplicateDeploymentListResponse
 		if err := sonic.Unmarshal(bodyCopy, &pageResponse); err != nil {
-			return nil, providerUtils.NewRakshaOperationError(
+			return nil, providerUtils.NewGatewayOperationError(
 				"failed to parse deployments response",
 				err)
 		}
@@ -383,8 +383,8 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.RakshaConte
 		Results: allDeployments,
 	}
 
-	// Convert deployments to Raksha response (no public models here)
-	response := ToRakshaListModelsResponse(
+	// Convert deployments to Gateway response (no public models here)
+	response := ToGatewayListModelsResponse(
 		deploymentsResponse,
 		providerName,
 		key.Models,
@@ -397,7 +397,7 @@ func (provider *ReplicateProvider) listDeploymentsByKey(ctx *schemas.RakshaConte
 }
 
 // ListModels performs a list models request to Replicate's API.
-func (provider *ReplicateProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
@@ -426,18 +426,18 @@ func (provider *ReplicateProvider) ListModels(ctx *schemas.RakshaContext, keys [
 }
 
 // TextCompletion performs a text completion request to the replicate API.
-func (provider *ReplicateProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.TextCompletionRequest); err != nil {
 		return nil, err
 	}
 
 	// build replicate request
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToReplicateTextRequest(request) })
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -492,35 +492,35 @@ func (provider *ReplicateProvider) TextCompletion(ctx *schemas.RakshaContext, ke
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to Raksha response
-	rakshaResponse := prediction.ToRakshaTextCompletionResponse()
+	// Convert to Gateway response
+	gatewayResponse := prediction.ToGatewayTextCompletionResponse()
 
 	// Set extra fields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // TextCompletionStream performs a streaming text completion request to replicate's API.
 // It formats the request, sends it to replicate, and processes the response.
-// Returns a channel of RakshaStream objects or an error if the request fails.
-func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel of GatewayStream objects or an error if the request fails.
+func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.TextCompletionStreamRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert Raksha request to Replicate format with streaming enabled
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Gateway request to Replicate format with streaming enabled
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -531,8 +531,8 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 			replicateReq.Stream = schemas.Ptr(true)
 			return replicateReq, nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Build prediction URL based on model type (version ID or model name)
@@ -565,32 +565,32 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 
 	// Verify stream URL is available
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
-		rakshaErr := providerUtils.NewRakshaOperationError(
+		gatewayErr := providerUtils.NewGatewayOperationError(
 			"stream URL not available in prediction response",
 			fmt.Errorf("prediction response missing stream URL"))
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	streamURL := *prediction.URLs.Stream
 
 	// Connect to stream URL
-	_, resp, rakshaErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	_, resp, gatewayErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context for transport layer
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -643,10 +643,10 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
-					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 				}
 				break
 			}
@@ -663,11 +663,11 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 				if eventData != "" {
 					// Create a streaming chunk with text completion response
 					text := eventData
-					response := &schemas.RakshaTextCompletionResponse{
+					response := &schemas.GatewayTextCompletionResponse{
 						ID:     messageID,
 						Model:  request.Model,
 						Object: "text_completion",
-						Choices: []schemas.RakshaResponseChoice{
+						Choices: []schemas.GatewayResponseChoice{
 							{
 								Index: 0,
 								TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{
@@ -675,7 +675,7 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 								},
 							},
 						},
-						ExtraFields: schemas.RakshaResponseExtraFields{
+						ExtraFields: schemas.GatewayResponseExtraFields{
 							ChunkIndex: chunkIndex,
 							Latency:    time.Since(lastChunkTime).Milliseconds(),
 						},
@@ -693,7 +693,7 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 					chunkIndex++
 
 					providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-						providerUtils.GetRakshaResponseForStreamResponse(response, nil, nil, nil, nil, nil),
+						providerUtils.GetGatewayResponseForStreamResponse(response, nil, nil, nil, nil, nil),
 						responseChan, postHookSpanFinalizer)
 				}
 
@@ -709,12 +709,12 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 				// Check for cancellation or error
 				switch doneData.Reason {
 				case "canceled":
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						"prediction was canceled",
 						fmt.Errorf("stream ended: prediction canceled"))
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					// Explicitly close the body stream to terminate connection to Replicate
 					resp.CloseBodyStream()
 					return
@@ -724,12 +724,12 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 					if doneData.Output != nil {
 						errorMsg = fmt.Sprintf("prediction failed: %v", doneData.Output)
 					}
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						errorMsg,
 						fmt.Errorf("stream ended with error"))
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					// Explicitly close the body stream to terminate connection to Replicate
 					resp.CloseBodyStream()
 					return
@@ -737,7 +737,7 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 
 				// Send final chunk with finish reason
 				finishReason := schemas.Ptr("stop")
-				finalResponse := providerUtils.CreateRakshaTextCompletionChunkResponse(
+				finalResponse := providerUtils.CreateGatewayTextCompletionChunkResponse(
 					messageID,
 					nil, // usage - not available in done event
 					finishReason,
@@ -752,9 +752,9 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 
 				finalResponse.ExtraFields.Latency = time.Since(startTime).Milliseconds()
 
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetRakshaResponseForStreamResponse(finalResponse, nil, nil, nil, nil, nil),
+					providerUtils.GetGatewayResponseForStreamResponse(finalResponse, nil, nil, nil, nil, nil),
 					responseChan, postHookSpanFinalizer)
 				resp.CloseBodyStream()
 				return
@@ -766,18 +766,18 @@ func (provider *ReplicateProvider) TextCompletionStream(ctx *schemas.RakshaConte
 }
 
 // ChatCompletion performs a chat completion request to the replicate API.
-func (provider *ReplicateProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
 	}
 
 	// build replicate request
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToReplicateChatRequest(request) })
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -832,35 +832,35 @@ func (provider *ReplicateProvider) ChatCompletion(ctx *schemas.RakshaContext, ke
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to Raksha response
-	rakshaResponse := prediction.ToRakshaChatResponse()
+	// Convert to Gateway response
+	gatewayResponse := prediction.ToGatewayChatResponse()
 
 	// Set extra fields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ChatCompletionStream performs a streaming chat completion request to the replicate API.
 // It supports real-time streaming of responses using Server-Sent Events (SSE).
-// Returns a channel containing RakshaResponse objects representing the stream or an error if the request fails.
-func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel containing GatewayResponse objects representing the stream or an error if the request fails.
+func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert Raksha request to Replicate format with streaming enabled
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Gateway request to Replicate format with streaming enabled
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -871,8 +871,8 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 			replicateReq.Stream = schemas.Ptr(true)
 			return replicateReq, nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Build prediction URL based on model type (version ID or model name)
@@ -905,32 +905,32 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 
 	// Verify stream URL is available
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
-		rakshaErr := providerUtils.NewRakshaOperationError(
+		gatewayErr := providerUtils.NewGatewayOperationError(
 			"stream URL not available in prediction response",
 			fmt.Errorf("prediction response missing stream URL"))
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	streamURL := *prediction.URLs.Stream
 
 	// Connect to stream URL
-	_, resp, rakshaErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	_, resp, gatewayErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context for transport layer
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -983,10 +983,10 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
-					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 				}
 				break
 			}
@@ -1009,12 +1009,12 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 						Role:    &role,
 					}
 
-					response := &schemas.RakshaChatResponse{
+					response := &schemas.GatewayChatResponse{
 						ID:      messageID,
 						Model:   request.Model,
 						Object:  "chat.completion.chunk",
 						Created: int(time.Now().Unix()),
-						Choices: []schemas.RakshaResponseChoice{
+						Choices: []schemas.GatewayResponseChoice{
 							{
 								Index: 0,
 								ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1022,7 +1022,7 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 								},
 							},
 						},
-						ExtraFields: schemas.RakshaResponseExtraFields{
+						ExtraFields: schemas.GatewayResponseExtraFields{
 							ChunkIndex: chunkIndex,
 							Latency:    time.Since(lastChunkTime).Milliseconds(),
 						},
@@ -1040,7 +1040,7 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 					chunkIndex++
 
 					providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-						providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil),
+						providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil),
 						responseChan, postHookSpanFinalizer)
 				}
 
@@ -1056,12 +1056,12 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 				// Check for cancellation or error
 				switch doneData.Reason {
 				case "canceled":
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						"prediction was canceled",
 						fmt.Errorf("stream ended: prediction canceled"))
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					// Explicitly close the body stream to terminate connection to Replicate
 					resp.CloseBodyStream()
 					return
@@ -1071,12 +1071,12 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 					if doneData.Output != nil {
 						errorMsg = fmt.Sprintf("prediction failed: %v", doneData.Output)
 					}
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						errorMsg,
 						fmt.Errorf("stream ended with error"))
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					// Explicitly close the body stream to terminate connection to Replicate
 					resp.CloseBodyStream()
 					return
@@ -1084,12 +1084,12 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 
 				// Send final chunk with finish reason
 				finishReason := "stop"
-				finalResponse := &schemas.RakshaChatResponse{
+				finalResponse := &schemas.GatewayChatResponse{
 					ID:      messageID,
 					Model:   request.Model,
 					Object:  "chat.completion.chunk",
 					Created: int(time.Now().Unix()),
-					Choices: []schemas.RakshaResponseChoice{
+					Choices: []schemas.GatewayResponseChoice{
 						{
 							Index:        0,
 							FinishReason: &finishReason,
@@ -1098,7 +1098,7 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 							},
 						},
 					},
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(startTime).Milliseconds(),
 					},
@@ -1109,9 +1109,9 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 					providerUtils.ParseAndSetRawRequest(&finalResponse.ExtraFields, jsonData)
 				}
 
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetRakshaResponseForStreamResponse(nil, finalResponse, nil, nil, nil, nil),
+					providerUtils.GetGatewayResponseForStreamResponse(nil, finalResponse, nil, nil, nil, nil),
 					responseChan, postHookSpanFinalizer)
 				resp.CloseBodyStream()
 				return
@@ -1123,18 +1123,18 @@ func (provider *ReplicateProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 }
 
 // Responses performs a responses request to the replicate API.
-func (provider *ReplicateProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ResponsesRequest); err != nil {
 		return nil, err
 	}
 
 	// build replicate request
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToReplicateResponsesRequest(request) })
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -1189,11 +1189,11 @@ func (provider *ReplicateProvider) Responses(ctx *schemas.RakshaContext, key sch
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to Raksha response
-	response := prediction.ToRakshaResponsesResponse()
+	// Convert to Gateway response
+	response := prediction.ToGatewayResponsesResponse()
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
@@ -1206,23 +1206,23 @@ func (provider *ReplicateProvider) Responses(ctx *schemas.RakshaContext, key sch
 }
 
 // ResponsesStream performs a streaming responses request to the replicate API.
-func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ResponsesStreamRequest); err != nil {
 		return nil, err
 	}
 
 	// Build replicate request
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToReplicateResponsesRequest(request) })
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Enable streaming (using sjson to set field directly, preserving key order)
 	if updatedData, err := providerUtils.SetJSONField(jsonData, "stream", true); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to set stream field", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to set stream field", err)
 	} else {
 		jsonData = updatedData
 	}
@@ -1257,10 +1257,10 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 
 	// Verify stream URL is available
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
-		rakshaErr := providerUtils.NewRakshaOperationError(
+		gatewayErr := providerUtils.NewGatewayOperationError(
 			"stream URL not available in prediction response",
 			fmt.Errorf("prediction response missing stream URL"))
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	streamURL := *prediction.URLs.Stream
@@ -1290,8 +1290,8 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 	if streamErr != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(streamErr, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1300,13 +1300,13 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 			}, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		if errors.Is(streamErr, fasthttp.ErrTimeout) || errors.Is(streamErr, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, streamErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, streamErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, streamErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, streamErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1317,13 +1317,13 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1348,11 +1348,11 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 		defer releaseGzip()
 
 		if reader == nil {
-			rakshaErr := providerUtils.NewRakshaOperationError(
+			gatewayErr := providerUtils.NewGatewayOperationError(
 				"provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"))
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency), responseChan, provider.logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency), responseChan, provider.logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -1394,17 +1394,17 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
-					rakshaErr := providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, readErr)
+					gatewayErr := providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, readErr)
 
 					// Include accumulated raw responses in error
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
+						gatewayErr.ExtraFields.RawResponse = rawResponseChunks
 					}
 
-					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				break
@@ -1429,15 +1429,15 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 						// Emit lifecycle events on first content
 						if !hasEmittedCreated {
 							// response.created
-							createdResp := &schemas.RakshaResponsesStreamResponse{
+							createdResp := &schemas.GatewayResponsesStreamResponse{
 								Type:           schemas.ResponsesStreamResponseTypeCreated,
 								SequenceNumber: sequenceNumber,
-								Response: &schemas.RakshaResponsesResponse{
+								Response: &schemas.GatewayResponsesResponse{
 									ID:        schemas.Ptr(messageID),
 									Model:     request.Model,
 									CreatedAt: int(startTime.Unix()),
 								},
-								ExtraFields: schemas.RakshaResponseExtraFields{
+								ExtraFields: schemas.GatewayResponseExtraFields{
 									Latency:    time.Since(startTime).Milliseconds(),
 									ChunkIndex: sequenceNumber,
 								},
@@ -1446,7 +1446,7 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 								providerUtils.ParseAndSetRawRequest(&createdResp.ExtraFields, jsonData)
 							}
 							providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-								providerUtils.GetRakshaResponseForStreamResponse(nil, nil, createdResp, nil, nil, nil),
+								providerUtils.GetGatewayResponseForStreamResponse(nil, nil, createdResp, nil, nil, nil),
 								responseChan, postHookSpanFinalizer)
 							sequenceNumber++
 							hasEmittedCreated = true
@@ -1454,19 +1454,19 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 
 						if !hasEmittedInProgress {
 							// response.in_progress
-							inProgressResp := &schemas.RakshaResponsesStreamResponse{
+							inProgressResp := &schemas.GatewayResponsesStreamResponse{
 								Type:           schemas.ResponsesStreamResponseTypeInProgress,
 								SequenceNumber: sequenceNumber,
-								Response: &schemas.RakshaResponsesResponse{
+								Response: &schemas.GatewayResponsesResponse{
 									ID:        schemas.Ptr(messageID),
 									CreatedAt: int(startTime.Unix()),
 								},
-								ExtraFields: schemas.RakshaResponseExtraFields{
+								ExtraFields: schemas.GatewayResponseExtraFields{
 									ChunkIndex: sequenceNumber,
 								},
 							}
 							providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-								providerUtils.GetRakshaResponseForStreamResponse(nil, nil, inProgressResp, nil, nil, nil),
+								providerUtils.GetGatewayResponseForStreamResponse(nil, nil, inProgressResp, nil, nil, nil),
 								responseChan, postHookSpanFinalizer)
 							sequenceNumber++
 							hasEmittedInProgress = true
@@ -1477,7 +1477,7 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 							messageType := schemas.ResponsesMessageTypeMessage
 							role := schemas.ResponsesInputMessageRoleAssistant
 							status := "in_progress"
-							itemAddedResp := &schemas.RakshaResponsesStreamResponse{
+							itemAddedResp := &schemas.GatewayResponsesStreamResponse{
 								Type:           schemas.ResponsesStreamResponseTypeOutputItemAdded,
 								SequenceNumber: sequenceNumber,
 								OutputIndex:    schemas.Ptr(outputIndex),
@@ -1490,12 +1490,12 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 										ContentBlocks: []schemas.ResponsesMessageContentBlock{},
 									},
 								},
-								ExtraFields: schemas.RakshaResponseExtraFields{
+								ExtraFields: schemas.GatewayResponseExtraFields{
 									ChunkIndex: sequenceNumber,
 								},
 							}
 							providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-								providerUtils.GetRakshaResponseForStreamResponse(nil, nil, itemAddedResp, nil, nil, nil),
+								providerUtils.GetGatewayResponseForStreamResponse(nil, nil, itemAddedResp, nil, nil, nil),
 								responseChan, postHookSpanFinalizer)
 							sequenceNumber++
 							hasEmittedOutputItemAdded = true
@@ -1504,7 +1504,7 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 						if !hasEmittedContentPartAdded {
 							// response.content_part.added
 							emptyText := ""
-							partAddedResp := &schemas.RakshaResponsesStreamResponse{
+							partAddedResp := &schemas.GatewayResponsesStreamResponse{
 								Type:           schemas.ResponsesStreamResponseTypeContentPartAdded,
 								SequenceNumber: sequenceNumber,
 								OutputIndex:    schemas.Ptr(outputIndex),
@@ -1518,19 +1518,19 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 										LogProbs:    []schemas.ResponsesOutputMessageContentTextLogProb{},
 									},
 								},
-								ExtraFields: schemas.RakshaResponseExtraFields{
+								ExtraFields: schemas.GatewayResponseExtraFields{
 									ChunkIndex: sequenceNumber,
 								},
 							}
 							providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-								providerUtils.GetRakshaResponseForStreamResponse(nil, nil, partAddedResp, nil, nil, nil),
+								providerUtils.GetGatewayResponseForStreamResponse(nil, nil, partAddedResp, nil, nil, nil),
 								responseChan, postHookSpanFinalizer)
 							sequenceNumber++
 							hasEmittedContentPartAdded = true
 						}
 
 						// response.output_text.delta
-						deltaResp := &schemas.RakshaResponsesStreamResponse{
+						deltaResp := &schemas.GatewayResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeOutputTextDelta,
 							SequenceNumber: sequenceNumber,
 							OutputIndex:    schemas.Ptr(outputIndex),
@@ -1538,12 +1538,12 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 							ItemID:         schemas.Ptr(itemID),
 							Delta:          schemas.Ptr(currentEvent.Data),
 							LogProbs:       []schemas.ResponsesOutputMessageContentTextLogProb{},
-							ExtraFields: schemas.RakshaResponseExtraFields{
+							ExtraFields: schemas.GatewayResponseExtraFields{
 								ChunkIndex: sequenceNumber,
 							},
 						}
 						providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-							providerUtils.GetRakshaResponseForStreamResponse(nil, nil, deltaResp, nil, nil, nil),
+							providerUtils.GetGatewayResponseForStreamResponse(nil, nil, deltaResp, nil, nil, nil),
 							responseChan, postHookSpanFinalizer)
 						sequenceNumber++
 						hasReceivedContent = true
@@ -1557,24 +1557,24 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 					// Stream completed
 					if hasReceivedContent {
 						// response.output_text.done
-						textDoneResp := &schemas.RakshaResponsesStreamResponse{
+						textDoneResp := &schemas.GatewayResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeOutputTextDone,
 							SequenceNumber: sequenceNumber,
 							OutputIndex:    schemas.Ptr(outputIndex),
 							ContentIndex:   schemas.Ptr(contentIndex),
 							ItemID:         schemas.Ptr(itemID),
 							LogProbs:       []schemas.ResponsesOutputMessageContentTextLogProb{},
-							ExtraFields: schemas.RakshaResponseExtraFields{
+							ExtraFields: schemas.GatewayResponseExtraFields{
 								ChunkIndex: sequenceNumber,
 							},
 						}
 						providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-							providerUtils.GetRakshaResponseForStreamResponse(nil, nil, textDoneResp, nil, nil, nil),
+							providerUtils.GetGatewayResponseForStreamResponse(nil, nil, textDoneResp, nil, nil, nil),
 							responseChan, postHookSpanFinalizer)
 						sequenceNumber++
 
 						// response.content_part.done
-						partDoneResp := &schemas.RakshaResponsesStreamResponse{
+						partDoneResp := &schemas.GatewayResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeContentPartDone,
 							SequenceNumber: sequenceNumber,
 							OutputIndex:    schemas.Ptr(outputIndex),
@@ -1587,12 +1587,12 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 									LogProbs:    []schemas.ResponsesOutputMessageContentTextLogProb{},
 								},
 							},
-							ExtraFields: schemas.RakshaResponseExtraFields{
+							ExtraFields: schemas.GatewayResponseExtraFields{
 								ChunkIndex: sequenceNumber,
 							},
 						}
 						providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-							providerUtils.GetRakshaResponseForStreamResponse(nil, nil, partDoneResp, nil, nil, nil),
+							providerUtils.GetGatewayResponseForStreamResponse(nil, nil, partDoneResp, nil, nil, nil),
 							responseChan, postHookSpanFinalizer)
 						sequenceNumber++
 
@@ -1600,7 +1600,7 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 						messageType := schemas.ResponsesMessageTypeMessage
 						role := schemas.ResponsesInputMessageRoleAssistant
 						status := "completed"
-						itemDoneResp := &schemas.RakshaResponsesStreamResponse{
+						itemDoneResp := &schemas.GatewayResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeOutputItemDone,
 							SequenceNumber: sequenceNumber,
 							OutputIndex:    schemas.Ptr(outputIndex),
@@ -1621,27 +1621,27 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 									},
 								},
 							},
-							ExtraFields: schemas.RakshaResponseExtraFields{
+							ExtraFields: schemas.GatewayResponseExtraFields{
 								ChunkIndex: sequenceNumber,
 							},
 						}
 						providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-							providerUtils.GetRakshaResponseForStreamResponse(nil, nil, itemDoneResp, nil, nil, nil),
+							providerUtils.GetGatewayResponseForStreamResponse(nil, nil, itemDoneResp, nil, nil, nil),
 							responseChan, postHookSpanFinalizer)
 						sequenceNumber++
 					}
 
 					// response.completed
-					completedResp := &schemas.RakshaResponsesStreamResponse{
+					completedResp := &schemas.GatewayResponsesStreamResponse{
 						Type:           schemas.ResponsesStreamResponseTypeCompleted,
 						SequenceNumber: sequenceNumber,
-						Response: &schemas.RakshaResponsesResponse{
+						Response: &schemas.GatewayResponsesResponse{
 							ID:          schemas.Ptr(messageID),
 							Model:       request.Model,
 							CreatedAt:   int(startTime.Unix()),
 							CompletedAt: schemas.Ptr(int(time.Now().Unix())),
 						},
-						ExtraFields: schemas.RakshaResponseExtraFields{
+						ExtraFields: schemas.GatewayResponseExtraFields{
 							Latency:    time.Since(startTime).Milliseconds(),
 							ChunkIndex: sequenceNumber,
 						},
@@ -1657,9 +1657,9 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 						completedResp.ExtraFields.RawResponse = rawResponseChunks
 					}
 
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-						providerUtils.GetRakshaResponseForStreamResponse(nil, nil, completedResp, nil, nil, nil),
+						providerUtils.GetGatewayResponseForStreamResponse(nil, nil, completedResp, nil, nil, nil),
 						responseChan, postHookSpanFinalizer)
 					resp.CloseBodyStream()
 					return
@@ -1674,18 +1674,18 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 					if currentEvent.Data != "" {
 						errorMsg = currentEvent.Data
 					}
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						errorMsg,
 						fmt.Errorf("stream error: %s", errorMsg))
 
 					// Include accumulated raw responses in error
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
+						gatewayErr.ExtraFields.RawResponse = rawResponseChunks
 					}
 
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					enrichedErr := providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					enrichedErr := providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 					resp.CloseBodyStream()
 					return
 				}
@@ -1697,55 +1697,55 @@ func (provider *ReplicateProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 }
 
 // Embedding is not supported by the replicate provider.
-func (provider *ReplicateProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.EmbeddingRequest, provider.GetProviderKey())
 }
 
 // Speech is not supported by the replicate provider.
-func (provider *ReplicateProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechRequest, provider.GetProviderKey())
 }
 
 // Rerank is not supported by the Replicate provider.
-func (provider *ReplicateProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Replicate provider.
-func (provider *ReplicateProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // SpeechStream is not supported by the replicate provider.
-func (provider *ReplicateProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ReplicateProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, provider.GetProviderKey())
 }
 
 // Transcription is not supported by the replicate provider.
-func (provider *ReplicateProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionRequest, provider.GetProviderKey())
 }
 
 // TranscriptionStream is not supported by the replicate provider.
-func (provider *ReplicateProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ReplicateProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, provider.GetProviderKey())
 }
 
 // ImageGeneration performs an image generation request to the replicate API using predictions.
-func (provider *ReplicateProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ImageGenerationRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert Raksha request to Replicate format
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Gateway request to Replicate format
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToReplicateImageGenerationInput(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -1800,31 +1800,31 @@ func (provider *ReplicateProvider) ImageGeneration(ctx *schemas.RakshaContext, k
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to Raksha response
-	rakshaResponse, err := ToRakshaImageGenerationResponse(prediction)
+	// Convert to Gateway response
+	gatewayResponse, err := ToGatewayImageGenerationResponse(prediction)
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set extra fields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ImageGenerationStream performs a streaming image generation request to the replicate API.
 // It creates a prediction with streaming enabled and listens to the stream URL for progressive updates.
-func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageGenerationRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ImageGenerationStreamRequest); err != nil {
 		return nil, err
 	}
@@ -1832,8 +1832,8 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	// Convert Raksha request to Replicate format with streaming enabled
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Gateway request to Replicate format with streaming enabled
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -1841,8 +1841,8 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 			replicateReq.Stream = schemas.Ptr(true)
 			return replicateReq, nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Build prediction URL based on model type (version ID or model name)
@@ -1876,7 +1876,7 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
 		return nil, providerUtils.EnrichError(
 			ctx,
-			providerUtils.NewRakshaOperationError(
+			providerUtils.NewGatewayOperationError(
 				"stream URL not available in prediction response",
 				fmt.Errorf("prediction response missing stream URL"),
 			),
@@ -1891,23 +1891,23 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 	streamURL := *prediction.URLs.Stream
 
 	// Connect to stream URL
-	_, resp, rakshaErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, resp, gatewayErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Store provider response headers in context for transport layer
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1962,10 +1962,10 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					provider.logger.Warn(fmt.Sprintf("Error reading SSE stream: %v", readErr))
-					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, readErr), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 				}
 				break
 			}
@@ -2002,14 +2002,14 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 				}
 
 				// Create chunk
-				chunk := &schemas.RakshaImageGenerationStreamResponse{
+				chunk := &schemas.GatewayImageGenerationStreamResponse{
 					Type:         schemas.ImageGenerationEventTypePartial,
 					Index:        0, // Single image for now
 					ChunkIndex:   chunkIndex,
 					B64JSON:      b64Data,
 					CreatedAt:    time.Now().Unix(),
 					OutputFormat: outputFormat,
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -2028,7 +2028,7 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 				chunkIndex++
 
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+					providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 					responseChan, postHookSpanFinalizer)
 
 			case "done":
@@ -2043,40 +2043,40 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 				// Check for cancellation or error
 				switch doneData.Reason {
 				case "canceled":
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						"prediction was canceled",
 						fmt.Errorf("stream ended: prediction canceled"))
 					// Include accumulated raw responses in error
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
+						gatewayErr.ExtraFields.RawResponse = rawResponseChunks
 					}
-					rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+					gatewayErr = providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				case "error":
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						"prediction failed",
 						fmt.Errorf("stream ended with error"))
 					// Include accumulated raw responses in error
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
+						gatewayErr.ExtraFields.RawResponse = rawResponseChunks
 					}
-					rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+					gatewayErr = providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 
 				// Send completion chunk (success case when reason is empty or not present)
-				finalChunk := &schemas.RakshaImageGenerationStreamResponse{
+				finalChunk := &schemas.GatewayImageGenerationStreamResponse{
 					Type:         schemas.ImageGenerationEventTypeCompleted,
 					Index:        0,
 					ChunkIndex:   chunkIndex,
 					B64JSON:      lastB64Data,      // Include last image data
 					OutputFormat: lastOutputFormat, // Include output format
 					CreatedAt:    time.Now().Unix(),
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(startTime).Milliseconds(),
 					},
@@ -2094,9 +2094,9 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 					finalChunk.ExtraFields.RawResponse = rawResponseChunks
 				}
 
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
+					providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
 					responseChan, postHookSpanFinalizer)
 				return
 
@@ -2115,8 +2115,8 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 					}
 				}
 
-				rakshaErr := &schemas.RakshaError{
-					IsRakshaError: false,
+				gatewayErr := &schemas.GatewayError{
+					IsGatewayError: false,
 					Error: &schemas.ErrorField{
 						Message: errorMsg,
 					},
@@ -2124,11 +2124,11 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 				// Include accumulated raw responses in error
 				if sendBackRawResponse {
 					rawResponseChunks = append(rawResponseChunks, ReplicateSSEEvent{Event: eventType, Data: eventData})
-					rakshaErr.ExtraFields.RawResponse = rawResponseChunks
+					gatewayErr.ExtraFields.RawResponse = rawResponseChunks
 				}
-				rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+				gatewayErr = providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 				return
 			}
 		}
@@ -2138,20 +2138,20 @@ func (provider *ReplicateProvider) ImageGenerationStream(ctx *schemas.RakshaCont
 }
 
 // ImageEdit is not supported by the Replicate provider.
-func (provider *ReplicateProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ImageEditRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert Raksha request to Replicate format
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Gateway request to Replicate format
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToReplicateImageEditInput(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Check for Prefer: wait header from context for sync mode
@@ -2206,31 +2206,31 @@ func (provider *ReplicateProvider) ImageEdit(ctx *schemas.RakshaContext, key sch
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to Raksha response (reuse image generation response format)
-	rakshaResponse, err := ToRakshaImageGenerationResponse(prediction)
+	// Convert to Gateway response (reuse image generation response format)
+	gatewayResponse, err := ToGatewayImageGenerationResponse(prediction)
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set extra fields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ImageEditStream performs a streaming image edit request to the replicate API.
 // It creates a prediction with streaming enabled and listens to the stream URL for progressive updates.
-func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.ImageEditStreamRequest); err != nil {
 		return nil, err
 	}
@@ -2238,8 +2238,8 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	// Convert Raksha request to Replicate format with streaming enabled
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Gateway request to Replicate format with streaming enabled
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -2247,8 +2247,8 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 			replicateReq.Stream = schemas.Ptr(true)
 			return replicateReq, nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Build prediction URL based on model type (version ID or model name)
@@ -2283,7 +2283,7 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 	if prediction.URLs == nil || prediction.URLs.Stream == nil || *prediction.URLs.Stream == "" {
 		return nil, providerUtils.EnrichError(
 			ctx,
-			providerUtils.NewRakshaOperationError(
+			providerUtils.NewGatewayOperationError(
 				"stream URL not available in prediction response",
 				fmt.Errorf("prediction response missing stream URL"),
 			),
@@ -2298,23 +2298,23 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 	streamURL := *prediction.URLs.Stream
 
 	// Connect to stream URL
-	_, resp, rakshaErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, resp, gatewayErr := listenToReplicateStreamURL(ctx, provider.streamingClient, streamURL, key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Store provider response headers in context for transport layer
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -2369,9 +2369,9 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 					return
 				}
 				if readErr != io.EOF {
-					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("stream read error", readErr), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
+					enrichedErr := providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("stream read error", readErr), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, enrichedErr, responseChan, provider.logger, postHookSpanFinalizer)
 				}
 				break
 			}
@@ -2406,14 +2406,14 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 				}
 
 				// Create chunk (use ImageEditEventTypePartial)
-				chunk := &schemas.RakshaImageGenerationStreamResponse{
+				chunk := &schemas.GatewayImageGenerationStreamResponse{
 					Type:         schemas.ImageEditEventTypePartial,
 					Index:        0,
 					ChunkIndex:   chunkIndex,
 					B64JSON:      b64Data,
 					CreatedAt:    time.Now().Unix(),
 					OutputFormat: outputFormat,
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -2432,7 +2432,7 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 				chunkIndex++
 
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+					providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 					responseChan, postHookSpanFinalizer)
 
 			case "done":
@@ -2447,38 +2447,38 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 				// Check for cancellation or error
 				switch doneData.Reason {
 				case "canceled":
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						"prediction was canceled",
 						fmt.Errorf("stream ended: prediction canceled"))
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
+						gatewayErr.ExtraFields.RawResponse = rawResponseChunks
 					}
-					rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+					gatewayErr = providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				case "error":
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						"prediction failed",
 						fmt.Errorf("stream ended with error"))
 					if sendBackRawResponse && len(rawResponseChunks) > 0 {
-						rakshaErr.ExtraFields.RawResponse = rawResponseChunks
+						gatewayErr.ExtraFields.RawResponse = rawResponseChunks
 					}
-					rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+					gatewayErr = providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 
 				// Send completion chunk (success case)
-				finalChunk := &schemas.RakshaImageGenerationStreamResponse{
+				finalChunk := &schemas.GatewayImageGenerationStreamResponse{
 					Type:         schemas.ImageEditEventTypeCompleted,
 					Index:        0,
 					ChunkIndex:   chunkIndex,
 					B64JSON:      lastB64Data,
 					CreatedAt:    time.Now().Unix(),
 					OutputFormat: lastOutputFormat,
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(startTime).Milliseconds(),
 					},
@@ -2492,9 +2492,9 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 					finalChunk.ExtraFields.RawResponse = rawResponseChunks
 				}
 
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
+					providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
 					responseChan, postHookSpanFinalizer)
 				return
 
@@ -2506,16 +2506,16 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 					errorData.Detail = eventData
 				}
 
-				rakshaErr := providerUtils.NewRakshaOperationError(
+				gatewayErr := providerUtils.NewGatewayOperationError(
 					"stream error",
 					fmt.Errorf("%s", errorData.Detail))
 				if sendBackRawResponse {
 					rawResponseChunks = append(rawResponseChunks, ReplicateSSEEvent{Event: eventType, Data: eventData})
-					rakshaErr.ExtraFields.RawResponse = rawResponseChunks
+					gatewayErr.ExtraFields.RawResponse = rawResponseChunks
 				}
-				rakshaErr = providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+				gatewayErr = providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 				return
 			}
 		}
@@ -2525,25 +2525,25 @@ func (provider *ReplicateProvider) ImageEditStream(ctx *schemas.RakshaContext, p
 }
 
 // ImageVariation is not supported by the Replicate provider.
-func (provider *ReplicateProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration performs a video generation request to Replicate's API.
-func (provider *ReplicateProvider) VideoGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) VideoGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.VideoGenerationRequest); err != nil {
 		return nil, err
 	}
 
-	// Convert Raksha request to Replicate format
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Gateway request to Replicate format
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToReplicateVideoGenerationInput(request)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create prediction asynchronously and return job ID without polling.
@@ -2574,38 +2574,38 @@ func (provider *ReplicateProvider) VideoGeneration(ctx *schemas.RakshaContext, k
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 
-	// Convert to Raksha response
-	rakshaResponse, err := ToRakshaVideoGenerationResponse(prediction)
+	// Convert to Gateway response
+	gatewayResponse, err := ToGatewayVideoGenerationResponse(prediction)
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
-	rakshaResponse.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResponse.ID, schemas.Replicate)
+	gatewayResponse.ID = providerUtils.AddVideoIDProviderSuffix(gatewayResponse.ID, schemas.Replicate)
 
 	// Set extra fields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // VideoRetrieve fetches the status/output of a Replicate video generation job.
-func (provider *ReplicateProvider) VideoRetrieve(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) VideoRetrieve(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.VideoRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	providerName := provider.GetProviderKey()
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
@@ -2625,10 +2625,10 @@ func (provider *ReplicateProvider) VideoRetrieve(ctx *schemas.RakshaContext, key
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2644,66 +2644,66 @@ func (provider *ReplicateProvider) VideoRetrieve(ctx *schemas.RakshaContext, key
 	}
 
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 	var prediction ReplicatePredictionResponse
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &prediction, nil, false, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &prediction, nil, false, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	rakshaResponse, convertErr := ToRakshaVideoGenerationResponse(&prediction)
+	gatewayResponse, convertErr := ToGatewayVideoGenerationResponse(&prediction)
 	if convertErr != nil {
 		return nil, providerUtils.EnrichError(ctx, convertErr, nil, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
-	rakshaResponse.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResponse.ID, providerName)
+	gatewayResponse.ID = providerUtils.AddVideoIDProviderSuffix(gatewayResponse.ID, providerName)
 
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if sendBackRawResponse {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // VideoDownload is not supported by the Replicate provider.
-func (provider *ReplicateProvider) VideoDownload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) VideoDownload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Replicate, provider.customProviderConfig, schemas.VideoDownloadRequest); err != nil {
 		return nil, err
 	}
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 	// Retrieve latest status/output first.
-	rakshaVideoRetrieveRequest := &schemas.RakshaVideoRetrieveRequest{
+	gatewayVideoRetrieveRequest := &schemas.GatewayVideoRetrieveRequest{
 		Provider: request.Provider,
 		ID:       request.ID,
 	}
-	videoResp, rakshaErr := provider.VideoRetrieve(ctx, key, rakshaVideoRetrieveRequest)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	videoResp, gatewayErr := provider.VideoRetrieve(ctx, key, gatewayVideoRetrieveRequest)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if videoResp.Status != schemas.VideoStatusCompleted {
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("video not ready, current status: %s", videoResp.Status),
 			nil)
 	}
 	if len(videoResp.Videos) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("video URL not available", nil)
+		return nil, providerUtils.NewGatewayOperationError("video URL not available", nil)
 	}
 	var videoUrl string
 	if videoResp.Videos[0].URL != nil {
 		videoUrl = *videoResp.Videos[0].URL
 	}
 	if videoUrl == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid video output type", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid video output type", nil)
 	}
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2715,92 +2715,92 @@ func (provider *ReplicateProvider) VideoDownload(ctx *schemas.RakshaContext, key
 	if key.Value.GetValue() != "" {
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("failed to download video: HTTP %d", resp.StatusCode()),
 			nil), latency)
 	}
 
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 	contentType := string(resp.Header.ContentType())
 	if contentType == "" {
 		contentType = "video/mp4"
 	}
 	content := append([]byte(nil), body...)
-	rakshaResp := &schemas.RakshaVideoDownloadResponse{
+	gatewayResp := &schemas.GatewayVideoDownloadResponse{
 		VideoID:     request.ID,
 		Content:     content,
 		ContentType: contentType,
 	}
 
-	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResp.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResp.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResp.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // VideoDelete is not supported by replicate provider.
-func (provider *ReplicateProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) VideoDelete(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by replicate provider.
-func (provider *ReplicateProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) VideoList(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by replicate provider.
-func (provider *ReplicateProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) VideoRemix(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // BatchCreate is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) BatchCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCreateRequest, provider.GetProviderKey())
 }
 
 // BatchList is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) BatchList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchListRequest, provider.GetProviderKey())
 }
 
 // BatchRetrieve is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) BatchRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchRetrieveRequest, provider.GetProviderKey())
 }
 
 // BatchCancel is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchCancel(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) BatchCancel(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCancelRequest, provider.GetProviderKey())
 }
 
 // BatchDelete is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) BatchDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults is not supported by replicate provider.
-func (provider *ReplicateProvider) BatchResults(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) BatchResults(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchResultsRequest, provider.GetProviderKey())
 }
 
 // FileUpload uploads a file to Replicate's Files API.
-func (provider *ReplicateProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) FileUpload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("file content is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file content is required", nil)
 	}
 
 	// Create multipart form data
@@ -2833,13 +2833,13 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.RakshaContext, key sc
 	// Add filename field if provided
 	if filename != "" {
 		if err := writer.WriteField("filename", filename); err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to write filename field", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to write filename field", err)
 		}
 	}
 
 	// Add type field (content type)
 	if err := writer.WriteField("type", contentType); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write type field", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write type field", err)
 	}
 
 	// Add metadata field if provided
@@ -2848,17 +2848,17 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.RakshaContext, key sc
 			if len(metadata) > 0 {
 				metadataJSON, err := providerUtils.MarshalSorted(metadata)
 				if err != nil {
-					return nil, providerUtils.NewRakshaOperationError("failed to marshal metadata", err)
+					return nil, providerUtils.NewGatewayOperationError("failed to marshal metadata", err)
 				}
 				h := make(textproto.MIMEHeader)
 				h.Set("Content-Disposition", `form-data; name="metadata"`)
 				h.Set("Content-Type", "application/json")
 				metadataPart, err := writer.CreatePart(h)
 				if err != nil {
-					return nil, providerUtils.NewRakshaOperationError("failed to create metadata part", err)
+					return nil, providerUtils.NewGatewayOperationError("failed to create metadata part", err)
 				}
 				if _, err := metadataPart.Write(metadataJSON); err != nil {
-					return nil, providerUtils.NewRakshaOperationError("failed to write metadata", err)
+					return nil, providerUtils.NewGatewayOperationError("failed to write metadata", err)
 				}
 			}
 		}
@@ -2871,14 +2871,14 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.RakshaContext, key sc
 
 	part, err := writer.CreatePart(h)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to create form file", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to create form file", err)
 	}
 	if _, err := part.Write(request.File); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write file content", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write file content", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to close multipart writer", err)
 	}
 
 	// Create request
@@ -2900,10 +2900,10 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.RakshaContext, key sc
 	req.SetBody(buf.Bytes())
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -2914,27 +2914,27 @@ func (provider *ReplicateProvider) FileUpload(ctx *schemas.RakshaContext, key sc
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var replicateResp ReplicateFileResponse
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	fileResponse := replicateResp.ToRakshaFileUploadResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+	fileResponse := replicateResp.ToGatewayFileUploadResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
 	fileResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	return fileResponse, nil
 }
 
 // FileList lists files using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *ReplicateProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) FileList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
@@ -2944,14 +2944,14 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.RakshaContext, keys []s
 	// unrecognised value through would produce a malformed request rather than a clean API error.
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, false)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaFileListResponse{
+		return &schemas.GatewayFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -2989,10 +2989,10 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.RakshaContext, keys []s
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -3003,16 +3003,16 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.RakshaContext, keys []s
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var replicateResp ReplicateFileListResponse
-	_, _, rakshaErr = providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, _, gatewayErr = providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert files to Raksha format
+	// Convert files to Gateway format
 	files := make([]schemas.FileObject, 0, len(replicateResp.Results))
 	for _, file := range replicateResp.Results {
 		files = append(files, schemas.FileObject{
@@ -3022,7 +3022,7 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.RakshaContext, keys []s
 			CreatedAt: ParseReplicateTimestamp(file.CreatedAt),
 			Filename:  file.Name,
 			Purpose:   schemas.FilePurposeBatch,
-			Status:    ToRakshaFileStatus(&file),
+			Status:    ToGatewayFileStatus(&file),
 		})
 	}
 
@@ -3038,38 +3038,38 @@ func (provider *ReplicateProvider) FileList(ctx *schemas.RakshaContext, keys []s
 	// Use helper to build proper cursor with key index
 	finalCursor, finalHasMore := helper.BuildNextCursor(hasMore, nextCursor)
 
-	// Convert to Raksha response
+	// Convert to Gateway response
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
-	rakshaResp := &schemas.RakshaFileListResponse{
+	gatewayResp := &schemas.GatewayFileListResponse{
 		Object:  "list",
 		Data:    files,
 		HasMore: finalHasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerResponseHeaders,
 		},
 	}
 	if finalCursor != "" {
-		rakshaResp.After = &finalCursor
+		gatewayResp.After = &finalCursor
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // FileRetrieve retrieves file metadata from Replicate's Files API by trying each key until found.
-func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -3086,12 +3086,12 @@ func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.RakshaContext, keys
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -3108,16 +3108,16 @@ func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.RakshaContext, keys
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var replicateResp ReplicateFileResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &replicateResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -3125,9 +3125,9 @@ func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.RakshaContext, keys
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
-		fileRetrieveResponse := replicateResp.ToRakshaFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+		fileRetrieveResponse := replicateResp.ToGatewayFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 		fileRetrieveResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 		return fileRetrieveResponse, nil
 	}
@@ -3136,17 +3136,17 @@ func (provider *ReplicateProvider) FileRetrieve(ctx *schemas.RakshaContext, keys
 }
 
 // FileDelete deletes a file from Replicate's Files API by trying each key until successful.
-func (provider *ReplicateProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) FileDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -3163,12 +3163,12 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -3177,12 +3177,12 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 			providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
-			return &schemas.RakshaFileDeleteResponse{
+			ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
+			return &schemas.GatewayFileDeleteResponse{
 				ID:      request.FileID,
 				Object:  "file",
 				Deleted: true,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					Latency:                 latency.Milliseconds(),
 					ProviderResponseHeaders: providerResponseHeaders,
 				},
@@ -3203,17 +3203,17 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		// Try to parse response body if present
 		var deleteResp map[string]interface{}
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &deleteResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &deleteResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -3221,13 +3221,13 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
-		result := &schemas.RakshaFileDeleteResponse{
+		result := &schemas.GatewayFileDeleteResponse{
 			ID:      request.FileID,
 			Object:  "file",
 			Deleted: true,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -3248,69 +3248,69 @@ func (provider *ReplicateProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 }
 
 // FileContent is not supported by replicate provider.
-func (provider *ReplicateProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) FileContent(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileContentRequest, provider.GetProviderKey())
 }
 
-func (provider *ReplicateProvider) CountTokens(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) CountTokens(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CountTokensRequest, provider.GetProviderKey())
 }
 
 // Compaction is not supported by the Replicate provider.
-func (provider *ReplicateProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ContainerCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ContainerList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ContainerRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ContainerDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ContainerFileCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ContainerFileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ContainerFileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ContainerFileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by replicate provider.
-func (provider *ReplicateProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) ContainerFileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 // Passthrough is not supported by the Replicate provider.
-func (provider *ReplicateProvider) Passthrough(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+func (provider *ReplicateProvider) Passthrough(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughRequest, provider.GetProviderKey())
 }
 
-func (provider *ReplicateProvider) PassthroughStream(_ *schemas.RakshaContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ReplicateProvider) PassthroughStream(_ *schemas.GatewayContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughStreamRequest, provider.GetProviderKey())
 }

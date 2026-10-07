@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // sharedHeadersResolver handles MCPAuthTypeHeaders — the admin-configured
@@ -17,7 +17,7 @@ import (
 // resolver covers the legacy DB default.
 type sharedHeadersResolver struct{}
 
-func (r *sharedHeadersResolver) ConnectionHeaders(_ *schemas.RakshaContext, config *schemas.MCPClientConfig) (http.Header, error) {
+func (r *sharedHeadersResolver) ConnectionHeaders(_ *schemas.GatewayContext, config *schemas.MCPClientConfig) (http.Header, error) {
 	headers := http.Header{}
 	if config == nil {
 		return headers, nil

@@ -1,11 +1,12 @@
 import CustomersTable from "@/app/workspace/governance/views/customerTable";
 import FullPageLoader from "@/components/fullPageLoader";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { parseAsSafeString } from "@/lib/queryParamsParser";
 import { getErrorMessage, useGetCustomersQuery, useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { parseAsInteger, useQueryStates } from "nuqs";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const POLLING_INTERVAL = 5000;
@@ -26,6 +27,9 @@ export default function GovernanceCustomersPage() {
 	);
 
 	const debouncedSearch = useDebouncedValue(urlState.search, 300);
+	const [vkPollMs, setVkPollMs] = useState(POLLING_INTERVAL);
+	const [teamsPollMs, setTeamsPollMs] = useState(POLLING_INTERVAL);
+	const [customersPollMs, setCustomersPollMs] = useState(POLLING_INTERVAL);
 
 	const {
 		data: virtualKeysData,
@@ -33,13 +37,13 @@ export default function GovernanceCustomersPage() {
 		isLoading: vkLoading,
 	} = useGetVirtualKeysQuery(undefined, {
 		skip: !hasVirtualKeysAccess,
-		pollingInterval: POLLING_INTERVAL,
+		pollingInterval: vkPollMs,
 	});
 	const {
 		data: teamsData,
 		error: teamsError,
 		isLoading: teamsLoading,
-	} = useGetTeamsQuery(undefined, { skip: !hasTeamsAccess, pollingInterval: POLLING_INTERVAL });
+	} = useGetTeamsQuery(undefined, { skip: !hasTeamsAccess, pollingInterval: teamsPollMs });
 	const {
 		data: customersData,
 		error: customersError,
@@ -53,9 +57,19 @@ export default function GovernanceCustomersPage() {
 		},
 		{
 			skip: !hasCustomersAccess,
-			pollingInterval: POLLING_INTERVAL,
+			pollingInterval: customersPollMs,
 		},
 	);
+
+	useEffect(() => {
+		setVkPollMs(vkError ? 0 : POLLING_INTERVAL);
+	}, [vkError]);
+	useEffect(() => {
+		setTeamsPollMs(teamsError ? 0 : POLLING_INTERVAL);
+	}, [teamsError]);
+	useEffect(() => {
+		setCustomersPollMs(customersError ? 0 : POLLING_INTERVAL);
+	}, [customersError]);
 
 	const customersTotal = customersData?.total_count ?? 0;
 
@@ -90,6 +104,20 @@ export default function GovernanceCustomersPage() {
 
 	return (
 		<div className="no-padding-parent mx-auto flex h-[calc(100dvh-1rem)] w-full flex-col p-4">
+			{vkError || teamsError || customersError ? (
+				<div className="mb-3">
+					<QueryErrorBanner
+						testId="governance-customers-query-error"
+						message={
+							customersError
+								? `Failed to load customers: ${getErrorMessage(customersError)}`
+								: teamsError
+									? `Failed to load teams: ${getErrorMessage(teamsError)}`
+									: `Failed to load virtual keys: ${getErrorMessage(vkError)}`
+						}
+					/>
+				</div>
+			) : null}
 			<CustomersTable
 				customers={customersData?.customers || []}
 				totalCount={customersData?.total_count || 0}

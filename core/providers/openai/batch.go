@@ -3,7 +3,7 @@ package openai
 import (
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // OpenAI Batch API Types
@@ -65,8 +65,8 @@ type OpenAIBatchListResponse struct {
 	HasMore bool                  `json:"has_more"`
 }
 
-// ToRakshaBatchStatus converts OpenAI status to Raksha status.
-func ToRakshaBatchStatus(status string) schemas.BatchStatus {
+// ToGatewayBatchStatus converts OpenAI status to Gateway status.
+func ToGatewayBatchStatus(status string) schemas.BatchStatus {
 	switch status {
 	case "validating":
 		return schemas.BatchStatusValidating
@@ -89,15 +89,15 @@ func ToRakshaBatchStatus(status string) schemas.BatchStatus {
 	}
 }
 
-// ToRakshaBatchCreateResponse converts OpenAI batch response to Raksha batch response.
-func (r *OpenAIBatchResponse) ToRakshaBatchCreateResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaBatchCreateResponse {
-	resp := &schemas.RakshaBatchCreateResponse{
+// ToGatewayBatchCreateResponse converts OpenAI batch response to Gateway batch response.
+func (r *OpenAIBatchResponse) ToGatewayBatchCreateResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayBatchCreateResponse {
+	resp := &schemas.GatewayBatchCreateResponse{
 		ID:               r.ID,
 		Object:           r.Object,
 		Endpoint:         r.Endpoint,
 		InputFileID:      r.InputFileID,
 		CompletionWindow: r.CompletionWindow,
-		Status:           ToRakshaBatchStatus(r.Status),
+		Status:           ToGatewayBatchStatus(r.Status),
 		Metadata:         r.Metadata,
 		CreatedAt:        r.CreatedAt,
 		OutputFileID:     r.OutputFileID,
@@ -105,7 +105,7 @@ func (r *OpenAIBatchResponse) ToRakshaBatchCreateResponse(latency time.Duration,
 		InputBlob:        r.InputBlob,
 		OutputBlob:       r.OutputBlob,
 		ErrorBlob:        r.ErrorBlob,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -133,15 +133,15 @@ func (r *OpenAIBatchResponse) ToRakshaBatchCreateResponse(latency time.Duration,
 	return resp
 }
 
-// ToRakshaBatchRetrieveResponse converts OpenAI batch response to Raksha batch retrieve response.
-func (r *OpenAIBatchResponse) ToRakshaBatchRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaBatchRetrieveResponse {
-	resp := &schemas.RakshaBatchRetrieveResponse{
+// ToGatewayBatchRetrieveResponse converts OpenAI batch response to Gateway batch retrieve response.
+func (r *OpenAIBatchResponse) ToGatewayBatchRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayBatchRetrieveResponse {
+	resp := &schemas.GatewayBatchRetrieveResponse{
 		ID:               r.ID,
 		Object:           r.Object,
 		Endpoint:         r.Endpoint,
 		InputFileID:      r.InputFileID,
 		CompletionWindow: r.CompletionWindow,
-		Status:           ToRakshaBatchStatus(r.Status),
+		Status:           ToGatewayBatchStatus(r.Status),
 		Metadata:         r.Metadata,
 		CreatedAt:        r.CreatedAt,
 		InProgressAt:     r.InProgressAt,
@@ -157,7 +157,7 @@ func (r *OpenAIBatchResponse) ToRakshaBatchRetrieveResponse(latency time.Duratio
 		InputBlob:        r.InputBlob,
 		OutputBlob:       r.OutputBlob,
 		ErrorBlob:        r.ErrorBlob,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}

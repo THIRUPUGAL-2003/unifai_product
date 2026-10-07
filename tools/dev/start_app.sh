@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "===================================================="
-echo "🚀 Starting Raksha & AI Guard (system-wide)"
+echo "🚀 Starting Gateway & AI Guard (system-wide)"
 echo "===================================================="
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -13,10 +13,10 @@ cd "$REPO_ROOT"
 if [[ -f "$REPO_ROOT/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
-  source <(grep -E '^(RAKSHA_PROXY_ADDR|PROXY_PORT|PAC_HTTP_PORT|SERVER_DOMAIN|APP_PORT|MITM_WEB_PORT)=' "$REPO_ROOT/.env" | sed 's/\r$//')
+  source <(grep -E '^(GATEWAY_PROXY_ADDR|GATEWAY_PROXY_ADDR|PROXY_PORT|PAC_HTTP_PORT|SERVER_DOMAIN|APP_PORT|MITM_WEB_PORT)=' "$REPO_ROOT/.env" | sed 's/\r$//')
   set +a
 fi
-PROXY_HOST_PORT="${RAKSHA_PROXY_ADDR:?set RAKSHA_PROXY_ADDR in .env}"
+PROXY_HOST_PORT="${GATEWAY_PROXY_ADDR:-${GATEWAY_PROXY_ADDR:?set GATEWAY_PROXY_ADDR in .env}}"
 PROXY_PORT_ONLY="${PROXY_HOST_PORT##*:}"
 MITM_WEB_PORT="${MITM_WEB_PORT:?set MITM_WEB_PORT in .env}"
 APP_PORT="${APP_PORT:?set APP_PORT in .env}"

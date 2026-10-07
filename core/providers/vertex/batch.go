@@ -8,17 +8,17 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/providers/gemini"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/gemini"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// vertexBatchCustomIDLabel is the request label used to carry the Raksha custom_id
+// vertexBatchCustomIDLabel is the request label used to carry the Gateway custom_id
 // through a batch prediction job (Vertex JSONL has no native custom_id field; the
 // request — labels included — is echoed back in each output line).
-const vertexBatchCustomIDLabel = "raksha_custom_id"
+const vertexBatchCustomIDLabel = "gateway_custom_id"
 
-// vertexJobStateToBatchStatus maps Vertex JOB_STATE_* values to Raksha batch statuses.
+// vertexJobStateToBatchStatus maps Vertex JOB_STATE_* values to Gateway batch statuses.
 func vertexJobStateToBatchStatus(state string) schemas.BatchStatus {
 	switch state {
 	case "JOB_STATE_QUEUED", "JOB_STATE_PENDING":
@@ -42,7 +42,7 @@ func vertexJobStateToBatchStatus(state string) schemas.BatchStatus {
 
 // vertexBatchJobsBaseURL returns ".../v1/projects/{project}/locations/{region}" for the
 // key's configured project and region. Batch prediction requires a regional endpoint.
-func vertexBatchJobsBaseURL(key schemas.Key) (string, *schemas.RakshaError) {
+func vertexBatchJobsBaseURL(key schemas.Key) (string, *schemas.GatewayError) {
 	if key.VertexKeyConfig == nil {
 		return "", providerUtils.NewConfigurationError("vertex key config is not set")
 	}
@@ -57,16 +57,16 @@ func vertexBatchJobsBaseURL(key schemas.Key) (string, *schemas.RakshaError) {
 	return getVertexProjectLocationURL(region, "v1", projectID), nil
 }
 
-// vertexBatchJobURL resolves a Raksha batch ID (bare job ID or full resource name)
+// vertexBatchJobURL resolves a Gateway batch ID (bare job ID or full resource name)
 // to the job's REST URL.
-func vertexBatchJobURL(key schemas.Key, batchID string) (string, *schemas.RakshaError) {
+func vertexBatchJobURL(key schemas.Key, batchID string) (string, *schemas.GatewayError) {
 	if strings.HasPrefix(batchID, "projects/") {
 		// Full resource name: projects/{p}/locations/{r}/batchPredictionJobs/{id}
 		parts := strings.Split(batchID, "/")
 		if len(parts) >= 6 && parts[2] == "locations" {
 			return getVertexAPIBaseURL(parts[3], "v1") + "/" + batchID, nil
 		}
-		return "", providerUtils.NewRakshaOperationError(fmt.Sprintf("invalid Vertex batch ID %q", batchID), nil)
+		return "", providerUtils.NewGatewayOperationError(fmt.Sprintf("invalid Vertex batch ID %q", batchID), nil)
 	}
 	base, cfgErr := vertexBatchJobsBaseURL(key)
 	if cfgErr != nil {
@@ -75,10 +75,10 @@ func vertexBatchJobURL(key schemas.Key, batchID string) (string, *schemas.Raksha
 	return base + "/batchPredictionJobs/" + batchID, nil
 }
 
-// vertexBatchJobToRaksha maps a BatchPredictionJob resource to the Raksha retrieve response.
-func vertexBatchJobToRaksha(job *VertexBatchPredictionJob) schemas.RakshaBatchRetrieveResponse {
+// vertexBatchJobToGateway maps a BatchPredictionJob resource to the Gateway retrieve response.
+func vertexBatchJobToGateway(job *VertexBatchPredictionJob) schemas.GatewayBatchRetrieveResponse {
 	status := vertexJobStateToBatchStatus(job.State)
-	resp := schemas.RakshaBatchRetrieveResponse{
+	resp := schemas.GatewayBatchRetrieveResponse{
 		ID:        job.Name,
 		Object:    "batch",
 		Status:    status,
@@ -128,7 +128,7 @@ func vertexBatchJobToRaksha(job *VertexBatchPredictionJob) schemas.RakshaBatchRe
 }
 
 // parseVertexJobAPIError parses a Vertex AI error response (same envelope as GCS).
-func parseVertexJobAPIError(body []byte, statusCode int, op string) *schemas.RakshaError {
+func parseVertexJobAPIError(body []byte, statusCode int, op string) *schemas.GatewayError {
 	var apiErr gcsErrorBody
 	_ = sonic.Unmarshal(body, &apiErr)
 	msg := apiErr.Error.Message
@@ -138,11 +138,11 @@ func parseVertexJobAPIError(body []byte, statusCode int, op string) *schemas.Rak
 	return providerUtils.NewProviderAPIError(msg, nil, statusCode, nil, nil)
 }
 
-// ToVertexBatchCreateRequest maps a Raksha batch create request to a Vertex
+// ToVertexBatchCreateRequest maps a Gateway batch create request to a Vertex
 // BatchPredictionJob request. The model, display name and input/output GCS config are
 // mapped explicitly; every other field is taken from extra_params (e.g. modelParameters,
 // labels, modelVersionId, encryptionSpec) and merged verbatim into the job body.
-func ToVertexBatchCreateRequest(request *schemas.RakshaBatchCreateRequest, displayName, inputURI, outputURI string) *VertexBatchCreateRequest {
+func ToVertexBatchCreateRequest(request *schemas.GatewayBatchCreateRequest, displayName, inputURI, outputURI string) *VertexBatchCreateRequest {
 	model := ""
 	if request.Model != nil {
 		model = *request.Model
@@ -231,8 +231,8 @@ func vertexConvertRequestsToJSONL(requests []schemas.BatchRequestItem) ([]byte, 
 
 // ============================ Integration Converters ============================
 // Convert between the native Vertex BatchPredictionJob wire shape (used by the aiplatform
-// JobServiceClient) and Raksha's neutral batch types, for the genai HTTP integration.
-// Key/project selection happens in Raksha from the vertex key config, so the project and
+// JobServiceClient) and Gateway's neutral batch types, for the genai HTTP integration.
+// Key/project selection happens in Gateway from the vertex key config, so the project and
 // location in the inbound request path are placeholders — only the job body is converted.
 
 // batchStatusToVertexJobState is the inverse of vertexJobStateToBatchStatus.
@@ -265,7 +265,7 @@ func formatVertexBatchTime(unix int64) string {
 	return time.Unix(unix, 0).UTC().Format(time.RFC3339)
 }
 
-// vertexCompletionStatsFromCounts maps Raksha request counts to Vertex completion stats.
+// vertexCompletionStatsFromCounts maps Gateway request counts to Vertex completion stats.
 func vertexCompletionStatsFromCounts(c schemas.BatchRequestCounts) *VertexBatchCompletionStats {
 	if c.Total == 0 && c.Completed == 0 && c.Failed == 0 {
 		return nil
@@ -281,16 +281,16 @@ func vertexCompletionStatsFromCounts(c schemas.BatchRequestCounts) *VertexBatchC
 	}
 }
 
-// ToRakshaBatchCreateRequest maps an inbound native Vertex BatchPredictionJob (as sent by
-// the aiplatform JobServiceClient) to a Raksha batch create request. The model, GCS input
-// URI and display name are mapped to typed Raksha fields; the GCS output prefix and every
+// ToGatewayBatchCreateRequest maps an inbound native Vertex BatchPredictionJob (as sent by
+// the aiplatform JobServiceClient) to a Gateway batch create request. The model, GCS input
+// URI and display name are mapped to typed Gateway fields; the GCS output prefix and every
 // other Vertex-native create-input field (modelParameters, labels, modelVersionId,
 // encryptionSpec, instanceConfig, ...) are carried through ExtraParams keyed by their Vertex
 // JSON names, so ToVertexBatchCreateRequest can merge them back into the job body verbatim
 // for a lossless round trip. Server-populated, output-only fields (state, outputInfo, error,
 // timestamps, completionStats, partialFailures, satisfiesPz*, ...) are intentionally omitted.
-func ToRakshaBatchCreateRequest(job *VertexBatchPredictionJob) *schemas.RakshaBatchCreateRequest {
-	req := &schemas.RakshaBatchCreateRequest{Provider: schemas.Vertex}
+func ToGatewayBatchCreateRequest(job *VertexBatchPredictionJob) *schemas.GatewayBatchCreateRequest {
+	req := &schemas.GatewayBatchCreateRequest{Provider: schemas.Vertex}
 	if job == nil {
 		return req
 	}
@@ -362,7 +362,7 @@ func ToRakshaBatchCreateRequest(job *VertexBatchPredictionJob) *schemas.RakshaBa
 }
 
 // vertexBatchJobShell builds the BatchPredictionJob fields shared by the create and retrieve
-// response converters. name is whatever Raksha returns (bare id or full resource name);
+// response converters. name is whatever Gateway returns (bare id or full resource name);
 // displayName is the human-readable job name, kept distinct from name.
 func vertexBatchJobShell(name, displayName string, status schemas.BatchStatus, createdAt int64, inputFileID string, outputFileID *string) *VertexBatchPredictionJob {
 	job := &VertexBatchPredictionJob{
@@ -387,9 +387,9 @@ func vertexBatchJobShell(name, displayName string, status schemas.BatchStatus, c
 	return job
 }
 
-// ToVertexBatchCreateResponse maps a Raksha batch create response to a native Vertex
+// ToVertexBatchCreateResponse maps a Gateway batch create response to a native Vertex
 // BatchPredictionJob.
-func ToVertexBatchCreateResponse(resp *schemas.RakshaBatchCreateResponse) *VertexBatchPredictionJob {
+func ToVertexBatchCreateResponse(resp *schemas.GatewayBatchCreateResponse) *VertexBatchPredictionJob {
 	if resp == nil {
 		return nil
 	}
@@ -402,9 +402,9 @@ func ToVertexBatchCreateResponse(resp *schemas.RakshaBatchCreateResponse) *Verte
 	return job
 }
 
-// ToVertexBatchRetrieveResponse maps a Raksha batch retrieve response to a native Vertex
+// ToVertexBatchRetrieveResponse maps a Gateway batch retrieve response to a native Vertex
 // BatchPredictionJob, including timestamps, completion stats and any terminal error.
-func ToVertexBatchRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse) *VertexBatchPredictionJob {
+func ToVertexBatchRetrieveResponse(resp *schemas.GatewayBatchRetrieveResponse) *VertexBatchPredictionJob {
 	if resp == nil {
 		return nil
 	}
@@ -437,9 +437,9 @@ func ToVertexBatchRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse) *V
 	return job
 }
 
-// ToVertexBatchListResponse maps a Raksha batch list response to the native Vertex
+// ToVertexBatchListResponse maps a Gateway batch list response to the native Vertex
 // batchPredictionJobs.list response envelope.
-func ToVertexBatchListResponse(resp *schemas.RakshaBatchListResponse) *VertexBatchJobListResponse {
+func ToVertexBatchListResponse(resp *schemas.GatewayBatchListResponse) *VertexBatchJobListResponse {
 	out := &VertexBatchJobListResponse{}
 	if resp == nil {
 		return out

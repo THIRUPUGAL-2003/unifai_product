@@ -14,184 +14,184 @@ import (
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
-// Raksha sink types: the subset of the management-API request bodies the
+// Gateway sink types: the subset of the management-API request bodies the
 // migration writes. Kept as local DTOs so the migration depends only on the
 // wire (JSON) contract, not on the transports package.
 
-// RakshaClient writes entities to the Raksha management API.
-type RakshaClient struct {
+// GatewayClient writes entities to the Gateway management API.
+type GatewayClient struct {
 	BaseURL string // e.g. http://localhost:8080
 	APIKey  string // optional bearer token
 }
 
-// RakshaCreateCustomerRequest is the body for POST /api/governance/customers.
-type RakshaCreateCustomerRequest struct {
+// GatewayCreateCustomerRequest is the body for POST /api/governance/customers.
+type GatewayCreateCustomerRequest struct {
 	Name      string                         `json:"name"`
-	Budgets   []RakshaCreateBudgetRequest   `json:"budgets,omitempty"`
-	RateLimit *RakshaCreateRateLimitRequest `json:"rate_limit,omitempty"`
+	Budgets   []GatewayCreateBudgetRequest   `json:"budgets,omitempty"`
+	RateLimit *GatewayCreateRateLimitRequest `json:"rate_limit,omitempty"`
 }
 
-// RakshaCreateTeamRequest is the body for POST /api/governance/teams.
+// GatewayCreateTeamRequest is the body for POST /api/governance/teams.
 // CustomerID links the team to a migrated customer (LiteLLM organization); it is
 // omitted for a standalone team or one whose customer could not be resolved.
-type RakshaCreateTeamRequest struct {
+type GatewayCreateTeamRequest struct {
 	Name       string                         `json:"name"`
 	CustomerID *string                        `json:"customer_id,omitempty"`
-	Budgets    []RakshaCreateBudgetRequest   `json:"budgets,omitempty"`
-	RateLimit  *RakshaCreateRateLimitRequest `json:"rate_limit,omitempty"`
+	Budgets    []GatewayCreateBudgetRequest   `json:"budgets,omitempty"`
+	RateLimit  *GatewayCreateRateLimitRequest `json:"rate_limit,omitempty"`
 }
 
-// RakshaCreateUserRequest is the body for POST /api/users. role_id is
-// intentionally omitted: LiteLLM's string user_role has no Raksha numeric
+// GatewayCreateUserRequest is the body for POST /api/users. role_id is
+// intentionally omitted: LiteLLM's string user_role has no Gateway numeric
 // role_id mapping, and user governance is driven by access profiles.
-type RakshaCreateUserRequest struct {
+type GatewayCreateUserRequest struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
 }
 
-// RakshaCreateVirtualKeyRequest is the body for
+// GatewayCreateVirtualKeyRequest is the body for
 // POST /api/governance/virtual-keys. TeamID and CustomerID are mutually
 // exclusive (VK ownership is team XOR customer). The key value is
 // server-generated; the LiteLLM token is not carried.
-type RakshaCreateVirtualKeyRequest struct {
+type GatewayCreateVirtualKeyRequest struct {
 	Name            string                           `json:"name"`
-	ProviderConfigs []RakshaVKProviderConfigRequest `json:"provider_configs,omitempty"`
+	ProviderConfigs []GatewayVKProviderConfigRequest `json:"provider_configs,omitempty"`
 	TeamID          *string                          `json:"team_id,omitempty"`
 	CustomerID      *string                          `json:"customer_id,omitempty"`
-	Budgets         []RakshaCreateBudgetRequest     `json:"budgets,omitempty"`
-	RateLimit       *RakshaCreateRateLimitRequest   `json:"rate_limit,omitempty"`
+	Budgets         []GatewayCreateBudgetRequest     `json:"budgets,omitempty"`
+	RateLimit       *GatewayCreateRateLimitRequest   `json:"rate_limit,omitempty"`
 	IsActive        *bool                            `json:"is_active,omitempty"`
 }
 
-// RakshaCreateModelConfigRequest is the body for
+// GatewayCreateModelConfigRequest is the body for
 // POST /api/governance/model-configs. Scope is global for LiteLLM model-level
 // budgets and rate limits.
-type RakshaCreateModelConfigRequest struct {
+type GatewayCreateModelConfigRequest struct {
 	ModelName string                         `json:"model_name"`
 	Provider  *string                        `json:"provider,omitempty"`
 	Scope     string                         `json:"scope,omitempty"`
-	Budgets   []RakshaCreateBudgetRequest   `json:"budgets,omitempty"`
-	RateLimit *RakshaCreateRateLimitRequest `json:"rate_limit,omitempty"`
+	Budgets   []GatewayCreateBudgetRequest   `json:"budgets,omitempty"`
+	RateLimit *GatewayCreateRateLimitRequest `json:"rate_limit,omitempty"`
 }
 
-// rakshaModelConfigScopeGlobal is the Raksha scope for global model configs.
-const rakshaModelConfigScopeGlobal = "global"
+// gatewayModelConfigScopeGlobal is the Gateway scope for global model configs.
+const gatewayModelConfigScopeGlobal = "global"
 
-// RakshaVKProviderConfigRequest selects which keys of a provider a VK may use.
+// GatewayVKProviderConfigRequest selects which keys of a provider a VK may use.
 // key_ids ["*"] grants all keys; specific UUIDs limit to those keys; empty denies all.
 // allowed_models ["*"] allows all models on the matched keys.
-type RakshaVKProviderConfigRequest struct {
+type GatewayVKProviderConfigRequest struct {
 	Provider      string   `json:"provider"`
 	KeyIDs        []string `json:"key_ids,omitempty"`
 	AllowedModels []string `json:"allowed_models,omitempty"`
 }
 
-// RakshaCreateBudgetRequest is a single Raksha budget.
-type RakshaCreateBudgetRequest struct {
+// GatewayCreateBudgetRequest is a single Gateway budget.
+type GatewayCreateBudgetRequest struct {
 	MaxLimit      float64 `json:"max_limit"`
 	ResetDuration string  `json:"reset_duration"` // e.g. "30s", "5m", "1h", "1d", "1w", "1M", "1Y"
 }
 
-// RakshaCreateRateLimitRequest is a Raksha rate limit. Token and request
+// GatewayCreateRateLimitRequest is a Gateway rate limit. Token and request
 // dimensions are independent; each is omitted when LiteLLM has no positive
 // limit for it.
-type RakshaCreateRateLimitRequest struct {
+type GatewayCreateRateLimitRequest struct {
 	TokenMaxLimit        *int64  `json:"token_max_limit,omitempty"`
 	TokenResetDuration   *string `json:"token_reset_duration,omitempty"`
 	RequestMaxLimit      *int64  `json:"request_max_limit,omitempty"`
 	RequestResetDuration *string `json:"request_reset_duration,omitempty"`
 }
 
-// rakshaDefaultConcurrency / rakshaDefaultBufferSize mirror
+// gatewayDefaultConcurrency / gatewayDefaultBufferSize mirror
 // schemas.DefaultConcurrency / DefaultBufferSize. The provider PUT/POST require
 // both to be > 0.
 const (
-	rakshaDefaultConcurrency = 1000
-	rakshaDefaultBufferSize  = 5000
+	gatewayDefaultConcurrency = 1000
+	gatewayDefaultBufferSize  = 5000
 )
 
-// RakshaConcurrencyAndBufferSize mirrors schemas.ConcurrencyAndBufferSize.
-type RakshaConcurrencyAndBufferSize struct {
+// GatewayConcurrencyAndBufferSize mirrors schemas.ConcurrencyAndBufferSize.
+type GatewayConcurrencyAndBufferSize struct {
 	Concurrency int `json:"concurrency"`
 	BufferSize  int `json:"buffer_size"`
 }
 
-// RakshaNetworkConfig is the subset of schemas.NetworkConfig the migration
-// sets. BaseURL is provider-level in Raksha (LiteLLM api_base is
+// GatewayNetworkConfig is the subset of schemas.NetworkConfig the migration
+// sets. BaseURL is provider-level in Gateway (LiteLLM api_base is
 // per-deployment).
-type RakshaNetworkConfig struct {
+type GatewayNetworkConfig struct {
 	BaseURL string `json:"base_url,omitempty"`
 }
 
-// RakshaCustomProviderConfig mirrors schemas.CustomProviderConfig for a
+// GatewayCustomProviderConfig mirrors schemas.CustomProviderConfig for a
 // synthesized provider that wraps a base provider at a distinct base URL.
-type RakshaCustomProviderConfig struct {
+type GatewayCustomProviderConfig struct {
 	IsKeyLess        bool   `json:"is_key_less"`
 	BaseProviderType string `json:"base_provider_type"`
 }
 
-// RakshaProviderUpdatePayload is the body for PUT /api/providers/{provider}
+// GatewayProviderUpdatePayload is the body for PUT /api/providers/{provider}
 // for standard providers; keys are managed separately via the /keys endpoint.
-type RakshaProviderUpdatePayload struct {
-	NetworkConfig            *RakshaNetworkConfig           `json:"network_config,omitempty"`
-	ConcurrencyAndBufferSize RakshaConcurrencyAndBufferSize `json:"concurrency_and_buffer_size"`
+type GatewayProviderUpdatePayload struct {
+	NetworkConfig            *GatewayNetworkConfig           `json:"network_config,omitempty"`
+	ConcurrencyAndBufferSize GatewayConcurrencyAndBufferSize `json:"concurrency_and_buffer_size"`
 }
 
-// RakshaProviderCreatePayload is the body for POST /api/providers.
-type RakshaProviderCreatePayload struct {
+// GatewayProviderCreatePayload is the body for POST /api/providers.
+type GatewayProviderCreatePayload struct {
 	Provider                 string                          `json:"provider"`
-	CustomProviderConfig     *RakshaCustomProviderConfig    `json:"custom_provider_config,omitempty"`
-	NetworkConfig            *RakshaNetworkConfig           `json:"network_config,omitempty"`
-	ConcurrencyAndBufferSize RakshaConcurrencyAndBufferSize `json:"concurrency_and_buffer_size"`
+	CustomProviderConfig     *GatewayCustomProviderConfig    `json:"custom_provider_config,omitempty"`
+	NetworkConfig            *GatewayNetworkConfig           `json:"network_config,omitempty"`
+	ConcurrencyAndBufferSize GatewayConcurrencyAndBufferSize `json:"concurrency_and_buffer_size"`
 }
 
-// RakshaProviderKey is the body for POST /api/providers/{provider}/keys. It
+// GatewayProviderKey is the body for POST /api/providers/{provider}/keys. It
 // decodes into schemas.Key; Value is a plain string ("env.FOO" => from
 // environment, else a literal value). The *_key_config fields carry provider-
 // specific credentials (Azure endpoint, AWS credentials, GCP credentials) or
 // the per-key server URL for the keyless self-hosted providers (vllm/ollama).
-type RakshaProviderKey struct {
+type GatewayProviderKey struct {
 	Name             string                   `json:"name"`
 	Value            string                   `json:"value"`
 	Models           []string                 `json:"models"`
 	Weight           float64                  `json:"weight"`
-	VLLMKeyConfig    *RakshaVLLMKeyConfig    `json:"vllm_key_config,omitempty"`
-	OllamaKeyConfig  *RakshaKeyURLConfig     `json:"ollama_key_config,omitempty"`
-	AzureKeyConfig   *RakshaAzureKeyConfig   `json:"azure_key_config,omitempty"`
-	BedrockKeyConfig *RakshaBedrockKeyConfig `json:"bedrock_key_config,omitempty"`
-	VertexKeyConfig  *RakshaVertexKeyConfig  `json:"vertex_key_config,omitempty"`
+	VLLMKeyConfig    *GatewayVLLMKeyConfig    `json:"vllm_key_config,omitempty"`
+	OllamaKeyConfig  *GatewayKeyURLConfig     `json:"ollama_key_config,omitempty"`
+	AzureKeyConfig   *GatewayAzureKeyConfig   `json:"azure_key_config,omitempty"`
+	BedrockKeyConfig *GatewayBedrockKeyConfig `json:"bedrock_key_config,omitempty"`
+	VertexKeyConfig  *GatewayVertexKeyConfig  `json:"vertex_key_config,omitempty"`
 }
 
-// RakshaVLLMKeyConfig mirrors schemas.VLLMKeyConfig: a per-key vLLM server URL
+// GatewayVLLMKeyConfig mirrors schemas.VLLMKeyConfig: a per-key vLLM server URL
 // plus the exact served model used to select the key.
-type RakshaVLLMKeyConfig struct {
+type GatewayVLLMKeyConfig struct {
 	URL       string `json:"url"`
 	ModelName string `json:"model_name,omitempty"`
 }
 
-// RakshaKeyURLConfig mirrors schemas.OllamaKeyConfig: a per-key server URL with
+// GatewayKeyURLConfig mirrors schemas.OllamaKeyConfig: a per-key server URL with
 // no model selector.
-type RakshaKeyURLConfig struct {
+type GatewayKeyURLConfig struct {
 	URL string `json:"url"`
 }
 
-// RakshaAzureKeyConfig mirrors schemas.AzureKeyConfig. Endpoint is the Azure
+// GatewayAzureKeyConfig mirrors schemas.AzureKeyConfig. Endpoint is the Azure
 // OpenAI service URL (e.g. https://myazure.openai.azure.com/). For Entra ID
 // (service principal) auth, set ClientID + ClientSecret + TenantID; for API-key
 // auth, leave those nil and set the key Value instead.
-type RakshaAzureKeyConfig struct {
+type GatewayAzureKeyConfig struct {
 	Endpoint     string  `json:"endpoint"`
 	ClientID     *string `json:"client_id,omitempty"`
 	ClientSecret *string `json:"client_secret,omitempty"`
 	TenantID     *string `json:"tenant_id,omitempty"`
 }
 
-// RakshaBedrockKeyConfig mirrors schemas.BedrockKeyConfig. For static IAM
+// GatewayBedrockKeyConfig mirrors schemas.BedrockKeyConfig. For static IAM
 // credentials set AccessKey + SecretKey (+ optional SessionToken). For role
 // assumption set RoleARN (+ optional RoleSessionName). For EC2 instance-profile
-// or ECS task-role auth leave AccessKey and SecretKey empty; Raksha uses the
+// or ECS task-role auth leave AccessKey and SecretKey empty; Gateway uses the
 // SDK default credential chain. Region is optional but recommended.
-type RakshaBedrockKeyConfig struct {
+type GatewayBedrockKeyConfig struct {
 	AccessKey       string  `json:"access_key,omitempty"`
 	SecretKey       string  `json:"secret_key,omitempty"`
 	SessionToken    *string `json:"session_token,omitempty"`
@@ -200,10 +200,10 @@ type RakshaBedrockKeyConfig struct {
 	RoleSessionName *string `json:"session_name,omitempty"`
 }
 
-// RakshaVertexKeyConfig mirrors schemas.VertexKeyConfig. ProjectID and Region
+// GatewayVertexKeyConfig mirrors schemas.VertexKeyConfig. ProjectID and Region
 // are required. AuthCredentials is the service-account JSON (or a path/env ref
 // to it); leave empty to use Application Default Credentials (ADC).
-type RakshaVertexKeyConfig struct {
+type GatewayVertexKeyConfig struct {
 	ProjectID       string `json:"project_id"`
 	ProjectNumber   string `json:"project_number,omitempty"`
 	Region          string `json:"region"`
@@ -211,19 +211,19 @@ type RakshaVertexKeyConfig struct {
 }
 
 // CreateCustomer posts a single customer to POST /api/governance/customers.
-func (c *RakshaClient) CreateCustomer(ctx context.Context, in *RakshaCreateCustomerRequest) error {
+func (c *GatewayClient) CreateCustomer(ctx context.Context, in *GatewayCreateCustomerRequest) error {
 	return c.sendJSON(ctx, http.MethodPost, "/api/governance/customers", in, "customer "+in.Name)
 }
 
 // CreateTeam posts a single team to POST /api/governance/teams.
-func (c *RakshaClient) CreateTeam(ctx context.Context, in *RakshaCreateTeamRequest) error {
+func (c *GatewayClient) CreateTeam(ctx context.Context, in *GatewayCreateTeamRequest) error {
 	return c.sendJSON(ctx, http.MethodPost, "/api/governance/teams", in, "team "+in.Name)
 }
 
-// FindCustomerByName resolves a Raksha customer id by exact name via
+// FindCustomerByName resolves a Gateway customer id by exact name via
 // GET /api/governance/customers?search=. It returns ok=false (no error) when no
 // customer matches, so the caller can create the team unlinked and warn.
-func (c *RakshaClient) FindCustomerByName(ctx context.Context, name string) (id string, ok bool, err error) {
+func (c *GatewayClient) FindCustomerByName(ctx context.Context, name string) (id string, ok bool, err error) {
 	body, err := c.getJSON(ctx, "/api/governance/customers?search="+url.QueryEscape(name), fmt.Sprintf("find customer %q", name))
 	if err != nil {
 		return "", false, err
@@ -247,10 +247,10 @@ func (c *RakshaClient) FindCustomerByName(ctx context.Context, name string) (id 
 	return "", false, nil
 }
 
-// CreateUser creates a Raksha user via POST /api/users and returns its id. An
+// CreateUser creates a Gateway user via POST /api/users and returns its id. An
 // existing user (409 on duplicate email) is resolved to the existing id via
 // FindUserByEmail, so the caller can still link team memberships.
-func (c *RakshaClient) CreateUser(ctx context.Context, in *RakshaCreateUserRequest) (string, error) {
+func (c *GatewayClient) CreateUser(ctx context.Context, in *GatewayCreateUserRequest) (string, error) {
 	body, status, err := c.doRequest(ctx, http.MethodPost, "/api/users", in)
 	if err != nil {
 		return "", fmt.Errorf("create user %q: %w", maskEmail(in.Email), err)
@@ -284,10 +284,10 @@ func (c *RakshaClient) CreateUser(ctx context.Context, in *RakshaCreateUserReque
 	return out.User.ID, nil
 }
 
-// ListProviders returns the names of providers configured in Raksha via
+// ListProviders returns the names of providers configured in Gateway via
 // GET /api/providers. The VK migration uses this to drop allow-list entries for
 // providers that were not migrated (a VK create rejects unknown providers).
-func (c *RakshaClient) ListProviders(ctx context.Context) (map[string]bool, error) {
+func (c *GatewayClient) ListProviders(ctx context.Context) (map[string]bool, error) {
 	body, err := c.getJSON(ctx, "/api/providers", "list providers")
 	if err != nil {
 		return nil, err
@@ -307,50 +307,50 @@ func (c *RakshaClient) ListProviders(ctx context.Context) (map[string]bool, erro
 	return set, nil
 }
 
-// RakshaKeyMeta is the key identity returned by GET /api/keys. The value is
+// GatewayKeyMeta is the key identity returned by GET /api/keys. The value is
 // redacted; only the UUID (KeyID) and name are needed for VK key attachment.
-type RakshaKeyMeta struct {
+type GatewayKeyMeta struct {
 	KeyID    string `json:"key_id"`
 	Name     string `json:"name"`
 	Provider string `json:"provider"`
 }
 
-// ListAllKeys returns every provider key registered in Raksha via GET /api/keys.
+// ListAllKeys returns every provider key registered in Gateway via GET /api/keys.
 // The VK migration uses the KeyID UUIDs to attach specific keys to virtual keys.
-func (c *RakshaClient) ListAllKeys(ctx context.Context) ([]RakshaKeyMeta, error) {
+func (c *GatewayClient) ListAllKeys(ctx context.Context) ([]GatewayKeyMeta, error) {
 	body, err := c.getJSON(ctx, "/api/keys", "list all keys")
 	if err != nil {
 		return nil, err
 	}
-	var keys []RakshaKeyMeta
+	var keys []GatewayKeyMeta
 	if err := json.Unmarshal(body, &keys); err != nil {
 		return nil, fmt.Errorf("decode keys: %w", err)
 	}
 	return keys, nil
 }
 
-// CreateVirtualKey creates a Raksha virtual key via
+// CreateVirtualKey creates a Gateway virtual key via
 // POST /api/governance/virtual-keys. The key value is server-generated.
-func (c *RakshaClient) CreateVirtualKey(ctx context.Context, in *RakshaCreateVirtualKeyRequest) error {
+func (c *GatewayClient) CreateVirtualKey(ctx context.Context, in *GatewayCreateVirtualKeyRequest) error {
 	return c.sendProvider(ctx, http.MethodPost, "/api/governance/virtual-keys", in, "virtual key "+in.Name)
 }
 
-// CreateModelConfig creates a global Raksha model config via
+// CreateModelConfig creates a global Gateway model config via
 // POST /api/governance/model-configs. An existing config is treated as success.
-func (c *RakshaClient) CreateModelConfig(ctx context.Context, in ModelConfigPlan) error {
-	req := RakshaCreateModelConfigRequest{
+func (c *GatewayClient) CreateModelConfig(ctx context.Context, in ModelConfigPlan) error {
+	req := GatewayCreateModelConfigRequest{
 		ModelName: in.ModelName,
 		Provider:  in.Provider,
-		Scope:     rakshaModelConfigScopeGlobal,
+		Scope:     gatewayModelConfigScopeGlobal,
 		Budgets:   in.Budgets,
 		RateLimit: in.RateLimit,
 	}
 	return c.sendProvider(ctx, http.MethodPost, "/api/governance/model-configs", req, "model config "+modelConfigSignature(in))
 }
 
-// FindUserByEmail resolves a Raksha user id by exact email via
+// FindUserByEmail resolves a Gateway user id by exact email via
 // GET /api/users?search=. Returns ok=false (no error) when none matches.
-func (c *RakshaClient) FindUserByEmail(ctx context.Context, email string) (id string, ok bool, err error) {
+func (c *GatewayClient) FindUserByEmail(ctx context.Context, email string) (id string, ok bool, err error) {
 	body, err := c.getJSON(ctx, "/api/users?search="+url.QueryEscape(email), fmt.Sprintf("find user %q", maskEmail(email)))
 	if err != nil {
 		return "", false, err
@@ -372,10 +372,10 @@ func (c *RakshaClient) FindUserByEmail(ctx context.Context, email string) (id st
 	return "", false, nil
 }
 
-// FindTeamByName resolves a Raksha team id by exact name via
+// FindTeamByName resolves a Gateway team id by exact name via
 // GET /api/governance/teams?search=. Returns ok=false (no error) when none
 // matches, so the caller can warn and skip the membership link.
-func (c *RakshaClient) FindTeamByName(ctx context.Context, name string) (id string, ok bool, err error) {
+func (c *GatewayClient) FindTeamByName(ctx context.Context, name string) (id string, ok bool, err error) {
 	body, err := c.getJSON(ctx, "/api/governance/teams?search="+url.QueryEscape(name), fmt.Sprintf("find team %q", name))
 	if err != nil {
 		return "", false, err
@@ -399,33 +399,33 @@ func (c *RakshaClient) FindTeamByName(ctx context.Context, name string) (id stri
 
 // AddTeamMember links a user to a team via POST /api/teams/{id}/members. An
 // existing membership (409) is treated as success.
-func (c *RakshaClient) AddTeamMember(ctx context.Context, teamID, userID string) error {
+func (c *GatewayClient) AddTeamMember(ctx context.Context, teamID, userID string) error {
 	return c.sendProvider(ctx, http.MethodPost, "/api/teams/"+teamID+"/members", map[string]string{"user_id": userID}, "team "+teamID+" member "+userID)
 }
 
-// EnsureProvider creates or upserts a Raksha provider's config (no keys). A
+// EnsureProvider creates or upserts a Gateway provider's config (no keys). A
 // custom provider (distinct base URL) is created via POST /api/providers; a
 // standard provider is upserted via PUT /api/providers/{provider}. An existing
 // provider (409 / already-present) is treated as success.
-func (c *RakshaClient) EnsureProvider(ctx context.Context, p ProviderPlan) error {
-	concurrency := RakshaConcurrencyAndBufferSize{Concurrency: rakshaDefaultConcurrency, BufferSize: rakshaDefaultBufferSize}
+func (c *GatewayClient) EnsureProvider(ctx context.Context, p ProviderPlan) error {
+	concurrency := GatewayConcurrencyAndBufferSize{Concurrency: gatewayDefaultConcurrency, BufferSize: gatewayDefaultBufferSize}
 
-	var network *RakshaNetworkConfig
+	var network *GatewayNetworkConfig
 	if p.BaseURL != "" {
-		network = &RakshaNetworkConfig{BaseURL: p.BaseURL}
+		network = &GatewayNetworkConfig{BaseURL: p.BaseURL}
 	}
 
 	if p.IsCustom {
-		payload := RakshaProviderCreatePayload{
+		payload := GatewayProviderCreatePayload{
 			Provider:                 p.Name,
-			CustomProviderConfig:     &RakshaCustomProviderConfig{BaseProviderType: p.BaseProvider},
+			CustomProviderConfig:     &GatewayCustomProviderConfig{BaseProviderType: p.BaseProvider},
 			NetworkConfig:            network,
 			ConcurrencyAndBufferSize: concurrency,
 		}
 		return c.sendProvider(ctx, http.MethodPost, "/api/providers", payload, p.Name)
 	}
 
-	payload := RakshaProviderUpdatePayload{
+	payload := GatewayProviderUpdatePayload{
 		NetworkConfig:            network,
 		ConcurrencyAndBufferSize: concurrency,
 	}
@@ -435,8 +435,8 @@ func (c *RakshaClient) EnsureProvider(ctx context.Context, p ProviderPlan) error
 // CreateProviderKey adds a single key to an existing provider via
 // POST /api/providers/{provider}/keys. An already-present key (409) is treated
 // as success.
-func (c *RakshaClient) CreateProviderKey(ctx context.Context, provider string, k KeyPlan) error {
-	key := RakshaProviderKey{
+func (c *GatewayClient) CreateProviderKey(ctx context.Context, provider string, k KeyPlan) error {
+	key := GatewayProviderKey{
 		Name:             k.Name,
 		Value:            k.Value,
 		Models:           k.Models,
@@ -449,19 +449,19 @@ func (c *RakshaClient) CreateProviderKey(ctx context.Context, provider string, k
 	if k.URL != "" {
 		switch provider {
 		case "vllm":
-			key.VLLMKeyConfig = &RakshaVLLMKeyConfig{URL: k.URL, ModelName: k.VLLMModelName}
+			key.VLLMKeyConfig = &GatewayVLLMKeyConfig{URL: k.URL, ModelName: k.VLLMModelName}
 		case "ollama":
-			key.OllamaKeyConfig = &RakshaKeyURLConfig{URL: k.URL}
+			key.OllamaKeyConfig = &GatewayKeyURLConfig{URL: k.URL}
 		}
 	}
 	return c.sendProvider(ctx, http.MethodPost, "/api/providers/"+provider+"/keys", key, provider+"/"+k.Name)
 }
 
-func (c *RakshaClient) endpoint(path string) string {
+func (c *GatewayClient) endpoint(path string) string {
 	return strings.TrimRight(c.BaseURL, "/") + path
 }
 
-func (c *RakshaClient) doRequest(ctx context.Context, method, path string, body any) ([]byte, int, error) {
+func (c *GatewayClient) doRequest(ctx context.Context, method, path string, body any) ([]byte, int, error) {
 	var rdr io.Reader
 	if body != nil {
 		payload, err := json.Marshal(body)
@@ -497,7 +497,7 @@ func (c *RakshaClient) doRequest(ctx context.Context, method, path string, body 
 
 // getJSON performs a GET with optional bearer and returns the body, mapping
 // non-2xx to an error.
-func (c *RakshaClient) getJSON(ctx context.Context, path, what string) ([]byte, error) {
+func (c *GatewayClient) getJSON(ctx context.Context, path, what string) ([]byte, error) {
 	body, status, err := c.doRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", what, err)
@@ -510,11 +510,11 @@ func (c *RakshaClient) getJSON(ctx context.Context, path, what string) ([]byte, 
 
 // sendProvider marshals body and performs the request, mapping 2xx and 409
 // (already exists) to success.
-func (c *RakshaClient) sendProvider(ctx context.Context, method, path string, body any, what string) error {
+func (c *GatewayClient) sendProvider(ctx context.Context, method, path string, body any, what string) error {
 	return c.sendJSON(ctx, method, path, body, what)
 }
 
-func (c *RakshaClient) sendJSON(ctx context.Context, method, path string, body any, what string) error {
+func (c *GatewayClient) sendJSON(ctx context.Context, method, path string, body any, what string) error {
 	out, status, err := c.doRequest(ctx, method, path, body)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", method, what, err)

@@ -1,9 +1,10 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useGetMCPClientsQuery, useUpdateMCPClientMutation } from "@/lib/store";
+import { getErrorMessage, useGetMCPClientsQuery, useUpdateMCPClientMutation } from "@/lib/store";
 import type { MCPAuthType, MCPClient } from "@/lib/types/mcp";
 import { KeyRound, Save } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -11,7 +12,7 @@ import { toast } from "sonner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 export default function MCPAuthConfigView() {
-	const { data, isLoading } = useGetMCPClientsQuery({ limit: 200, offset: 0 });
+	const { data, isLoading, isError, error, refetch } = useGetMCPClientsQuery({ limit: 200, offset: 0 });
 	const [updateClient] = useUpdateMCPClientMutation();
 	const clients = data?.clients || [];
 	const [offset, setOffset] = useState(0);
@@ -70,7 +71,14 @@ export default function MCPAuthConfigView() {
 				</p>
 			</div>
 
-			{isLoading ? (
+			{isError ? (
+				<div className="flex flex-col gap-2">
+					<QueryErrorBanner testId="mcp-auth-config-query-error" message={getErrorMessage(error) || "Failed to load MCP clients."} />
+					<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetch()}>
+						Retry
+					</Button>
+				</div>
+			) : isLoading ? (
 				<p className="text-muted-foreground text-sm">Loading MCP clients…</p>
 			) : clients.length === 0 ? (
 				<div className="rounded-xl border border-dashed p-10 text-center">

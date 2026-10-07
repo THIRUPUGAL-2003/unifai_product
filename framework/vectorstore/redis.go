@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/redis/go-redis/v9"
 )
 

@@ -10,8 +10,8 @@ import (
 	"net/url"
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -30,7 +30,7 @@ func (provider *OpenAIProvider) RealtimeWebSocketURL(key schemas.Key, model stri
 }
 
 // RealtimeHeaders returns the headers required for the OpenAI Realtime WebSocket connection.
-func (provider *OpenAIProvider) RealtimeHeaders(_ *schemas.RakshaContext, key schemas.Key) (map[string]string, *schemas.RakshaError) {
+func (provider *OpenAIProvider) RealtimeHeaders(_ *schemas.GatewayContext, key schemas.Key) (map[string]string, *schemas.GatewayError) {
 	headers := map[string]string{
 		"Authorization": "Bearer " + key.Value.GetValue(),
 	}
@@ -47,12 +47,12 @@ func (provider *OpenAIProvider) SupportsRealtimeWebRTC() bool {
 
 // ExchangeRealtimeWebRTCSDP performs the GA SDP exchange via multipart POST to /v1/realtime/calls.
 func (provider *OpenAIProvider) ExchangeRealtimeWebRTCSDP(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
 	model string,
 	sdp string,
 	session json.RawMessage,
-) (string, *schemas.RakshaError) {
+) (string, *schemas.GatewayError) {
 	path := "/v1/realtime/calls"
 	if session == nil && strings.TrimSpace(model) != "" {
 		path += "?model=" + url.QueryEscape(model)
@@ -63,24 +63,24 @@ func (provider *OpenAIProvider) ExchangeRealtimeWebRTCSDP(
 // ExchangeLegacyRealtimeWebRTCSDP performs the beta SDP exchange via multipart POST to /v1/realtime.
 // Same multipart format but targets the legacy endpoint with model in the URL.
 func (provider *OpenAIProvider) ExchangeLegacyRealtimeWebRTCSDP(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
 	sdp string,
 	session json.RawMessage,
 	model string,
-) (string, *schemas.RakshaError) {
+) (string, *schemas.GatewayError) {
 	return provider.exchangeWebRTCSDP(ctx, key, "/v1/realtime?model="+url.QueryEscape(model), sdp, session)
 }
 
 // exchangeWebRTCSDP is the shared multipart SDP exchange implementation.
 // Builds a multipart body with sdp + optional session, POSTs to the given path.
 func (provider *OpenAIProvider) exchangeWebRTCSDP(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
 	path string,
 	sdp string,
 	session json.RawMessage,
-) (string, *schemas.RakshaError) {
+) (string, *schemas.GatewayError) {
 	bodyBuf := &bytes.Buffer{}
 	writer := multipart.NewWriter(bodyBuf)
 	if err := writer.WriteField("sdp", sdp); err != nil {
@@ -107,17 +107,17 @@ func (provider *OpenAIProvider) exchangeWebRTCSDP(
 	for k, v := range provider.networkConfig.ExtraHeaders {
 		req.Header.Set(k, v)
 	}
-	if headers, _ := ctx.Value(schemas.RakshaContextKeyRequestHeaders).(map[string]string); headers != nil {
+	if headers, _ := ctx.Value(schemas.GatewayContextKeyRequestHeaders).(map[string]string); headers != nil {
 		if agentsSDK := headers["x-openai-agents-sdk"]; agentsSDK != "" {
 			req.Header.Set("X-OpenAI-Agents-SDK", agentsSDK)
 		}
 	}
 	req.SetBody(bodyBuf.Bytes())
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return "", rakshaErr
+	if gatewayErr != nil {
+		return "", gatewayErr
 	}
 
 	answerBody := resp.Body()
@@ -128,31 +128,31 @@ func (provider *OpenAIProvider) exchangeWebRTCSDP(
 	return string(answerBody), nil
 }
 
-func (provider *OpenAIProvider) realtimeWebRTCUpstreamError(ctx *schemas.RakshaContext, statusCode int, body []byte) *schemas.RakshaError {
-	rakshaErr := &schemas.RakshaError{
-		IsRakshaError: false,
+func (provider *OpenAIProvider) realtimeWebRTCUpstreamError(ctx *schemas.GatewayContext, statusCode int, body []byte) *schemas.GatewayError {
+	gatewayErr := &schemas.GatewayError{
+		IsGatewayError: false,
 		StatusCode:     schemas.Ptr(fasthttp.StatusBadGateway),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr("upstream_connection_error"),
 			Message: fmt.Sprintf("upstream realtime WebRTC handshake failed for %s", provider.GetProviderKey()),
 		},
-		ExtraFields: schemas.RakshaErrorExtraFields{
+		ExtraFields: schemas.GatewayErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 			Provider:    provider.GetProviderKey(),
 		},
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaErr.ExtraFields.RawResponse = map[string]any{
+		gatewayErr.ExtraFields.RawResponse = map[string]any{
 			"status": statusCode,
 			"body":   string(body),
 		}
 	}
-	return rakshaErr
+	return gatewayErr
 }
 
-func newRealtimeWebRTCSDPError(status int, errorType, message string, err error) *schemas.RakshaError {
-	rakshaErr := &schemas.RakshaError{
-		IsRakshaError: true,
+func newRealtimeWebRTCSDPError(status int, errorType, message string, err error) *schemas.GatewayError {
+	gatewayErr := &schemas.GatewayError{
+		IsGatewayError: true,
 		StatusCode:     schemas.Ptr(status),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr(errorType),
@@ -160,12 +160,12 @@ func newRealtimeWebRTCSDPError(status int, errorType, message string, err error)
 		},
 	}
 	if err != nil {
-		rakshaErr.Error.Error = err
+		gatewayErr.Error.Error = err
 	}
-	return rakshaErr
+	return gatewayErr
 }
 
-func (provider *OpenAIProvider) ShouldStartRealtimeTurn(event *schemas.RakshaRealtimeEvent) bool {
+func (provider *OpenAIProvider) ShouldStartRealtimeTurn(event *schemas.GatewayRealtimeEvent) bool {
 	if event == nil {
 		return false
 	}
@@ -189,7 +189,7 @@ func (provider *OpenAIProvider) RealtimeWebSocketSubprotocol() string {
 	return "realtime"
 }
 
-func (provider *OpenAIProvider) ShouldForwardRealtimeEvent(event *schemas.RakshaRealtimeEvent) bool {
+func (provider *OpenAIProvider) ShouldForwardRealtimeEvent(event *schemas.GatewayRealtimeEvent) bool {
 	return true
 }
 
@@ -208,18 +208,18 @@ func (provider *OpenAIProvider) ShouldAccumulateRealtimeOutput(eventType schemas
 // CreateRealtimeClientSecret mints an OpenAI Realtime client secret and returns
 // the native OpenAI response body unchanged.
 func (provider *OpenAIProvider) CreateRealtimeClientSecret(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
 	endpointType schemas.RealtimeSessionEndpointType,
 	rawRequest json.RawMessage,
-) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.RealtimeRequest); err != nil {
 		return nil, err
 	}
 
-	normalizedBody, _, rakshaErr := NormalizeRealtimeClientSecretRequest(rawRequest, provider.GetProviderKey(), endpointType)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	normalizedBody, _, gatewayErr := NormalizeRealtimeClientSecretRequest(rawRequest, provider.GetProviderKey(), endpointType)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -235,14 +235,14 @@ func (provider *OpenAIProvider) CreateRealtimeClientSecret(
 	}
 	req.SetBody(normalizedBody)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	headers := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	if resp.StatusCode() < fasthttp.StatusOK || resp.StatusCode() >= fasthttp.StatusMultipleChoices {
 		return nil, providerUtils.SetErrorLatency(ParseOpenAIError(resp), latency)
@@ -250,14 +250,14 @@ func (provider *OpenAIProvider) CreateRealtimeClientSecret(
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to decode response body", err)
 	}
 
-	out := &schemas.RakshaPassthroughResponse{
+	out := &schemas.GatewayPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 		},
@@ -277,15 +277,15 @@ func NormalizeRealtimeClientSecretRequest(
 	rawRequest json.RawMessage,
 	defaultProvider schemas.ModelProvider,
 	endpointType schemas.RealtimeSessionEndpointType,
-) ([]byte, string, *schemas.RakshaError) {
-	root, rakshaErr := schemas.ParseRealtimeClientSecretBody(rawRequest)
-	if rakshaErr != nil {
-		return nil, "", rakshaErr
+) ([]byte, string, *schemas.GatewayError) {
+	root, gatewayErr := schemas.ParseRealtimeClientSecretBody(rawRequest)
+	if gatewayErr != nil {
+		return nil, "", gatewayErr
 	}
 
-	modelValue, rakshaErr := schemas.ExtractRealtimeClientSecretModel(root)
-	if rakshaErr != nil {
-		return nil, "", rakshaErr
+	modelValue, gatewayErr := schemas.ExtractRealtimeClientSecretModel(root)
+	if gatewayErr != nil {
+		return nil, "", gatewayErr
 	}
 	providerKey, normalizedModel := schemas.ParseModelString(modelValue, defaultProvider)
 	if normalizedModel == "" {
@@ -308,7 +308,7 @@ func NormalizeRealtimeClientSecretRequest(
 func normalizeRealtimeClientSecretsRequest(
 	root map[string]json.RawMessage,
 	normalizedModel string,
-) ([]byte, string, *schemas.RakshaError) {
+) ([]byte, string, *schemas.GatewayError) {
 	session := map[string]json.RawMessage{}
 	if existingSession, ok := root["session"]; ok && len(existingSession) > 0 && !bytes.Equal(existingSession, []byte("null")) {
 		if err := json.Unmarshal(existingSession, &session); err != nil {
@@ -348,7 +348,7 @@ func normalizeRealtimeClientSecretsRequest(
 func normalizeRealtimeSessionsRequest(
 	root map[string]json.RawMessage,
 	normalizedModel string,
-) ([]byte, string, *schemas.RakshaError) {
+) ([]byte, string, *schemas.GatewayError) {
 	if existingSession, ok := root["session"]; ok && len(existingSession) > 0 && !bytes.Equal(existingSession, []byte("null")) {
 		session := map[string]json.RawMessage{}
 		if err := json.Unmarshal(existingSession, &session); err != nil {
@@ -379,7 +379,7 @@ func normalizeRealtimeSessionsRequest(
 
 // StripNestedModelPrefixes removes provider prefixes (e.g. "openai/whisper-1" → "whisper-1")
 // from known nested model fields in the realtime session config. This prevents forwarding
-// Raksha-style "provider/model" strings to upstream providers that expect bare model names.
+// Gateway-style "provider/model" strings to upstream providers that expect bare model names.
 func StripNestedModelPrefixes(session map[string]json.RawMessage) {
 	// Old format: input_audio_transcription.model
 	stripModelInNestedObject(session, "input_audio_transcription")
@@ -462,16 +462,16 @@ func realtimeSessionUpstreamPath(endpointType schemas.RealtimeSessionEndpointTyp
 	return "/v1/realtime/client_secrets"
 }
 
-func newRealtimeClientSecretError(status int, errorType, message string, err error) *schemas.RakshaError {
-	return &schemas.RakshaError{
-		IsRakshaError: false,
+func newRealtimeClientSecretError(status int, errorType, message string, err error) *schemas.GatewayError {
+	return &schemas.GatewayError{
+		IsGatewayError: false,
 		StatusCode:     schemas.Ptr(status),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr(errorType),
 			Message: message,
 			Error:   err,
 		},
-		ExtraFields: schemas.RakshaErrorExtraFields{
+		ExtraFields: schemas.GatewayErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 			Provider:    schemas.OpenAI,
 		},
@@ -537,14 +537,14 @@ type openAIRealtimeError struct {
 	Param   string `json:"param,omitempty"`
 }
 
-// ToRakshaRealtimeEvent converts an OpenAI Realtime event (raw JSON) to the unified Raksha format.
-func (provider *OpenAIProvider) ToRakshaRealtimeEvent(providerEvent json.RawMessage) (*schemas.RakshaRealtimeEvent, error) {
+// ToGatewayRealtimeEvent converts an OpenAI Realtime event (raw JSON) to the unified Gateway format.
+func (provider *OpenAIProvider) ToGatewayRealtimeEvent(providerEvent json.RawMessage) (*schemas.GatewayRealtimeEvent, error) {
 	var raw openAIRealtimeEvent
 	if err := json.Unmarshal(providerEvent, &raw); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal OpenAI realtime event: %w", err)
 	}
 
-	event := &schemas.RakshaRealtimeEvent{
+	event := &schemas.GatewayRealtimeEvent{
 		Type:    schemas.RealtimeEventType(raw.Type),
 		EventID: raw.EventID,
 		RawData: providerEvent,
@@ -636,131 +636,131 @@ func (provider *OpenAIProvider) ToRakshaRealtimeEvent(providerEvent json.RawMess
 	return event, nil
 }
 
-// ToProviderRealtimeEvent converts a unified Raksha Realtime event back to OpenAI's native JSON.
-func (provider *OpenAIProvider) ToProviderRealtimeEvent(rakshaEvent *schemas.RakshaRealtimeEvent) (json.RawMessage, error) {
+// ToProviderRealtimeEvent converts a unified Gateway Realtime event back to OpenAI's native JSON.
+func (provider *OpenAIProvider) ToProviderRealtimeEvent(gatewayEvent *schemas.GatewayRealtimeEvent) (json.RawMessage, error) {
 	out := map[string]interface{}{
-		"type": string(rakshaEvent.Type),
+		"type": string(gatewayEvent.Type),
 	}
-	if rakshaEvent.EventID != "" {
-		out["event_id"] = rakshaEvent.EventID
+	if gatewayEvent.EventID != "" {
+		out["event_id"] = gatewayEvent.EventID
 	}
-	mergeRealtimeExtraParams(out, rakshaEvent.ExtraParams)
+	mergeRealtimeExtraParams(out, gatewayEvent.ExtraParams)
 
-	if rakshaEvent.Session != nil {
+	if gatewayEvent.Session != nil {
 		sess := map[string]interface{}{}
-		if rakshaEvent.Session.ID != "" && rakshaEvent.Type != schemas.RTEventSessionUpdate {
-			sess["id"] = rakshaEvent.Session.ID
+		if gatewayEvent.Session.ID != "" && gatewayEvent.Type != schemas.RTEventSessionUpdate {
+			sess["id"] = gatewayEvent.Session.ID
 		}
-		if rakshaEvent.Session.Model != "" {
-			sess["model"] = rakshaEvent.Session.Model
+		if gatewayEvent.Session.Model != "" {
+			sess["model"] = gatewayEvent.Session.Model
 		}
-		if len(rakshaEvent.Session.Modalities) > 0 {
-			sess["modalities"] = rakshaEvent.Session.Modalities
+		if len(gatewayEvent.Session.Modalities) > 0 {
+			sess["modalities"] = gatewayEvent.Session.Modalities
 		}
-		if rakshaEvent.Session.Instructions != "" {
-			sess["instructions"] = rakshaEvent.Session.Instructions
+		if gatewayEvent.Session.Instructions != "" {
+			sess["instructions"] = gatewayEvent.Session.Instructions
 		}
-		if rakshaEvent.Session.Voice != "" {
-			sess["voice"] = rakshaEvent.Session.Voice
+		if gatewayEvent.Session.Voice != "" {
+			sess["voice"] = gatewayEvent.Session.Voice
 		}
-		if rakshaEvent.Session.Temperature != nil {
-			sess["temperature"] = *rakshaEvent.Session.Temperature
+		if gatewayEvent.Session.Temperature != nil {
+			sess["temperature"] = *gatewayEvent.Session.Temperature
 		}
-		if rakshaEvent.Session.MaxOutputTokens != nil {
-			sess["max_output_tokens"] = rakshaEvent.Session.MaxOutputTokens
+		if gatewayEvent.Session.MaxOutputTokens != nil {
+			sess["max_output_tokens"] = gatewayEvent.Session.MaxOutputTokens
 		}
-		if rakshaEvent.Session.TurnDetection != nil {
-			sess["turn_detection"] = rakshaEvent.Session.TurnDetection
+		if gatewayEvent.Session.TurnDetection != nil {
+			sess["turn_detection"] = gatewayEvent.Session.TurnDetection
 		}
-		if rakshaEvent.Session.InputAudioFormat != "" {
-			sess["input_audio_format"] = rakshaEvent.Session.InputAudioFormat
+		if gatewayEvent.Session.InputAudioFormat != "" {
+			sess["input_audio_format"] = gatewayEvent.Session.InputAudioFormat
 		}
-		if rakshaEvent.Session.OutputAudioType != "" {
-			sess["output_audio_type"] = rakshaEvent.Session.OutputAudioType
+		if gatewayEvent.Session.OutputAudioType != "" {
+			sess["output_audio_type"] = gatewayEvent.Session.OutputAudioType
 		}
-		if rakshaEvent.Session.Tools != nil {
-			sess["tools"] = rakshaEvent.Session.Tools
+		if gatewayEvent.Session.Tools != nil {
+			sess["tools"] = gatewayEvent.Session.Tools
 		}
-		mergeRealtimeSessionExtraParams(sess, rakshaEvent.Session.ExtraParams, rakshaEvent.Type)
+		mergeRealtimeSessionExtraParams(sess, gatewayEvent.Session.ExtraParams, gatewayEvent.Type)
 		out["session"] = sess
 	}
 
-	if rakshaEvent.Item != nil {
+	if gatewayEvent.Item != nil {
 		item := map[string]interface{}{
-			"type": rakshaEvent.Item.Type,
+			"type": gatewayEvent.Item.Type,
 		}
-		if rakshaEvent.Item.ID != "" {
-			item["id"] = rakshaEvent.Item.ID
+		if gatewayEvent.Item.ID != "" {
+			item["id"] = gatewayEvent.Item.ID
 		}
-		if rakshaEvent.Item.Role != "" {
-			item["role"] = rakshaEvent.Item.Role
+		if gatewayEvent.Item.Role != "" {
+			item["role"] = gatewayEvent.Item.Role
 		}
-		if rakshaEvent.Item.Status != "" {
-			item["status"] = rakshaEvent.Item.Status
+		if gatewayEvent.Item.Status != "" {
+			item["status"] = gatewayEvent.Item.Status
 		}
-		if rakshaEvent.Item.Content != nil {
-			item["content"] = rakshaEvent.Item.Content
+		if gatewayEvent.Item.Content != nil {
+			item["content"] = gatewayEvent.Item.Content
 		}
-		if rakshaEvent.Item.Name != "" {
-			item["name"] = rakshaEvent.Item.Name
+		if gatewayEvent.Item.Name != "" {
+			item["name"] = gatewayEvent.Item.Name
 		}
-		if rakshaEvent.Item.CallID != "" {
-			item["call_id"] = rakshaEvent.Item.CallID
+		if gatewayEvent.Item.CallID != "" {
+			item["call_id"] = gatewayEvent.Item.CallID
 		}
-		if rakshaEvent.Item.Arguments != "" {
-			item["arguments"] = rakshaEvent.Item.Arguments
+		if gatewayEvent.Item.Arguments != "" {
+			item["arguments"] = gatewayEvent.Item.Arguments
 		}
-		if rakshaEvent.Item.Output != "" {
-			item["output"] = rakshaEvent.Item.Output
+		if gatewayEvent.Item.Output != "" {
+			item["output"] = gatewayEvent.Item.Output
 		}
-		mergeRealtimeExtraParams(item, rakshaEvent.Item.ExtraParams)
+		mergeRealtimeExtraParams(item, gatewayEvent.Item.ExtraParams)
 		out["item"] = item
 	}
 
-	if rakshaEvent.Error != nil {
+	if gatewayEvent.Error != nil {
 		rtErr := map[string]interface{}{}
-		if rakshaEvent.Error.Type != "" {
-			rtErr["type"] = rakshaEvent.Error.Type
+		if gatewayEvent.Error.Type != "" {
+			rtErr["type"] = gatewayEvent.Error.Type
 		}
-		if rakshaEvent.Error.Code != "" {
-			rtErr["code"] = rakshaEvent.Error.Code
+		if gatewayEvent.Error.Code != "" {
+			rtErr["code"] = gatewayEvent.Error.Code
 		}
-		if rakshaEvent.Error.Message != "" {
-			rtErr["message"] = rakshaEvent.Error.Message
+		if gatewayEvent.Error.Message != "" {
+			rtErr["message"] = gatewayEvent.Error.Message
 		}
-		if rakshaEvent.Error.Param != "" {
-			rtErr["param"] = rakshaEvent.Error.Param
+		if gatewayEvent.Error.Param != "" {
+			rtErr["param"] = gatewayEvent.Error.Param
 		}
-		mergeRealtimeExtraParams(rtErr, rakshaEvent.Error.ExtraParams)
+		mergeRealtimeExtraParams(rtErr, gatewayEvent.Error.ExtraParams)
 		out["error"] = rtErr
 	}
 
-	if rakshaEvent.Delta != nil {
-		if rakshaEvent.Delta.Text != "" {
-			out["delta"] = rakshaEvent.Delta.Text
+	if gatewayEvent.Delta != nil {
+		if gatewayEvent.Delta.Text != "" {
+			out["delta"] = gatewayEvent.Delta.Text
 		}
-		if rakshaEvent.Delta.Audio != "" {
-			out["audio"] = rakshaEvent.Delta.Audio
+		if gatewayEvent.Delta.Audio != "" {
+			out["audio"] = gatewayEvent.Delta.Audio
 		}
-		if rakshaEvent.Delta.Transcript != "" {
-			out["transcript"] = rakshaEvent.Delta.Transcript
+		if gatewayEvent.Delta.Transcript != "" {
+			out["transcript"] = gatewayEvent.Delta.Transcript
 		}
-		if rakshaEvent.Delta.ItemID != "" && !hasRealtimeExtraParam(rakshaEvent.ExtraParams, "item_id") {
-			out["item_id"] = rakshaEvent.Delta.ItemID
+		if gatewayEvent.Delta.ItemID != "" && !hasRealtimeExtraParam(gatewayEvent.ExtraParams, "item_id") {
+			out["item_id"] = gatewayEvent.Delta.ItemID
 		}
-		if rakshaEvent.Delta.OutputIdx != nil && !hasRealtimeExtraParam(rakshaEvent.ExtraParams, "output_index") {
-			out["output_index"] = *rakshaEvent.Delta.OutputIdx
+		if gatewayEvent.Delta.OutputIdx != nil && !hasRealtimeExtraParam(gatewayEvent.ExtraParams, "output_index") {
+			out["output_index"] = *gatewayEvent.Delta.OutputIdx
 		}
-		if rakshaEvent.Delta.ContentIdx != nil && !hasRealtimeExtraParam(rakshaEvent.ExtraParams, "content_index") {
-			out["content_index"] = *rakshaEvent.Delta.ContentIdx
+		if gatewayEvent.Delta.ContentIdx != nil && !hasRealtimeExtraParam(gatewayEvent.ExtraParams, "content_index") {
+			out["content_index"] = *gatewayEvent.Delta.ContentIdx
 		}
-		if rakshaEvent.Delta.ResponseID != "" && !hasRealtimeExtraParam(rakshaEvent.ExtraParams, "response_id") {
-			out["response_id"] = rakshaEvent.Delta.ResponseID
+		if gatewayEvent.Delta.ResponseID != "" && !hasRealtimeExtraParam(gatewayEvent.ExtraParams, "response_id") {
+			out["response_id"] = gatewayEvent.Delta.ResponseID
 		}
 	}
 
-	if len(rakshaEvent.Audio) > 0 && (rakshaEvent.Delta == nil || rakshaEvent.Delta.Audio == "") {
-		out["audio"] = base64.StdEncoding.EncodeToString(rakshaEvent.Audio)
+	if len(gatewayEvent.Audio) > 0 && (gatewayEvent.Delta == nil || gatewayEvent.Delta.Audio == "") {
+		out["audio"] = base64.StdEncoding.EncodeToString(gatewayEvent.Audio)
 	}
 
 	return providerUtils.MarshalSorted(out)
@@ -782,7 +782,7 @@ func mergeRealtimeSessionExtraParams(out map[string]interface{}, params map[stri
 	mergeRealtimeExtraParams(out, filtered)
 }
 
-func (provider *OpenAIProvider) ExtractRealtimeTurnUsage(terminalEventRaw []byte) *schemas.RakshaLLMUsage {
+func (provider *OpenAIProvider) ExtractRealtimeTurnUsage(terminalEventRaw []byte) *schemas.GatewayLLMUsage {
 	if len(terminalEventRaw) == 0 {
 		return nil
 	}
@@ -792,7 +792,7 @@ func (provider *OpenAIProvider) ExtractRealtimeTurnUsage(terminalEventRaw []byte
 		return nil
 	}
 
-	usage := &schemas.RakshaLLMUsage{
+	usage := &schemas.GatewayLLMUsage{
 		PromptTokens:     parsed.Response.Usage.InputTokens,
 		CompletionTokens: parsed.Response.Usage.OutputTokens,
 		TotalTokens:      parsed.Response.Usage.TotalTokens,
@@ -953,7 +953,7 @@ func extractOpenAIRealtimeResponseDoneToolCalls(outputs []openAIRealtimeResponse
 	return toolCalls
 }
 
-func setRealtimeExtraParam(event *schemas.RakshaRealtimeEvent, key string, value any) {
+func setRealtimeExtraParam(event *schemas.GatewayRealtimeEvent, key string, value any) {
 	if event == nil || key == "" || value == nil {
 		return
 	}

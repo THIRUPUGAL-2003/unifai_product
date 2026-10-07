@@ -3,7 +3,7 @@ package vertex
 import (
 	"time"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
 )
 
 // Vertex AI Embedding API types
@@ -367,7 +367,7 @@ type VertexBatchJobError struct {
 }
 
 // VertexBatchPredictionJob is the BatchPredictionJob resource returned by the Vertex AI API.
-// Fields Raksha interprets are typed; the deeply-nested explanation/monitoring config trees
+// Fields Gateway interprets are typed; the deeply-nested explanation/monitoring config trees
 // (rarely used for Gemini batch) are kept generic for lossless passthrough.
 type VertexBatchPredictionJob struct {
 	Name                        string                             `json:"name,omitempty"`
@@ -407,7 +407,7 @@ type VertexBatchPredictionJob struct {
 }
 
 // VertexBatchCreateRequest is the request body for creating a BatchPredictionJob. Only the
-// fields Raksha maps directly are typed; any other Vertex-native field (modelParameters,
+// fields Gateway maps directly are typed; any other Vertex-native field (modelParameters,
 // labels, modelVersionId, encryptionSpec, instanceConfig, ...) is passed through ExtraParams
 // and merged into the body by CheckContextAndGetRequestBody.
 type VertexBatchCreateRequest struct {
@@ -431,7 +431,7 @@ type VertexBatchJobListResponse struct {
 }
 
 // VertexBatchOutputLine is one line of a predictions-*.jsonl batch output file.
-// The original request is echoed back; labels carry the Raksha custom_id.
+// The original request is echoed back; labels carry the Gateway custom_id.
 type VertexBatchOutputLine struct {
 	Status  string `json:"status,omitempty"` // error string for failed records, empty on success
 	Request struct {

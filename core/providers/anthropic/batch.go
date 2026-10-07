@@ -3,7 +3,7 @@ package anthropic
 import (
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // Anthropic Batch API Types
@@ -90,8 +90,8 @@ type AnthropicBatchError struct {
 	Message string `json:"message"`
 }
 
-// ToRakshaBatchStatus converts Anthropic processing_status to Raksha status.
-func ToRakshaBatchStatus(status string) schemas.BatchStatus {
+// ToGatewayBatchStatus converts Anthropic processing_status to Gateway status.
+func ToGatewayBatchStatus(status string) schemas.BatchStatus {
 	switch status {
 	case "in_progress":
 		return schemas.BatchStatusInProgress
@@ -116,8 +116,8 @@ func parseAnthropicTimestamp(timestamp string) int64 {
 	return t.Unix()
 }
 
-// ToRakshaObjectType converts Anthropic type to Raksha object type.
-func ToRakshaObjectType(anthropicType string) string {
+// ToGatewayObjectType converts Anthropic type to Gateway object type.
+func ToGatewayObjectType(anthropicType string) string {
 	switch anthropicType {
 	case "message_batch":
 		return "batch"
@@ -126,18 +126,18 @@ func ToRakshaObjectType(anthropicType string) string {
 	}
 }
 
-// ToRakshaBatchCreateResponse converts Anthropic batch response to Raksha batch create response.
-func (r *AnthropicBatchResponse) ToRakshaBatchCreateResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaBatchCreateResponse {
+// ToGatewayBatchCreateResponse converts Anthropic batch response to Gateway batch create response.
+func (r *AnthropicBatchResponse) ToGatewayBatchCreateResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayBatchCreateResponse {
 	expiresAt := parseAnthropicTimestamp(r.ExpiresAt)
-	resp := &schemas.RakshaBatchCreateResponse{
+	resp := &schemas.GatewayBatchCreateResponse{
 		ID:               r.ID,
-		Object:           ToRakshaObjectType(r.Type),
-		Status:           ToRakshaBatchStatus(r.ProcessingStatus),
+		Object:           ToGatewayObjectType(r.Type),
+		Status:           ToGatewayBatchStatus(r.ProcessingStatus),
 		ProcessingStatus: &r.ProcessingStatus,
 		ResultsURL:       r.ResultsURL,
 		CreatedAt:        parseAnthropicTimestamp(r.CreatedAt),
 		ExpiresAt:        &expiresAt,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -165,16 +165,16 @@ func (r *AnthropicBatchResponse) ToRakshaBatchCreateResponse(latency time.Durati
 	return resp
 }
 
-// ToRakshaBatchRetrieveResponse converts Anthropic batch response to Raksha batch retrieve response.
-func (r *AnthropicBatchResponse) ToRakshaBatchRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaBatchRetrieveResponse {
-	resp := &schemas.RakshaBatchRetrieveResponse{
+// ToGatewayBatchRetrieveResponse converts Anthropic batch response to Gateway batch retrieve response.
+func (r *AnthropicBatchResponse) ToGatewayBatchRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayBatchRetrieveResponse {
+	resp := &schemas.GatewayBatchRetrieveResponse{
 		ID:               r.ID,
-		Object:           ToRakshaObjectType(r.Type),
-		Status:           ToRakshaBatchStatus(r.ProcessingStatus),
+		Object:           ToGatewayObjectType(r.Type),
+		Status:           ToGatewayBatchStatus(r.ProcessingStatus),
 		ProcessingStatus: &r.ProcessingStatus,
 		ResultsURL:       r.ResultsURL,
 		CreatedAt:        parseAnthropicTimestamp(r.CreatedAt),
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -222,8 +222,8 @@ func (r *AnthropicBatchResponse) ToRakshaBatchRetrieveResponse(latency time.Dura
 	return resp
 }
 
-// ToAnthropicBatchCreateResponse converts a Raksha batch create response to Anthropic format.
-func ToAnthropicBatchCreateResponse(resp *schemas.RakshaBatchCreateResponse) *AnthropicBatchResponse {
+// ToAnthropicBatchCreateResponse converts a Gateway batch create response to Anthropic format.
+func ToAnthropicBatchCreateResponse(resp *schemas.GatewayBatchCreateResponse) *AnthropicBatchResponse {
 	result := &AnthropicBatchResponse{
 		ID:               resp.ID,
 		Type:             "message_batch",
@@ -250,8 +250,8 @@ func ToAnthropicBatchCreateResponse(resp *schemas.RakshaBatchCreateResponse) *An
 	return result
 }
 
-// ToAnthropicBatchListResponse converts a Raksha batch list response to Anthropic format.
-func ToAnthropicBatchListResponse(resp *schemas.RakshaBatchListResponse) *AnthropicBatchListResponse {
+// ToAnthropicBatchListResponse converts a Gateway batch list response to Anthropic format.
+func ToAnthropicBatchListResponse(resp *schemas.GatewayBatchListResponse) *AnthropicBatchListResponse {
 	result := &AnthropicBatchListResponse{
 		Data:    make([]AnthropicBatchResponse, len(resp.Data)),
 		HasMore: resp.HasMore,
@@ -266,8 +266,8 @@ func ToAnthropicBatchListResponse(resp *schemas.RakshaBatchListResponse) *Anthro
 	return result
 }
 
-// ToAnthropicBatchRetrieveResponse converts a Raksha batch retrieve response to Anthropic format.
-func ToAnthropicBatchRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse) *AnthropicBatchResponse {
+// ToAnthropicBatchRetrieveResponse converts a Gateway batch retrieve response to Anthropic format.
+func ToAnthropicBatchRetrieveResponse(resp *schemas.GatewayBatchRetrieveResponse) *AnthropicBatchResponse {
 	result := &AnthropicBatchResponse{
 		ID:               resp.ID,
 		Type:             "message_batch",
@@ -308,8 +308,8 @@ func ToAnthropicBatchRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse)
 	return result
 }
 
-// ToAnthropicBatchCancelResponse converts a Raksha batch cancel response to Anthropic format.
-func ToAnthropicBatchCancelResponse(resp *schemas.RakshaBatchCancelResponse) *AnthropicBatchResponse {
+// ToAnthropicBatchCancelResponse converts a Gateway batch cancel response to Anthropic format.
+func ToAnthropicBatchCancelResponse(resp *schemas.GatewayBatchCancelResponse) *AnthropicBatchResponse {
 	result := &AnthropicBatchResponse{
 		ID:               resp.ID,
 		Type:             "message_batch",
@@ -334,7 +334,7 @@ func ToAnthropicBatchCancelResponse(resp *schemas.RakshaBatchCancelResponse) *An
 	return result
 }
 
-// toAnthropicProcessingStatus converts Raksha batch status to Anthropic processing_status.
+// toAnthropicProcessingStatus converts Gateway batch status to Anthropic processing_status.
 func toAnthropicProcessingStatus(status schemas.BatchStatus) string {
 	switch status {
 	case schemas.BatchStatusInProgress:

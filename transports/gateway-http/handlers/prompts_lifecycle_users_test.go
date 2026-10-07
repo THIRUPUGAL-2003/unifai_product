@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/configstore/tables"
 )
 
 func usersTestRoot(t *testing.T, lifecycle *PromptLifecycleManager, name, folderType string) *tables.TableFolder {

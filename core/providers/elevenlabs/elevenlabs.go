@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -24,8 +24,8 @@ type ElevenlabsProvider struct {
 	client               *fasthttp.Client              // HTTP client for unary API requests (ReadTimeout bounds overall response)
 	streamingClient      *fasthttp.Client              // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig        schemas.NetworkConfig         // Network configuration including extra headers
-	sendBackRawRequest   bool                          // Whether to include raw request in RakshaResponse
-	sendBackRawResponse  bool                          // Whether to include raw response in RakshaResponse
+	sendBackRawRequest   bool                          // Whether to include raw request in GatewayResponse
+	sendBackRawResponse  bool                          // Whether to include raw response in GatewayResponse
 	customProviderConfig *schemas.CustomProviderConfig // Custom provider config
 }
 
@@ -75,7 +75,7 @@ func (provider *ElevenlabsProvider) GetProviderKey() schemas.ModelProvider {
 
 // listModelsByKey performs a list models request for a single key.
 // Returns the response and latency, or an error if the request fails.
-func (provider *ElevenlabsProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) listModelsByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -95,24 +95,24 @@ func (provider *ElevenlabsProvider) listModelsByKey(ctx *schemas.RakshaContext, 
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	// Extract and set provider response headers so they're available on error paths
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, providerUtils.SetErrorLatency(parseElevenlabsError(resp), latency)
 	}
 
 	var elevenlabsResponse ElevenlabsListModelsResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(resp.Body(), &elevenlabsResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(resp.Body(), &elevenlabsResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	response := elevenlabsResponse.ToRakshaListModelsResponse(provider.GetProviderKey(), key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+	response := elevenlabsResponse.ToGatewayListModelsResponse(provider.GetProviderKey(), key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
@@ -132,7 +132,7 @@ func (provider *ElevenlabsProvider) listModelsByKey(ctx *schemas.RakshaContext, 
 
 // ListModels performs a list models request to Elevenlabs' API.
 // Requests are made concurrently for improved performance.
-func (provider *ElevenlabsProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Elevenlabs, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
@@ -145,42 +145,42 @@ func (provider *ElevenlabsProvider) ListModels(ctx *schemas.RakshaContext, keys 
 }
 
 // TextCompletion is not supported by the Elevenlabs provider
-func (provider *ElevenlabsProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionRequest, provider.GetProviderKey())
 }
 
 // TextCompletionStream is not supported by the Elevenlabs provider
-func (provider *ElevenlabsProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionStreamRequest, provider.GetProviderKey())
 }
 
 // ChatCompletion is not supported by the Elevenlabs provider
-func (provider *ElevenlabsProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ChatCompletionRequest, provider.GetProviderKey())
 }
 
 // ChatCompletionStream is not supported by the Elevenlabs provider
-func (provider *ElevenlabsProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ChatCompletionStreamRequest, provider.GetProviderKey())
 }
 
 // Responses is not supported by the Elevenlabs provider
-func (provider *ElevenlabsProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ResponsesRequest, provider.GetProviderKey())
 }
 
 // ResponsesStream is not supported by the Elevenlabs provider
-func (provider *ElevenlabsProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ResponsesStreamRequest, provider.GetProviderKey())
 }
 
 // Embedding is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, input *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, input *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.EmbeddingRequest, provider.GetProviderKey())
 }
 
 // Speech performs a text to speech request
-func (provider *ElevenlabsProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Elevenlabs, provider.customProviderConfig, schemas.SpeechRequest); err != nil {
 		return nil, err
 	}
@@ -206,7 +206,7 @@ func (provider *ElevenlabsProvider) Speech(ctx *schemas.RakshaContext, key schem
 			endpoint = "/v1/text-to-speech/" + voice
 		}
 	} else {
-		return nil, providerUtils.NewRakshaOperationError("voice parameter is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("voice parameter is required", nil)
 	}
 
 	requestURL := provider.buildBaseSpeechRequestURL(ctx, endpoint, schemas.SpeechRequest, request)
@@ -218,15 +218,15 @@ func (provider *ElevenlabsProvider) Speech(ctx *schemas.RakshaContext, key schem
 		req.Header.Set("xi-api-key", key.Value.GetValue())
 	}
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToElevenlabsSpeechRequest(request), nil
 		})
 
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if !providerUtils.ApplyLargePayloadRequestBody(ctx, req) {
@@ -234,13 +234,13 @@ func (provider *ElevenlabsProvider) Speech(ctx *schemas.RakshaContext, key schem
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	// Extract and set provider response headers so they're available on error paths
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -250,31 +250,31 @@ func (provider *ElevenlabsProvider) Speech(ctx *schemas.RakshaContext, key schem
 	// Get the response body
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Create response based on whether timestamps were requested
-	rakshaResponse := &schemas.RakshaSpeechResponse{
-		ExtraFields: schemas.RakshaResponseExtraFields{
+	gatewayResponse := &schemas.GatewaySpeechResponse{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 		},
 	}
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 
 	if withTimestampsRequest {
 		var timestampResponse ElevenlabsSpeechWithTimestampsResponse
 		if err := sonic.Unmarshal(body, &timestampResponse); err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to parse with-timestamps response", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to parse with-timestamps response", err)
 		}
 
-		rakshaResponse.AudioBase64 = &timestampResponse.AudioBase64
+		gatewayResponse.AudioBase64 = &timestampResponse.AudioBase64
 
 		if timestampResponse.Alignment != nil {
-			rakshaResponse.Alignment = &schemas.SpeechAlignment{
+			gatewayResponse.Alignment = &schemas.SpeechAlignment{
 				CharStartTimesMs: timestampResponse.Alignment.CharStartTimesMs,
 				CharEndTimesMs:   timestampResponse.Alignment.CharEndTimesMs,
 				Characters:       timestampResponse.Alignment.Characters,
@@ -282,45 +282,45 @@ func (provider *ElevenlabsProvider) Speech(ctx *schemas.RakshaContext, key schem
 		}
 
 		if timestampResponse.NormalizedAlignment != nil {
-			rakshaResponse.NormalizedAlignment = &schemas.SpeechAlignment{
+			gatewayResponse.NormalizedAlignment = &schemas.SpeechAlignment{
 				CharStartTimesMs: timestampResponse.NormalizedAlignment.CharStartTimesMs,
 				CharEndTimesMs:   timestampResponse.NormalizedAlignment.CharEndTimesMs,
 				Characters:       timestampResponse.NormalizedAlignment.Characters,
 			}
 		}
 
-		return rakshaResponse, nil
+		return gatewayResponse, nil
 	}
 
-	rakshaResponse.Audio = body
-	return rakshaResponse, nil
+	gatewayResponse.Audio = body
+	return gatewayResponse, nil
 }
 
 // Rerank is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // SpeechStream performs a text to speech stream request
-func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Elevenlabs, provider.customProviderConfig, schemas.SpeechStreamRequest); err != nil {
 		return nil, err
 	}
 
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToElevenlabsSpeechRequest(request), nil
 		})
 
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create HTTP request for streaming
@@ -333,7 +333,7 @@ func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.RakshaContext, pos
 	providerUtils.SetExtraHeaders(ctx, req, provider.networkConfig.ExtraHeaders, nil)
 
 	if request.Params == nil || request.Params.VoiceConfig == nil || request.Params.VoiceConfig.Voice == nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("voice parameter is required", nil), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("voice parameter is required", nil), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse)
 	}
 
 	req.SetRequestURI(provider.buildBaseSpeechRequestURL(ctx, "/v1/text-to-speech/"+*request.Params.VoiceConfig.Voice+"/stream", schemas.SpeechStreamRequest, request))
@@ -355,8 +355,8 @@ func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.RakshaContext, pos
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -365,17 +365,17 @@ func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.RakshaContext, pos
 			}, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		// non-streaming path - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -384,7 +384,7 @@ func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.RakshaContext, pos
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -433,7 +433,7 @@ func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.RakshaContext, pos
 				if err == io.EOF {
 					break
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				provider.logger.Warn("Error reading stream: %v", err)
 				providerUtils.ProcessAndSendError(ctx, postHookRunner, err, responseChan, provider.logger, postHookSpanFinalizer)
 				return
@@ -444,10 +444,10 @@ func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.RakshaContext, pos
 				audioChunk := make([]byte, n)
 				copy(audioChunk, buffer[:n])
 
-				response := &schemas.RakshaSpeechStreamResponse{
+				response := &schemas.GatewaySpeechStreamResponse{
 					Type:  schemas.SpeechStreamResponseTypeDelta,
 					Audio: audioChunk,
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -459,15 +459,15 @@ func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.RakshaContext, pos
 					response.ExtraFields.RawResponse = audioChunk
 				}
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
 
 		// Send final response after natural loop termination (similar to Gemini pattern)
-		finalResponse := &schemas.RakshaSpeechStreamResponse{
+		finalResponse := &schemas.GatewaySpeechStreamResponse{
 			Type:  schemas.SpeechStreamResponseTypeDone,
 			Audio: []byte{},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				ChunkIndex: chunkIndex + 1,
 				Latency:    time.Since(startTime).Milliseconds(),
 			},
@@ -477,43 +477,43 @@ func (provider *ElevenlabsProvider) SpeechStream(ctx *schemas.RakshaContext, pos
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			providerUtils.ParseAndSetRawRequest(&finalResponse.ExtraFields, jsonBody)
 		}
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, finalResponse, nil, nil), responseChan, postHookSpanFinalizer)
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, finalResponse, nil, nil), responseChan, postHookSpanFinalizer)
 	}()
 
 	return responseChan, nil
 }
 
 // Transcription performs a transcription request
-func (provider *ElevenlabsProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Elevenlabs, provider.customProviderConfig, schemas.TranscriptionRequest); err != nil {
 		return nil, err
 	}
 
 	reqBody := ToElevenlabsTranscriptionRequest(request)
 	if reqBody == nil {
-		return nil, providerUtils.NewRakshaOperationError("transcription request is not provided", nil)
+		return nil, providerUtils.NewGatewayOperationError("transcription request is not provided", nil)
 	}
 
 	hasFile := len(reqBody.File) > 0
 	hasURL := reqBody.CloudStorageURL != nil && strings.TrimSpace(*reqBody.CloudStorageURL) != ""
 	if hasFile && hasURL {
-		return nil, providerUtils.NewRakshaOperationError("provide either a file or cloud_storage_url, not both", nil)
+		return nil, providerUtils.NewGatewayOperationError("provide either a file or cloud_storage_url, not both", nil)
 	}
 	if !hasFile && !hasURL {
-		return nil, providerUtils.NewRakshaOperationError("either a transcription file or cloud_storage_url must be provided", nil)
+		return nil, providerUtils.NewGatewayOperationError("either a transcription file or cloud_storage_url must be provided", nil)
 	}
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
-	if rakshaErr := writeTranscriptionMultipart(writer, reqBody); rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr := writeTranscriptionMultipart(writer, reqBody); gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	contentType := writer.FormDataContentType()
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to finalize multipart transcription request", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to finalize multipart transcription request", err)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -536,27 +536,27 @@ func (provider *ElevenlabsProvider) Transcription(ctx *schemas.RakshaContext, ke
 	}
 	req.SetBody(body.Bytes())
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	// Extract and set provider response headers so they're available on error paths
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return nil, providerUtils.SetErrorLatency(parseElevenlabsError(resp), latency)
 	}
 
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Check for empty response
 	trimmed := strings.TrimSpace(string(responseBody))
 	if len(trimmed) == 0 {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseEmpty,
 			},
@@ -565,15 +565,15 @@ func (provider *ElevenlabsProvider) Transcription(ctx *schemas.RakshaContext, ke
 
 	chunks, err := parseTranscriptionResponse(responseBody)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(err.Error(), nil)
+		return nil, providerUtils.NewGatewayOperationError(err.Error(), nil)
 	}
 
 	if len(chunks) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("no chunks found in transcription response", nil)
+		return nil, providerUtils.NewGatewayOperationError("no chunks found in transcription response", nil)
 	}
 
-	response := ToRakshaTranscriptionResponse(chunks)
-	response.ExtraFields = schemas.RakshaResponseExtraFields{
+	response := ToGatewayTranscriptionResponse(chunks)
+	response.ExtraFields = schemas.GatewayResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 	}
@@ -589,9 +589,9 @@ func (provider *ElevenlabsProvider) Transcription(ctx *schemas.RakshaContext, ke
 	return response, nil
 }
 
-func writeTranscriptionMultipart(writer *multipart.Writer, reqBody *ElevenlabsTranscriptionRequest) *schemas.RakshaError {
+func writeTranscriptionMultipart(writer *multipart.Writer, reqBody *ElevenlabsTranscriptionRequest) *schemas.GatewayError {
 	if err := writer.WriteField("model_id", reqBody.ModelID); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to write model_id field", err)
+		return providerUtils.NewGatewayOperationError("failed to write model_id field", err)
 	}
 
 	if len(reqBody.File) > 0 {
@@ -601,98 +601,98 @@ func writeTranscriptionMultipart(writer *multipart.Writer, reqBody *ElevenlabsTr
 		}
 		fileWriter, err := writer.CreateFormFile("file", filename)
 		if err != nil {
-			return providerUtils.NewRakshaOperationError("failed to create file field", err)
+			return providerUtils.NewGatewayOperationError("failed to create file field", err)
 		}
 		if _, err := fileWriter.Write(reqBody.File); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write file data", err)
+			return providerUtils.NewGatewayOperationError("failed to write file data", err)
 		}
 	}
 
 	if reqBody.CloudStorageURL != nil && strings.TrimSpace(*reqBody.CloudStorageURL) != "" {
 		if err := writer.WriteField("cloud_storage_url", *reqBody.CloudStorageURL); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write cloud_storage_url field", err)
+			return providerUtils.NewGatewayOperationError("failed to write cloud_storage_url field", err)
 		}
 	}
 
 	if reqBody.LanguageCode != nil && strings.TrimSpace(*reqBody.LanguageCode) != "" {
 		if err := writer.WriteField("language_code", *reqBody.LanguageCode); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write language_code field", err)
+			return providerUtils.NewGatewayOperationError("failed to write language_code field", err)
 		}
 	}
 
 	if reqBody.TagAudioEvents != nil {
 		if err := writer.WriteField("tag_audio_events", strconv.FormatBool(*reqBody.TagAudioEvents)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write tag_audio_events field", err)
+			return providerUtils.NewGatewayOperationError("failed to write tag_audio_events field", err)
 		}
 	}
 
 	if reqBody.NumSpeakers != nil && *reqBody.NumSpeakers > 0 {
 		if err := writer.WriteField("num_speakers", strconv.Itoa(*reqBody.NumSpeakers)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write num_speakers field", err)
+			return providerUtils.NewGatewayOperationError("failed to write num_speakers field", err)
 		}
 	}
 
 	if reqBody.TimestampsGranularity != nil && *reqBody.TimestampsGranularity != "" {
 		if err := writer.WriteField("timestamps_granularity", string(*reqBody.TimestampsGranularity)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write timestamps_granularity field", err)
+			return providerUtils.NewGatewayOperationError("failed to write timestamps_granularity field", err)
 		}
 	}
 
 	if reqBody.Diarize != nil {
 		if err := writer.WriteField("diarize", strconv.FormatBool(*reqBody.Diarize)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write diarize field", err)
+			return providerUtils.NewGatewayOperationError("failed to write diarize field", err)
 		}
 	}
 
 	if reqBody.DiarizationThreshold != nil {
 		if err := writer.WriteField("diarization_threshold", strconv.FormatFloat(*reqBody.DiarizationThreshold, 'f', -1, 64)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write diarization_threshold field", err)
+			return providerUtils.NewGatewayOperationError("failed to write diarization_threshold field", err)
 		}
 	}
 
 	if len(reqBody.AdditionalFormats) > 0 {
 		payload, err := providerUtils.MarshalSorted(reqBody.AdditionalFormats)
 		if err != nil {
-			return providerUtils.NewRakshaOperationError("failed to marshal additional_formats", err)
+			return providerUtils.NewGatewayOperationError("failed to marshal additional_formats", err)
 		}
 		if err := writer.WriteField("additional_formats", string(payload)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write additional_formats field", err)
+			return providerUtils.NewGatewayOperationError("failed to write additional_formats field", err)
 		}
 	}
 
 	if reqBody.FileFormat != nil && *reqBody.FileFormat != "" {
 		if err := writer.WriteField("file_format", string(*reqBody.FileFormat)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write file_format field", err)
+			return providerUtils.NewGatewayOperationError("failed to write file_format field", err)
 		}
 	}
 
 	if reqBody.Webhook != nil {
 		if err := writer.WriteField("webhook", strconv.FormatBool(*reqBody.Webhook)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write webhook field", err)
+			return providerUtils.NewGatewayOperationError("failed to write webhook field", err)
 		}
 	}
 
 	if reqBody.WebhookID != nil && strings.TrimSpace(*reqBody.WebhookID) != "" {
 		if err := writer.WriteField("webhook_id", *reqBody.WebhookID); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write webhook_id field", err)
+			return providerUtils.NewGatewayOperationError("failed to write webhook_id field", err)
 		}
 	}
 
 	if reqBody.Temperature != nil {
 		if err := writer.WriteField("temperature", strconv.FormatFloat(*reqBody.Temperature, 'f', -1, 64)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write temperature field", err)
+			return providerUtils.NewGatewayOperationError("failed to write temperature field", err)
 		}
 	}
 
 	if reqBody.Seed != nil {
 		if err := writer.WriteField("seed", strconv.Itoa(*reqBody.Seed)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write seed field", err)
+			return providerUtils.NewGatewayOperationError("failed to write seed field", err)
 		}
 	}
 
 	if reqBody.UseMultiChannel != nil {
 		if err := writer.WriteField("use_multi_channel", strconv.FormatBool(*reqBody.UseMultiChannel)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write use_multi_channel field", err)
+			return providerUtils.NewGatewayOperationError("failed to write use_multi_channel field", err)
 		}
 	}
 
@@ -701,16 +701,16 @@ func writeTranscriptionMultipart(writer *multipart.Writer, reqBody *ElevenlabsTr
 		case string:
 			if strings.TrimSpace(v) != "" {
 				if err := writer.WriteField("webhook_metadata", v); err != nil {
-					return providerUtils.NewRakshaOperationError("failed to write webhook_metadata field", err)
+					return providerUtils.NewGatewayOperationError("failed to write webhook_metadata field", err)
 				}
 			}
 		default:
 			payload, err := providerUtils.MarshalSorted(v)
 			if err != nil {
-				return providerUtils.NewRakshaOperationError("failed to marshal webhook_metadata", err)
+				return providerUtils.NewGatewayOperationError("failed to marshal webhook_metadata", err)
 			}
 			if err := writer.WriteField("webhook_metadata", string(payload)); err != nil {
-				return providerUtils.NewRakshaOperationError("failed to write webhook_metadata field", err)
+				return providerUtils.NewGatewayOperationError("failed to write webhook_metadata field", err)
 			}
 		}
 	}
@@ -719,67 +719,67 @@ func writeTranscriptionMultipart(writer *multipart.Writer, reqBody *ElevenlabsTr
 }
 
 // TranscriptionStream is not supported by the Elevenlabs provider
-func (provider *ElevenlabsProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, provider.GetProviderKey())
 }
 
 // ImageGeneration is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationRequest, provider.GetProviderKey())
 }
 
 // ImageGenerationStream is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ImageGenerationStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageGenerationRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationStreamRequest, provider.GetProviderKey())
 }
 
 // ImageEdit is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditRequest, provider.GetProviderKey())
 }
 
 // ImageEditStream is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditStreamRequest, provider.GetProviderKey())
 }
 
 // ImageVariation is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration is not supported by the ElevenLabs provider.
-func (provider *ElevenlabsProvider) VideoGeneration(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) VideoGeneration(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoGenerationRequest, provider.GetProviderKey())
 }
 
 // VideoRetrieve is not supported by the ElevenLabs provider.
-func (provider *ElevenlabsProvider) VideoRetrieve(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) VideoRetrieve(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRetrieveRequest, provider.GetProviderKey())
 }
 
 // VideoDownload is not supported by the ElevenLabs provider.
-func (provider *ElevenlabsProvider) VideoDownload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) VideoDownload(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDownloadRequest, provider.GetProviderKey())
 }
 
 // VideoDelete is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) VideoDelete(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) VideoList(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) VideoRemix(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // buildSpeechRequestURL constructs the full request URL using the provider's configuration for speech.
-func (provider *ElevenlabsProvider) buildBaseSpeechRequestURL(ctx *schemas.RakshaContext, defaultPath string, requestType schemas.RequestType, request *schemas.RakshaSpeechRequest) string {
+func (provider *ElevenlabsProvider) buildBaseSpeechRequestURL(ctx *schemas.GatewayContext, defaultPath string, requestType schemas.RequestType, request *schemas.GatewaySpeechRequest) string {
 	baseURL := provider.networkConfig.BaseURL
 	requestPath, isCompleteURL := providerUtils.GetRequestPath(ctx, defaultPath, provider.customProviderConfig, requestType)
 
@@ -809,7 +809,7 @@ func (provider *ElevenlabsProvider) buildBaseSpeechRequestURL(ctx *schemas.Raksh
 			q.Set("enable_logging", strconv.FormatBool(*request.Params.EnableLogging))
 		}
 
-		convertedFormat := ConvertRakshaSpeechFormatToElevenlabs(request.Params.ResponseFormat)
+		convertedFormat := ConvertGatewaySpeechFormatToElevenlabs(request.Params.ResponseFormat)
 		if convertedFormat != "" {
 			q.Set("output_format", convertedFormat)
 		}
@@ -824,120 +824,120 @@ func (provider *ElevenlabsProvider) buildBaseSpeechRequestURL(ctx *schemas.Raksh
 }
 
 // BatchCreate is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) BatchCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) BatchCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCreateRequest, provider.GetProviderKey())
 }
 
 // BatchList is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) BatchList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) BatchList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchListRequest, provider.GetProviderKey())
 }
 
 // BatchRetrieve is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) BatchRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) BatchRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchRetrieveRequest, provider.GetProviderKey())
 }
 
 // BatchCancel is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) BatchCancel(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) BatchCancel(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCancelRequest, provider.GetProviderKey())
 }
 
 // BatchDelete is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) BatchDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) BatchDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) BatchResults(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) BatchResults(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchResultsRequest, provider.GetProviderKey())
 }
 
 // FileUpload is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) FileUpload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) FileUpload(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileUploadRequest, provider.GetProviderKey())
 }
 
 // FileList is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) FileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) FileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileListRequest, provider.GetProviderKey())
 }
 
 // FileRetrieve is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) FileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) FileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileRetrieveRequest, provider.GetProviderKey())
 }
 
 // FileDelete is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) FileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) FileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileDeleteRequest, provider.GetProviderKey())
 }
 
 // FileContent is not supported by Elevenlabs provider.
-func (provider *ElevenlabsProvider) FileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) FileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileContentRequest, provider.GetProviderKey())
 }
 
 // CountTokens is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) CountTokens(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) CountTokens(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CountTokensRequest, provider.GetProviderKey())
 }
 
 // Compaction is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ContainerCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ContainerList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ContainerRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ContainerDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ContainerFileCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ContainerFileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ContainerFileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ContainerFileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) ContainerFileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 // Passthrough is not supported by the Elevenlabs provider.
-func (provider *ElevenlabsProvider) Passthrough(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) Passthrough(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughRequest, provider.GetProviderKey())
 }
 
-func (provider *ElevenlabsProvider) PassthroughStream(_ *schemas.RakshaContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *ElevenlabsProvider) PassthroughStream(_ *schemas.GatewayContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughStreamRequest, provider.GetProviderKey())
 }

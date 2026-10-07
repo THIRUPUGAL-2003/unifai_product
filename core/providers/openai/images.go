@@ -6,33 +6,33 @@ import (
 	"net/http"
 	"strconv"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToOpenAIImageGenerationRequest converts a Raksha Image Request to OpenAI format
-func ToOpenAIImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) *OpenAIImageGenerationRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil || rakshaReq.Input.Prompt == "" {
+// ToOpenAIImageGenerationRequest converts a Gateway Image Request to OpenAI format
+func ToOpenAIImageGenerationRequest(gatewayReq *schemas.GatewayImageGenerationRequest) *OpenAIImageGenerationRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil || gatewayReq.Input.Prompt == "" {
 		return nil
 	}
 
 	req := &OpenAIImageGenerationRequest{
-		Model:  rakshaReq.Model,
-		Prompt: rakshaReq.Input.Prompt,
+		Model:  gatewayReq.Model,
+		Prompt: gatewayReq.Input.Prompt,
 	}
 
-	if rakshaReq.Params != nil {
-		req.ImageGenerationParameters = *rakshaReq.Params
+	if gatewayReq.Params != nil {
+		req.ImageGenerationParameters = *gatewayReq.Params
 	}
 
-	switch rakshaReq.Provider {
+	switch gatewayReq.Provider {
 	case schemas.XAI:
 		filterXAISpecificParameters(req)
 	case schemas.OpenAI, schemas.Azure:
 		filterOpenAISpecificParameters(req)
 	}
-	if rakshaReq.Params != nil {
-		req.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		req.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 	return req
 }
@@ -50,15 +50,15 @@ func filterOpenAISpecificParameters(req *OpenAIImageGenerationRequest) {
 	req.NegativePrompt = nil
 }
 
-// ToRakshaImageGenerationRequest converts an OpenAI image generation request to Raksha format
-func (request *OpenAIImageGenerationRequest) ToRakshaImageGenerationRequest(ctx *schemas.RakshaContext) *schemas.RakshaImageGenerationRequest {
+// ToGatewayImageGenerationRequest converts an OpenAI image generation request to Gateway format
+func (request *OpenAIImageGenerationRequest) ToGatewayImageGenerationRequest(ctx *schemas.GatewayContext) *schemas.GatewayImageGenerationRequest {
 	if request == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	return &schemas.RakshaImageGenerationRequest{
+	return &schemas.GatewayImageGenerationRequest{
 		Provider: provider,
 		Model:    model,
 		Input: &schemas.ImageGenerationInput{
@@ -69,14 +69,14 @@ func (request *OpenAIImageGenerationRequest) ToRakshaImageGenerationRequest(ctx 
 	}
 }
 
-func (request *OpenAIImageEditRequest) ToRakshaImageEditRequest(ctx *schemas.RakshaContext) *schemas.RakshaImageEditRequest {
+func (request *OpenAIImageEditRequest) ToGatewayImageEditRequest(ctx *schemas.GatewayContext) *schemas.GatewayImageEditRequest {
 	if request == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	return &schemas.RakshaImageEditRequest{
+	return &schemas.GatewayImageEditRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     request.Input,
@@ -85,14 +85,14 @@ func (request *OpenAIImageEditRequest) ToRakshaImageEditRequest(ctx *schemas.Rak
 	}
 }
 
-func (request *OpenAIImageVariationRequest) ToRakshaImageVariationRequest(ctx *schemas.RakshaContext) *schemas.RakshaImageVariationRequest {
+func (request *OpenAIImageVariationRequest) ToGatewayImageVariationRequest(ctx *schemas.GatewayContext) *schemas.GatewayImageVariationRequest {
 	if request == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	return &schemas.RakshaImageVariationRequest{
+	return &schemas.GatewayImageVariationRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     request.Input,
@@ -101,103 +101,103 @@ func (request *OpenAIImageVariationRequest) ToRakshaImageVariationRequest(ctx *s
 	}
 }
 
-func ToOpenAIImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *OpenAIImageEditRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil || rakshaReq.Input.Images == nil || rakshaReq.Input.Prompt == "" {
+func ToOpenAIImageEditRequest(gatewayReq *schemas.GatewayImageEditRequest) *OpenAIImageEditRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil || gatewayReq.Input.Images == nil || gatewayReq.Input.Prompt == "" {
 		return nil
 	}
 
 	req := &OpenAIImageEditRequest{
-		Model: rakshaReq.Model,
-		Input: rakshaReq.Input,
+		Model: gatewayReq.Model,
+		Input: gatewayReq.Input,
 	}
 
-	if rakshaReq.Params != nil {
-		req.ImageEditParameters = *rakshaReq.Params
+	if gatewayReq.Params != nil {
+		req.ImageEditParameters = *gatewayReq.Params
 	}
 
-	if rakshaReq.Params != nil {
-		req.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		req.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 
 	return req
 }
 
-func parseImageEditFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAIImageEditRequest, providerName schemas.ModelProvider) *schemas.RakshaError {
+func parseImageEditFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAIImageEditRequest, providerName schemas.ModelProvider) *schemas.GatewayError {
 	// Add model field (required)
 	if err := writer.WriteField("model", openaiReq.Model); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to write model field", err)
+		return providerUtils.NewGatewayOperationError("failed to write model field", err)
 	}
 
 	// Add prompt field (required)
 	if err := writer.WriteField("prompt", openaiReq.Input.Prompt); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to write prompt field", err)
+		return providerUtils.NewGatewayOperationError("failed to write prompt field", err)
 	}
 
 	// Add stream field when requesting streaming
 	if openaiReq.Stream != nil && *openaiReq.Stream {
 		if err := writer.WriteField("stream", "true"); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write stream field", err)
+			return providerUtils.NewGatewayOperationError("failed to write stream field", err)
 		}
 	}
 
 	// Add optional parameters before file parts so routing metadata arrives first upstream.
 	if openaiReq.N != nil {
 		if err := writer.WriteField("n", strconv.Itoa(*openaiReq.N)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write n field", err)
+			return providerUtils.NewGatewayOperationError("failed to write n field", err)
 		}
 	}
 
 	if openaiReq.Size != nil {
 		if err := writer.WriteField("size", *openaiReq.Size); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write size field", err)
+			return providerUtils.NewGatewayOperationError("failed to write size field", err)
 		}
 	}
 
 	if openaiReq.ResponseFormat != nil {
 		if err := writer.WriteField("response_format", *openaiReq.ResponseFormat); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write response_format field", err)
+			return providerUtils.NewGatewayOperationError("failed to write response_format field", err)
 		}
 	}
 
 	if openaiReq.Quality != nil {
 		if err := writer.WriteField("quality", *openaiReq.Quality); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write quality field", err)
+			return providerUtils.NewGatewayOperationError("failed to write quality field", err)
 		}
 	}
 
 	if openaiReq.Background != nil {
 		if err := writer.WriteField("background", *openaiReq.Background); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write background field", err)
+			return providerUtils.NewGatewayOperationError("failed to write background field", err)
 		}
 	}
 
 	if openaiReq.InputFidelity != nil {
 		if err := writer.WriteField("input_fidelity", *openaiReq.InputFidelity); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write input_fidelity field", err)
+			return providerUtils.NewGatewayOperationError("failed to write input_fidelity field", err)
 		}
 	}
 
 	if openaiReq.PartialImages != nil {
 		if err := writer.WriteField("partial_images", strconv.Itoa(*openaiReq.PartialImages)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write partial_images field", err)
+			return providerUtils.NewGatewayOperationError("failed to write partial_images field", err)
 		}
 	}
 
 	if openaiReq.OutputFormat != nil {
 		if err := writer.WriteField("output_format", *openaiReq.OutputFormat); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write output_format field", err)
+			return providerUtils.NewGatewayOperationError("failed to write output_format field", err)
 		}
 	}
 
 	if openaiReq.OutputCompression != nil {
 		if err := writer.WriteField("output_compression", strconv.Itoa(*openaiReq.OutputCompression)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write output_compression field", err)
+			return providerUtils.NewGatewayOperationError("failed to write output_compression field", err)
 		}
 	}
 
 	if openaiReq.User != nil {
 		if err := writer.WriteField("user", *openaiReq.User); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write user field", err)
+			return providerUtils.NewGatewayOperationError("failed to write user field", err)
 		}
 	}
 
@@ -229,10 +229,10 @@ func parseImageEditFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *
 			"Content-Type":        {mimeType},
 		})
 		if err != nil {
-			return providerUtils.NewRakshaOperationError(fmt.Sprintf("failed to create form part for image %d", i), err)
+			return providerUtils.NewGatewayOperationError(fmt.Sprintf("failed to create form part for image %d", i), err)
 		}
 		if _, err := part.Write(imageInput.Image); err != nil {
-			return providerUtils.NewRakshaOperationError(fmt.Sprintf("failed to write image %d data", i), err)
+			return providerUtils.NewGatewayOperationError(fmt.Sprintf("failed to write image %d data", i), err)
 		}
 	}
 
@@ -260,75 +260,75 @@ func parseImageEditFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *
 			"Content-Type":        {maskMimeType},
 		})
 		if err != nil {
-			return providerUtils.NewRakshaOperationError("failed to create mask form part", err)
+			return providerUtils.NewGatewayOperationError("failed to create mask form part", err)
 		}
 		if _, err := maskPart.Write(openaiReq.Mask); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write mask data", err)
+			return providerUtils.NewGatewayOperationError("failed to write mask data", err)
 		}
 	}
 
 	// Close the multipart writer
 	if err := writer.Close(); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
+		return providerUtils.NewGatewayOperationError("failed to close multipart writer", err)
 	}
 
 	return nil
 }
 
-func ToOpenAIImageVariationRequest(rakshaReq *schemas.RakshaImageVariationRequest) *OpenAIImageVariationRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil || rakshaReq.Input.Image.Image == nil || len(rakshaReq.Input.Image.Image) == 0 {
+func ToOpenAIImageVariationRequest(gatewayReq *schemas.GatewayImageVariationRequest) *OpenAIImageVariationRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil || gatewayReq.Input.Image.Image == nil || len(gatewayReq.Input.Image.Image) == 0 {
 		return nil
 	}
 
 	req := &OpenAIImageVariationRequest{
-		Model: rakshaReq.Model,
-		Input: rakshaReq.Input,
+		Model: gatewayReq.Model,
+		Input: gatewayReq.Input,
 	}
 
-	if rakshaReq.Params != nil {
-		req.ImageVariationParameters = *rakshaReq.Params
+	if gatewayReq.Params != nil {
+		req.ImageVariationParameters = *gatewayReq.Params
 	}
 
-	if rakshaReq.Params != nil {
-		req.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		req.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 
 	return req
 }
 
-func parseImageVariationFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAIImageVariationRequest, providerName schemas.ModelProvider) *schemas.RakshaError {
+func parseImageVariationFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAIImageVariationRequest, providerName schemas.ModelProvider) *schemas.GatewayError {
 	// Add model field (required)
 	if err := writer.WriteField("model", openaiReq.Model); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to write model field", err)
+		return providerUtils.NewGatewayOperationError("failed to write model field", err)
 	}
 
 	// Add image file (required)
 	if openaiReq.Input == nil || openaiReq.Input.Image.Image == nil || len(openaiReq.Input.Image.Image) == 0 {
-		return providerUtils.NewRakshaOperationError("image is required", nil)
+		return providerUtils.NewGatewayOperationError("image is required", nil)
 	}
 
 	// Add optional parameters before the image part so metadata arrives first upstream.
 	if openaiReq.N != nil {
 		if err := writer.WriteField("n", strconv.Itoa(*openaiReq.N)); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write n field", err)
+			return providerUtils.NewGatewayOperationError("failed to write n field", err)
 		}
 	}
 
 	if openaiReq.ResponseFormat != nil {
 		if err := writer.WriteField("response_format", *openaiReq.ResponseFormat); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write response_format field", err)
+			return providerUtils.NewGatewayOperationError("failed to write response_format field", err)
 		}
 	}
 
 	if openaiReq.Size != nil {
 		if err := writer.WriteField("size", *openaiReq.Size); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write size field", err)
+			return providerUtils.NewGatewayOperationError("failed to write size field", err)
 		}
 	}
 
 	if openaiReq.User != nil {
 		if err := writer.WriteField("user", *openaiReq.User); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write user field", err)
+			return providerUtils.NewGatewayOperationError("failed to write user field", err)
 		}
 	}
 
@@ -345,16 +345,16 @@ func parseImageVariationFormDataBodyFromRequest(writer *multipart.Writer, openai
 		"Content-Type":        {mimeType},
 	})
 	if err != nil {
-		return providerUtils.NewRakshaOperationError("failed to create image part", err)
+		return providerUtils.NewGatewayOperationError("failed to create image part", err)
 	}
 
 	if _, err := part.Write(openaiReq.Input.Image.Image); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to write image data", err)
+		return providerUtils.NewGatewayOperationError("failed to write image data", err)
 	}
 
 	// Close the multipart writer
 	if err := writer.Close(); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
+		return providerUtils.NewGatewayOperationError("failed to close multipart writer", err)
 	}
 
 	return nil

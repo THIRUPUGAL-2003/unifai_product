@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
@@ -16,7 +17,7 @@ import { ModelProvider } from "@/lib/types/config";
 import { CreateBudgetRequest, ProviderGovernance } from "@/lib/types/governance";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -71,10 +72,19 @@ export function GovernanceFormFragment({ provider }: GovernanceFormFragmentProps
 	const hasUpdateProviderAccess = useRbac(RbacResource.ModelProvider, RbacOperation.Update);
 	const hasViewAccess = useRbac(RbacResource.Governance, RbacOperation.View);
 
-	const { data: providerGovernanceData } = useGetProviderGovernanceQuery(undefined, {
+	const [govPollMs, setGovPollMs] = useState(5000);
+	const {
+		data: providerGovernanceData,
+		isError: governanceFailed,
+		error: governanceError,
+	} = useGetProviderGovernanceQuery(undefined, {
 		skip: !hasViewAccess,
-		pollingInterval: 5000,
+		pollingInterval: govPollMs,
 	});
+
+	useEffect(() => {
+		setGovPollMs(governanceFailed ? 0 : 5000);
+	}, [governanceFailed]);
 	const [updateProviderGovernance, { isLoading: isUpdating }] = useUpdateProviderGovernanceMutation();
 	const [deleteProviderGovernance, { isLoading: isDeleting }] = useDeleteProviderGovernanceMutation();
 
@@ -182,6 +192,12 @@ export function GovernanceFormFragment({ provider }: GovernanceFormFragmentProps
 	return (
 		<Form {...form}>
 			<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 px-6">
+				{governanceFailed ? (
+					<QueryErrorBanner
+						message={getErrorMessage(governanceError) || "Failed to load governance."}
+						testId="provider-governance-form-query-error"
+					/>
+				) : null}
 				{/* Budget Configuration */}
 				<MultiBudgetLines
 					data-testid="provider-governance-budgets"

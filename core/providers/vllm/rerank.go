@@ -4,42 +4,42 @@ import (
 	"fmt"
 	"sort"
 
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-// ToVLLMRerankRequest converts a Raksha rerank request to vLLM format.
-func ToVLLMRerankRequest(rakshaReq *schemas.RakshaRerankRequest) *vLLMRerankRequest {
-	if rakshaReq == nil {
+// ToVLLMRerankRequest converts a Gateway rerank request to vLLM format.
+func ToVLLMRerankRequest(gatewayReq *schemas.GatewayRerankRequest) *vLLMRerankRequest {
+	if gatewayReq == nil {
 		return nil
 	}
 
 	vllmReq := &vLLMRerankRequest{
-		Model:     rakshaReq.Model,
-		Query:     rakshaReq.Query,
-		Documents: make([]string, len(rakshaReq.Documents)),
+		Model:     gatewayReq.Model,
+		Query:     gatewayReq.Query,
+		Documents: make([]string, len(gatewayReq.Documents)),
 	}
 
-	for i, doc := range rakshaReq.Documents {
+	for i, doc := range gatewayReq.Documents {
 		vllmReq.Documents[i] = doc.Text
 	}
 
-	if rakshaReq.Params != nil {
-		vllmReq.TopN = rakshaReq.Params.TopN
-		vllmReq.MaxTokensPerDoc = rakshaReq.Params.MaxTokensPerDoc
-		vllmReq.Priority = rakshaReq.Params.Priority
-		vllmReq.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		vllmReq.TopN = gatewayReq.Params.TopN
+		vllmReq.MaxTokensPerDoc = gatewayReq.Params.MaxTokensPerDoc
+		vllmReq.Priority = gatewayReq.Params.Priority
+		vllmReq.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 
 	return vllmReq
 }
 
-// ToRakshaRerankResponse converts a vLLM rerank response payload to Raksha format.
-func ToRakshaRerankResponse(payload map[string]interface{}, documents []schemas.RerankDocument, returnDocuments bool) (*schemas.RakshaRerankResponse, error) {
+// ToGatewayRerankResponse converts a vLLM rerank response payload to Gateway format.
+func ToGatewayRerankResponse(payload map[string]interface{}, documents []schemas.RerankDocument, returnDocuments bool) (*schemas.GatewayRerankResponse, error) {
 	if payload == nil {
 		return nil, fmt.Errorf("vllm rerank response is nil")
 	}
 
-	response := &schemas.RakshaRerankResponse{}
+	response := &schemas.GatewayRerankResponse{}
 
 	if id, ok := schemas.SafeExtractString(payload["id"]); ok {
 		response.ID = id
@@ -113,7 +113,7 @@ func ToRakshaRerankResponse(payload map[string]interface{}, documents []schemas.
 	return response, nil
 }
 
-func parseVLLMUsage(rawUsage interface{}) (*schemas.RakshaLLMUsage, bool) {
+func parseVLLMUsage(rawUsage interface{}) (*schemas.GatewayLLMUsage, bool) {
 	usageMap, ok := rawUsage.(map[string]interface{})
 	if !ok {
 		return nil, false
@@ -141,7 +141,7 @@ func parseVLLMUsage(rawUsage interface{}) (*schemas.RakshaLLMUsage, bool) {
 		return nil, false
 	}
 
-	return &schemas.RakshaLLMUsage{
+	return &schemas.GatewayLLMUsage{
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 		TotalTokens:      totalTokens,

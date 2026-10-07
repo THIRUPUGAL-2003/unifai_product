@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // unsupportedSystemPromptModels is a set of models that don't support the system_prompt field.
@@ -18,28 +18,28 @@ var unsupportedSystemPromptModels = []string{
 	"xai/grok-4",
 }
 
-func ToReplicateChatRequest(rakshaReq *schemas.RakshaChatRequest) (*ReplicatePredictionRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil {
-		return nil, fmt.Errorf("raksha request is nil or input is nil")
+func ToReplicateChatRequest(gatewayReq *schemas.GatewayChatRequest) (*ReplicatePredictionRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil {
+		return nil, fmt.Errorf("gateway request is nil or input is nil")
 	}
 
 	// Build the input from messages
 	input := &ReplicatePredictionRequestInput{}
 
-	isGPT5Structured := strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) && strings.Contains(rakshaReq.Model, "gpt-5-structured")
+	isGPT5Structured := strings.HasPrefix(gatewayReq.Model, string(schemas.OpenAI)) && strings.Contains(gatewayReq.Model, "gpt-5-structured")
 
 	// openai models support messages
-	if len(rakshaReq.Input) > 0 && strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) {
+	if len(gatewayReq.Input) > 0 && strings.HasPrefix(gatewayReq.Model, string(schemas.OpenAI)) {
 		if isGPT5Structured {
 			responsesMessages := []schemas.ResponsesMessage{}
-			for _, msg := range rakshaReq.Input {
+			for _, msg := range gatewayReq.Input {
 				responsesMessages = append(responsesMessages, msg.ToResponsesMessages()...)
 			}
 			if len(responsesMessages) > 0 {
 				input.InputItemList = responsesMessages
 			}
 		} else {
-			input.Messages = rakshaReq.Input
+			input.Messages = gatewayReq.Input
 		}
 	} else {
 		// Extract system prompt and build conversation prompt
@@ -47,7 +47,7 @@ func ToReplicateChatRequest(rakshaReq *schemas.RakshaChatRequest) (*ReplicatePre
 		var conversationParts []string
 		var imageInput []string
 
-		for _, msg := range rakshaReq.Input {
+		for _, msg := range gatewayReq.Input {
 			if msg.Content == nil {
 				continue
 			}
@@ -91,7 +91,7 @@ func ToReplicateChatRequest(rakshaReq *schemas.RakshaChatRequest) (*ReplicatePre
 		}
 
 		// Set system prompt if present and model supports it
-		modelSupportsSystemPrompt := supportsSystemPrompt(rakshaReq.Model)
+		modelSupportsSystemPrompt := supportsSystemPrompt(gatewayReq.Model)
 
 		if systemPrompt != "" {
 			if modelSupportsSystemPrompt {
@@ -126,8 +126,8 @@ func ToReplicateChatRequest(rakshaReq *schemas.RakshaChatRequest) (*ReplicatePre
 	}
 
 	// Map parameters if present
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		// Temperature
 		if params.Temperature != nil {
@@ -143,7 +143,7 @@ func ToReplicateChatRequest(rakshaReq *schemas.RakshaChatRequest) (*ReplicatePre
 		if params.MaxCompletionTokens != nil {
 			if isGPT5Structured {
 				input.MaxOutputTokens = params.MaxCompletionTokens
-			} else if strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) {
+			} else if strings.HasPrefix(gatewayReq.Model, string(schemas.OpenAI)) {
 				input.MaxCompletionTokens = params.MaxCompletionTokens
 			} else {
 				input.MaxTokens = params.MaxCompletionTokens
@@ -193,15 +193,15 @@ func ToReplicateChatRequest(rakshaReq *schemas.RakshaChatRequest) (*ReplicatePre
 		Input: input,
 	}
 
-	if isVersionID(rakshaReq.Model) {
-		req.Version = &rakshaReq.Model
+	if isVersionID(gatewayReq.Model) {
+		req.Version = &gatewayReq.Model
 	}
 
-	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
-		if webhook, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["webhook"]); ok {
+	if gatewayReq.Params != nil && gatewayReq.Params.ExtraParams != nil {
+		if webhook, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["webhook"]); ok {
 			req.Webhook = webhook
 		}
-		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["webhook_events_filter"]); ok {
+		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(gatewayReq.Params.ExtraParams["webhook_events_filter"]); ok {
 			req.WebhookEventsFilter = webhookEventsFilter
 		}
 	}
@@ -209,8 +209,8 @@ func ToReplicateChatRequest(rakshaReq *schemas.RakshaChatRequest) (*ReplicatePre
 	return req, nil
 }
 
-// ToRakshaChatResponse converts a Replicate prediction response to Raksha format
-func (response *ReplicatePredictionResponse) ToRakshaChatResponse() *schemas.RakshaChatResponse {
+// ToGatewayChatResponse converts a Replicate prediction response to Gateway format
+func (response *ReplicatePredictionResponse) ToGatewayChatResponse() *schemas.GatewayChatResponse {
 	if response == nil {
 		return nil
 	}
@@ -221,8 +221,8 @@ func (response *ReplicatePredictionResponse) ToRakshaChatResponse() *schemas.Rak
 		createdAt = time.Now().Unix()
 	}
 
-	// Initialize Raksha response
-	rakshaResponse := &schemas.RakshaChatResponse{
+	// Initialize Gateway response
+	gatewayResponse := &schemas.GatewayChatResponse{
 		ID:      response.ID,
 		Model:   response.Model,
 		Object:  "chat.completion",
@@ -269,7 +269,7 @@ func (response *ReplicatePredictionResponse) ToRakshaChatResponse() *schemas.Rak
 	}
 
 	// Create choice
-	choice := schemas.RakshaResponseChoice{
+	choice := schemas.GatewayResponseChoice{
 		Index: 0,
 		ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
 			Message: &message,
@@ -277,13 +277,13 @@ func (response *ReplicatePredictionResponse) ToRakshaChatResponse() *schemas.Rak
 		FinishReason: finishReason,
 	}
 
-	rakshaResponse.Choices = []schemas.RakshaResponseChoice{choice}
+	gatewayResponse.Choices = []schemas.GatewayResponseChoice{choice}
 
 	// Extract usage information from logs
 	if response.Logs != nil {
 		inputTokens, outputTokens, totalTokens, found := parseTokenUsageFromLogs(response.Logs, schemas.ChatCompletionRequest)
 		if found {
-			rakshaResponse.Usage = &schemas.RakshaLLMUsage{
+			gatewayResponse.Usage = &schemas.GatewayLLMUsage{
 				PromptTokens:     inputTokens,
 				CompletionTokens: outputTokens,
 				TotalTokens:      totalTokens,
@@ -291,7 +291,7 @@ func (response *ReplicatePredictionResponse) ToRakshaChatResponse() *schemas.Rak
 		}
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
 // supportsSystemPrompt checks if a model supports the system_prompt field.

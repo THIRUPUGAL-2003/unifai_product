@@ -8,7 +8,7 @@ import (
 // keyed by the request ID and lives between PreLLMHook (where it's populated)
 // and PostLLMHook (where it's consumed and cleared).
 //
-// Centralizes what used to be a set of stringly-typed RakshaContext keys
+// Centralizes what used to be a set of stringly-typed GatewayContext keys
 // (directCacheID, paramsHash, embeddings, embedding input tokens) into one
 // struct so the lifecycle is explicit and consumers don't have to chase
 // ctx.Value/SetValue calls across files.

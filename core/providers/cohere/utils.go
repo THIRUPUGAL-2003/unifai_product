@@ -3,13 +3,13 @@ package cohere
 import (
 	"encoding/json"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/tidwall/sjson"
 )
 
 var (
-	// Maps provider-specific finish reasons to Raksha format
-	cohereFinishReasonToRaksha = map[CohereFinishReason]string{
+	// Maps provider-specific finish reasons to Gateway format
+	cohereFinishReasonToGateway = map[CohereFinishReason]string{
 		FinishReasonComplete:     "stop",
 		FinishReasonStopSequence: "stop",
 		FinishReasonMaxTokens:    "length",
@@ -17,16 +17,16 @@ var (
 	}
 )
 
-// ConvertCohereFinishReasonToRaksha converts provider finish reasons to Raksha format
-func ConvertCohereFinishReasonToRaksha(providerReason CohereFinishReason) string {
-	if rakshaReason, ok := cohereFinishReasonToRaksha[providerReason]; ok {
-		return rakshaReason
+// ConvertCohereFinishReasonToGateway converts provider finish reasons to Gateway format
+func ConvertCohereFinishReasonToGateway(providerReason CohereFinishReason) string {
+	if gatewayReason, ok := cohereFinishReasonToGateway[providerReason]; ok {
+		return gatewayReason
 	}
 	return string(providerReason)
 }
 
 // convertInterfaceToToolFunctionParameters converts an interface{} to ToolFunctionParameters
-// This handles the conversion from Cohere's flexible parameter format to Raksha's structured format
+// This handles the conversion from Cohere's flexible parameter format to Gateway's structured format
 func convertInterfaceToToolFunctionParameters(params interface{}) *schemas.ToolFunctionParameters {
 	if params == nil {
 		return nil
@@ -272,8 +272,8 @@ func convertResponseFormatToCohere(responseFormat *interface{}) *CohereResponseF
 	return cohereFormat
 }
 
-// convertCohereResponseFormatToRaksha converts Cohere's typed response_format back to interface{}
-func convertCohereResponseFormatToRaksha(cohereFormat *CohereResponseFormat) *interface{} {
+// convertCohereResponseFormatToGateway converts Cohere's typed response_format back to interface{}
+func convertCohereResponseFormatToGateway(cohereFormat *CohereResponseFormat) *interface{} {
 	if cohereFormat == nil {
 		return nil
 	}

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/framework/logstore"
+	"github.com/gateway/gateway/framework/logstore"
 )
 
 const (

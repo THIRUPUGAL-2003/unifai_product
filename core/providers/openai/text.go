@@ -3,29 +3,29 @@ package openai
 import (
 	"maps"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToOpenAITextCompletionRequest converts a Raksha text completion request to OpenAI format
-func ToOpenAITextCompletionRequest(rakshaReq *schemas.RakshaTextCompletionRequest) *OpenAITextCompletionRequest {
-	if rakshaReq == nil {
+// ToOpenAITextCompletionRequest converts a Gateway text completion request to OpenAI format
+func ToOpenAITextCompletionRequest(gatewayReq *schemas.GatewayTextCompletionRequest) *OpenAITextCompletionRequest {
+	if gatewayReq == nil {
 		return nil
 	}
-	params := rakshaReq.Params
+	params := gatewayReq.Params
 	openaiReq := &OpenAITextCompletionRequest{
-		Model:  rakshaReq.Model,
-		Prompt: rakshaReq.Input,
+		Model:  gatewayReq.Model,
+		Prompt: gatewayReq.Input,
 	}
 	if params != nil {
 		openaiReq.TextCompletionParameters = *params
 		// Drop user field if it exceeds OpenAI's 64 character limit
 		openaiReq.TextCompletionParameters.User = SanitizeUserField(openaiReq.TextCompletionParameters.User)
-		if rakshaReq.Params.ExtraParams != nil {
-			openaiReq.ExtraParams = maps.Clone(rakshaReq.Params.ExtraParams)
+		if gatewayReq.Params.ExtraParams != nil {
+			openaiReq.ExtraParams = maps.Clone(gatewayReq.Params.ExtraParams)
 			openaiReq.TextCompletionParameters.ExtraParams = openaiReq.ExtraParams
 		}
 	}
-	if rakshaReq.Provider == schemas.Fireworks {
+	if gatewayReq.Provider == schemas.Fireworks {
 		openaiReq.applyFireworksTextCompletionCompatibility()
 	}
 	return openaiReq
@@ -56,15 +56,15 @@ func (req *OpenAITextCompletionRequest) applyFireworksTextCompletionCompatibilit
 	req.TextCompletionParameters.ExtraParams = req.ExtraParams
 }
 
-// ToRakshaTextCompletionRequest converts an OpenAI text completion request to Raksha format
-func (req *OpenAITextCompletionRequest) ToRakshaTextCompletionRequest(ctx *schemas.RakshaContext) *schemas.RakshaTextCompletionRequest {
+// ToGatewayTextCompletionRequest converts an OpenAI text completion request to Gateway format
+func (req *OpenAITextCompletionRequest) ToGatewayTextCompletionRequest(ctx *schemas.GatewayContext) *schemas.GatewayTextCompletionRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	return &schemas.RakshaTextCompletionRequest{
+	return &schemas.GatewayTextCompletionRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     req.Prompt,

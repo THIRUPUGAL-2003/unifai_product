@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunPassthroughExtraParamsTest executes the passthrough extraParams test scenario
@@ -16,7 +16,7 @@ import (
 // Note: This test only runs for providers that support arbitrary extra params at the root level
 // of the request body. Providers like Anthropic have strict schema validation and don't accept
 // unknown fields, so they should set PassThroughExtraParams: false in their test config.
-func RunPassthroughExtraParamsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunPassthroughExtraParamsTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	// Guard: Check if ChatModel is configured
 	if testConfig.ChatModel == "" {
 		t.Logf("ChatModel not configured for provider %s, skipping passthrough test", testConfig.Provider)
@@ -33,22 +33,22 @@ func RunPassthroughExtraParamsTest(t *testing.T, client *raksha.Raksha, ctx cont
 			t.Parallel()
 		}
 
-		// Create a Raksha context with passthrough extraParams enabled
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-		bfCtx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
-		bfCtx.SetValue(schemas.RakshaContextKeySendBackRawRequest, true)
+		// Create a Gateway context with passthrough extraParams enabled
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+		bfCtx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
+		bfCtx.SetValue(schemas.GatewayContextKeySendBackRawRequest, true)
 
 		// Prepare chat request with extraParams
 		// custom_param will be at root level
 		// custom_nested will be a nested structure to test recursive merging
-		chatReq := &schemas.RakshaChatRequest{
+		chatReq := &schemas.GatewayChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input: []schemas.ChatMessage{
 				CreateBasicChatMessage("Say hello in one word"),
 			},
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: raksha.Ptr(10),
+				MaxCompletionTokens: gateway.Ptr(10),
 				// Set extraParams with custom_param and nested structure
 				ExtraParams: map[string]interface{}{
 					"custom_param": "test_value_123",
@@ -85,7 +85,7 @@ func RunPassthroughExtraParamsTest(t *testing.T, client *raksha.Raksha, ctx cont
 		// Verify raw request is present in ExtraFields
 		if response.ExtraFields.RawRequest == nil {
 			t.Logf("⚠️  Raw request not found in ExtraFields - this may be provider-specific")
-			t.Logf("   Check Raksha logs for the raw request body sent to provider")
+			t.Logf("   Check Gateway logs for the raw request body sent to provider")
 			t.Logf("   Expected in raw request:")
 			t.Logf("     - 'custom_param': 'test_value_123'")
 			t.Logf("     - 'custom_nested.custom_field': 'nested_custom_value_456'")

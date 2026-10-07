@@ -1,6 +1,6 @@
 package framework
 
-import "github.com/raksha/raksha/framework/modelcatalog"
+import "github.com/gateway/gateway/framework/modelcatalog"
 
 // FrameworkConfig represents the configuration for the framework.
 type FrameworkConfig struct {

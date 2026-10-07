@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/raksha/raksha/scripts/raksha-migration-cli/litellm"
+	"github.com/gateway/gateway/scripts/gateway-migration-cli/litellm"
 )
 
 // VKProviderConfig is the planned per-provider key attachment for a VK.
@@ -16,16 +16,16 @@ type VKProviderConfig struct {
 	KeyIDs   []string // ["*"] = all keys; specific UUIDs = only those keys
 }
 
-// VKPlan is the planned Raksha virtual key. Owner ids are LiteLLM ids; the
-// caller resolves them to Raksha team/customer ids (mutually exclusive) before
+// VKPlan is the planned Gateway virtual key. Owner ids are LiteLLM ids; the
+// caller resolves them to Gateway team/customer ids (mutually exclusive) before
 // the write. The remaining fields are informational for the migration report.
 type VKPlan struct {
 	Name            string
-	OwnerTeamID     *string // LiteLLM team_id (resolve -> Raksha team)
-	OwnerOrgID      *string // LiteLLM org_id (resolve -> Raksha customer)
+	OwnerTeamID     *string // LiteLLM team_id (resolve -> Gateway team)
+	OwnerOrgID      *string // LiteLLM org_id (resolve -> Gateway customer)
 	ProviderConfigs []VKProviderConfig
-	Budget          *RakshaCreateBudgetRequest
-	RateLimit       *RakshaCreateRateLimitRequest
+	Budget          *GatewayCreateBudgetRequest
+	RateLimit       *GatewayCreateRateLimitRequest
 	IsActive        *bool // set false when the LiteLLM key is blocked
 
 	// Informational (reported, not carried onto the VK):
@@ -39,7 +39,7 @@ var llmAllModelSentinels = map[string]bool{
 	"*": true, "all-proxy-models": true, "all-team-models": true,
 }
 
-// LiteLLMVirtualKeyToRaksha transforms a LiteLLM virtual key into a Raksha VK
+// LiteLLMVirtualKeyToGateway transforms a LiteLLM virtual key into a Gateway VK
 // plan. The mapping is pure (no I/O).
 //
 // Keys: the VK's allowed model list (union of key + team + org) is used to
@@ -49,9 +49,9 @@ var llmAllModelSentinels = map[string]bool{
 // "all models" sentinel, all providers are granted via key_ids=["*"].
 // No model restriction is set on the VK — all models are always allowed.
 //
-// Owner: team_id wins over org_id (Raksha VK ownership is team XOR customer);
+// Owner: team_id wins over org_id (Gateway VK ownership is team XOR customer);
 // user_id has no VK-create field and is reported instead.
-func LiteLLMVirtualKeyToRaksha(key litellm.LiteLLMVirtualKey, teamModels, orgModels []string, keyModelIdx map[string][]ProviderKeyRef, wildcardKeys []ProviderKeyRef, allProviders []string, maxBudgetPeriod string) (*VKPlan, error) {
+func LiteLLMVirtualKeyToGateway(key litellm.LiteLLMVirtualKey, teamModels, orgModels []string, keyModelIdx map[string][]ProviderKeyRef, wildcardKeys []ProviderKeyRef, allProviders []string, maxBudgetPeriod string) (*VKPlan, error) {
 	name := ""
 	if key.KeyAlias != nil {
 		name = strings.TrimSpace(*key.KeyAlias)
@@ -104,7 +104,7 @@ func LiteLLMVirtualKeyToRaksha(key litellm.LiteLLMVirtualKey, teamModels, orgMod
 	return plan, nil
 }
 
-// resolveProviderKeyConfigs turns a set of LiteLLM model names into Raksha VK
+// resolveProviderKeyConfigs turns a set of LiteLLM model names into Gateway VK
 // provider configs by selecting which provider keys serve those models.
 //
 // An empty set (no restriction) or an "all models" sentinel grants key_ids=["*"]

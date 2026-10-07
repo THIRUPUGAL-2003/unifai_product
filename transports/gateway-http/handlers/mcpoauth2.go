@@ -1,4 +1,4 @@
-// Package handlers provides HTTP request handlers for the Raksha HTTP transport.
+// Package handlers provides HTTP request handlers for the Gateway HTTP transport.
 // This file contains OAuth 2.0 authentication flow handlers.
 package handlers
 
@@ -9,23 +9,23 @@ import (
 	"net/url"
 
 	"github.com/fasthttp/router"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/oauth2"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/oauth2"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
 // OAuth2Handler manages HTTP requests for OAuth2 operations
 type OAuthHandler struct {
-	client        *raksha.Raksha
+	client        *gateway.Gateway
 	store         *lib.Config
 	oauthProvider *oauth2.OAuth2Provider
 }
 
 // NewOAuthHandler creates a new OAuth handler instance
-func NewOAuthHandler(oauthProvider *oauth2.OAuth2Provider, client *raksha.Raksha, store *lib.Config) *OAuthHandler {
+func NewOAuthHandler(oauthProvider *oauth2.OAuth2Provider, client *gateway.Gateway, store *lib.Config) *OAuthHandler {
 	return &OAuthHandler{
 		client:        client,
 		store:         store,
@@ -34,7 +34,7 @@ func NewOAuthHandler(oauthProvider *oauth2.OAuth2Provider, client *raksha.Raksha
 }
 
 // RegisterRoutes registers all OAuth-related routes
-func (h *OAuthHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *OAuthHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/oauth/callback", lib.ChainMiddlewares(h.handleOAuthCallback, middlewares...))
 	r.GET("/api/oauth/config/{id}/status", lib.ChainMiddlewares(h.getOAuthConfigStatus, middlewares...))
 	r.DELETE("/api/oauth/config/{id}", lib.ChainMiddlewares(h.revokeOAuthConfig, middlewares...))
@@ -46,7 +46,7 @@ func (h *OAuthHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.R
 //
 // Two flow types share this redirect_uri, distinguished by which state table
 // the state token belongs to:
-//   - Per-user runtime flow (Raksha-as-client to upstream for an MCP server's
+//   - Per-user runtime flow (Gateway-as-client to upstream for an MCP server's
 //     per-user OAuth). On success → /workspace/mcp-sessions.
 //   - Server-level admin-test flow (mcpClientSheet OAuth2Authorizer popup
 //     validating an OAuth config template). On success → /workspace/mcp-registry/oauth-callback

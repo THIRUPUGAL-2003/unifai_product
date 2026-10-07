@@ -1,4 +1,4 @@
-# Part of Raksha browser_ai_proxy
+# Part of Gateway browser_ai_proxy
 import re
 import json
 import os
@@ -26,10 +26,10 @@ def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
     return False
 
 
-def _is_raksha_inject_frame(body: str) -> bool:
+def _is_gateway_inject_frame(body: str) -> bool:
     """Frames Guard itself injected — never treat as a user Send."""
     b = (body or "").lower()
-    return "raksha-reply" in b or '"messageid":"raksha-reply"' in b
+    return "gateway-reply" in b or '"messageid":"gateway-reply"' in b
 
 
 def _is_persistent_chat_websocket(path: str) -> bool:
@@ -51,7 +51,7 @@ def _copilot_frame_is_user_send(body: str) -> bool:
     """True only for a finished Copilot/Bing/Edge user Send frame — not attach-ack or ping."""
     if not body or not str(body).strip():
         return False
-    if _is_raksha_inject_frame(body):
+    if _is_gateway_inject_frame(body):
         return False
     if is_event_sync_noise_content(body):
         return False
@@ -1303,7 +1303,7 @@ def wait_if_composer_unstable(domain: str, prompt: str) -> str | None:
                     # Longer typing won — follow it on THIS request (do not silent-drop;
                     # the longer request may never arrive if the browser aborted).
                     print(
-                        f"[Raksha Proxy] Composer superseded -> commit longer | {domain!r} | "
+                        f"[Gateway Proxy] Composer superseded -> commit longer | {domain!r} | "
                         f"{text[:40]!r} -> {cur_text[:40]!r}"
                     )
                     text = cur_text
@@ -1346,7 +1346,7 @@ def wait_if_composer_unstable(domain: str, prompt: str) -> str | None:
             and (time.time() - float(cur_ts)) <= COMPOSER_PREFIX_WINDOW
         ):
             print(
-                f"[Raksha Proxy] Composer prefix -> commit longer | {domain!r} | "
+                f"[Gateway Proxy] Composer prefix -> commit longer | {domain!r} | "
                 f"{text[:40]!r} -> {cur_text[:40]!r}"
             )
             text = cur_text
@@ -1954,7 +1954,7 @@ def _extract_from_xml(text: str) -> str | None:
         if best:
             return best
     except Exception as _xml_ex:
-        print(f"[Raksha Proxy DEBUG] XML prompt extract failed ({type(_xml_ex).__name__}): {_xml_ex}")
+        print(f"[Gateway Proxy DEBUG] XML prompt extract failed ({type(_xml_ex).__name__}): {_xml_ex}")
 
     prompt_tags = r'question|query|prompt|text|message|input|user_input|instruction'
     pat = rf'<(?:\w+:)?({prompt_tags})[^>]*>([^<]+)</(?:\w+:)?\1>'
@@ -2000,7 +2000,7 @@ def _extract_from_ndjson(text: str) -> str | None:
             except Exception:
                 continue
     except Exception as _ndjson_ex:
-        print(f"[Raksha Proxy DEBUG] NDJSON prompt extract failed ({type(_ndjson_ex).__name__}): {_ndjson_ex}")
+        print(f"[Gateway Proxy DEBUG] NDJSON prompt extract failed ({type(_ndjson_ex).__name__}): {_ndjson_ex}")
     return best
 
 
@@ -2322,7 +2322,7 @@ def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", hos
                     return got
         except Exception as _json_ex:
             # Log so new platforms with unusual encoding are visible (don't silently miss DLP).
-            print(f"[Raksha Proxy DEBUG] prompt JSON extract failed ({type(_json_ex).__name__}): {_json_ex}")
+            print(f"[Gateway Proxy DEBUG] prompt JSON extract failed ({type(_json_ex).__name__}): {_json_ex}")
 
     # ── Step 5: URL-encoded form ───────────────────────────────────────────
     if (

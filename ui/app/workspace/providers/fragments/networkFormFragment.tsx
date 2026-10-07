@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { SecretVarInput } from "@/components/ui/secretVarInput";
@@ -187,7 +188,7 @@ export function NetworkFormFragment({ provider }: NetworkFormFragmentProps) {
 										</FormControl>
 										{isCustomProvider ? (
 											<FormDescription>
-												Host only — do not include <code className="text-xs">/v1</code>. Raksha appends paths like{" "}
+												Host only — do not include <code className="text-xs">/v1</code>. {PRODUCT_NAME} appends paths like{" "}
 												<code className="text-xs">/v1/models</code>. Example:{" "}
 												<code className="text-xs">https://api.siliconflow.com</code> (not{" "}
 												<code className="text-xs">…/v1</code>).

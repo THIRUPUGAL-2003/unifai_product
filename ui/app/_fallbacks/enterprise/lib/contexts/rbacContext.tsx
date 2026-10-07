@@ -54,6 +54,8 @@ interface RbacContextType {
 	isAllowed: (resource: RbacResource, operation: RbacOperation) => boolean;
 	permissions: Record<string, Record<string, boolean>>;
 	isLoading: boolean;
+	isError: boolean;
+	error: unknown;
 	refetch: () => void;
 }
 
@@ -81,14 +83,14 @@ function hasPermission(
 }
 
 export function RbacProvider({ children }: { children: React.ReactNode }) {
-	const { data, isLoading, refetch } = useGetMyRBACPermissionsQuery(undefined);
+	const { data, isLoading, isError, error, refetch } = useGetMyRBACPermissionsQuery(undefined);
 	const permissions = data?.permissions ?? {};
 	// Never default to "admin" while loading — that fail-opens every gated control.
 	const role = data?.role ?? "";
 
 	const isAllowed = useCallback(
 		(resource: RbacResource, operation: RbacOperation) => {
-			if (isLoading || !data) {
+			if (isLoading || isError || !data) {
 				return false;
 			}
 			if (role === "admin") {
@@ -96,7 +98,7 @@ export function RbacProvider({ children }: { children: React.ReactNode }) {
 			}
 			return hasPermission(permissions, resource, operation);
 		},
-		[permissions, role, isLoading, data],
+		[permissions, role, isLoading, isError, data],
 	);
 
 	const value = useMemo(
@@ -104,9 +106,11 @@ export function RbacProvider({ children }: { children: React.ReactNode }) {
 			isAllowed,
 			permissions,
 			isLoading,
+			isError,
+			error,
 			refetch,
 		}),
-		[isAllowed, permissions, isLoading, refetch],
+		[isAllowed, permissions, isLoading, isError, error, refetch],
 	);
 
 	return <RbacContext.Provider value={value}>{children}</RbacContext.Provider>;
@@ -131,6 +135,8 @@ export function useRbacContext() {
 			isAllowed: () => !IS_ENTERPRISE,
 			permissions: {},
 			isLoading: false,
+			isError: false,
+			error: undefined,
 			refetch: () => {},
 		};
 	}

@@ -1,10 +1,10 @@
-module github.com/raksha/raksha/plugins/mocker
+module github.com/gateway/gateway/plugins/mocker
 
 go 1.26.4
 
 require (
 	github.com/jaswdr/faker/v2 v2.8.0
-	github.com/raksha/raksha/core v1.6.2
+	github.com/gateway/gateway/core v1.6.2
 )
 
 require (

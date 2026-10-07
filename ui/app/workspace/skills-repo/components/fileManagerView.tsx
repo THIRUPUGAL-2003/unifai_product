@@ -27,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollBar } from "@/components/ui/scrollArea";
 import { Textarea } from "@/components/ui/textarea";
 import { Tree, type BaseNodeData, type TreeNode } from "@/components/ui/treeView";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getErrorMessage } from "@/lib/store/apis/baseApi";
 import { useUploadSkillFileMutation } from "@/lib/store/apis/skillsApi";
 import { SkillFileEntry } from "@/lib/types/skills";
@@ -315,7 +316,7 @@ function FileAddForm({ folderPath, initialSourceType, initialEntry, submitLabel,
 			{sourceType === "url" && (
 				<div className="flex items-start gap-2 rounded-sm border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200">
 					<Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-					<span>This source is saved as a live reference. Raksha will read from this URL when the skill file is retrieved.</span>
+					<span>This source is saved as a live reference. {PRODUCT_NAME} will read from this URL when the skill file is retrieved.</span>
 				</div>
 			)}
 
@@ -842,7 +843,7 @@ export function FileManagerSection({
 			return [...next];
 		});
 
-		if (addingFile?.folderPath.startsWith(`${folderPath}/`) || addingFile?.folderPath === folderPath) {
+		if (addingFile?.folderPath?.startsWith(`${folderPath}/`) || addingFile?.folderPath === folderPath) {
 			setAddingFile({
 				...addingFile,
 				folderPath: getMovedPath(addingFile.folderPath, folderPath, nextFolderPath),
@@ -902,7 +903,7 @@ export function FileManagerSection({
 			}
 			return nextIndex;
 		});
-		if (addingFile?.folderPath === folderPath || addingFile?.folderPath.startsWith(`${folderPath}/`)) setAddingFile(null);
+		if (addingFile?.folderPath === folderPath || addingFile?.folderPath?.startsWith(`${folderPath}/`)) setAddingFile(null);
 		if (newFolderParent === folderPath || newFolderParent?.startsWith(`${folderPath}/`)) {
 			setNewFolderParent(null);
 			setNewFolderName("");
@@ -1494,7 +1495,7 @@ export function FileManagerSection({
 					<AlertDialogHeader>
 						<AlertDialogTitle>Delete folder?</AlertDialogTitle>
 						<AlertDialogDescription>
-							{folderDeleteImpact?.nestedFiles.length ? (
+							{folderDeleteImpact?.nestedFiles?.length ? (
 								<>
 									This will remove the folder <b>{folderToDelete}</b>, its nested folders, and all files inside it from this skill draft.
 								</>
@@ -1511,7 +1512,7 @@ export function FileManagerSection({
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 
-					{folderDeleteImpact?.nestedFiles.length ? (
+					{folderDeleteImpact?.nestedFiles?.length ? (
 						<div className="bg-muted/20 flex flex-col gap-3 rounded-sm border p-3 text-xs">
 							<div className="flex flex-col gap-1">
 								<div className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Files</div>

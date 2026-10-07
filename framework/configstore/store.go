@@ -1,4 +1,4 @@
-// Package configstore provides a persistent configuration store for Raksha.
+// Package configstore provides a persistent configuration store for Gateway.
 package configstore
 
 import (
@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/objectstore"
-	"github.com/raksha/raksha/framework/vectorstore"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/objectstore"
+	"github.com/gateway/gateway/framework/vectorstore"
 	"gorm.io/gorm"
 )
 

@@ -12,11 +12,11 @@ import (
 
 	"github.com/fasthttp/router"
 	ws "github.com/fasthttp/websocket"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/integrations"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
-	ufws "github.com/raksha/raksha/transports/raksha-http/websocket"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/integrations"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
+	ufws "github.com/gateway/gateway/transports/gateway-http/websocket"
 	"github.com/valyala/fasthttp"
 )
 
@@ -29,7 +29,7 @@ const (
 
 // WSRealtimeHandler handles bidirectional WebSocket proxying for the Realtime API.
 type WSRealtimeHandler struct {
-	client       *raksha.Raksha
+	client       *gateway.Gateway
 	config       *lib.Config
 	handlerStore lib.HandlerStore
 	pool         *ufws.Pool
@@ -37,7 +37,7 @@ type WSRealtimeHandler struct {
 }
 
 // NewWSRealtimeHandler creates a new Realtime WebSocket handler.
-func NewWSRealtimeHandler(client *raksha.Raksha, config *lib.Config, pool *ufws.Pool) *WSRealtimeHandler {
+func NewWSRealtimeHandler(client *gateway.Gateway, config *lib.Config, pool *ufws.Pool) *WSRealtimeHandler {
 	maxConns := config.WebSocketConfig.MaxConnections
 
 	return &WSRealtimeHandler{
@@ -50,7 +50,7 @@ func NewWSRealtimeHandler(client *raksha.Raksha, config *lib.Config, pool *ufws.
 }
 
 // RegisterRoutes registers the Realtime WebSocket endpoint at the base path and OpenAI integration paths.
-func (h *WSRealtimeHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *WSRealtimeHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	handler := lib.ChainMiddlewares(h.handleUpgrade, middlewares...)
 	r.GET("/v1/realtime", handler)
 	for _, path := range integrations.OpenAIRealtimePaths("/openai") {
@@ -84,7 +84,7 @@ func (h *WSRealtimeHandler) handleUpgrade(ctx *fasthttp.RequestCtx) {
 		upgradeErr := upgrader.Upgrade(ctx, func(conn *ws.Conn) {
 			defer conn.Close()
 			clientConn := newRealtimeClientConn(conn)
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", err.Error()))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", err.Error()))
 		})
 		if upgradeErr != nil {
 			logger.Warn("websocket upgrade failed for %s: %v", path, upgradeErr)
@@ -97,45 +97,45 @@ func (h *WSRealtimeHandler) handleUpgrade(ctx *fasthttp.RequestCtx) {
 	// phase explicitly here. Mutations to provider/model are read back into the local vars
 	// and copied to fasthttp user values so snapshotRealtimeMiddlewareValues picks up any
 	// ctx changes (governance team/customer IDs, routing engine logs).
-	preReqCtx, preReqCancel := createRakshaContextFromAuth(h.handlerStore, auth)
+	preReqCtx, preReqCancel := createGatewayContextFromAuth(h.handlerStore, auth)
 	if preReqCtx == nil {
 		preReqCancel()
 		upgrader := h.websocketUpgrader("")
 		upgradeErr := upgrader.Upgrade(ctx, func(conn *ws.Conn) {
 			defer conn.Close()
 			clientConn := newRealtimeClientConn(conn)
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(500, "server_error", "failed to create request context"))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(500, "server_error", "failed to create request context"))
 		})
 		if upgradeErr != nil {
 			logger.Warn("websocket upgrade failed for %s: %v", path, upgradeErr)
 		}
 		return
 	}
-	preReqCtx.SetValue(schemas.RakshaContextKeyHTTPRequestType, schemas.RealtimeRequest)
+	preReqCtx.SetValue(schemas.GatewayContextKeyHTTPRequestType, schemas.RealtimeRequest)
 	if realtimeDefaultProviderForPath(path) == schemas.OpenAI {
-		preReqCtx.SetValue(schemas.RakshaContextKeyIntegrationType, "openai")
+		preReqCtx.SetValue(schemas.GatewayContextKeyIntegrationType, "openai")
 	}
 	// Surface full request headers + query params on the pre-request context so governance
 	// CEL routing rules (which read headers[...] / params[...]) see the same shape they would
-	// for normal HTTP requests. Mirrors lib/ctx.go ConvertToRakshaContext; the normal HTTP
+	// for normal HTTP requests. Mirrors lib/ctx.go ConvertToGatewayContext; the normal HTTP
 	// path doesn't run for WS upgrades, so we populate these explicitly. Keys are lowercased.
 	allHeaders := make(map[string]string)
 	ctx.Request.Header.All()(func(key, value []byte) bool {
 		allHeaders[strings.ToLower(string(key))] = string(value)
 		return true
 	})
-	preReqCtx.SetValue(schemas.RakshaContextKeyRequestHeaders, allHeaders)
+	preReqCtx.SetValue(schemas.GatewayContextKeyRequestHeaders, allHeaders)
 	if queryArgs := ctx.Request.URI().QueryArgs(); queryArgs.Len() > 0 {
 		allQuery := make(map[string]string, queryArgs.Len())
 		queryArgs.All()(func(key, value []byte) bool {
 			allQuery[strings.ToLower(string(key))] = string(value)
 			return true
 		})
-		preReqCtx.SetValue(schemas.RakshaContextKeyRequestQuery, allQuery)
+		preReqCtx.SetValue(schemas.GatewayContextKeyRequestQuery, allQuery)
 	}
-	preReq := &schemas.RakshaRequest{
+	preReq := &schemas.GatewayRequest{
 		RequestType: schemas.RealtimeRequest,
-		ResponsesRequest: &schemas.RakshaResponsesRequest{
+		ResponsesRequest: &schemas.GatewayResponsesRequest{
 			Provider: providerKey,
 			Model:    model,
 		},
@@ -150,7 +150,7 @@ func (h *WSRealtimeHandler) handleUpgrade(ctx *fasthttp.RequestCtx) {
 		upgradeErr := upgrader.Upgrade(ctx, func(conn *ws.Conn) {
 			defer conn.Close()
 			clientConn := newRealtimeClientConn(conn)
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", fmt.Sprintf("no provider could be resolved for model %q (set as provider/model or configure the model catalog)", model)))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", fmt.Sprintf("no provider could be resolved for model %q (set as provider/model or configure the model catalog)", model)))
 		})
 		if upgradeErr != nil {
 			logger.Warn("websocket upgrade failed for %s: %v", path, upgradeErr)
@@ -176,7 +176,7 @@ func (h *WSRealtimeHandler) handleUpgrade(ctx *fasthttp.RequestCtx) {
 		upgradeErr := upgrader.Upgrade(ctx, func(conn *ws.Conn) {
 			defer conn.Close()
 			clientConn := newRealtimeClientConn(conn)
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", "provider does not support realtime: "+string(providerKey)))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", "provider does not support realtime: "+string(providerKey)))
 		})
 		if upgradeErr != nil {
 			logger.Warn("websocket upgrade failed for %s: %v", path, upgradeErr)
@@ -185,7 +185,7 @@ func (h *WSRealtimeHandler) handleUpgrade(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Capture governance/routing values set by the transport middleware.
-	// TransportInterceptorMiddleware copies RakshaContext user values to individual
+	// TransportInterceptorMiddleware copies GatewayContext user values to individual
 	// fasthttp UserValue slots after HTTPTransportPreHook runs. We snapshot them now
 	// because the fasthttp RequestCtx is recycled after the handler returns — the
 	// WebSocket session outlives it.
@@ -198,7 +198,7 @@ func (h *WSRealtimeHandler) handleUpgrade(ctx *fasthttp.RequestCtx) {
 
 		session, sessionErr := h.sessions.Create(conn)
 		if sessionErr != nil {
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(429, "rate_limit_exceeded", sessionErr.Error()))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(429, "rate_limit_exceeded", sessionErr.Error()))
 			return
 		}
 		defer h.sessions.Remove(conn)
@@ -240,9 +240,9 @@ func (h *WSRealtimeHandler) runRealtimeSession(
 	clientConn.startHeartbeat()
 	defer clientConn.stopHeartbeat()
 
-	rakshaCtx, cancel := createRakshaContextFromAuth(h.handlerStore, auth)
-	if rakshaCtx == nil {
-		clientConn.writeRealtimeError(newRealtimeWireRakshaError(500, "server_error", "failed to create request context"))
+	gatewayCtx, cancel := createGatewayContextFromAuth(h.handlerStore, auth)
+	if gatewayCtx == nil {
+		clientConn.writeRealtimeError(newRealtimeWireGatewayError(500, "server_error", "failed to create request context"))
 		return
 	}
 	defer cancel()
@@ -251,37 +251,37 @@ func (h *WSRealtimeHandler) runRealtimeSession(
 	// These include routing rule ID/name, virtual key ID/name, routing engines,
 	// routing engine logs, raw-storage header overrides, and other values set by
 	// HTTPTransportPreHook plugins (governance, prompts, etc.).
-	applyRealtimeMiddlewareValues(rakshaCtx, middlewareValues)
+	applyRealtimeMiddlewareValues(gatewayCtx, middlewareValues)
 
 	// Resolve ephemeral key mapping to restore virtual key context.
 	token := extractRealtimeBearerTokenFromHeader(auth.authorization)
 	if isRealtimeEphemeralToken(token) {
 		mapping, ok := lookupRealtimeEphemeralKeyMapping(h.handlerStore.GetKVStore(), token)
 		if ok {
-			applyRealtimeEphemeralKeyMapping(rakshaCtx, mapping)
+			applyRealtimeEphemeralKeyMapping(gatewayCtx, mapping)
 		}
 	}
 
-	rakshaCtx.SetValue(schemas.RakshaContextKeyHTTPRequestType, schemas.RealtimeRequest)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyHTTPRequestType, schemas.RealtimeRequest)
 	if strings.HasPrefix(path, "/openai") {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyIntegrationType, "openai")
+		gatewayCtx.SetValue(schemas.GatewayContextKeyIntegrationType, "openai")
 	}
 
 	provider := h.client.GetProviderByKey(providerKey)
 	if provider == nil {
-		clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", "provider not found: "+string(providerKey)))
+		clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", "provider not found: "+string(providerKey)))
 		return
 	}
 
 	rtProvider, ok := provider.(schemas.RealtimeProvider)
 	if !ok || !rtProvider.SupportsRealtimeAPI() {
-		clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", "provider does not support realtime: "+string(providerKey)))
+		clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", "provider does not support realtime: "+string(providerKey)))
 		return
 	}
 
-	key, err := h.client.SelectKeyForProviderRequestType(rakshaCtx, schemas.RealtimeRequest, providerKey, model)
+	key, err := h.client.SelectKeyForProviderRequestType(gatewayCtx, schemas.RealtimeRequest, providerKey, model)
 	if err != nil {
-		clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", err.Error()))
+		clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", err.Error()))
 		return
 	}
 
@@ -289,16 +289,16 @@ func (h *WSRealtimeHandler) runRealtimeSession(
 	model = key.Aliases.Resolve(model)
 
 	// Compute raw storage flag from provider config + per-request header overrides.
-	// Normal inference computes this inside raksha.executeRequest, which is bypassed
+	// Normal inference computes this inside gateway.executeRequest, which is bypassed
 	// for realtime WebSocket connections. Setting it on the session context ensures
 	// turn-level hooks can read it via shouldStoreRealtimeRawPayloads().
-	applyRealtimeRawStorageContext(rakshaCtx, h.client.ComputeRawStorageForProvider(rakshaCtx, providerKey))
+	applyRealtimeRawStorageContext(gatewayCtx, h.client.ComputeRawStorageForProvider(gatewayCtx, providerKey))
 
 	// Tag the session context with transport type for downstream logging/metadata.
-	rakshaCtx.SetValue(schemas.RakshaContextKeyRealtimeTransport, "websocket")
+	gatewayCtx.SetValue(schemas.GatewayContextKeyRealtimeTransport, "websocket")
 
 	wsURL := rtProvider.RealtimeWebSocketURL(key, model)
-	realtimeHeaders, headerErr := rtProvider.RealtimeHeaders(rakshaCtx, key)
+	realtimeHeaders, headerErr := rtProvider.RealtimeHeaders(gatewayCtx, key)
 	if headerErr != nil {
 		clientConn.writeRealtimeError(headerErr)
 		return
@@ -309,17 +309,17 @@ func (h *WSRealtimeHandler) runRealtimeSession(
 		Endpoint: wsURL,
 	}, mapToHTTPHeader(realtimeHeaders))
 	if err != nil {
-		clientConn.writeRealtimeError(newRealtimeWireRakshaError(502, "server_error", err.Error()))
+		clientConn.writeRealtimeError(newRealtimeWireGatewayError(502, "server_error", err.Error()))
 		return
 	}
 	defer h.pool.Discard(upstream)
 
 	errCh := make(chan error, 2)
 	go func() {
-		errCh <- h.relayClientToRealtimeProvider(clientConn, session, upstream, rtProvider, rakshaCtx, providerKey, model, key)
+		errCh <- h.relayClientToRealtimeProvider(clientConn, session, upstream, rtProvider, gatewayCtx, providerKey, model, key)
 	}()
 	go func() {
-		errCh <- h.relayRealtimeProviderToClient(clientConn, session, upstream, rtProvider, rakshaCtx, providerKey, model, key)
+		errCh <- h.relayRealtimeProviderToClient(clientConn, session, upstream, rtProvider, gatewayCtx, providerKey, model, key)
 	}()
 
 	firstErr := <-errCh
@@ -337,7 +337,7 @@ func (h *WSRealtimeHandler) relayClientToRealtimeProvider(
 	session *ufws.Session,
 	upstream *ufws.UpstreamConn,
 	provider schemas.RealtimeProvider,
-	rakshaCtx *schemas.RakshaContext,
+	gatewayCtx *schemas.GatewayContext,
 	providerKey schemas.ModelProvider,
 	model string,
 	key schemas.Key,
@@ -347,7 +347,7 @@ func (h *WSRealtimeHandler) relayClientToRealtimeProvider(
 		if err != nil {
 			finalizeRealtimeTurnHooksOnTransportError(
 				h.client,
-				rakshaCtx,
+				gatewayCtx,
 				session,
 				providerKey,
 				model,
@@ -362,13 +362,13 @@ func (h *WSRealtimeHandler) relayClientToRealtimeProvider(
 			return err
 		}
 		if messageType != ws.TextMessage {
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", "realtime websocket only accepts text messages"))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", "realtime websocket only accepts text messages"))
 			return nil
 		}
 
 		event, err := schemas.ParseRealtimeEvent(message)
 		if err != nil {
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", "failed to parse realtime event JSON"))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", "failed to parse realtime event JSON"))
 			continue
 		}
 		// Extract pending tool/input summaries but defer recording until the event
@@ -379,7 +379,7 @@ func (h *WSRealtimeHandler) relayClientToRealtimeProvider(
 		startsTurn := provider.ShouldStartRealtimeTurn(event)
 		if startsTurn {
 			if session.PeekRealtimeTurnHooks() != nil {
-				clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", "Conversation already has an active response in progress."))
+				clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", "Conversation already has an active response in progress."))
 				continue
 			}
 			if toolSummary != "" {
@@ -388,8 +388,8 @@ func (h *WSRealtimeHandler) relayClientToRealtimeProvider(
 			if inputSummary != "" {
 				session.RecordRealtimeInput(inputItemID, inputSummary, string(message))
 			}
-			if rakshaErr := startRealtimeTurnHooks(h.client, rakshaCtx, session, provider, providerKey, model, &key, event.Type); rakshaErr != nil {
-				clientConn.writeRealtimeError(rakshaErr)
+			if gatewayErr := startRealtimeTurnHooks(h.client, gatewayCtx, session, provider, providerKey, model, &key, event.Type); gatewayErr != nil {
+				clientConn.writeRealtimeError(gatewayErr)
 				return nil
 			}
 		}
@@ -400,20 +400,20 @@ func (h *WSRealtimeHandler) relayClientToRealtimeProvider(
 			if startsTurn {
 				if finalizeErr := finalizeRealtimeTurnHooksWithError(
 					h.client,
-					rakshaCtx,
+					gatewayCtx,
 					session,
 					providerKey,
 					model,
 					&key,
 					schemas.RTEventError,
 					nil,
-					newRealtimeWireRakshaError(400, "invalid_request_error", err.Error()),
+					newRealtimeWireGatewayError(400, "invalid_request_error", err.Error()),
 				); finalizeErr != nil {
 					clientConn.writeRealtimeError(finalizeErr)
 					return nil
 				}
 			}
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(400, "invalid_request_error", err.Error()))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(400, "invalid_request_error", err.Error()))
 			continue
 		}
 
@@ -434,16 +434,16 @@ func (h *WSRealtimeHandler) relayClientToRealtimeProvider(
 		if err := upstream.WriteMessage(ws.TextMessage, providerEvent); err != nil {
 			finalizeRealtimeTurnHooksWithError(
 				h.client,
-				rakshaCtx,
+				gatewayCtx,
 				session,
 				providerKey,
 				model,
 				&key,
 				schemas.RTEventError,
 				nil,
-				newRealtimeWireRakshaError(502, "server_error", "failed to write realtime event upstream"),
+				newRealtimeWireGatewayError(502, "server_error", "failed to write realtime event upstream"),
 			)
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(502, "server_error", "failed to write realtime event upstream"))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(502, "server_error", "failed to write realtime event upstream"))
 			return err
 		}
 	}
@@ -454,7 +454,7 @@ func (h *WSRealtimeHandler) relayRealtimeProviderToClient(
 	session *ufws.Session,
 	upstream *ufws.UpstreamConn,
 	provider schemas.RealtimeProvider,
-	rakshaCtx *schemas.RakshaContext,
+	gatewayCtx *schemas.GatewayContext,
 	providerKey schemas.ModelProvider,
 	model string,
 	key schemas.Key,
@@ -465,7 +465,7 @@ func (h *WSRealtimeHandler) relayRealtimeProviderToClient(
 		if err != nil {
 			finalizeRealtimeTurnHooksOnTransportError(
 				h.client,
-				rakshaCtx,
+				gatewayCtx,
 				session,
 				providerKey,
 				model,
@@ -479,34 +479,34 @@ func (h *WSRealtimeHandler) relayRealtimeProviderToClient(
 			}
 			finalizeRealtimeTurnHooksWithError(
 				h.client,
-				rakshaCtx,
+				gatewayCtx,
 				session,
 				providerKey,
 				model,
 				&key,
 				schemas.RTEventError,
 				nil,
-				newRealtimeWireRakshaError(502, "server_error", "upstream realtime websocket stream interrupted"),
+				newRealtimeWireGatewayError(502, "server_error", "upstream realtime websocket stream interrupted"),
 			)
-			clientConn.writeRealtimeError(newRealtimeWireRakshaError(502, "server_error", "upstream realtime websocket stream interrupted"))
+			clientConn.writeRealtimeError(newRealtimeWireGatewayError(502, "server_error", "upstream realtime websocket stream interrupted"))
 			return err
 		}
 
 		if messageType == ws.TextMessage {
-			event, err := provider.ToRakshaRealtimeEvent(message)
+			event, err := provider.ToGatewayRealtimeEvent(message)
 			if err != nil {
 				finalizeRealtimeTurnHooksWithError(
 					h.client,
-					rakshaCtx,
+					gatewayCtx,
 					session,
 					providerKey,
 					model,
 					&key,
 					schemas.RTEventError,
 					message,
-					newRealtimeWireRakshaError(502, "server_error", "failed to translate upstream realtime event"),
+					newRealtimeWireGatewayError(502, "server_error", "failed to translate upstream realtime event"),
 				)
-				clientConn.writeRealtimeError(newRealtimeWireRakshaError(502, "server_error", "failed to translate upstream realtime event"))
+				clientConn.writeRealtimeError(newRealtimeWireGatewayError(502, "server_error", "failed to translate upstream realtime event"))
 				return err
 			}
 			if event != nil {
@@ -520,8 +520,8 @@ func (h *WSRealtimeHandler) relayRealtimeProviderToClient(
 					session.AppendRealtimeOutputText(event.Delta.Transcript)
 				}
 				if provider.ShouldStartRealtimeTurn(event) && session.PeekRealtimeTurnHooks() == nil {
-					if rakshaErr := startRealtimeTurnHooks(h.client, rakshaCtx, session, provider, providerKey, model, &key, event.Type); rakshaErr != nil {
-						clientConn.writeRealtimeError(rakshaErr)
+					if gatewayErr := startRealtimeTurnHooks(h.client, gatewayCtx, session, provider, providerKey, model, &key, event.Type); gatewayErr != nil {
+						clientConn.writeRealtimeError(gatewayErr)
 						return nil
 					}
 				}
@@ -533,15 +533,15 @@ func (h *WSRealtimeHandler) relayRealtimeProviderToClient(
 				}
 				if event.Type == provider.RealtimeTurnFinalEvent() {
 					contentOverride := session.ConsumeRealtimeOutputText()
-					if rakshaErr := finalizeRealtimeTurnHooks(h.client, rakshaCtx, session, provider, providerKey, model, &key, message, contentOverride); rakshaErr != nil {
-						clientConn.writeRealtimeError(rakshaErr)
+					if gatewayErr := finalizeRealtimeTurnHooks(h.client, gatewayCtx, session, provider, providerKey, model, &key, message, contentOverride); gatewayErr != nil {
+						clientConn.writeRealtimeError(gatewayErr)
 						return nil
 					}
 				} else if event.Error != nil {
-					turnErr := newRakshaErrorFromRealtimeError(providerKey, model, message, event.Error)
+					turnErr := newGatewayErrorFromRealtimeError(providerKey, model, message, event.Error)
 					finalizeErr := finalizeRealtimeTurnHooksWithError(
 						h.client,
-						rakshaCtx,
+						gatewayCtx,
 						session,
 						providerKey,
 						model,
@@ -564,7 +564,7 @@ func (h *WSRealtimeHandler) relayRealtimeProviderToClient(
 				if len(event.RawData) == 0 {
 					message, err = provider.ToProviderRealtimeEvent(event)
 					if err != nil {
-						clientConn.writeRealtimeError(newRealtimeWireRakshaError(502, "server_error", "failed to encode translated realtime event"))
+						clientConn.writeRealtimeError(newRealtimeWireGatewayError(502, "server_error", "failed to encode translated realtime event"))
 						return err
 					}
 				}
@@ -574,7 +574,7 @@ func (h *WSRealtimeHandler) relayRealtimeProviderToClient(
 		if err := clientConn.WriteMessage(messageType, message); err != nil {
 			finalizeRealtimeTurnHooksOnTransportError(
 				h.client,
-				rakshaCtx,
+				gatewayCtx,
 				session,
 				providerKey,
 				model,
@@ -744,8 +744,8 @@ func (c *realtimeClientConn) closeDone() {
 	})
 }
 
-func (c *realtimeClientConn) writeRealtimeError(rakshaErr *schemas.RakshaError) {
-	payload := newRealtimeTurnErrorEventPayload(rakshaErr)
+func (c *realtimeClientConn) writeRealtimeError(gatewayErr *schemas.GatewayError) {
+	payload := newRealtimeTurnErrorEventPayload(gatewayErr)
 	_ = c.WriteMessage(ws.TextMessage, payload)
 }
 
@@ -777,9 +777,9 @@ func mapToHTTPHeader(headers map[string]string) http.Header {
 	return merged
 }
 
-func newRealtimeWireRakshaError(status int, code, message string) *schemas.RakshaError {
+func newRealtimeWireGatewayError(status int, code, message string) *schemas.GatewayError {
 	errType := code
-	return &schemas.RakshaError{
+	return &schemas.GatewayError{
 		StatusCode: &status,
 		Type:       &errType,
 		Error: &schemas.ErrorField{
@@ -791,56 +791,56 @@ func newRealtimeWireRakshaError(status int, code, message string) *schemas.Raksh
 }
 
 // applyRealtimeMiddlewareValues copies governance and routing values from the transport
-// middleware RakshaContext (populated by HTTPTransportPreHook plugins) to the long-lived
+// middleware GatewayContext (populated by HTTPTransportPreHook plugins) to the long-lived
 // WebSocket session context. Without this, values set by the governance plugin during
 // the HTTP upgrade (routing rule ID/name, VK ID/name, routing engines, routing engine
 // logs, raw-storage overrides) would be lost because the WebSocket handler creates a
-// fresh RakshaContext that outlives the fasthttp request.
+// fresh GatewayContext that outlives the fasthttp request.
 //
-// Values already explicitly set by createRakshaContextFromAuth (VK, parent request ID,
+// Values already explicitly set by createGatewayContextFromAuth (VK, parent request ID,
 // request headers, extra headers) are preserved — middleware values do not overwrite them
-// since createRakshaContextFromAuth runs first.
-// realtimeMiddlewareKeys lists the RakshaContext keys that TransportInterceptorMiddleware
+// since createGatewayContextFromAuth runs first.
+// realtimeMiddlewareKeys lists the GatewayContext keys that TransportInterceptorMiddleware
 // copies from the governance plugin's context onto individual fasthttp UserValue slots.
 // We snapshot exactly these keys before the WebSocket upgrade so the long-lived session
 // has access to routing rule info, virtual key resolution, routing engine logs, etc.
 var realtimeMiddlewareKeys = []any{
-	schemas.RakshaContextKeyGovernanceVirtualKeyID,
-	schemas.RakshaContextKeyGovernanceVirtualKeyName,
-	schemas.RakshaContextKeyGovernanceRoutingRuleID,
-	schemas.RakshaContextKeyGovernanceRoutingRuleName,
-	schemas.RakshaContextKeyGovernanceCustomerID,
-	schemas.RakshaContextKeyGovernanceCustomerName,
-	schemas.RakshaContextKeyGovernanceTeamID,
-	schemas.RakshaContextKeyGovernanceTeamName,
-	schemas.RakshaContextKeyGovernanceBusinessUnitID,
-	schemas.RakshaContextKeyGovernanceBusinessUnitName,
-	schemas.RakshaContextKeyGovernanceIncludeOnlyKeys,
-	schemas.RakshaContextKeyGovernancePluginName,
-	schemas.RakshaContextKeyRoutingEnginesUsed,
-	schemas.RakshaContextKeyRoutingEngineLogs,
-	schemas.RakshaContextKeyShouldStoreRawInLogs,
-	schemas.RakshaContextKeyCaptureRawRequest,
-	schemas.RakshaContextKeyCaptureRawResponse,
-	schemas.RakshaContextKeyDropRawRequestFromClient,
-	schemas.RakshaContextKeyDropRawResponseFromClient,
-	schemas.RakshaContextKeyUserID,
-	schemas.RakshaContextKeyUserName,
-	schemas.RakshaContextKeyAPIKeyID,
-	schemas.RakshaContextKeyAPIKeyName,
-	schemas.RakshaContextKeySelectedKeyID,
-	schemas.RakshaContextKeySelectedKeyName,
-	// NOTE: RakshaContextKeyTraceID is intentionally NOT inherited here. The
+	schemas.GatewayContextKeyGovernanceVirtualKeyID,
+	schemas.GatewayContextKeyGovernanceVirtualKeyName,
+	schemas.GatewayContextKeyGovernanceRoutingRuleID,
+	schemas.GatewayContextKeyGovernanceRoutingRuleName,
+	schemas.GatewayContextKeyGovernanceCustomerID,
+	schemas.GatewayContextKeyGovernanceCustomerName,
+	schemas.GatewayContextKeyGovernanceTeamID,
+	schemas.GatewayContextKeyGovernanceTeamName,
+	schemas.GatewayContextKeyGovernanceBusinessUnitID,
+	schemas.GatewayContextKeyGovernanceBusinessUnitName,
+	schemas.GatewayContextKeyGovernanceIncludeOnlyKeys,
+	schemas.GatewayContextKeyGovernancePluginName,
+	schemas.GatewayContextKeyRoutingEnginesUsed,
+	schemas.GatewayContextKeyRoutingEngineLogs,
+	schemas.GatewayContextKeyShouldStoreRawInLogs,
+	schemas.GatewayContextKeyCaptureRawRequest,
+	schemas.GatewayContextKeyCaptureRawResponse,
+	schemas.GatewayContextKeyDropRawRequestFromClient,
+	schemas.GatewayContextKeyDropRawResponseFromClient,
+	schemas.GatewayContextKeyUserID,
+	schemas.GatewayContextKeyUserName,
+	schemas.GatewayContextKeyAPIKeyID,
+	schemas.GatewayContextKeyAPIKeyName,
+	schemas.GatewayContextKeySelectedKeyID,
+	schemas.GatewayContextKeySelectedKeyName,
+	// NOTE: GatewayContextKeyTraceID is intentionally NOT inherited here. The
 	// upgrade request's trace is already ended by the time realtime turns run, so
 	// inheriting it would route each turn's log entry into pendingLogsToInject
 	// under a dead trace ID whose Inject() never fires, dropping the row. Each
 	// realtime turn mints its own trace in RunRealtimeTurnPreHooks instead.
-	schemas.RakshaContextKeyTransportPluginLogs,
+	schemas.GatewayContextKeyTransportPluginLogs,
 }
 
 // snapshotRealtimeMiddlewareValues reads governance/routing values from the fasthttp
 // context's UserValue store. TransportInterceptorMiddleware copies them there as
-// individual key-value pairs (not inside a RakshaContext). Routing engine logs
+// individual key-value pairs (not inside a GatewayContext). Routing engine logs
 // emitted by PreRequestHook (governance routing rules, LB, modelcatalogresolver)
 // are surfaced through the same mechanism — the hooks write them onto preReqCtx
 // and handleUpgrade mirrors that ctx's user values onto the fasthttp ctx before
@@ -858,7 +858,7 @@ func snapshotRealtimeMiddlewareValues(ctx *fasthttp.RequestCtx) map[any]any {
 	return result
 }
 
-func applyRealtimeMiddlewareValues(ctx *schemas.RakshaContext, middlewareValues map[any]any) {
+func applyRealtimeMiddlewareValues(ctx *schemas.GatewayContext, middlewareValues map[any]any) {
 	if ctx == nil || len(middlewareValues) == 0 {
 		return
 	}
@@ -866,7 +866,7 @@ func applyRealtimeMiddlewareValues(ctx *schemas.RakshaContext, middlewareValues 
 		if value == nil {
 			continue
 		}
-		// Skip values already set by createRakshaContextFromAuth to avoid overwriting
+		// Skip values already set by createGatewayContextFromAuth to avoid overwriting
 		// auth-resolved values with stale middleware copies.
 		if existing := ctx.Value(key); existing != nil {
 			continue

@@ -3,11 +3,11 @@ package compat
 import (
 	"fmt"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // dropUnsupportedParams removes unsupported model parameters from a request in place.
-func dropUnsupportedParams(ctx *schemas.RakshaContext, req *schemas.RakshaRequest, supportedParams []string) []string {
+func dropUnsupportedParams(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, supportedParams []string) []string {
 	if req == nil {
 		return nil
 	}
@@ -257,13 +257,13 @@ func dropUnsupportedParams(ctx *schemas.RakshaContext, req *schemas.RakshaReques
 		}
 	}
 
-	ctx.SetValue(schemas.RakshaContextKeySupportsAssistantPrefill, isSupported["assistant_prefill"])
+	ctx.SetValue(schemas.GatewayContextKeySupportsAssistantPrefill, isSupported["assistant_prefill"])
 
 	return dropped
 }
 
 // dropWebsearchToolCalls drops web search tool calls from the request
-func dropWebsearchToolCalls(req *schemas.RakshaRequest) []string {
+func dropWebsearchToolCalls(req *schemas.GatewayRequest) []string {
 	dropped := []string{}
 	tools := req.ResponsesRequest.Params.Tools
 	kept := tools[:0]
@@ -279,7 +279,7 @@ func dropWebsearchToolCalls(req *schemas.RakshaRequest) []string {
 }
 
 // dropCachePoint drops cache point (only supported by bedrock) from the request
-func dropCachePoint(req *schemas.RakshaChatRequest) []string {
+func dropCachePoint(req *schemas.GatewayChatRequest) []string {
 	dropped := []string{}
 	for i := range req.Input {
 		if req.Input[i].Content != nil && req.Input[i].Content.ContentBlocks != nil {
@@ -299,7 +299,7 @@ func dropCachePoint(req *schemas.RakshaChatRequest) []string {
 }
 
 // dropCacheControlFromResponsesMessages clears cache_control from all content blocks.
-func dropCacheControlFromResponsesMessages(req *schemas.RakshaResponsesRequest) []string {
+func dropCacheControlFromResponsesMessages(req *schemas.GatewayResponsesRequest) []string {
 	var dropped []string
 
 	if req.Input != nil {
@@ -335,7 +335,7 @@ func dropCacheControlFromResponsesMessages(req *schemas.RakshaResponsesRequest) 
 // applyBedrockResponsesCompatibility sanitizes messages for OpenAI-compatible Bedrock models:
 // - drops empty text content blocks
 // - strips reasoning signatures (Anthropic-specific, not supported by OpenAI models)
-func applyBedrockResponsesCompatibility(req *schemas.RakshaResponsesRequest) []string {
+func applyBedrockResponsesCompatibility(req *schemas.GatewayResponsesRequest) []string {
 	var dropped []string
 	for i := range req.Input {
 		msg := &req.Input[i]

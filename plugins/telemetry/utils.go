@@ -1,5 +1,5 @@
 // Package telemetry provides Prometheus metrics collection and monitoring functionality
-// for the Raksha HTTP service. This file contains the setup and configuration
+// for the Gateway HTTP service. This file contains the setup and configuration
 // for Prometheus metrics collection, including HTTP middleware and metric definitions.
 package telemetry
 

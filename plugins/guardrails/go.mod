@@ -1,4 +1,4 @@
-module github.com/raksha/raksha/plugins/guardrails
+module github.com/gateway/gateway/plugins/guardrails
 
 go 1.26.4
 

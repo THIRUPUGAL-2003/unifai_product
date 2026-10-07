@@ -7,7 +7,7 @@ import subprocess
 import sys
 import threading
 
-from agent_config import AGENT_VERSION, RAKSHA_BACKEND_URL
+from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL
 from agent_health import first_run_path
 from agent_http import _http_json
 from agent_identity import get_or_create_agent_id
@@ -32,7 +32,7 @@ def show_message_async(title: str, text: str, flags: int = 0x40) -> None:
     threading.Thread(
         target=show_message,
         args=(title, text, flags),
-        name="raksha-guard-msg",
+        name="gateway-guard-msg",
         daemon=True,
     ).start()
 
@@ -58,14 +58,14 @@ def maybe_first_run_prompt() -> None:
         else "Chrome, Edge, Brave, Opera, Vivaldi, Firefox"
     )
     show_message_async(
-        "Raksha Guard installed",
-        "Raksha Guard is running.\n\n"
+        "Gateway Guard installed",
+        "Gateway Guard is running.\n\n"
         "For Browser AI monitoring & predict to work:\n"
         f"1) Fully quit every browser you use ({browsers})\n"
         "2) Reopen the browser and visit a monitored AI site\n"
         "3) Send a test prompt\n\n"
         f"Version {AGENT_VERSION}\n"
-        f"Backend: {RAKSHA_BACKEND_URL}\n"
+        f"Backend: {GATEWAY_BACKEND_URL}\n"
         f"Logs: {log_hint_path()}",
     )
 
@@ -79,11 +79,11 @@ def _is_guard_install_path(path: str) -> bool:
     n = (path or "").replace("\\", "/").lower()
     if not n:
         return False
-    if "raksha" in n and "guard" in n:
+    if "gateway" in n and "guard" in n:
         return True
-    if n.endswith("/raksha_guard.app") or n.endswith("raksha_guard.app"):
+    if n.endswith("/gateway_guard.app") or n.endswith("gateway_guard.app"):
         return True
-    if n.endswith("raksha_guard.exe"):
+    if n.endswith("gateway_guard.exe"):
         return True
     return False
 
@@ -108,31 +108,31 @@ def schedule_install_removal() -> None:
             allusersprofile = os.environ.get("ALLUSERSPROFILE", "")
 
             for cand in (
-                os.path.join(local, "Programs", "Raksha", "Guard", "Raksha_Guard.exe") if local else "",
-                os.path.join(pf, "Raksha", "Guard", "Raksha_Guard.exe"),
+                os.path.join(local, "Programs", "Gateway", "Guard", "Gateway_Guard.exe") if local else "",
+                os.path.join(pf, "Gateway", "Guard", "Gateway_Guard.exe"),
             ):
                 if cand and os.path.isfile(cand) and cand not in targets:
                     targets.append(cand)
 
             parts: list[str] = [
                 "ping -n 4 127.0.0.1 >nul",
-                "taskkill /F /IM Raksha_Guard.exe >nul 2>&1",
+                "taskkill /F /IM Gateway_Guard.exe >nul 2>&1",
                 "ping -n 2 127.0.0.1 >nul",
                 'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}" /f >nul 2>&1',
-                'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "Raksha_Guard" /f >nul 2>&1',
+                'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "Gateway_Guard" /f >nul 2>&1',
             ]
 
             if userprofile:
-                parts.append(f'del /f /q "{userprofile}\\Desktop\\Raksha Guard.lnk" >nul 2>&1')
+                parts.append(f'del /f /q "{userprofile}\\Desktop\\Gateway Guard.lnk" >nul 2>&1')
             if allusersprofile:
-                parts.append(f'del /f /q "{allusersprofile}\\Desktop\\Raksha Guard.lnk" >nul 2>&1')
+                parts.append(f'del /f /q "{allusersprofile}\\Desktop\\Gateway Guard.lnk" >nul 2>&1')
 
             if appdata:
-                sm = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Raksha Guard")
+                sm = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Gateway Guard")
                 parts.append(f'del /f /q "{sm}\\*.*" >nul 2>&1')
                 parts.append(f'rmdir /s /q "{sm}" >nul 2>&1')
             if allusersprofile:
-                sm_all = os.path.join(allusersprofile, "Microsoft", "Windows", "Start Menu", "Programs", "Raksha Guard")
+                sm_all = os.path.join(allusersprofile, "Microsoft", "Windows", "Start Menu", "Programs", "Gateway Guard")
                 parts.append(f'del /f /q "{sm_all}\\*.*" >nul 2>&1')
                 parts.append(f'rmdir /s /q "{sm_all}" >nul 2>&1')
 
@@ -143,19 +143,19 @@ def schedule_install_removal() -> None:
                 if _is_guard_install_path(d):
                     dirs.add(d)
             if local:
-                dirs.add(os.path.join(local, "Programs", "Raksha", "Guard"))
+                dirs.add(os.path.join(local, "Programs", "Gateway", "Guard"))
 
             for d in dirs:
                 parts.append(f'del /f /q "{d}\\*.*" >nul 2>&1')
                 parts.append(f'rmdir /s /q "{d}" >nul 2>&1')
                 parent = os.path.dirname(d)
-                if parent and parent.lower().endswith("\\raksha"):
+                if parent and parent.lower().endswith("\\gateway"):
                     parts.append(f'rmdir "{parent}" >nul 2>&1')
 
             if local:
-                parts.append(f'del /f /q "{os.path.join(local, "Raksha", "Guard")}\\*.*" >nul 2>&1')
-                parts.append(f'rmdir /s /q "{os.path.join(local, "Raksha", "Guard")}" >nul 2>&1')
-                parts.append(f'rmdir "{os.path.join(local, "Raksha")}" >nul 2>&1')
+                parts.append(f'del /f /q "{os.path.join(local, "Gateway", "Guard")}\\*.*" >nul 2>&1')
+                parts.append(f'rmdir /s /q "{os.path.join(local, "Gateway", "Guard")}" >nul 2>&1')
+                parts.append(f'rmdir "{os.path.join(local, "Gateway")}" >nul 2>&1')
 
             cmd = " & ".join(parts)
             si = subprocess.STARTUPINFO()
@@ -163,14 +163,14 @@ def schedule_install_removal() -> None:
             si.wShowWindow = subprocess.SW_HIDE
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             subprocess.Popen(f'cmd.exe /c "{cmd}"', startupinfo=si, creationflags=flags, close_fds=True)
-            print("[Raksha Guard] Scheduled complete Windows uninstall cleanup.")
+            print("[Gateway Guard] Scheduled complete Windows uninstall cleanup.")
             return
 
         if IS_MAC:
             home = os.path.expanduser("~")
             apps = [
-                "/Applications/Raksha_Guard.app",
-                os.path.join(home, "Applications", "Raksha_Guard.app"),
+                "/Applications/Gateway_Guard.app",
+                os.path.join(home, "Applications", "Gateway_Guard.app"),
             ]
             if getattr(sys, "frozen", False):
                 exe = os.path.abspath(sys.executable)
@@ -179,8 +179,8 @@ def schedule_install_removal() -> None:
                     app = exe[: exe.replace("\\", "/").index(marker)]
                     if app.endswith(".app") and app not in apps:
                         apps.append(app)
-            plist = os.path.join(home, "Library", "LaunchAgents", "com.raksha.guard.plist")
-            guard_data = os.path.join(home, "Library", "Application Support", "Raksha")
+            plist = os.path.join(home, "Library", "LaunchAgents", "com.gateway.guard.plist")
+            guard_data = os.path.join(home, "Library", "Application Support", "Gateway")
             app_paths = " ".join(f'"{a}"' for a in apps)
             script = (
                 f'(sleep 3; '
@@ -189,21 +189,21 @@ def schedule_install_removal() -> None:
                 # Remove immutable lock before deletion (authorized uninstall only reaches here after key verified)
                 f'chflags -R nouchg {app_paths} 2>/dev/null; '
                 f'rm -rf {app_paths} "{guard_data}"; '
-                f'pkill -f "Raksha_Guard.app/Contents/MacOS/Raksha_Guard" 2>/dev/null; '
-                f'pkill -f "/MacOS/Raksha_Guard" 2>/dev/null) >/dev/null 2>&1 &'
+                f'pkill -f "Gateway_Guard.app/Contents/MacOS/Gateway_Guard" 2>/dev/null; '
+                f'pkill -f "/MacOS/Gateway_Guard" 2>/dev/null) >/dev/null 2>&1 &'
             )
             subprocess.Popen(["/bin/bash", "-c", script], start_new_session=True)
-            print("[Raksha Guard] Scheduled complete macOS uninstall cleanup.")
+            print("[Gateway Guard] Scheduled complete macOS uninstall cleanup.")
             return
     except Exception as e:
-        print(f"[Raksha Guard WARNING] Could not schedule install removal: {e}")
+        print(f"[Gateway Guard WARNING] Could not schedule install removal: {e}")
 
 
 def remote_uninstall_authorized(agent_id: str) -> bool:
     """True when an admin already approved removing this Guard from the dashboard."""
     status, data = _http_json(
         "POST",
-        f"{RAKSHA_BACKEND_URL}/api/browser-ai/agents/uninstall-status",
+        f"{GATEWAY_BACKEND_URL}/api/browser-ai/agents/uninstall-status",
         {"agent_id": agent_id},
     )
     return status == 200 and isinstance(data, dict) and bool(data.get("authorized"))
@@ -229,10 +229,10 @@ def launch_windows_uninstaller() -> bool:
             creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             close_fds=True,
         )
-        print(f"[Raksha Guard] Launched silent uninstaller: {uninstaller}")
+        print(f"[Gateway Guard] Launched silent uninstaller: {uninstaller}")
         return True
     except Exception as e:
-        print(f"[Raksha Guard WARNING] Could not launch uninstaller: {e}")
+        print(f"[Gateway Guard WARNING] Could not launch uninstaller: {e}")
         return False
 
 
@@ -251,7 +251,7 @@ def lock_install_dir_against_deletion() -> None:
             app_dir = os.environ.get("LOCALAPPDATA", "")
             dirs_to_lock = set()
             if app_dir:
-                std_guard_dir = os.path.join(app_dir, "Programs", "Raksha", "Guard")
+                std_guard_dir = os.path.join(app_dir, "Programs", "Gateway", "Guard")
                 if os.path.isdir(std_guard_dir):
                     dirs_to_lock.add(std_guard_dir)
 
@@ -271,8 +271,8 @@ def lock_install_dir_against_deletion() -> None:
         try:
             home = os.path.expanduser("~")
             candidates = [
-                "/Applications/Raksha_Guard.app",
-                os.path.join(home, "Applications", "Raksha_Guard.app"),
+                "/Applications/Gateway_Guard.app",
+                os.path.join(home, "Applications", "Gateway_Guard.app"),
             ]
             if getattr(sys, "frozen", False):
                 exe = os.path.abspath(sys.executable)
@@ -285,7 +285,7 @@ def lock_install_dir_against_deletion() -> None:
                 if os.path.isdir(app):
                     # Set user-immutable flag recursively — prevents rm -rf and Finder deletion
                     subprocess.run(["chflags", "-R", "uchg", app], capture_output=True)
-                    print(f"[Raksha Guard] macOS immutable lock applied: {app}")
+                    print(f"[Gateway Guard] macOS immutable lock applied: {app}")
         except Exception:
             pass
 
@@ -305,7 +305,7 @@ def unlock_install_dir_for_uninstall() -> None:
             app_dir = os.environ.get("LOCALAPPDATA", "")
             dirs_to_unlock = set()
             if app_dir:
-                std_guard_dir = os.path.join(app_dir, "Programs", "Raksha", "Guard")
+                std_guard_dir = os.path.join(app_dir, "Programs", "Gateway", "Guard")
                 if os.path.isdir(std_guard_dir):
                     dirs_to_unlock.add(std_guard_dir)
 
@@ -324,8 +324,8 @@ def unlock_install_dir_for_uninstall() -> None:
         try:
             home = os.path.expanduser("~")
             candidates = [
-                "/Applications/Raksha_Guard.app",
-                os.path.join(home, "Applications", "Raksha_Guard.app"),
+                "/Applications/Gateway_Guard.app",
+                os.path.join(home, "Applications", "Gateway_Guard.app"),
             ]
             if getattr(sys, "frozen", False):
                 exe = os.path.abspath(sys.executable)
@@ -338,7 +338,7 @@ def unlock_install_dir_for_uninstall() -> None:
                 if os.path.isdir(app):
                     # Clear immutable flag so authorized rm -rf succeeds
                     subprocess.run(["chflags", "-R", "nouchg", app], capture_output=True)
-                    print(f"[Raksha Guard] macOS immutable lock removed: {app}")
+                    print(f"[Gateway Guard] macOS immutable lock removed: {app}")
         except Exception:
             pass
 
@@ -353,11 +353,11 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
     clean_key = (key or "").strip()
     status, data = _http_json(
         "POST",
-        f"{RAKSHA_BACKEND_URL}/api/browser-ai/agents/uninstall",
+        f"{GATEWAY_BACKEND_URL}/api/browser-ai/agents/uninstall",
         {"agent_id": agent_id, "key": clean_key},
     )
     if status == 200:
-        print("[Raksha Guard] Uninstall authorized by backend.")
+        print("[Gateway Guard] Uninstall authorized by backend.")
         try:
             tamper_flag = os.path.join(data_dir(), "tamper.flag")
             if os.path.isfile(tamper_flag):
@@ -378,7 +378,7 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
         return 0
     if status in (403, 429):
         msg = "Locked out for failed uninstall attempts" if status == 429 else "Unauthorized uninstall attempted with invalid key"
-        print(f"[Raksha Guard ERROR] {msg}.")
+        print(f"[Gateway Guard ERROR] {msg}.")
         lock_install_dir_against_deletion()
         try:
             tamper_flag = os.path.join(data_dir(), "tamper.flag")
@@ -399,16 +399,16 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
             pass
         return 2
     if status == 0:
-        print("[Raksha Guard ERROR] Backend unreachable — uninstall key not verified. PAC left on.")
+        print("[Gateway Guard ERROR] Backend unreachable — uninstall key not verified. PAC left on.")
         return 1
-    print(f"[Raksha Guard ERROR] Uninstall rejected status={status} body={data}")
+    print(f"[Gateway Guard ERROR] Uninstall rejected status={status} body={data}")
     return 1
 
 
 def run_uninstall_prompt() -> int:
     agent_id = get_or_create_agent_id()
     if remote_uninstall_authorized(agent_id):
-        print("[Raksha Guard] Uninstall already approved by admin — no key needed.")
+        print("[Gateway Guard] Uninstall already approved by admin — no key needed.")
         clear_guard_runtime(clear_startup=True)
         try:
             from agent_identity import agent_id_path
@@ -418,43 +418,43 @@ def run_uninstall_prompt() -> int:
         except Exception:
             pass
         schedule_install_removal()
-        if IS_WIN or not os.environ.get("RAKSHA_WRAPPER_UI"):
+        if IS_WIN or not (os.environ.get("GATEWAY_WRAPPER_UI") or os.environ.get("GATEWAY_WRAPPER_UI")):
             show_message(
-                "Raksha Guard Uninstalled",
-                "Raksha Guard has been successfully uninstalled.\n\nBrowser protection has been disabled and files have been removed.\nPlease restart your browsers.",
+                "Gateway Guard Uninstalled",
+                "Gateway Guard has been successfully uninstalled.\n\nBrowser protection has been disabled and files have been removed.\nPlease restart your browsers.",
             )
         return 0
 
     key = prompt_uninstall_key()
     if key is None:
-        print("[Raksha Guard] Uninstall cancelled by user.")
+        print("[Gateway Guard] Uninstall cancelled by user.")
         return 3
     if not key.strip():
-        if IS_WIN or not os.environ.get("RAKSHA_WRAPPER_UI"):
+        if IS_WIN or not (os.environ.get("GATEWAY_WRAPPER_UI") or os.environ.get("GATEWAY_WRAPPER_UI")):
             show_message(
                 "Uninstall Key Required",
-                "Uninstall key is required to uninstall Raksha Guard.\n\nRaksha Guard remains installed and active.",
+                "Uninstall key is required to uninstall Gateway Guard.\n\nGateway Guard remains installed and active.",
                 flags=0x10,
             )
         return 2
 
     code = run_uninstall(key, schedule_cleanup=True)
-    if IS_WIN or not os.environ.get("RAKSHA_WRAPPER_UI"):
+    if IS_WIN or not (os.environ.get("GATEWAY_WRAPPER_UI") or os.environ.get("GATEWAY_WRAPPER_UI")):
         if code == 0:
             show_message(
-                "Raksha Guard Uninstalled",
-                "Raksha Guard has been successfully uninstalled.\n\nBrowser protection has been disabled and files have been removed.\nPlease restart your browsers.",
+                "Gateway Guard Uninstalled",
+                "Gateway Guard has been successfully uninstalled.\n\nBrowser protection has been disabled and files have been removed.\nPlease restart your browsers.",
             )
         elif code == 2:
             show_message(
                 "Invalid Uninstall Key",
-                "The uninstall key entered is incorrect.\n\nRaksha Guard remains installed and active.\nContact your IT administrator for the uninstall key.",
+                "The uninstall key entered is incorrect.\n\nGateway Guard remains installed and active.\nContact your IT administrator for the uninstall key.",
                 flags=0x10,
             )
         else:
             show_message(
                 "Uninstall Failed",
-                "Unable to verify uninstall key with the server.\n\nCheck your network connection and try again.\nRaksha Guard remains active.",
+                "Unable to verify uninstall key with the server.\n\nCheck your network connection and try again.\nGateway Guard remains active.",
                 flags=0x10,
             )
-    return code
+    return code

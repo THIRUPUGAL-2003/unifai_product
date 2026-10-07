@@ -14,19 +14,19 @@ import (
 	"time"
 
 	"github.com/fasthttp/router"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/network"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/modelcatalog"
-	"github.com/raksha/raksha/framework/vectorstore"
-	"github.com/raksha/raksha/plugins/compat"
-	"github.com/raksha/raksha/plugins/semanticcache"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/network"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/modelcatalog"
+	"github.com/gateway/gateway/framework/vectorstore"
+	"github.com/gateway/gateway/plugins/compat"
+	"github.com/gateway/gateway/plugins/semanticcache"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -100,7 +100,7 @@ type ConfigManager interface {
 	ReloadHeaderFilterConfig(ctx context.Context, config *configstoreTables.GlobalHeaderFilterConfig) error
 }
 
-// ConfigHandler manages runtime configuration updates for Raksha.
+// ConfigHandler manages runtime configuration updates for Gateway.
 // It provides endpoints to update and retrieve settings persisted via the ConfigStore backed by sql database.
 type ConfigHandler struct {
 	store         *lib.Config
@@ -108,7 +108,7 @@ type ConfigHandler struct {
 }
 
 // NewConfigHandler creates a new handler for configuration management.
-// It requires the Raksha client, a logger, and the config store.
+// It requires the Gateway client, a logger, and the config store.
 func NewConfigHandler(configManager ConfigManager, store *lib.Config) *ConfigHandler {
 	return &ConfigHandler{
 		configManager: configManager,
@@ -118,7 +118,7 @@ func NewConfigHandler(configManager ConfigManager, store *lib.Config) *ConfigHan
 
 // RegisterRoutes registers the configuration-related routes.
 // It adds the `PUT /api/config` endpoint.
-func (h *ConfigHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *ConfigHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/config", lib.ChainMiddlewares(h.getConfig, middlewares...))
 	r.PUT("/api/config", lib.ChainMiddlewares(h.updateConfig, middlewares...))
 	r.POST("/api/config/metadata", lib.ChainMiddlewares(h.updateMetadata, middlewares...))
@@ -319,7 +319,7 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	if payload.FrameworkConfig.PricingURL != nil && strings.TrimSpace(*payload.FrameworkConfig.PricingURL) == "" {
-		payload.FrameworkConfig.PricingURL = raksha.Ptr(modelcatalog.DefaultPricingURL)
+		payload.FrameworkConfig.PricingURL = gateway.Ptr(modelcatalog.DefaultPricingURL)
 	}
 	if payload.FrameworkConfig.PricingURL != nil && *payload.FrameworkConfig.PricingURL != modelcatalog.DefaultPricingURL &&
 		(storedFramework == nil || storedFramework.PricingURL == nil || *storedFramework.PricingURL != *payload.FrameworkConfig.PricingURL) {
@@ -357,7 +357,7 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 		if err := checkURLAccessibility(incomingMCPLibraryURL); err != nil {
 			if incomingMCPLibraryURL == storedMCPLibraryURL {
 				logger.Warn("stored MCP library URL is unreachable (%v); resetting to default catalog", err)
-				payload.FrameworkConfig.MCPLibraryURL = raksha.Ptr("")
+				payload.FrameworkConfig.MCPLibraryURL = gateway.Ptr("")
 			} else {
 				logger.Warn("failed to check the accessibility of the MCP library URL: %v", err)
 				SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("failed to check the accessibility of the MCP library URL: %v", err))
@@ -692,28 +692,28 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 	if frameworkConfig == nil {
 		frameworkConfig = &configstoreTables.TableFrameworkConfig{
 			ID:                     0,
-			PricingURL:             raksha.Ptr(modelcatalog.DefaultPricingURL),
-			PricingSyncInterval:    raksha.Ptr(int64(modelcatalog.DefaultSyncInterval.Seconds())),
-			ModelParametersURL:     raksha.Ptr(modelcatalog.DefaultModelParametersURL),
-			MCPLibraryURL:          raksha.Ptr(modelcatalog.DefaultMCPLibraryURL),
-			MCPLibrarySyncInterval: raksha.Ptr(int64(modelcatalog.DefaultSyncInterval.Seconds())),
+			PricingURL:             gateway.Ptr(modelcatalog.DefaultPricingURL),
+			PricingSyncInterval:    gateway.Ptr(int64(modelcatalog.DefaultSyncInterval.Seconds())),
+			ModelParametersURL:     gateway.Ptr(modelcatalog.DefaultModelParametersURL),
+			MCPLibraryURL:          gateway.Ptr(modelcatalog.DefaultMCPLibraryURL),
+			MCPLibrarySyncInterval: gateway.Ptr(int64(modelcatalog.DefaultSyncInterval.Seconds())),
 		}
 	}
 	// Handling individual nil cases
 	if frameworkConfig.PricingURL == nil {
-		frameworkConfig.PricingURL = raksha.Ptr(modelcatalog.DefaultPricingURL)
+		frameworkConfig.PricingURL = gateway.Ptr(modelcatalog.DefaultPricingURL)
 	}
 	if frameworkConfig.PricingSyncInterval == nil {
-		frameworkConfig.PricingSyncInterval = raksha.Ptr(int64(modelcatalog.DefaultSyncInterval.Seconds()))
+		frameworkConfig.PricingSyncInterval = gateway.Ptr(int64(modelcatalog.DefaultSyncInterval.Seconds()))
 	}
 	if frameworkConfig.ModelParametersURL == nil {
-		frameworkConfig.ModelParametersURL = raksha.Ptr(modelcatalog.DefaultModelParametersURL)
+		frameworkConfig.ModelParametersURL = gateway.Ptr(modelcatalog.DefaultModelParametersURL)
 	}
 	if frameworkConfig.MCPLibraryURL == nil {
-		frameworkConfig.MCPLibraryURL = raksha.Ptr(modelcatalog.DefaultMCPLibraryURL)
+		frameworkConfig.MCPLibraryURL = gateway.Ptr(modelcatalog.DefaultMCPLibraryURL)
 	}
 	if frameworkConfig.MCPLibrarySyncInterval == nil {
-		frameworkConfig.MCPLibrarySyncInterval = raksha.Ptr(int64(modelcatalog.DefaultSyncInterval.Seconds()))
+		frameworkConfig.MCPLibrarySyncInterval = gateway.Ptr(int64(modelcatalog.DefaultSyncInterval.Seconds()))
 	}
 	// Updating framework config
 	shouldReloadFrameworkConfig := false
@@ -929,7 +929,7 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 				return
 			}
 		}
-		// Note: AuthMiddleware is updated via ServerCallbacks.UpdateAuthConfig (handled by RakshaHTTPServer)
+		// Note: AuthMiddleware is updated via ServerCallbacks.UpdateAuthConfig (handled by GatewayHTTPServer)
 	}
 
 	// Set restart required flag if any restart-requiring configs changed
@@ -1320,7 +1320,7 @@ func checkURLAccessibility(rawURL string) error {
 		}
 		return nil
 	}
-	if err := raksha.ValidateExternalURL(rawURL, true); err != nil {
+	if err := gateway.ValidateExternalURL(rawURL, true); err != nil {
 		return fmt.Errorf("URL validation failed: %w", err)
 	}
 	client := &http.Client{Timeout: 60 * time.Second}

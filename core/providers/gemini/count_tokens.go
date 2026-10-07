@@ -3,11 +3,11 @@ package gemini
 import (
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaCountTokensResponse converts a Gemini count tokens response to Raksha format.
-func (resp *GeminiCountTokensResponse) ToRakshaCountTokensResponse(model string) *schemas.RakshaCountTokensResponse {
+// ToGatewayCountTokensResponse converts a Gemini count tokens response to Gateway format.
+func (resp *GeminiCountTokensResponse) ToGatewayCountTokensResponse(model string) *schemas.GatewayCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
@@ -49,29 +49,29 @@ func (resp *GeminiCountTokensResponse) ToRakshaCountTokensResponse(model string)
 
 	total := int(resp.TotalTokens)
 
-	return &schemas.RakshaCountTokensResponse{
+	return &schemas.GatewayCountTokensResponse{
 		Model:              model,
 		Object:             "response.input_tokens",
 		InputTokens:        inputTokens,
 		InputTokensDetails: inputDetails,
 		TotalTokens:        &total,
-		ExtraFields:        schemas.RakshaResponseExtraFields{},
+		ExtraFields:        schemas.GatewayResponseExtraFields{},
 	}
 }
 
-// ToGeminiCountTokensResponse converts a Raksha count tokens response to Gemini format.
-func ToGeminiCountTokensResponse(rakshaResp *schemas.RakshaCountTokensResponse) *GeminiCountTokensResponse {
-	if rakshaResp == nil {
+// ToGeminiCountTokensResponse converts a Gateway count tokens response to Gemini format.
+func ToGeminiCountTokensResponse(gatewayResp *schemas.GatewayCountTokensResponse) *GeminiCountTokensResponse {
+	if gatewayResp == nil {
 		return nil
 	}
 
 	response := &GeminiCountTokensResponse{
-		TotalTokens: int32(rakshaResp.InputTokens),
+		TotalTokens: int32(gatewayResp.InputTokens),
 	}
 
 	// Map cached content token count if available
-	if rakshaResp.InputTokensDetails != nil && rakshaResp.InputTokensDetails.CachedReadTokens > 0 {
-		response.CachedContentTokenCount = int32(rakshaResp.InputTokensDetails.CachedReadTokens)
+	if gatewayResp.InputTokensDetails != nil && gatewayResp.InputTokensDetails.CachedReadTokens > 0 {
+		response.CachedContentTokenCount = int32(gatewayResp.InputTokensDetails.CachedReadTokens)
 	} else {
 		response.CachedContentTokenCount = 0
 	}

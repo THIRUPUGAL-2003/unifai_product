@@ -3,11 +3,11 @@ package anthropic
 import (
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToAnthropicFileUploadResponse converts a Raksha file upload response to Anthropic format.
-func ToAnthropicFileUploadResponse(resp *schemas.RakshaFileUploadResponse) *AnthropicFileResponse {
+// ToAnthropicFileUploadResponse converts a Gateway file upload response to Anthropic format.
+func ToAnthropicFileUploadResponse(resp *schemas.GatewayFileUploadResponse) *AnthropicFileResponse {
 	return &AnthropicFileResponse{
 		ID:        resp.ID,
 		Type:      resp.Object,
@@ -18,8 +18,8 @@ func ToAnthropicFileUploadResponse(resp *schemas.RakshaFileUploadResponse) *Anth
 	}
 }
 
-// ToAnthropicFileListResponse converts a Raksha file list response to Anthropic format.
-func ToAnthropicFileListResponse(resp *schemas.RakshaFileListResponse) *AnthropicFileListResponse {
+// ToAnthropicFileListResponse converts a Gateway file list response to Anthropic format.
+func ToAnthropicFileListResponse(resp *schemas.GatewayFileListResponse) *AnthropicFileListResponse {
 	data := make([]AnthropicFileResponse, len(resp.Data))
 	for i, file := range resp.Data {
 		data[i] = AnthropicFileResponse{
@@ -38,20 +38,20 @@ func ToAnthropicFileListResponse(resp *schemas.RakshaFileListResponse) *Anthropi
 	}
 }
 
-// ToAnthropicFileRetrieveResponse converts a Raksha file retrieve response to Anthropic format.
-func ToAnthropicFileRetrieveResponse(resp *schemas.RakshaFileRetrieveResponse) *AnthropicFileResponse {
+// ToAnthropicFileRetrieveResponse converts a Gateway file retrieve response to Anthropic format.
+func ToAnthropicFileRetrieveResponse(resp *schemas.GatewayFileRetrieveResponse) *AnthropicFileResponse {
 	return &AnthropicFileResponse{
 		ID:        resp.ID,
 		Type:      resp.Object,
 		Filename:  resp.Filename,
-		MimeType:  "", // Not supported in Raksha responses
+		MimeType:  "", // Not supported in Gateway responses
 		SizeBytes: resp.Bytes,
 		CreatedAt: formatAnthropicFileTimestamp(resp.CreatedAt),
 	}
 }
 
-// ToAnthropicFileDeleteResponse converts a Raksha file delete response to Anthropic format.
-func ToAnthropicFileDeleteResponse(resp *schemas.RakshaFileDeleteResponse) *AnthropicFileDeleteResponse {
+// ToAnthropicFileDeleteResponse converts a Gateway file delete response to Anthropic format.
+func ToAnthropicFileDeleteResponse(resp *schemas.GatewayFileDeleteResponse) *AnthropicFileDeleteResponse {
 	respType := "file"
 	if resp.Deleted {
 		respType = "file_deleted"

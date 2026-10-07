@@ -8,6 +8,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/codeEditor";
@@ -21,7 +22,7 @@ import {
 import { DottedSeparator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Status, StatusColors, Statuses } from "@/lib/constants/logs";
-import { useGetMCPLogByIdQuery } from "@/lib/store";
+import { getErrorMessage, useGetMCPLogByIdQuery } from "@/lib/store";
 import type { MCPToolLogEntry } from "@/lib/types/logs";
 import { downloadAsJson } from "@/lib/utils/browser-download";
 import { Link } from "@tanstack/react-router";
@@ -83,6 +84,8 @@ export function MCPLogDetailSheet({
 		data: fullLog,
 		isLoading,
 		isError,
+		error: logFetchError,
+		refetch: refetchLog,
 	} = useGetMCPLogByIdQuery(log?.id ?? "", {
 		skip: !open || !log?.id,
 	});
@@ -116,6 +119,17 @@ export function MCPLogDetailSheet({
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>
 			<SheetContent className="flex w-full flex-col gap-4 overflow-x-hidden p-8 sm:max-w-[60%]">
+				{isError ? (
+					<div className="flex flex-col gap-2">
+						<QueryErrorBanner
+							testId="mcp-log-detail-fetch-error"
+							message={`Could not load full log details: ${getErrorMessage(logFetchError)}. Showing list summary.`}
+						/>
+						<Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => void refetchLog()}>
+							Retry
+						</Button>
+					</div>
+				) : null}
 				<SheetHeader className="flex flex-row items-center px-0">
 					<div className="flex w-full items-center justify-between">
 						<SheetTitle className="flex w-fit items-center gap-2 font-medium">

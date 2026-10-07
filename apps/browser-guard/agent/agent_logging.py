@@ -13,7 +13,7 @@ class _Tee:
 
     closed = False
     errors = "replace"
-    name = "<raksha-guard-log>"
+    name = "<gateway-guard-log>"
     mode = "w"
 
     def __init__(self, stream, log_file):
@@ -69,7 +69,7 @@ class _Tee:
 
 
 def setup_file_logging() -> str:
-    log_path = os.path.join(data_dir(), "raksha_guard.log")
+    log_path = os.path.join(data_dir(), "gateway_guard.log")
     log_f = open(log_path, "a", encoding="utf-8", buffering=1)
     sys.stdout = _Tee(sys.stdout, log_f)
     sys.stderr = _Tee(sys.stderr, log_f)

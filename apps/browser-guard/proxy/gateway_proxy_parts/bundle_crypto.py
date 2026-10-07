@@ -1,4 +1,4 @@
-"""Raksha Guard Proxy Bundle Strong Encryption & In-Memory Decryption.
+"""Gateway Guard proxy bundle strong encryption & in-memory decryption.
 
 Zero external dependencies (uses standard library hashlib, hmac, marshal, zlib).
 Guarantees 100% consistent execution across macOS and Windows regardless of C-extension availability.
@@ -18,10 +18,10 @@ import zlib
 from pathlib import Path
 from typing import Any
 
-MAGIC_HEADER = b"RAKSHAENC02\n"
-AUTH_CONTEXT = b"Raksha_Browser_AI_Proxy_Bundle_V2_Enterprise"
+MAGIC_HEADER = b"GATEWAYENC02\n"
+AUTH_CONTEXT = b"Gateway_Browser_AI_Proxy_Bundle_V2_Enterprise"
 # Proprietary master secret seed
-_MASTER_SEED = b"RakshaGuard::EnterpriseDLP::CoreRulesEngine::2026.09::SecretKeySeed"
+_MASTER_SEED = b"GatewayGuard::EnterpriseDLP::CoreRulesEngine::2026.09::SecretKeySeed"
 
 
 def _derive_key(salt: bytes) -> bytes:
@@ -71,7 +71,7 @@ def encrypt_parts_bundle(parts_dir: Path, output_enc_path: Path) -> dict[str, in
             continue
         source_text = py_file.read_text(encoding="utf-8")
         # Compile directly to optimized Python bytecode (strip docstrings, assert)
-        code_obj = compile(source_text, f"<raksha_proxy_parts/{name}>", "exec", optimize=2)
+        code_obj = compile(source_text, f"<gateway_proxy_parts/{name}>", "exec", optimize=2)
         code_bytes = marshal.dumps(code_obj)
         bundle_dict[name] = code_bytes
         stats[name] = len(code_bytes)

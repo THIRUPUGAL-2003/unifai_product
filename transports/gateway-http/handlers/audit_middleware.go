@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
 
@@ -83,7 +83,7 @@ func auditInitiator(store configstore.ConfigStore, ctx *fasthttp.RequestCtx) str
 // (create / update / delete) into Audit Logs — governance, Browser AI, plugins,
 // session users, etc. Skips high-volume agent/intercept noise and auth events
 // that already use dedicated login/logout actions.
-func WorkspaceAuditMiddleware(store configstore.ConfigStore) schemas.RakshaHTTPMiddleware {
+func WorkspaceAuditMiddleware(store configstore.ConfigStore) schemas.GatewayHTTPMiddleware {
 	ws, _ := configstore.AsWorkspaceStore(store)
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {

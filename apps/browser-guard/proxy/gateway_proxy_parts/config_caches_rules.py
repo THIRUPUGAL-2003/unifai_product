@@ -1,12 +1,12 @@
-# Part of Raksha browser_ai_proxy — do not import directly.
+# Part of Gateway browser_ai_proxy — do not import directly.
 
 #!/usr/bin/env python3
 """
-Raksha Browser AI Live Proxy Interceptor & DLP Guardrail Addon for mitmproxy.
+Gateway Browser AI Live Proxy Interceptor & DLP Guardrail Addon for mitmproxy.
 
 Features:
-- Real-time target domain fetching from Raksha backend (/api/browser-ai/targets)
-- Real-time DLP guard rule fetching from Raksha backend (/api/browser-ai/rules)
+- Real-time target domain fetching from Gateway backend (/api/browser-ai/targets)
+- Real-time DLP guard rule fetching from Gateway backend (/api/browser-ai/rules)
 - File upload detection and blocking
 - WebSocket prompt interception
 - SSE stream response injection for ChatGPT blocked prompts
@@ -31,89 +31,99 @@ from mitmproxy import http
 # Configuration
 # ─────────────────────────────────────────────
 
-# Backend URL — strictly obtained from environment variables (.env). Never hardcode hosts, ports, or domains.
-_env_backend = (os.getenv("RAKSHA_BACKEND_URL") or os.getenv("SERVER_DOMAIN") or "").strip().rstrip("/")
+def _env(*names: str, default: str = "") -> str:
+	"""Prefer GATEWAY_* then legacy GATEWAY_* / alternate keys."""
+	for name in names:
+		val = (os.getenv(name) or "").strip()
+		if val:
+			return val
+	return default
+
+
+# Backend URL — strictly from env (.env). Never hardcode hosts, ports, or domains.
+_env_backend = _env("GATEWAY_BACKEND_URL", "GATEWAY_BACKEND_URL", "SERVER_DOMAIN").rstrip("/")
 if not _env_backend:
-	_env_host = (os.getenv("RAKSHA_BACKEND_HOST") or os.getenv("HOST") or "").strip()
-	_env_port = (os.getenv("RAKSHA_BACKEND_PORT") or os.getenv("BACKEND_PORT") or os.getenv("PORT") or "").strip()
+	_env_host = _env("GATEWAY_BACKEND_HOST", "GATEWAY_BACKEND_HOST", "HOST")
+	_env_port = _env("GATEWAY_BACKEND_PORT", "GATEWAY_BACKEND_PORT", "BACKEND_PORT", "PORT")
 	if _env_host and _env_port:
 		_env_backend = f"http://{_env_host}:{_env_port}"
 	elif _env_host:
 		_env_backend = f"http://{_env_host}"
 
-RAKSHA_BACKEND_URL = _env_backend
-if RAKSHA_BACKEND_URL and not RAKSHA_BACKEND_URL.startswith("http://") and not RAKSHA_BACKEND_URL.startswith("https://"):
-	RAKSHA_BACKEND_URL = f"http://{RAKSHA_BACKEND_URL}"
-RAKSHA_GUARD_SECRET = (os.getenv("RAKSHA_GUARD_SECRET") or os.getenv("GUARD_SECRET_KEY") or "").strip()
+GATEWAY_BACKEND_URL = _env_backend
+if GATEWAY_BACKEND_URL and not GATEWAY_BACKEND_URL.startswith("http://") and not GATEWAY_BACKEND_URL.startswith("https://"):
+	GATEWAY_BACKEND_URL = f"http://{GATEWAY_BACKEND_URL}"
+GATEWAY_GUARD_SECRET = _env("GATEWAY_GUARD_SECRET", "GATEWAY_GUARD_SECRET", "GUARD_SECRET_KEY")
 
 
 def _backend_headers(extra: dict | None = None) -> dict:
 	headers = {"Accept": "application/json"}
-	if RAKSHA_GUARD_SECRET:
-		headers["X-Raksha-Guard-Key"] = RAKSHA_GUARD_SECRET
+	if GATEWAY_GUARD_SECRET:
+		headers["X-Gateway-Guard-Key"] = GATEWAY_GUARD_SECRET
+		headers["X-Gateway-Guard-Key"] = GATEWAY_GUARD_SECRET  # legacy backends
 	if extra:
 		headers.update(extra)
 	return headers
 
 
-RAKSHA_AGENT_ID = os.getenv("RAKSHA_AGENT_ID", "")
-RAKSHA_AGENT_HOSTNAME = os.getenv("RAKSHA_AGENT_HOSTNAME", "")
-RAKSHA_AGENT_TYPE = (os.getenv("RAKSHA_AGENT_TYPE") or "").strip().lower()
-RAKSHA_SERVER_MODE = (os.getenv("RAKSHA_SERVER_MODE") or "").strip().lower() in (
+GATEWAY_AGENT_ID = _env("GATEWAY_AGENT_ID", "GATEWAY_AGENT_ID")
+GATEWAY_AGENT_HOSTNAME = _env("GATEWAY_AGENT_HOSTNAME", "GATEWAY_AGENT_HOSTNAME")
+GATEWAY_AGENT_TYPE = _env("GATEWAY_AGENT_TYPE", "GATEWAY_AGENT_TYPE").lower()
+GATEWAY_SERVER_MODE = _env("GATEWAY_SERVER_MODE", "GATEWAY_SERVER_MODE").lower() in (
     "1", "true", "yes", "on", "server", "network",
 )
-if RAKSHA_AGENT_TYPE in ("server", "gateway", "corp", "shared"):
-    RAKSHA_AGENT_TYPE = "network"
-if not RAKSHA_AGENT_TYPE:
-    RAKSHA_AGENT_TYPE = "network" if RAKSHA_SERVER_MODE else "endpoint"
-if RAKSHA_AGENT_TYPE not in ("endpoint", "network"):
-    RAKSHA_AGENT_TYPE = "endpoint"
+if GATEWAY_AGENT_TYPE in ("server", "gateway", "corp", "shared"):
+    GATEWAY_AGENT_TYPE = "network"
+if not GATEWAY_AGENT_TYPE:
+    GATEWAY_AGENT_TYPE = "network" if GATEWAY_SERVER_MODE else "endpoint"
+if GATEWAY_AGENT_TYPE not in ("endpoint", "network"):
+    GATEWAY_AGENT_TYPE = "endpoint"
 
-# Stable network-proxy identity when Docker does not set RAKSHA_AGENT_ID.
-if not RAKSHA_AGENT_ID and (RAKSHA_SERVER_MODE or RAKSHA_AGENT_TYPE == "network"):
+# Stable network-proxy identity when Docker does not set GATEWAY_AGENT_ID / GATEWAY_AGENT_ID.
+if not GATEWAY_AGENT_ID and (GATEWAY_SERVER_MODE or GATEWAY_AGENT_TYPE == "network"):
     import socket as _socket
-    RAKSHA_AGENT_ID = os.getenv("HOSTNAME") or _socket.gethostname() or "network-proxy"
-    RAKSHA_AGENT_ID = f"network-{RAKSHA_AGENT_ID}".replace(" ", "-").lower()[:120]
-if not RAKSHA_AGENT_HOSTNAME and (RAKSHA_SERVER_MODE or RAKSHA_AGENT_TYPE == "network"):
+    GATEWAY_AGENT_ID = os.getenv("HOSTNAME") or _socket.gethostname() or "network-proxy"
+    GATEWAY_AGENT_ID = f"network-{GATEWAY_AGENT_ID}".replace(" ", "-").lower()[:120]
+if not GATEWAY_AGENT_HOSTNAME and (GATEWAY_SERVER_MODE or GATEWAY_AGENT_TYPE == "network"):
     import socket as _socket
-    RAKSHA_AGENT_HOSTNAME = os.getenv("HOSTNAME") or _socket.gethostname() or "network-proxy"
+    GATEWAY_AGENT_HOSTNAME = os.getenv("HOSTNAME") or _socket.gethostname() or "network-proxy"
 
 
 def _agent_wire_fields() -> dict:
     return {
-        "agent_id": RAKSHA_AGENT_ID,
-        "agent_hostname": RAKSHA_AGENT_HOSTNAME,
-        "agent_type": RAKSHA_AGENT_TYPE,
+        "agent_id": GATEWAY_AGENT_ID,
+        "agent_hostname": GATEWAY_AGENT_HOSTNAME,
+        "agent_type": GATEWAY_AGENT_TYPE,
     }
 
 
 def _agent_metadata_fields() -> dict:
     return {
-        "agent_id": RAKSHA_AGENT_ID,
-        "agent_hostname": RAKSHA_AGENT_HOSTNAME,
-        "agent_type": RAKSHA_AGENT_TYPE,
+        "agent_id": GATEWAY_AGENT_ID,
+        "agent_hostname": GATEWAY_AGENT_HOSTNAME,
+        "agent_type": GATEWAY_AGENT_TYPE,
     }
 
 
 def _network_proxy_heartbeat_loop() -> None:
     """Register the shared/server proxy on the same Agents dashboard as laptop Guards.
 
-    Opt-in only: set RAKSHA_NETWORK_AGENT_REGISTER=1. Laptop Guard EXE never hits this
+    Opt-in only: set GATEWAY_NETWORK_AGENT_REGISTER=1 (or GATEWAY_*). Laptop Guard EXE never hits this
     path. Default off so corp-network-proxy does not keep reappearing for laptop-only setups.
     """
-    if (os.getenv("RAKSHA_NETWORK_AGENT_REGISTER") or "").strip().lower() not in ("1", "true", "yes", "on"):
+    if _env("GATEWAY_NETWORK_AGENT_REGISTER", "GATEWAY_NETWORK_AGENT_REGISTER").lower() not in ("1", "true", "yes", "on"):
         return
-    if not (RAKSHA_SERVER_MODE or RAKSHA_AGENT_TYPE == "network"):
+    if not (GATEWAY_SERVER_MODE or GATEWAY_AGENT_TYPE == "network"):
         return
-    if not RAKSHA_BACKEND_URL or not RAKSHA_AGENT_ID:
+    if not GATEWAY_BACKEND_URL or not GATEWAY_AGENT_ID:
         return
     import socket as _socket
 
     while True:
         try:
             payload = {
-                "id": RAKSHA_AGENT_ID,
-                "hostname": RAKSHA_AGENT_HOSTNAME or _socket.gethostname(),
+                "id": GATEWAY_AGENT_ID,
+                "hostname": GATEWAY_AGENT_HOSTNAME or _socket.gethostname(),
                 "username": "network-proxy",
                 "ip_address": "",
                 "os_version": "network-proxy",
@@ -124,7 +134,7 @@ def _network_proxy_heartbeat_loop() -> None:
                 "status": "active",
             }
             req = urllib.request.Request(
-                f"{RAKSHA_BACKEND_URL.rstrip('/')}/api/browser-ai/agents/heartbeat",
+                f"{GATEWAY_BACKEND_URL.rstrip('/')}/api/browser-ai/agents/heartbeat",
                 data=json.dumps(payload).encode("utf-8"),
                 headers=_backend_headers({"Content-Type": "application/json"}),
                 method="POST",
@@ -132,7 +142,7 @@ def _network_proxy_heartbeat_loop() -> None:
             with urllib.request.urlopen(req, timeout=12) as resp:
                 resp.read()
         except Exception as e:
-            print(f"[Raksha Proxy WARNING] network heartbeat failed: {e}")
+            print(f"[Gateway Proxy WARNING] network heartbeat failed: {e}")
         time.sleep(30)
 
 
@@ -417,7 +427,7 @@ def _fetch_json(url: str, timeout: float | None = None) -> dict | None:
                     return None
                 return json.loads(raw)
     except Exception as e:
-        print(f"[Raksha Proxy] backend GET failed | {url.split('?', 1)[0]} | {e}")
+        print(f"[Gateway Proxy] backend GET failed | {url.split('?', 1)[0]} | {e}")
     return None
 
 
@@ -531,21 +541,21 @@ def _apply_targets_from_data(data: dict) -> None:
         _cached_families = _build_target_families(targets)
         _domains_fetched_at = time.time()
     print(
-        f"[Raksha Proxy] Refreshed {len(new_map)} target domains "
+        f"[Gateway Proxy] Refreshed {len(new_map)} target domains "
         f"({len(new_blocked)} full-site locks, {len(_cached_families)} upload families) from backend."
     )
 
 
 def _refresh_targets_from_backend() -> None:
-    if not RAKSHA_BACKEND_URL:
+    if not GATEWAY_BACKEND_URL:
         return
-    data = _fetch_json(f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets?for=agent")
+    data = _fetch_json(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent")
     if data is None:
-        data = _fetch_json(f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets")
+        data = _fetch_json(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets")
     if data is not None:
         _apply_targets_from_data(data)
     elif not _cached_domains:
-        print("[Raksha Proxy] WARNING: target domains empty — monitoring idle until backend targets fetch succeeds.")
+        print("[Gateway Proxy] WARNING: target domains empty — monitoring idle until backend targets fetch succeeds.")
 
 
 def _ensure_background_config_refresh() -> None:
@@ -564,35 +574,35 @@ def _ensure_background_config_refresh() -> None:
             try:
                 _refresh_targets_from_backend()
             except Exception as e:
-                print(f"[Raksha Proxy] bg targets refresh: {e}")
+                print(f"[Gateway Proxy] bg targets refresh: {e}")
             try:
                 get_guard_rules(force_network=True)
             except Exception as e:
-                print(f"[Raksha Proxy] bg rules refresh: {e}")
+                print(f"[Gateway Proxy] bg rules refresh: {e}")
             try:
                 get_control_settings(force_network=True)
             except Exception as e:
-                print(f"[Raksha Proxy] bg controls refresh: {e}")
+                print(f"[Gateway Proxy] bg controls refresh: {e}")
             time.sleep(5.0)
 
-    threading.Thread(target=_loop, name="raksha-config-refresh", daemon=True).start()
+    threading.Thread(target=_loop, name="gateway-config-refresh", daemon=True).start()
 
     def _first_pull() -> None:
         try:
             _refresh_targets_from_backend()
         except Exception as e:
-            print(f"[Raksha Proxy] first targets pull: {e}")
+            print(f"[Gateway Proxy] first targets pull: {e}")
         try:
             get_guard_rules(force_network=True)
         except Exception as e:
-            print(f"[Raksha Proxy] first rules pull: {e}")
+            print(f"[Gateway Proxy] first rules pull: {e}")
         try:
             get_control_settings(force_network=True)
         except Exception as e:
-            print(f"[Raksha Proxy] first controls pull: {e}")
+            print(f"[Gateway Proxy] first controls pull: {e}")
 
     # Immediate first pull — targets + rules + controls (avoid empty-regex cold start).
-    threading.Thread(target=_first_pull, name="raksha-config-first-pull", daemon=True).start()
+    threading.Thread(target=_first_pull, name="gateway-config-first-pull", daemon=True).start()
 
 
 def get_target_domains() -> dict:
@@ -661,7 +671,7 @@ def make_site_blocked_response(flow: http.HTTPFlow, domain: str, platform: str) 
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Blocked by Raksha Guard</title>
+  <title>Blocked by Gateway Guard</title>
   <style>
     body {{ font-family: Segoe UI, system-ui, sans-serif; background:#0b1220; color:#e2e8f0;
            display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; }}
@@ -673,7 +683,7 @@ def make_site_blocked_response(flow: http.HTTPFlow, domain: str, platform: str) 
 </head>
 <body>
   <div class="card">
-    <h1>Website blocked by Raksha Guard</h1>
+    <h1>Website blocked by Gateway Guard</h1>
     <p>Access to <strong>{title}</strong> (<code>{domain}</code>) is not allowed by your company policy.</p>
   </div>
 </body>
@@ -684,14 +694,14 @@ def make_site_blocked_response(flow: http.HTTPFlow, domain: str, platform: str) 
         {
             "Content-Type": "text/html; charset=utf-8",
             "Cache-Control": "no-store",
-            "X-Raksha-Blocked": "site",
+            "X-Gateway-Blocked": "site",
         },
     )
 
 
 def get_guard_rules(force_network: bool = False) -> list:
     """
-    Fetch active DLP guard rules from Raksha backend.
+    Fetch active DLP guard rules from Gateway backend.
     Request path: memory only. Background thread uses force_network=True (~1s).
     Never falls back to hardcoded patterns.
     """
@@ -700,12 +710,12 @@ def get_guard_rules(force_network: bool = False) -> list:
     now = time.time()
     if not force_network and _rules_fetched_at > 0:
         return _cached_rules
-    if not RAKSHA_BACKEND_URL:
+    if not GATEWAY_BACKEND_URL:
         return _cached_rules
 
-    data = _fetch_json(f"{RAKSHA_BACKEND_URL}/api/browser-ai/rules?for=agent")
+    data = _fetch_json(f"{GATEWAY_BACKEND_URL}/api/browser-ai/rules?for=agent")
     if data is None:
-        data = _fetch_json(f"{RAKSHA_BACKEND_URL}/api/browser-ai/rules")
+        data = _fetch_json(f"{GATEWAY_BACKEND_URL}/api/browser-ai/rules")
     if data is not None:
         rules = data.get("rules", [])
         compiled = []
@@ -744,19 +754,19 @@ def get_guard_rules(force_network: bool = False) -> list:
                     "warning_message": (r.get("warning_message") or "").strip(),
                 })
             except re.error as e:
-                print(f"[Raksha Proxy] WARNING: invalid regex skipped | {name!r} | {e}")
+                print(f"[Gateway Proxy] WARNING: invalid regex skipped | {name!r} | {e}")
         with _cache_lock:
             _cached_rules = compiled
             _cached_rule_catalog = catalog
             _cached_has_ai_bot = has_ai_bot
             _rules_fetch_ok = True
             _rules_fetched_at = time.time()
-        print(f"[Raksha Proxy] Refreshed {len(compiled)} regex rules, {len(catalog)} active rules from backend.")
+        print(f"[Gateway Proxy] Refreshed {len(compiled)} regex rules, {len(catalog)} active rules from backend.")
         return _cached_rules
 
     # Backend down: keep last cache; allow cold-start retry.
     if not _cached_rules and not _rules_fetch_ok:
-        print("[Raksha Proxy] WARNING: guard rules empty — regex DLP idle until backend rules fetch succeeds.")
+        print("[Gateway Proxy] WARNING: guard rules empty — regex DLP idle until backend rules fetch succeeds.")
     return _cached_rules
 
 
@@ -856,7 +866,7 @@ def evaluate_prompt(platform: str, domain: str, prompt: str, client_ip: str, url
                     },
                 }).encode("utf-8")
                 req = urllib.request.Request(
-                    f"{RAKSHA_BACKEND_URL}/api/browser-ai/intercept",
+                    f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
                     data=payload,
                     headers=_backend_headers({"Content-Type": "application/json"}),
                     method="POST",
@@ -874,7 +884,7 @@ def evaluate_prompt(platform: str, domain: str, prompt: str, client_ip: str, url
     if need_backend:
         allowed, rt, action, forward, reply, eval_err = send_to_backend(platform, domain, prompt, client_ip, url, method)
         if eval_err:
-            print(f"[Raksha Proxy] AI Guard Bot prompt eval failed | {eval_err}")
+            print(f"[Gateway Proxy] AI Guard Bot prompt eval failed | {eval_err}")
             # Bot hang/timeout must not erase local regex — re-check before fail-open.
             local2 = decide_prompt_locally(prompt)
             if (not local2[0]) or (local2[2] or "").lower() == "blocked" or local2[2] in ("Redacted", "Warned"):
@@ -891,7 +901,7 @@ def evaluate_prompt(platform: str, domain: str, prompt: str, client_ip: str, url
 
 
 def _fail_open() -> bool:
-    return os.getenv("RAKSHA_FAIL_OPEN", "").strip() in ("1", "true", "TRUE", "yes", "YES")
+    return _env("GATEWAY_FAIL_OPEN", "GATEWAY_FAIL_OPEN") in ("1", "true", "TRUE", "yes", "YES")
 
 
 def get_control_settings(force_network: bool = False) -> dict:
@@ -900,10 +910,10 @@ def get_control_settings(force_network: bool = False) -> dict:
     _ensure_background_config_refresh()
     if not force_network and _controls_fetched_at > 0:
         return _cached_controls
-    if not RAKSHA_BACKEND_URL:
+    if not GATEWAY_BACKEND_URL:
         return _cached_controls
 
-    data = _fetch_json(f"{RAKSHA_BACKEND_URL}/api/browser-ai/controls")
+    data = _fetch_json(f"{GATEWAY_BACKEND_URL}/api/browser-ai/controls")
     if data and isinstance(data.get("controls"), dict):
         c = data["controls"]
         with _cache_lock:
@@ -915,7 +925,7 @@ def get_control_settings(force_network: bool = False) -> dict:
             _controls_from_backend = True
             _controls_fetched_at = time.time()
         print(
-            "[Raksha Proxy] Controls refreshed | "
+            "[Gateway Proxy] Controls refreshed | "
             f"enabled={_cached_controls['enabled']} "
             f"upload={_cached_controls['block_upload']}"
         )
@@ -977,7 +987,7 @@ def _compile_guard_regex(pattern: str):
 
     # Warn on known exponential catastrophic backtracking nested quantifiers: (a+)+, (.*)*, etc.
     if re.search(r'\([^\)]*[\+\*][^\)]*\)[\+\*]', p):
-        print(f"[Raksha Guard Security Warning] High-risk ReDoS backtracking pattern detected in rule regex: {p[:60]}")
+        print(f"[Gateway Proxy] High-risk ReDoS backtracking pattern detected in rule regex: {p[:60]}")
 
     return re.compile(p, re.IGNORECASE)
 
@@ -992,7 +1002,7 @@ def rule_matches_prompt(rule: dict, prompt: str) -> bool:
         eval_text = prompt if len(prompt) <= 300000 else prompt[:300000]
         return bool(regex.search(eval_text))
     except Exception as e:
-        print(f"[Raksha Guard Regex Error] Evaluation failed: {e}")
+        print(f"[Gateway Proxy] Evaluation failed: {e}")
         return False
 
 
@@ -1004,11 +1014,11 @@ def _redacted_forward(prompt: str, warning_message: str = "", rule: dict | None 
             text = rule["regex"].sub("[REDACTED]", text)
         except Exception:
             pass
-    w = (warning_message or "").strip() or "This prompt triggered a Raksha Guard redaction policy."
+    w = (warning_message or "").strip() or "This prompt triggered a Gateway Guard redaction policy."
     body = (text or "").rstrip()
     if body:
-        return f"{body}\n\n[RAKSHA REDACTED] {w}"
-    return f"[RAKSHA REDACTED] {w}"
+        return f"{body}\n\n[GATEWAY REDACTED] {w}"
+    return f"[GATEWAY REDACTED] {w}"
 
 
 def _redact_notice_for_rule(rule_name: str) -> str:
@@ -1172,11 +1182,11 @@ def decide_prompt_locally(prompt: str) -> tuple[bool, str, str, str, str]:
 
 def _warning_forward(prompt: str, warning_message: str = "") -> str:
     """ChatGPT receives full original prompt + warning notice. Logs keep original only."""
-    w = (warning_message or "").strip() or "This prompt triggered a Raksha Guard warning policy."
+    w = (warning_message or "").strip() or "This prompt triggered a Gateway Guard warning policy."
     body = (prompt or "").rstrip()
     if body:
-        return f"{body}\n\n[RAKSHA WARNING] {w}"
-    return f"[RAKSHA WARNING] {w}"
+        return f"{body}\n\n[GATEWAY WARNING] {w}"
+    return f"[GATEWAY WARNING] {w}"
 
 
 def log_prompt_async(platform: str, domain: str, prompt: str, client_ip: str, url: str, method: str) -> None:
@@ -1620,7 +1630,7 @@ def is_event_send_chat_submit(path: str, body: str = "") -> bool:
 
     `/c/api/chat` is a long-lived WebSocket URL. Path alone is never a Send.
     """
-    if _is_raksha_inject_frame(body or ""):
+    if _is_gateway_inject_frame(body or ""):
         return False
     if _copilot_frame_is_user_send(body or ""):
         return True

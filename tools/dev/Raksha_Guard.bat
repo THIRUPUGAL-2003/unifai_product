@@ -1,7 +1,7 @@
 @echo off
-title Raksha Enterprise Security Guard Agent
+title Gateway Enterprise Security Guard Agent
 echo ====================================================
-echo   Launching Raksha Security Guard Agent...
+echo   Launching Gateway Security Guard Agent...
 echo ====================================================
-python "%~dp0..\..\apps\browser-guard\agent\raksha_agent.py"
+python "%~dp0..\..\apps\browser-guard\agent\gateway_agent.py"
 pause

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/modelcatalog"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/modelcatalog"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -194,7 +194,7 @@ func buildProviderConfig(provider string, allowedModels []string) configstoreTab
 	return configstoreTables.TableVirtualKeyProviderConfig{
 		Provider:      provider,
 		AllowedModels: allowedModels,
-		Weight:        raksha.Ptr(1.0),
+		Weight:        gateway.Ptr(1.0),
 		RateLimit:     nil,
 		Keys:          []configstoreTables.TableKey{},
 	}

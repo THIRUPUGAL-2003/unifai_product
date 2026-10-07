@@ -1,4 +1,4 @@
-// Package logging provides a GORM-based logging plugin for Raksha.
+// Package logging provides a GORM-based logging plugin for Gateway.
 // This plugin stores comprehensive logs of all requests and responses with search,
 // filter, and pagination capabilities.
 package logging
@@ -13,14 +13,14 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/mcp"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/mcpcatalog"
-	"github.com/raksha/raksha/framework/modelcatalog"
-	"github.com/raksha/raksha/framework/streaming"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/mcp"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/mcpcatalog"
+	"github.com/gateway/gateway/framework/modelcatalog"
+	"github.com/gateway/gateway/framework/streaming"
 )
 
 const (
@@ -39,23 +39,23 @@ const (
 // UpdateLogData contains data for log entry updates
 type UpdateLogData struct {
 	Status                 string
-	TokenUsage             *schemas.RakshaLLMUsage
+	TokenUsage             *schemas.GatewayLLMUsage
 	Cost                   *float64        // Cost in dollars from pricing plugin
 	ListModelsOutput       []schemas.Model // For list models requests
 	ChatOutput             *schemas.ChatMessage
 	ResponsesOutput        []schemas.ResponsesMessage
 	EmbeddingOutput        []schemas.EmbeddingData
 	RerankOutput           []schemas.RerankResult
-	OCROutput              *schemas.RakshaOCRResponse // For OCR responses
-	ErrorDetails           *schemas.RakshaError
-	SpeechOutput           *schemas.RakshaSpeechResponse          // For non-streaming speech responses
-	TranscriptionOutput    *schemas.RakshaTranscriptionResponse   // For non-streaming transcription responses
-	ImageGenerationOutput  *schemas.RakshaImageGenerationResponse // For non-streaming image generation responses
-	VideoGenerationOutput  *schemas.RakshaVideoGenerationResponse // For non-streaming video generation responses
-	VideoRetrieveOutput    *schemas.RakshaVideoGenerationResponse // For non-streaming video retrieve responses
-	VideoDownloadOutput    *schemas.RakshaVideoDownloadResponse   // For non-streaming video download responses
-	VideoListOutput        *schemas.RakshaVideoListResponse       // For non-streaming video list responses
-	VideoDeleteOutput      *schemas.RakshaVideoDeleteResponse     // For non-streaming video delete responses
+	OCROutput              *schemas.GatewayOCRResponse // For OCR responses
+	ErrorDetails           *schemas.GatewayError
+	SpeechOutput           *schemas.GatewaySpeechResponse          // For non-streaming speech responses
+	TranscriptionOutput    *schemas.GatewayTranscriptionResponse   // For non-streaming transcription responses
+	ImageGenerationOutput  *schemas.GatewayImageGenerationResponse // For non-streaming image generation responses
+	VideoGenerationOutput  *schemas.GatewayVideoGenerationResponse // For non-streaming video generation responses
+	VideoRetrieveOutput    *schemas.GatewayVideoGenerationResponse // For non-streaming video retrieve responses
+	VideoDownloadOutput    *schemas.GatewayVideoDownloadResponse   // For non-streaming video download responses
+	VideoListOutput        *schemas.GatewayVideoListResponse       // For non-streaming video list responses
+	VideoDeleteOutput      *schemas.GatewayVideoDeleteResponse     // For non-streaming video delete responses
 	RawRequest             any
 	RawResponse            any
 	IsLargePayloadRequest  bool // When true, RawRequest is a truncated preview string (skip sonic.Marshal)
@@ -64,15 +64,15 @@ type UpdateLogData struct {
 
 // applyLargePayloadPreviews reads large payload/response preview strings from context
 // and overrides RawRequest/RawResponse on updateData for truncated logging.
-func applyLargePayloadPreviews(ctx *schemas.RakshaContext, updateData *UpdateLogData) {
-	if isLargePayload, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
-		if preview, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadRequestPreview).(string); ok && preview != "" {
+func applyLargePayloadPreviews(ctx *schemas.GatewayContext, updateData *UpdateLogData) {
+	if isLargePayload, ok := ctx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+		if preview, ok := ctx.Value(schemas.GatewayContextKeyLargePayloadRequestPreview).(string); ok && preview != "" {
 			updateData.RawRequest = preview
 			updateData.IsLargePayloadRequest = true
 		}
 	}
-	if isLargeResponse, ok := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); ok && isLargeResponse {
-		if preview, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadResponsePreview).(string); ok && preview != "" {
+	if isLargeResponse, ok := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); ok && isLargeResponse {
+		if preview, ok := ctx.Value(schemas.GatewayContextKeyLargePayloadResponsePreview).(string); ok && preview != "" {
 			updateData.RawResponse = preview
 			updateData.IsLargePayloadResponse = true
 		}
@@ -81,14 +81,14 @@ func applyLargePayloadPreviews(ctx *schemas.RakshaContext, updateData *UpdateLog
 
 // applyLargePayloadPreviewsToEntry applies the large payload preview values from
 // the context to the log entry, if they are available and content logging is enabled.
-func applyLargePayloadPreviewsToEntry(ctx *schemas.RakshaContext, entry *logstore.Log, contentLoggingEnabled bool) {
+func applyLargePayloadPreviewsToEntry(ctx *schemas.GatewayContext, entry *logstore.Log, contentLoggingEnabled bool) {
 	if ctx == nil || entry == nil {
 		return
 	}
 
 	updateData := &UpdateLogData{}
 	applyLargePayloadPreviews(ctx, updateData)
-	shouldStoreRaw, _ := ctx.Value(schemas.RakshaContextKeyShouldStoreRawInLogs).(bool)
+	shouldStoreRaw, _ := ctx.Value(schemas.GatewayContextKeyShouldStoreRawInLogs).(bool)
 
 	if updateData.IsLargePayloadRequest {
 		entry.IsLargePayloadRequest = true
@@ -117,7 +117,7 @@ func applyLargePayloadPreviewsToEntry(ctx *schemas.RakshaContext, entry *logstor
 // hybrid store, rdb batch writes), serializes ErrorDetailsParsed into the error_details
 // column and overwrites anything a caller put in ErrorDetails. Callers set only the
 // sanitized ErrorDetailsParsed and leave the string serialization to SerializeFields.
-func sanitizeErrorForLogging(err *schemas.RakshaError, contentLoggingEnabled, shouldStoreRaw bool) *schemas.RakshaError {
+func sanitizeErrorForLogging(err *schemas.GatewayError, contentLoggingEnabled, shouldStoreRaw bool) *schemas.GatewayError {
 	if err == nil {
 		return nil
 	}
@@ -131,13 +131,13 @@ func sanitizeErrorForLogging(err *schemas.RakshaError, contentLoggingEnabled, sh
 }
 
 // contentLoggingEnabled returns true if content (messages, params, tool results) should be
-// recorded for this request. The RakshaContextKeyDisableContentLogging per-request override is
-// only honored when RakshaContextKeyAllowPerRequestStorageOverride is true in context (set by
-// ConvertToRakshaContext from allow_per_request_content_storage_override config).
-func (p *LoggerPlugin) contentLoggingEnabled(ctx *schemas.RakshaContext) bool {
+// recorded for this request. The GatewayContextKeyDisableContentLogging per-request override is
+// only honored when GatewayContextKeyAllowPerRequestStorageOverride is true in context (set by
+// ConvertToGatewayContext from allow_per_request_content_storage_override config).
+func (p *LoggerPlugin) contentLoggingEnabled(ctx *schemas.GatewayContext) bool {
 	if ctx != nil {
-		if perRequestAllowed, _ := ctx.Value(schemas.RakshaContextKeyAllowPerRequestStorageOverride).(bool); perRequestAllowed {
-			if override, ok := ctx.Value(schemas.RakshaContextKeyDisableContentLogging).(bool); ok {
+		if perRequestAllowed, _ := ctx.Value(schemas.GatewayContextKeyAllowPerRequestStorageOverride).(bool); perRequestAllowed {
+			if override, ok := ctx.Value(schemas.GatewayContextKeyDisableContentLogging).(bool); ok {
 				return !override
 			}
 		}
@@ -146,14 +146,14 @@ func (p *LoggerPlugin) contentLoggingEnabled(ctx *schemas.RakshaContext) bool {
 }
 
 // applyMCPGovernanceFieldsToEntry stamps MCP log ownership from the request context.
-func applyMCPGovernanceFieldsToEntry(ctx *schemas.RakshaContext, entry *logstore.MCPToolLog) {
+func applyMCPGovernanceFieldsToEntry(ctx *schemas.GatewayContext, entry *logstore.MCPToolLog) {
 	if ctx == nil || entry == nil {
 		return
 	}
-	userID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
-	teamID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamID)
-	customerID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerID)
-	businessUnitID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceBusinessUnitID)
+	userID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
+	teamID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamID)
+	customerID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceCustomerID)
+	businessUnitID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceBusinessUnitID)
 	if userID != "" {
 		entry.UserID = &userID
 	}
@@ -171,11 +171,11 @@ func applyMCPGovernanceFieldsToEntry(ctx *schemas.RakshaContext, entry *logstore
 // scheduleDeferredUsageUpdate schedules a deferred usage update for the request.
 // applyErrorBillingFromBilledUsage backfills a failed/cancelled request's log
 // entry from the usage the provider already processed before the failure
-// (carried on RakshaError.ExtraFields.BilledUsage). Token usage is only filled
+// (carried on GatewayError.ExtraFields.BilledUsage). Token usage is only filled
 // when stream accumulation didn't already capture it, but cost is (re)computed
 // whenever it is still missing - independent of whether tokens were already
 // parsed, since a streaming error can populate usage without a cost.
-func (p *LoggerPlugin) applyErrorBillingFromBilledUsage(ctx *schemas.RakshaContext, entry *logstore.Log, billed *schemas.RakshaLLMUsage, requestType schemas.RequestType) {
+func (p *LoggerPlugin) applyErrorBillingFromBilledUsage(ctx *schemas.GatewayContext, entry *logstore.Log, billed *schemas.GatewayLLMUsage, requestType schemas.RequestType) {
 	if billed == nil {
 		return
 	}
@@ -193,12 +193,12 @@ func (p *LoggerPlugin) applyErrorBillingFromBilledUsage(ctx *schemas.RakshaConte
 	}
 }
 
-func (p *LoggerPlugin) scheduleDeferredUsageUpdate(ctx *schemas.RakshaContext, requestID string, usageAlreadyPresent bool) {
+func (p *LoggerPlugin) scheduleDeferredUsageUpdate(ctx *schemas.GatewayContext, requestID string, usageAlreadyPresent bool) {
 	if usageAlreadyPresent || ctx == nil {
 		return
 	}
 
-	deferredChan, ok := ctx.Value(schemas.RakshaContextKeyDeferredUsage).(<-chan *schemas.RakshaLLMUsage)
+	deferredChan, ok := ctx.Value(schemas.GatewayContextKeyDeferredUsage).(<-chan *schemas.GatewayLLMUsage)
 	if !ok || deferredChan == nil {
 		return
 	}
@@ -293,7 +293,7 @@ type LogMessage struct {
 	Timestamp          time.Time                          // Of the preHook/postHook call
 	Latency            int64                              // For latency updates
 	InitialData        *InitialLogData                    // For create operations
-	SemanticCacheDebug *schemas.RakshaCacheDebug          // For semantic cache operations
+	SemanticCacheDebug *schemas.GatewayCacheDebug          // For semantic cache operations
 	UpdateData         *UpdateLogData                     // For update operations
 	StreamResponse     *streaming.ProcessedStreamResponse // For streaming delta updates
 	RoutingEngineLogs  string                             // Formatted routing engine decision logs
@@ -519,25 +519,25 @@ func (p *LoggerPlugin) GetName() string {
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (p *LoggerPlugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *LoggerPlugin) HTTPTransportPreHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (p *LoggerPlugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *LoggerPlugin) HTTPTransportPostHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (p *LoggerPlugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
+func (p *LoggerPlugin) HTTPTransportStreamChunkHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, chunk *schemas.GatewayStreamChunk) (*schemas.GatewayStreamChunk, error) {
 	return chunk, nil
 }
 
 // captureLoggingHeaders extracts configured logging headers and x-uf-lh-* prefixed headers
 // from the request context. Returns a new metadata map, or nil if no headers were captured.
 // System entries (e.g. isAsyncRequest) should be set AFTER calling this so they take precedence.
-func (p *LoggerPlugin) captureLoggingHeaders(ctx *schemas.RakshaContext) map[string]interface{} {
-	allHeaders, _ := ctx.Value(schemas.RakshaContextKeyRequestHeaders).(map[string]string)
+func (p *LoggerPlugin) captureLoggingHeaders(ctx *schemas.GatewayContext) map[string]interface{} {
+	allHeaders, _ := ctx.Value(schemas.GatewayContextKeyRequestHeaders).(map[string]string)
 	if allHeaders == nil {
 		return nil
 	}
@@ -570,7 +570,7 @@ func (p *LoggerPlugin) captureLoggingHeaders(ctx *schemas.RakshaContext) map[str
 	}
 
 	// Include x-uf-dim-* dimensions in metadata.
-	if dims, ok := ctx.Value(schemas.RakshaContextKeyDimensions).(map[string]string); ok {
+	if dims, ok := ctx.Value(schemas.GatewayContextKeyDimensions).(map[string]string); ok {
 		for k, v := range dims {
 			if metadata == nil {
 				metadata = make(map[string]any)
@@ -585,20 +585,20 @@ func (p *LoggerPlugin) captureLoggingHeaders(ctx *schemas.RakshaContext) map[str
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (p *LoggerPlugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
+func (p *LoggerPlugin) PreRequestHook(_ *schemas.GatewayContext, _ *schemas.GatewayRequest) error {
 	return nil
 }
 
 // PreLLMHook is called before a request is processed - FULLY ASYNC, NO DATABASE I/O
 // Parameters:
-//   - ctx: The Raksha context
-//   - req: The Raksha request
+//   - ctx: The Gateway request context
+//   - req: The Gateway request
 //
 // Returns:
-//   - *schemas.RakshaRequest: The processed request
+//   - *schemas.GatewayRequest: The processed request
 //   - *schemas.LLMPluginShortCircuit: The plugin short circuit if the request is not allowed
 //   - error: Any error that occurred during processing
-func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *LoggerPlugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	if ctx == nil {
 		// Log error but don't fail the request
 		p.logger.Error("context is nil in PreLLMHook")
@@ -606,7 +606,7 @@ func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 	}
 
 	// Extract request ID from context
-	requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
+	requestID, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string)
 	if !ok || requestID == "" {
 		// Log error but don't fail the request
 		p.logger.Error("request-id not found in context or is empty")
@@ -618,8 +618,8 @@ func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 	p.logger.Debug("PreLLMHook: request %s type=%q", requestID, req.RequestType)
 
 	// If request type is streaming we create a stream accumulator via the tracer
-	if raksha.IsStreamRequestType(req.RequestType) {
-		tracer, traceID, err := raksha.GetTracerFromContext(ctx)
+	if gateway.IsStreamRequestType(req.RequestType) {
+		tracer, traceID, err := gateway.GetTracerFromContext(ctx)
 		if err == nil && tracer != nil && traceID != "" {
 			tracer.CreateStreamAccumulator(traceID, createdTimestamp)
 		}
@@ -680,7 +680,7 @@ func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 			initialData.Params = req.TranscriptionRequest.Params
 			input := req.TranscriptionRequest.Input
 			if input != nil {
-				reqThreshold, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadRequestThreshold).(int64)
+				reqThreshold, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadRequestThreshold).(int64)
 				if reqThreshold > 0 && int64(len(input.File)) > reqThreshold {
 					// Strip binary file content when it exceeds the large payload threshold
 					// to avoid serializing multi-MB audio into the log database.
@@ -698,7 +698,7 @@ func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 			params := req.ImageEditRequest.Params
 			input := req.ImageEditRequest.Input
 			if input != nil {
-				reqThreshold, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadRequestThreshold).(int64)
+				reqThreshold, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadRequestThreshold).(int64)
 				if reqThreshold > 0 {
 					var totalSize int64
 					for _, img := range input.Images {
@@ -729,7 +729,7 @@ func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 			initialData.Params = req.ImageVariationRequest.Params
 			input := req.ImageVariationRequest.Input
 			if input != nil {
-				reqThreshold, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadRequestThreshold).(int64)
+				reqThreshold, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadRequestThreshold).(int64)
 				if reqThreshold > 0 && int64(len(input.Image.Image)) > reqThreshold {
 					logInput := *input
 					logInput.Image = schemas.ImageInput{}
@@ -778,7 +778,7 @@ func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 	initialData.Metadata = mergeRealtimeMetadata(p.captureLoggingHeaders(ctx), ctx)
 
 	// System entries are set after so they take precedence over dynamic header values
-	if isAsync, ok := ctx.Value(schemas.RakshaIsAsyncRequest).(bool); ok && isAsync {
+	if isAsync, ok := ctx.Value(schemas.GatewayIsAsyncRequest).(bool); ok && isAsync {
 		if initialData.Metadata == nil {
 			initialData.Metadata = make(map[string]interface{})
 		}
@@ -789,10 +789,10 @@ func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 	// Determine effective request ID (fallback override)
 	effectiveRequestID := requestID
 	var parentRequestID string
-	if directParentRequestID, ok := ctx.Value(schemas.RakshaContextKeyParentRequestID).(string); ok && directParentRequestID != "" {
+	if directParentRequestID, ok := ctx.Value(schemas.GatewayContextKeyParentRequestID).(string); ok && directParentRequestID != "" {
 		parentRequestID = directParentRequestID
 	}
-	fallbackRequestID, ok := ctx.Value(schemas.RakshaContextKeyFallbackRequestID).(string)
+	fallbackRequestID, ok := ctx.Value(schemas.GatewayContextKeyFallbackRequestID).(string)
 	if ok && fallbackRequestID != "" {
 		effectiveRequestID = fallbackRequestID
 		if parentRequestID == "" {
@@ -800,10 +800,10 @@ func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 		}
 	}
 
-	fallbackIndex := raksha.GetIntFromContext(ctx, schemas.RakshaContextKeyFallbackIndex)
+	fallbackIndex := gateway.GetIntFromContext(ctx, schemas.GatewayContextKeyFallbackIndex)
 	// Get routing engines array
 	routingEngines := []string{}
-	if engines, ok := ctx.Value(schemas.RakshaContextKeyRoutingEnginesUsed).([]string); ok {
+	if engines, ok := ctx.Value(schemas.GatewayContextKeyRoutingEnginesUsed).([]string); ok {
 		routingEngines = engines
 	}
 
@@ -839,63 +839,63 @@ func (p *LoggerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 
 // PostLLMHook is called after a response is received - FULLY ASYNC, NO DATABASE I/O
 // Parameters:
-//   - ctx: The Raksha context
-//   - result: The Raksha response to be processed
-//   - rakshaErr: The Raksha error to be processed
+//   - ctx: The Gateway request context
+//   - result: The Gateway response to be processed
+//   - gatewayErr: The Gateway error to be processed
 //
 // Returns:
-//   - *schemas.RakshaResponse: The processed response
-//   - *schemas.RakshaError: The processed error
+//   - *schemas.GatewayResponse: The processed response
+//   - *schemas.GatewayError: The processed error
 //   - error: Any error that occurred during processing
-func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
+func (p *LoggerPlugin) PostLLMHook(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error) {
 	if ctx == nil {
 		// Log error but don't fail the request
 		p.logger.Error("context is nil in PostLLMHook")
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
-	requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
+	requestID, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string)
 	if !ok || requestID == "" {
 		p.logger.Error("request-id not found in context or is empty")
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 	// If fallback request ID is present, use it instead of the primary request ID
-	fallbackRequestID, ok := ctx.Value(schemas.RakshaContextKeyFallbackRequestID).(string)
+	fallbackRequestID, ok := ctx.Value(schemas.GatewayContextKeyFallbackRequestID).(string)
 	if ok && fallbackRequestID != "" {
 		requestID = fallbackRequestID
 	}
-	selectedKeyID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedKeyID)
-	selectedKeyName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedKeyName)
-	virtualKeyID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyID)
-	virtualKeyName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyName)
-	routingRuleID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceRoutingRuleID)
-	routingRuleName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceRoutingRuleName)
-	selectedPromptName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedPromptName)
-	selectedPromptVersion := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedPromptVersion)
-	selectedPromptID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedPromptID)
-	teamID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamID)
-	teamName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamName)
-	customerID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerID)
-	customerName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerName)
-	userID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
-	userName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserName)
-	businessUnitID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceBusinessUnitID)
-	businessUnitName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceBusinessUnitName)
-	numberOfRetries := raksha.GetIntFromContext(ctx, schemas.RakshaContextKeyNumberOfRetries)
-	attemptTrail, _ := ctx.Value(schemas.RakshaContextKeyAttemptTrail).([]schemas.KeyAttemptRecord)
+	selectedKeyID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeySelectedKeyID)
+	selectedKeyName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeySelectedKeyName)
+	virtualKeyID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyID)
+	virtualKeyName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyName)
+	routingRuleID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceRoutingRuleID)
+	routingRuleName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceRoutingRuleName)
+	selectedPromptName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeySelectedPromptName)
+	selectedPromptVersion := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeySelectedPromptVersion)
+	selectedPromptID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeySelectedPromptID)
+	teamID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamID)
+	teamName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamName)
+	customerID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceCustomerID)
+	customerName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceCustomerName)
+	userID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
+	userName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserName)
+	businessUnitID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceBusinessUnitID)
+	businessUnitName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceBusinessUnitName)
+	numberOfRetries := gateway.GetIntFromContext(ctx, schemas.GatewayContextKeyNumberOfRetries)
+	attemptTrail, _ := ctx.Value(schemas.GatewayContextKeyAttemptTrail).([]schemas.KeyAttemptRecord)
 
-	requestType, _, originalModelRequested, resolvedModelUsed := raksha.GetResponseFields(result, rakshaErr)
-	resolvedKeyAlias := raksha.GetResponseRoutingInfo(result, rakshaErr).ResolvedKeyAlias
-	shouldStoreRaw, _ := ctx.Value(schemas.RakshaContextKeyShouldStoreRawInLogs).(bool)
+	requestType, _, originalModelRequested, resolvedModelUsed := gateway.GetResponseFields(result, gatewayErr)
+	resolvedKeyAlias := gateway.GetResponseRoutingInfo(result, gatewayErr).ResolvedKeyAlias
+	shouldStoreRaw, _ := ctx.Value(schemas.GatewayContextKeyShouldStoreRawInLogs).(bool)
 	contentLoggingEnabled := p.contentLoggingEnabled(ctx)
 
-	isFinalChunk := raksha.IsFinalChunk(ctx)
+	isFinalChunk := gateway.IsFinalChunk(ctx)
 
-	p.logger.Debug("PostLLMHook: request %s type=%q isFinalChunk=%v hasError=%v", requestID, requestType, isFinalChunk, rakshaErr != nil)
+	p.logger.Debug("PostLLMHook: request %s type=%q isFinalChunk=%v hasError=%v", requestID, requestType, isFinalChunk, gatewayErr != nil)
 
 	// Retrieve pending input data from PreLLMHook
 	var pendingVal any
 	var hasPending bool
-	if !raksha.IsStreamRequestType(requestType) || isFinalChunk || rakshaErr != nil {
+	if !gateway.IsStreamRequestType(requestType) || isFinalChunk || gatewayErr != nil {
 		pendingVal, hasPending = p.pendingLogsEntries.LoadAndDelete(requestID)
 	} else {
 		pendingVal, hasPending = p.pendingLogsEntries.Load(requestID)
@@ -907,19 +907,19 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 		// If we have an error (e.g., cancellation/timeout), still write a minimal error entry
 		// so the error is visible in logs. Without PreLLMHook's DB insert, silently returning
 		// here means the error is completely lost.
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			p.logger.Warn("no pending log data found for request %s, writing minimal error entry", requestID)
 			entry := &logstore.Log{
 				ID:        requestID,
-				Provider:  string(rakshaErr.ExtraFields.Provider),
-				Status:    logStatusForError(rakshaErr),
+				Provider:  string(gatewayErr.ExtraFields.Provider),
+				Status:    logStatusForError(gatewayErr),
 				Object:    string(requestType),
-				Stream:    raksha.IsStreamRequestType(requestType),
+				Stream:    gateway.IsStreamRequestType(requestType),
 				Timestamp: time.Now().UTC(),
 				CreatedAt: time.Now().UTC(),
 			}
 			entry.MetadataParsed = mergeRealtimeMetadata(p.captureLoggingHeaders(ctx), ctx)
-			if isAsync, ok := ctx.Value(schemas.RakshaIsAsyncRequest).(bool); ok && isAsync {
+			if isAsync, ok := ctx.Value(schemas.GatewayIsAsyncRequest).(bool); ok && isAsync {
 				if entry.MetadataParsed == nil {
 					entry.MetadataParsed = make(map[string]interface{})
 				}
@@ -927,7 +927,7 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 			}
 			applyModelAlias(entry, originalModelRequested, resolvedModelUsed)
 			applyResolvedAliasInfo(entry, resolvedKeyAlias)
-			entry.ErrorDetailsParsed = sanitizeErrorForLogging(rakshaErr, contentLoggingEnabled, shouldStoreRaw)
+			entry.ErrorDetailsParsed = sanitizeErrorForLogging(gatewayErr, contentLoggingEnabled, shouldStoreRaw)
 			if nodeID, _ := p.clusterNodeID.Load().(string); nodeID != "" {
 				entry.ClusterNodeID = &nodeID
 			}
@@ -937,7 +937,7 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 		} else {
 			p.logger.Warn("no pending log data found for request %s, skipping log write", requestID)
 		}
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 
 	pending := pendingVal.(*PendingLogData)
@@ -957,9 +957,9 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 
 	var tracer schemas.Tracer
 	var traceID string
-	if raksha.IsStreamRequestType(requestType) && requestType != schemas.RealtimeRequest {
+	if gateway.IsStreamRequestType(requestType) && requestType != schemas.RealtimeRequest {
 		var err error
-		tracer, traceID, err = raksha.GetTracerFromContext(ctx)
+		tracer, traceID, err = gateway.GetTracerFromContext(ctx)
 		if err != nil {
 			p.logger.Debug("tracer not available in logging plugin posthook: %v", err)
 			// Continue with nil tracer — the rest of the code handles this gracefully
@@ -971,20 +971,20 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 	// and skip the write queue entirely. The accumulator work (ProcessStreamingChunk)
 	// is fast (mutex + append). Only final chunks, errors, and non-streaming
 	// responses need a DB write.
-	if raksha.IsStreamRequestType(requestType) && requestType != schemas.RealtimeRequest && !isFinalChunk && result != nil && rakshaErr == nil {
+	if gateway.IsStreamRequestType(requestType) && requestType != schemas.RealtimeRequest && !isFinalChunk && result != nil && gatewayErr == nil {
 		if tracer != nil && traceID != "" {
-			tracer.ProcessStreamingChunk(ctx, traceID, false, result, rakshaErr)
+			tracer.ProcessStreamingChunk(ctx, traceID, false, result, gatewayErr)
 		}
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 	// Extract routing engine logs from context before entering goroutine
 	routingEngineLogs := formatRoutingEngineLogs(ctx.GetRoutingEngineLogs())
 	if requestType == schemas.RealtimeRequest {
-		if resolvedRealtimeSessionID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyRealtimeSessionID); resolvedRealtimeSessionID != "" {
+		if resolvedRealtimeSessionID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyRealtimeSessionID); resolvedRealtimeSessionID != "" {
 			pending.ParentRequestID = resolvedRealtimeSessionID
 		}
 		pending.InitialData.Metadata = mergeRealtimeMetadata(pending.InitialData.Metadata, ctx)
-		if routingEngines, ok := ctx.Value(schemas.RakshaContextKeyRoutingEnginesUsed).([]string); ok {
+		if routingEngines, ok := ctx.Value(schemas.GatewayContextKeyRoutingEnginesUsed).([]string); ok {
 			pending.InitialData.RoutingEngineUsed = routingEngines
 			pending.RoutingEnginesUsed = routingEngines
 		}
@@ -1002,8 +1002,8 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 		if ef.CacheDebug != nil && ef.CacheDebug.CacheHit && ef.CacheDebug.CacheHitLatency != nil {
 			latency = *ef.CacheDebug.CacheHitLatency
 		}
-	} else if rakshaErr != nil {
-		latency = rakshaErr.ExtraFields.Latency
+	} else if gatewayErr != nil {
+		latency = gatewayErr.ExtraFields.Latency
 	}
 	applyOutputFieldsToEntry(entry, selectedKeyID, selectedKeyName, virtualKeyID, virtualKeyName, routingRuleID, routingRuleName, selectedPromptID, selectedPromptName, selectedPromptVersion, teamID, teamName, customerID, customerName, userID, userName, businessUnitID, businessUnitName, numberOfRetries, latency, attemptTrail)
 	applyResolvedAliasInfo(entry, resolvedKeyAlias)
@@ -1011,28 +1011,28 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 	if nodeID, _ := p.clusterNodeID.Load().(string); nodeID != "" {
 		entry.ClusterNodeID = &nodeID
 	}
-	if budgetIDs, ok := ctx.Value(schemas.RakshaContextKeyGovernanceBudgetIDs).([]string); ok && len(budgetIDs) > 0 {
+	if budgetIDs, ok := ctx.Value(schemas.GatewayContextKeyGovernanceBudgetIDs).([]string); ok && len(budgetIDs) > 0 {
 		entry.BudgetIDsParsed = budgetIDs
 	}
-	if rateLimitIDs, ok := ctx.Value(schemas.RakshaContextKeyGovernanceRateLimitIDs).([]string); ok && len(rateLimitIDs) > 0 {
+	if rateLimitIDs, ok := ctx.Value(schemas.GatewayContextKeyGovernanceRateLimitIDs).([]string); ok && len(rateLimitIDs) > 0 {
 		entry.RateLimitIDsParsed = rateLimitIDs
 	}
-	if teamIDs, ok := ctx.Value(schemas.RakshaContextKeyGovernanceTeamIDs).([]string); ok && len(teamIDs) > 0 {
+	if teamIDs, ok := ctx.Value(schemas.GatewayContextKeyGovernanceTeamIDs).([]string); ok && len(teamIDs) > 0 {
 		entry.TeamIDsParsed = teamIDs
 	}
-	if teamNames, ok := ctx.Value(schemas.RakshaContextKeyGovernanceTeamNames).([]string); ok && len(teamNames) > 0 {
+	if teamNames, ok := ctx.Value(schemas.GatewayContextKeyGovernanceTeamNames).([]string); ok && len(teamNames) > 0 {
 		entry.TeamNamesParsed = teamNames
 	}
-	if buIDs, ok := ctx.Value(schemas.RakshaContextKeyGovernanceBusinessUnitIDs).([]string); ok && len(buIDs) > 0 {
+	if buIDs, ok := ctx.Value(schemas.GatewayContextKeyGovernanceBusinessUnitIDs).([]string); ok && len(buIDs) > 0 {
 		entry.BusinessUnitIDsParsed = buIDs
 	}
-	if buNames, ok := ctx.Value(schemas.RakshaContextKeyGovernanceBusinessUnitNames).([]string); ok && len(buNames) > 0 {
+	if buNames, ok := ctx.Value(schemas.GatewayContextKeyGovernanceBusinessUnitNames).([]string); ok && len(buNames) > 0 {
 		entry.BusinessUnitNamesParsed = buNames
 	}
-	if customerIDs, ok := ctx.Value(schemas.RakshaContextKeyGovernanceCustomerIDs).([]string); ok && len(customerIDs) > 0 {
+	if customerIDs, ok := ctx.Value(schemas.GatewayContextKeyGovernanceCustomerIDs).([]string); ok && len(customerIDs) > 0 {
 		entry.CustomerIDsParsed = customerIDs
 	}
-	if customerNames, ok := ctx.Value(schemas.RakshaContextKeyGovernanceCustomerNames).([]string); ok && len(customerNames) > 0 {
+	if customerNames, ok := ctx.Value(schemas.GatewayContextKeyGovernanceCustomerNames).([]string); ok && len(customerNames) > 0 {
 		entry.CustomerNamesParsed = customerNames
 	}
 	entry.MetadataParsed = pending.InitialData.Metadata
@@ -1042,19 +1042,19 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 	// Branch based on response type to populate output-specific fields
 
 	// Path A: Error with nil result
-	if result == nil && rakshaErr != nil {
-		entry.Status = logStatusForError(rakshaErr)
+	if result == nil && gatewayErr != nil {
+		entry.Status = logStatusForError(gatewayErr)
 		applyModelAlias(entry, originalModelRequested, resolvedModelUsed)
-		if raksha.IsStreamRequestType(requestType) {
+		if gateway.IsStreamRequestType(requestType) {
 			entry.Stream = true
 		}
 
 		// For streaming errors, finalize and read accumulated chunks so logs retain pre-error stream metadata
-		if raksha.IsStreamRequestType(requestType) &&
+		if gateway.IsStreamRequestType(requestType) &&
 			requestType != schemas.RealtimeRequest &&
 			tracer != nil &&
 			traceID != "" {
-			if accResult := tracer.ProcessStreamingChunk(ctx, traceID, true, result, rakshaErr); accResult != nil {
+			if accResult := tracer.ProcessStreamingChunk(ctx, traceID, true, result, gatewayErr); accResult != nil {
 				if streamResponse := convertToProcessedStreamResponse(accResult, requestType); streamResponse != nil {
 					p.applyStreamingOutputToEntry(entry, streamResponse, shouldStoreRaw, contentLoggingEnabled)
 				}
@@ -1062,17 +1062,17 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 			tracer.CleanupStreamAccumulator(traceID)
 		}
 
-		entry.ErrorDetailsParsed = sanitizeErrorForLogging(rakshaErr, contentLoggingEnabled, shouldStoreRaw)
+		entry.ErrorDetailsParsed = sanitizeErrorForLogging(gatewayErr, contentLoggingEnabled, shouldStoreRaw)
 		if shouldStoreRaw && contentLoggingEnabled {
-			if rakshaErr.ExtraFields.RawRequest != nil {
-				rawReqBytes, err := sonic.Marshal(rakshaErr.ExtraFields.RawRequest)
+			if gatewayErr.ExtraFields.RawRequest != nil {
+				rawReqBytes, err := sonic.Marshal(gatewayErr.ExtraFields.RawRequest)
 				if err == nil {
 					entry.RawRequest = string(rawReqBytes)
 				}
 			}
 
-			if entry.RawResponse == "" && rakshaErr.ExtraFields.RawResponse != nil {
-				rawRespBytes, err := sonic.Marshal(rakshaErr.ExtraFields.RawResponse)
+			if entry.RawResponse == "" && gatewayErr.ExtraFields.RawResponse != nil {
+				rawRespBytes, err := sonic.Marshal(gatewayErr.ExtraFields.RawResponse)
 				if err == nil {
 					entry.RawResponse = string(rawRespBytes)
 				}
@@ -1082,33 +1082,33 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 		// processed tokens (carried on BilledUsage). Record cost + tokens so the
 		// logs DB reflects what we were actually billed, mirroring the governance
 		// budget.
-		p.applyErrorBillingFromBilledUsage(ctx, entry, rakshaErr.ExtraFields.BilledUsage, requestType)
+		p.applyErrorBillingFromBilledUsage(ctx, entry, gatewayErr.ExtraFields.BilledUsage, requestType)
 		applyLargePayloadPreviewsToEntry(ctx, entry, contentLoggingEnabled)
 		p.storeOrEnqueueEntry(ctx, entry, p.makePostWriteCallback(nil))
 		p.scheduleDeferredUsageUpdate(ctx, requestID, entry.TokenUsageParsed != nil)
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 
 	// Path B: Streaming final chunk
-	if raksha.IsStreamRequestType(requestType) && requestType != schemas.RealtimeRequest {
+	if gateway.IsStreamRequestType(requestType) && requestType != schemas.RealtimeRequest {
 		var streamResponse *streaming.ProcessedStreamResponse
 		if tracer != nil && traceID != "" {
-			accResult := tracer.ProcessStreamingChunk(ctx, traceID, isFinalChunk, result, rakshaErr)
+			accResult := tracer.ProcessStreamingChunk(ctx, traceID, isFinalChunk, result, gatewayErr)
 			if accResult != nil {
 				streamResponse = convertToProcessedStreamResponse(accResult, requestType)
 			}
 		}
 
-		if rakshaErr != nil {
-			entry.Status = logStatusForError(rakshaErr)
+		if gatewayErr != nil {
+			entry.Status = logStatusForError(gatewayErr)
 			entry.Stream = true
 			applyModelAlias(entry, originalModelRequested, resolvedModelUsed)
-			entry.ErrorDetailsParsed = sanitizeErrorForLogging(rakshaErr, contentLoggingEnabled, shouldStoreRaw)
+			entry.ErrorDetailsParsed = sanitizeErrorForLogging(gatewayErr, contentLoggingEnabled, shouldStoreRaw)
 			// Backfill raw request/response on streaming-error path so cancellation/timeout
 			// log entries still carry raw payloads when content logging + raw storage are
 			// enabled. Mirrors the non-streaming Path A pattern at line 872. Prefer the
 			// accumulator-captured raw bytes (streamResponse), then fall back to whatever
-			// the provider attached to the RakshaError.
+			// the provider attached to the GatewayError.
 			if shouldStoreRaw && contentLoggingEnabled {
 				if entry.RawRequest == "" {
 					if streamResponse != nil && streamResponse.RawRequest != nil && *streamResponse.RawRequest != nil {
@@ -1120,8 +1120,8 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 								entry.RawRequest = string(rawReqBytes)
 							}
 						}
-					} else if rakshaErr.ExtraFields.RawRequest != nil {
-						if rawReqBytes, err := sonic.Marshal(rakshaErr.ExtraFields.RawRequest); err == nil {
+					} else if gatewayErr.ExtraFields.RawRequest != nil {
+						if rawReqBytes, err := sonic.Marshal(gatewayErr.ExtraFields.RawRequest); err == nil {
 							entry.RawRequest = string(rawReqBytes)
 						}
 					}
@@ -1129,8 +1129,8 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 				if entry.RawResponse == "" {
 					if streamResponse != nil && streamResponse.Data != nil && streamResponse.Data.RawResponse != nil {
 						entry.RawResponse = *streamResponse.Data.RawResponse
-					} else if rakshaErr.ExtraFields.RawResponse != nil {
-						if rawRespBytes, err := sonic.Marshal(rakshaErr.ExtraFields.RawResponse); err == nil {
+					} else if gatewayErr.ExtraFields.RawResponse != nil {
+						if rawRespBytes, err := sonic.Marshal(gatewayErr.ExtraFields.RawResponse); err == nil {
 							entry.RawResponse = string(rawRespBytes)
 						}
 					}
@@ -1175,18 +1175,18 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 		}
 		p.storeOrEnqueueEntry(ctx, entry, p.makePostWriteCallback(nil))
 		p.scheduleDeferredUsageUpdate(ctx, requestID, entry.TokenUsageParsed != nil)
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 
 	// Path C: Non-streaming response
-	if rakshaErr != nil {
-		entry.Status = logStatusForError(rakshaErr)
+	if gatewayErr != nil {
+		entry.Status = logStatusForError(gatewayErr)
 		applyModelAlias(entry, originalModelRequested, resolvedModelUsed)
-		entry.ErrorDetailsParsed = sanitizeErrorForLogging(rakshaErr, contentLoggingEnabled, shouldStoreRaw)
+		entry.ErrorDetailsParsed = sanitizeErrorForLogging(gatewayErr, contentLoggingEnabled, shouldStoreRaw)
 		// Realtime turns that fail mid-stream still need their input transcript
-		// surfaced — backfill from rakshaErr.ExtraFields.RawRequest if present.
+		// surfaced — backfill from gatewayErr.ExtraFields.RawRequest if present.
 		if requestType == schemas.RealtimeRequest {
-			applyRealtimeRawRequestBackfill(entry, rakshaErr.ExtraFields.RawRequest, contentLoggingEnabled, shouldStoreRaw)
+			applyRealtimeRawRequestBackfill(entry, gatewayErr.ExtraFields.RawRequest, contentLoggingEnabled, shouldStoreRaw)
 		}
 	} else if result != nil {
 		entry.Status = logStatusSuccess
@@ -1205,7 +1205,7 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 	applyLargePayloadPreviewsToEntry(ctx, entry, contentLoggingEnabled)
 
 	// Calculate cost
-	var cacheDebug *schemas.RakshaCacheDebug
+	var cacheDebug *schemas.GatewayCacheDebug
 	if result != nil {
 		cacheDebug = result.GetExtraFields().CacheDebug
 	}
@@ -1238,7 +1238,7 @@ func (p *LoggerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.R
 	}
 	p.storeOrEnqueueEntry(ctx, entry, p.makePostWriteCallback(nil))
 	p.scheduleDeferredUsageUpdate(ctx, requestID, entry.TokenUsageParsed != nil)
-	return result, rakshaErr, nil
+	return result, gatewayErr, nil
 }
 
 // Cleanup is called when the plugin is being shut down. It stops the
@@ -1321,8 +1321,8 @@ drainQueue:
 // storeOrEnqueueEntry stores a log entry in pendingLogs keyed by traceID for later
 // retrieval by Inject(), or enqueues directly if no traceID is available (Go SDK path).
 // Multiple entries per traceID are supported (e.g. fallback/retry attempts within the same trace).
-func (p *LoggerPlugin) storeOrEnqueueEntry(ctx *schemas.RakshaContext, entry *logstore.Log, callback func(entry *logstore.Log)) {
-	traceID, _ := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
+func (p *LoggerPlugin) storeOrEnqueueEntry(ctx *schemas.GatewayContext, entry *logstore.Log, callback func(entry *logstore.Log)) {
+	traceID, _ := ctx.Value(schemas.GatewayContextKeyTraceID).(string)
 	if traceID != "" {
 		// Append to slice for Inject() to pick up — supports multiple attempts per trace
 		existing, loaded := p.pendingLogsToInject.LoadOrStore(traceID, &pendingInjectEntries{entries: []*logstore.Log{entry}, createdAt: time.Now()})
@@ -1383,14 +1383,14 @@ func (p *LoggerPlugin) SetMCPToolLogCallback(callback MCPToolLogCallback) {
 
 // PreMCPHook is called before an MCP tool execution - creates initial log entry
 // Parameters:
-//   - ctx: The Raksha context
+//   - ctx: The Gateway request context
 //   - req: The MCP request containing tool call information
 //
 // Returns:
-//   - *schemas.RakshaMCPRequest: The unmodified request
+//   - *schemas.GatewayMCPRequest: The unmodified request
 //   - *schemas.MCPPluginShortCircuit: nil (no short-circuiting)
 //   - error: nil (errors are logged but don't fail the request)
-func (p *LoggerPlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error) {
+func (p *LoggerPlugin) PreMCPHook(ctx *schemas.GatewayContext, req *schemas.GatewayMCPRequest) (*schemas.GatewayMCPRequest, *schemas.MCPPluginShortCircuit, error) {
 	if ctx == nil {
 		p.logger.Error("context is nil in PreMCPHook")
 		return req, nil, nil
@@ -1401,14 +1401,14 @@ func (p *LoggerPlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 		return req, nil, nil
 	}
 
-	requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
+	requestID, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string)
 	if !ok || requestID == "" {
 		p.logger.Error("request-id not found in context or is empty in PreMCPHook")
 		return req, nil, nil
 	}
 
 	// Get parent request ID if this MCP call is part of a larger LLM request (using the MCP agent original request ID)
-	parentRequestID, _ := ctx.Value(schemas.RakshaMCPAgentOriginalRequestID).(string)
+	parentRequestID, _ := ctx.Value(schemas.GatewayMCPAgentOriginalRequestID).(string)
 
 	createdTimestamp := time.Now().UTC()
 
@@ -1439,17 +1439,17 @@ func (p *LoggerPlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 	// e.g. "executeToolCode") and the suffix after the client prefix (e.g.
 	// "myclient-executeToolCode") so PreMCP and PostMCP agree on what to skip
 	// and we never leave an orphan pending row to expire via the TTL path.
-	if raksha.IsCodemodeTool(fullToolName) || raksha.IsCodemodeTool(toolName) {
+	if gateway.IsCodemodeTool(fullToolName) || gateway.IsCodemodeTool(toolName) {
 		return req, nil, nil
 	}
 
 	// Get virtual key information from context - using same method as normal LLM logging
-	virtualKeyID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyID)
-	virtualKeyName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyName)
+	virtualKeyID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyID)
+	virtualKeyName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyName)
 
 	// Use the per-tool-call unique MCP log ID (set by agent executor per goroutine) as the
 	// primary key. Fall back to requestID if not set (e.g. direct single tool call).
-	mcpLogID, ok := ctx.Value(schemas.RakshaContextKeyMCPLogID).(string)
+	mcpLogID, ok := ctx.Value(schemas.GatewayContextKeyMCPLogID).(string)
 	if !ok || mcpLogID == "" {
 		mcpLogID = requestID
 	}
@@ -1498,18 +1498,18 @@ func (p *LoggerPlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 
 // PostMCPHook is called after an MCP tool execution - updates the log entry with results
 // Parameters:
-//   - ctx: The Raksha context
+//   - ctx: The Gateway request context
 //   - resp: The MCP response containing tool execution result
-//   - rakshaErr: Any error that occurred during execution
+//   - gatewayErr: Any error that occurred during execution
 //
 // Returns:
-//   - *schemas.RakshaMCPResponse: The unmodified response
-//   - *schemas.RakshaError: The unmodified error
+//   - *schemas.GatewayMCPResponse: The unmodified response
+//   - *schemas.GatewayError: The unmodified error
 //   - error: nil (errors are logged but don't fail the request)
-func (p *LoggerPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error) {
+func (p *LoggerPlugin) PostMCPHook(ctx *schemas.GatewayContext, resp *schemas.GatewayMCPResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayMCPResponse, *schemas.GatewayError, error) {
 	if ctx == nil {
 		p.logger.Error("context is nil in PostMCPHook")
-		return resp, rakshaErr, nil
+		return resp, gatewayErr, nil
 	}
 
 	// Skip non tool-execute envelopes (Ping/ListTools). The MCP gate stamps
@@ -1519,32 +1519,32 @@ func (p *LoggerPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.Rak
 	mcpReqType := schemas.MCPRequestType("")
 	if resp != nil {
 		mcpReqType = resp.ExtraFields.MCPRequestType
-	} else if rakshaErr != nil {
-		mcpReqType = rakshaErr.ExtraFields.MCPRequestType
+	} else if gatewayErr != nil {
+		mcpReqType = gatewayErr.ExtraFields.MCPRequestType
 	}
 	if !mcpReqType.IsExecuteTool() {
-		return resp, rakshaErr, nil
+		return resp, gatewayErr, nil
 	}
 	// Skip logging for codemode tools (executeToolCode, listToolFiles, readToolFile)
-	if resp != nil && raksha.IsCodemodeTool(resp.ExtraFields.ToolName) {
-		return resp, rakshaErr, nil
+	if resp != nil && gateway.IsCodemodeTool(resp.ExtraFields.ToolName) {
+		return resp, gatewayErr, nil
 	}
 
-	requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
+	requestID, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string)
 	if !ok || requestID == "" {
 		p.logger.Error("request-id not found in context or is empty in PostMCPHook")
-		return resp, rakshaErr, nil
+		return resp, gatewayErr, nil
 	}
 
 	// Use the per-tool-call unique MCP log ID to find the correct log entry.
-	mcpLogID, ok := ctx.Value(schemas.RakshaContextKeyMCPLogID).(string)
+	mcpLogID, ok := ctx.Value(schemas.GatewayContextKeyMCPLogID).(string)
 	if !ok || mcpLogID == "" {
 		mcpLogID = requestID
 	}
 
 	// Extract virtual key ID and name from context (set by governance plugin)
-	virtualKeyID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyID)
-	virtualKeyName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyName)
+	virtualKeyID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyID)
+	virtualKeyName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyName)
 
 	pendingVal, hasPending := p.pendingMCPLogsToInject.LoadAndDelete(mcpLogID)
 	var entry *logstore.MCPToolLog
@@ -1575,7 +1575,7 @@ func (p *LoggerPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.Rak
 		entry.Latency = &latency
 	}
 
-	success := resp != nil && rakshaErr == nil
+	success := resp != nil && gatewayErr == nil
 	if success && p.mcpCatalog != nil && resp.ExtraFields.ClientName != "" && resp.ExtraFields.ToolName != "" {
 		if pricingEntry, ok := p.mcpCatalog.GetPricingData(resp.ExtraFields.ClientName, resp.ExtraFields.ToolName); ok {
 			toolCost := pricingEntry.CostPerExecution
@@ -1584,10 +1584,10 @@ func (p *LoggerPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.Rak
 		}
 	}
 
-	if rakshaErr != nil {
-		entry.Status = logStatusForError(rakshaErr)
-		shouldStoreRaw, _ := ctx.Value(schemas.RakshaContextKeyShouldStoreRawInLogs).(bool)
-		entry.ErrorDetailsParsed = sanitizeErrorForLogging(rakshaErr, p.contentLoggingEnabled(ctx), shouldStoreRaw)
+	if gatewayErr != nil {
+		entry.Status = logStatusForError(gatewayErr)
+		shouldStoreRaw, _ := ctx.Value(schemas.GatewayContextKeyShouldStoreRawInLogs).(bool)
+		entry.ErrorDetailsParsed = sanitizeErrorForLogging(gatewayErr, p.contentLoggingEnabled(ctx), shouldStoreRaw)
 	} else if resp != nil {
 		entry.Status = "success"
 		if p.contentLoggingEnabled(ctx) {
@@ -1613,8 +1613,8 @@ func (p *LoggerPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.Rak
 		}
 	} else {
 		entry.Status = "error"
-		entry.ErrorDetailsParsed = &schemas.RakshaError{
-			IsRakshaError: true,
+		entry.ErrorDetailsParsed = &schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: "MCP tool execution returned nil response",
 			},
@@ -1626,5 +1626,5 @@ func (p *LoggerPlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.Rak
 	p.mu.Unlock()
 	p.enqueueMCPToolLogEntry(entry, callback)
 
-	return resp, rakshaErr, nil
+	return resp, gatewayErr, nil
 }

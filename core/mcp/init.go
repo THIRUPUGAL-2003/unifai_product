@@ -1,6 +1,6 @@
 package mcp
 
-import "github.com/raksha/raksha/core/schemas"
+import "github.com/gateway/gateway/core/schemas"
 
 // noopLogger is a no-op implementation of schemas.Logger used as a fallback
 // when no logger is provided.

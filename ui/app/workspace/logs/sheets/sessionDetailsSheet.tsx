@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -71,11 +72,21 @@ export function SessionDetailsSheet({
 	const totalCountRef = useRef(totalCount);
 	const [hasMore, setHasMore] = useState(false);
 	const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-	const { data: sessionSummary } = useGetLogSessionSummaryByIdQuery(sessionId || "", {
+	const [summaryPollMs, setSummaryPollMs] = useState(5000);
+	const {
+		data: sessionSummary,
+		isError: summaryFailed,
+		error: summaryError,
+		refetch: refetchSummary,
+	} = useGetLogSessionSummaryByIdQuery(sessionId || "", {
 		skip: !open || !sessionId,
-		pollingInterval: 5000,
+		pollingInterval: summaryPollMs,
 		refetchOnMountOrArgChange: true,
 	});
+
+	useEffect(() => {
+		setSummaryPollMs(summaryFailed ? 0 : 5000);
+	}, [summaryFailed]);
 
 	const summaryCards: SummaryCard[] = useMemo(
 		() => [
@@ -213,6 +224,18 @@ export function SessionDetailsSheet({
 						</Button>
 					</div>
 				</div>
+
+				{summaryFailed ? (
+					<div className="flex flex-col gap-2">
+						<QueryErrorBanner
+							testId="session-summary-query-error"
+							message={getErrorMessage(summaryError) || "Failed to load session summary."}
+						/>
+						<Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => void refetchSummary()}>
+							Retry
+						</Button>
+					</div>
+				) : null}
 
 				<div className="grid shrink-0 grid-cols-1 gap-4 sm:grid-cols-3">
 					{summaryCards.map((card) => (

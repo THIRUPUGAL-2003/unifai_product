@@ -17,8 +17,8 @@ import (
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/raksha/raksha/core/mcp/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/mcp/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // AcquireClientConn returns a live upstream MCP client connection for the
@@ -38,7 +38,7 @@ import (
 // observable by plugins. Credential-resolution errors (including
 // *MCPUserOAuthRequiredError) surface from this method without opening any
 // connection.
-func (m *MCPManager) AcquireClientConn(ctx *schemas.RakshaContext, state *schemas.MCPClientState) (*client.Client, func(), error) {
+func (m *MCPManager) AcquireClientConn(ctx *schemas.GatewayContext, state *schemas.MCPClientState) (*client.Client, func(), error) {
 	if state == nil || state.ExecutionConfig == nil {
 		return nil, nil, fmt.Errorf("client state is required")
 	}
@@ -58,7 +58,7 @@ func (m *MCPManager) AcquireClientConn(ctx *schemas.RakshaContext, state *schema
 	}
 	url := config.ConnectionString.GetValue()
 
-	connectReq := &schemas.RakshaMCPConnectRequest{
+	connectReq := &schemas.GatewayMCPConnectRequest{
 		ClientName:       config.Name,
 		ConnectionType:   config.ConnectionType,
 		AuthType:         config.AuthType,
@@ -69,7 +69,7 @@ func (m *MCPManager) AcquireClientConn(ctx *schemas.RakshaContext, state *schema
 	// Closure-captured outputs from the op so the caller can CallTool on the
 	// live client after the gate returns.
 	var tempClient *client.Client
-	// MCPAuthRequiredError is wrapped into a generic RakshaError by the
+	// MCPAuthRequiredError is wrapped into a generic GatewayError by the
 	// pipeline before PostConnectionHook runs, so capture it out-of-band to
 	// preserve the typed-error info for the envelope path. Same capture
 	// covers both per-user-OAuth (Kind=oauth) and per-user-headers
@@ -77,7 +77,7 @@ func (m *MCPManager) AcquireClientConn(ctx *schemas.RakshaContext, state *schema
 	var authRequiredErr *schemas.MCPAuthRequiredError
 	start := time.Now()
 
-	_, gateErr := m.runConnectWithPluginPipeline(ctx, connectReq, func(preReq *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectResponse, error) {
+	_, gateErr := m.runConnectWithPluginPipeline(ctx, connectReq, func(preReq *schemas.GatewayMCPConnectRequest) (*schemas.GatewayMCPConnectResponse, error) {
 		// Resolve auth headers AFTER PreConnectionHook ran. Plugins never see
 		// the Authorization header — it lives only on the wire transport.
 		authHeaders, credErr := m.credStore.ConnectionHeaders(ctx, config)
@@ -130,7 +130,7 @@ func (m *MCPManager) AcquireClientConn(ctx *schemas.RakshaContext, state *schema
 				ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
 				Capabilities:    mcp.ClientCapabilities{},
 				ClientInfo: mcp.Implementation{
-					Name:    fmt.Sprintf("Raksha-%s-user", config.Name),
+					Name:    fmt.Sprintf("Gateway-%s-user", config.Name),
 					Version: "1.0.0",
 				},
 			},
@@ -150,12 +150,12 @@ func (m *MCPManager) AcquireClientConn(ctx *schemas.RakshaContext, state *schema
 
 		// Build the gate response from the captured initialize result so
 		// PostConnectionHook plugins observe what the upstream advertised.
-		resp := &schemas.RakshaMCPConnectResponse{
+		resp := &schemas.GatewayMCPConnectResponse{
 			ConnectionInfo: &schemas.MCPClientConnectionInfo{
 				Type:          config.ConnectionType,
 				ConnectionURL: &targetURL,
 			},
-			ExtraFields: schemas.RakshaMCPResponseExtraFields{
+			ExtraFields: schemas.GatewayMCPResponseExtraFields{
 				Latency: time.Since(start).Milliseconds(),
 			},
 		}
@@ -419,7 +419,7 @@ func (m *MCPManager) VerifyPerUserOAuthConnection(ctx context.Context, config *s
 		}
 		preparedHeaders[k] = v.GetValue()
 	}
-	connectReq := &schemas.RakshaMCPConnectRequest{
+	connectReq := &schemas.GatewayMCPConnectRequest{
 		ClientName:       config.Name,
 		ConnectionType:   schemas.MCPConnectionTypeHTTP,
 		AuthType:         config.AuthType,
@@ -429,7 +429,7 @@ func (m *MCPManager) VerifyPerUserOAuthConnection(ctx context.Context, config *s
 
 	verifyCtx, cancel := context.WithTimeout(ctx, MCPClientConnectionEstablishTimeout)
 	defer cancel()
-	gateCtx := schemas.NewRakshaContext(verifyCtx, schemas.NoDeadline)
+	gateCtx := schemas.NewGatewayContext(verifyCtx, schemas.NoDeadline)
 
 	var tempClient *client.Client
 	defer func() {
@@ -439,7 +439,7 @@ func (m *MCPManager) VerifyPerUserOAuthConnection(ctx context.Context, config *s
 	}()
 	start := time.Now()
 
-	_, gateErr := m.runConnectWithPluginPipeline(gateCtx, connectReq, func(preReq *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectResponse, error) {
+	_, gateErr := m.runConnectWithPluginPipeline(gateCtx, connectReq, func(preReq *schemas.GatewayMCPConnectRequest) (*schemas.GatewayMCPConnectResponse, error) {
 		// Use mutated URL/headers
 		finalURL := url
 		if preReq.ConnectionString != nil {
@@ -475,7 +475,7 @@ func (m *MCPManager) VerifyPerUserOAuthConnection(ctx context.Context, config *s
 				ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
 				Capabilities:    mcp.ClientCapabilities{},
 				ClientInfo: mcp.Implementation{
-					Name:    fmt.Sprintf("Raksha-%s-verify", config.Name),
+					Name:    fmt.Sprintf("Gateway-%s-verify", config.Name),
 					Version: "1.0.0",
 				},
 			},
@@ -485,12 +485,12 @@ func (m *MCPManager) VerifyPerUserOAuthConnection(ctx context.Context, config *s
 			return nil, fmt.Errorf("failed to initialize MCP connection for verification: %w", initErr)
 		}
 
-		resp := &schemas.RakshaMCPConnectResponse{
+		resp := &schemas.GatewayMCPConnectResponse{
 			ConnectionInfo: &schemas.MCPClientConnectionInfo{
 				Type:          schemas.MCPConnectionTypeHTTP,
 				ConnectionURL: &finalURL,
 			},
-			ExtraFields: schemas.RakshaMCPResponseExtraFields{
+			ExtraFields: schemas.GatewayMCPResponseExtraFields{
 				Latency: time.Since(start).Milliseconds(),
 			},
 		}
@@ -569,7 +569,7 @@ func (m *MCPManager) VerifyHeadersConnection(ctx context.Context, config *schema
 	// VerifyPerUserOAuthConnection's Authorization-injection pattern.
 	url := config.ConnectionString.GetValue()
 	preparedHeaders := utils.FlattenHeaders(utils.StaticConfigHeaders(config))
-	connectReq := &schemas.RakshaMCPConnectRequest{
+	connectReq := &schemas.GatewayMCPConnectRequest{
 		ClientName:       config.Name,
 		ConnectionType:   schemas.MCPConnectionTypeHTTP,
 		AuthType:         config.AuthType,
@@ -579,7 +579,7 @@ func (m *MCPManager) VerifyHeadersConnection(ctx context.Context, config *schema
 
 	verifyCtx, cancel := context.WithTimeout(ctx, MCPClientConnectionEstablishTimeout)
 	defer cancel()
-	gateCtx := schemas.NewRakshaContext(verifyCtx, schemas.NoDeadline)
+	gateCtx := schemas.NewGatewayContext(verifyCtx, schemas.NoDeadline)
 
 	var tempClient *client.Client
 	defer func() {
@@ -589,7 +589,7 @@ func (m *MCPManager) VerifyHeadersConnection(ctx context.Context, config *schema
 	}()
 	start := time.Now()
 
-	_, gateErr := m.runConnectWithPluginPipeline(gateCtx, connectReq, func(preReq *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectResponse, error) {
+	_, gateErr := m.runConnectWithPluginPipeline(gateCtx, connectReq, func(preReq *schemas.GatewayMCPConnectRequest) (*schemas.GatewayMCPConnectResponse, error) {
 		finalURL := url
 		if preReq.ConnectionString != nil {
 			finalURL = *preReq.ConnectionString
@@ -627,7 +627,7 @@ func (m *MCPManager) VerifyHeadersConnection(ctx context.Context, config *schema
 				ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
 				Capabilities:    mcp.ClientCapabilities{},
 				ClientInfo: mcp.Implementation{
-					Name:    fmt.Sprintf("Raksha-%s-verify", config.Name),
+					Name:    fmt.Sprintf("Gateway-%s-verify", config.Name),
 					Version: "1.0.0",
 				},
 			},
@@ -637,12 +637,12 @@ func (m *MCPManager) VerifyHeadersConnection(ctx context.Context, config *schema
 			return nil, fmt.Errorf("failed to initialize MCP connection for verification: %w", initErr)
 		}
 
-		resp := &schemas.RakshaMCPConnectResponse{
+		resp := &schemas.GatewayMCPConnectResponse{
 			ConnectionInfo: &schemas.MCPClientConnectionInfo{
 				Type:          schemas.MCPConnectionTypeHTTP,
 				ConnectionURL: &finalURL,
 			},
-			ExtraFields: schemas.RakshaMCPResponseExtraFields{
+			ExtraFields: schemas.GatewayMCPResponseExtraFields{
 				Latency: time.Since(start).Milliseconds(),
 			},
 		}
@@ -767,8 +767,8 @@ func (m *MCPManager) removeClientUnsafe(id string) error {
 //   - error: Any error that occurred during disable
 func (m *MCPManager) DisableClient(id string) error {
 	// The internal in-process client must never be disabled:
-	if id == RakshaMCPClientKey {
-		return fmt.Errorf("cannot disable internal raksha client")
+	if id == GatewayMCPClientKey {
+		return fmt.Errorf("cannot disable internal gateway client")
 	}
 	// Use LoadOrStore (not Load) so the check and the sentinel insertion are atomic.
 	if _, alreadyInFlight := m.reconnectingClients.LoadOrStore(id, true); alreadyInFlight {
@@ -1118,7 +1118,7 @@ func stdioConfigEqual(a, b *schemas.MCPStdioConfig) bool {
 //   - name: Unique tool name
 //   - description: Human-readable tool description
 //   - handler: Typed function that handles tool execution
-//   - toolSchema: Raksha tool schema for function calling
+//   - toolSchema: Gateway tool schema for function calling
 //
 // Returns:
 //   - error: Any registration error
@@ -1129,7 +1129,7 @@ func stdioConfigEqual(a, b *schemas.MCPStdioConfig) bool {
 //	    Message string `json:"message"`
 //	}
 //
-//	err := raksha.RegisterMCPTool("echo", "Echo a message",
+//	err := gateway.RegisterMCPTool("echo", "Echo a message",
 //	    func(args EchoArgs) (string, error) {
 //	        return args.Message, nil
 //	    }, toolSchema)
@@ -1157,21 +1157,21 @@ func (m *MCPManager) RegisterTool(name, description string, toolFunction MCPTool
 	defer m.mu.Unlock()
 
 	// Verify internal client exists
-	internalClient, ok := m.clientMap[RakshaMCPClientKey]
+	internalClient, ok := m.clientMap[GatewayMCPClientKey]
 	if !ok {
-		return fmt.Errorf("raksha client not found")
+		return fmt.Errorf("gateway client not found")
 	}
 
 	// Create prefixed tool name for consistency with external tools
-	// Format: rakshaInternal-toolName
-	prefixedToolName := fmt.Sprintf("%s-%s", RakshaMCPClientKey, name)
+	// Format: gatewayInternal-toolName
+	prefixedToolName := fmt.Sprintf("%s-%s", GatewayMCPClientKey, name)
 
 	// Check if tool name already exists to prevent silent overwrites
 	if _, exists := internalClient.ToolMap[prefixedToolName]; exists {
 		return fmt.Errorf("tool '%s' is already registered", name)
 	}
 
-	m.logger.Debug("%s Registering typed tool: %s -> prefixed as %s (client: %s)", MCPLogPrefix, name, prefixedToolName, RakshaMCPClientKey)
+	m.logger.Debug("%s Registering typed tool: %s -> prefixed as %s (client: %s)", MCPLogPrefix, name, prefixedToolName, GatewayMCPClientKey)
 	m.logger.Info("%s Registering typed tool: %s", MCPLogPrefix, name)
 
 	// Create MCP handler wrapper that converts between typed and MCP interfaces
@@ -1284,7 +1284,7 @@ func (m *MCPManager) connectToMCPClient(requestCtx context.Context, config *sche
 	//
 	// SECURITY: Authorization is stripped from the headers exposed to PreHooks and
 	// re-injected after all PreHooks have run. Plugins never see the bearer token.
-	connectReq := &schemas.RakshaMCPConnectRequest{
+	connectReq := &schemas.GatewayMCPConnectRequest{
 		ClientName:     config.Name,
 		ConnectionType: config.ConnectionType,
 		AuthType:       config.AuthType,
@@ -1310,20 +1310,20 @@ func (m *MCPManager) connectToMCPClient(requestCtx context.Context, config *sche
 
 	// Wrap the caller context so connection hooks can read request-scoped
 	// values, such as headers extracted by the HTTP transport.
-	gateCtx := schemas.NewRakshaContext(requestCtx, schemas.NoDeadline)
+	gateCtx := schemas.NewGatewayContext(requestCtx, schemas.NoDeadline)
 
 	// To capture InitializeResult for the response, the op closure populates these.
 	var initResult *mcp.InitializeResult
 	start := time.Now()
 
-	_, gateErr := m.runConnectWithPluginPipeline(gateCtx, connectReq, func(preReq *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectResponse, error) {
+	_, gateErr := m.runConnectWithPluginPipeline(gateCtx, connectReq, func(preReq *schemas.GatewayMCPConnectRequest) (*schemas.GatewayMCPConnectResponse, error) {
 		// Layer credstore-resolved auth headers onto the plugin-mutated static
 		// headers. Build a shallow clone so the merged result doesn't leak back
 		// into the request object that plugins captured in PreHook (which they
 		// may still reference in PostHook).
 		mutForWire := preReq
 		if config.ConnectionType == schemas.MCPConnectionTypeHTTP || config.ConnectionType == schemas.MCPConnectionTypeSSE {
-			bfCtx := schemas.NewRakshaContext(m.ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(m.ctx, schemas.NoDeadline)
 			authHeaders, credErr := m.credStore.ConnectionHeaders(bfCtx, config)
 			if credErr != nil {
 				return nil, credErr
@@ -1398,7 +1398,7 @@ func (m *MCPManager) connectToMCPClient(requestCtx context.Context, config *sche
 				ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
 				Capabilities:    mcp.ClientCapabilities{},
 				ClientInfo: mcp.Implementation{
-					Name:    fmt.Sprintf("Raksha-%s", config.Name),
+					Name:    fmt.Sprintf("Gateway-%s", config.Name),
 					Version: "1.0.0",
 				},
 			},
@@ -1428,9 +1428,9 @@ func (m *MCPManager) connectToMCPClient(requestCtx context.Context, config *sche
 		m.logger.Debug("%s [%s] Client initialized successfully", MCPLogPrefix, config.Name)
 
 		// Build the gate response from captured initialize result.
-		resp := &schemas.RakshaMCPConnectResponse{
+		resp := &schemas.GatewayMCPConnectResponse{
 			ConnectionInfo: connectionInfo,
-			ExtraFields: schemas.RakshaMCPResponseExtraFields{
+			ExtraFields: schemas.GatewayMCPResponseExtraFields{
 				Latency: time.Since(start).Milliseconds(),
 			},
 		}
@@ -1597,8 +1597,8 @@ func (m *MCPManager) connectToMCPClient(requestCtx context.Context, config *sche
 	monitor := NewClientHealthMonitor(m, config.ID, DefaultHealthCheckInterval, isPingAvailable, m.logger)
 	m.healthMonitorManager.StartMonitoring(monitor)
 
-	// Start tool syncing for the client (skip for internal raksha client)
-	if config.ID != RakshaMCPClientKey {
+	// Start tool syncing for the client (skip for internal gateway client)
+	if config.ID != GatewayMCPClientKey {
 		syncInterval := ResolveToolSyncInterval(config, m.toolSyncManager.GetGlobalInterval())
 		if syncInterval > 0 {
 			syncer := NewClientToolSyncer(m, config.ID, config.Name, syncInterval, m.logger)
@@ -1647,7 +1647,7 @@ func (m *MCPManager) buildTLSHTTPClient(tlsCfg *schemas.MCPTLSConfig) (*http.Cli
 // If overrides is non-nil and carries a populated ConnectionString or Headers, those values
 // are used instead of resolving them from config. This is how plugin PreHook mutations flow
 // into the transport.
-func (m *MCPManager) createHTTPConnection(ctx context.Context, config *schemas.MCPClientConfig, overrides *schemas.RakshaMCPConnectRequest) (*client.Client, *schemas.MCPClientConnectionInfo, error) {
+func (m *MCPManager) createHTTPConnection(ctx context.Context, config *schemas.MCPClientConfig, overrides *schemas.GatewayMCPConnectRequest) (*client.Client, *schemas.MCPClientConnectionInfo, error) {
 	if config.ConnectionString == nil {
 		return nil, nil, fmt.Errorf("HTTP connection string is required")
 	}
@@ -1666,7 +1666,7 @@ func (m *MCPManager) createHTTPConnection(ctx context.Context, config *schemas.M
 	if overrides != nil && overrides.Headers != nil {
 		headers = overrides.Headers
 	} else {
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		authHeaders, err := m.credStore.ConnectionHeaders(bfCtx, config)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get HTTP headers: %w", err)
@@ -1680,7 +1680,7 @@ func (m *MCPManager) createHTTPConnection(ctx context.Context, config *schemas.M
 	}
 
 	// Create StreamableHTTP transport. The static headers above are baked onto the
-	// transport once; per-request "extra" headers (RakshaContextKeyMCPExtraHeaders,
+	// transport once; per-request "extra" headers (GatewayContextKeyMCPExtraHeaders,
 	// allowlisted by AllowedExtraHeaders) are injected per outgoing request via the
 	// headerFunc, which runs for every method — including ping/list_tools, whose
 	// request.Header the mcp-go client otherwise drops.
@@ -1710,7 +1710,7 @@ func (m *MCPManager) createHTTPConnection(ctx context.Context, config *schemas.M
 
 // createSTDIOConnection creates a STDIO-based MCP client connection without holding locks.
 // If overrides is non-nil with a populated StdioCommand/StdioArgs, those replace the config values.
-func (m *MCPManager) createSTDIOConnection(_ context.Context, config *schemas.MCPClientConfig, overrides *schemas.RakshaMCPConnectRequest) (*client.Client, *schemas.MCPClientConnectionInfo, error) {
+func (m *MCPManager) createSTDIOConnection(_ context.Context, config *schemas.MCPClientConfig, overrides *schemas.GatewayMCPConnectRequest) (*client.Client, *schemas.MCPClientConnectionInfo, error) {
 	if config.StdioConfig == nil {
 		return nil, nil, fmt.Errorf("stdio config is required")
 	}
@@ -1759,7 +1759,7 @@ func (m *MCPManager) createSTDIOConnection(_ context.Context, config *schemas.MC
 
 // createSSEConnection creates a SSE-based MCP client connection without holding locks.
 // Same override semantics as createHTTPConnection.
-func (m *MCPManager) createSSEConnection(ctx context.Context, config *schemas.MCPClientConfig, overrides *schemas.RakshaMCPConnectRequest) (*client.Client, *schemas.MCPClientConnectionInfo, error) {
+func (m *MCPManager) createSSEConnection(ctx context.Context, config *schemas.MCPClientConfig, overrides *schemas.GatewayMCPConnectRequest) (*client.Client, *schemas.MCPClientConnectionInfo, error) {
 	if config.ConnectionString == nil {
 		return nil, nil, fmt.Errorf("SSE connection string is required")
 	}
@@ -1775,7 +1775,7 @@ func (m *MCPManager) createSSEConnection(ctx context.Context, config *schemas.MC
 	if overrides != nil && overrides.Headers != nil {
 		headers = overrides.Headers
 	} else {
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		authHeaders, err := m.credStore.ConnectionHeaders(bfCtx, config)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get HTTP headers: %w", err)
@@ -1877,7 +1877,7 @@ func (m *MCPManager) setupLocalHost() error {
 
 	// Assign server and client atomically while holding the lock
 	m.server = server
-	m.clientMap[RakshaMCPClientKey] = client
+	m.clientMap[GatewayMCPClientKey] = client
 	m.mu.Unlock()
 
 	// Start the server and initialize client connection
@@ -1894,7 +1894,7 @@ func (m *MCPManager) setupLocalHost() error {
 func (m *MCPManager) createLocalMCPServer() (*server.MCPServer, error) {
 	// Create MCP server
 	mcpServer := server.NewMCPServer(
-		"Raksha-MCP-Server",
+		"Gateway-MCP-Server",
 		"1.0.0",
 		server.WithToolCapabilities(true),
 	)
@@ -1913,8 +1913,8 @@ func (m *MCPManager) createLocalMCPClient() (*schemas.MCPClientState, error) {
 	// after the server is ready using NewInProcessClient
 	return &schemas.MCPClientState{
 		ExecutionConfig: &schemas.MCPClientConfig{
-			ID:             RakshaMCPClientKey,
-			Name:           RakshaMCPClientKey, // Use same value as ID for consistent prefixing
+			ID:             GatewayMCPClientKey,
+			Name:           GatewayMCPClientKey, // Use same value as ID for consistent prefixing
 			ToolsToExecute: []string{"*"},      // Allow all tools for internal client
 		},
 		ToolMap:         make(map[string]schemas.ChatTool),
@@ -1949,9 +1949,9 @@ func (m *MCPManager) startLocalMCPServer() error {
 	}
 
 	// Update the client connection
-	clientEntry, ok := m.clientMap[RakshaMCPClientKey]
+	clientEntry, ok := m.clientMap[GatewayMCPClientKey]
 	if !ok {
-		return fmt.Errorf("raksha client not found")
+		return fmt.Errorf("gateway client not found")
 	}
 	clientEntry.Conn = inProcessClient
 
@@ -1965,8 +1965,8 @@ func (m *MCPManager) startLocalMCPServer() error {
 			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
 			Capabilities:    mcp.ClientCapabilities{},
 			ClientInfo: mcp.Implementation{
-				Name:    RakshaMCPClientName,
-				Version: RakshaMCPVersion,
+				Name:    GatewayMCPClientName,
+				Version: GatewayMCPVersion,
 			},
 		},
 	}

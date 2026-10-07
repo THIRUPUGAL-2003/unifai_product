@@ -1,4 +1,4 @@
-// Package handlers provides HTTP request handlers for the Raksha HTTP transport.
+// Package handlers provides HTTP request handlers for the Gateway HTTP transport.
 // This file contains common utility functions used across all handlers.
 package handlers
 
@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -102,34 +102,34 @@ func SendJSONWithStatus(ctx *fasthttp.RequestCtx, data interface{}, statusCode i
 	}
 }
 
-// SendError sends a RakshaError response
+// SendError sends a GatewayError response
 func SendError(ctx *fasthttp.RequestCtx, statusCode int, message string) {
-	rakshaErr := &schemas.RakshaError{
-		IsRakshaError: false,
+	gatewayErr := &schemas.GatewayError{
+		IsGatewayError: false,
 		StatusCode:    &statusCode,
 		Error: &schemas.ErrorField{
 			Message: message,
 		},
 	}
-	SendRakshaError(ctx, rakshaErr)
+	SendGatewayError(ctx, gatewayErr)
 }
 
-// SendRakshaError sends a RakshaError response
-func SendRakshaError(ctx *fasthttp.RequestCtx, rakshaErr *schemas.RakshaError) {
-	rakshaErr = lib.SanitizeRakshaErrorForClient(rakshaErr)
-	if rakshaErr == nil {
+// SendGatewayError sends a GatewayError response
+func SendGatewayError(ctx *fasthttp.RequestCtx, gatewayErr *schemas.GatewayError) {
+	gatewayErr = lib.SanitizeGatewayErrorForClient(gatewayErr)
+	if gatewayErr == nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, lib.ClientSafeInternalErrorMessage)
 		return
 	}
 
-	if rakshaErr.StatusCode != nil {
-		ctx.SetStatusCode(*rakshaErr.StatusCode)
-	} else if !rakshaErr.IsRakshaError {
+	if gatewayErr.StatusCode != nil {
+		ctx.SetStatusCode(*gatewayErr.StatusCode)
+	} else if !gatewayErr.IsGatewayError {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 	} else {
-		if rakshaErr.Error != nil &&
-			(rakshaErr.Error.Message == raksha.ProviderAutoResolveErrorMessage ||
-				rakshaErr.Error.Message == raksha.ModelAutoResolveErrorMessage) {
+		if gatewayErr.Error != nil &&
+			(gatewayErr.Error.Message == gateway.ProviderAutoResolveErrorMessage ||
+				gatewayErr.Error.Message == gateway.ModelAutoResolveErrorMessage) {
 			ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		} else {
 			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
@@ -137,7 +137,7 @@ func SendRakshaError(ctx *fasthttp.RequestCtx, rakshaErr *schemas.RakshaError) {
 	}
 
 	ctx.SetContentType("application/json")
-	if encodeErr := json.NewEncoder(ctx).Encode(rakshaErr); encodeErr != nil {
+	if encodeErr := json.NewEncoder(ctx).Encode(gatewayErr); encodeErr != nil {
 		logger.Warn(fmt.Sprintf("Failed to encode error response: %v", encodeErr))
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString(fmt.Sprintf("Failed to encode error response: %v", encodeErr))
@@ -147,21 +147,21 @@ func SendRakshaError(ctx *fasthttp.RequestCtx, rakshaErr *schemas.RakshaError) {
 // streamLargeResponseIfActive checks if large response mode was activated by the provider
 // and streams the response directly to the client. Returns true if the response was handled
 // (caller should return), false if normal response handling should continue.
-func streamLargeResponseIfActive(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext) bool {
-	isLargeResponse, ok := rakshaCtx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool)
+func streamLargeResponseIfActive(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext) bool {
+	isLargeResponse, ok := gatewayCtx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool)
 	if !ok || !isLargeResponse {
 		return false
 	}
-	if !lib.StreamLargeResponseBody(ctx, rakshaCtx) {
+	if !lib.StreamLargeResponseBody(ctx, gatewayCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Large response reader not available")
 	}
 	return true
 }
 
 // SendSSEError sends an error in Server-Sent Events format
-func SendSSEError(ctx *fasthttp.RequestCtx, rakshaErr *schemas.RakshaError) {
+func SendSSEError(ctx *fasthttp.RequestCtx, gatewayErr *schemas.GatewayError) {
 	errorJSON, err := json.Marshal(map[string]interface{}{
-		"error": rakshaErr,
+		"error": gatewayErr,
 	})
 	if err != nil {
 		logger.Error("failed to marshal error for SSE: %v", err)

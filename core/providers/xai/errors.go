@@ -1,8 +1,8 @@
 package xai
 
 import (
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -15,25 +15,25 @@ type XAIErrorResponse struct {
 // ParseXAIError parses xAI-specific error responses.
 // xAI returns errors in format: {"code": "...", "error": "..."}
 // Unlike OpenAI which uses: {"error": {"message": "...", "type": "...", "code": "..."}}
-func ParseXAIError(resp *fasthttp.Response) *schemas.RakshaError {
+func ParseXAIError(resp *fasthttp.Response) *schemas.GatewayError {
 	// Try to parse xAI error format
 	var xaiErr XAIErrorResponse
-	rakshaErr := providerUtils.HandleProviderAPIError(resp, &xaiErr)
+	gatewayErr := providerUtils.HandleProviderAPIError(resp, &xaiErr)
 
-	if rakshaErr == nil {
+	if gatewayErr == nil {
 		return nil
 	}
 
 	// If we successfully parsed xAI format, extract the fields
 	if xaiErr.Error != "" {
-		if rakshaErr.Error == nil {
-			rakshaErr.Error = &schemas.ErrorField{}
+		if gatewayErr.Error == nil {
+			gatewayErr.Error = &schemas.ErrorField{}
 		}
-		rakshaErr.Error.Message = xaiErr.Error
+		gatewayErr.Error.Message = xaiErr.Error
 		if xaiErr.Code != "" {
-			rakshaErr.Error.Code = schemas.Ptr(xaiErr.Code)
+			gatewayErr.Error.Code = schemas.Ptr(xaiErr.Code)
 		}
 	}
 
-	return rakshaErr
+	return gatewayErr
 }

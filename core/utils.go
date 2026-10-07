@@ -1,4 +1,4 @@
-package raksha
+package gateway
 
 import (
 	"bytes"
@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/core/mcp"
-	"github.com/raksha/raksha/core/network"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/mcp"
+	"github.com/gateway/gateway/core/network"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 const (
@@ -197,16 +197,16 @@ func calculateBackoff(attempt int, config *schemas.ProviderConfig) time.Duration
 }
 
 // validateRequestAfterPreRequestHooks validates the provider and model fields of the given request.
-func validateRequestAfterPreRequestHooks(req *schemas.RakshaRequest) *schemas.RakshaError {
+func validateRequestAfterPreRequestHooks(req *schemas.GatewayRequest) *schemas.GatewayError {
 	if req == nil {
-		return newRakshaErrorFromMsg("raksha request cannot be nil")
+		return newGatewayErrorFromMsg("gateway request cannot be nil")
 	}
 	provider, model, _ := req.GetRequestFields()
 	if provider == "" {
-		return newRakshaErrorFromMsg(ProviderAutoResolveErrorMessage)
+		return newGatewayErrorFromMsg(ProviderAutoResolveErrorMessage)
 	}
 	if isModelRequired(req.RequestType) && model == "" {
-		return newRakshaErrorFromMsg(ModelAutoResolveErrorMessage)
+		return newGatewayErrorFromMsg(ModelAutoResolveErrorMessage)
 	}
 	return nil
 }
@@ -281,13 +281,13 @@ func IsRateLimitErrorMessage(errorMessage string) bool {
 }
 
 // routingErrorSummary produces a sanitized, audit-safe one-line summary of a
-// RakshaError for emission to the per-request routing engine log trail.
+// GatewayError for emission to the per-request routing engine log trail.
 // It deliberately omits the upstream provider message — which can echo back
 // API keys, tokens, or user input — and surfaces only the error type and HTTP
 // status code. Used by the core fallback orchestrator so the routing log
 // records *why* a fallback was triggered without leaking secrets into log
 // storage or the UI.
-func routingErrorSummary(e *schemas.RakshaError) string {
+func routingErrorSummary(e *schemas.GatewayError) string {
 	if e == nil {
 		return "unknown error"
 	}
@@ -306,11 +306,11 @@ func routingErrorSummary(e *schemas.RakshaError) string {
 	return strings.Join(parts, " ")
 }
 
-// newRakshaError wraps a standard error into a RakshaError with IsRakshaError set to false.
-// This helper function reduces code duplication when handling non-Raksha errors.
-func newRakshaError(err error) *schemas.RakshaError {
-	return &schemas.RakshaError{
-		IsRakshaError: false,
+// newGatewayError wraps a standard error into a GatewayError with IsGatewayError set to false.
+// This helper function reduces code duplication when handling non-Gateway errors.
+func newGatewayError(err error) *schemas.GatewayError {
+	return &schemas.GatewayError{
+		IsGatewayError: false,
 		Error: &schemas.ErrorField{
 			Message: err.Error(),
 			Error:   err,
@@ -318,20 +318,20 @@ func newRakshaError(err error) *schemas.RakshaError {
 	}
 }
 
-// newRakshaErrorFromMsg creates a RakshaError with a custom message.
+// newGatewayErrorFromMsg creates a GatewayError with a custom message.
 // This helper function is used for static error messages.
-func newRakshaErrorFromMsg(message string) *schemas.RakshaError {
-	return &schemas.RakshaError{
-		IsRakshaError: false,
+func newGatewayErrorFromMsg(message string) *schemas.GatewayError {
+	return &schemas.GatewayError{
+		IsGatewayError: false,
 		Error: &schemas.ErrorField{
 			Message: message,
 		},
 	}
 }
 
-// newRakshaCtxDoneError creates a RakshaError from a cancelled/expired context.
+// newGatewayCtxDoneError creates a GatewayError from a cancelled/expired context.
 // It distinguishes DeadlineExceeded (504 RequestTimedOut) from Canceled (499 RequestCancelled).
-func newRakshaCtxDoneError(ctx *schemas.RakshaContext, stage string) *schemas.RakshaError {
+func newGatewayCtxDoneError(ctx *schemas.GatewayContext, stage string) *schemas.GatewayError {
 	var statusCode int
 	var errorType string
 	var message string
@@ -346,8 +346,8 @@ func newRakshaCtxDoneError(ctx *schemas.RakshaContext, stage string) *schemas.Ra
 		message = fmt.Sprintf("request cancelled %s: %v", stage, ctx.Err())
 	}
 
-	return &schemas.RakshaError{
-		IsRakshaError: true,
+	return &schemas.GatewayError{
+		IsGatewayError: true,
 		StatusCode:     &statusCode,
 		AllowFallbacks: new(false),
 		Error: &schemas.ErrorField{
@@ -358,19 +358,19 @@ func newRakshaCtxDoneError(ctx *schemas.RakshaContext, stage string) *schemas.Ra
 	}
 }
 
-// newRakshaMessageChan creates a channel that sends a raksha response.
-// It is used to send a raksha response to the client.
-func newRakshaMessageChan(message *schemas.RakshaResponse) chan *schemas.RakshaStreamChunk {
-	ch := make(chan *schemas.RakshaStreamChunk)
+// newGatewayMessageChan creates a channel that sends a gateway response.
+// It is used to send a gateway response to the client.
+func newGatewayMessageChan(message *schemas.GatewayResponse) chan *schemas.GatewayStreamChunk {
+	ch := make(chan *schemas.GatewayStreamChunk)
 
 	go func() {
 		defer close(ch)
-		ch <- &schemas.RakshaStreamChunk{
-			RakshaTextCompletionResponse:      message.TextCompletionResponse,
-			RakshaChatResponse:                message.ChatResponse,
-			RakshaResponsesStreamResponse:     message.ResponsesStreamResponse,
-			RakshaSpeechStreamResponse:        message.SpeechStreamResponse,
-			RakshaTranscriptionStreamResponse: message.TranscriptionStreamResponse,
+		ch <- &schemas.GatewayStreamChunk{
+			GatewayTextCompletionResponse:      message.TextCompletionResponse,
+			GatewayChatResponse:                message.ChatResponse,
+			GatewayResponsesStreamResponse:     message.ResponsesStreamResponse,
+			GatewaySpeechStreamResponse:        message.SpeechStreamResponse,
+			GatewayTranscriptionStreamResponse: message.TranscriptionStreamResponse,
 		}
 	}()
 
@@ -378,15 +378,15 @@ func newRakshaMessageChan(message *schemas.RakshaResponse) chan *schemas.RakshaS
 }
 
 // clearCtxForFallback clears the ctx values which are not applicable for fallback requests.
-func clearCtxForFallback(ctx *schemas.RakshaContext) {
-	ctx.ClearValue(schemas.RakshaContextKeyAPIKeyID)
-	ctx.ClearValue(schemas.RakshaContextKeyAPIKeyName)
-	ctx.ClearValue(schemas.RakshaContextKeyGovernanceIncludeOnlyKeys)
-	ctx.ClearValue(schemas.RakshaContextKeyChangeRequestType)
-	ctx.ClearValue(schemas.RakshaContextKeyAttemptTrail)
-	ctx.ClearValue(schemas.RakshaContextKeyStreamEndIndicator)
-	ctx.ClearValue(schemas.RakshaContextKeyConnectionClosed)
-	ctx.ClearValue(schemas.RakshaContextKeySupportsAssistantPrefill)
+func clearCtxForFallback(ctx *schemas.GatewayContext) {
+	ctx.ClearValue(schemas.GatewayContextKeyAPIKeyID)
+	ctx.ClearValue(schemas.GatewayContextKeyAPIKeyName)
+	ctx.ClearValue(schemas.GatewayContextKeyGovernanceIncludeOnlyKeys)
+	ctx.ClearValue(schemas.GatewayContextKeyChangeRequestType)
+	ctx.ClearValue(schemas.GatewayContextKeyAttemptTrail)
+	ctx.ClearValue(schemas.GatewayContextKeyStreamEndIndicator)
+	ctx.ClearValue(schemas.GatewayContextKeyConnectionClosed)
+	ctx.ClearValue(schemas.GatewayContextKeySupportsAssistantPrefill)
 }
 
 var supportedBaseProvidersSet = func() map[schemas.ModelProvider]struct{} {
@@ -423,12 +423,12 @@ func IsStreamRequestType(reqType schemas.RequestType) bool {
 	return reqType == schemas.TextCompletionStreamRequest || reqType == schemas.ChatCompletionStreamRequest || reqType == schemas.ResponsesStreamRequest || reqType == schemas.SpeechStreamRequest || reqType == schemas.TranscriptionStreamRequest || reqType == schemas.ImageGenerationStreamRequest || reqType == schemas.ImageEditStreamRequest || reqType == schemas.PassthroughStreamRequest || reqType == schemas.WebSocketResponsesRequest || reqType == schemas.RealtimeRequest
 }
 
-func GetTracerFromContext(ctx *schemas.RakshaContext) (schemas.Tracer, string, error) {
-	tracer, ok := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
+func GetTracerFromContext(ctx *schemas.GatewayContext) (schemas.Tracer, string, error) {
+	tracer, ok := ctx.Value(schemas.GatewayContextKeyTracer).(schemas.Tracer)
 	if !ok || tracer == nil {
 		return nil, "", fmt.Errorf("tracer not found in context")
 	}
-	traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
+	traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string)
 	if !ok || traceID == "" {
 		return nil, "", fmt.Errorf("traceID not found in context")
 	}
@@ -488,12 +488,12 @@ func isResponsesLifecycleRequestType(reqType schemas.RequestType) bool {
 }
 
 // IsFinalChunk returns true if the given context is a final chunk.
-func IsFinalChunk(ctx *schemas.RakshaContext) bool {
+func IsFinalChunk(ctx *schemas.GatewayContext) bool {
 	if ctx == nil {
 		return false
 	}
 
-	isStreamEndIndicator := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator)
+	isStreamEndIndicator := ctx.Value(schemas.GatewayContextKeyStreamEndIndicator)
 	if isStreamEndIndicator == nil {
 		return false
 	}
@@ -506,7 +506,7 @@ func IsFinalChunk(ctx *schemas.RakshaContext) bool {
 }
 
 // GetResponseFields extracts the request type, provider, original model, and resolved model from the result or error.
-func GetResponseFields(result *schemas.RakshaResponse, err *schemas.RakshaError) (requestType schemas.RequestType, provider schemas.ModelProvider, originalModel string, resolvedModel string) {
+func GetResponseFields(result *schemas.GatewayResponse, err *schemas.GatewayError) (requestType schemas.RequestType, provider schemas.ModelProvider, originalModel string, resolvedModel string) {
 	if result != nil {
 		extraFields := result.GetExtraFields()
 		return extraFields.RequestType, extraFields.Provider, extraFields.OriginalModelRequested, extraFields.ResolvedModelUsed
@@ -519,7 +519,7 @@ func GetResponseFields(result *schemas.RakshaResponse, err *schemas.RakshaError)
 
 // GetResponseRoutingInfo extracts the RoutingInfo recorded on a completed
 // attempt — from the accumulated response, or the error when the attempt failed.
-func GetResponseRoutingInfo(result *schemas.RakshaResponse, err *schemas.RakshaError) schemas.RoutingInfo {
+func GetResponseRoutingInfo(result *schemas.GatewayResponse, err *schemas.GatewayError) schemas.RoutingInfo {
 	if result != nil {
 		return result.GetExtraFields().RoutingInfo
 	}
@@ -544,7 +544,7 @@ func MarshalUnsafe(v any) string {
 }
 
 // // [Deprecated] use err.GetErrorString() instead. Will be removed in a future release.
-func GetErrorMessage(err *schemas.RakshaError) string {
+func GetErrorMessage(err *schemas.GatewayError) string {
 	return err.GetErrorString()
 }
 
@@ -678,25 +678,25 @@ func isPromptOptionalImageEditType(t *string) bool {
 // responses produced by a type-converted request are converted back to the
 // caller's original type before the post-hook runs.
 func wrapConvertedStreamPostHookRunner(postHookRunner schemas.PostHookRunner, targetType schemas.RequestType) schemas.PostHookRunner {
-	return func(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError) {
+	return func(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError) {
 		if result != nil {
 			switch targetType {
 			case schemas.ChatCompletionRequest:
 				// text→chat: convert chat stream chunk back to text completion
 				if result.ChatResponse != nil {
-					if converted := result.ChatResponse.ToRakshaTextCompletionResponse(); converted != nil {
-						result = &schemas.RakshaResponse{TextCompletionResponse: converted}
+					if converted := result.ChatResponse.ToGatewayTextCompletionResponse(); converted != nil {
+						result = &schemas.GatewayResponse{TextCompletionResponse: converted}
 					}
 				}
 			case schemas.ResponsesRequest:
 				// chat→responses: convert responses stream chunk back to chat
 				if result.ResponsesStreamResponse != nil {
-					if converted := result.ResponsesStreamResponse.ToRakshaChatResponse(); converted != nil {
-						result = &schemas.RakshaResponse{ChatResponse: converted}
+					if converted := result.ResponsesStreamResponse.ToGatewayChatResponse(); converted != nil {
+						result = &schemas.GatewayResponse{ChatResponse: converted}
 					}
 				}
 			}
 		}
-		return postHookRunner(ctx, result, rakshaErr)
+		return postHookRunner(ctx, result, gatewayErr)
 	}
 }

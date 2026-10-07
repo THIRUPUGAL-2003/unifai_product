@@ -2,10 +2,10 @@ package schemas
 
 import "encoding/json"
 
-// RealtimeEventType represents the type of a Raksha unified Realtime event.
+// RealtimeEventType represents the type of a Gateway unified Realtime event.
 type RealtimeEventType string
 
-// Client-to-server event types (sent by the client through Raksha)
+// Client-to-server event types (sent by the client through Gateway)
 const (
 	RTEventSessionUpdate          RealtimeEventType = "session.update"
 	RTEventConversationItemCreate RealtimeEventType = "conversation.item.create"
@@ -65,8 +65,8 @@ func IsRealtimeConversationItemEventType(eventType RealtimeEventType) bool {
 }
 
 // IsRealtimeUserInputEvent reports whether the event represents a finalized
-// user input item in the canonical Raksha realtime schema.
-func IsRealtimeUserInputEvent(event *RakshaRealtimeEvent) bool {
+// user input item in the canonical Gateway realtime schema.
+func IsRealtimeUserInputEvent(event *GatewayRealtimeEvent) bool {
 	return event != nil &&
 		event.Item != nil &&
 		event.Item.Role == "user" &&
@@ -74,8 +74,8 @@ func IsRealtimeUserInputEvent(event *RakshaRealtimeEvent) bool {
 }
 
 // IsRealtimeToolOutputEvent reports whether the event represents a finalized
-// tool output item in the canonical Raksha realtime schema.
-func IsRealtimeToolOutputEvent(event *RakshaRealtimeEvent) bool {
+// tool output item in the canonical Gateway realtime schema.
+func IsRealtimeToolOutputEvent(event *GatewayRealtimeEvent) bool {
 	return event != nil &&
 		event.Item != nil &&
 		event.Item.Type == "function_call_output" &&
@@ -83,14 +83,14 @@ func IsRealtimeToolOutputEvent(event *RakshaRealtimeEvent) bool {
 }
 
 // IsRealtimeInputTranscriptEvent reports whether the event carries a finalized
-// input-audio transcript in the canonical Raksha realtime schema.
-func IsRealtimeInputTranscriptEvent(event *RakshaRealtimeEvent) bool {
+// input-audio transcript in the canonical Gateway realtime schema.
+func IsRealtimeInputTranscriptEvent(event *GatewayRealtimeEvent) bool {
 	return event != nil && event.Type == RTEventInputAudioTransCompleted
 }
 
-// RakshaRealtimeEvent is the unified Raksha envelope for all Realtime events.
+// GatewayRealtimeEvent is the unified Gateway envelope for all Realtime events.
 // Provider converters translate between this format and the provider-native protocol.
-type RakshaRealtimeEvent struct {
+type GatewayRealtimeEvent struct {
 	Type    RealtimeEventType `json:"type"`
 	EventID string            `json:"event_id,omitempty"`
 
@@ -101,7 +101,7 @@ type RakshaRealtimeEvent struct {
 	Error   *RealtimeError   `json:"error,omitempty"`
 
 	// ExtraParams preserves provider-specific top-level event fields that are not
-	// promoted into the common Raksha schema.
+	// promoted into the common Gateway schema.
 	ExtraParams map[string]json.RawMessage `json:"extra_params,omitempty"`
 
 	// RawData preserves the original provider event for pass-through or debugging.
@@ -181,25 +181,25 @@ type RealtimeSessionRoute struct {
 type RealtimeProvider interface {
 	SupportsRealtimeAPI() bool
 	RealtimeWebSocketURL(key Key, model string) string
-	RealtimeHeaders(ctx *RakshaContext, key Key) (map[string]string, *RakshaError)
+	RealtimeHeaders(ctx *GatewayContext, key Key) (map[string]string, *GatewayError)
 	// SupportsRealtimeWebRTC reports whether the provider supports WebRTC SDP exchange.
 	SupportsRealtimeWebRTC() bool
 	// ExchangeRealtimeWebRTCSDP performs the provider-specific SDP signaling exchange.
 	// The provider owns the HTTP specifics (URL, headers, body format).
 	// session may be nil if the signaling format doesn't include session config.
-	ExchangeRealtimeWebRTCSDP(ctx *RakshaContext, key Key, model string, sdp string, session json.RawMessage) (string, *RakshaError)
-	ToRakshaRealtimeEvent(providerEvent json.RawMessage) (*RakshaRealtimeEvent, error)
-	ToProviderRealtimeEvent(rakshaEvent *RakshaRealtimeEvent) (json.RawMessage, error)
+	ExchangeRealtimeWebRTCSDP(ctx *GatewayContext, key Key, model string, sdp string, session json.RawMessage) (string, *GatewayError)
+	ToGatewayRealtimeEvent(providerEvent json.RawMessage) (*GatewayRealtimeEvent, error)
+	ToProviderRealtimeEvent(gatewayEvent *GatewayRealtimeEvent) (json.RawMessage, error)
 	// ShouldStartRealtimeTurn reports whether the canonical client-side event
 	// should start pre-hooks. Providers without an explicit turn-start signal
 	// return false and rely on finalize-time fallback hooks.
-	ShouldStartRealtimeTurn(event *RakshaRealtimeEvent) bool
+	ShouldStartRealtimeTurn(event *GatewayRealtimeEvent) bool
 	// RealtimeTurnFinalEvent returns the canonical provider event that completes
 	// a turn and should trigger post-hooks.
 	RealtimeTurnFinalEvent() RealtimeEventType
 	RealtimeWebRTCDataChannelLabel() string
 	RealtimeWebSocketSubprotocol() string
-	ShouldForwardRealtimeEvent(event *RakshaRealtimeEvent) bool
+	ShouldForwardRealtimeEvent(event *GatewayRealtimeEvent) bool
 	ShouldAccumulateRealtimeOutput(eventType RealtimeEventType) bool
 }
 
@@ -209,13 +209,13 @@ type RealtimeProvider interface {
 // Takes SDP offer + optional session JSON, same as ExchangeRealtimeWebRTCSDP
 // but targets the provider's legacy/beta endpoint.
 type RealtimeLegacyWebRTCProvider interface {
-	ExchangeLegacyRealtimeWebRTCSDP(ctx *RakshaContext, key Key, sdp string, session json.RawMessage, model string) (string, *RakshaError)
+	ExchangeLegacyRealtimeWebRTCSDP(ctx *GatewayContext, key Key, sdp string, session json.RawMessage, model string) (string, *GatewayError)
 }
 
 // RealtimeUsageExtractor lets providers parse terminal-turn usage/output from
 // their native wire payloads without coupling handlers to a specific protocol.
 type RealtimeUsageExtractor interface {
-	ExtractRealtimeTurnUsage(terminalEventRaw []byte) *RakshaLLMUsage
+	ExtractRealtimeTurnUsage(terminalEventRaw []byte) *GatewayLLMUsage
 	ExtractRealtimeTurnOutput(terminalEventRaw []byte) *ChatMessage
 }
 
@@ -223,12 +223,12 @@ type RealtimeUsageExtractor interface {
 // short-lived client secrets for browser/client-side Realtime connections.
 // Checked via type assertion: provider.(RealtimeSessionProvider).
 type RealtimeSessionProvider interface {
-	CreateRealtimeClientSecret(ctx *RakshaContext, key Key, endpointType RealtimeSessionEndpointType, rawRequest json.RawMessage) (*RakshaPassthroughResponse, *RakshaError)
+	CreateRealtimeClientSecret(ctx *GatewayContext, key Key, endpointType RealtimeSessionEndpointType, rawRequest json.RawMessage) (*GatewayPassthroughResponse, *GatewayError)
 }
 
 // ParseRealtimeEvent decodes a client/provider realtime event while preserving
 // unknown top-level fields in ExtraParams for provider-specific round-tripping.
-func ParseRealtimeEvent(raw []byte) (*RakshaRealtimeEvent, error) {
+func ParseRealtimeEvent(raw []byte) (*GatewayRealtimeEvent, error) {
 	type realtimeEventAlias struct {
 		Type    RealtimeEventType `json:"type"`
 		EventID string            `json:"event_id,omitempty"`
@@ -244,7 +244,7 @@ func ParseRealtimeEvent(raw []byte) (*RakshaRealtimeEvent, error) {
 		return nil, err
 	}
 
-	event := &RakshaRealtimeEvent{
+	event := &GatewayRealtimeEvent{
 		Type:    alias.Type,
 		EventID: alias.EventID,
 		Session: alias.Session,

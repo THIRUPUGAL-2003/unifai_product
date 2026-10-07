@@ -1,5 +1,5 @@
 """
-OS-specific helpers for Raksha Guard (Windows + macOS).
+OS-specific helpers for Gateway Guard (Windows + macOS).
 Shared agent imports this module so Windows and Mac stay one product.
 """
 
@@ -31,17 +31,17 @@ def data_dir() -> str:
         base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
     else:
         base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
-    path = os.path.join(base, "Raksha", "Guard")
+    path = os.path.join(base, "Gateway", "Guard")
     os.makedirs(path, exist_ok=True)
     return path
 
 
 def log_hint_path() -> str:
     if IS_WIN:
-        return r"%LOCALAPPDATA%\Raksha\Guard"
+        return r"%LOCALAPPDATA%\Gateway\Guard"
     if IS_MAC:
-        return "~/Library/Application Support/Raksha/Guard"
-    return "~/.local/share/Raksha/Guard"
+        return "~/Library/Application Support/Gateway/Guard"
+    return "~/.local/share/Gateway/Guard"
 
 
 def _guid_from_transport(raw: str) -> str:
@@ -171,7 +171,7 @@ def _mac_iface_to_service_name(iface: str) -> str:
     return ""
 
 
-def ensure_single_instance(mutex_name: str = "Raksha_Guard_Agent") -> bool:
+def ensure_single_instance(mutex_name: str = "Gateway_Guard_Agent") -> bool:
     if IS_WIN:
         kernel32 = ctypes.windll.kernel32  # type: ignore[union-attr]
         handle = kernel32.CreateMutexW(None, False, f"Global\\{mutex_name}")
@@ -199,7 +199,7 @@ def show_message(title: str, text: str, error: bool = False) -> None:
             ctypes.windll.user32.MessageBoxW(0, text, title, flags)  # type: ignore[union-attr]
             return
         except Exception as e:
-            print(f"[Raksha Guard] Message: {title}: {text} ({e})")
+            print(f"[Gateway Guard] Message: {title}: {text} ({e})")
             return
     if IS_MAC:
         icon = "stop" if error else "note"
@@ -210,9 +210,9 @@ def show_message(title: str, text: str, error: bool = False) -> None:
             subprocess.run(["osascript", "-e", script], check=False, timeout=120)
             return
         except Exception as e:
-            print(f"[Raksha Guard] Message: {title}: {text} ({e})")
+            print(f"[Gateway Guard] Message: {title}: {text} ({e})")
             return
-    print(f"[Raksha Guard] {title}: {text}")
+    print(f"[Gateway Guard] {title}: {text}")
 
 
 def prompt_uninstall_key() -> str | None:
@@ -222,7 +222,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'Raksha Guard Uninstall'
+$form.Text = 'Gateway Guard Uninstall'
 $form.Size = New-Object System.Drawing.Size(460,185)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
@@ -234,7 +234,7 @@ $form.ShowInTaskbar = $true
 $label = New-Object System.Windows.Forms.Label
 $label.Location = New-Object System.Drawing.Point(20,16)
 $label.Size = New-Object System.Drawing.Size(410,32)
-$label.Text = 'Enter company or device uninstall key to remove Raksha Guard:'
+$label.Text = 'Enter company or device uninstall key to remove Gateway Guard:'
 $label.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 $form.Controls.Add($label)
 
@@ -279,13 +279,13 @@ if ($result -ne [System.Windows.Forms.DialogResult]::OK) { exit 3 }
                 return None
             return (completed.stdout or "").strip()
         except Exception as e:
-            print(f"[Raksha Guard ERROR] Uninstall prompt failed: {e}")
+            print(f"[Gateway Guard ERROR] Uninstall prompt failed: {e}")
             return None
     if IS_MAC:
         script = (
             'try\n'
-            'set r to display dialog "Enter company uninstall key provided by your administrator to uninstall Raksha Guard:" '
-            'default answer "" with title "Raksha Guard Uninstall" '
+            'set r to display dialog "Enter company uninstall key provided by your administrator to uninstall Gateway Guard:" '
+            'default answer "" with title "Gateway Guard Uninstall" '
             'buttons {"Cancel", "Uninstall"} default button "Uninstall"\n'
             'return text returned of r\n'
             'on error\n'
@@ -305,7 +305,7 @@ if ($result -ne [System.Windows.Forms.DialogResult]::OK) { exit 3 }
                 return None
             return out
         except Exception as e:
-            print(f"[Raksha Guard ERROR] Uninstall prompt failed: {e}")
+            print(f"[Gateway Guard ERROR] Uninstall prompt failed: {e}")
             return None
     return ""
 
@@ -397,7 +397,7 @@ def install_ca_certificate(status_path: str) -> bool:
         mitm_dir.mkdir(parents=True, exist_ok=True)
         CertStore.from_store(path=mitm_dir, basename="mitmproxy", key_size=2048)
     except Exception as e:
-        print(f"[Raksha Guard WARNING] Could not ensure mitm certs: {e}")
+        print(f"[Gateway Guard WARNING] Could not ensure mitm certs: {e}")
 
     mitm_dir = os.path.expanduser("~/.mitmproxy")
     candidates = [
@@ -408,7 +408,7 @@ def install_ca_certificate(status_path: str) -> bool:
     target_cert = next((p for p in candidates if os.path.exists(p)), "")
     if not target_cert:
         msg = "CA cert file not found yet — HTTPS intercept will fail until cert exists."
-        print(f"[Raksha Guard ERROR] {msg}")
+        print(f"[Gateway Guard ERROR] {msg}")
         try:
             with open(status_path, "w", encoding="utf-8") as f:
                 f.write("FAILED: " + msg + "\n")
@@ -418,7 +418,7 @@ def install_ca_certificate(status_path: str) -> bool:
 
     try:
         if IS_WIN:
-            print("[Raksha Guard] Installing mitmproxy Root CA into Windows Trusted Root Store...")
+            print("[Gateway Guard] Installing mitmproxy Root CA into Windows Trusted Root Store...")
             completed = subprocess.run(
                 ["certutil.exe", "-user", "-addstore", "Root", target_cert],
                 stdout=subprocess.PIPE,
@@ -429,12 +429,12 @@ def install_ca_certificate(status_path: str) -> bool:
             )
             out = ((completed.stdout or "") + (completed.stderr or "")).strip()
             if completed.returncode != 0 and "already in store" not in out.lower():
-                print(f"[Raksha Guard ERROR] CA install failed (code={completed.returncode}): {out}")
+                print(f"[Gateway Guard ERROR] CA install failed (code={completed.returncode}): {out}")
                 with open(status_path, "w", encoding="utf-8") as f:
                     f.write(f"FAILED code={completed.returncode}\n{out}\n")
                 return False
         elif IS_MAC:
-            print("[Raksha Guard] Installing mitmproxy CA into macOS login keychain...")
+            print("[Gateway Guard] Installing mitmproxy CA into macOS login keychain...")
             keychain = os.path.expanduser("~/Library/Keychains/login.keychain-db")
             if not os.path.exists(keychain):
                 keychain = os.path.expanduser("~/Library/Keychains/login.keychain")
@@ -470,8 +470,8 @@ def install_ca_certificate(status_path: str) -> bool:
             if code != 0 and "already" not in out.lower() and "exists" not in out.lower():
                 code2, out2 = _add_trusted(True)
                 if code2 != 0 and "already" not in out2.lower() and "exists" not in out2.lower():
-                    print(f"[Raksha Guard ERROR] CA install failed: {out or out2}")
-                    print("[Raksha Guard ERROR] Approve the cert in Keychain Access → Trust → Always Trust (SSL).")
+                    print(f"[Gateway Guard ERROR] CA install failed: {out or out2}")
+                    print("[Gateway Guard ERROR] Approve the cert in Keychain Access → Trust → Always Trust (SSL).")
                     with open(status_path, "w", encoding="utf-8") as f:
                         f.write(f"FAILED\n{out}\n{out2}\n")
                     return False
@@ -486,24 +486,24 @@ def install_ca_certificate(status_path: str) -> bool:
                 check=False,
             )
             if verify.returncode != 0:
-                print("[Raksha Guard WARNING] CA added but SSL trust not verified yet — open Keychain Access and set Always Trust.")
+                print("[Gateway Guard WARNING] CA added but SSL trust not verified yet — open Keychain Access and set Always Trust.")
                 with open(status_path, "w", encoding="utf-8") as f:
                     f.write("PARTIAL: installed but SSL trust not verified\n")
                 # Still return True so Guard starts; health will keep warning until verify OK.
                 # Caller uses ca_trusted() which will stay False until verify succeeds.
                 return False
         else:
-            print("[Raksha Guard WARNING] Auto CA install not supported on this OS — trust mitmproxy CA manually.")
+            print("[Gateway Guard WARNING] Auto CA install not supported on this OS — trust mitmproxy CA manually.")
             with open(status_path, "w", encoding="utf-8") as f:
                 f.write("MANUAL\n")
             return False
 
-        print("[Raksha Guard] Certificate trust step completed.")
+        print("[Gateway Guard] Certificate trust step completed.")
         with open(status_path, "w", encoding="utf-8") as f:
             f.write("OK\n")
         return True
     except Exception as e:
-        print(f"[Raksha Guard ERROR] Could not auto-install CA Cert: {e}")
+        print(f"[Gateway Guard ERROR] Could not auto-install CA Cert: {e}")
         try:
             with open(status_path, "w", encoding="utf-8") as f:
                 f.write(f"FAILED: {e}\n")
@@ -544,7 +544,7 @@ def _mac_network_services() -> list[str]:
             services.append(s)
         return services
     except Exception as e:
-        print(f"[Raksha Guard WARNING] list network services: {e}")
+        print(f"[Gateway Guard WARNING] list network services: {e}")
         return ["Wi-Fi", "Ethernet"]
 
 
@@ -554,7 +554,7 @@ def set_system_proxy_pac(enable: bool, pac_url: str, silent: bool = False) -> bo
         return _set_windows_proxy_pac(enable, pac_url, silent)
     if IS_MAC:
         return _set_mac_proxy_pac(enable, pac_url, silent)
-    print("[Raksha Guard WARNING] System PAC not implemented for this OS.")
+    print("[Gateway Guard WARNING] System PAC not implemented for this OS.")
     return False
 
 
@@ -571,7 +571,7 @@ def _set_windows_proxy_pac(enable: bool, pac_url: str, silent: bool) -> bool:
                 pass
             winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, "localhost;127.0.0.1;<local>")  # type: ignore
             if not silent:
-                print(f"[Raksha Guard] Windows PAC ENABLED -> {pac_url}")
+                print(f"[Gateway Guard] Windows PAC ENABLED -> {pac_url}")
         else:
             winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)  # type: ignore
             try:
@@ -579,17 +579,17 @@ def _set_windows_proxy_pac(enable: bool, pac_url: str, silent: bool) -> bool:
             except FileNotFoundError:
                 pass
             if not silent:
-                print("[Raksha Guard] Windows Proxy / PAC DISABLED.")
+                print("[Gateway Guard] Windows Proxy / PAC DISABLED.")
         winreg.CloseKey(key)  # type: ignore
         try:
             ctypes.windll.Wininet.InternetSetOptionW(0, 39, 0, 0)  # type: ignore
             ctypes.windll.Wininet.InternetSetOptionW(0, 37, 0, 0)  # type: ignore
         except Exception as _ie_err:
             # Non-critical: browsers re-read registry on next navigation anyway.
-            print(f"[Raksha Guard DEBUG] InternetSetOptionW notify skipped: {_ie_err}")
+            print(f"[Gateway Guard DEBUG] InternetSetOptionW notify skipped: {_ie_err}")
         return True
     except Exception as e:
-        print(f"[Raksha Guard ERROR] Failed to update Windows Proxy settings: {e}")
+        print(f"[Gateway Guard ERROR] Failed to update Windows Proxy settings: {e}")
         return False
 
 
@@ -616,11 +616,11 @@ def _set_mac_proxy_pac(enable: bool, pac_url: str, silent: bool) -> bool:
                 )
                 if set_url.returncode != 0:
                     err = ((set_url.stderr or "") + (set_url.stdout or "")).strip()
-                    print(f"[Raksha Guard WARNING] setautoproxyurl '{service}' failed: {err or set_url.returncode}")
+                    print(f"[Gateway Guard WARNING] setautoproxyurl '{service}' failed: {err or set_url.returncode}")
                     continue
                 if set_state.returncode != 0:
                     err = ((set_state.stderr or "") + (set_state.stdout or "")).strip()
-                    print(f"[Raksha Guard WARNING] setautoproxystate '{service}' failed: {err or set_state.returncode}")
+                    print(f"[Gateway Guard WARNING] setautoproxystate '{service}' failed: {err or set_state.returncode}")
                     continue
                 # Confirm URL stuck on the interface (false OK previously ignored setautoproxyurl failures).
                 got = subprocess.run(
@@ -640,7 +640,7 @@ def _set_mac_proxy_pac(enable: bool, pac_url: str, silent: bool) -> bool:
 
                         pac_port_str = str(_p)
                     if pac_url not in got_out and f":{pac_port_str}" not in got_out and pac_port_str not in got_out:
-                        print(f"[Raksha Guard WARNING] PAC URL not confirmed on '{service}': {got_out[:200]}")
+                        print(f"[Gateway Guard WARNING] PAC URL not confirmed on '{service}': {got_out[:200]}")
                         continue
                 ok_any = True
             else:
@@ -655,11 +655,11 @@ def _set_mac_proxy_pac(enable: bool, pac_url: str, silent: bool) -> bool:
                 if completed.returncode == 0:
                     ok_any = True
         except Exception as e:
-            print(f"[Raksha Guard WARNING] PAC on '{service}': {e}")
+            print(f"[Gateway Guard WARNING] PAC on '{service}': {e}")
     if enable and not silent:
-        print(f"[Raksha Guard] macOS auto-proxy PAC {'ENABLED' if ok_any else 'FAILED'} -> {pac_url}")
+        print(f"[Gateway Guard] macOS auto-proxy PAC {'ENABLED' if ok_any else 'FAILED'} -> {pac_url}")
     elif not enable and not silent:
-        print("[Raksha Guard] macOS auto-proxy PAC DISABLED.")
+        print("[Gateway Guard] macOS auto-proxy PAC DISABLED.")
     return ok_any
 
 
@@ -728,16 +728,16 @@ def register_autostart(exe_path: str) -> None:
                 0,
                 winreg.KEY_SET_VALUE,  # type: ignore
             )
-            winreg.SetValueEx(key, "Raksha_Guard", 0, winreg.REG_SZ, f'"{exe_path}"')  # type: ignore
+            winreg.SetValueEx(key, "Gateway_Guard", 0, winreg.REG_SZ, f'"{exe_path}"')  # type: ignore
             winreg.CloseKey(key)  # type: ignore
-            print("[Raksha Guard] Autostart registered (Windows Run key).")
+            print("[Gateway Guard] Autostart registered (Windows Run key).")
         except Exception as e:
-            print(f"[Raksha Guard WARNING] Autostart register failed: {e}")
+            print(f"[Gateway Guard WARNING] Autostart register failed: {e}")
         return
     if IS_MAC:
         agents = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents")
         os.makedirs(agents, exist_ok=True)
-        plist_path = os.path.join(agents, "com.raksha.guard.plist")
+        plist_path = os.path.join(agents, "com.gateway.guard.plist")
         # Prefer .app Contents/MacOS binary when frozen as app bundle
         program = exe_path
 
@@ -746,7 +746,7 @@ def register_autostart(exe_path: str) -> None:
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.raksha.guard</string>
+  <string>com.gateway.guard</string>
   <key>ProgramArguments</key>
   <array>
     <string>{program}</string>
@@ -773,9 +773,9 @@ def register_autostart(exe_path: str) -> None:
             # Write plist only — do not launchctl load while this process is alive
             # (would spawn a second copy). KeepAlive applies on next login when
             # launchd starts Guard and restarts it after crash.
-            print(f"[Raksha Guard] Autostart registered (LaunchAgent KeepAlive on next login): {plist_path}")
+            print(f"[Gateway Guard] Autostart registered (LaunchAgent KeepAlive on next login): {plist_path}")
         except Exception as e:
-            print(f"[Raksha Guard WARNING] LaunchAgent register failed: {e}")
+            print(f"[Gateway Guard WARNING] LaunchAgent register failed: {e}")
 
 
 def clear_autostart() -> None:
@@ -788,48 +788,48 @@ def clear_autostart() -> None:
                 winreg.KEY_SET_VALUE,  # type: ignore
             )
             try:
-                winreg.DeleteValue(key, "Raksha_Guard")  # type: ignore
+                winreg.DeleteValue(key, "Gateway_Guard")  # type: ignore
             except FileNotFoundError:
                 pass
             winreg.CloseKey(key)  # type: ignore
         except Exception as e:
-            print(f"[Raksha Guard WARNING] Could not clear autostart: {e}")
+            print(f"[Gateway Guard WARNING] Could not clear autostart: {e}")
         return
     if IS_MAC:
-        plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", "com.raksha.guard.plist")
+        plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", "com.gateway.guard.plist")
         try:
             subprocess.run(["launchctl", "unload", plist_path], check=False, capture_output=True)
             if os.path.isfile(plist_path):
                 os.remove(plist_path)
-            print("[Raksha Guard] LaunchAgent removed.")
+            print("[Gateway Guard] LaunchAgent removed.")
         except Exception as e:
-            print(f"[Raksha Guard WARNING] Could not clear LaunchAgent: {e}")
+            print(f"[Gateway Guard WARNING] Could not clear LaunchAgent: {e}")
 
 
 def register_windows_uninstall_entry(exe_path: str) -> None:
-    """Ensure Raksha Guard is registered in Windows Control Panel & Settings (Installed Apps)."""
+    """Ensure Gateway Guard is registered in Windows Control Panel & Settings (Installed Apps)."""
     if not IS_WIN or not exe_path:
         return
     try:
-        from agent_config import AGENT_VERSION, RAKSHA_BACKEND_URL
+        from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL
         sub_key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, sub_key)  # type: ignore
         install_dir = os.path.dirname(os.path.abspath(exe_path))
-        winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "Raksha Guard")  # type: ignore
+        winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "Gateway Guard")  # type: ignore
         winreg.SetValueEx(key, "DisplayVersion", 0, winreg.REG_SZ, AGENT_VERSION)  # type: ignore
-        winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, "Raksha")  # type: ignore
+        winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, "Gateway")  # type: ignore
         winreg.SetValueEx(key, "DisplayIcon", 0, winreg.REG_SZ, exe_path)  # type: ignore
         winreg.SetValueEx(key, "InstallLocation", 0, winreg.REG_SZ, install_dir)  # type: ignore
         winreg.SetValueEx(key, "UninstallString", 0, winreg.REG_SZ, f'"{exe_path}" --uninstall-prompt')  # type: ignore
         winreg.SetValueEx(key, "QuietUninstallString", 0, winreg.REG_SZ, f'"{exe_path}" --uninstall')  # type: ignore
-        winreg.SetValueEx(key, "HelpLink", 0, winreg.REG_SZ, RAKSHA_BACKEND_URL)  # type: ignore
-        winreg.SetValueEx(key, "URLInfoAbout", 0, winreg.REG_SZ, RAKSHA_BACKEND_URL)  # type: ignore
+        winreg.SetValueEx(key, "HelpLink", 0, winreg.REG_SZ, GATEWAY_BACKEND_URL)  # type: ignore
+        winreg.SetValueEx(key, "URLInfoAbout", 0, winreg.REG_SZ, GATEWAY_BACKEND_URL)  # type: ignore
         winreg.SetValueEx(key, "NoModify", 0, winreg.REG_DWORD, 1)  # type: ignore
         winreg.SetValueEx(key, "NoRepair", 0, winreg.REG_DWORD, 1)  # type: ignore
         winreg.CloseKey(key)  # type: ignore
-        print("[Raksha Guard] Windows Control Panel / Installed Apps uninstall entry registered.")
+        print("[Gateway Guard] Windows Control Panel / Installed Apps uninstall entry registered.")
     except Exception as e:
-        print(f"[Raksha Guard WARNING] Could not register uninstall entry: {e}")
+        print(f"[Gateway Guard WARNING] Could not register uninstall entry: {e}")
 
 
 def os_label() -> str:
@@ -847,7 +847,7 @@ def write_chrome_mac_proxy_policy(enable: bool, pac_url: str) -> None:
     try:
         with open(note, "w", encoding="utf-8") as f:
             f.write(
-                "Raksha Guard on macOS uses system Auto Proxy URL (networksetup).\n"
+                "Gateway Guard on macOS uses system Auto Proxy URL (networksetup).\n"
                 "Chrome / Edge / Brave / Firefox typically follow system proxy.\n"
                 "Managed policies also disable QUIC (HTTP/3) where Chrome supports it.\n"
                 "Fully quit & reopen browsers after install.\n"
@@ -873,7 +873,7 @@ def write_chrome_mac_proxy_policy(enable: bool, pac_url: str) -> None:
         os.path.join(app_support, "Chromium", "policies", "managed"),
     ]
     for root in managed_roots:
-        path = os.path.join(root, "raksha_guard.json")
+        path = os.path.join(root, "gateway_guard.json")
         try:
             if enable:
                 os.makedirs(root, exist_ok=True)
@@ -882,4 +882,4 @@ def write_chrome_mac_proxy_policy(enable: bool, pac_url: str) -> None:
             elif os.path.isfile(path):
                 os.remove(path)
         except Exception as e:
-            print(f"[Raksha Guard WARNING] Mac Chromium policy write failed ({root}): {e}")
+            print(f"[Gateway Guard WARNING] Mac Chromium policy write failed ({root}): {e}")

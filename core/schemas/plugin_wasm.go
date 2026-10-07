@@ -6,8 +6,8 @@ package schemas
 // It can contain either a response (success short-circuit), a stream (streaming short-circuit), or an error (error short-circuit).
 // Streams are not supported in WASM plugins.
 type LLMPluginShortCircuit struct {
-	Response *RakshaResponse // If set, short-circuit with this response (skips provider call)
-	Error    *RakshaError    // If set, short-circuit with this error (can set AllowFallbacks field)
+	Response *GatewayResponse // If set, short-circuit with this response (skips provider call)
+	Error    *GatewayError    // If set, short-circuit with this error (can set AllowFallbacks field)
 }
 
 // PluginShortCircuit is the legacy name for LLMPluginShortCircuit (v1.3.x compatibility).

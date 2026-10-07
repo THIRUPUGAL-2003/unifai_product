@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -80,7 +80,7 @@ var PROVIDERS_OR_POLICIES = func() []inferenceProvider {
 	return out
 }()
 
-func (provider *HuggingFaceProvider) buildModelHubURL(request *schemas.RakshaListModelsRequest, inferenceProvider inferenceProvider) string {
+func (provider *HuggingFaceProvider) buildModelHubURL(request *schemas.GatewayListModelsRequest, inferenceProvider inferenceProvider) string {
 	values := url.Values{}
 
 	// Add inference_provider parameter to filter models served by Hugging Face's inference provider
@@ -127,27 +127,27 @@ func (provider *HuggingFaceProvider) buildModelInferenceProviderURL(modelName st
 	return fmt.Sprintf("%s/api/models/%s?%s", modelHubBaseURL, modelName, values.Encode())
 }
 
-func splitIntoModelProvider(rakshaModelName string) (inferenceProvider, string, error) {
+func splitIntoModelProvider(gatewayModelName string) (inferenceProvider, string, error) {
 	// Extract provider and model name
-	t := strings.Count(rakshaModelName, "/")
+	t := strings.Count(gatewayModelName, "/")
 	if t == 0 {
-		return "", "", fmt.Errorf("invalid model name format: %s", rakshaModelName)
+		return "", "", fmt.Errorf("invalid model name format: %s", gatewayModelName)
 	}
 	var prov inferenceProvider
 	var model string
 	if t > 1 {
-		before, after, _ := strings.Cut(rakshaModelName, "/")
+		before, after, _ := strings.Cut(gatewayModelName, "/")
 		prov = inferenceProvider(before)
 		model = after
 	} else if t == 1 {
 		prov = ""
-		model = rakshaModelName
+		model = gatewayModelName
 	}
 	return prov, model, nil
 }
 
 // Defined for tasks given by https://huggingface.co/docs/inference-providers/en/index and makeURL logic at https://github.com/huggingface/huggingface.js/blob/c02dd89eff24593b304d72715247f7eef79b3b73/packages/inference/src/providers/providerHelper.ts#L111
-func (provider *HuggingFaceProvider) getInferenceProviderRouteURL(ctx *schemas.RakshaContext, inferenceProvider inferenceProvider, modelName string, requestType schemas.RequestType) (string, error) {
+func (provider *HuggingFaceProvider) getInferenceProviderRouteURL(ctx *schemas.GatewayContext, inferenceProvider inferenceProvider, modelName string, requestType schemas.RequestType) (string, error) {
 	defaultPath := ""
 	switch inferenceProvider {
 	case falAI:
@@ -220,7 +220,7 @@ func convertToInferenceProviderMappings(resp *HuggingFaceInferenceProviderMappin
 	return mappings
 }
 
-func (provider *HuggingFaceProvider) getModelInferenceProviderMapping(ctx context.Context, huggingfaceModelName string) (map[inferenceProvider]HuggingFaceInferenceProviderMapping, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) getModelInferenceProviderMapping(ctx context.Context, huggingfaceModelName string) (map[inferenceProvider]HuggingFaceInferenceProviderMapping, *schemas.GatewayError) {
 	// Check cache first
 	if cached, ok := provider.modelProviderMappingCache.Load(huggingfaceModelName); ok {
 		if mappings, ok := cached.(map[inferenceProvider]HuggingFaceInferenceProviderMapping); ok {
@@ -237,32 +237,32 @@ func (provider *HuggingFaceProvider) getModelInferenceProviderMapping(ctx contex
 	req.SetRequestURI(provider.buildModelInferenceProviderURL(huggingfaceModelName))
 	req.Header.SetMethod(http.MethodGet)
 	req.Header.SetContentType("application/json")
-	_, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	_, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		var errorResp HuggingFaceHubError
-		rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
-		if rakshaErr.Error == nil {
-			rakshaErr.Error = &schemas.ErrorField{}
+		gatewayErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+		if gatewayErr.Error == nil {
+			gatewayErr.Error = &schemas.ErrorField{}
 		}
 		if strings.TrimSpace(errorResp.Message) != "" {
-			rakshaErr.Error.Message = errorResp.Message
+			gatewayErr.Error.Message = errorResp.Message
 		}
-		return nil, rakshaErr
+		return nil, gatewayErr
 	}
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var mappingResp HuggingFaceInferenceProviderMappingResponse
 	if err := sonic.Unmarshal(body, &mappingResp); err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	mappings := convertToInferenceProviderMappings(&mappingResp)
@@ -278,14 +278,14 @@ func (provider *HuggingFaceProvider) getModelInferenceProviderMapping(ctx contex
 // getValidatedProviderModelID fetches the inference provider mapping for a model
 // and validates that the given inferenceProvider has a mapping with the expected task.
 // On success it returns the provider-specific model id. On failure it returns a
-// RakshaError indicating the operation isn't supported for the requested
+// GatewayError indicating the operation isn't supported for the requested
 // request type or provider.
-func (provider *HuggingFaceProvider) getValidatedProviderModelID(ctx context.Context, inferenceProvider inferenceProvider, huggingfaceModelName string, requiredTask string, requestType schemas.RequestType) (string, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) getValidatedProviderModelID(ctx context.Context, inferenceProvider inferenceProvider, huggingfaceModelName string, requiredTask string, requestType schemas.RequestType) (string, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 
-	providerMapping, rakshaErr := provider.getModelInferenceProviderMapping(ctx, huggingfaceModelName)
-	if rakshaErr != nil {
-		return "", rakshaErr
+	providerMapping, gatewayErr := provider.getModelInferenceProviderMapping(ctx, huggingfaceModelName)
+	if gatewayErr != nil {
+		return "", gatewayErr
 	}
 
 	if providerMapping == nil {
@@ -310,10 +310,10 @@ func (provider *HuggingFaceProvider) downloadAudioFromURL(ctx context.Context, a
 	req.SetRequestURI(audioURL)
 	req.Header.SetMethod(http.MethodGet)
 
-	_, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	_, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, fmt.Errorf("failed to download audio: %v", rakshaErr)
+	if gatewayErr != nil {
+		return nil, fmt.Errorf("failed to download audio: %v", gatewayErr)
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {

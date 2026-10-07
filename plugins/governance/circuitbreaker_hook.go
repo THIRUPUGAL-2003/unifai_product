@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/circuitbreaker"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/circuitbreaker"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 )
 
 type circuitBreakerCtxKey string
@@ -84,7 +84,7 @@ func (p *GovernancePlugin) vkAllowsEndpoint(vk *configstoreTables.TableVirtualKe
 	return false
 }
 
-func (p *GovernancePlugin) applyCircuitBreakerFailover(ctx *schemas.RakshaContext, req *schemas.RakshaRequest, virtualKey *configstoreTables.TableVirtualKey) bool {
+func (p *GovernancePlugin) applyCircuitBreakerFailover(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, virtualKey *configstoreTables.TableVirtualKey) bool {
 	p.syncCircuitBreakerPoliciesFromStore()
 	provider, model, _ := req.GetRequestFields()
 	if model == "" {
@@ -100,13 +100,13 @@ func (p *GovernancePlugin) applyCircuitBreakerFailover(ctx *schemas.RakshaContex
 				" is not allowed for this virtual key — keeping the primary")
 		return false
 	}
-	ctx.SetValue(schemas.RakshaContextKeyCircuitBreakerFailover,
+	ctx.SetValue(schemas.GatewayContextKeyCircuitBreakerFailover,
 		decision.PolicyName+"; "+decision.FromProv+"/"+decision.FromModel+" -> "+decision.ToProv+"/"+decision.ToModel)
 	ctx.SetValue(circuitBreakerPrimaryProviderKey, decision.FromProv)
 	ctx.SetValue(circuitBreakerPrimaryModelKey, decision.FromModel)
 	req.SetProvider(schemas.ModelProvider(decision.ToProv))
 	req.SetModel(decision.ToModel)
-	schemas.AppendToContextList(ctx, schemas.RakshaContextKeyRoutingEnginesUsed, schemas.RoutingEngineCircuitBreaker)
+	schemas.AppendToContextList(ctx, schemas.GatewayContextKeyRoutingEnginesUsed, schemas.RoutingEngineCircuitBreaker)
 	if p.logger != nil {
 		p.logger.Info("[Governance] Circuit breaker failover policy=%s %s/%s → %s/%s",
 			decision.PolicyName, decision.FromProv, decision.FromModel, decision.ToProv, decision.ToModel)
@@ -116,9 +116,9 @@ func (p *GovernancePlugin) applyCircuitBreakerFailover(ctx *schemas.RakshaContex
 	return true
 }
 
-func (p *GovernancePlugin) evaluateCircuitBreakerTrip(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) {
-	requestType, provider, originalModel, resolvedModel := raksha.GetResponseFields(result, err)
-	if raksha.IsStreamRequestType(requestType) && !raksha.IsFinalChunk(ctx) {
+func (p *GovernancePlugin) evaluateCircuitBreakerTrip(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) {
+	requestType, provider, originalModel, resolvedModel := gateway.GetResponseFields(result, err)
+	if gateway.IsStreamRequestType(requestType) && !gateway.IsFinalChunk(ctx) {
 		return
 	}
 	p.syncCircuitBreakerPoliciesFromStore()
@@ -137,7 +137,7 @@ func (p *GovernancePlugin) evaluateCircuitBreakerTrip(ctx *schemas.RakshaContext
 	if len(headers) == 0 {
 		return
 	}
-	keyID, _ := ctx.Value(schemas.RakshaContextKeySelectedKeyID).(string)
+	keyID, _ := ctx.Value(schemas.GatewayContextKeySelectedKeyID).(string)
 	if name, tripped := circuitbreaker.Default.EvaluateTrip(provider, model, keyID, headers); tripped {
 		if p.logger != nil {
 			p.logger.Info("[Governance] Circuit breaker tripped policy=%s provider=%s model=%s", name, provider, model)
@@ -147,13 +147,13 @@ func (p *GovernancePlugin) evaluateCircuitBreakerTrip(ctx *schemas.RakshaContext
 	}
 }
 
-func collectProviderResponseHeaders(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) map[string]string {
+func collectProviderResponseHeaders(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) map[string]string {
 	if result != nil {
 		if extra := result.GetExtraFields(); extra != nil && extra.ProviderResponseHeaders != nil {
 			return extra.ProviderResponseHeaders
 		}
 	}
-	if raw, ok := ctx.Value(schemas.RakshaContextKeyProviderResponseHeaders).(map[string]string); ok && len(raw) > 0 {
+	if raw, ok := ctx.Value(schemas.GatewayContextKeyProviderResponseHeaders).(map[string]string); ok && len(raw) > 0 {
 		return raw
 	}
 	return nil

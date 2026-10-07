@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/raksha/raksha/framework/temptoken"
+	"github.com/gateway/gateway/framework/temptoken"
 )
 
 // mcpAuthScope declares the routes the mcp_auth scope grants access to. The

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Raksha Browser Guard - AI Domain Coverage Test Script
+Gateway Browser Guard - AI Domain Coverage Test Script
 ======================================================
 Tests which AI domains are properly detected and whether
 prompts / file uploads will be captured from them.
@@ -28,7 +28,7 @@ import datetime
 # ─── Load proxy parts (same as browser_ai_proxy.py) ─────────────────────────
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_PARTS_DIR = os.path.join(_HERE, "raksha_proxy_parts")
+_PARTS_DIR = os.path.join(_HERE, "gateway_proxy_parts")
 
 
 def _load_parts():
@@ -195,7 +195,7 @@ def test_domain(domain, platform, chat_paths, bodies):
     ok, matched_domain, matched_platform = detect_target(domain)
     domain_detected = ok
     if not domain_detected:
-        notes.append("Not in Target Websites (add it in Raksha dashboard)")
+        notes.append("Not in Target Websites (add it in Gateway dashboard)")
 
     # 2. Prompt capture via is_chat_path
     prompt_captured = False
@@ -272,7 +272,7 @@ def test_domain(domain, platform, chat_paths, bodies):
 
 print()
 print("=" * 90)
-print("  Raksha Browser Guard - AI Domain Coverage Test")
+print("  Gateway Browser Guard - AI Domain Coverage Test")
 print(f"  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print("=" * 90)
 print()
@@ -342,7 +342,7 @@ report_path  = os.path.join(_HERE, "ai_domain_coverage_report.txt")
 fail_path    = os.path.join(_HERE, "ai_domain_failures.txt")
 
 with open(report_path, "w", encoding="utf-8") as f:
-    f.write("Raksha AI Domain Coverage Report\n")
+    f.write("Gateway AI Domain Coverage Report\n")
     f.write(f"Generated: {datetime.datetime.now()}\n")
     f.write("=" * 90 + "\n\n")
     f.write(f"{'#':<4} {'Domain':<32} {'Platform':<26} {'Dom':^5} {'Prompt':^7} {'Upload':^7} Status\n")
@@ -376,7 +376,7 @@ print(f"  {report_path}")
 print(f"  {fail_path}")
 print()
 print("HOW TO FIX FAIL DOMAINS:")
-print("  1. Add domain in Raksha dashboard -> Browser AI -> Target Websites")
+print("  1. Add domain in Gateway dashboard -> Browser AI -> Target Websites")
 print("  2. If prompt still not captured, check the AI site's POST request body format")
 print("     and share it — a specific detection rule can be added.")
 print("  3. gRPC/binary protocol AIs cannot be intercepted via HTTP proxy.")

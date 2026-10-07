@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import {
 	useGetLogsModelHistogramQuery,
 	useGetModelRankingsQuery,
@@ -5,7 +6,7 @@ import {
 	useLazyGetModelRankingsQuery,
 } from "@/lib/store";
 import type { LogFilters } from "@/lib/types/logs";
-import { forwardRef, useCallback, useImperativeHandle, useMemo } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import type { DashboardData } from "../../utils/exportUtils";
 import { ModelRankingsTab } from "../modelRankingsTab";
 
@@ -27,13 +28,19 @@ export const ModelRankingsTabView = forwardRef<ModelRankingsTabViewHandle, Model
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
+	const [pollMs, setPollMs] = useState(pollingInterval ?? 0);
 	const skipOpts = useMemo(
-		() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
-		[active, pollingInterval],
+		() => ({ skip: !active, pollingInterval: pollMs, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
+		[active, pollMs],
 	);
 
-	const { data: rankingsData, isLoading: loadingRankings } = useGetModelRankingsQuery(fetchArg, skipOpts);
-	const { data: modelData, isLoading: loadingModels } = useGetLogsModelHistogramQuery(fetchArg, skipOpts);
+	const { data: rankingsData, isLoading: loadingRankings, isError: errRankings } = useGetModelRankingsQuery(fetchArg, skipOpts);
+	const { data: modelData, isLoading: loadingModels, isError: errModels } = useGetLogsModelHistogramQuery(fetchArg, skipOpts);
+	const queryFailed = errRankings || errModels;
+
+	useEffect(() => {
+		setPollMs(queryFailed ? 0 : (pollingInterval ?? 0));
+	}, [queryFailed, pollingInterval]);
 
 	const [triggerRankings] = useLazyGetModelRankingsQuery();
 	const [triggerModels] = useLazyGetLogsModelHistogramQuery();
@@ -56,13 +63,16 @@ export const ModelRankingsTabView = forwardRef<ModelRankingsTabViewHandle, Model
 	);
 
 	return (
-		<ModelRankingsTab
-			rankingsData={rankingsData ?? null}
-			loading={loadingRankings}
-			modelData={modelData ?? null}
-			loadingModels={loadingModels}
-			startTime={startTime}
-			endTime={endTime}
-		/>
+		<div className="flex h-full flex-col gap-3">
+			{queryFailed ? <QueryErrorBanner testId="dashboard-model-rankings-query-error" /> : null}
+			<ModelRankingsTab
+				rankingsData={rankingsData ?? null}
+				loading={loadingRankings}
+				modelData={modelData ?? null}
+				loadingModels={loadingModels}
+				startTime={startTime}
+				endTime={endTime}
+			/>
+		</div>
 	);
 });

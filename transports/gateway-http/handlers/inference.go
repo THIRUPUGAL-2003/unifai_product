@@ -1,4 +1,4 @@
-// Package handlers provides HTTP request handlers for the Raksha HTTP transport.
+// Package handlers provides HTTP request handlers for the Gateway HTTP transport.
 // This file contains completion request handlers for text and chat completions.
 package handlers
 
@@ -21,12 +21,12 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
-	raksha "github.com/raksha/raksha/core"
+	gateway "github.com/gateway/gateway/core"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/modelcatalog"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/modelcatalog"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -37,22 +37,22 @@ func forwardProviderHeaders(ctx *fasthttp.RequestCtx, headers map[string]string)
 	}
 }
 
-// forwardProviderHeadersFromContext extracts provider response headers from the raksha context
+// forwardProviderHeadersFromContext extracts provider response headers from the gateway context
 // and forwards them to the HTTP response. This ensures error responses also include provider headers.
-func forwardProviderHeadersFromContext(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext) {
-	if headers, ok := rakshaCtx.Value(schemas.RakshaContextKeyProviderResponseHeaders).(map[string]string); ok {
+func forwardProviderHeadersFromContext(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext) {
+	if headers, ok := gatewayCtx.Value(schemas.GatewayContextKeyProviderResponseHeaders).(map[string]string); ok {
 		forwardProviderHeaders(ctx, headers)
 	}
 }
 
 // CompletionHandler manages HTTP requests for completion operations
 type CompletionHandler struct {
-	client *raksha.Raksha
+	client *gateway.Gateway
 	config *lib.Config
 }
 
 // NewInferenceHandler creates a new completion handler instance
-func NewInferenceHandler(client *raksha.Raksha, config *lib.Config) *CompletionHandler {
+func NewInferenceHandler(client *gateway.Gateway, config *lib.Config) *CompletionHandler {
 	return &CompletionHandler{
 		client: client,
 		config: config,
@@ -360,17 +360,17 @@ var containerCreateParamsKnownFields = map[string]bool{
 	"metadata":      true,
 }
 
-type RakshaParams struct {
+type GatewayParams struct {
 	Model        string   `json:"model"`                   // Model to use in "provider/model" format
 	Fallbacks    []string `json:"fallbacks"`               // Fallback providers and models in "provider/model" format
 	Stream       *bool    `json:"stream"`                  // Whether to stream the response
 	StreamFormat *string  `json:"stream_format,omitempty"` // For speech
 }
 
-func (b RakshaParams) getModel() string       { return b.Model }
-func (b RakshaParams) getFallbacks() []string { return b.Fallbacks }
+func (b GatewayParams) getModel() string       { return b.Model }
+func (b GatewayParams) getFallbacks() []string { return b.Fallbacks }
 
-// baseRequest is satisfied by any type that embeds RakshaParams.
+// baseRequest is satisfied by any type that embeds GatewayParams.
 type baseRequest interface {
 	getModel() string
 	getFallbacks() []string
@@ -387,27 +387,27 @@ type requestBase struct {
 
 type TextRequest struct {
 	Prompt *schemas.TextCompletionInput `json:"prompt"`
-	RakshaParams
+	GatewayParams
 	*schemas.TextCompletionParameters
 }
 
 type ChatRequest struct {
 	Messages []schemas.ChatMessage `json:"messages"`
-	RakshaParams
+	GatewayParams
 	*schemas.ChatParameters
 }
 
 // UnmarshalJSON implements custom JSON unmarshalling for ChatRequest.
 // This is needed because ChatParameters has a custom UnmarshalJSON method,
-// which interferes with sonic's handling of the embedded RakshaParams struct.
+// which interferes with sonic's handling of the embedded GatewayParams struct.
 func (cr *ChatRequest) UnmarshalJSON(data []byte) error {
-	// First, unmarshal RakshaParams fields directly
-	type rakshaAlias RakshaParams
-	var bp rakshaAlias
+	// First, unmarshal GatewayParams fields directly
+	type gatewayAlias GatewayParams
+	var bp gatewayAlias
 	if err := sonic.Unmarshal(data, &bp); err != nil {
 		return err
 	}
-	cr.RakshaParams = RakshaParams(bp)
+	cr.GatewayParams = GatewayParams(bp)
 
 	// Unmarshal messages
 	var msgStruct struct {
@@ -438,25 +438,25 @@ type ResponsesRequestInput struct {
 type ImageGenerationHTTPRequest struct {
 	*schemas.ImageGenerationInput
 	*schemas.ImageGenerationParameters
-	RakshaParams
+	GatewayParams
 }
 
 type ImageEditHTTPRequest struct {
 	*schemas.ImageEditInput
 	*schemas.ImageEditParameters
-	RakshaParams
+	GatewayParams
 }
 
 type ImageVariationHTTPRequest struct {
 	*schemas.ImageVariationInput
 	*schemas.ImageVariationParameters
-	RakshaParams
+	GatewayParams
 }
 
 type VideoGenerationHTTPRequest struct {
 	*schemas.VideoGenerationInput
 	*schemas.VideoGenerationParameters
-	RakshaParams
+	GatewayParams
 }
 
 // UnmarshalJSON unmarshals the responses request input
@@ -478,15 +478,15 @@ func (r *ResponsesRequestInput) UnmarshalJSON(data []byte) error {
 
 // UnmarshalJSON implements custom JSON unmarshalling for ResponsesRequest.
 // This is needed because ResponsesParameters has a custom UnmarshalJSON method,
-// which interferes with sonic's handling of the embedded RakshaParams struct.
+// which interferes with sonic's handling of the embedded GatewayParams struct.
 func (rr *ResponsesRequest) UnmarshalJSON(data []byte) error {
-	// First, unmarshal RakshaParams fields directly
-	type rakshaAlias RakshaParams
-	var bp rakshaAlias
+	// First, unmarshal GatewayParams fields directly
+	type gatewayAlias GatewayParams
+	var bp gatewayAlias
 	if err := sonic.Unmarshal(data, &bp); err != nil {
 		return err
 	}
-	rr.RakshaParams = RakshaParams(bp)
+	rr.GatewayParams = GatewayParams(bp)
 
 	// Unmarshal messages
 	var inputStruct struct {
@@ -508,71 +508,71 @@ func (rr *ResponsesRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ResponsesRequest is a raksha responses request
+// ResponsesRequest is a gateway responses request
 type ResponsesRequest struct {
 	Input ResponsesRequestInput `json:"input"`
-	RakshaParams
+	GatewayParams
 	*schemas.ResponsesParameters
 }
 
-// CompactionHTTPRequest is a raksha compaction request (subset of responses fields)
+// CompactionHTTPRequest is a gateway compaction request (subset of responses fields)
 type CompactionHTTPRequest struct {
 	Input                ResponsesRequestInput      `json:"input"`
 	Instructions         *string                    `json:"instructions,omitempty"`
 	PreviousResponseID   *string                    `json:"previous_response_id,omitempty"`
 	PromptCacheKey       *string                    `json:"prompt_cache_key,omitempty"`
 	PromptCacheRetention *string                    `json:"prompt_cache_retention,omitempty"`
-	ServiceTier          *schemas.RakshaServiceTier `json:"service_tier,omitempty"`
-	RakshaParams
+	ServiceTier          *schemas.GatewayServiceTier `json:"service_tier,omitempty"`
+	GatewayParams
 }
 
-// EmbeddingRequest is a raksha embedding request
+// EmbeddingRequest is a gateway embedding request
 type EmbeddingRequest struct {
 	Input *schemas.EmbeddingInput `json:"input"`
-	RakshaParams
+	GatewayParams
 	*schemas.EmbeddingParameters
 }
 
-// RerankRequest is a raksha rerank request
+// RerankRequest is a gateway rerank request
 type RerankRequest struct {
 	Query     string                   `json:"query"`
 	Documents []schemas.RerankDocument `json:"documents"`
-	RakshaParams
+	GatewayParams
 	*schemas.RerankParameters
 }
 
-// OCRHandlerRequest is a raksha OCR request
+// OCRHandlerRequest is a gateway OCR request
 type OCRHandlerRequest struct {
 	ID       *string             `json:"id,omitempty"`
 	Document schemas.OCRDocument `json:"document"`
-	RakshaParams
+	GatewayParams
 	*schemas.OCRParameters
 }
 
 type SpeechRequest struct {
 	*schemas.SpeechInput
-	RakshaParams
+	GatewayParams
 	*schemas.SpeechParameters
 }
 
 type TranscriptionRequest struct {
 	*schemas.TranscriptionInput
-	RakshaParams
+	GatewayParams
 	*schemas.TranscriptionParameters
 }
 
 type VideoGenerationRequest struct {
 	*schemas.VideoGenerationInput
-	RakshaParams
+	GatewayParams
 	*schemas.VideoGenerationParameters
 }
 type VideoRemixRequest struct {
 	*schemas.VideoGenerationInput
-	RakshaParams
+	GatewayParams
 	ExtraParams map[string]any `json:"extra_params,omitempty"`
 }
 
-// BatchCreateRequest is a raksha batch create request
+// BatchCreateRequest is a gateway batch create request
 type BatchCreateRequest struct {
 	Model            string                     `json:"model"`                       // Model in "provider/model" format
 	InputFileID      string                     `json:"input_file_id,omitempty"`     // OpenAI-style file ID
@@ -585,7 +585,7 @@ type BatchCreateRequest struct {
 	Metadata         map[string]string          `json:"metadata,omitempty"`
 }
 
-// BatchListRequest is a raksha batch list request
+// BatchListRequest is a gateway batch list request
 type BatchListRequest struct {
 	Provider string  `json:"provider"`         // Provider name
 	Limit    int     `json:"limit,omitempty"`  // Maximum number of batches to return
@@ -593,7 +593,7 @@ type BatchListRequest struct {
 	Before   *string `json:"before,omitempty"` // Cursor for pagination
 }
 
-// ContainerCreateRequest is a raksha container create request
+// ContainerCreateRequest is a gateway container create request
 type ContainerCreateRequest struct {
 	Provider     string                         `json:"provider"`                // Provider name
 	Name         string                         `json:"name"`                    // Name of the container
@@ -608,10 +608,10 @@ type ContainerCreateRequest struct {
 // enableRawRequestResponseForContainer sets per-request overrides to always capture and
 // send back raw request/response for container operations. Container operations don't have
 // model-specific content, so raw data is useful for debugging and should be enabled by default.
-func enableRawRequestResponseForContainer(rakshaCtx *schemas.RakshaContext) {
-	rakshaCtx.SetValue(schemas.RakshaContextKeySendBackRawRequest, true)
-	rakshaCtx.SetValue(schemas.RakshaContextKeySendBackRawResponse, true)
-	rakshaCtx.SetValue(schemas.RakshaContextKeyStoreRawRequestResponse, true)
+func enableRawRequestResponseForContainer(gatewayCtx *schemas.GatewayContext) {
+	gatewayCtx.SetValue(schemas.GatewayContextKeySendBackRawRequest, true)
+	gatewayCtx.SetValue(schemas.GatewayContextKeySendBackRawResponse, true)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyStoreRawRequestResponse, true)
 }
 
 // parseFallbacks extracts fallbacks from string array and converts to Fallback structs
@@ -694,10 +694,10 @@ var PathToTypeMapping = map[string]schemas.RequestType{
 }
 
 // createRequestTypeMiddleware creates a middleware that sets the request type for a specific route
-func createRequestTypeMiddleware(requestType schemas.RequestType) schemas.RakshaHTTPMiddleware {
+func createRequestTypeMiddleware(requestType schemas.RequestType) schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
-			ctx.SetUserValue(schemas.RakshaContextKeyHTTPRequestType, requestType)
+			ctx.SetUserValue(schemas.GatewayContextKeyHTTPRequestType, requestType)
 			next(ctx)
 		}
 	}
@@ -708,16 +708,16 @@ func RegisterRequestTypeMiddleware(next fasthttp.RequestHandler) fasthttp.Reques
 	return func(ctx *fasthttp.RequestCtx) {
 		path := string(ctx.Path())
 		if requestType, ok := PathToTypeMapping[path]; ok {
-			ctx.SetUserValue(schemas.RakshaContextKeyHTTPRequestType, requestType)
+			ctx.SetUserValue(schemas.GatewayContextKeyHTTPRequestType, requestType)
 		}
 		next(ctx)
 	}
 }
 
 // RegisterRoutes registers all completion-related routes
-func (h *CompletionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *CompletionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	// Base middlewares for all routes
-	baseMiddlewares := append([]schemas.RakshaHTTPMiddleware{RegisterRequestTypeMiddleware}, middlewares...)
+	baseMiddlewares := append([]schemas.GatewayHTTPMiddleware{RegisterRequestTypeMiddleware}, middlewares...)
 
 	// Model endpoints
 	r.GET("/v1/models", lib.ChainMiddlewares(h.listModels, baseMiddlewares...))
@@ -726,10 +726,10 @@ func (h *CompletionHandler) RegisterRoutes(r *router.Router, middlewares ...sche
 	r.POST("/v1/completions", lib.ChainMiddlewares(h.textCompletion, baseMiddlewares...))
 	r.POST("/v1/chat/completions", lib.ChainMiddlewares(h.chatCompletion, baseMiddlewares...))
 	r.POST("/v1/responses", lib.ChainMiddlewares(h.responses, baseMiddlewares...))
-	responsesRetrieveMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ResponsesRetrieveRequest)}, middlewares...)
-	responsesDeleteMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ResponsesDeleteRequest)}, middlewares...)
-	responsesCancelMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ResponsesCancelRequest)}, middlewares...)
-	responsesInputItemsMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ResponsesInputItemsRequest)}, middlewares...)
+	responsesRetrieveMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ResponsesRetrieveRequest)}, middlewares...)
+	responsesDeleteMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ResponsesDeleteRequest)}, middlewares...)
+	responsesCancelMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ResponsesCancelRequest)}, middlewares...)
+	responsesInputItemsMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ResponsesInputItemsRequest)}, middlewares...)
 	r.GET("/v1/responses/{response_id}", lib.ChainMiddlewares(h.responsesRetrieve, responsesRetrieveMW...))
 	r.DELETE("/v1/responses/{response_id}", lib.ChainMiddlewares(h.responsesDelete, responsesDeleteMW...))
 	r.POST("/v1/responses/{response_id}/cancel", lib.ChainMiddlewares(h.responsesCancel, responsesCancelMW...))
@@ -747,11 +747,11 @@ func (h *CompletionHandler) RegisterRoutes(r *router.Router, middlewares ...sche
 	r.POST("/v1/videos", lib.ChainMiddlewares(h.videoGeneration, baseMiddlewares...))
 
 	// Video API endpoints (parameterized routes need explicit request type middleware)
-	videoListMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoListRequest)}, middlewares...)
-	videoRetrieveMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoRetrieveRequest)}, middlewares...)
-	videoDownloadMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoDownloadRequest)}, middlewares...)
-	videoDeleteMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoDeleteRequest)}, middlewares...)
-	videoRemixMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoRemixRequest)}, middlewares...)
+	videoListMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoListRequest)}, middlewares...)
+	videoRetrieveMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoRetrieveRequest)}, middlewares...)
+	videoDownloadMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoDownloadRequest)}, middlewares...)
+	videoDeleteMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoDeleteRequest)}, middlewares...)
+	videoRemixMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.VideoRemixRequest)}, middlewares...)
 	r.GET("/v1/videos", lib.ChainMiddlewares(h.videoList, videoListMW...))
 	r.GET("/v1/videos/{video_id}", lib.ChainMiddlewares(h.videoRetrieve, videoRetrieveMW...))
 	r.GET("/v1/videos/{video_id}/content", lib.ChainMiddlewares(h.videoDownload, videoDownloadMW...))
@@ -759,11 +759,11 @@ func (h *CompletionHandler) RegisterRoutes(r *router.Router, middlewares ...sche
 	r.POST("/v1/videos/{video_id}/remix", lib.ChainMiddlewares(h.videoRemix, videoRemixMW...))
 
 	// Batch API endpoints (parameterized routes need explicit request type middleware)
-	batchCreateMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchCreateRequest)}, middlewares...)
-	batchListMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchListRequest)}, middlewares...)
-	batchRetrieveMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchRetrieveRequest)}, middlewares...)
-	batchCancelMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchCancelRequest)}, middlewares...)
-	batchResultsMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchResultsRequest)}, middlewares...)
+	batchCreateMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchCreateRequest)}, middlewares...)
+	batchListMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchListRequest)}, middlewares...)
+	batchRetrieveMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchRetrieveRequest)}, middlewares...)
+	batchCancelMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchCancelRequest)}, middlewares...)
+	batchResultsMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.BatchResultsRequest)}, middlewares...)
 
 	r.POST("/v1/batches", lib.ChainMiddlewares(h.batchCreate, batchCreateMW...))
 	r.GET("/v1/batches", lib.ChainMiddlewares(h.batchList, batchListMW...))
@@ -772,11 +772,11 @@ func (h *CompletionHandler) RegisterRoutes(r *router.Router, middlewares ...sche
 	r.GET("/v1/batches/{batch_id}/results", lib.ChainMiddlewares(h.batchResults, batchResultsMW...))
 
 	// File API endpoints (parameterized routes need explicit request type middleware)
-	fileUploadMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.FileUploadRequest)}, middlewares...)
-	fileListMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.FileListRequest)}, middlewares...)
-	fileRetrieveMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.FileRetrieveRequest)}, middlewares...)
-	fileDeleteMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.FileDeleteRequest)}, middlewares...)
-	fileContentMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.FileContentRequest)}, middlewares...)
+	fileUploadMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.FileUploadRequest)}, middlewares...)
+	fileListMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.FileListRequest)}, middlewares...)
+	fileRetrieveMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.FileRetrieveRequest)}, middlewares...)
+	fileDeleteMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.FileDeleteRequest)}, middlewares...)
+	fileContentMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.FileContentRequest)}, middlewares...)
 
 	r.POST("/v1/files", lib.ChainMiddlewares(h.fileUpload, fileUploadMW...))
 	r.GET("/v1/files", lib.ChainMiddlewares(h.fileList, fileListMW...))
@@ -785,10 +785,10 @@ func (h *CompletionHandler) RegisterRoutes(r *router.Router, middlewares ...sche
 	r.GET("/v1/files/{file_id}/content", lib.ChainMiddlewares(h.fileContent, fileContentMW...))
 
 	// Container API endpoints (parameterized routes need explicit request type middleware)
-	containerCreateMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerCreateRequest)}, middlewares...)
-	containerListMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerListRequest)}, middlewares...)
-	containerRetrieveMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerRetrieveRequest)}, middlewares...)
-	containerDeleteMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerDeleteRequest)}, middlewares...)
+	containerCreateMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerCreateRequest)}, middlewares...)
+	containerListMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerListRequest)}, middlewares...)
+	containerRetrieveMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerRetrieveRequest)}, middlewares...)
+	containerDeleteMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerDeleteRequest)}, middlewares...)
 
 	r.POST("/v1/containers", lib.ChainMiddlewares(h.containerCreate, containerCreateMW...))
 	r.GET("/v1/containers", lib.ChainMiddlewares(h.containerList, containerListMW...))
@@ -796,11 +796,11 @@ func (h *CompletionHandler) RegisterRoutes(r *router.Router, middlewares ...sche
 	r.DELETE("/v1/containers/{container_id}", lib.ChainMiddlewares(h.containerDelete, containerDeleteMW...))
 
 	// Container Files API endpoints (parameterized routes need explicit request type middleware)
-	containerFileCreateMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileCreateRequest)}, middlewares...)
-	containerFileListMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileListRequest)}, middlewares...)
-	containerFileRetrieveMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileRetrieveRequest)}, middlewares...)
-	containerFileContentMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileContentRequest)}, middlewares...)
-	containerFileDeleteMW := append([]schemas.RakshaHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileDeleteRequest)}, middlewares...)
+	containerFileCreateMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileCreateRequest)}, middlewares...)
+	containerFileListMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileListRequest)}, middlewares...)
+	containerFileRetrieveMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileRetrieveRequest)}, middlewares...)
+	containerFileContentMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileContentRequest)}, middlewares...)
+	containerFileDeleteMW := append([]schemas.GatewayHTTPMiddleware{createRequestTypeMiddleware(schemas.ContainerFileDeleteRequest)}, middlewares...)
 
 	r.POST("/v1/containers/{container_id}/files", lib.ChainMiddlewares(h.containerFileCreate, containerFileCreateMW...))
 	r.GET("/v1/containers/{container_id}/files", lib.ChainMiddlewares(h.containerFileList, containerFileListMW...))
@@ -816,18 +816,18 @@ func (h *CompletionHandler) listModels(ctx *fasthttp.RequestCtx) {
 	provider := string(ctx.QueryArgs().Peek("provider"))
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel() // Ensure cleanup on function exit
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	if provider == "" && !h.applyListModelsVirtualKeyProviderFilter(ctx, rakshaCtx) {
+	if provider == "" && !h.applyListModelsVirtualKeyProviderFilter(ctx, gatewayCtx) {
 		return
 	}
 
-	var resp *schemas.RakshaListModelsResponse
-	var rakshaErr *schemas.RakshaError
+	var resp *schemas.GatewayListModelsResponse
+	var gatewayErr *schemas.GatewayError
 
 	pageSize := 0
 	if pageSizeStr := ctx.QueryArgs().Peek("page_size"); len(pageSizeStr) > 0 {
@@ -837,7 +837,7 @@ func (h *CompletionHandler) listModels(ctx *fasthttp.RequestCtx) {
 	}
 	pageToken := string(ctx.QueryArgs().Peek("page_token"))
 
-	rakshaListModelsReq := &schemas.RakshaListModelsRequest{
+	gatewayListModelsReq := &schemas.GatewayListModelsRequest{
 		Provider:  schemas.ModelProvider(provider),
 		PageSize:  pageSize,
 		PageToken: pageToken,
@@ -852,23 +852,23 @@ func (h *CompletionHandler) listModels(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	if len(extraParams) > 0 {
-		rakshaListModelsReq.ExtraParams = extraParams
+		gatewayListModelsReq.ExtraParams = extraParams
 	}
 
 	// If provider is empty, list all models from all providers
 	if provider == "" {
-		resp, rakshaErr = h.client.ListAllModels(rakshaCtx, rakshaListModelsReq)
+		resp, gatewayErr = h.client.ListAllModels(gatewayCtx, gatewayListModelsReq)
 	} else {
-		resp, rakshaErr = h.client.ListModelsRequest(rakshaCtx, rakshaListModelsReq)
+		resp, gatewayErr = h.client.ListModelsRequest(gatewayCtx, gatewayListModelsReq)
 	}
 
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 
@@ -880,7 +880,7 @@ func (h *CompletionHandler) listModels(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, resp)
 }
 
-func enrichAndFilterListModelsResponse(resp *schemas.RakshaListModelsResponse, catalog *modelcatalog.ModelCatalog) {
+func enrichAndFilterListModelsResponse(resp *schemas.GatewayListModelsResponse, catalog *modelcatalog.ModelCatalog) {
 	if resp == nil || len(resp.Data) == 0 {
 		return
 	}
@@ -903,7 +903,7 @@ func enrichAndFilterListModelsResponse(resp *schemas.RakshaListModelsResponse, c
 		if pricingEntry != nil {
 			modelEntry.IsDeprecated = false
 			if pricingEntry.BaseModel != "" && modelEntry.NormalizedName == nil {
-				modelEntry.NormalizedName = raksha.Ptr(providerUtils.NormalizeBaseModelSlug(pricingEntry.BaseModel))
+				modelEntry.NormalizedName = gateway.Ptr(providerUtils.NormalizeBaseModelSlug(pricingEntry.BaseModel))
 			}
 			if len(pricingEntry.AdditionalAttributes) > 0 && modelEntry.AdditionalAttributes == nil {
 				modelEntry.AdditionalAttributes = pricingEntry.AdditionalAttributes
@@ -925,22 +925,22 @@ func enrichAndFilterListModelsResponse(resp *schemas.RakshaListModelsResponse, c
 			if modelEntry.Pricing == nil {
 				pricing := &schemas.Pricing{}
 				if pricingEntry.InputCostPerToken != nil {
-					pricing.Prompt = raksha.Ptr(fmt.Sprintf("%.10f", *pricingEntry.InputCostPerToken))
+					pricing.Prompt = gateway.Ptr(fmt.Sprintf("%.10f", *pricingEntry.InputCostPerToken))
 				}
 				if pricingEntry.OutputCostPerToken != nil {
-					pricing.Completion = raksha.Ptr(fmt.Sprintf("%.10f", *pricingEntry.OutputCostPerToken))
+					pricing.Completion = gateway.Ptr(fmt.Sprintf("%.10f", *pricingEntry.OutputCostPerToken))
 				}
 				if pricingEntry.InputCostPerImage != nil {
-					pricing.Image = raksha.Ptr(fmt.Sprintf("%.10f", *pricingEntry.InputCostPerImage))
+					pricing.Image = gateway.Ptr(fmt.Sprintf("%.10f", *pricingEntry.InputCostPerImage))
 				}
 				if pricingEntry.CacheReadInputTokenCost != nil {
-					pricing.InputCacheRead = raksha.Ptr(fmt.Sprintf("%.10f", *pricingEntry.CacheReadInputTokenCost))
+					pricing.InputCacheRead = gateway.Ptr(fmt.Sprintf("%.10f", *pricingEntry.CacheReadInputTokenCost))
 				}
 				if pricingEntry.CacheCreationInputTokenCost != nil {
-					pricing.InputCacheWrite = raksha.Ptr(fmt.Sprintf("%.10f", *pricingEntry.CacheCreationInputTokenCost))
+					pricing.InputCacheWrite = gateway.Ptr(fmt.Sprintf("%.10f", *pricingEntry.CacheCreationInputTokenCost))
 				}
 				if pricingEntry.SearchContextCostPerQuery != nil {
-					pricing.WebSearch = raksha.Ptr(fmt.Sprintf("%.10f", *pricingEntry.SearchContextCostPerQuery))
+					pricing.WebSearch = gateway.Ptr(fmt.Sprintf("%.10f", *pricingEntry.SearchContextCostPerQuery))
 				}
 				modelEntry.Pricing = pricing
 			}
@@ -950,8 +950,8 @@ func enrichAndFilterListModelsResponse(resp *schemas.RakshaListModelsResponse, c
 	resp.Data = models
 }
 
-// prepareTextCompletionRequest prepares a RakshaTextCompletionRequest from the HTTP request body
-func prepareTextCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*TextRequest, *schemas.RakshaTextCompletionRequest, error) {
+// prepareTextCompletionRequest prepares a GatewayTextCompletionRequest from the HTTP request body
+func prepareTextCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*TextRequest, *schemas.GatewayTextCompletionRequest, error) {
 	req, base, err := prepareRequest[TextRequest](ctx, config, textParamsKnownFields)
 	if err != nil {
 		return nil, nil, err
@@ -963,7 +963,7 @@ func prepareTextCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 		req.TextCompletionParameters = &schemas.TextCompletionParameters{}
 	}
 	req.TextCompletionParameters.ExtraParams = base.ExtraParams
-	return req, &schemas.RakshaTextCompletionRequest{
+	return req, &schemas.GatewayTextCompletionRequest{
 		Provider:  base.Provider,
 		Model:     base.ModelName,
 		Input:     req.Prompt,
@@ -974,18 +974,18 @@ func prepareTextCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 
 // textCompletion handles POST /v1/completions - Process text completion requests
 func (h *CompletionHandler) textCompletion(ctx *fasthttp.RequestCtx) {
-	req, rakshaTextReq, err := prepareTextCompletionRequest(ctx, h.config)
+	req, gatewayTextReq, err := prepareTextCompletionRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 	if req.Stream != nil && *req.Stream {
-		h.handleStreamingTextCompletion(ctx, rakshaTextReq, rakshaCtx, cancel)
+		h.handleStreamingTextCompletion(ctx, gatewayTextReq, gatewayCtx, cancel)
 		return
 	}
 
@@ -994,10 +994,10 @@ func (h *CompletionHandler) textCompletion(ctx *fasthttp.RequestCtx) {
 	// This is a known issue of valyala/fasthttp. And will be fixed here once it is fixed upstream.
 	defer cancel() // Ensure cleanup on function exit
 
-	resp, rakshaErr := h.client.TextCompletionRequest(rakshaCtx, rakshaTextReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.TextCompletionRequest(gatewayCtx, gatewayTextReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -1005,15 +1005,15 @@ func (h *CompletionHandler) textCompletion(ctx *fasthttp.RequestCtx) {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
 
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	// Send successful response
 	SendJSON(ctx, resp)
 }
 
-// prepareChatCompletionRequest prepares a RakshaChatRequest from a ChatRequest
-func prepareChatCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*ChatRequest, *schemas.RakshaChatRequest, error) {
+// prepareChatCompletionRequest prepares a GatewayChatRequest from a ChatRequest
+func prepareChatCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*ChatRequest, *schemas.GatewayChatRequest, error) {
 	req, base, err := prepareRequest[ChatRequest](ctx, config, chatParamsKnownFields)
 	if err != nil {
 		return nil, nil, err
@@ -1040,7 +1040,7 @@ func prepareChatCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 		}
 	}
 	req.ChatParameters.ExtraParams = base.ExtraParams
-	return req, &schemas.RakshaChatRequest{
+	return req, &schemas.GatewayChatRequest{
 		Provider:  base.Provider,
 		Model:     base.ModelName,
 		Input:     req.Messages,
@@ -1051,43 +1051,43 @@ func prepareChatCompletionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 
 // chatCompletion handles POST /v1/chat/completions - Process chat completion requests
 func (h *CompletionHandler) chatCompletion(ctx *fasthttp.RequestCtx) {
-	req, rakshaChatReq, err := prepareChatCompletionRequest(ctx, h.config)
+	req, gatewayChatReq, err := prepareChatCompletionRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 	if effectiveStream(req.Stream) {
-		h.handleStreamingChatCompletion(ctx, rakshaChatReq, rakshaCtx, cancel)
+		h.handleStreamingChatCompletion(ctx, gatewayChatReq, gatewayCtx, cancel)
 		return
 	}
 	defer cancel() // Ensure cleanup on function exit
 	// Complete the request
-	resp, rakshaErr := h.client.ChatCompletionRequest(rakshaCtx, rakshaChatReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ChatCompletionRequest(gatewayCtx, gatewayChatReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
 
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	// Send successful response
 	SendJSON(ctx, resp)
 }
 
-// prepareResponsesRequest prepares a RakshaResponsesRequest from a ResponsesRequest
-func prepareResponsesRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*ResponsesRequest, *schemas.RakshaResponsesRequest, error) {
+// prepareResponsesRequest prepares a GatewayResponsesRequest from a ResponsesRequest
+func prepareResponsesRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*ResponsesRequest, *schemas.GatewayResponsesRequest, error) {
 	req, base, err := prepareRequest[ResponsesRequest](ctx, config, responsesParamsKnownFields)
 	if err != nil {
 		return nil, nil, err
@@ -1109,7 +1109,7 @@ func prepareResponsesRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Res
 			},
 		}
 	}
-	return req, &schemas.RakshaResponsesRequest{
+	return req, &schemas.GatewayResponsesRequest{
 		Provider:  base.Provider,
 		Model:     base.ModelName,
 		Input:     input,
@@ -1120,45 +1120,45 @@ func prepareResponsesRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Res
 
 // responses handles POST /v1/responses - Process responses requests
 func (h *CompletionHandler) responses(ctx *fasthttp.RequestCtx) {
-	req, rakshaResponsesReq, err := prepareResponsesRequest(ctx, h.config)
+	req, gatewayResponsesReq, err := prepareResponsesRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
 	if effectiveStream(req.Stream) {
-		h.handleStreamingResponses(ctx, rakshaResponsesReq, rakshaCtx, cancel)
+		h.handleStreamingResponses(ctx, gatewayResponsesReq, gatewayCtx, cancel)
 		return
 	}
 
 	defer cancel() // Ensure cleanup on function exit
 
-	resp, rakshaErr := h.client.ResponsesRequest(rakshaCtx, rakshaResponsesReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ResponsesRequest(gatewayCtx, gatewayResponsesReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	// Send successful response
 	SendJSON(ctx, resp)
 }
 
-// prepareEmbeddingRequest prepares a RakshaEmbeddingRequest from the HTTP request body
-func prepareEmbeddingRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*EmbeddingRequest, *schemas.RakshaEmbeddingRequest, error) {
+// prepareEmbeddingRequest prepares a GatewayEmbeddingRequest from the HTTP request body
+func prepareEmbeddingRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*EmbeddingRequest, *schemas.GatewayEmbeddingRequest, error) {
 	req, base, err := prepareRequest[EmbeddingRequest](ctx, config, embeddingParamsKnownFields)
 	if err != nil {
 		return nil, nil, err
@@ -1170,7 +1170,7 @@ func prepareEmbeddingRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Emb
 		req.EmbeddingParameters = &schemas.EmbeddingParameters{}
 	}
 	req.EmbeddingParameters.ExtraParams = base.ExtraParams
-	return req, &schemas.RakshaEmbeddingRequest{
+	return req, &schemas.GatewayEmbeddingRequest{
 		Provider:  base.Provider,
 		Model:     base.ModelName,
 		Input:     req.Input,
@@ -1181,38 +1181,38 @@ func prepareEmbeddingRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Emb
 
 // embeddings handles POST /v1/embeddings - Process embeddings requests
 func (h *CompletionHandler) embeddings(ctx *fasthttp.RequestCtx) {
-	_, rakshaEmbeddingReq, err := prepareEmbeddingRequest(ctx, h.config)
+	_, gatewayEmbeddingReq, err := prepareEmbeddingRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.EmbeddingRequest(rakshaCtx, rakshaEmbeddingReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.EmbeddingRequest(gatewayCtx, gatewayEmbeddingReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	// Send successful response
 	SendJSON(ctx, resp)
 }
 
-// prepareRerankRequest prepares a RakshaRerankRequest from the HTTP request body
-func prepareRerankRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*RerankRequest, *schemas.RakshaRerankRequest, error) {
+// prepareRerankRequest prepares a GatewayRerankRequest from the HTTP request body
+func prepareRerankRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*RerankRequest, *schemas.GatewayRerankRequest, error) {
 	req, base, err := prepareRequest[RerankRequest](ctx, config, rerankParamsKnownFields)
 	if err != nil {
 		return nil, nil, err
@@ -1235,7 +1235,7 @@ func prepareRerankRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Rerank
 		return nil, nil, fmt.Errorf("top_n must be at least 1")
 	}
 	req.RerankParameters.ExtraParams = base.ExtraParams
-	return req, &schemas.RakshaRerankRequest{
+	return req, &schemas.GatewayRerankRequest{
 		Provider:  base.Provider,
 		Model:     base.ModelName,
 		Query:     req.Query,
@@ -1247,24 +1247,24 @@ func prepareRerankRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Rerank
 
 // rerank handles POST /v1/rerank - Process rerank requests
 func (h *CompletionHandler) rerank(ctx *fasthttp.RequestCtx) {
-	_, rakshaRerankReq, err := prepareRerankRequest(ctx, h.config)
+	_, gatewayRerankReq, err := prepareRerankRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.RerankRequest(rakshaCtx, rakshaRerankReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.RerankRequest(gatewayCtx, gatewayRerankReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -1272,15 +1272,15 @@ func (h *CompletionHandler) rerank(ctx *fasthttp.RequestCtx) {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
 
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	// Send successful response
 	SendJSON(ctx, resp)
 }
 
-// prepareOCRRequest prepares a RakshaOCRRequest from the HTTP request body
-func prepareOCRRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*OCRHandlerRequest, *schemas.RakshaOCRRequest, error) {
+// prepareOCRRequest prepares a GatewayOCRRequest from the HTTP request body
+func prepareOCRRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*OCRHandlerRequest, *schemas.GatewayOCRRequest, error) {
 	req, base, err := prepareRequest[OCRHandlerRequest](ctx, config, ocrParamsKnownFields)
 	if err != nil {
 		return nil, nil, err
@@ -1298,7 +1298,7 @@ func prepareOCRRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*OCRHandle
 		req.OCRParameters = &schemas.OCRParameters{}
 	}
 	req.OCRParameters.ExtraParams = base.ExtraParams
-	return req, &schemas.RakshaOCRRequest{
+	return req, &schemas.GatewayOCRRequest{
 		Provider:  base.Provider,
 		Model:     base.ModelName,
 		ID:        req.ID,
@@ -1310,24 +1310,24 @@ func prepareOCRRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*OCRHandle
 
 // ocr handles POST /v1/ocr - Process OCR requests
 func (h *CompletionHandler) ocr(ctx *fasthttp.RequestCtx) {
-	_, rakshaOCRReq, err := prepareOCRRequest(ctx, h.config)
+	_, gatewayOCRReq, err := prepareOCRRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.OCRRequest(rakshaCtx, rakshaOCRReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.OCRRequest(gatewayCtx, gatewayOCRReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -1335,15 +1335,15 @@ func (h *CompletionHandler) ocr(ctx *fasthttp.RequestCtx) {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
 
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	// Send successful response
 	SendJSON(ctx, resp)
 }
 
-// prepareSpeechRequest prepares a RakshaSpeechRequest from the HTTP request body
-func prepareSpeechRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*SpeechRequest, *schemas.RakshaSpeechRequest, error) {
+// prepareSpeechRequest prepares a GatewaySpeechRequest from the HTTP request body
+func prepareSpeechRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*SpeechRequest, *schemas.GatewaySpeechRequest, error) {
 	req, base, err := prepareRequest[SpeechRequest](ctx, config, speechParamsKnownFields)
 	if err != nil {
 		return nil, nil, err
@@ -1355,7 +1355,7 @@ func prepareSpeechRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Speech
 		return nil, nil, fmt.Errorf("voice is required for speech completion")
 	}
 	req.SpeechParameters.ExtraParams = base.ExtraParams
-	return req, &schemas.RakshaSpeechRequest{
+	return req, &schemas.GatewaySpeechRequest{
 		Provider:  base.Provider,
 		Model:     base.ModelName,
 		Input:     req.SpeechInput,
@@ -1366,43 +1366,43 @@ func prepareSpeechRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Speech
 
 // speech handles POST /v1/audio/speech - Process speech completion requests
 func (h *CompletionHandler) speech(ctx *fasthttp.RequestCtx) {
-	req, rakshaSpeechReq, err := prepareSpeechRequest(ctx, h.config)
+	req, gatewaySpeechReq, err := prepareSpeechRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
 	if req.StreamFormat != nil && *req.StreamFormat == "sse" {
-		h.handleStreamingSpeech(ctx, rakshaSpeechReq, rakshaCtx, cancel)
+		h.handleStreamingSpeech(ctx, gatewaySpeechReq, gatewayCtx, cancel)
 		return
 	}
 
 	defer cancel() // Ensure cleanup on function exit
 
-	resp, rakshaErr := h.client.SpeechRequest(rakshaCtx, rakshaSpeechReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.SpeechRequest(gatewayCtx, gatewaySpeechReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	// Preserve the attachment header through the large-response shortcut; the
 	// normal binary path sets this explicitly after the stream check.
-	if !(rakshaSpeechReq.Provider == schemas.Elevenlabs && req.WithTimestamps != nil && *req.WithTimestamps) {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyLargeResponseContentDisposition, "attachment; filename=speech.mp3")
+	if !(gatewaySpeechReq.Provider == schemas.Elevenlabs && req.WithTimestamps != nil && *req.WithTimestamps) {
+		gatewayCtx.SetValue(schemas.GatewayContextKeyLargeResponseContentDisposition, "attachment; filename=speech.mp3")
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
 
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 
@@ -1410,7 +1410,7 @@ func (h *CompletionHandler) speech(ctx *fasthttp.RequestCtx) {
 	// When with_timestamps is true, Elevenlabs returns base64 encoded audio
 	hasTimestamps := req.WithTimestamps != nil && *req.WithTimestamps
 
-	if rakshaSpeechReq.Provider == schemas.Elevenlabs && hasTimestamps {
+	if gatewaySpeechReq.Provider == schemas.Elevenlabs && hasTimestamps {
 		ctx.Response.Header.Set("Content-Type", "application/json")
 		SendJSON(ctx, resp)
 		return
@@ -1427,9 +1427,9 @@ func (h *CompletionHandler) speech(ctx *fasthttp.RequestCtx) {
 	ctx.Response.SetBody(resp.Audio)
 }
 
-// prepareTranscriptionRequest prepares a RakshaTranscriptionRequest from a multipart form.
+// prepareTranscriptionRequest prepares a GatewayTranscriptionRequest from a multipart form.
 // Returns the request, whether streaming was requested, and any error.
-func prepareTranscriptionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*schemas.RakshaTranscriptionRequest, bool, error) {
+func prepareTranscriptionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*schemas.GatewayTranscriptionRequest, bool, error) {
 	form, err := ctx.MultipartForm()
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to parse multipart form: %v", err)
@@ -1486,50 +1486,50 @@ func prepareTranscriptionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (
 	if err != nil {
 		return nil, false, err
 	}
-	rakshaTranscriptionReq := &schemas.RakshaTranscriptionRequest{
+	gatewayTranscriptionReq := &schemas.GatewayTranscriptionRequest{
 		Model:     modelName,
 		Provider:  schemas.ModelProvider(provider),
 		Input:     transcriptionInput,
 		Params:    transcriptionParams,
 		Fallbacks: fallbacks,
 	}
-	return rakshaTranscriptionReq, stream, nil
+	return gatewayTranscriptionReq, stream, nil
 }
 
 // transcription handles POST /v1/audio/transcriptions - Process transcription requests
 func (h *CompletionHandler) transcription(ctx *fasthttp.RequestCtx) {
-	rakshaTranscriptionReq, stream, err := prepareTranscriptionRequest(ctx, h.config)
+	gatewayTranscriptionReq, stream, err := prepareTranscriptionRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
 	if stream {
-		h.handleStreamingTranscriptionRequest(ctx, rakshaTranscriptionReq, rakshaCtx, cancel)
+		h.handleStreamingTranscriptionRequest(ctx, gatewayTranscriptionReq, gatewayCtx, cancel)
 		return
 	}
 
 	defer cancel()
 
-	resp, rakshaErr := h.client.TranscriptionRequest(rakshaCtx, rakshaTranscriptionReq)
+	resp, gatewayErr := h.client.TranscriptionRequest(gatewayCtx, gatewayTranscriptionReq)
 
 	// Handle response
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	// Send successful response
@@ -1538,29 +1538,29 @@ func (h *CompletionHandler) transcription(ctx *fasthttp.RequestCtx) {
 
 // countTokens handles POST /v1/responses/input_tokens - Process count tokens requests
 func (h *CompletionHandler) countTokens(ctx *fasthttp.RequestCtx) {
-	_, rakshaResponsesReq, err := prepareResponsesRequest(ctx, h.config)
+	_, gatewayResponsesReq, err := prepareResponsesRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 	defer cancel()
 
-	response, rakshaErr := h.client.CountTokensRequest(rakshaCtx, rakshaResponsesReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	response, gatewayErr := h.client.CountTokensRequest(gatewayCtx, gatewayResponsesReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	forwardProviderHeaders(ctx, response.ExtraFields.ProviderResponseHeaders)
 	// Send successful response
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, response)
@@ -1574,8 +1574,8 @@ func responsesLifecycleProviderFromQuery(ctx *fasthttp.RequestCtx) schemas.Model
 	return p
 }
 
-// prepareCompactionRequest prepares a RakshaCompactionRequest from the HTTP request body
-func prepareCompactionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*CompactionHTTPRequest, *schemas.RakshaCompactionRequest, error) {
+// prepareCompactionRequest prepares a GatewayCompactionRequest from the HTTP request body
+func prepareCompactionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*CompactionHTTPRequest, *schemas.GatewayCompactionRequest, error) {
 	req, base, err := prepareRequest[CompactionHTTPRequest](ctx, config, compactionParamsKnownFields)
 	if err != nil {
 		return nil, nil, err
@@ -1595,7 +1595,7 @@ func prepareCompactionRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Co
 		}
 	}
 
-	return req, &schemas.RakshaCompactionRequest{
+	return req, &schemas.GatewayCompactionRequest{
 		Provider:             base.Provider,
 		Model:                base.ModelName,
 		Input:                input,
@@ -1616,14 +1616,14 @@ func (h *CompletionHandler) responsesRetrieve(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "response_id is required")
 		return
 	}
-	rakshaReq := &schemas.RakshaResponsesRetrieveRequest{
+	gatewayReq := &schemas.GatewayResponsesRetrieveRequest{
 		Provider:   responsesLifecycleProviderFromQuery(ctx),
 		ResponseID: responseID,
 	}
 	ctx.QueryArgs().VisitAll(func(key, value []byte) {
 		switch string(key) {
 		case "include":
-			rakshaReq.Include = append(rakshaReq.Include, string(value))
+			gatewayReq.Include = append(gatewayReq.Include, string(value))
 		}
 	})
 	if raw := ctx.QueryArgs().Peek("starting_after"); len(raw) > 0 {
@@ -1632,7 +1632,7 @@ func (h *CompletionHandler) responsesRetrieve(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusBadRequest, "starting_after must be an integer")
 			return
 		}
-		rakshaReq.StartingAfter = schemas.Ptr(n)
+		gatewayReq.StartingAfter = schemas.Ptr(n)
 	}
 	if raw := ctx.QueryArgs().Peek("include_obfuscation"); len(raw) > 0 {
 		b, err := strconv.ParseBool(string(raw))
@@ -1640,24 +1640,24 @@ func (h *CompletionHandler) responsesRetrieve(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusBadRequest, "include_obfuscation must be a boolean")
 			return
 		}
-		rakshaReq.IncludeObfuscation = &b
+		gatewayReq.IncludeObfuscation = &b
 	}
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	resp, rakshaErr := h.client.ResponsesRetrieveRequest(rakshaCtx, rakshaReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ResponsesRetrieveRequest(gatewayCtx, gatewayReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -1665,30 +1665,30 @@ func (h *CompletionHandler) responsesRetrieve(ctx *fasthttp.RequestCtx) {
 
 // compaction handles POST /v1/responses/compact - Compact a conversation context window
 func (h *CompletionHandler) compaction(ctx *fasthttp.RequestCtx) {
-	_, rakshaCompactionReq, err := prepareCompactionRequest(ctx, h.config)
+	_, gatewayCompactionReq, err := prepareCompactionRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	response, rakshaErr := h.client.CompactionRequest(rakshaCtx, rakshaCompactionReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	response, gatewayErr := h.client.CompactionRequest(gatewayCtx, gatewayCompactionReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if response != nil && response.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, response.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, response)
@@ -1701,26 +1701,26 @@ func (h *CompletionHandler) responsesDelete(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "response_id is required")
 		return
 	}
-	rakshaReq := &schemas.RakshaResponsesDeleteRequest{
+	gatewayReq := &schemas.GatewayResponsesDeleteRequest{
 		Provider:   responsesLifecycleProviderFromQuery(ctx),
 		ResponseID: responseID,
 	}
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	resp, rakshaErr := h.client.ResponsesDeleteRequest(rakshaCtx, rakshaReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ResponsesDeleteRequest(gatewayCtx, gatewayReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -1733,26 +1733,26 @@ func (h *CompletionHandler) responsesCancel(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "response_id is required")
 		return
 	}
-	rakshaReq := &schemas.RakshaResponsesCancelRequest{
+	gatewayReq := &schemas.GatewayResponsesCancelRequest{
 		Provider:   responsesLifecycleProviderFromQuery(ctx),
 		ResponseID: responseID,
 	}
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	resp, rakshaErr := h.client.ResponsesCancelRequest(rakshaCtx, rakshaReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ResponsesCancelRequest(gatewayCtx, gatewayReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -1765,18 +1765,18 @@ func (h *CompletionHandler) responsesInputItems(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "response_id is required")
 		return
 	}
-	rakshaReq := &schemas.RakshaResponsesInputItemsRequest{
+	gatewayReq := &schemas.GatewayResponsesInputItemsRequest{
 		Provider:   responsesLifecycleProviderFromQuery(ctx),
 		ResponseID: responseID,
 	}
 	ctx.QueryArgs().VisitAll(func(key, value []byte) {
 		switch string(key) {
 		case "after":
-			rakshaReq.After = string(value)
+			gatewayReq.After = string(value)
 		case "include":
-			rakshaReq.Include = append(rakshaReq.Include, string(value))
+			gatewayReq.Include = append(gatewayReq.Include, string(value))
 		case "order":
-			rakshaReq.Order = string(value)
+			gatewayReq.Order = string(value)
 		}
 	})
 	if raw := ctx.QueryArgs().Peek("limit"); len(raw) > 0 {
@@ -1785,101 +1785,101 @@ func (h *CompletionHandler) responsesInputItems(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusBadRequest, "limit must be an integer")
 			return
 		}
-		rakshaReq.Limit = schemas.Ptr(n)
+		gatewayReq.Limit = schemas.Ptr(n)
 	}
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	resp, rakshaErr := h.client.ResponsesInputItemsRequest(rakshaCtx, rakshaReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ResponsesInputItemsRequest(gatewayCtx, gatewayReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
 }
 
 // handleStreamingTextCompletion handles streaming text completion requests using Server-Sent Events (SSE)
-func (h *CompletionHandler) handleStreamingTextCompletion(ctx *fasthttp.RequestCtx, req *schemas.RakshaTextCompletionRequest, rakshaCtx *schemas.RakshaContext, cancel context.CancelFunc) {
-	// Use the cancellable context from ConvertToRakshaContext
+func (h *CompletionHandler) handleStreamingTextCompletion(ctx *fasthttp.RequestCtx, req *schemas.GatewayTextCompletionRequest, gatewayCtx *schemas.GatewayContext, cancel context.CancelFunc) {
+	// Use the cancellable context from ConvertToGatewayContext
 	// See router.go for detailed explanation of why we need a cancellable context
 
-	getStream := func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-		return h.client.TextCompletionStreamRequest(rakshaCtx, req)
+	getStream := func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+		return h.client.TextCompletionStreamRequest(gatewayCtx, req)
 	}
 
-	h.handleStreamingResponse(ctx, rakshaCtx, getStream, cancel)
+	h.handleStreamingResponse(ctx, gatewayCtx, getStream, cancel)
 }
 
 // handleStreamingChatCompletion handles streaming chat completion requests using Server-Sent Events (SSE)
-func (h *CompletionHandler) handleStreamingChatCompletion(ctx *fasthttp.RequestCtx, req *schemas.RakshaChatRequest, rakshaCtx *schemas.RakshaContext, cancel context.CancelFunc) {
-	// Use the cancellable context from ConvertToRakshaContext
+func (h *CompletionHandler) handleStreamingChatCompletion(ctx *fasthttp.RequestCtx, req *schemas.GatewayChatRequest, gatewayCtx *schemas.GatewayContext, cancel context.CancelFunc) {
+	// Use the cancellable context from ConvertToGatewayContext
 	// See router.go for detailed explanation of why we need a cancellable context
 
-	getStream := func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-		return h.client.ChatCompletionStreamRequest(rakshaCtx, req)
+	getStream := func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+		return h.client.ChatCompletionStreamRequest(gatewayCtx, req)
 	}
 
-	h.handleStreamingResponse(ctx, rakshaCtx, getStream, cancel)
+	h.handleStreamingResponse(ctx, gatewayCtx, getStream, cancel)
 }
 
 // handleStreamingResponses handles streaming responses requests using Server-Sent Events (SSE)
-func (h *CompletionHandler) handleStreamingResponses(ctx *fasthttp.RequestCtx, req *schemas.RakshaResponsesRequest, rakshaCtx *schemas.RakshaContext, cancel context.CancelFunc) {
-	// Use the cancellable context from ConvertToRakshaContext
+func (h *CompletionHandler) handleStreamingResponses(ctx *fasthttp.RequestCtx, req *schemas.GatewayResponsesRequest, gatewayCtx *schemas.GatewayContext, cancel context.CancelFunc) {
+	// Use the cancellable context from ConvertToGatewayContext
 	// See router.go for detailed explanation of why we need a cancellable context
 
-	getStream := func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-		return h.client.ResponsesStreamRequest(rakshaCtx, req)
+	getStream := func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+		return h.client.ResponsesStreamRequest(gatewayCtx, req)
 	}
 
-	h.handleStreamingResponse(ctx, rakshaCtx, getStream, cancel)
+	h.handleStreamingResponse(ctx, gatewayCtx, getStream, cancel)
 }
 
 // handleStreamingSpeech handles streaming speech requests using Server-Sent Events (SSE)
-func (h *CompletionHandler) handleStreamingSpeech(ctx *fasthttp.RequestCtx, req *schemas.RakshaSpeechRequest, rakshaCtx *schemas.RakshaContext, cancel context.CancelFunc) {
-	// Use the cancellable context from ConvertToRakshaContext
+func (h *CompletionHandler) handleStreamingSpeech(ctx *fasthttp.RequestCtx, req *schemas.GatewaySpeechRequest, gatewayCtx *schemas.GatewayContext, cancel context.CancelFunc) {
+	// Use the cancellable context from ConvertToGatewayContext
 	// See router.go for detailed explanation of why we need a cancellable context
 
-	getStream := func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-		return h.client.SpeechStreamRequest(rakshaCtx, req)
+	getStream := func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+		return h.client.SpeechStreamRequest(gatewayCtx, req)
 	}
 
-	h.handleStreamingResponse(ctx, rakshaCtx, getStream, cancel)
+	h.handleStreamingResponse(ctx, gatewayCtx, getStream, cancel)
 }
 
 // handleStreamingTranscriptionRequest handles streaming transcription requests using Server-Sent Events (SSE)
-func (h *CompletionHandler) handleStreamingTranscriptionRequest(ctx *fasthttp.RequestCtx, req *schemas.RakshaTranscriptionRequest, rakshaCtx *schemas.RakshaContext, cancel context.CancelFunc) {
-	// Use the cancellable context from ConvertToRakshaContext
+func (h *CompletionHandler) handleStreamingTranscriptionRequest(ctx *fasthttp.RequestCtx, req *schemas.GatewayTranscriptionRequest, gatewayCtx *schemas.GatewayContext, cancel context.CancelFunc) {
+	// Use the cancellable context from ConvertToGatewayContext
 	// See router.go for detailed explanation of why we need a cancellable context
 
-	getStream := func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-		return h.client.TranscriptionStreamRequest(rakshaCtx, req)
+	getStream := func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+		return h.client.TranscriptionStreamRequest(gatewayCtx, req)
 	}
 
-	h.handleStreamingResponse(ctx, rakshaCtx, getStream, cancel)
+	h.handleStreamingResponse(ctx, gatewayCtx, getStream, cancel)
 }
 
 // handleStreamingResponse is a generic function to handle streaming responses using Server-Sent Events (SSE)
 // The cancel function is called ONLY when client disconnects are detected via write errors.
-// Raksha handles cleanup internally for normal completion and errors, so we only cancel
+// Gateway handles cleanup internally for normal completion and errors, so we only cancel
 // upstream streams when write errors indicate the client has disconnected.
-func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, getStream func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError), cancel context.CancelFunc) {
+func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, getStream func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError), cancel context.CancelFunc) {
 	// Get the streaming channel — called BEFORE setting SSE headers so that
 	// provider errors return proper HTTP status codes + JSON content type.
-	stream, rakshaErr := getStream()
-	if rakshaErr != nil {
+	stream, gatewayErr := getStream()
+	if gatewayErr != nil {
 		cancel()
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -1889,25 +1889,25 @@ func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, ra
 	ctx.Response.Header.Set("Connection", "keep-alive")
 
 	// Forward provider response headers stored in context by streaming handlers
-	if headers, ok := rakshaCtx.Value(schemas.RakshaContextKeyProviderResponseHeaders).(map[string]string); ok {
+	if headers, ok := gatewayCtx.Value(schemas.GatewayContextKeyProviderResponseHeaders).(map[string]string); ok {
 		forwardProviderHeaders(ctx, headers)
 	}
 
 	// Signal to tracing middleware that trace completion should be deferred
 	// The streaming callback will complete the trace after the stream ends
-	ctx.SetUserValue(schemas.RakshaContextKeyDeferTraceCompletion, true)
+	ctx.SetUserValue(schemas.GatewayContextKeyDeferTraceCompletion, true)
 
 	// Pre-allocate atomic.Value slot for the transport post-hook completer.
 	// TransportInterceptorMiddleware stores the completer into this slot after next(ctx)
 	// returns. The goroutine reads from the closure-captured pointer, avoiding any ctx
 	// access after the handler returns (fasthttp recycles RequestCtx).
 	var completerSlot atomic.Value
-	ctx.SetUserValue(schemas.RakshaContextKeyTransportPostHookCompleter, &completerSlot)
+	ctx.SetUserValue(schemas.GatewayContextKeyTransportPostHookCompleter, &completerSlot)
 
 	// Get the trace completer function for use in the streaming callback.
 	// Signature: func([]schemas.PluginLogEntry) — accepts transport plugin logs so it
 	// never needs to read from ctx.UserValue (ctx may be recycled).
-	traceCompleter, _ := ctx.UserValue(schemas.RakshaContextKeyTraceCompleter).(func([]schemas.PluginLogEntry))
+	traceCompleter, _ := ctx.UserValue(schemas.GatewayContextKeyTraceCompleter).(func([]schemas.PluginLogEntry))
 
 	// Get stream chunk interceptor for plugin hooks
 	interceptor := h.config.GetStreamChunkInterceptor()
@@ -1994,27 +1994,27 @@ func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, ra
 			}
 
 			includeEventType = false
-			if chunk.RakshaResponsesStreamResponse != nil ||
-				chunk.RakshaImageGenerationStreamResponse != nil ||
-				(chunk.RakshaError != nil && (chunk.RakshaError.ExtraFields.RequestType == schemas.ResponsesStreamRequest || chunk.RakshaError.ExtraFields.RequestType == schemas.ImageGenerationStreamRequest || chunk.RakshaError.ExtraFields.RequestType == schemas.ImageEditStreamRequest)) {
+			if chunk.GatewayResponsesStreamResponse != nil ||
+				chunk.GatewayImageGenerationStreamResponse != nil ||
+				(chunk.GatewayError != nil && (chunk.GatewayError.ExtraFields.RequestType == schemas.ResponsesStreamRequest || chunk.GatewayError.ExtraFields.RequestType == schemas.ImageGenerationStreamRequest || chunk.GatewayError.ExtraFields.RequestType == schemas.ImageEditStreamRequest)) {
 				includeEventType = true
 			}
 
 			// Image generation streams don't use [DONE] marker
-			if chunk.RakshaImageGenerationStreamResponse != nil {
+			if chunk.GatewayImageGenerationStreamResponse != nil {
 				skipDoneMarker = true
 			}
 
 			// Allow plugins to modify/filter the chunk via StreamChunkInterceptor
 			if interceptor != nil {
 				var err error
-				chunk, err = interceptor.InterceptChunk(rakshaCtx, httpReq, chunk)
+				chunk, err = interceptor.InterceptChunk(gatewayCtx, httpReq, chunk)
 				if err != nil {
 					if chunk == nil {
 						var errorPayload interface{} = map[string]string{"error": err.Error()}
 						var structuredErr *schemas.StreamInterceptionError
 						if errors.As(err, &structuredErr) && structuredErr != nil {
-							if sanitized := lib.SanitizeRakshaErrorForClient(structuredErr.RakshaError); sanitized != nil {
+							if sanitized := lib.SanitizeGatewayErrorForClient(structuredErr.GatewayError); sanitized != nil {
 								errorPayload = sanitized
 							}
 						}
@@ -2052,11 +2052,11 @@ func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, ra
 			var eventType string
 			if includeEventType {
 				// For responses and image gen API, use OpenAI-compatible format with event line
-				if chunk.RakshaResponsesStreamResponse != nil {
-					eventType = string(chunk.RakshaResponsesStreamResponse.Type)
-				} else if chunk.RakshaImageGenerationStreamResponse != nil {
-					eventType = string(chunk.RakshaImageGenerationStreamResponse.Type)
-				} else if chunk.RakshaError != nil {
+				if chunk.GatewayResponsesStreamResponse != nil {
+					eventType = string(chunk.GatewayResponsesStreamResponse.Type)
+				} else if chunk.GatewayImageGenerationStreamResponse != nil {
+					eventType = string(chunk.GatewayImageGenerationStreamResponse.Type)
+				} else if chunk.GatewayError != nil {
 					eventType = string(schemas.ResponsesStreamResponseTypeError)
 				}
 			}
@@ -2087,7 +2087,7 @@ func (h *CompletionHandler) handleStreamingResponse(ctx *fasthttp.RequestCtx, ra
 			}
 		}
 		// Note: OpenAI responses API doesn't use [DONE] marker, it ends when the stream closes
-		// Stream completed normally, Raksha handles cleanup internally
+		// Stream completed normally, Gateway handles cleanup internally
 		cancel()
 	}()
 }
@@ -2169,8 +2169,8 @@ func (h *CompletionHandler) validateAudioFile(fileHeader *multipart.FileHeader) 
 	return nil
 }
 
-// prepareImageGenerationRequest prepares a RakshaImageGenerationRequest from the HTTP request body
-func prepareImageGenerationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*ImageGenerationHTTPRequest, *schemas.RakshaImageGenerationRequest, error) {
+// prepareImageGenerationRequest prepares a GatewayImageGenerationRequest from the HTTP request body
+func prepareImageGenerationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*ImageGenerationHTTPRequest, *schemas.GatewayImageGenerationRequest, error) {
 	req, base, err := prepareRequest[ImageGenerationHTTPRequest](ctx, config, imageGenerationParamsKnownFields)
 	if err != nil {
 		return nil, nil, err
@@ -2182,7 +2182,7 @@ func prepareImageGenerationRequest(ctx *fasthttp.RequestCtx, config *lib.Config)
 		req.ImageGenerationParameters = &schemas.ImageGenerationParameters{}
 	}
 	req.ImageGenerationParameters.ExtraParams = base.ExtraParams
-	return req, &schemas.RakshaImageGenerationRequest{
+	return req, &schemas.GatewayImageGenerationRequest{
 		Provider:  base.Provider,
 		Model:     base.ModelName,
 		Input:     req.ImageGenerationInput,
@@ -2193,59 +2193,59 @@ func prepareImageGenerationRequest(ctx *fasthttp.RequestCtx, config *lib.Config)
 
 // imageGeneration handles POST /v1/images/generations - Processes image generation requests
 func (h *CompletionHandler) imageGeneration(ctx *fasthttp.RequestCtx) {
-	req, rakshaReq, err := prepareImageGenerationRequest(ctx, h.config)
+	req, gatewayReq, err := prepareImageGenerationRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		cancel()
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	rakshaCtx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
 
 	// Handle streaming image generation
-	if req.RakshaParams.Stream != nil && *req.RakshaParams.Stream {
-		h.handleStreamingImageGeneration(ctx, rakshaReq, rakshaCtx, cancel)
+	if req.GatewayParams.Stream != nil && *req.GatewayParams.Stream {
+		h.handleStreamingImageGeneration(ctx, gatewayReq, gatewayCtx, cancel)
 		return
 	}
 	defer cancel()
 
 	// Execute request
-	resp, rakshaErr := h.client.ImageGenerationRequest(rakshaCtx, rakshaReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ImageGenerationRequest(gatewayCtx, gatewayReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
 }
 
 // handleStreamingImageGeneration handles streaming image generation requests using Server-Sent Events (SSE)
-func (h *CompletionHandler) handleStreamingImageGeneration(ctx *fasthttp.RequestCtx, req *schemas.RakshaImageGenerationRequest, rakshaCtx *schemas.RakshaContext, cancel context.CancelFunc) {
-	// Use the cancellable context from ConvertToRakshaContext
+func (h *CompletionHandler) handleStreamingImageGeneration(ctx *fasthttp.RequestCtx, req *schemas.GatewayImageGenerationRequest, gatewayCtx *schemas.GatewayContext, cancel context.CancelFunc) {
+	// Use the cancellable context from ConvertToGatewayContext
 	// See router.go for detailed explanation of why we need a cancellable context
 	// Pass the context directly instead of copying to avoid copying lock values
 
-	getStream := func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-		return h.client.ImageGenerationStreamRequest(rakshaCtx, req)
+	getStream := func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+		return h.client.ImageGenerationStreamRequest(gatewayCtx, req)
 	}
 
-	h.handleStreamingResponse(ctx, rakshaCtx, getStream, cancel)
+	h.handleStreamingResponse(ctx, gatewayCtx, getStream, cancel)
 }
 
-// prepareImageEditRequest prepares a RakshaImageEditRequest from a multipart form
-func prepareImageEditRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*ImageEditHTTPRequest, *schemas.RakshaImageEditRequest, error) {
+// prepareImageEditRequest prepares a GatewayImageEditRequest from a multipart form
+func prepareImageEditRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*ImageEditHTTPRequest, *schemas.GatewayImageEditRequest, error) {
 	var req ImageEditHTTPRequest
 	form, err := ctx.MultipartForm()
 	if err != nil {
@@ -2390,68 +2390,68 @@ func prepareImageEditRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*Ima
 	if err != nil {
 		return nil, nil, err
 	}
-	rakshaReq := &schemas.RakshaImageEditRequest{
+	gatewayReq := &schemas.GatewayImageEditRequest{
 		Provider:  schemas.ModelProvider(provider),
 		Model:     modelName,
 		Input:     req.ImageEditInput,
 		Params:    req.ImageEditParameters,
 		Fallbacks: fallbacks,
 	}
-	return &req, rakshaReq, nil
+	return &req, gatewayReq, nil
 }
 
 // imageEdit handles POST /v1/images/edits - Processes image edit requests
 func (h *CompletionHandler) imageEdit(ctx *fasthttp.RequestCtx) {
-	req, rakshaReq, err := prepareImageEditRequest(ctx, h.config)
+	req, gatewayReq, err := prepareImageEditRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
 	// Handle streaming image edit
 	if req.Stream != nil && *req.Stream {
-		h.handleStreamingImageEditRequest(ctx, rakshaReq, rakshaCtx, cancel)
+		h.handleStreamingImageEditRequest(ctx, gatewayReq, gatewayCtx, cancel)
 		return
 	}
 	defer cancel()
 
 	// Execute request
-	resp, rakshaErr := h.client.ImageEditRequest(rakshaCtx, rakshaReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ImageEditRequest(gatewayCtx, gatewayReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
 }
 
 // handleStreamingImageEditRequest handles streaming image edit requests using Server-Sent Events (SSE)
-func (h *CompletionHandler) handleStreamingImageEditRequest(ctx *fasthttp.RequestCtx, req *schemas.RakshaImageEditRequest, rakshaCtx *schemas.RakshaContext, cancel context.CancelFunc) {
-	// Use the cancellable context from ConvertToRakshaContext
+func (h *CompletionHandler) handleStreamingImageEditRequest(ctx *fasthttp.RequestCtx, req *schemas.GatewayImageEditRequest, gatewayCtx *schemas.GatewayContext, cancel context.CancelFunc) {
+	// Use the cancellable context from ConvertToGatewayContext
 	// See router.go for detailed explanation of why we need a cancellable context
 
-	getStream := func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-		return h.client.ImageEditStreamRequest(rakshaCtx, req)
+	getStream := func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+		return h.client.ImageEditStreamRequest(gatewayCtx, req)
 	}
 
-	h.handleStreamingResponse(ctx, rakshaCtx, getStream, cancel)
+	h.handleStreamingResponse(ctx, gatewayCtx, getStream, cancel)
 }
 
-// prepareImageVariationRequest prepares a RakshaImageVariationRequest from a multipart form
-func prepareImageVariationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*schemas.RakshaImageVariationRequest, error) {
+// prepareImageVariationRequest prepares a GatewayImageVariationRequest from a multipart form
+func prepareImageVariationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (*schemas.GatewayImageVariationRequest, error) {
 	rawBody := ctx.Request.Body()
 	form, err := ctx.MultipartForm()
 	if err != nil {
@@ -2525,7 +2525,7 @@ func prepareImageVariationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 		if err != nil {
 			return nil, err
 		}
-		return &schemas.RakshaImageVariationRequest{
+		return &schemas.GatewayImageVariationRequest{
 			Provider:       schemas.ModelProvider(provider),
 			Model:          modelName,
 			Input:          variationInput,
@@ -2534,7 +2534,7 @@ func prepareImageVariationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 			RawRequestBody: rawBody,
 		}, nil
 	}
-	return &schemas.RakshaImageVariationRequest{
+	return &schemas.GatewayImageVariationRequest{
 		Provider:       schemas.ModelProvider(provider),
 		Model:          modelName,
 		Input:          variationInput,
@@ -2545,31 +2545,31 @@ func prepareImageVariationRequest(ctx *fasthttp.RequestCtx, config *lib.Config) 
 
 // imageVariation handles POST /v1/images/variations - Processes image variation requests
 func (h *CompletionHandler) imageVariation(ctx *fasthttp.RequestCtx) {
-	rakshaReq, err := prepareImageVariationRequest(ctx, h.config)
+	gatewayReq, err := prepareImageVariationRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 	defer cancel()
 
 	// Execute request (no streaming for variations)
-	resp, rakshaErr := h.client.ImageVariationRequest(rakshaCtx, rakshaReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ImageVariationRequest(gatewayCtx, gatewayReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -2611,7 +2611,7 @@ func (h *CompletionHandler) videoGeneration(ctx *fasthttp.RequestCtx) {
 		req.VideoGenerationParameters.ExtraParams = extraParams
 	}
 
-	rakshaReq := &schemas.RakshaVideoGenerationRequest{
+	gatewayReq := &schemas.GatewayVideoGenerationRequest{
 		Provider:  schemas.ModelProvider(provider),
 		Model:     modelName,
 		Input:     req.VideoGenerationInput,
@@ -2619,25 +2619,25 @@ func (h *CompletionHandler) videoGeneration(ctx *fasthttp.RequestCtx) {
 		Fallbacks: fallbacks,
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
+	if gatewayCtx == nil {
 		cancel()
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 	defer cancel()
 
-	resp, rakshaErr := h.client.VideoGenerationRequest(rakshaCtx, rakshaReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.VideoGenerationRequest(gatewayCtx, gatewayReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -2666,31 +2666,31 @@ func (h *CompletionHandler) videoRetrieve(ctx *fasthttp.RequestCtx) {
 
 	provider := schemas.ModelProvider(idParts[1])
 
-	// Build Raksha video retrieve request
-	rakshaVideoReq := &schemas.RakshaVideoRetrieveRequest{
+	// Build Gateway video retrieve request
+	gatewayVideoReq := &schemas.GatewayVideoRetrieveRequest{
 		Provider: provider,
 		ID:       idParts[0],
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.VideoRetrieveRequest(rakshaCtx, rakshaVideoReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.VideoRetrieveRequest(gatewayCtx, gatewayVideoReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -2720,35 +2720,35 @@ func (h *CompletionHandler) videoDownload(ctx *fasthttp.RequestCtx) {
 	// take variant from query parameters
 	variant := string(ctx.QueryArgs().Peek("variant"))
 
-	// Build Raksha video download request
-	rakshaVideoReq := &schemas.RakshaVideoDownloadRequest{
+	// Build Gateway video download request
+	gatewayVideoReq := &schemas.GatewayVideoDownloadRequest{
 		Provider: schemas.ModelProvider(idParts[1]),
 		ID:       idParts[0],
 	}
 
 	if variant != "" {
-		rakshaVideoReq.Variant = schemas.Ptr(schemas.VideoDownloadVariant(variant))
+		gatewayVideoReq.Variant = schemas.Ptr(schemas.VideoDownloadVariant(variant))
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.VideoDownloadRequest(rakshaCtx, rakshaVideoReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.VideoDownloadRequest(gatewayCtx, gatewayVideoReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 
@@ -2767,15 +2767,15 @@ func (h *CompletionHandler) videoList(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha video list request
-	rakshaVideoReq := &schemas.RakshaVideoListRequest{
+	// Build Gateway video list request
+	gatewayVideoReq := &schemas.GatewayVideoListRequest{
 		Provider: schemas.ModelProvider(provider),
 	}
 
 	// Parse optional query parameters
 	if afterBytes := ctx.QueryArgs().Peek("after"); len(afterBytes) > 0 {
 		after := string(afterBytes)
-		rakshaVideoReq.After = &after
+		gatewayVideoReq.After = &after
 	}
 
 	if limitBytes := ctx.QueryArgs().Peek("limit"); len(limitBytes) > 0 {
@@ -2784,33 +2784,33 @@ func (h *CompletionHandler) videoList(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusBadRequest, "invalid limit parameter")
 			return
 		}
-		rakshaVideoReq.Limit = &limit
+		gatewayVideoReq.Limit = &limit
 	}
 
 	if orderBytes := ctx.QueryArgs().Peek("order"); len(orderBytes) > 0 {
 		order := string(orderBytes)
-		rakshaVideoReq.Order = &order
+		gatewayVideoReq.Order = &order
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.VideoListRequest(rakshaCtx, rakshaVideoReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.VideoListRequest(gatewayCtx, gatewayVideoReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -2837,31 +2837,31 @@ func (h *CompletionHandler) videoDelete(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha video delete request
-	rakshaVideoReq := &schemas.RakshaVideoDeleteRequest{
+	// Build Gateway video delete request
+	gatewayVideoReq := &schemas.GatewayVideoDeleteRequest{
 		Provider: schemas.ModelProvider(idParts[1]),
 		ID:       idParts[0],
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.VideoDeleteRequest(rakshaCtx, rakshaVideoReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.VideoDeleteRequest(gatewayCtx, gatewayVideoReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -2910,8 +2910,8 @@ func (h *CompletionHandler) videoRemix(ctx *fasthttp.RequestCtx) {
 		req.ExtraParams = extraParams
 	}
 
-	// Build Raksha video remix request
-	rakshaVideoReq := &schemas.RakshaVideoRemixRequest{
+	// Build Gateway video remix request
+	gatewayVideoReq := &schemas.GatewayVideoRemixRequest{
 		Provider: provider,
 		ID:       idParts[0],
 		Input: &schemas.VideoGenerationInput{
@@ -2921,24 +2921,24 @@ func (h *CompletionHandler) videoRemix(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.VideoRemixRequest(rakshaCtx, rakshaVideoReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.VideoRemixRequest(gatewayCtx, gatewayVideoReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -2998,8 +2998,8 @@ func (h *CompletionHandler) batchCreate(ctx *fasthttp.RequestCtx) {
 		model = schemas.Ptr(modelName)
 	}
 
-	// Build Raksha batch create request
-	rakshaBatchReq := &schemas.RakshaBatchCreateRequest{
+	// Build Gateway batch create request
+	gatewayBatchReq := &schemas.GatewayBatchCreateRequest{
 		Provider:         schemas.ModelProvider(provider),
 		Model:            model,
 		InputFileID:      req.InputFileID,
@@ -3014,24 +3014,24 @@ func (h *CompletionHandler) batchCreate(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.BatchCreateRequest(rakshaCtx, rakshaBatchReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.BatchCreateRequest(gatewayCtx, gatewayBatchReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3065,8 +3065,8 @@ func (h *CompletionHandler) batchList(ctx *fasthttp.RequestCtx) {
 		before = &s
 	}
 
-	// Build Raksha batch list request
-	rakshaBatchReq := &schemas.RakshaBatchListRequest{
+	// Build Gateway batch list request
+	gatewayBatchReq := &schemas.GatewayBatchListRequest{
 		Provider: schemas.ModelProvider(provider),
 		Limit:    limit,
 		After:    after,
@@ -3074,24 +3074,24 @@ func (h *CompletionHandler) batchList(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.BatchListRequest(rakshaCtx, rakshaBatchReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.BatchListRequest(gatewayCtx, gatewayBatchReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3118,31 +3118,31 @@ func (h *CompletionHandler) batchRetrieve(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha batch retrieve request
-	rakshaBatchReq := &schemas.RakshaBatchRetrieveRequest{
+	// Build Gateway batch retrieve request
+	gatewayBatchReq := &schemas.GatewayBatchRetrieveRequest{
 		Provider: schemas.ModelProvider(provider),
 		BatchID:  batchID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.BatchRetrieveRequest(rakshaCtx, rakshaBatchReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.BatchRetrieveRequest(gatewayCtx, gatewayBatchReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3169,31 +3169,31 @@ func (h *CompletionHandler) batchCancel(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha batch cancel request
-	rakshaBatchReq := &schemas.RakshaBatchCancelRequest{
+	// Build Gateway batch cancel request
+	gatewayBatchReq := &schemas.GatewayBatchCancelRequest{
 		Provider: schemas.ModelProvider(provider),
 		BatchID:  batchID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.BatchCancelRequest(rakshaCtx, rakshaBatchReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.BatchCancelRequest(gatewayCtx, gatewayBatchReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3220,31 +3220,31 @@ func (h *CompletionHandler) batchResults(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha batch results request
-	rakshaBatchReq := &schemas.RakshaBatchResultsRequest{
+	// Build Gateway batch results request
+	gatewayBatchReq := &schemas.GatewayBatchResultsRequest{
 		Provider: schemas.ModelProvider(provider),
 		BatchID:  batchID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.BatchResultsRequest(rakshaCtx, rakshaBatchReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.BatchResultsRequest(gatewayCtx, gatewayBatchReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3365,8 +3365,8 @@ func (h *CompletionHandler) fileUpload(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	// Build Raksha file upload request
-	rakshaFileReq := &schemas.RakshaFileUploadRequest{
+	// Build Gateway file upload request
+	gatewayFileReq := &schemas.GatewayFileUploadRequest{
 		Provider:      schemas.ModelProvider(provider),
 		File:          fileData,
 		Filename:      filename,
@@ -3377,17 +3377,17 @@ func (h *CompletionHandler) fileUpload(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.FileUploadRequest(rakshaCtx, rakshaFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.FileUploadRequest(gatewayCtx, gatewayFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -3397,7 +3397,7 @@ func (h *CompletionHandler) fileUpload(ctx *fasthttp.RequestCtx) {
 			forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 		}
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3459,8 +3459,8 @@ func (h *CompletionHandler) fileList(ctx *fasthttp.RequestCtx) {
 		}
 	})
 
-	// Build Raksha file list request
-	rakshaFileReq := &schemas.RakshaFileListRequest{
+	// Build Gateway file list request
+	gatewayFileReq := &schemas.GatewayFileListRequest{
 		Provider:      schemas.ModelProvider(provider),
 		Purpose:       schemas.FilePurpose(purpose),
 		Limit:         limit,
@@ -3471,17 +3471,17 @@ func (h *CompletionHandler) fileList(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.FileListRequest(rakshaCtx, rakshaFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.FileListRequest(gatewayCtx, gatewayFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -3493,7 +3493,7 @@ func (h *CompletionHandler) fileList(ctx *fasthttp.RequestCtx) {
 			forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 		}
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3520,24 +3520,24 @@ func (h *CompletionHandler) fileRetrieve(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha file retrieve request
-	rakshaFileReq := &schemas.RakshaFileRetrieveRequest{
+	// Build Gateway file retrieve request
+	gatewayFileReq := &schemas.GatewayFileRetrieveRequest{
 		Provider: schemas.ModelProvider(provider),
 		FileID:   fileID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.FileRetrieveRequest(rakshaCtx, rakshaFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.FileRetrieveRequest(gatewayCtx, gatewayFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -3547,7 +3547,7 @@ func (h *CompletionHandler) fileRetrieve(ctx *fasthttp.RequestCtx) {
 			forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 		}
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3574,24 +3574,24 @@ func (h *CompletionHandler) fileDelete(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha file delete request
-	rakshaFileReq := &schemas.RakshaFileDeleteRequest{
+	// Build Gateway file delete request
+	gatewayFileReq := &schemas.GatewayFileDeleteRequest{
 		Provider: schemas.ModelProvider(provider),
 		FileID:   fileID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.FileDeleteRequest(rakshaCtx, rakshaFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.FileDeleteRequest(gatewayCtx, gatewayFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -3601,7 +3601,7 @@ func (h *CompletionHandler) fileDelete(ctx *fasthttp.RequestCtx) {
 			forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 		}
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3628,28 +3628,28 @@ func (h *CompletionHandler) fileContent(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha file content request
-	rakshaFileReq := &schemas.RakshaFileContentRequest{
+	// Build Gateway file content request
+	gatewayFileReq := &schemas.GatewayFileContentRequest{
 		Provider: schemas.ModelProvider(provider),
 		FileID:   fileID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
-	resp, rakshaErr := h.client.FileContentRequest(rakshaCtx, rakshaFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.FileContentRequest(gatewayCtx, gatewayFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 
@@ -3684,8 +3684,8 @@ func (h *CompletionHandler) containerCreate(ctx *fasthttp.RequestCtx) {
 		logger.Warn("Failed to extract extra params: %v", err)
 	}
 
-	// Build Raksha container create request
-	rakshaContainerReq := &schemas.RakshaContainerCreateRequest{
+	// Build Gateway container create request
+	gatewayContainerReq := &schemas.GatewayContainerCreateRequest{
 		Provider:     schemas.ModelProvider(req.Provider),
 		Name:         req.Name,
 		ExpiresAfter: req.ExpiresAfter,
@@ -3696,25 +3696,25 @@ func (h *CompletionHandler) containerCreate(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	enableRawRequestResponseForContainer(rakshaCtx)
+	enableRawRequestResponseForContainer(gatewayCtx)
 
-	resp, rakshaErr := h.client.ContainerCreateRequest(rakshaCtx, rakshaContainerReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ContainerCreateRequest(gatewayCtx, gatewayContainerReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3740,14 +3740,14 @@ func (h *CompletionHandler) containerList(ctx *fasthttp.RequestCtx) {
 	// Parse pagination parameters
 	var after, order *string
 	if afterStr := ctx.QueryArgs().Peek("after"); len(afterStr) > 0 {
-		after = raksha.Ptr(string(afterStr))
+		after = gateway.Ptr(string(afterStr))
 	}
 	if orderStr := ctx.QueryArgs().Peek("order"); len(orderStr) > 0 {
-		order = raksha.Ptr(string(orderStr))
+		order = gateway.Ptr(string(orderStr))
 	}
 
-	// Build Raksha container list request
-	rakshaContainerReq := &schemas.RakshaContainerListRequest{
+	// Build Gateway container list request
+	gatewayContainerReq := &schemas.GatewayContainerListRequest{
 		Provider: schemas.ModelProvider(provider),
 		Limit:    limit,
 		After:    after,
@@ -3755,25 +3755,25 @@ func (h *CompletionHandler) containerList(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	enableRawRequestResponseForContainer(rakshaCtx)
+	enableRawRequestResponseForContainer(gatewayCtx)
 
-	resp, rakshaErr := h.client.ContainerListRequest(rakshaCtx, rakshaContainerReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ContainerListRequest(gatewayCtx, gatewayContainerReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3795,32 +3795,32 @@ func (h *CompletionHandler) containerRetrieve(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha container retrieve request
-	rakshaContainerReq := &schemas.RakshaContainerRetrieveRequest{
+	// Build Gateway container retrieve request
+	gatewayContainerReq := &schemas.GatewayContainerRetrieveRequest{
 		Provider:    schemas.ModelProvider(provider),
 		ContainerID: containerID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	enableRawRequestResponseForContainer(rakshaCtx)
+	enableRawRequestResponseForContainer(gatewayCtx)
 
-	resp, rakshaErr := h.client.ContainerRetrieveRequest(rakshaCtx, rakshaContainerReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ContainerRetrieveRequest(gatewayCtx, gatewayContainerReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3842,32 +3842,32 @@ func (h *CompletionHandler) containerDelete(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha container delete request
-	rakshaContainerReq := &schemas.RakshaContainerDeleteRequest{
+	// Build Gateway container delete request
+	gatewayContainerReq := &schemas.GatewayContainerDeleteRequest{
 		Provider:    schemas.ModelProvider(provider),
 		ContainerID: containerID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	enableRawRequestResponseForContainer(rakshaCtx)
+	enableRawRequestResponseForContainer(gatewayCtx)
 
-	resp, rakshaErr := h.client.ContainerDeleteRequest(rakshaCtx, rakshaContainerReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ContainerDeleteRequest(gatewayCtx, gatewayContainerReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3893,8 +3893,8 @@ func (h *CompletionHandler) containerFileCreate(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha container file create request
-	rakshaContainerFileReq := &schemas.RakshaContainerFileCreateRequest{
+	// Build Gateway container file create request
+	gatewayContainerFileReq := &schemas.GatewayContainerFileCreateRequest{
 		Provider:    schemas.ModelProvider(provider),
 		ContainerID: containerID,
 	}
@@ -3920,10 +3920,10 @@ func (h *CompletionHandler) containerFileCreate(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusInternalServerError, "Internal Server Error")
 			return
 		}
-		rakshaContainerFileReq.File = fileContent
+		gatewayContainerFileReq.File = fileContent
 		// Extract optional file_path from multipart form
 		if filePath := ctx.FormValue("file_path"); len(filePath) > 0 {
-			rakshaContainerFileReq.Path = raksha.Ptr(string(filePath))
+			gatewayContainerFileReq.Path = gateway.Ptr(string(filePath))
 		}
 	} else {
 		// Handle JSON request with file_id
@@ -3939,32 +3939,32 @@ func (h *CompletionHandler) containerFileCreate(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusBadRequest, "file_id is required in JSON body")
 			return
 		}
-		rakshaContainerFileReq.FileID = raksha.Ptr(reqBody.FileID)
+		gatewayContainerFileReq.FileID = gateway.Ptr(reqBody.FileID)
 		if reqBody.FilePath != "" {
-			rakshaContainerFileReq.Path = raksha.Ptr(reqBody.FilePath)
+			gatewayContainerFileReq.Path = gateway.Ptr(reqBody.FilePath)
 		}
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	enableRawRequestResponseForContainer(rakshaCtx)
+	enableRawRequestResponseForContainer(gatewayCtx)
 
-	resp, rakshaErr := h.client.ContainerFileCreateRequest(rakshaCtx, rakshaContainerFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ContainerFileCreateRequest(gatewayCtx, gatewayContainerFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -3986,8 +3986,8 @@ func (h *CompletionHandler) containerFileList(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha container file list request
-	rakshaContainerFileReq := &schemas.RakshaContainerFileListRequest{
+	// Build Gateway container file list request
+	gatewayContainerFileReq := &schemas.GatewayContainerFileListRequest{
 		Provider:    schemas.ModelProvider(provider),
 		ContainerID: containerID,
 	}
@@ -3995,36 +3995,36 @@ func (h *CompletionHandler) containerFileList(ctx *fasthttp.RequestCtx) {
 	// Parse pagination parameters
 	if limit := ctx.QueryArgs().Peek("limit"); len(limit) > 0 {
 		if limitInt, err := strconv.Atoi(string(limit)); err == nil && limitInt > 0 {
-			rakshaContainerFileReq.Limit = limitInt
+			gatewayContainerFileReq.Limit = limitInt
 		}
 	}
 	if after := string(ctx.QueryArgs().Peek("after")); after != "" {
-		rakshaContainerFileReq.After = raksha.Ptr(after)
+		gatewayContainerFileReq.After = gateway.Ptr(after)
 	}
 	if order := string(ctx.QueryArgs().Peek("order")); order != "" {
-		rakshaContainerFileReq.Order = raksha.Ptr(order)
+		gatewayContainerFileReq.Order = gateway.Ptr(order)
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	enableRawRequestResponseForContainer(rakshaCtx)
+	enableRawRequestResponseForContainer(gatewayCtx)
 
-	resp, rakshaErr := h.client.ContainerFileListRequest(rakshaCtx, rakshaContainerFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ContainerFileListRequest(gatewayCtx, gatewayContainerFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -4053,33 +4053,33 @@ func (h *CompletionHandler) containerFileRetrieve(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha container file retrieve request
-	rakshaContainerFileReq := &schemas.RakshaContainerFileRetrieveRequest{
+	// Build Gateway container file retrieve request
+	gatewayContainerFileReq := &schemas.GatewayContainerFileRetrieveRequest{
 		Provider:    schemas.ModelProvider(provider),
 		ContainerID: containerID,
 		FileID:      fileID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	enableRawRequestResponseForContainer(rakshaCtx)
+	enableRawRequestResponseForContainer(gatewayCtx)
 
-	resp, rakshaErr := h.client.ContainerFileRetrieveRequest(rakshaCtx, rakshaContainerFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ContainerFileRetrieveRequest(gatewayCtx, gatewayContainerFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)
@@ -4108,30 +4108,30 @@ func (h *CompletionHandler) containerFileContent(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha container file content request
-	rakshaContainerFileReq := &schemas.RakshaContainerFileContentRequest{
+	// Build Gateway container file content request
+	gatewayContainerFileReq := &schemas.GatewayContainerFileContentRequest{
 		Provider:    schemas.ModelProvider(provider),
 		ContainerID: containerID,
 		FileID:      fileID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	enableRawRequestResponseForContainer(rakshaCtx)
+	enableRawRequestResponseForContainer(gatewayCtx)
 
-	resp, rakshaErr := h.client.ContainerFileContentRequest(rakshaCtx, rakshaContainerFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ContainerFileContentRequest(gatewayCtx, gatewayContainerFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 
@@ -4163,33 +4163,33 @@ func (h *CompletionHandler) containerFileDelete(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Build Raksha container file delete request
-	rakshaContainerFileReq := &schemas.RakshaContainerFileDeleteRequest{
+	// Build Gateway container file delete request
+	gatewayContainerFileReq := &schemas.GatewayContainerFileDeleteRequest{
 		Provider:    schemas.ModelProvider(provider),
 		ContainerID: containerID,
 		FileID:      fileID,
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel()
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
-	enableRawRequestResponseForContainer(rakshaCtx)
+	enableRawRequestResponseForContainer(gatewayCtx)
 
-	resp, rakshaErr := h.client.ContainerFileDeleteRequest(rakshaCtx, rakshaContainerFileReq)
-	if rakshaErr != nil {
-		forwardProviderHeadersFromContext(ctx, rakshaCtx)
-		SendRakshaError(ctx, rakshaErr)
+	resp, gatewayErr := h.client.ContainerFileDeleteRequest(gatewayCtx, gatewayContainerFileReq)
+	if gatewayErr != nil {
+		forwardProviderHeadersFromContext(ctx, gatewayCtx)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	if resp != nil && resp.ExtraFields.ProviderResponseHeaders != nil {
 		forwardProviderHeaders(ctx, resp.ExtraFields.ProviderResponseHeaders)
 	}
-	if streamLargeResponseIfActive(ctx, rakshaCtx) {
+	if streamLargeResponseIfActive(ctx, gatewayCtx) {
 		return
 	}
 	SendJSON(ctx, resp)

@@ -17,12 +17,12 @@ import (
 	"sync"
 	"time"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/modelcatalog/datasheet"
-	"github.com/raksha/raksha/framework/modelcatalog/keyconfig"
-	"github.com/raksha/raksha/framework/modelcatalog/live"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/modelcatalog/datasheet"
+	"github.com/gateway/gateway/framework/modelcatalog/keyconfig"
+	"github.com/gateway/gateway/framework/modelcatalog/live"
 )
 
 type ModelCatalog struct {

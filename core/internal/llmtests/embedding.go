@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // cosineSimilarity computes the cosine similarity between two vectors
@@ -36,7 +36,7 @@ func cosineSimilarity(a, b []float64) float64 {
 }
 
 // RunEmbeddingTest executes the embedding test scenario
-func RunEmbeddingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunEmbeddingTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Embedding {
 		t.Logf("Embedding not supported for provider %s", testConfig.Provider)
 		return
@@ -58,14 +58,14 @@ func RunEmbeddingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 			"Goodnight, moon!",
 		}
 
-		request := &schemas.RakshaEmbeddingRequest{
+		request := &schemas.GatewayEmbeddingRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.EmbeddingModel,
 			Input: &schemas.EmbeddingInput{
 				Texts: testTexts,
 			},
 			Params: &schemas.EmbeddingParameters{
-				EncodingFormat: raksha.Ptr("float"),
+				EncodingFormat: gateway.Ptr("float"),
 			},
 			Fallbacks: testConfig.EmbeddingFallbacks,
 		}
@@ -98,13 +98,13 @@ func RunEmbeddingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		embeddingResponse, rakshaErr := WithEmbeddingTestRetry(t, embeddingRetryConfig, retryContext, expectations, "Embedding", func() (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		embeddingResponse, gatewayErr := WithEmbeddingTestRetry(t, embeddingRetryConfig, retryContext, expectations, "Embedding", func() (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.EmbeddingRequest(bfCtx, request)
 		})
 
-		if rakshaErr != nil {
-			t.Fatalf("❌ Embedding request failed after retries: %v", GetErrorMessage(rakshaErr))
+		if gatewayErr != nil {
+			t.Fatalf("❌ Embedding request failed after retries: %v", GetErrorMessage(gatewayErr))
 		}
 
 		// Additional embedding-specific validation (complementary to the main validation)
@@ -114,7 +114,7 @@ func RunEmbeddingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 
 // validateEmbeddingSemantics performs semantic validation on embedding responses
 // This is complementary to the main validation framework and focuses on embedding-specific concerns
-func validateEmbeddingSemantics(t *testing.T, response *schemas.RakshaEmbeddingResponse, testTexts []string) {
+func validateEmbeddingSemantics(t *testing.T, response *schemas.GatewayEmbeddingResponse, testTexts []string) {
 	if response == nil || response.Data == nil {
 		t.Fatal("Invalid embedding response structure")
 	}

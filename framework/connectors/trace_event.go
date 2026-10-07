@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 func traceEvent(trace *schemas.Trace) map[string]any {

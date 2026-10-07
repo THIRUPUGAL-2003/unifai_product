@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	codemcp "github.com/raksha/raksha/core/mcp"
-	"github.com/raksha/raksha/core/schemas"
+	codemcp "github.com/gateway/gateway/core/mcp"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // createGetToolDocsTool creates the getToolDocs tool definition for code mode.

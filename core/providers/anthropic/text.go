@@ -4,41 +4,41 @@ import (
 	"fmt"
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToAnthropicTextCompletionRequest converts a Raksha text completion request to Anthropic format
-func ToAnthropicTextCompletionRequest(rakshaReq *schemas.RakshaTextCompletionRequest) *AnthropicTextRequest {
-	if rakshaReq == nil {
+// ToAnthropicTextCompletionRequest converts a Gateway text completion request to Anthropic format
+func ToAnthropicTextCompletionRequest(gatewayReq *schemas.GatewayTextCompletionRequest) *AnthropicTextRequest {
+	if gatewayReq == nil {
 		return nil
 	}
 
 	prompt := ""
-	if rakshaReq.Input.PromptStr != nil {
-		prompt = *rakshaReq.Input.PromptStr
-	} else if len(rakshaReq.Input.PromptArray) > 0 {
-		prompt = strings.Join(rakshaReq.Input.PromptArray, "\n\n")
+	if gatewayReq.Input.PromptStr != nil {
+		prompt = *gatewayReq.Input.PromptStr
+	} else if len(gatewayReq.Input.PromptArray) > 0 {
+		prompt = strings.Join(gatewayReq.Input.PromptArray, "\n\n")
 	}
 
 	anthropicReq := &AnthropicTextRequest{
-		Model:             rakshaReq.Model,
+		Model:             gatewayReq.Model,
 		Prompt:            fmt.Sprintf("\n\nHuman: %s\n\nAssistant:", prompt),
-		MaxTokensToSample: providerUtils.GetMaxOutputTokensOrDefault(rakshaReq.Model, AnthropicDefaultMaxTokens),
+		MaxTokensToSample: providerUtils.GetMaxOutputTokensOrDefault(gatewayReq.Model, AnthropicDefaultMaxTokens),
 	}
 
 	// Convert parameters
-	if rakshaReq.Params != nil {
-		if rakshaReq.Params.MaxTokens != nil {
-			anthropicReq.MaxTokensToSample = *rakshaReq.Params.MaxTokens
+	if gatewayReq.Params != nil {
+		if gatewayReq.Params.MaxTokens != nil {
+			anthropicReq.MaxTokensToSample = *gatewayReq.Params.MaxTokens
 		}
-		anthropicReq.Temperature = rakshaReq.Params.Temperature
-		anthropicReq.TopP = rakshaReq.Params.TopP
-		anthropicReq.StopSequences = rakshaReq.Params.Stop
+		anthropicReq.Temperature = gatewayReq.Params.Temperature
+		anthropicReq.TopP = gatewayReq.Params.TopP
+		anthropicReq.StopSequences = gatewayReq.Params.Stop
 
-		if rakshaReq.Params.ExtraParams != nil {
-			anthropicReq.ExtraParams = rakshaReq.Params.ExtraParams
-			if topK, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["top_k"]); ok {
+		if gatewayReq.Params.ExtraParams != nil {
+			anthropicReq.ExtraParams = gatewayReq.Params.ExtraParams
+			if topK, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["top_k"]); ok {
 				delete(anthropicReq.ExtraParams, "top_k")
 				anthropicReq.TopK = topK
 			}
@@ -48,15 +48,15 @@ func ToAnthropicTextCompletionRequest(rakshaReq *schemas.RakshaTextCompletionReq
 	return anthropicReq
 }
 
-// ToRakshaTextCompletionRequest converts an Anthropic text request back to Raksha format
-func (req *AnthropicTextRequest) ToRakshaTextCompletionRequest(ctx *schemas.RakshaContext) *schemas.RakshaTextCompletionRequest {
+// ToGatewayTextCompletionRequest converts an Anthropic text request back to Gateway format
+func (req *AnthropicTextRequest) ToGatewayTextCompletionRequest(ctx *schemas.GatewayContext) *schemas.GatewayTextCompletionRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	rakshaReq := &schemas.RakshaTextCompletionRequest{
+	gatewayReq := &schemas.GatewayTextCompletionRequest{
 		Provider: provider,
 		Model:    model,
 		Input: &schemas.TextCompletionInput{
@@ -73,23 +73,23 @@ func (req *AnthropicTextRequest) ToRakshaTextCompletionRequest(ctx *schemas.Raks
 
 	// Add extra params if present
 	if req.TopK != nil {
-		rakshaReq.Params.ExtraParams = map[string]interface{}{
+		gatewayReq.Params.ExtraParams = map[string]interface{}{
 			"top_k": *req.TopK,
 		}
 	}
 
-	return rakshaReq
+	return gatewayReq
 }
 
-// ToRakshaTextCompletionResponse converts an Anthropic text response back to Raksha format
-func (response *AnthropicTextResponse) ToRakshaTextCompletionResponse() *schemas.RakshaTextCompletionResponse {
+// ToGatewayTextCompletionResponse converts an Anthropic text response back to Gateway format
+func (response *AnthropicTextResponse) ToGatewayTextCompletionResponse() *schemas.GatewayTextCompletionResponse {
 	if response == nil {
 		return nil
 	}
-	return &schemas.RakshaTextCompletionResponse{
+	return &schemas.GatewayTextCompletionResponse{
 		ID:     response.ID,
 		Object: "text_completion",
-		Choices: []schemas.RakshaResponseChoice{
+		Choices: []schemas.GatewayResponseChoice{
 			{
 				Index: 0,
 				TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{
@@ -97,7 +97,7 @@ func (response *AnthropicTextResponse) ToRakshaTextCompletionResponse() *schemas
 				},
 			},
 		},
-		Usage: &schemas.RakshaLLMUsage{
+		Usage: &schemas.GatewayLLMUsage{
 			PromptTokens:     response.Usage.InputTokens,
 			CompletionTokens: response.Usage.OutputTokens,
 			TotalTokens:      response.Usage.InputTokens + response.Usage.OutputTokens,
@@ -106,21 +106,21 @@ func (response *AnthropicTextResponse) ToRakshaTextCompletionResponse() *schemas
 	}
 }
 
-// ToAnthropicTextCompletionResponse converts a RakshaResponse back to Anthropic text completion format
-func ToAnthropicTextCompletionResponse(rakshaResp *schemas.RakshaTextCompletionResponse) *AnthropicTextResponse {
-	if rakshaResp == nil {
+// ToAnthropicTextCompletionResponse converts a GatewayResponse back to Anthropic text completion format
+func ToAnthropicTextCompletionResponse(gatewayResp *schemas.GatewayTextCompletionResponse) *AnthropicTextResponse {
+	if gatewayResp == nil {
 		return nil
 	}
 
 	anthropicResp := &AnthropicTextResponse{
-		ID:    rakshaResp.ID,
+		ID:    gatewayResp.ID,
 		Type:  "completion",
-		Model: rakshaResp.Model,
+		Model: gatewayResp.Model,
 	}
 
 	// Convert choices to completion text
-	if len(rakshaResp.Choices) > 0 {
-		choice := rakshaResp.Choices[0] // Anthropic text API typically returns one choice
+	if len(gatewayResp.Choices) > 0 {
+		choice := gatewayResp.Choices[0] // Anthropic text API typically returns one choice
 
 		if choice.TextCompletionResponseChoice != nil && choice.TextCompletionResponseChoice.Text != nil {
 			anthropicResp.Completion = *choice.TextCompletionResponseChoice.Text
@@ -128,9 +128,9 @@ func ToAnthropicTextCompletionResponse(rakshaResp *schemas.RakshaTextCompletionR
 	}
 
 	// Convert usage information
-	if rakshaResp.Usage != nil {
-		anthropicResp.Usage.InputTokens = rakshaResp.Usage.PromptTokens
-		anthropicResp.Usage.OutputTokens = rakshaResp.Usage.CompletionTokens
+	if gatewayResp.Usage != nil {
+		anthropicResp.Usage.InputTokens = gatewayResp.Usage.PromptTokens
+		anthropicResp.Usage.OutputTokens = gatewayResp.Usage.CompletionTokens
 	}
 
 	return anthropicResp

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
 
@@ -102,7 +102,7 @@ func publicRequestOrigin(ctx *fasthttp.RequestCtx) string {
 }
 
 func publicUIOrigin(ctx *fasthttp.RequestCtx) string {
-	for _, key := range []string{"RAKSHA_UI_URL", "RAKSHA_PUBLIC_URL"} {
+	for _, key := range []string{"GATEWAY_UI_URL", "GATEWAY_UI_URL", "GATEWAY_PUBLIC_URL", "GATEWAY_PUBLIC_URL"} {
 		if u := strings.TrimRight(strings.TrimSpace(os.Getenv(key)), "/"); u != "" {
 			return u
 		}
@@ -111,7 +111,7 @@ func publicUIOrigin(ctx *fasthttp.RequestCtx) string {
 }
 
 func publicAPIOrigin(ctx *fasthttp.RequestCtx) string {
-	if u := strings.TrimRight(strings.TrimSpace(os.Getenv("RAKSHA_API_URL")), "/"); u != "" {
+	if u := strings.TrimRight(strings.TrimSpace(gatewayEnv("API_URL")), "/"); u != "" {
 		return u
 	}
 	return publicRequestOrigin(ctx)
@@ -134,7 +134,7 @@ func (h *SessionHandler) notifyAdminsPendingRegistration(ctx *fasthttp.RequestCt
 	apiOrigin := publicAPIOrigin(ctx)
 	uiOrigin := publicUIOrigin(ctx)
 	if apiOrigin == "" {
-		logger.Warn("registration admin notify skipped: no public API origin (set RAKSHA_API_URL)")
+		logger.Warn("registration admin notify skipped: no public API origin (set GATEWAY_API_URL)")
 		return
 	}
 	acceptURL := apiOrigin + "/api/session/users/review?token=" + approveTok
@@ -149,7 +149,7 @@ func (h *SessionHandler) notifyAdminsPendingRegistration(ctx *fasthttp.RequestCt
 		return
 	}
 	body := fmt.Sprintf(
-		"A new Raksha sign-up is waiting for approval.\n\n"+
+		"A new Gateway sign-up is waiting for approval.\n\n"+
 			"Username: %s\nEmail: %s\n\n"+
 			"Accept (activate account):\n%s\n\n"+
 			"Deny (block access):\n%s\n\n"+
@@ -157,7 +157,7 @@ func (h *SessionHandler) notifyAdminsPendingRegistration(ctx *fasthttp.RequestCt
 			"These links expire in %d hours.\n",
 		user.Username, user.Email, acceptURL, denyURL, governanceURL, int(registrationReviewTokenTTL.Hours()),
 	)
-	subject := "Raksha registration pending: " + user.Username
+	subject := "Gateway registration pending: " + user.Username
 	seen := map[string]bool{}
 	for _, u := range users {
 		if u == nil || !u.IsApproved() {
@@ -270,7 +270,7 @@ func (h *SessionHandler) writeReviewHTML(ctx *fasthttp.RequestCtx, status int, t
 	ctx.SetContentType("text/html; charset=utf-8")
 	page := fmt.Sprintf(`<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>%s · Raksha</title>
+<title>%s · Gateway</title>
 <style>
 body{font-family:system-ui,sans-serif;background:#0b1220;color:#e2e8f0;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}
 .card{max-width:480px;background:#111827;border:1px solid #334155;border-radius:16px;padding:28px;box-shadow:0 20px 50px #0008}

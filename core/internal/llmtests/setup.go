@@ -1,4 +1,4 @@
-// Package llmtests provides comprehensive test utilities and configurations for the Raksha system.
+// Package llmtests provides comprehensive test utilities and configurations for the Gateway system.
 // It includes comprehensive test implementations covering all major AI provider scenarios,
 // including text completion, chat, tool calling, image processing, and end-to-end workflows.
 package llmtests
@@ -7,8 +7,8 @@ import (
 	"context"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // Constants for test configuration
@@ -18,26 +18,26 @@ const (
 	TestTimeout = 20 * time.Minute
 )
 
-// getRaksha initializes and returns a Raksha instance for comprehensive testing.
+// getGateway initializes and returns a Gateway instance for comprehensive testing.
 // It sets up the comprehensive test account, plugin, and logger configuration.
 //
 // Environment variables are expected to be set by the system or test runner before calling this function.
 // The account configuration will read API keys and settings from these environment variables.
 //
 // Returns:
-//   - *raksha.Raksha: A configured Raksha instance ready for comprehensive testing
-//   - error: Any error that occurred during Raksha initialization
+//   - *gateway.Gateway: A configured Gateway instance ready for comprehensive testing
+//   - error: Any error that occurred during Gateway initialization
 //
 // The function:
 //  1. Creates a comprehensive test account instance
-//  2. Configures Raksha with the account and default logger
-func getRaksha(ctx context.Context) (*raksha.Raksha, error) {
+//  2. Configures Gateway with the account and default logger
+func getGateway(ctx context.Context) (*gateway.Gateway, error) {
 	account := ComprehensiveTestAccount{}
 
-	// Initialize Raksha
-	b, err := raksha.Init(ctx, schemas.RakshaConfig{
+	// Initialize Gateway
+	b, err := gateway.Init(ctx, schemas.GatewayConfig{
 		Account: &account,
-		Logger:  raksha.NewDefaultLogger(schemas.LogLevelDebug),
+		Logger:  gateway.NewDefaultLogger(schemas.LogLevelDebug),
 	})
 	if err != nil {
 		return nil, err
@@ -47,9 +47,9 @@ func getRaksha(ctx context.Context) (*raksha.Raksha, error) {
 }
 
 // SetupTest initializes a test environment with timeout context
-func SetupTest() (*raksha.Raksha, context.Context, context.CancelFunc, error) {
+func SetupTest() (*gateway.Gateway, context.Context, context.CancelFunc, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), TestTimeout)
-	client, err := getRaksha(ctx)
+	client, err := getGateway(ctx)
 	if err != nil {
 		cancel()
 		return nil, nil, nil, err

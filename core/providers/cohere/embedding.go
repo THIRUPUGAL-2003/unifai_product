@@ -1,18 +1,18 @@
 package cohere
 
 import (
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToCohereEmbeddingRequest converts a Raksha embedding request to Cohere format
-func ToCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *CohereEmbeddingRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil || (rakshaReq.Input.Text == nil && rakshaReq.Input.Texts == nil) {
+// ToCohereEmbeddingRequest converts a Gateway embedding request to Cohere format
+func ToCohereEmbeddingRequest(gatewayReq *schemas.GatewayEmbeddingRequest) *CohereEmbeddingRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil || (gatewayReq.Input.Text == nil && gatewayReq.Input.Texts == nil) {
 		return nil
 	}
 
-	embeddingInput := rakshaReq.Input
+	embeddingInput := gatewayReq.Input
 	cohereReq := &CohereEmbeddingRequest{
-		Model: rakshaReq.Model,
+		Model: gatewayReq.Model,
 	}
 
 	texts := []string{}
@@ -22,7 +22,7 @@ func ToCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Cohere
 		texts = embeddingInput.Texts
 	}
 
-	// Convert texts from Raksha format
+	// Convert texts from Gateway format
 	if len(texts) > 0 {
 		cohereReq.Texts = texts
 	}
@@ -30,11 +30,11 @@ func ToCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Cohere
 	// Set default input type if not specified in extra params
 	cohereReq.InputType = "search_document" // Default value
 
-	if rakshaReq.Params != nil {
-		cohereReq.OutputDimension = rakshaReq.Params.Dimensions
-		cohereReq.ExtraParams = rakshaReq.Params.ExtraParams
-		if rakshaReq.Params.ExtraParams != nil {
-			if maxTokens, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["max_tokens"]); ok {
+	if gatewayReq.Params != nil {
+		cohereReq.OutputDimension = gatewayReq.Params.Dimensions
+		cohereReq.ExtraParams = gatewayReq.Params.ExtraParams
+		if gatewayReq.Params.ExtraParams != nil {
+			if maxTokens, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["max_tokens"]); ok {
 				delete(cohereReq.ExtraParams, "max_tokens")
 				cohereReq.MaxTokens = maxTokens
 			}
@@ -42,15 +42,15 @@ func ToCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Cohere
 	}
 
 	// Handle extra params
-	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
+	if gatewayReq.Params != nil && gatewayReq.Params.ExtraParams != nil {
 		// Input type
-		if inputType, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["input_type"]); ok {
+		if inputType, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["input_type"]); ok {
 			delete(cohereReq.ExtraParams, "input_type")
 			cohereReq.InputType = inputType
 		}
 
 		// Embedding types
-		if embeddingTypes, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["embedding_types"]); ok {
+		if embeddingTypes, ok := schemas.SafeExtractStringSlice(gatewayReq.Params.ExtraParams["embedding_types"]); ok {
 			if len(embeddingTypes) > 0 {
 				delete(cohereReq.ExtraParams, "embedding_types")
 				cohereReq.EmbeddingTypes = embeddingTypes
@@ -58,7 +58,7 @@ func ToCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Cohere
 		}
 
 		// Truncate
-		if truncate, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["truncate"]); ok {
+		if truncate, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["truncate"]); ok {
 			delete(cohereReq.ExtraParams, "truncate")
 			cohereReq.Truncate = truncate
 		}
@@ -67,15 +67,15 @@ func ToCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Cohere
 	return cohereReq
 }
 
-// ToRakshaEmbeddingRequest converts a Cohere embedding request to Raksha format
-func (req *CohereEmbeddingRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaContext) *schemas.RakshaEmbeddingRequest {
+// ToGatewayEmbeddingRequest converts a Cohere embedding request to Gateway format
+func (req *CohereEmbeddingRequest) ToGatewayEmbeddingRequest(ctx *schemas.GatewayContext) *schemas.GatewayEmbeddingRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	rakshaReq := &schemas.RakshaEmbeddingRequest{
+	gatewayReq := &schemas.GatewayEmbeddingRequest{
 		Provider: provider,
 		Model:    model,
 		Input:    &schemas.EmbeddingInput{},
@@ -85,15 +85,15 @@ func (req *CohereEmbeddingRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaC
 	// Convert texts
 	if len(req.Texts) > 0 {
 		if len(req.Texts) == 1 {
-			rakshaReq.Input.Text = &req.Texts[0]
+			gatewayReq.Input.Text = &req.Texts[0]
 		} else {
-			rakshaReq.Input.Texts = req.Texts
+			gatewayReq.Input.Texts = req.Texts
 		}
 	}
 
 	// Convert parameters
 	if req.OutputDimension != nil {
-		rakshaReq.Params.Dimensions = req.OutputDimension
+		gatewayReq.Params.Dimensions = req.OutputDimension
 	}
 
 	// Convert extra params
@@ -111,79 +111,79 @@ func (req *CohereEmbeddingRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaC
 		extraParams["max_tokens"] = *req.MaxTokens
 	}
 	if len(extraParams) > 0 {
-		rakshaReq.Params.ExtraParams = extraParams
+		gatewayReq.Params.ExtraParams = extraParams
 	}
 
-	return rakshaReq
+	return gatewayReq
 }
 
-// ToRakshaEmbeddingResponse converts a Cohere embedding response to Raksha format
-func (response *CohereEmbeddingResponse) ToRakshaEmbeddingResponse() *schemas.RakshaEmbeddingResponse {
+// ToGatewayEmbeddingResponse converts a Cohere embedding response to Gateway format
+func (response *CohereEmbeddingResponse) ToGatewayEmbeddingResponse() *schemas.GatewayEmbeddingResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaEmbeddingResponse{
+	gatewayResponse := &schemas.GatewayEmbeddingResponse{
 		Object: "list",
 	}
 
 	// Convert embeddings data
 	if response.Embeddings != nil {
-		var rakshaEmbeddings []schemas.EmbeddingData
+		var gatewayEmbeddings []schemas.EmbeddingData
 
 		// Handle different embedding types - prioritize float embeddings
 		if response.Embeddings.Float != nil {
 			for i, embedding := range response.Embeddings.Float {
-				rakshaEmbedding := schemas.EmbeddingData{
+				gatewayEmbedding := schemas.EmbeddingData{
 					Object: "embedding",
 					Index:  i,
 					Embedding: schemas.EmbeddingStruct{
 						EmbeddingArray: embedding,
 					},
 				}
-				rakshaEmbeddings = append(rakshaEmbeddings, rakshaEmbedding)
+				gatewayEmbeddings = append(gatewayEmbeddings, gatewayEmbedding)
 			}
 		} else if response.Embeddings.Base64 != nil {
 			// Handle base64 embeddings as strings
 			for i, embedding := range response.Embeddings.Base64 {
-				rakshaEmbedding := schemas.EmbeddingData{
+				gatewayEmbedding := schemas.EmbeddingData{
 					Object: "embedding",
 					Index:  i,
 					Embedding: schemas.EmbeddingStruct{
 						EmbeddingStr: &embedding,
 					},
 				}
-				rakshaEmbeddings = append(rakshaEmbeddings, rakshaEmbedding)
+				gatewayEmbeddings = append(gatewayEmbeddings, gatewayEmbedding)
 			}
 		}
 		// Note: Int8, Uint8, Binary, Ubinary types would need special handling
-		// depending on how Raksha wants to represent them
+		// depending on how Gateway wants to represent them
 
-		rakshaResponse.Data = rakshaEmbeddings
+		gatewayResponse.Data = gatewayEmbeddings
 	}
 
 	// Convert usage information
 	if response.Meta != nil {
 		if response.Meta.Tokens != nil {
-			rakshaResponse.Usage = &schemas.RakshaLLMUsage{}
+			gatewayResponse.Usage = &schemas.GatewayLLMUsage{}
 			if response.Meta.Tokens.InputTokens != nil {
-				rakshaResponse.Usage.PromptTokens = int(*response.Meta.Tokens.InputTokens)
+				gatewayResponse.Usage.PromptTokens = int(*response.Meta.Tokens.InputTokens)
 			}
 			if response.Meta.Tokens.OutputTokens != nil {
-				rakshaResponse.Usage.CompletionTokens = int(*response.Meta.Tokens.OutputTokens)
+				gatewayResponse.Usage.CompletionTokens = int(*response.Meta.Tokens.OutputTokens)
 			}
-			rakshaResponse.Usage.TotalTokens = rakshaResponse.Usage.PromptTokens + rakshaResponse.Usage.CompletionTokens
+			gatewayResponse.Usage.TotalTokens = gatewayResponse.Usage.PromptTokens + gatewayResponse.Usage.CompletionTokens
 		} else if response.Meta.BilledUnits != nil {
-			rakshaResponse.Usage = &schemas.RakshaLLMUsage{}
+			gatewayResponse.Usage = &schemas.GatewayLLMUsage{}
 			if response.Meta.BilledUnits.InputTokens != nil {
-				rakshaResponse.Usage.PromptTokens = int(*response.Meta.BilledUnits.InputTokens)
+				gatewayResponse.Usage.PromptTokens = int(*response.Meta.BilledUnits.InputTokens)
 			}
 			if response.Meta.BilledUnits.OutputTokens != nil {
-				rakshaResponse.Usage.CompletionTokens = int(*response.Meta.BilledUnits.OutputTokens)
+				gatewayResponse.Usage.CompletionTokens = int(*response.Meta.BilledUnits.OutputTokens)
 			}
-			rakshaResponse.Usage.TotalTokens = rakshaResponse.Usage.PromptTokens + rakshaResponse.Usage.CompletionTokens
+			gatewayResponse.Usage.TotalTokens = gatewayResponse.Usage.PromptTokens + gatewayResponse.Usage.CompletionTokens
 		}
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }

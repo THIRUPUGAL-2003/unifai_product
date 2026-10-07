@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { SheetNavigationButtons } from "@/components/sheetNavigationButtons";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -61,8 +62,16 @@ export default function VirtualKeyDetailSheet({
 	hasPrev = false,
 	hasNext = false,
 }: VirtualKeyDetailSheetProps) {
-	const { assignedUsers, isManagedByProfile, managingProfile, hasApRateLimit, displayBudgets, displayRateLimit } =
-		useVirtualKeyUsage(virtualKey);
+	const {
+		assignedUsers,
+		isManagedByProfile,
+		managingProfile,
+		hasApRateLimit,
+		displayBudgets,
+		displayRateLimit,
+		isApUsageError,
+		isVkUsersError,
+	} = useVirtualKeyUsage(virtualKey);
 
 	const { prev: prevKeys, next: nextKeys } = useSheetNavigation({
 		enabled: true,
@@ -112,6 +121,16 @@ export default function VirtualKeyDetailSheet({
 				</SheetHeader>
 
 				<div className="space-y-6 px-8 py-4">
+					{isApUsageError || isVkUsersError ? (
+						<QueryErrorBanner
+							testId="vk-detail-usage-query-error"
+							message={
+								isVkUsersError
+									? "Failed to load assigned users for this virtual key."
+									: "Failed to load access-profile usage for this virtual key. Budget bars may be incomplete."
+							}
+						/>
+					) : null}
 					<ManagedVirtualKeyNotice managingProfile={managingProfile} />
 
 					{assignedUsers.length > 0 ? (

@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SecretVarInput } from "@/components/ui/secretVarInput";
@@ -299,7 +300,7 @@ function ExpandedConfigPanel({
 						</SelectContent>
 					</Select>
 				</FieldRow>
-				<FieldRow label="Description" hint="Note for users. Not used by Raksha.">
+				<FieldRow label="Description" hint={`Note for users. Not used by ${PRODUCT_NAME}.`}>
 					<Textarea
 						value={config.description ?? ""}
 						onChange={(e) => {

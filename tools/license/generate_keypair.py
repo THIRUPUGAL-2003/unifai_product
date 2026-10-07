@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Master Keypair Generator for Raksha Enterprise Licensing.
+Master Keypair Generator for Gateway Enterprise Licensing.
 Generates an Ed25519 asymmetric cryptographic keypair.
 
-- The PRIVATE KEY stays strictly with the Raksha/UnifAI vendor (YOU).
+- The PRIVATE KEY stays strictly with the Gateway/UnifAI vendor (YOU).
   Keep it safe. Never commit it to git or share it with clients.
 - The PUBLIC KEY is embedded into the Go backend binary.
   It is safe to distribute; it can only verify signatures, never create them.

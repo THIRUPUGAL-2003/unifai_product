@@ -5,29 +5,29 @@ import (
 	"strings"
 )
 
-type RakshaEmbeddingRequest struct {
+type GatewayEmbeddingRequest struct {
 	Provider       ModelProvider        `json:"provider"`
 	Model          string               `json:"model"`
 	Input          *EmbeddingInput      `json:"input,omitempty"`
 	Params         *EmbeddingParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback           `json:"fallbacks,omitempty"`
-	RawRequestBody []byte               `json:"-"` // set raksha-use-raw-request-body to true in ctx to use the raw request body. Raksha will directly send this to the downstream provider.
+	RawRequestBody []byte               `json:"-"` // set gateway-use-raw-request-body to true in ctx to use the raw request body. Gateway will directly send this to the downstream provider.
 }
 
-func (r *RakshaEmbeddingRequest) GetRawRequestBody() []byte {
+func (r *GatewayEmbeddingRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
-type RakshaEmbeddingResponse struct {
+type GatewayEmbeddingResponse struct {
 	Data        []EmbeddingData            `json:"data"` // Maps to "data" field in provider responses (e.g., OpenAI embedding format)
 	Model       string                     `json:"model"`
 	Object      string                     `json:"object"` // "list"
-	Usage       *RakshaLLMUsage           `json:"usage"`
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	Usage       *GatewayLLMUsage           `json:"usage"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
 // BackfillParams copies request metadata into the response when the provider omitted it (e.g. model in JSON).
-func (r *RakshaEmbeddingResponse) BackfillParams(request *RakshaEmbeddingRequest) {
+func (r *GatewayEmbeddingResponse) BackfillParams(request *GatewayEmbeddingRequest) {
 	if r == nil || request == nil {
 		return
 	}

@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
-	ufws "github.com/raksha/raksha/transports/raksha-http/websocket"
+	"github.com/gateway/gateway/core/schemas"
+	ufws "github.com/gateway/gateway/transports/gateway-http/websocket"
 )
 
 type realtimeTurnSource string
@@ -20,7 +20,7 @@ const (
 	realtimeMissingTranscriptText = "[Audio transcription unavailable]"
 )
 
-func extractRealtimeTurnSummary(event *schemas.RakshaRealtimeEvent, contentOverride string) string {
+func extractRealtimeTurnSummary(event *schemas.GatewayRealtimeEvent, contentOverride string) string {
 	if strings.TrimSpace(contentOverride) != "" {
 		return strings.TrimSpace(contentOverride)
 	}
@@ -109,7 +109,7 @@ func collectRealtimeTextFragments(value any, parts *[]string) {
 	}
 }
 
-func finalizedRealtimeInputSummary(event *schemas.RakshaRealtimeEvent) string {
+func finalizedRealtimeInputSummary(event *schemas.GatewayRealtimeEvent) string {
 	if event == nil {
 		return ""
 	}
@@ -137,7 +137,7 @@ func finalizedRealtimeInputSummary(event *schemas.RakshaRealtimeEvent) string {
 	return ""
 }
 
-func pendingRealtimeInputUpdate(event *schemas.RakshaRealtimeEvent) (string, string) {
+func pendingRealtimeInputUpdate(event *schemas.GatewayRealtimeEvent) (string, string) {
 	if event == nil {
 		return "", ""
 	}
@@ -183,21 +183,21 @@ func realtimeItemHasMissingAudioTranscript(item *schemas.RealtimeItem) bool {
 	return false
 }
 
-func finalizedRealtimeToolOutputSummary(event *schemas.RakshaRealtimeEvent) string {
+func finalizedRealtimeToolOutputSummary(event *schemas.GatewayRealtimeEvent) string {
 	if !schemas.IsRealtimeToolOutputEvent(event) {
 		return ""
 	}
 	return extractRealtimeItemSummary(event.Item)
 }
 
-func pendingRealtimeToolOutputUpdate(event *schemas.RakshaRealtimeEvent) (string, string) {
+func pendingRealtimeToolOutputUpdate(event *schemas.GatewayRealtimeEvent) (string, string) {
 	if event == nil || event.Type == schemas.RTEventConversationItemRetrieved || !schemas.IsRealtimeToolOutputEvent(event) {
 		return "", ""
 	}
 	return realtimeEventItemID(event), finalizedRealtimeToolOutputSummary(event)
 }
 
-func extractRealtimeExtraParamString(event *schemas.RakshaRealtimeEvent, key string) string {
+func extractRealtimeExtraParamString(event *schemas.GatewayRealtimeEvent, key string) string {
 	if event == nil || event.ExtraParams == nil {
 		return ""
 	}
@@ -212,7 +212,7 @@ func extractRealtimeExtraParamString(event *schemas.RakshaRealtimeEvent, key str
 	return strings.TrimSpace(value)
 }
 
-func realtimeEventItemID(event *schemas.RakshaRealtimeEvent) string {
+func realtimeEventItemID(event *schemas.GatewayRealtimeEvent) string {
 	if event == nil {
 		return ""
 	}
@@ -284,7 +284,7 @@ type realtimeResponseDoneOutputTokenUsage struct {
 	RejectedPredictionTokens int  `json:"rejected_prediction_tokens"`
 }
 
-func extractRealtimeTurnUsage(provider schemas.RealtimeProvider, rawMessage []byte) *schemas.RakshaLLMUsage {
+func extractRealtimeTurnUsage(provider schemas.RealtimeProvider, rawMessage []byte) *schemas.GatewayLLMUsage {
 	if extractor, ok := provider.(schemas.RealtimeUsageExtractor); ok {
 		if usage := extractor.ExtractRealtimeTurnUsage(rawMessage); usage != nil {
 			return usage
@@ -394,7 +394,7 @@ func extractRealtimeResponseDoneToolCalls(outputs []realtimeResponseDoneOutput) 
 	return toolCalls
 }
 
-func extractRealtimeResponseDoneUsage(rawMessage []byte) *schemas.RakshaLLMUsage {
+func extractRealtimeResponseDoneUsage(rawMessage []byte) *schemas.GatewayLLMUsage {
 	if len(rawMessage) == 0 {
 		return nil
 	}
@@ -409,7 +409,7 @@ func extractRealtimeResponseDoneUsage(rawMessage []byte) *schemas.RakshaLLMUsage
 		totalTokens = parsed.Response.Usage.InputTokens + parsed.Response.Usage.OutputTokens
 	}
 
-	usage := &schemas.RakshaLLMUsage{
+	usage := &schemas.GatewayLLMUsage{
 		PromptTokens:     parsed.Response.Usage.InputTokens,
 		CompletionTokens: parsed.Response.Usage.OutputTokens,
 		TotalTokens:      totalTokens,

@@ -1,4 +1,4 @@
-// Package openai provides the OpenAI provider implementation for the Raksha framework.
+// Package openai provides the OpenAI provider implementation for the Gateway framework.
 package openai
 
 import (
@@ -17,8 +17,8 @@ import (
 
 	"github.com/bytedance/sonic"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -28,8 +28,8 @@ type OpenAIProvider struct {
 	client               *fasthttp.Client              // HTTP client for unary API requests (ReadTimeout bounds overall response)
 	streamingClient      *fasthttp.Client              // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig        schemas.NetworkConfig         // Network configuration including extra headers
-	sendBackRawRequest   bool                          // Whether to include raw request in RakshaResponse
-	sendBackRawResponse  bool                          // Whether to include raw response in RakshaResponse
+	sendBackRawRequest   bool                          // Whether to include raw request in GatewayResponse
+	sendBackRawResponse  bool                          // Whether to include raw response in GatewayResponse
 	customProviderConfig *schemas.CustomProviderConfig // Custom provider config
 	disableStore         bool                          // Whether to force store=false on outgoing requests
 }
@@ -53,7 +53,7 @@ func NewOpenAIProvider(config *schemas.ProviderConfig, logger schemas.Logger) *O
 
 	// // Pre-warm response pools
 	// for range config.ConcurrencyAndBufferSize.Concurrency {
-	// 	openAIResponsePool.Put(&schemas.RakshaResponse{})
+	// 	openAIResponsePool.Put(&schemas.GatewayResponse{})
 	// }
 
 	// Configure proxy and retry policy
@@ -86,7 +86,7 @@ func (provider *OpenAIProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // buildRequestURL constructs the full request URL using the provider's configuration.
-func (provider *OpenAIProvider) buildRequestURL(ctx *schemas.RakshaContext, defaultPath string, requestType schemas.RequestType) string {
+func (provider *OpenAIProvider) buildRequestURL(ctx *schemas.GatewayContext, defaultPath string, requestType schemas.RequestType) string {
 	path, isCompleteURL := providerUtils.GetRequestPath(ctx, defaultPath, provider.customProviderConfig, requestType)
 	if isCompleteURL {
 		return path
@@ -94,14 +94,14 @@ func (provider *OpenAIProvider) buildRequestURL(ctx *schemas.RakshaContext, defa
 	return provider.networkConfig.BaseURL + path
 }
 
-func (provider *OpenAIProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
 	providerName := provider.GetProviderKey()
 
 	if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
-		return providerUtils.HandleKeylessListModelsRequest(providerName, func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+		return providerUtils.HandleKeylessListModelsRequest(providerName, func() (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 			return ListModelsByKey(
 				ctx,
 				provider.client,
@@ -131,7 +131,7 @@ func (provider *OpenAIProvider) ListModels(ctx *schemas.RakshaContext, keys []sc
 // ListModelsByKey performs a list models request for a single key.
 // Returns the list-models response, or an error if the request fails.
 func ListModelsByKey(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
 	key schemas.Key,
@@ -140,7 +140,7 @@ func ListModelsByKey(
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -159,19 +159,19 @@ func ListModelsByKey(
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
-		rakshaErr := ParseOpenAIError(resp)
-		return nil, providerUtils.SetErrorLatency(rakshaErr, latency)
+		gatewayErr := ParseOpenAIError(resp)
+		return nil, providerUtils.SetErrorLatency(gatewayErr, latency)
 	}
 
 	// Copy response body before releasing
@@ -179,10 +179,10 @@ func ListModelsByKey(
 
 	openaiResponse, parseErr := parseOpenAIListModelsBody(responseBody)
 	if parseErr != nil {
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, parseErr), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, parseErr), latency)
 	}
 
-	response := openaiResponse.ToRakshaListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, unfiltered)
+	response := openaiResponse.ToGatewayListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, unfiltered)
 
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
@@ -230,20 +230,20 @@ func BearerAuthHeader(key schemas.Key) map[string]string {
 
 // HandleOpenAIListModelsRequest handles a list models request to OpenAI's API.
 func HandleOpenAIListModelsRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
-	request *schemas.RakshaListModelsRequest,
+	request *schemas.GatewayListModelsRequest,
 	url string,
 	keys []schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	if len(keys) == 0 {
 		return ListModelsByKey(ctx, client, url, schemas.Key{}, request.Unfiltered, extraHeaders, providerName, sendBackRawRequest, sendBackRawResponse)
 	}
-	listModelsByKeyWrapper := func(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+	listModelsByKeyWrapper := func(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 		return ListModelsByKey(ctx, client, url, key, request.Unfiltered, extraHeaders, providerName, sendBackRawRequest, sendBackRawResponse)
 	}
 	return providerUtils.HandleMultipleListModelsRequests(
@@ -256,7 +256,7 @@ func HandleOpenAIListModelsRequest(
 
 // TextCompletion is not supported by the OpenAI provider.
 // Returns an error indicating that text completion is not available.
-func (provider *OpenAIProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.TextCompletionRequest); err != nil {
 		return nil, err
 	}
@@ -278,19 +278,19 @@ func (provider *OpenAIProvider) TextCompletion(ctx *schemas.RakshaContext, key s
 
 // HandleOpenAITextCompletionRequest handles a text completion request to OpenAI's API.
 func HandleOpenAITextCompletionRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaTextCompletionRequest,
+	request *schemas.GatewayTextCompletionRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-	customResponseHandler responseHandler[schemas.RakshaTextCompletionResponse],
+	customResponseHandler responseHandler[schemas.GatewayTextCompletionResponse],
 	customErrorConverter ErrorConverter,
 	logger schemas.Logger,
-) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -321,41 +321,41 @@ func HandleOpenAITextCompletionRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaTextCompletionResponse{}
+			response := &schemas.GatewayTextCompletionResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaTextCompletionResponse{
+		return &schemas.GatewayTextCompletionResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAITextCompletionRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -372,25 +372,25 @@ func HandleOpenAITextCompletionRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.RakshaTextCompletionResponse{
+		return &schemas.GatewayTextCompletionResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.RakshaTextCompletionResponse{}
+	response := &schemas.GatewayTextCompletionResponse{}
 
 	var rawRequest, rawResponse interface{}
 
 	if customResponseHandler != nil {
-		rawRequest, rawResponse, rakshaErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, gatewayErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	} else {
-		rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, gatewayErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	}
 
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -411,8 +411,8 @@ func HandleOpenAITextCompletionRequest(
 
 // TextCompletionStream performs a streaming text completion request to OpenAI's API.
 // It formats the request, sends it to OpenAI, and processes the response.
-// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
-func (provider *OpenAIProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel of GatewayStreamChunk objects or an error if the request fails.
+func (provider *OpenAIProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.TextCompletionStreamRequest); err != nil {
 		return nil, err
 	}
@@ -439,10 +439,10 @@ func (provider *OpenAIProvider) TextCompletionStream(ctx *schemas.RakshaContext,
 // HandleOpenAITextCompletionStreaming handles text completion streaming for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same SSE format.
 func HandleOpenAITextCompletionStreaming(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaTextCompletionRequest,
+	request *schemas.GatewayTextCompletionRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -451,11 +451,11 @@ func HandleOpenAITextCompletionStreaming(
 	providerName schemas.ModelProvider,
 	customErrorConverter ErrorConverter,
 	postHookRunner schemas.PostHookRunner,
-	customResponseHandler responseHandler[schemas.RakshaTextCompletionResponse],
-	postResponseConverter func(*schemas.RakshaTextCompletionResponse) *schemas.RakshaTextCompletionResponse,
+	customResponseHandler responseHandler[schemas.GatewayTextCompletionResponse],
+	postResponseConverter func(*schemas.GatewayTextCompletionResponse) *schemas.GatewayTextCompletionResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	headers := map[string]string{
 		"Content-Type":  "application/json",
@@ -467,7 +467,7 @@ func HandleOpenAITextCompletionStreaming(
 		maps.Copy(headers, authHeader)
 	}
 
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -481,8 +481,8 @@ func HandleOpenAITextCompletionStreaming(
 			return reqBody, nil
 		})
 
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create HTTP request for streaming
@@ -516,8 +516,8 @@ func HandleOpenAITextCompletionStreaming(
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		latency := time.Since(startTime)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -526,20 +526,20 @@ func HandleOpenAITextCompletionStreaming(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// The request failed before the first response byte (connection refused, server
 		// closed an idle/pooled connection, broken pipe, DNS failure, etc.). Mirror the
 		// non-streaming path (makeRequestWithDoFunc) and surface this as a retriable upstream
-		// connection error (502, IsRakshaError=false) rather than NewRakshaOperationError
-		// (500, IsRakshaError=true). The latter caused the retry loop in executeRequestWithRetries
-		// to break early on IsRakshaError, so max_retries never applied to streaming connection
-		// failures - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// connection error (502, IsGatewayError=false) rather than NewGatewayOperationError
+		// (500, IsGatewayError=true). The latter caused the retry loop in executeRequestWithRetries
+		// to break early on IsGatewayError, so max_retries never applied to streaming connection
+		// failures - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -556,13 +556,13 @@ func HandleOpenAITextCompletionStreaming(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -593,7 +593,7 @@ func HandleOpenAITextCompletionStreaming(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -601,10 +601,10 @@ func HandleOpenAITextCompletionStreaming(
 		sseReader := providerUtils.GetSSEDataReader(ctx, reader)
 
 		chunkIndex := -1
-		usage := &schemas.RakshaLLMUsage{}
+		usage := &schemas.GatewayLLMUsage{}
 		// Register the accumulating usage handle so a mid-stream
 		// cancel/timeout can bill for tokens the provider already processed.
-		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, usage)
+		ctx.SetValue(schemas.GatewayContextKeyStreamAccumulatedUsage, usage)
 
 		var finishReason *string
 		var messageID string
@@ -621,7 +621,7 @@ func HandleOpenAITextCompletionStreaming(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 					return
@@ -629,7 +629,7 @@ func HandleOpenAITextCompletionStreaming(
 				break
 			}
 			jsonData := string(data)
-			var response schemas.RakshaTextCompletionResponse
+			var response schemas.GatewayTextCompletionResponse
 			if customResponseHandler != nil {
 				rawRequest, rawResponse, handlerErr := customResponseHandler([]byte(jsonData), &response, nil, sendBackRawRequest, sendBackRawResponse)
 				if handlerErr != nil {
@@ -640,8 +640,8 @@ func HandleOpenAITextCompletionStreaming(
 					if sendBackRawResponse {
 						handlerErr.ExtraFields.RawResponse = rawResponse
 					}
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, handlerErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, handlerErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 			} else {
@@ -649,17 +649,17 @@ func HandleOpenAITextCompletionStreaming(
 				// Quick check for error field (allocation-free using sonic.GetFromString)
 				if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 					// Only unmarshal when we know there's an error
-					var rakshaErr schemas.RakshaError
-					if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
-						if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
-							ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-							providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					var gatewayErr schemas.GatewayError
+					if err := sonic.UnmarshalString(jsonData, &gatewayErr); err == nil {
+						if gatewayErr.Error != nil && gatewayErr.Error.Message != "" {
+							ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+							providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 							return
 						}
 					}
 				}
 
-				// Parse into raksha response
+				// Parse into gateway response
 				if err := sonic.UnmarshalString(jsonData, &response); err != nil {
 					logger.Warn("Failed to parse stream response: %v", err)
 					continue
@@ -668,7 +668,7 @@ func HandleOpenAITextCompletionStreaming(
 
 			// choices be array if nil
 			if response.Choices == nil {
-				response.Choices = []schemas.RakshaResponseChoice{}
+				response.Choices = []schemas.GatewayResponseChoice{}
 			}
 
 			if postResponseConverter != nil {
@@ -736,7 +736,7 @@ func HandleOpenAITextCompletionStreaming(
 					response.ExtraFields.RawResponse = jsonData
 				}
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(&response, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(&response, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 
 			// For providers that don't send [DONE] marker break on finish_reason
@@ -745,7 +745,7 @@ func HandleOpenAITextCompletionStreaming(
 			}
 		}
 
-		response := providerUtils.CreateRakshaTextCompletionChunkResponse(messageID, usage, finishReason, chunkIndex, schemas.TextCompletionStreamRequest, request.Model)
+		response := providerUtils.CreateGatewayTextCompletionChunkResponse(messageID, usage, finishReason, chunkIndex, schemas.TextCompletionStreamRequest, request.Model)
 		if postResponseConverter != nil {
 			response = postResponseConverter(response)
 			if response == nil {
@@ -758,8 +758,8 @@ func HandleOpenAITextCompletionStreaming(
 			providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 		}
 		response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(response, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(response, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 	}()
 
 	return responseChan, nil
@@ -767,8 +767,8 @@ func HandleOpenAITextCompletionStreaming(
 
 // ChatCompletion performs a chat completion request to the OpenAI API.
 // It supports both text and image content in messages.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *OpenAIProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *OpenAIProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	// Check if chat completion is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
@@ -800,20 +800,20 @@ func (provider *OpenAIProvider) ChatCompletion(ctx *schemas.RakshaContext, key s
 
 // HandleOpenAIChatCompletionRequest handles a chat completion request to OpenAI's API.
 func HandleOpenAIChatCompletionRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaChatRequest,
+	request *schemas.GatewayChatRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
-	customResponseHandler responseHandler[schemas.RakshaChatResponse],
+	customResponseHandler responseHandler[schemas.GatewayChatResponse],
 	customErrorConverter ErrorConverter,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
-) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -844,28 +844,28 @@ func HandleOpenAIChatCompletionRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaChatResponse{}
+			response := &schemas.GatewayChatResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaChatResponse{
+		return &schemas.GatewayChatResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIChatRequest(ctx, request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if signer != nil {
@@ -881,14 +881,14 @@ func HandleOpenAIChatCompletionRequest(
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -906,25 +906,25 @@ func HandleOpenAIChatCompletionRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.RakshaChatResponse{
+		return &schemas.GatewayChatResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
-	response := &schemas.RakshaChatResponse{}
+	response := &schemas.GatewayChatResponse{}
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	var rawRequest, rawResponse interface{}
 
 	if customResponseHandler != nil {
-		rawRequest, rawResponse, rakshaErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, gatewayErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	} else {
-		rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, gatewayErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	}
 
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -945,7 +945,7 @@ func HandleOpenAIChatCompletionRequest(
 // ChatCompletionStream handles streaming for OpenAI chat completions.
 // It formats messages, prepares request body, and uses shared streaming logic.
 // Returns a channel for streaming responses and any error that occurred.
-func (provider *OpenAIProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	// Check if chat completion stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
@@ -984,10 +984,10 @@ func (provider *OpenAIProvider) ChatCompletionStream(ctx *schemas.RakshaContext,
 // HandleOpenAIChatCompletionStreaming handles streaming for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same SSE format.
 func HandleOpenAIChatCompletionStreaming(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaChatRequest,
+	request *schemas.GatewayChatRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -995,21 +995,21 @@ func HandleOpenAIChatCompletionStreaming(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customRequestConverter func(*schemas.RakshaChatRequest) (providerUtils.RequestBodyWithExtraParams, error),
-	customResponseHandler responseHandler[schemas.RakshaChatResponse],
+	customRequestConverter func(*schemas.GatewayChatRequest) (providerUtils.RequestBodyWithExtraParams, error),
+	customResponseHandler responseHandler[schemas.GatewayChatResponse],
 	customErrorConverter ErrorConverter,
 	postRequestConverter func(*OpenAIChatRequest) *OpenAIChatRequest,
-	postResponseConverter func(*schemas.RakshaChatResponse) *schemas.RakshaChatResponse,
+	postResponseConverter func(*schemas.GatewayChatResponse) *schemas.GatewayChatResponse,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Check if the request is a redirect from ResponsesStream to ChatCompletionStream
 	isResponsesToChatCompletionsFallback := false
 	var responsesStreamState *schemas.ChatToResponsesStreamState
-	if ctx.Value(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback) != nil {
-		isResponsesToChatCompletionsFallbackValue, ok := ctx.Value(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback).(bool)
+	if ctx.Value(schemas.GatewayContextKeyIsResponsesToChatCompletionFallback) != nil {
+		isResponsesToChatCompletionsFallbackValue, ok := ctx.Value(schemas.GatewayContextKeyIsResponsesToChatCompletionFallback).(bool)
 		if ok && isResponsesToChatCompletionsFallbackValue {
 			isResponsesToChatCompletionsFallback = true
 			responsesStreamState = schemas.AcquireChatToResponsesStreamState()
@@ -1027,7 +1027,7 @@ func HandleOpenAIChatCompletionStreaming(
 		maps.Copy(headers, authHeader)
 	}
 
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -1046,8 +1046,8 @@ func HandleOpenAIChatCompletionStreaming(
 			}
 			return reqBody, nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create HTTP request for streaming
@@ -1093,8 +1093,8 @@ func HandleOpenAIChatCompletionStreaming(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1103,20 +1103,20 @@ func HandleOpenAIChatCompletionStreaming(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// The request failed before the first response byte (connection refused, server
 		// closed an idle/pooled connection, broken pipe, DNS failure, etc.). Mirror the
 		// non-streaming path (makeRequestWithDoFunc) and surface this as a retriable upstream
-		// connection error (502, IsRakshaError=false) rather than NewRakshaOperationError
-		// (500, IsRakshaError=true). The latter caused the retry loop in executeRequestWithRetries
-		// to break early on IsRakshaError, so max_retries never applied to streaming connection
-		// failures - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// connection error (502, IsGatewayError=false) rather than NewGatewayOperationError
+		// (500, IsGatewayError=true). The latter caused the retry loop in executeRequestWithRetries
+		// to break early on IsGatewayError, so max_retries never applied to streaming connection
+		// failures - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1130,13 +1130,13 @@ func HandleOpenAIChatCompletionStreaming(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -1169,7 +1169,7 @@ func HandleOpenAIChatCompletionStreaming(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -1177,10 +1177,10 @@ func HandleOpenAIChatCompletionStreaming(
 		sseReader := providerUtils.GetSSEDataReader(ctx, reader)
 
 		chunkIndex := -1
-		usage := &schemas.RakshaLLMUsage{}
+		usage := &schemas.GatewayLLMUsage{}
 		// Register the accumulating usage handle so a mid-stream
 		// cancel/timeout can bill for tokens the provider already processed.
-		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, usage)
+		ctx.SetValue(schemas.GatewayContextKeyStreamAccumulatedUsage, usage)
 
 		lastChunkTime := startTime
 
@@ -1190,7 +1190,7 @@ func HandleOpenAIChatCompletionStreaming(
 		var created int
 		forwardedTerminalFinishReason := false
 		// Defer final completed/incomplete event until usage chunk arrives (fallback path only).
-		var pendingFinalEvent *schemas.RakshaResponsesStreamResponse
+		var pendingFinalEvent *schemas.GatewayResponsesStreamResponse
 		usageSeen := false
 
 		for {
@@ -1204,7 +1204,7 @@ func HandleOpenAIChatCompletionStreaming(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 					return
@@ -1216,18 +1216,18 @@ func HandleOpenAIChatCompletionStreaming(
 			// Quick check for error field (allocation-free using sonic.GetFromString)
 			if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 				// Only unmarshal when we know there's an error
-				var rakshaErr schemas.RakshaError
-				if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
-					if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+				var gatewayErr schemas.GatewayError
+				if err := sonic.UnmarshalString(jsonData, &gatewayErr); err == nil {
+					if gatewayErr.Error != nil && gatewayErr.Error.Message != "" {
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 				}
 			}
 
-			// Parse into raksha response
-			var response schemas.RakshaChatResponse
+			// Parse into gateway response
+			var response schemas.GatewayChatResponse
 			if customResponseHandler != nil {
 				rawRequest, rawResponse, handlerErr := customResponseHandler([]byte(jsonData), &response, nil, sendBackRawRequest, sendBackRawResponse)
 				if handlerErr != nil {
@@ -1237,8 +1237,8 @@ func HandleOpenAIChatCompletionStreaming(
 					if sendBackRawResponse {
 						handlerErr.ExtraFields.RawResponse = rawResponse
 					}
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, handlerErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, handlerErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 			} else {
@@ -1250,7 +1250,7 @@ func HandleOpenAIChatCompletionStreaming(
 
 			// choices be array if nil
 			if response.Choices == nil {
-				response.Choices = []schemas.RakshaResponseChoice{}
+				response.Choices = []schemas.GatewayResponseChoice{}
 			}
 
 			if isResponsesToChatCompletionsFallback {
@@ -1280,27 +1280,27 @@ func HandleOpenAIChatCompletionStreaming(
 					}
 				}
 
-				spreadResponses := response.ToRakshaResponsesStreamResponse(responsesStreamState)
+				spreadResponses := response.ToGatewayResponsesStreamResponse(responsesStreamState)
 				for _, response := range spreadResponses {
 					if response.Type == schemas.ResponsesStreamResponseTypeError {
-						rakshaErr := &schemas.RakshaError{
+						gatewayErr := &schemas.GatewayError{
 							Type:           schemas.Ptr(string(schemas.ResponsesStreamResponseTypeError)),
-							IsRakshaError: false,
+							IsGatewayError: false,
 							Error:          &schemas.ErrorField{},
 						}
 
 						if response.Message != nil {
-							rakshaErr.Error.Message = *response.Message
+							gatewayErr.Error.Message = *response.Message
 						}
 						if response.Param != nil {
-							rakshaErr.Error.Param = *response.Param
+							gatewayErr.Error.Param = *response.Param
 						}
 						if response.Code != nil {
-							rakshaErr.Error.Code = response.Code
+							gatewayErr.Error.Code = response.Code
 						}
 
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 
@@ -1319,7 +1319,7 @@ func HandleOpenAIChatCompletionStreaming(
 					response.ExtraFields.Latency = time.Since(lastChunkTime).Milliseconds()
 					lastChunkTime = time.Now()
 
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 				}
 			} else {
 				if postResponseConverter != nil {
@@ -1405,7 +1405,7 @@ func HandleOpenAIChatCompletionStreaming(
 						response.ExtraFields.RawResponse = jsonData
 					}
 
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, &response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, &response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 				}
 
 				// For providers that don't send [DONE] marker break on finish_reason
@@ -1424,15 +1424,15 @@ func HandleOpenAIChatCompletionStreaming(
 					providerUtils.ParseAndSetRawRequest(&pendingFinalEvent.ExtraFields, jsonBody)
 				}
 				pendingFinalEvent.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, pendingFinalEvent, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, pendingFinalEvent, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		} else {
 			finalFinishReason := finishReason
 			if forwardedTerminalFinishReason {
 				finalFinishReason = nil
 			}
-			response := providerUtils.CreateRakshaChatCompletionChunkResponse(messageID, usage, finalFinishReason, chunkIndex, modelName, created)
+			response := providerUtils.CreateGatewayChatCompletionChunkResponse(messageID, usage, finalFinishReason, chunkIndex, modelName, created)
 			if postResponseConverter != nil {
 				response = postResponseConverter(response)
 			}
@@ -1441,8 +1441,8 @@ func HandleOpenAIChatCompletionStreaming(
 				providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 			}
 			response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 		}
 	}()
 
@@ -1450,13 +1450,13 @@ func HandleOpenAIChatCompletionStreaming(
 }
 
 // Responses performs a responses request to the OpenAI API.
-func (provider *OpenAIProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if provider.shouldFallbackResponsesToChat(schemas.ResponsesRequest, schemas.ChatCompletionRequest) {
 		chatResponse, err := provider.ChatCompletion(ctx, key, request.ToChatRequest())
 		if err != nil {
 			return nil, err
 		}
-		return chatResponse.ToRakshaResponsesResponse(), nil
+		return chatResponse.ToGatewayResponsesResponse(), nil
 	}
 
 	// Check if chat completion is allowed for this provider
@@ -1490,20 +1490,20 @@ func (provider *OpenAIProvider) Responses(ctx *schemas.RakshaContext, key schema
 
 // HandleOpenAIResponsesRequest handles a responses request to OpenAI's API.
 func HandleOpenAIResponsesRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaResponsesRequest,
+	request *schemas.GatewayResponsesRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
-	customResponseHandler responseHandler[schemas.RakshaResponsesResponse],
+	customResponseHandler responseHandler[schemas.GatewayResponsesResponse],
 	customErrorConverter ErrorConverter,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
-) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -1534,28 +1534,28 @@ func HandleOpenAIResponsesRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaResponsesResponse{}
+			response := &schemas.GatewayResponsesResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaResponsesResponse{
+		return &schemas.GatewayResponsesResponse{
 			Model:       request.Model,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Use centralized converter
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIResponsesRequest(ctx, request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if signer != nil {
@@ -1571,14 +1571,14 @@ func HandleOpenAIResponsesRequest(
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1596,24 +1596,24 @@ func HandleOpenAIResponsesRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.RakshaResponsesResponse{
+		return &schemas.GatewayResponsesResponse{
 			Model:       request.Model,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.RakshaResponsesResponse{}
+	response := &schemas.GatewayResponsesResponse{}
 
 	var rawRequest, rawResponse interface{}
 
 	if customResponseHandler != nil {
-		rawRequest, rawResponse, rakshaErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, gatewayErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	} else {
-		rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, gatewayErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	}
 
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -1633,9 +1633,9 @@ func HandleOpenAIResponsesRequest(
 }
 
 // ResponsesStream performs a streaming responses request to the OpenAI API.
-func (provider *OpenAIProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if provider.shouldFallbackResponsesToChat(schemas.ResponsesStreamRequest, schemas.ChatCompletionStreamRequest) {
-		ctx.SetValue(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback, true)
+		ctx.SetValue(schemas.GatewayContextKeyIsResponsesToChatCompletionFallback, true)
 		return provider.ChatCompletionStream(ctx, postHookRunner, postHookSpanFinalizer, key, request.ToChatRequest())
 	}
 
@@ -1676,10 +1676,10 @@ func (provider *OpenAIProvider) ResponsesStream(ctx *schemas.RakshaContext, post
 // HandleOpenAIResponsesStreaming handles streaming for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same SSE format.
 func HandleOpenAIResponsesStreaming(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaResponsesRequest,
+	request *schemas.GatewayResponsesRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -1687,14 +1687,14 @@ func HandleOpenAIResponsesStreaming(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customResponseHandler responseHandler[schemas.RakshaResponsesStreamResponse],
+	customResponseHandler responseHandler[schemas.GatewayResponsesStreamResponse],
 	customErrorConverter ErrorConverter,
 	postRequestConverter func(*OpenAIResponsesRequest) *OpenAIResponsesRequest,
-	postResponseConverter func(*schemas.RakshaResponsesStreamResponse) *schemas.RakshaResponsesStreamResponse,
+	postResponseConverter func(*schemas.GatewayResponsesStreamResponse) *schemas.GatewayResponsesStreamResponse,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Prepare SGL headers (SGL typically doesn't require authorization, but we include it if provided)
 	headers := map[string]string{
@@ -1708,7 +1708,7 @@ func HandleOpenAIResponsesStreaming(
 		maps.Copy(headers, authHeader)
 	}
 
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -1721,8 +1721,8 @@ func HandleOpenAIResponsesStreaming(
 			}
 			return reqBody, nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create HTTP request for streaming
@@ -1767,8 +1767,8 @@ func HandleOpenAIResponsesStreaming(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1777,20 +1777,20 @@ func HandleOpenAIResponsesStreaming(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// The request failed before the first response byte (connection refused, server
 		// closed an idle/pooled connection, broken pipe, DNS failure, etc.). Mirror the
 		// non-streaming path (makeRequestWithDoFunc) and surface this as a retriable upstream
-		// connection error (502, IsRakshaError=false) rather than NewRakshaOperationError
-		// (500, IsRakshaError=true). The latter caused the retry loop in executeRequestWithRetries
-		// to break early on IsRakshaError, so max_retries never applied to streaming connection
-		// failures - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// connection error (502, IsGatewayError=false) rather than NewGatewayOperationError
+		// (500, IsGatewayError=true). The latter caused the retry loop in executeRequestWithRetries
+		// to break early on IsGatewayError, so max_retries never applied to streaming connection
+		// failures - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1804,13 +1804,13 @@ func HandleOpenAIResponsesStreaming(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -1841,7 +1841,7 @@ func HandleOpenAIResponsesStreaming(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -1861,7 +1861,7 @@ func HandleOpenAIResponsesStreaming(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				}
@@ -1869,20 +1869,20 @@ func HandleOpenAIResponsesStreaming(
 			}
 			jsonData := string(data)
 
-			// Parse into raksha response
-			var response schemas.RakshaResponsesStreamResponse
+			// Parse into gateway response
+			var response schemas.GatewayResponsesStreamResponse
 			// TODO fix this
 			if customResponseHandler != nil {
-				rawRequest, rawResponse, rakshaErr := customResponseHandler([]byte(jsonData), &response, nil, false, false)
-				if rakshaErr != nil {
+				rawRequest, rawResponse, gatewayErr := customResponseHandler([]byte(jsonData), &response, nil, false, false)
+				if gatewayErr != nil {
 					if sendBackRawRequest {
-						rakshaErr.ExtraFields.RawRequest = rawRequest
+						gatewayErr.ExtraFields.RawRequest = rawRequest
 					}
 					if sendBackRawResponse {
-						rakshaErr.ExtraFields.RawResponse = rawResponse
+						gatewayErr.ExtraFields.RawResponse = rawResponse
 					}
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 			} else {
@@ -1904,57 +1904,57 @@ func HandleOpenAIResponsesStreaming(
 				}
 
 				if response.Type == schemas.ResponsesStreamResponseTypeError {
-					rakshaErr := &schemas.RakshaError{
+					gatewayErr := &schemas.GatewayError{
 						Type:           schemas.Ptr(string(schemas.ResponsesStreamResponseTypeError)),
-						IsRakshaError: false,
+						IsGatewayError: false,
 						Error:          &schemas.ErrorField{},
 					}
 
 					if response.Message != nil {
-						rakshaErr.Error.Message = *response.Message
+						gatewayErr.Error.Message = *response.Message
 					}
 					if response.Param != nil {
-						rakshaErr.Error.Param = *response.Param
+						gatewayErr.Error.Param = *response.Param
 					}
 					if response.Code != nil {
-						rakshaErr.Error.Code = response.Code
+						gatewayErr.Error.Code = response.Code
 					}
 					if response.Error != nil {
-						if response.Error.Message != "" && rakshaErr.Error.Message == "" {
-							rakshaErr.Error.Message = response.Error.Message
+						if response.Error.Message != "" && gatewayErr.Error.Message == "" {
+							gatewayErr.Error.Message = response.Error.Message
 						}
-						if response.Error.Code != "" && (rakshaErr.Error.Code == nil || *rakshaErr.Error.Code == "") {
-							rakshaErr.Error.Code = &response.Error.Code
+						if response.Error.Code != "" && (gatewayErr.Error.Code == nil || *gatewayErr.Error.Code == "") {
+							gatewayErr.Error.Code = &response.Error.Code
 						}
 					}
 					if response.Response != nil && response.Response.Error != nil {
-						if response.Response.Error.Message != "" && rakshaErr.Error.Message == "" {
-							rakshaErr.Error.Message = response.Response.Error.Message
+						if response.Response.Error.Message != "" && gatewayErr.Error.Message == "" {
+							gatewayErr.Error.Message = response.Response.Error.Message
 						}
-						if response.Response.Error.Code != "" && (rakshaErr.Error.Code == nil || *rakshaErr.Error.Code == "") {
-							rakshaErr.Error.Code = schemas.Ptr(response.Response.Error.Code)
+						if response.Response.Error.Code != "" && (gatewayErr.Error.Code == nil || *gatewayErr.Error.Code == "") {
+							gatewayErr.Error.Code = schemas.Ptr(response.Response.Error.Code)
 						}
 					}
 
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, []byte(jsonData), sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, []byte(jsonData), sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 
 				// Some providers (e.g. Fireworks) send response.failed on HTTP 200 streams
-				// instead of a pre-stream 4xx. Convert to RakshaError for consistent handling.
+				// instead of a pre-stream 4xx. Convert to GatewayError for consistent handling.
 				if response.Type == schemas.ResponsesStreamResponseTypeFailed {
-					rakshaErr := &schemas.RakshaError{
+					gatewayErr := &schemas.GatewayError{
 						Type:           schemas.Ptr(string(schemas.ResponsesStreamResponseTypeFailed)),
-						IsRakshaError: false,
+						IsGatewayError: false,
 						Error:          &schemas.ErrorField{},
 					}
 					if response.Response != nil && response.Response.Error != nil {
-						rakshaErr.Error.Message = response.Response.Error.Message
-						rakshaErr.Error.Code = &response.Response.Error.Code
+						gatewayErr.Error.Message = response.Response.Error.Message
+						gatewayErr.Error.Code = &response.Response.Error.Code
 					}
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, []byte(jsonData), sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, []byte(jsonData), sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 
@@ -1965,15 +1965,15 @@ func HandleOpenAIResponsesStreaming(
 						providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 					}
 					response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, &response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, &response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 					return
 				}
 
 				response.ExtraFields.Latency = time.Since(lastChunkTime).Milliseconds()
 				lastChunkTime = time.Now()
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, &response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, &response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
 	}()
@@ -1983,8 +1983,8 @@ func HandleOpenAIResponsesStreaming(
 
 // Embedding generates embeddings for the given input text(s).
 // The input can be either a single string or a slice of strings for batch embedding.
-// Returns a RakshaResponse containing the embedding(s) and any error that occurred.
-func (provider *OpenAIProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the embedding(s) and any error that occurred.
+func (provider *OpenAIProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	// Check if embedding is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.EmbeddingRequest); err != nil {
 		return nil, err
@@ -2009,18 +2009,18 @@ func (provider *OpenAIProvider) Embedding(ctx *schemas.RakshaContext, key schema
 // HandleOpenAIEmbeddingRequest handles embedding requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same embedding request format.
 func HandleOpenAIEmbeddingRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaEmbeddingRequest,
+	request *schemas.GatewayEmbeddingRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-	customResponseHandler responseHandler[schemas.RakshaEmbeddingResponse],
+	customResponseHandler responseHandler[schemas.GatewayEmbeddingResponse],
 	logger schemas.Logger,
-) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2051,42 +2051,42 @@ func HandleOpenAIEmbeddingRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaEmbeddingResponse{}
+			response := &schemas.GatewayEmbeddingResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaEmbeddingResponse{
+		return &schemas.GatewayEmbeddingResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Use centralized converter
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIEmbeddingRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2101,25 +2101,25 @@ func HandleOpenAIEmbeddingRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.RakshaEmbeddingResponse{
+		return &schemas.GatewayEmbeddingResponse{
 			Model:       request.Model,
 			Usage:       lpResult.Usage,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.RakshaEmbeddingResponse{}
+	response := &schemas.GatewayEmbeddingResponse{}
 
 	var rawRequest, rawResponse interface{}
 
 	if customResponseHandler != nil {
-		rawRequest, rawResponse, rakshaErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, gatewayErr = customResponseHandler(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	} else {
-		rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+		rawRequest, rawResponse, gatewayErr = providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
 	}
 
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -2152,7 +2152,7 @@ func (provider *OpenAIProvider) shouldFallbackResponsesToChat(responsesOp, chatO
 // Speech handles non-streaming speech synthesis requests.
 // It formats the request body, makes the API call, and returns the response.
 // Returns the response and any error that occurred.
-func (provider *OpenAIProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.SpeechRequest); err != nil {
 		return nil, err
 	}
@@ -2175,18 +2175,18 @@ func (provider *OpenAIProvider) Speech(ctx *schemas.RakshaContext, key schemas.K
 // HandleOpenAISpeechRequest handles speech requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same speech request format.
 func HandleOpenAISpeechRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaSpeechRequest,
+	request *schemas.GatewaySpeechRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
-	customResponseHandler responseHandler[schemas.RakshaSpeechResponse],
+	customResponseHandler responseHandler[schemas.GatewaySpeechResponse],
 	logger schemas.Logger,
-) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2216,31 +2216,31 @@ func HandleOpenAISpeechRequest(
 			return nil, lpErr
 		}
 		// Speech response is raw audio bytes (MP3/WAV), not JSON
-		return &schemas.RakshaSpeechResponse{
+		return &schemas.GatewaySpeechResponse{
 			Audio:       lpResult.ResponseBody,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) { return ToOpenAISpeechRequest(request), nil })
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2256,40 +2256,40 @@ func HandleOpenAISpeechRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.RakshaSpeechResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewaySpeechResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Create final response with the audio data
 	// Note: For speech synthesis, we return the binary audio data in the raw response
 	// The audio data is typically in MP3, WAV, or other audio formats as specified by response_format
-	rakshaResponse := &schemas.RakshaSpeechResponse{
+	gatewayResponse := &schemas.GatewaySpeechResponse{
 		Audio: body,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerResponseHeaders,
 		},
 	}
 
 	if sendBackRawRequest {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // SpeechStream handles streaming for speech synthesis.
 // It formats the request body, creates HTTP request, and uses shared streaming logic.
 // Returns a channel for streaming responses and any error that occurred.
-func (provider *OpenAIProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *OpenAIProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.SpeechStreamRequest); err != nil {
 		return nil, err
 	}
 
 	for _, model := range providerUtils.UnsupportedSpeechStreamModels {
 		if model == request.Model {
-			return nil, providerUtils.NewRakshaOperationError(fmt.Sprintf("model %s is not supported for streaming speech synthesis", model), nil)
+			return nil, providerUtils.NewGatewayOperationError(fmt.Sprintf("model %s is not supported for streaming speech synthesis", model), nil)
 		}
 	}
 
@@ -2315,10 +2315,10 @@ func (provider *OpenAIProvider) SpeechStream(ctx *schemas.RakshaContext, postHoo
 // HandleOpenAISpeechStreamRequest handles speech stream requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same speech stream request format.
 func HandleOpenAISpeechStreamRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaSpeechRequest,
+	request *schemas.GatewaySpeechRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -2327,10 +2327,10 @@ func HandleOpenAISpeechStreamRequest(
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
 	postRequestConverter func(*OpenAISpeechRequest) *OpenAISpeechRequest,
-	postResponseConverter func(*schemas.RakshaSpeechStreamResponse) *schemas.RakshaSpeechStreamResponse,
+	postResponseConverter func(*schemas.GatewaySpeechStreamResponse) *schemas.GatewaySpeechStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Create HTTP request for streaming
 	req := fasthttp.AcquireRequest()
@@ -2362,7 +2362,7 @@ func HandleOpenAISpeechStreamRequest(
 	}
 
 	// Use centralized converter
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -2375,8 +2375,8 @@ func HandleOpenAISpeechStreamRequest(
 			}
 			return reqBody, nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	setStreamingRequestBody(ctx, req, jsonBody, providerName)
@@ -2392,8 +2392,8 @@ func HandleOpenAISpeechStreamRequest(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -2402,20 +2402,20 @@ func HandleOpenAISpeechStreamRequest(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// The request failed before the first response byte (connection refused, server
 		// closed an idle/pooled connection, broken pipe, DNS failure, etc.). Mirror the
 		// non-streaming path (makeRequestWithDoFunc) and surface this as a retriable upstream
-		// connection error (502, IsRakshaError=false) rather than NewRakshaOperationError
-		// (500, IsRakshaError=true). The latter caused the retry loop in executeRequestWithRetries
-		// to break early on IsRakshaError, so max_retries never applied to streaming connection
-		// failures - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// connection error (502, IsGatewayError=false) rather than NewGatewayOperationError
+		// (500, IsGatewayError=true). The latter caused the retry loop in executeRequestWithRetries
+		// to break early on IsGatewayError, so max_retries never applied to streaming connection
+		// failures - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2426,13 +2426,13 @@ func HandleOpenAISpeechStreamRequest(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -2463,7 +2463,7 @@ func HandleOpenAISpeechStreamRequest(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -2485,7 +2485,7 @@ func HandleOpenAISpeechStreamRequest(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				}
@@ -2496,18 +2496,18 @@ func HandleOpenAISpeechStreamRequest(
 			// Quick check for error field (allocation-free using sonic.GetFromString)
 			if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 				// Only unmarshal when we know there's an error
-				var rakshaErr schemas.RakshaError
-				if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
-					if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+				var gatewayErr schemas.GatewayError
+				if err := sonic.UnmarshalString(jsonData, &gatewayErr); err == nil {
+					if gatewayErr.Error != nil && gatewayErr.Error.Message != "" {
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 				}
 			}
 
-			// Parse into raksha response
-			var response schemas.RakshaSpeechStreamResponse
+			// Parse into gateway response
+			var response schemas.GatewaySpeechStreamResponse
 			if err := sonic.UnmarshalString(jsonData, &response); err != nil {
 				logger.Warn("Failed to parse stream response: %v", err)
 				continue
@@ -2523,7 +2523,7 @@ func HandleOpenAISpeechStreamRequest(
 
 			chunkIndex++
 
-			response.ExtraFields = schemas.RakshaResponseExtraFields{
+			response.ExtraFields = schemas.GatewayResponseExtraFields{
 				ChunkIndex: chunkIndex,
 				Latency:    time.Since(lastChunkTime).Milliseconds(),
 			}
@@ -2539,12 +2539,12 @@ func HandleOpenAISpeechStreamRequest(
 					providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 				}
 				response.BackfillParams(request)
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
 				return
 			}
 
-			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
+			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
 		}
 	}()
 
@@ -2554,7 +2554,7 @@ func HandleOpenAISpeechStreamRequest(
 // Transcription handles non-streaming transcription requests.
 // It creates a multipart form, adds fields, makes the API call, and returns the response.
 // Returns the response and any error that occurred.
-func (provider *OpenAIProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.TranscriptionRequest); err != nil {
 		return nil, err
 	}
@@ -2574,17 +2574,17 @@ func (provider *OpenAIProvider) Transcription(ctx *schemas.RakshaContext, key sc
 }
 
 func HandleOpenAITranscriptionRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaTranscriptionRequest,
+	request *schemas.GatewayTranscriptionRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawResponse bool,
-	customResponseHandler responseHandler[schemas.RakshaTranscriptionResponse],
+	customResponseHandler responseHandler[schemas.GatewayTranscriptionResponse],
 	logger schemas.Logger,
-) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	// Large payload passthrough: stream multipart body directly without parsing
 	if lpResult, lpErr, handled := handleOpenAILargePayloadPassthrough(ctx, client, url, BearerAuthHeader(key), extraHeaders, providerName, logger); handled {
 		if lpErr != nil {
@@ -2592,15 +2592,15 @@ func HandleOpenAITranscriptionRequest(
 		}
 		// Unmarshal the upstream response body to preserve transcription text and fields
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaTranscriptionResponse{}
+			response := &schemas.GatewayTranscriptionResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaTranscriptionResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayTranscriptionResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
@@ -2629,7 +2629,7 @@ func HandleOpenAITranscriptionRequest(
 	// Use centralized converter
 	reqBody := ToOpenAITranscriptionRequest(request)
 	if reqBody == nil {
-		return nil, providerUtils.NewRakshaOperationError("transcription input is not provided", nil)
+		return nil, providerUtils.NewGatewayOperationError("transcription input is not provided", nil)
 	}
 
 	// Create multipart form
@@ -2643,14 +2643,14 @@ func HandleOpenAITranscriptionRequest(
 	req.SetBody(body.Bytes())
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.SetErrorLatency(rakshaErr, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.SetErrorLatency(gatewayErr, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2665,16 +2665,16 @@ func HandleOpenAITranscriptionRequest(
 		return nil, providerUtils.SetErrorLatency(finalErr, latency)
 	}
 	if lpResult != nil {
-		return &schemas.RakshaTranscriptionResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayTranscriptionResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Check for empty response
 	trimmed := strings.TrimSpace(string(responseBody))
 	if len(trimmed) == 0 {
-		return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseEmpty,
 			},
@@ -2683,8 +2683,8 @@ func HandleOpenAITranscriptionRequest(
 
 	copiedResponseBody := append([]byte(nil), responseBody...)
 
-	// Parse OpenAI's transcription response directly into RakshaTranscribe
-	response := &schemas.RakshaTranscriptionResponse{}
+	// Parse OpenAI's transcription response directly into GatewayTranscribe
+	response := &schemas.GatewayTranscriptionResponse{}
 	var rawResponse interface{}
 	if request.Params != nil && schemas.IsPlainTextTranscriptionFormat(request.Params.ResponseFormat) {
 		response.Text = string(copiedResponseBody)
@@ -2692,20 +2692,20 @@ func HandleOpenAITranscriptionRequest(
 			rawResponse = string(copiedResponseBody)
 		}
 	} else if customResponseHandler != nil {
-		_, rawResponse, rakshaErr = customResponseHandler(copiedResponseBody, response, nil, false, sendBackRawResponse)
+		_, rawResponse, gatewayErr = customResponseHandler(copiedResponseBody, response, nil, false, sendBackRawResponse)
 	} else {
 		if err := sonic.Unmarshal(copiedResponseBody, response); err != nil {
 			// Check if it's an HTML response
 			if providerUtils.IsHTMLResponse(resp, copiedResponseBody) {
-				return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-					IsRakshaError: false,
+				return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+					IsGatewayError: false,
 					Error: &schemas.ErrorField{
 						Message: schemas.ErrProviderResponseHTML,
 						Error:   errors.New(string(copiedResponseBody)),
 					},
 				}, latency)
 			}
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err), latency)
 		}
 
 		// TODO: add HandleProviderResponse here
@@ -2713,16 +2713,16 @@ func HandleOpenAITranscriptionRequest(
 		// Parse raw response for RawResponse field
 		if sendBackRawResponse {
 			if err := sonic.Unmarshal(copiedResponseBody, &rawResponse); err != nil {
-				return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderRawResponseUnmarshal, err), latency)
+				return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderRawResponseUnmarshal, err), latency)
 			}
 		}
 	}
 
-	if rakshaErr != nil {
-		return nil, providerUtils.SetErrorLatency(rakshaErr, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.SetErrorLatency(gatewayErr, latency)
 	}
 
-	response.ExtraFields = schemas.RakshaResponseExtraFields{
+	response.ExtraFields = schemas.GatewayResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -2735,7 +2735,7 @@ func HandleOpenAITranscriptionRequest(
 }
 
 // TranscriptionStream performs a streaming transcription request to the OpenAI API.
-func (provider *OpenAIProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *OpenAIProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.TranscriptionStreamRequest); err != nil {
 		return nil, err
 	}
@@ -2763,10 +2763,10 @@ func (provider *OpenAIProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 // HandleOpenAITranscriptionStreamRequest handles transcription stream requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same transcription stream request format.
 func HandleOpenAITranscriptionStreamRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaTranscriptionRequest,
+	request *schemas.GatewayTranscriptionRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -2774,17 +2774,17 @@ func HandleOpenAITranscriptionStreamRequest(
 	accumulateText bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customResponseHandler responseHandler[schemas.RakshaTranscriptionStreamResponse],
+	customResponseHandler responseHandler[schemas.GatewayTranscriptionStreamResponse],
 	postRequestConverter func(*OpenAITranscriptionRequest) *OpenAITranscriptionRequest,
-	postResponseConverter func(*schemas.RakshaTranscriptionStreamResponse) *schemas.RakshaTranscriptionStreamResponse,
+	postResponseConverter func(*schemas.GatewayTranscriptionStreamResponse) *schemas.GatewayTranscriptionStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Use centralized converter
 	reqBody := ToOpenAITranscriptionRequest(request)
 	if reqBody == nil {
-		return nil, providerUtils.NewRakshaOperationError("transcription input is not provided", nil)
+		return nil, providerUtils.NewGatewayOperationError("transcription input is not provided", nil)
 	}
 	reqBody.Stream = schemas.Ptr(true)
 	if postRequestConverter != nil {
@@ -2795,8 +2795,8 @@ func HandleOpenAITranscriptionStreamRequest(
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
-	if rakshaErr := ParseTranscriptionFormDataBodyFromRequest(writer, reqBody, providerName); rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr := ParseTranscriptionFormDataBodyFromRequest(writer, reqBody, providerName); gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Prepare OpenAI headers
@@ -2837,8 +2837,8 @@ func HandleOpenAITranscriptionStreamRequest(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -2847,13 +2847,13 @@ func HandleOpenAITranscriptionStreamRequest(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2864,13 +2864,13 @@ func HandleOpenAITranscriptionStreamRequest(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -2901,7 +2901,7 @@ func HandleOpenAITranscriptionStreamRequest(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -2924,7 +2924,7 @@ func HandleOpenAITranscriptionStreamRequest(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				}
@@ -2932,28 +2932,28 @@ func HandleOpenAITranscriptionStreamRequest(
 			}
 			jsonData := string(data)
 			// TODo fix this
-			response := &schemas.RakshaTranscriptionStreamResponse{}
-			var rakshaErr *schemas.RakshaError
+			response := &schemas.GatewayTranscriptionStreamResponse{}
+			var gatewayErr *schemas.GatewayError
 			if customResponseHandler != nil {
-				_, _, rakshaErr = customResponseHandler([]byte(jsonData), response, nil, false, false)
-				if rakshaErr != nil {
+				_, _, gatewayErr = customResponseHandler([]byte(jsonData), response, nil, false, false)
+				if gatewayErr != nil {
 					if sendBackRawResponse {
-						rakshaErr.ExtraFields.RawResponse = jsonData
+						gatewayErr.ExtraFields.RawResponse = jsonData
 					}
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, body.Bytes(), []byte(jsonData), false, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, body.Bytes(), []byte(jsonData), false, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 			} else {
 				// Quick check for error field (allocation-free using sonic.GetFromString)
 				if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 					// Only unmarshal when we know there's an error
-					var rakshaErrVal schemas.RakshaError
-					if err := sonic.UnmarshalString(jsonData, &rakshaErrVal); err == nil {
-						if rakshaErrVal.Error != nil && rakshaErrVal.Error.Message != "" {
-							ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					var gatewayErrVal schemas.GatewayError
+					if err := sonic.UnmarshalString(jsonData, &gatewayErrVal); err == nil {
+						if gatewayErrVal.Error != nil && gatewayErrVal.Error.Message != "" {
+							ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 							respBody := append([]byte(nil), resp.Body()...)
-							providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErrVal, body.Bytes(), respBody, false, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+							providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &gatewayErrVal, body.Bytes(), respBody, false, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 							return
 						}
 					}
@@ -2976,7 +2976,7 @@ func HandleOpenAITranscriptionStreamRequest(
 
 			chunkIndex++
 
-			response.ExtraFields = schemas.RakshaResponseExtraFields{
+			response.ExtraFields = schemas.GatewayResponseExtraFields{
 				ChunkIndex: chunkIndex,
 				Latency:    time.Since(lastChunkTime).Milliseconds(),
 			}
@@ -2988,17 +2988,17 @@ func HandleOpenAITranscriptionStreamRequest(
 
 			if response.Usage != nil || response.Type == schemas.TranscriptionStreamResponseTypeDone {
 				response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 
 				if accumulateText {
 					response.Text = fullTranscriptionText
 				}
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
 				return
 			}
 
-			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
+			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
 		}
 	}()
 
@@ -3007,10 +3007,10 @@ func HandleOpenAITranscriptionStreamRequest(
 
 // ImageGeneration performs an Image Generation request to OpenAI's API.
 // It formats the request, sends it to OpenAI, and processes the response.
-// Returns a RakshaResponse containing the raksha response or an error if the request fails.
-func (provider *OpenAIProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key,
-	req *schemas.RakshaImageGenerationRequest,
-) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the gateway response or an error if the request fails.
+func (provider *OpenAIProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key,
+	req *schemas.GatewayImageGenerationRequest,
+) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ImageGenerationRequest); err != nil {
 		return nil, err
 	}
@@ -3032,17 +3032,17 @@ func (provider *OpenAIProvider) ImageGeneration(ctx *schemas.RakshaContext, key 
 // HandleOpenAIImageGenerationRequest handles image generation requests for OpenAI-compatible APIs.
 // This shared function reduces code duplication between providers that use the same image generation request format.
 func HandleOpenAIImageGenerationRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaImageGenerationRequest,
+	request *schemas.GatewayImageGenerationRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	logger schemas.Logger,
-) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3073,40 +3073,40 @@ func HandleOpenAIImageGenerationRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaImageGenerationResponse{}
+			response := &schemas.GatewayImageGenerationResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaImageGenerationResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayImageGenerationResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	// Use centralized converter
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIImageGenerationRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3121,17 +3121,17 @@ func HandleOpenAIImageGenerationRequest(
 		return nil, finalErr
 	}
 	if lpResult != nil {
-		return &schemas.RakshaImageGenerationResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayImageGenerationResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.RakshaImageGenerationResponse{}
+	response := &schemas.GatewayImageGenerationResponse{}
 
 	// Use enhanced response handler with pre-allocated response
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -3154,14 +3154,14 @@ func HandleOpenAIImageGenerationRequest(
 // It formats the request body, creates HTTP request, and uses shared streaming logic.
 // Returns a channel for streaming responses and any error that occurred.
 func (provider *OpenAIProvider) ImageGenerationStream(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	request *schemas.RakshaImageGenerationRequest,
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+	request *schemas.GatewayImageGenerationRequest,
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 
 	// Check if image generation stream is allowed for this provider
@@ -3191,10 +3191,10 @@ func (provider *OpenAIProvider) ImageGenerationStream(
 }
 
 func HandleOpenAIImageGenerationStreaming(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaImageGenerationRequest,
+	request *schemas.GatewayImageGenerationRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -3202,12 +3202,12 @@ func HandleOpenAIImageGenerationStreaming(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customRequestConverter func(*schemas.RakshaImageGenerationRequest) (providerUtils.RequestBodyWithExtraParams, error),
+	customRequestConverter func(*schemas.GatewayImageGenerationRequest) (providerUtils.RequestBodyWithExtraParams, error),
 	postRequestConverter func(*OpenAIImageGenerationRequest) *OpenAIImageGenerationRequest,
-	postResponseConverter func(*schemas.RakshaImageGenerationStreamResponse) *schemas.RakshaImageGenerationStreamResponse,
+	postResponseConverter func(*schemas.GatewayImageGenerationStreamResponse) *schemas.GatewayImageGenerationStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	// Set headers
 	headers := map[string]string{
@@ -3221,7 +3221,7 @@ func HandleOpenAIImageGenerationStreaming(
 		maps.Copy(headers, authHeader)
 	}
 
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -3237,8 +3237,8 @@ func HandleOpenAIImageGenerationStreaming(
 			}
 			return reqBody, nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create HTTP request for streaming
@@ -3273,8 +3273,8 @@ func HandleOpenAIImageGenerationStreaming(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -3283,13 +3283,13 @@ func HandleOpenAIImageGenerationStreaming(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3300,13 +3300,13 @@ func HandleOpenAIImageGenerationStreaming(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -3337,7 +3337,7 @@ func HandleOpenAIImageGenerationStreaming(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -3374,11 +3374,11 @@ func HandleOpenAIImageGenerationStreaming(
 			// Quick check for error field (allocation-free using sonic.GetFromString)
 			if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 				// Only unmarshal when we know there's an error
-				var rakshaErr schemas.RakshaError
-				if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
-					if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+				var gatewayErr schemas.GatewayError
+				if err := sonic.UnmarshalString(jsonData, &gatewayErr); err == nil {
+					if gatewayErr.Error != nil && gatewayErr.Error.Message != "" {
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -3393,25 +3393,25 @@ func HandleOpenAIImageGenerationStreaming(
 
 			// Check if response type indicates an error
 			if response.Type == "error" {
-				rakshaErr := &schemas.RakshaError{
-					IsRakshaError: false,
+				gatewayErr := &schemas.GatewayError{
+					IsGatewayError: false,
 					Error:          &schemas.ErrorField{},
 				}
 				// Guard access to response.Error fields
 				if response.Error != nil {
-					rakshaErr.Error.Message = response.Error.Message
+					gatewayErr.Error.Message = response.Error.Message
 					if response.Error.Code != nil {
-						rakshaErr.Error.Code = response.Error.Code
+						gatewayErr.Error.Code = response.Error.Code
 					}
 					if response.Error.Param != nil {
-						rakshaErr.Error.Param = response.Error.Param
+						gatewayErr.Error.Param = response.Error.Param
 					}
 					if response.Error.Type != nil {
-						rakshaErr.Error.Type = response.Error.Type
+						gatewayErr.Error.Type = response.Error.Type
 					}
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, logger, postHookSpanFinalizer)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, logger, postHookSpanFinalizer)
 				return
 			}
 
@@ -3477,7 +3477,7 @@ func HandleOpenAIImageGenerationStreaming(
 			}
 			chunkIndex := imageChunkIndices[imageIndex]
 			// Build chunk with all OpenAI fields
-			chunk := &schemas.RakshaImageGenerationStreamResponse{
+			chunk := &schemas.GatewayImageGenerationStreamResponse{
 				Type:         response.Type,
 				Index:        imageIndex, // Which image (0-N)
 				ChunkIndex:   chunkIndex, // Chunk order within this image (top-level)
@@ -3486,7 +3486,7 @@ func HandleOpenAIImageGenerationStreaming(
 				Quality:      response.Quality,
 				Background:   response.Background,
 				OutputFormat: response.OutputFormat,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					ChunkIndex: chunkIndex, // Chunk order within this image
 					Latency:    time.Since(lastChunkTime).Milliseconds(),
 				},
@@ -3532,18 +3532,18 @@ func HandleOpenAIImageGenerationStreaming(
 				chunk.Usage = response.Usage
 				// For completed chunk, use total latency from start
 				chunk.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-				chunk.BackfillParams(&schemas.RakshaRequest{
+				chunk.BackfillParams(&schemas.GatewayRequest{
 					ImageGenerationRequest: request,
 				})
 				// Set raw request only on final chunk if enabled
 				if sendBackRawRequest {
 					providerUtils.ParseAndSetRawRequest(&chunk.ExtraFields, jsonBody)
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			}
 
 			providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-				providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+				providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 				responseChan, postHookSpanFinalizer)
 
 			if isCompleted {
@@ -3556,17 +3556,17 @@ func HandleOpenAIImageGenerationStreaming(
 }
 
 // Rerank is not supported by the OpenAI provider.
-func (provider *OpenAIProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Openai provider.
-func (provider *OpenAIProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration performs a video generation request via the OpenAI API.
-func (provider *OpenAIProvider) VideoGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) VideoGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoGenerationRequest); err != nil {
 		return nil, err
 	}
@@ -3586,14 +3586,14 @@ func (provider *OpenAIProvider) VideoGeneration(ctx *schemas.RakshaContext, key 
 }
 
 // VideoRetrieve retrieves a video generation job from the OpenAI API.
-func (provider *OpenAIProvider) VideoRetrieve(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) VideoRetrieve(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	providerName := provider.GetProviderKey()
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
 
@@ -3614,7 +3614,7 @@ func (provider *OpenAIProvider) VideoRetrieve(ctx *schemas.RakshaContext, key sc
 }
 
 // VideoDownload downloads video content from OpenAI.
-func (provider *OpenAIProvider) VideoDownload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) VideoDownload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoDownloadRequest); err != nil {
 		return nil, err
 	}
@@ -3622,7 +3622,7 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 	providerName := provider.GetProviderKey()
 
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
 
@@ -3651,14 +3651,14 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3668,7 +3668,7 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Get content type from response
@@ -3681,11 +3681,11 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 	// Copy the binary content
 	content := append([]byte(nil), body...)
 
-	return &schemas.RakshaVideoDownloadResponse{
+	return &schemas.GatewayVideoDownloadResponse{
 		VideoID:     providerUtils.AddVideoIDProviderSuffix(videoID, providerName),
 		Content:     content,
 		ContentType: contentType,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerResponseHeaders,
 		},
@@ -3693,7 +3693,7 @@ func (provider *OpenAIProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 }
 
 // VideoDelete deletes a video generation job from the OpenAI API.
-func (provider *OpenAIProvider) VideoDelete(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) VideoDelete(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoDeleteRequest); err != nil {
 		return nil, err
 	}
@@ -3701,7 +3701,7 @@ func (provider *OpenAIProvider) VideoDelete(ctx *schemas.RakshaContext, key sche
 	providerName := provider.GetProviderKey()
 
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
 
@@ -3720,7 +3720,7 @@ func (provider *OpenAIProvider) VideoDelete(ctx *schemas.RakshaContext, key sche
 }
 
 // VideoList lists videos from OpenAI.
-func (provider *OpenAIProvider) VideoList(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) VideoList(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoListRequest); err != nil {
 		return nil, err
 	}
@@ -3742,17 +3742,17 @@ func (provider *OpenAIProvider) VideoList(ctx *schemas.RakshaContext, key schema
 // HandleOpenAIVideoGenerationRequest handles video generation requests for OpenAI-compatible APIs.
 // It creates a multipart form, adds fields, makes the API call, and returns the response.
 func HandleOpenAIVideoGenerationRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaVideoGenerationRequest,
+	request *schemas.GatewayVideoGenerationRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	logger schemas.Logger,
-) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3771,10 +3771,10 @@ func HandleOpenAIVideoGenerationRequest(
 	// Use centralized converter
 	reqBody, err := ToOpenAIVideoGenerationRequest(request)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to convert video generation request to openai format", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to convert video generation request to openai format", err)
 	}
 	if reqBody == nil {
-		return nil, providerUtils.NewRakshaOperationError("video generation input is not provided", nil)
+		return nil, providerUtils.NewGatewayOperationError("video generation input is not provided", nil)
 	}
 
 	// Create multipart form
@@ -3788,14 +3788,14 @@ func HandleOpenAIVideoGenerationRequest(
 	req.SetBody(body.Bytes())
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3805,14 +3805,14 @@ func HandleOpenAIVideoGenerationRequest(
 
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Check for empty response
 	trimmed := strings.TrimSpace(string(responseBody))
 	if len(trimmed) == 0 {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseEmpty,
 			},
@@ -3820,17 +3820,17 @@ func HandleOpenAIVideoGenerationRequest(
 	}
 
 	// Parse OpenAI's video generation response
-	response := &schemas.RakshaVideoGenerationResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	response := &schemas.GatewayVideoGenerationResponse{}
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, response, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if response.ID != "" {
 		response.ID = providerUtils.AddVideoIDProviderSuffix(response.ID, providerName)
 	}
 
-	response.ExtraFields = schemas.RakshaResponseExtraFields{
+	response.ExtraFields = schemas.GatewayResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -3847,16 +3847,16 @@ func HandleOpenAIVideoGenerationRequest(
 }
 
 // VideoDownloadFunc downloads video content. Used by HandleOpenAIVideoRetrieveRequest for enrichment.
-type VideoDownloadHandler func(ctx *schemas.RakshaContext, key schemas.Key, req *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError)
+type VideoDownloadHandler func(ctx *schemas.GatewayContext, key schemas.Key, req *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError)
 
 // HandleOpenAIVideoRetrieveRequest handles video retrieve requests for OpenAI-compatible APIs.
 // When authHeaders is non-nil, they are applied for authentication (e.g. Azure api-key); otherwise Bearer from key is used.
 // When videoDownloadFunc is non-nil and ctx has VideoOutputRequested with status completed, the handler fetches video content and appends to response.
 func HandleOpenAIVideoRetrieveRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaVideoRetrieveRequest,
+	request *schemas.GatewayVideoRetrieveRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	authHeaders map[string]string,
@@ -3865,7 +3865,7 @@ func HandleOpenAIVideoRetrieveRequest(
 	sendBackRawResponse bool,
 	videoDownloaddHandler VideoDownloadHandler,
 	logger schemas.Logger,
-) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -3884,14 +3884,14 @@ func HandleOpenAIVideoRetrieveRequest(
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		logger.Debug("error from %s provider: %s", providerName, string(resp.Body()))
@@ -3900,13 +3900,13 @@ func HandleOpenAIVideoRetrieveRequest(
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
-	response := &schemas.RakshaVideoGenerationResponse{}
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	response := &schemas.GatewayVideoGenerationResponse{}
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if response.ID != "" {
 		response.ID = providerUtils.AddVideoIDProviderSuffix(response.ID, providerName)
@@ -3917,15 +3917,15 @@ func HandleOpenAIVideoRetrieveRequest(
 	}
 
 	if videoDownloaddHandler != nil {
-		downloadVideo, ok := ctx.Value(schemas.RakshaContextKeyVideoOutputRequested).(bool)
+		downloadVideo, ok := ctx.Value(schemas.GatewayContextKeyVideoOutputRequested).(bool)
 		if ok && downloadVideo && response.Status == schemas.VideoStatusCompleted {
-			videoDownloadRequest := &schemas.RakshaVideoDownloadRequest{
+			videoDownloadRequest := &schemas.GatewayVideoDownloadRequest{
 				Provider: providerName,
 				ID:       response.ID,
 			}
-			videoDownloadResponse, rakshaErr := videoDownloaddHandler(ctx, key, videoDownloadRequest)
-			if rakshaErr != nil {
-				return nil, rakshaErr
+			videoDownloadResponse, gatewayErr := videoDownloaddHandler(ctx, key, videoDownloadRequest)
+			if gatewayErr != nil {
+				return nil, gatewayErr
 			}
 			if len(videoDownloadResponse.Content) > 0 {
 				output := schemas.VideoOutput{
@@ -3941,7 +3941,7 @@ func HandleOpenAIVideoRetrieveRequest(
 		}
 	}
 
-	response.ExtraFields = schemas.RakshaResponseExtraFields{
+	response.ExtraFields = schemas.GatewayResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -3953,7 +3953,7 @@ func HandleOpenAIVideoRetrieveRequest(
 
 // HandleOpenAIVideoDeleteRequest handles video deletion requests for OpenAI-compatible APIs.
 func HandleOpenAIVideoDeleteRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
 	videoID string,
@@ -3963,7 +3963,7 @@ func HandleOpenAIVideoDeleteRequest(
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	logger schemas.Logger,
-) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3981,14 +3981,14 @@ func HandleOpenAIVideoDeleteRequest(
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -3998,20 +3998,20 @@ func HandleOpenAIVideoDeleteRequest(
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Parse OpenAI's video response
-	response := &schemas.RakshaVideoDeleteResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	response := &schemas.GatewayVideoDeleteResponse{}
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if response.ID != "" {
 		response.ID = providerUtils.AddVideoIDProviderSuffix(response.ID, providerName)
 	}
 
-	response.ExtraFields = schemas.RakshaResponseExtraFields{
+	response.ExtraFields = schemas.GatewayResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -4028,17 +4028,17 @@ func HandleOpenAIVideoDeleteRequest(
 
 // HandleOpenAIVideoListRequest handles video list requests for OpenAI-compatible APIs.
 func HandleOpenAIVideoListRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	baseURL string,
-	request *schemas.RakshaVideoListRequest,
+	request *schemas.GatewayVideoListRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	logger schemas.Logger,
-) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -4072,14 +4072,14 @@ func HandleOpenAIVideoListRequest(
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -4089,13 +4089,13 @@ func HandleOpenAIVideoListRequest(
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
-	response := &schemas.RakshaVideoListResponse{}
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	response := &schemas.GatewayVideoListResponse{}
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, response, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	for i := range response.Data {
 		if response.Data[i].ID != "" {
@@ -4115,7 +4115,7 @@ func HandleOpenAIVideoListRequest(
 		response.LastID = &lastID
 	}
 
-	response.ExtraFields = schemas.RakshaResponseExtraFields{
+	response.ExtraFields = schemas.GatewayResponseExtraFields{
 		Latency:                 latency.Milliseconds(),
 		ProviderResponseHeaders: providerResponseHeaders,
 	}
@@ -4128,7 +4128,7 @@ func HandleOpenAIVideoListRequest(
 }
 
 // CountTokens performs a count tokens request to the OpenAI API.
-func (provider *OpenAIProvider) CountTokens(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) CountTokens(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.CountTokensRequest); err != nil {
 		return nil, err
 	}
@@ -4148,7 +4148,7 @@ func (provider *OpenAIProvider) CountTokens(ctx *schemas.RakshaContext, key sche
 }
 
 // Compaction compacts a conversation context window using OpenAI's /v1/responses/compact endpoint.
-func (provider *OpenAIProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.CompactionRequest); err != nil {
 		return nil, err
 	}
@@ -4169,17 +4169,17 @@ func (provider *OpenAIProvider) Compaction(ctx *schemas.RakshaContext, key schem
 
 // HandleOpenAICompactionRequest handles a compaction request to OpenAI's /v1/responses/compact endpoint.
 func HandleOpenAICompactionRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaCompactionRequest,
+	request *schemas.GatewayCompactionRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -4205,38 +4205,38 @@ func HandleOpenAICompactionRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaCompactionResponse{}
+			response := &schemas.GatewayCompactionResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaCompactionResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayCompactionResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAICompactionRequest(ctx, request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	req.SetBody(jsonData)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -4250,15 +4250,15 @@ func HandleOpenAICompactionRequest(
 		return nil, providerUtils.EnrichError(ctx, finalErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	if lpResult != nil {
-		return &schemas.RakshaCompactionResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayCompactionResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.RakshaCompactionResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	response := &schemas.GatewayCompactionResponse{}
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -4276,17 +4276,17 @@ func HandleOpenAICompactionRequest(
 
 // HandleOpenAICountTokensRequest handles a count tokens request to OpenAI's API.
 func HandleOpenAICountTokensRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaResponsesRequest,
+	request *schemas.GatewayResponsesRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -4317,39 +4317,39 @@ func HandleOpenAICountTokensRequest(
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaCountTokensResponse{}
+			response := &schemas.GatewayCountTokensResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaCountTokensResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayCountTokensResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIResponsesRequest(ctx, request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -4364,17 +4364,17 @@ func HandleOpenAICountTokensRequest(
 		return nil, finalErr
 	}
 	if lpResult != nil {
-		return &schemas.RakshaCountTokensResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayCountTokensResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.RakshaCountTokensResponse{}
+	response := &schemas.GatewayCountTokensResponse{}
 
 	// Use enhanced response handler with pre-allocated response
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	response.Model = request.Model
@@ -4393,7 +4393,7 @@ func HandleOpenAICountTokensRequest(
 }
 
 // ImageEdit performs image editing via the OpenAI Images API.
-func (provider *OpenAIProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ImageEditRequest); err != nil {
 		return nil, err
 	}
@@ -4413,38 +4413,38 @@ func (provider *OpenAIProvider) ImageEdit(ctx *schemas.RakshaContext, key schema
 }
 
 func HandleOpenAIImageEditRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaImageEditRequest,
+	request *schemas.GatewayImageEditRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	// Large payload passthrough: stream multipart body directly without parsing
 	if lpResult, lpErr, handled := handleOpenAILargePayloadPassthrough(ctx, client, url, BearerAuthHeader(key), extraHeaders, providerName, logger); handled {
 		if lpErr != nil {
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaImageGenerationResponse{}
+			response := &schemas.GatewayImageGenerationResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaImageGenerationResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayImageGenerationResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	openaiReq := ToOpenAIImageEditRequest(request)
 	if openaiReq == nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to convert request to OpenAI format", nil)
+		return nil, providerUtils.NewGatewayOperationError("failed to convert request to OpenAI format", nil)
 	}
 
 	// Create request
@@ -4480,14 +4480,14 @@ func HandleOpenAIImageEditRequest(
 	bodyData := body.Bytes()
 	req.SetBody(bodyData)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -4500,15 +4500,15 @@ func HandleOpenAIImageEditRequest(
 		return nil, finalErr
 	}
 	if lpResult != nil {
-		return &schemas.RakshaImageGenerationResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayImageGenerationResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.RakshaImageGenerationResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(bodyBytes, response, nil, false, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	response := &schemas.GatewayImageGenerationResponse{}
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(bodyBytes, response, nil, false, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
@@ -4526,7 +4526,7 @@ func HandleOpenAIImageEditRequest(
 }
 
 // ImageEditStream streams image edits via the OpenAI Images API.
-func (provider *OpenAIProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	// Check if image generation stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ImageEditStreamRequest); err != nil {
 		return nil, err
@@ -4553,10 +4553,10 @@ func (provider *OpenAIProvider) ImageEditStream(ctx *schemas.RakshaContext, post
 }
 
 func HandleOpenAIImageEditStreamRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaImageEditRequest,
+	request *schemas.GatewayImageEditRequest,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	streamIdleTimeoutInSeconds int,
@@ -4564,16 +4564,16 @@ func HandleOpenAIImageEditStreamRequest(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	customRequestConverter func(*schemas.RakshaImageEditRequest) (providerUtils.RequestBodyWithExtraParams, error),
+	customRequestConverter func(*schemas.GatewayImageEditRequest) (providerUtils.RequestBodyWithExtraParams, error),
 	postRequestConverter func(*OpenAIImageEditRequest) *OpenAIImageEditRequest,
-	postResponseConverter func(*schemas.RakshaImageGenerationStreamResponse) *schemas.RakshaImageGenerationStreamResponse,
+	postResponseConverter func(*schemas.GatewayImageGenerationStreamResponse) *schemas.GatewayImageGenerationStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	reqBody := ToOpenAIImageEditRequest(request)
 	if reqBody == nil {
-		return nil, providerUtils.NewRakshaOperationError("image edit input is not provided", nil)
+		return nil, providerUtils.NewGatewayOperationError("image edit input is not provided", nil)
 	}
 
 	reqBody.Stream = schemas.Ptr(true)
@@ -4584,8 +4584,8 @@ func HandleOpenAIImageEditStreamRequest(
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
-	if rakshaErr := parseImageEditFormDataBodyFromRequest(writer, reqBody, providerName); rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr := parseImageEditFormDataBodyFromRequest(writer, reqBody, providerName); gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Prepare OpenAI headers
@@ -4625,8 +4625,8 @@ func HandleOpenAIImageEditStreamRequest(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -4635,12 +4635,12 @@ func HandleOpenAIImageEditStreamRequest(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -4651,13 +4651,13 @@ func HandleOpenAIImageEditStreamRequest(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -4688,7 +4688,7 @@ func HandleOpenAIImageEditStreamRequest(
 		// on non-line-delimited data (e.g. provider returned JSON instead of SSE).
 		reader, drained := providerUtils.DrainNonSSEStreamReader(resp, reader)
 		if drained {
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendError(ctx, postHookRunner, errors.New("provider returned non-SSE response for streaming request"), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
@@ -4726,11 +4726,11 @@ func HandleOpenAIImageEditStreamRequest(
 			// Quick check for error field (allocation-free using sonic.GetFromString)
 			if errorNode, _ := sonic.GetFromString(jsonData, "error"); errorNode.Exists() {
 				// Only unmarshal when we know there's an error
-				var rakshaErr schemas.RakshaError
-				if err := sonic.UnmarshalString(jsonData, &rakshaErr); err == nil {
-					if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &rakshaErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+				var gatewayErr schemas.GatewayError
+				if err := sonic.UnmarshalString(jsonData, &gatewayErr); err == nil {
+					if gatewayErr.Error != nil && gatewayErr.Error.Message != "" {
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, &gatewayErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -4745,25 +4745,25 @@ func HandleOpenAIImageEditStreamRequest(
 
 			// Check if response type indicates an error
 			if response.Type == "error" {
-				rakshaErr := &schemas.RakshaError{
-					IsRakshaError: false,
+				gatewayErr := &schemas.GatewayError{
+					IsGatewayError: false,
 					Error:          &schemas.ErrorField{},
 				}
 				// Guard access to response.Error fields
 				if response.Error != nil {
-					rakshaErr.Error.Message = response.Error.Message
+					gatewayErr.Error.Message = response.Error.Message
 					if response.Error.Code != nil {
-						rakshaErr.Error.Code = response.Error.Code
+						gatewayErr.Error.Code = response.Error.Code
 					}
 					if response.Error.Param != nil {
-						rakshaErr.Error.Param = response.Error.Param
+						gatewayErr.Error.Param = response.Error.Param
 					}
 					if response.Error.Type != nil {
-						rakshaErr.Error.Type = response.Error.Type
+						gatewayErr.Error.Type = response.Error.Type
 					}
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, logger, postHookSpanFinalizer)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, logger, postHookSpanFinalizer)
 				return
 			}
 
@@ -4829,7 +4829,7 @@ func HandleOpenAIImageEditStreamRequest(
 			}
 			chunkIndex := imageChunkIndices[imageIndex]
 			// Build chunk with all OpenAI fields
-			chunk := &schemas.RakshaImageGenerationStreamResponse{
+			chunk := &schemas.GatewayImageGenerationStreamResponse{
 				Type:         response.Type,
 				Index:        imageIndex, // Which image (0-N)
 				ChunkIndex:   chunkIndex, // Chunk order within this image (top-level)
@@ -4838,7 +4838,7 @@ func HandleOpenAIImageEditStreamRequest(
 				Quality:      response.Quality,
 				Background:   response.Background,
 				OutputFormat: response.OutputFormat,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					ChunkIndex: chunkIndex, // Chunk order within this image
 					Latency:    time.Since(lastChunkTime).Milliseconds(),
 				},
@@ -4884,14 +4884,14 @@ func HandleOpenAIImageEditStreamRequest(
 				chunk.Usage = response.Usage
 				// For completed chunk, use total latency from start
 				chunk.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-				chunk.BackfillParams(&schemas.RakshaRequest{
+				chunk.BackfillParams(&schemas.GatewayRequest{
 					ImageEditRequest: request,
 				})
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			}
 
 			providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-				providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+				providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 				responseChan, postHookSpanFinalizer)
 
 			if isCompleted {
@@ -4904,7 +4904,7 @@ func HandleOpenAIImageEditStreamRequest(
 }
 
 // ImageVariation performs an image variation request to openai's images api.
-func (provider *OpenAIProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ImageVariationRequest); err != nil {
 		return nil, err
 	}
@@ -4927,38 +4927,38 @@ func (provider *OpenAIProvider) ImageVariation(ctx *schemas.RakshaContext, key s
 // ImageVariation performs an image variation request
 // HandleOpenAIImageVariationRequest handles image variation requests for OpenAI-compatible providers
 func HandleOpenAIImageVariationRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaImageVariationRequest,
+	request *schemas.GatewayImageVariationRequest,
 	key schemas.Key,
 	extraHeaders map[string]string,
 	sendBackRawRequest bool,
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	// Large payload passthrough: stream multipart body directly without parsing
 	if lpResult, lpErr, handled := handleOpenAILargePayloadPassthrough(ctx, client, url, BearerAuthHeader(key), extraHeaders, providerName, logger); handled {
 		if lpErr != nil {
 			return nil, lpErr
 		}
 		if len(lpResult.ResponseBody) > 0 {
-			response := &schemas.RakshaImageGenerationResponse{}
+			response := &schemas.GatewayImageGenerationResponse{}
 			if err := sonic.Unmarshal(lpResult.ResponseBody, response); err != nil {
-				return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+				return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			}
-			response.ExtraFields = schemas.RakshaResponseExtraFields{Latency: lpResult.Latency}
+			response.ExtraFields = schemas.GatewayResponseExtraFields{Latency: lpResult.Latency}
 			return response, nil
 		}
-		return &schemas.RakshaImageGenerationResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayImageGenerationResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
 	openaiReq := ToOpenAIImageVariationRequest(request)
 	if openaiReq == nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to convert request to OpenAI format", nil)
+		return nil, providerUtils.NewGatewayOperationError("failed to convert request to OpenAI format", nil)
 	}
 
 	// Create request
@@ -4993,14 +4993,14 @@ func HandleOpenAIImageVariationRequest(
 	bodyData := body.Bytes()
 	req.SetBody(bodyData)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, nil, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	// Extract provider response headers early so they're available on error paths too
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
@@ -5013,15 +5013,15 @@ func HandleOpenAIImageVariationRequest(
 		return nil, finalErr
 	}
 	if lpResult != nil {
-		return &schemas.RakshaImageGenerationResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: lpResult.Latency},
+		return &schemas.GatewayImageGenerationResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: lpResult.Latency},
 		}, nil
 	}
 
-	response := &schemas.RakshaImageGenerationResponse{}
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(bodyBytes, response, nil, false, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	response := &schemas.GatewayImageGenerationResponse{}
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(bodyBytes, response, nil, false, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
@@ -5034,17 +5034,17 @@ func HandleOpenAIImageVariationRequest(
 }
 
 // FileUpload uploads a file to OpenAI.
-func (provider *OpenAIProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) FileUpload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileUploadRequest); err != nil {
 		return nil, err
 	}
 
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("file content is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file content is required", nil)
 	}
 
 	if request.Purpose == "" {
-		return nil, providerUtils.NewRakshaOperationError("purpose is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("purpose is required", nil)
 	}
 
 	// Create multipart form data
@@ -5053,16 +5053,16 @@ func (provider *OpenAIProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 
 	// Add purpose field
 	if err := writer.WriteField("purpose", string(request.Purpose)); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write purpose field", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write purpose field", err)
 	}
 
 	// Add expires_after fields if provided
 	if request.ExpiresAfter != nil {
 		if err := writer.WriteField("expires_after[anchor]", request.ExpiresAfter.Anchor); err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to write expires_after[anchor] field", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to write expires_after[anchor] field", err)
 		}
 		if err := writer.WriteField("expires_after[seconds]", fmt.Sprintf("%d", request.ExpiresAfter.Seconds)); err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to write expires_after[seconds] field", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to write expires_after[seconds] field", err)
 		}
 	}
 
@@ -5073,14 +5073,14 @@ func (provider *OpenAIProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 	}
 	part, err := writer.CreateFormFile("file", filename)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to create form file", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to create form file", err)
 	}
 	if _, err := part.Write(request.File); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write file content", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write file content", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to close multipart writer", err)
 	}
 
 	// Create request
@@ -5102,10 +5102,10 @@ func (provider *OpenAIProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 	req.SetBody(buf.Bytes())
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -5116,25 +5116,25 @@ func (provider *OpenAIProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var openAIResp OpenAIFileResponse
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	fileResponse := openAIResp.ToRakshaFileUploadResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+	fileResponse := openAIResp.ToGatewayFileUploadResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 	fileResponse.ExtraFields.ProviderResponseHeaders = providerUtils.ExtractProviderResponseHeaders(resp)
 	return fileResponse, nil
 }
 
 // FileList lists files using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *OpenAIProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) FileList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileListRequest); err != nil {
 		return nil, err
 	}
@@ -5146,14 +5146,14 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.RakshaContext, keys []sche
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaFileListResponse{
+		return &schemas.GatewayFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -5197,10 +5197,10 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.RakshaContext, keys []sche
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -5211,16 +5211,16 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.RakshaContext, keys []sche
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var openAIResp OpenAIFileListResponse
-	_, _, rakshaErr = providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, _, gatewayErr = providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert files to Raksha format
+	// Convert files to Gateway format
 	files := make([]schemas.FileObject, 0, len(openAIResp.Data))
 	var lastFileID string
 	for _, file := range openAIResp.Data {
@@ -5231,7 +5231,7 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.RakshaContext, keys []sche
 			CreatedAt:     file.CreatedAt,
 			Filename:      file.Filename,
 			Purpose:       schemas.FilePurpose(file.Purpose),
-			Status:        ToRakshaFileStatus(file.Status),
+			Status:        ToGatewayFileStatus(file.Status),
 			StatusDetails: file.StatusDetails,
 		})
 		lastFileID = file.ID
@@ -5241,25 +5241,25 @@ func (provider *OpenAIProvider) FileList(ctx *schemas.RakshaContext, keys []sche
 	// OpenAI uses LastID as the cursor for pagination
 	nextCursor, hasMore := helper.BuildNextCursor(openAIResp.HasMore, lastFileID)
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaFileListResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayFileListResponse{
 		Object:  "list",
 		Data:    files,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: providerUtils.ExtractProviderResponseHeaders(resp),
 		},
 	}
 	if nextCursor != "" {
-		rakshaResp.After = &nextCursor
+		gatewayResp.After = &nextCursor
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // FileRetrieve retrieves file metadata from OpenAI by trying each key until found.
-func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileRetrieveRequest); err != nil {
 		return nil, err
 	}
@@ -5267,13 +5267,13 @@ func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5290,12 +5290,12 @@ func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -5312,30 +5312,30 @@ func (provider *OpenAIProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp OpenAIFileResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		return openAIResp.ToRakshaFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+		return openAIResp.ToGatewayFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 	}
 
 	return nil, lastErr
 }
 
 // FileDelete deletes a file from OpenAI by trying each key until successful.
-func (provider *OpenAIProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) FileDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileDeleteRequest); err != nil {
 		return nil, err
 	}
@@ -5343,13 +5343,13 @@ func (provider *OpenAIProvider) FileDelete(ctx *schemas.RakshaContext, keys []sc
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5366,12 +5366,12 @@ func (provider *OpenAIProvider) FileDelete(ctx *schemas.RakshaContext, keys []sc
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -5388,27 +5388,27 @@ func (provider *OpenAIProvider) FileDelete(ctx *schemas.RakshaContext, keys []sc
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp OpenAIFileDeleteResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := &schemas.RakshaFileDeleteResponse{
+		result := &schemas.GatewayFileDeleteResponse{
 			ID:      openAIResp.ID,
 			Object:  openAIResp.Object,
 			Deleted: openAIResp.Deleted,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -5428,7 +5428,7 @@ func (provider *OpenAIProvider) FileDelete(ctx *schemas.RakshaContext, keys []sc
 }
 
 // FileContent downloads file content from OpenAI by trying each key until found.
-func (provider *OpenAIProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) FileContent(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.FileContentRequest); err != nil {
 		return nil, err
 	}
@@ -5436,10 +5436,10 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.RakshaContext, keys []s
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5455,12 +5455,12 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.RakshaContext, keys []s
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -5477,7 +5477,7 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.RakshaContext, keys []s
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
@@ -5491,11 +5491,11 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.RakshaContext, keys []s
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		return &schemas.RakshaFileContentResponse{
+		return &schemas.GatewayFileContentResponse{
 			FileID:      request.FileID,
 			Content:     content,
 			ContentType: contentType,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
@@ -5505,7 +5505,7 @@ func (provider *OpenAIProvider) FileContent(ctx *schemas.RakshaContext, keys []s
 }
 
 // VideoRemix remixes an existing video from the OpenAI provider.
-func (provider *OpenAIProvider) VideoRemix(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) VideoRemix(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.VideoRemixRequest); err != nil {
 		return nil, err
 	}
@@ -5513,20 +5513,20 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.RakshaContext, key schem
 	providerName := provider.GetProviderKey()
 
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 	if request.Input == nil || request.Input.Prompt == "" {
-		return nil, providerUtils.NewRakshaOperationError("prompt is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("prompt is required", nil)
 	}
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToOpenAIVideoRemixRequest(request)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
@@ -5553,10 +5553,10 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.RakshaContext, key schem
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -5567,14 +5567,14 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.RakshaContext, key schem
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Parse OpenAI's video response
-	response := &schemas.RakshaVideoGenerationResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	response := &schemas.GatewayVideoGenerationResponse{}
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, response, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if response.ID != "" {
 		response.ID = providerUtils.AddVideoIDProviderSuffix(response.ID, providerName)
@@ -5584,7 +5584,7 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.RakshaContext, key schem
 		response.RemixedFromVideoID = &remixID
 	}
 
-	response.ExtraFields = schemas.RakshaResponseExtraFields{
+	response.ExtraFields = schemas.GatewayResponseExtraFields{
 		Latency: latency.Milliseconds(),
 	}
 
@@ -5599,7 +5599,7 @@ func (provider *OpenAIProvider) VideoRemix(ctx *schemas.RakshaContext, key schem
 }
 
 // BatchCreate creates a new batch job.
-func (provider *OpenAIProvider) BatchCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) BatchCreate(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchCreateRequest); err != nil {
 		return nil, err
 	}
@@ -5611,18 +5611,18 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 		// Convert inline requests to JSONL format
 		jsonlData, err := ConvertRequestsToJSONL(request.Requests)
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to convert requests to JSONL", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to convert requests to JSONL", err)
 		}
 
 		// Upload the file with purpose "batch"
-		uploadResp, rakshaErr := provider.FileUpload(ctx, key, &schemas.RakshaFileUploadRequest{
+		uploadResp, gatewayErr := provider.FileUpload(ctx, key, &schemas.GatewayFileUploadRequest{
 			Provider: schemas.OpenAI,
 			File:     jsonlData,
 			Filename: "batch_requests.jsonl",
 			Purpose:  "batch",
 		})
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 
 		inputFileID = uploadResp.ID
@@ -5630,12 +5630,12 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 
 	// Validate that we have a file ID (either provided or uploaded)
 	if inputFileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("either input_file_id or requests array is required for OpenAI batch API", nil)
+		return nil, providerUtils.NewGatewayOperationError("either input_file_id or requests array is required for OpenAI batch API", nil)
 	}
 
 	// Validate that we have an endpoint
 	if request.Endpoint == "" {
-		return nil, providerUtils.NewRakshaOperationError("endpoint is required for OpenAI batch API", nil)
+		return nil, providerUtils.NewGatewayOperationError("endpoint is required for OpenAI batch API", nil)
 	}
 
 	// Create request
@@ -5670,7 +5670,7 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 
 	jsonData, err := providerUtils.MarshalSorted(openAIReq)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 	req.SetBody(jsonData)
 
@@ -5678,10 +5678,10 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Handle error response
@@ -5691,21 +5691,21 @@ func (provider *OpenAIProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	var openAIResp OpenAIBatchResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
-	return openAIResp.ToRakshaBatchCreateResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+	return openAIResp.ToGatewayBatchCreateResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 }
 
 // BatchList lists batch jobs using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *OpenAIProvider) BatchList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) BatchList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchListRequest); err != nil {
 		return nil, err
 	}
@@ -5716,16 +5716,16 @@ func (provider *OpenAIProvider) BatchList(ctx *schemas.RakshaContext, keys []sch
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaBatchListResponse{
+		return &schemas.GatewayBatchListResponse{
 			Object:  "list",
-			Data:    []schemas.RakshaBatchRetrieveResponse{},
+			Data:    []schemas.GatewayBatchRetrieveResponse{},
 			HasMore: false,
 		}, nil
 	}
@@ -5762,10 +5762,10 @@ func (provider *OpenAIProvider) BatchList(ctx *schemas.RakshaContext, keys []sch
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -5775,20 +5775,20 @@ func (provider *OpenAIProvider) BatchList(ctx *schemas.RakshaContext, keys []sch
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var openAIResp OpenAIBatchListResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert batches to Raksha format
-	batches := make([]schemas.RakshaBatchRetrieveResponse, 0, len(openAIResp.Data))
+	// Convert batches to Gateway format
+	batches := make([]schemas.GatewayBatchRetrieveResponse, 0, len(openAIResp.Data))
 	var lastBatchID string
 	for _, batch := range openAIResp.Data {
-		batches = append(batches, *batch.ToRakshaBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse))
+		batches = append(batches, *batch.ToGatewayBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse))
 		lastBatchID = batch.ID
 	}
 
@@ -5796,36 +5796,36 @@ func (provider *OpenAIProvider) BatchList(ctx *schemas.RakshaContext, keys []sch
 	// OpenAI uses LastID as the cursor for pagination
 	nextCursor, hasMore := helper.BuildNextCursor(openAIResp.HasMore, lastBatchID)
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaBatchListResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayBatchListResponse{
 		Object:  "list",
 		Data:    batches,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 	if nextCursor != "" {
-		rakshaResp.NextCursor = &nextCursor
+		gatewayResp.NextCursor = &nextCursor
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // BatchRetrieve retrieves a specific batch job by trying each key until found.
-func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5842,12 +5842,12 @@ func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys [
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -5863,23 +5863,23 @@ func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys [
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp OpenAIBatchResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := openAIResp.ToRakshaBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+		result := openAIResp.ToGatewayBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 		return result, nil
 	}
 
@@ -5887,19 +5887,19 @@ func (provider *OpenAIProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys [
 }
 
 // BatchCancel cancels a batch job by trying each key until successful.
-func (provider *OpenAIProvider) BatchCancel(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) BatchCancel(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchCancelRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -5916,12 +5916,12 @@ func (provider *OpenAIProvider) BatchCancel(ctx *schemas.RakshaContext, keys []s
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -5937,29 +5937,29 @@ func (provider *OpenAIProvider) BatchCancel(ctx *schemas.RakshaContext, keys []s
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp OpenAIBatchResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := &schemas.RakshaBatchCancelResponse{
+		result := &schemas.GatewayBatchCancelResponse{
 			ID:           openAIResp.ID,
 			Object:       openAIResp.Object,
-			Status:       ToRakshaBatchStatus(openAIResp.Status),
+			Status:       ToGatewayBatchStatus(openAIResp.Status),
 			CancellingAt: openAIResp.CancellingAt,
 			CancelledAt:  openAIResp.CancelledAt,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -5987,37 +5987,37 @@ func (provider *OpenAIProvider) BatchCancel(ctx *schemas.RakshaContext, keys []s
 }
 
 // BatchDelete is not supported by the OpenAI provider.
-func (provider *OpenAIProvider) BatchDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) BatchDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults retrieves batch results by trying each key until successful.
 // Note: For OpenAI, batch results are obtained by downloading the output_file_id.
 // This method returns the file content parsed as batch results.
-func (provider *OpenAIProvider) BatchResults(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) BatchResults(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.BatchResultsRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	// First, retrieve the batch to get the output_file_id (this already iterates over keys)
-	batchResp, rakshaErr := provider.BatchRetrieve(ctx, keys, &schemas.RakshaBatchRetrieveRequest{
+	batchResp, gatewayErr := provider.BatchRetrieve(ctx, keys, &schemas.GatewayBatchRetrieveRequest{
 		Provider: request.Provider,
 		BatchID:  request.BatchID,
 	})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if batchResp.OutputFileID == nil || *batchResp.OutputFileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch results not available: output_file_id is empty (batch may not be completed)", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch results not available: output_file_id is empty (batch may not be completed)", nil)
 	}
 
 	// Download the output file - try each key
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		req := fasthttp.AcquireRequest()
 		resp := fasthttp.AcquireResponse()
@@ -6032,12 +6032,12 @@ func (provider *OpenAIProvider) BatchResults(ctx *schemas.RakshaContext, keys []
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -6053,7 +6053,7 @@ func (provider *OpenAIProvider) BatchResults(ctx *schemas.RakshaContext, keys []
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
@@ -6073,10 +6073,10 @@ func (provider *OpenAIProvider) BatchResults(ctx *schemas.RakshaContext, keys []
 			return nil
 		})
 
-		batchResultsResp := &schemas.RakshaBatchResultsResponse{
+		batchResultsResp := &schemas.GatewayBatchResultsResponse{
 			BatchID: request.BatchID,
 			Results: results,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -6092,17 +6092,17 @@ func (provider *OpenAIProvider) BatchResults(ctx *schemas.RakshaContext, keys []
 }
 
 // ContainerCreate creates a new container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ContainerCreateRequest); err != nil {
 		return nil, err
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 
 	if request.Name == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: name is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: name is required", nil)
 	}
 
 	// Build request body
@@ -6138,7 +6138,7 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.RakshaContext, key 
 
 	jsonBody, err := providerUtils.MarshalSorted(reqBody)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 
 	// Create request
@@ -6159,10 +6159,10 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.RakshaContext, key 
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -6185,12 +6185,12 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.RakshaContext, key 
 		Metadata     map[string]string              `json:"metadata"`
 	}
 
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	response := &schemas.RakshaContainerCreateResponse{
+	response := &schemas.GatewayContainerCreateResponse{
 		ID:           containerResp.ID,
 		Object:       containerResp.Object,
 		Name:         containerResp.Name,
@@ -6200,7 +6200,7 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.RakshaContext, key 
 		LastActiveAt: containerResp.LastActiveAt,
 		MemoryLimit:  containerResp.MemoryLimit,
 		Metadata:     containerResp.Metadata,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -6217,15 +6217,15 @@ func (provider *OpenAIProvider) ContainerCreate(ctx *schemas.RakshaContext, key 
 
 // ContainerList lists containers via OpenAI's API.
 // Uses SerialListHelper for multi-key pagination - exhausts all pages from one key before moving to next.
-func (provider *OpenAIProvider) ContainerList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ContainerList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
+			return nil, providerUtils.NewGatewayOperationError("provider config not found", nil)
 		}
 	}
 
@@ -6239,14 +6239,14 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.RakshaContext, keys [
 	// Initialize serial pagination helper for multi-key support
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaContainerListResponse{
+		return &schemas.GatewayContainerListResponse{
 			Object:  "list",
 			Data:    []schemas.ContainerObject{},
 			HasMore: false,
@@ -6288,10 +6288,10 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.RakshaContext, keys [
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -6310,9 +6310,9 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.RakshaContext, keys [
 		HasMore bool                      `json:"has_more"`
 	}
 
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Track last container ID for pagination cursor
@@ -6324,13 +6324,13 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.RakshaContext, keys [
 	// Build cursor for next request (handles cross-key pagination)
 	nextCursor, hasMore := helper.BuildNextCursor(listResp.HasMore, lastContainerID)
 
-	response := &schemas.RakshaContainerListResponse{
+	response := &schemas.GatewayContainerListResponse{
 		Object:  listResp.Object,
 		Data:    listResp.Data,
 		FirstID: listResp.FirstID,
 		LastID:  listResp.LastID,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -6351,26 +6351,26 @@ func (provider *OpenAIProvider) ContainerList(ctx *schemas.RakshaContext, keys [
 }
 
 // ContainerRetrieve retrieves a specific container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
+			return nil, providerUtils.NewGatewayOperationError("provider config not found", nil)
 		}
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("container_id is required", nil)
 	}
 
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ContainerRetrieveRequest); err != nil {
 		return nil, err
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -6387,12 +6387,12 @@ func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.RakshaContext, ke
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -6419,15 +6419,15 @@ func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.RakshaContext, ke
 			Metadata     map[string]string              `json:"metadata"`
 		}
 
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
-		response := &schemas.RakshaContainerRetrieveResponse{
+		response := &schemas.GatewayContainerRetrieveResponse{
 			ID:           containerResp.ID,
 			Object:       containerResp.Object,
 			Name:         containerResp.Name,
@@ -6437,7 +6437,7 @@ func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.RakshaContext, ke
 			LastActiveAt: containerResp.LastActiveAt,
 			MemoryLimit:  containerResp.MemoryLimit,
 			Metadata:     containerResp.Metadata,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -6458,26 +6458,26 @@ func (provider *OpenAIProvider) ContainerRetrieve(ctx *schemas.RakshaContext, ke
 }
 
 // ContainerDelete deletes a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
+			return nil, providerUtils.NewGatewayOperationError("provider config not found", nil)
 		}
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("container_id is required", nil)
 	}
 
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ContainerDeleteRequest); err != nil {
 		return nil, err
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -6494,12 +6494,12 @@ func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.RakshaContext, keys
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -6520,19 +6520,19 @@ func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.RakshaContext, keys
 			Deleted bool   `json:"deleted"`
 		}
 
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
-		response := &schemas.RakshaContainerDeleteResponse{
+		response := &schemas.GatewayContainerDeleteResponse{
 			ID:      deleteResp.ID,
 			Object:  deleteResp.Object,
 			Deleted: deleteResp.Deleted,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -6557,17 +6557,17 @@ func (provider *OpenAIProvider) ContainerDelete(ctx *schemas.RakshaContext, keys
 // =============================================================================
 
 // ContainerFileCreate creates a file in a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.ContainerFileCreateRequest); err != nil {
 		return nil, err
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 
 	// Create request
@@ -6584,7 +6584,7 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.RakshaContext, 
 
 	// Handle file upload (multipart only)
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: file is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: file is required", nil)
 	}
 
 	// Multipart file upload
@@ -6594,13 +6594,13 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.RakshaContext, 
 	// Add file
 	part, err := writer.CreateFormFile("file", "file")
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to create multipart form", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to create multipart form", err)
 	}
 	if _, err = part.Write(request.File); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write file to multipart form", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write file to multipart form", err)
 	}
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to close multipart form", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to close multipart form", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.SetBody(body.Bytes())
@@ -6610,10 +6610,10 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.RakshaContext, 
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -6624,7 +6624,7 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.RakshaContext, 
 	// Decode response body (handles content-encoding like gzip)
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
@@ -6639,12 +6639,12 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.RakshaContext, 
 		Source      string `json:"source"`
 	}
 
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, false, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, false, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	containerFileCreateResponse := &schemas.RakshaContainerFileCreateResponse{
+	containerFileCreateResponse := &schemas.GatewayContainerFileCreateResponse{
 		ID:          fileResp.ID,
 		Object:      fileResp.Object,
 		Bytes:       fileResp.Bytes,
@@ -6652,7 +6652,7 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.RakshaContext, 
 		ContainerID: fileResp.ContainerID,
 		Path:        fileResp.Path,
 		Source:      fileResp.Source,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -6670,20 +6670,20 @@ func (provider *OpenAIProvider) ContainerFileCreate(ctx *schemas.RakshaContext, 
 
 // ContainerFileList lists files in a container via OpenAI's API.
 // Uses SerialListHelper for multi-key pagination - exhausts all pages from one key before moving to next.
-func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewRakshaOperationError("no keys provided", nil)
+			return nil, providerUtils.NewGatewayOperationError("no keys provided", nil)
 		}
 	}
 
@@ -6697,14 +6697,14 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.RakshaContext, ke
 	// Initialize serial pagination helper for multi-key support
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaContainerFileListResponse{
+		return &schemas.GatewayContainerFileListResponse{
 			Object:  "list",
 			Data:    []schemas.ContainerFileObject{},
 			HasMore: false,
@@ -6746,10 +6746,10 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.RakshaContext, ke
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if resp.StatusCode() >= 400 {
@@ -6759,7 +6759,7 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.RakshaContext, ke
 	// Decode response body (handles content-encoding like gzip)
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var listResp struct {
@@ -6770,9 +6770,9 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.RakshaContext, ke
 		HasMore bool                          `json:"has_more"`
 	}
 
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Track last file ID for pagination cursor
@@ -6784,13 +6784,13 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.RakshaContext, ke
 	// Build cursor for next request (handles cross-key pagination)
 	nextCursor, hasMore := helper.BuildNextCursor(listResp.HasMore, lastFileID)
 
-	containerFileListResponse := &schemas.RakshaContainerFileListResponse{
+	containerFileListResponse := &schemas.GatewayContainerFileListResponse{
 		Object:  listResp.Object,
 		Data:    listResp.Data,
 		FirstID: listResp.FirstID,
 		LastID:  listResp.LastID,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -6811,12 +6811,12 @@ func (provider *OpenAIProvider) ContainerFileList(ctx *schemas.RakshaContext, ke
 }
 
 // ContainerFileRetrieve retrieves a file from a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewRakshaOperationError("no keys provided", nil)
+			return nil, providerUtils.NewGatewayOperationError("no keys provided", nil)
 		}
 	}
 
@@ -6825,18 +6825,18 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: file_id is required", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		req := fasthttp.AcquireRequest()
 		resp := fasthttp.AcquireResponse()
@@ -6851,10 +6851,10 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext
 			req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 		}
 
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
-			lastErr = rakshaErr
+		if gatewayErr != nil {
+			lastErr = gatewayErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -6870,7 +6870,7 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext
 		// Decode response body (handles content-encoding like gzip)
 		responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -6888,15 +6888,15 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext
 			Source      string `json:"source"`
 		}
 
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
-			lastErr = rakshaErr
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
+			lastErr = gatewayErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
 		}
 
-		containerFileRetrieveResponse := &schemas.RakshaContainerFileRetrieveResponse{
+		containerFileRetrieveResponse := &schemas.GatewayContainerFileRetrieveResponse{
 			ID:          fileResp.ID,
 			Object:      fileResp.Object,
 			Bytes:       fileResp.Bytes,
@@ -6904,7 +6904,7 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext
 			ContainerID: fileResp.ContainerID,
 			Path:        fileResp.Path,
 			Source:      fileResp.Source,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -6925,12 +6925,12 @@ func (provider *OpenAIProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext
 }
 
 // ContainerFileContent retrieves the content of a file from a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewRakshaOperationError("no keys provided", nil)
+			return nil, providerUtils.NewGatewayOperationError("no keys provided", nil)
 		}
 	}
 
@@ -6939,18 +6939,18 @@ func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.RakshaContext,
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: file_id is required", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		req := fasthttp.AcquireRequest()
 		resp := fasthttp.AcquireResponse()
@@ -6965,10 +6965,10 @@ func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.RakshaContext,
 			req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 		}
 
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
-			lastErr = rakshaErr
+		if gatewayErr != nil {
+			lastErr = gatewayErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -6992,15 +6992,15 @@ func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.RakshaContext,
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 		content := append([]byte(nil), body...)
 
-		containerFileContentResponse := &schemas.RakshaContainerFileContentResponse{
+		containerFileContentResponse := &schemas.GatewayContainerFileContentResponse{
 			Content:     content,
 			ContentType: contentType,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -7024,12 +7024,12 @@ func (provider *OpenAIProvider) ContainerFileContent(ctx *schemas.RakshaContext,
 }
 
 // ContainerFileDelete deletes a file from a container via OpenAI's API.
-func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	if len(keys) == 0 {
 		if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
 			keys = []schemas.Key{{}}
 		} else {
-			return nil, providerUtils.NewRakshaOperationError("no keys provided", nil)
+			return nil, providerUtils.NewGatewayOperationError("no keys provided", nil)
 		}
 	}
 
@@ -7038,18 +7038,18 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.RakshaContext, 
 	}
 
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: file_id is required", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		req := fasthttp.AcquireRequest()
 		resp := fasthttp.AcquireResponse()
@@ -7065,10 +7065,10 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.RakshaContext, 
 			req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 		}
 
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
-			lastErr = rakshaErr
+		if gatewayErr != nil {
+			lastErr = gatewayErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -7084,7 +7084,7 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.RakshaContext, 
 		// Decode response body (handles content-encoding like gzip)
 		responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -7098,19 +7098,19 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.RakshaContext, 
 			Deleted bool   `json:"deleted"`
 		}
 
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
-			lastErr = rakshaErr
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
+			lastErr = gatewayErr
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
 		}
 
-		containerFileDeleteResponse := &schemas.RakshaContainerFileDeleteResponse{
+		containerFileDeleteResponse := &schemas.GatewayContainerFileDeleteResponse{
 			ID:      deleteResp.ID,
 			Object:  deleteResp.Object,
 			Deleted: deleteResp.Deleted,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -7131,10 +7131,10 @@ func (provider *OpenAIProvider) ContainerFileDelete(ctx *schemas.RakshaContext, 
 }
 
 func (provider *OpenAIProvider) Passthrough(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
-	req *schemas.RakshaPassthroughRequest,
-) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.PassthroughRequest); err != nil {
 		return nil, err
 	}
@@ -7170,30 +7170,30 @@ func (provider *OpenAIProvider) Passthrough(
 
 	fasthttpReq.SetBody(req.Body)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to decode response body", err)
 	}
 
-	var passthroughUsage *schemas.RakshaPassthroughUsage
+	var passthroughUsage *schemas.GatewayPassthroughUsage
 	if resp.StatusCode() >= 200 && resp.StatusCode() < 300 {
 		passthroughUsage = ExtractOpenAIPassthroughUsage(req.Method, req.Path, req.Body, body)
 	}
 
-	rakshaResponse := &schemas.RakshaPassthroughResponse{
+	gatewayResponse := &schemas.GatewayPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 			PassthroughPath:         req.Path,
@@ -7201,16 +7201,16 @@ func (provider *OpenAIProvider) Passthrough(
 		PassthroughUsage: passthroughUsage,
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 func (provider *OpenAIProvider) PassthroughStream(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	req *schemas.RakshaPassthroughRequest,
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.OpenAI, provider.customProviderConfig, schemas.PassthroughStreamRequest); err != nil {
 		return nil, err
 	}
@@ -7256,8 +7256,8 @@ func (provider *OpenAIProvider) PassthroughStream(
 	if err != nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -7266,18 +7266,18 @@ func (provider *OpenAIProvider) PassthroughStream(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	rawBodyStream := resp.BodyStream()
 	if rawBodyStream == nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			"provider returned an empty stream body",
 			fmt.Errorf("provider returned an empty stream body"))
 	}
@@ -7294,7 +7294,7 @@ func (provider *OpenAIProvider) PassthroughStream(
 			StartTime:        startTime,
 			Logger:           provider.logger,
 			HasUsage:         HasOpenAIPassthroughUsage,
-			Observe: func(event []byte) *schemas.RakshaPassthroughUsage {
+			Observe: func(event []byte) *schemas.GatewayPassthroughUsage {
 				return ExtractOpenAIPassthroughUsage(req.Method, req.Path, req.Body, event)
 			},
 		},

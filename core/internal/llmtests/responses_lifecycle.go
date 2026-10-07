@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunResponsesLifecycleTest exercises OpenAI Responses API lifecycle: create with store,
 // retrieve, list input_items, delete. Cancel is only meaningful for background responses and is omitted.
-func RunResponsesLifecycleTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunResponsesLifecycleTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ResponsesLifecycle {
 		return
 	}
@@ -23,9 +23,9 @@ func RunResponsesLifecycleTest(t *testing.T, client *raksha.Raksha, ctx context.
 		model = "gpt-4o-mini"
 	}
 
-	bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+	bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 	store := true
-	createReq := &schemas.RakshaResponsesRequest{
+	createReq := &schemas.GatewayResponsesRequest{
 		Provider: testConfig.Provider,
 		Model:    model,
 		Input: []schemas.ResponsesMessage{
@@ -50,13 +50,13 @@ func RunResponsesLifecycleTest(t *testing.T, client *raksha.Raksha, ctx context.
 	}
 	rid := *created.ID
 	t.Cleanup(func() {
-		_, _ = client.ResponsesDeleteRequest(bfCtx, &schemas.RakshaResponsesDeleteRequest{
+		_, _ = client.ResponsesDeleteRequest(bfCtx, &schemas.GatewayResponsesDeleteRequest{
 			Provider:   testConfig.Provider,
 			ResponseID: rid,
 		})
 	})
 
-	retrieved, err := client.ResponsesRetrieveRequest(bfCtx, &schemas.RakshaResponsesRetrieveRequest{
+	retrieved, err := client.ResponsesRetrieveRequest(bfCtx, &schemas.GatewayResponsesRetrieveRequest{
 		Provider:   testConfig.Provider,
 		ResponseID: rid,
 	})
@@ -67,7 +67,7 @@ func RunResponsesLifecycleTest(t *testing.T, client *raksha.Raksha, ctx context.
 		t.Fatalf("retrieve id mismatch: got %#v want id %s", retrieved, rid)
 	}
 
-	items, err := client.ResponsesInputItemsRequest(bfCtx, &schemas.RakshaResponsesInputItemsRequest{
+	items, err := client.ResponsesInputItemsRequest(bfCtx, &schemas.GatewayResponsesInputItemsRequest{
 		Provider:   testConfig.Provider,
 		ResponseID: rid,
 		Limit:      schemas.Ptr(20),
@@ -79,7 +79,7 @@ func RunResponsesLifecycleTest(t *testing.T, client *raksha.Raksha, ctx context.
 		t.Fatalf("expected input_items list payload")
 	}
 
-	deleted, err := client.ResponsesDeleteRequest(bfCtx, &schemas.RakshaResponsesDeleteRequest{
+	deleted, err := client.ResponsesDeleteRequest(bfCtx, &schemas.GatewayResponsesDeleteRequest{
 		Provider:   testConfig.Provider,
 		ResponseID: rid,
 	})

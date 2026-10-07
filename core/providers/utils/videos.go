@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // StripVideoIDProviderSuffix removes ":<provider>" from a video ID if present.

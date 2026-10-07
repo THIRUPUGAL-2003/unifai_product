@@ -1,6 +1,7 @@
 import FullPageLoader from "@/components/fullPageLoader";
 import { ProviderNames } from "@/lib/constants/logs";
 import {
+	getErrorMessage,
 	useGetModelsQuery,
 	useGetProvidersQuery,
 	useLazyGetLogsModelHistogramQuery,
@@ -62,7 +63,10 @@ export default function OverviewTab({ hasAccess }: OverviewTabProps) {
 		error: providersError,
 		refetch: refetchProviders,
 	} = useGetProvidersQuery(undefined, { skip: !hasAccess });
-	const { data: modelsData } = useGetModelsQuery({ unfiltered: true, limit: 1000 }, { skip: !hasAccess });
+	const { data: modelsData, isError: modelsFailed, error: modelsError } = useGetModelsQuery(
+		{ unfiltered: true, limit: 1000 },
+		{ skip: !hasAccess },
+	);
 
 	const [triggerGlobalStats, { data: globalStats, isError: globalStatsError }] = useLazyGetLogsStatsQuery();
 	const [triggerStats] = useLazyGetLogsStatsQuery();
@@ -205,12 +209,14 @@ export default function OverviewTab({ hasAccess }: OverviewTabProps) {
 
 	return (
 		<>
-			{(statsPartialFailure || modelsPartialFailure || globalStatsError) && (
+			{(statsPartialFailure || modelsPartialFailure || globalStatsError || modelsFailed) && (
 				<div
 					className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100 mb-4 rounded-md border px-3 py-2 text-xs"
 					data-testid="model-catalog-overview-partial-warning"
 				>
-					Some usage stats could not be loaded and may show as zero. Refresh the page or check Logs permissions.
+					{modelsFailed
+						? `Failed to load model catalog: ${getErrorMessage(modelsError)}. Totals may be incomplete.`
+						: "Some usage stats could not be loaded and may show as zero. Refresh the page or check Logs permissions."}
 				</div>
 			)}
 			<ModelCatalogTable
@@ -219,7 +225,7 @@ export default function OverviewTab({ hasAccess }: OverviewTabProps) {
 				providerFilter={providerFilter}
 				onProviderFilterChange={setProviderFilter}
 				totalProviders={(providers ?? []).length}
-				totalModels={modelsData?.total ?? 0}
+				totalModels={modelsFailed ? 0 : (modelsData?.total ?? 0)}
 				totalRequests24h={globalStats?.total_requests ?? 0}
 				totalCost24h={globalStats?.total_cost ?? 0}
 				isLoadingModels={isLoadingModels}

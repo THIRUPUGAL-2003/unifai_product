@@ -4,9 +4,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/modelcatalog/datasheet"
-	"github.com/raksha/raksha/framework/modelcatalog/keyconfig"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/modelcatalog/datasheet"
+	"github.com/gateway/gateway/framework/modelcatalog/keyconfig"
 )
 
 const (
@@ -61,7 +61,7 @@ const (
 
 // PricingLookupScopesFromContext is re-exported so callers don't have to
 // change their imports.
-func PricingLookupScopesFromContext(ctx *schemas.RakshaContext, provider string) *PricingLookupScopes {
+func PricingLookupScopesFromContext(ctx *schemas.GatewayContext, provider string) *PricingLookupScopes {
 	return datasheet.LookupScopesFromContext(ctx, provider)
 }
 
@@ -74,7 +74,7 @@ const (
 	DefaultModelParametersTimeout = datasheet.DefaultModelParametersTimeout
 
 	// DefaultMCPLibraryURL points at the bundled catalog. The historical
-	// https://getraksha.ai/mcp-library host no longer resolves (NXDOMAIN), so
+	// https://getgateway.ai/mcp-library host no longer resolves (NXDOMAIN), so
 	// shipping the local file keeps Force Sync / first-boot working with logos.
 	DefaultMCPLibraryURL     = "file:///app/configs/mcp-library.json"
 	DefaultMCPLibraryTimeout = 45 * time.Second
@@ -88,7 +88,7 @@ func SanitizeMCPLibraryURL(raw string) string {
 		return DefaultMCPLibraryURL
 	}
 	lower := strings.ToLower(trimmed)
-	if strings.Contains(lower, "getraksha.ai") {
+	if strings.Contains(lower, "getgateway.ai") {
 		return DefaultMCPLibraryURL
 	}
 	return trimmed

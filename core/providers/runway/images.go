@@ -5,27 +5,27 @@ import (
 	"strings"
 	"time"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-// ToRunwayImageGenerationRequest converts a Raksha image generation request to Runway's text_to_image format.
-func ToRunwayImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) (*RunwayImageGenerationRequest, error) {
-	if rakshaReq.Input == nil {
+// ToRunwayImageGenerationRequest converts a Gateway image generation request to Runway's text_to_image format.
+func ToRunwayImageGenerationRequest(gatewayReq *schemas.GatewayImageGenerationRequest) (*RunwayImageGenerationRequest, error) {
+	if gatewayReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
 	// Field support varies by model; only attach what the target model accepts.
-	caps := runwayImageModelCapabilities(rakshaReq.Model)
+	caps := runwayImageModelCapabilities(gatewayReq.Model)
 
 	request := &RunwayImageGenerationRequest{
-		Model:      rakshaReq.Model,
-		PromptText: rakshaReq.Input.Prompt,
-		Ratio:      defaultRunwayImageRatio(rakshaReq.Model),
+		Model:      gatewayReq.Model,
+		PromptText: gatewayReq.Input.Prompt,
+		Ratio:      defaultRunwayImageRatio(gatewayReq.Model),
 	}
 
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		if params.AspectRatio != nil && *params.AspectRatio != "" {
 			request.Ratio = *params.AspectRatio
@@ -98,32 +98,32 @@ func ToRunwayImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequ
 	return request, nil
 }
 
-// ToRunwayImageEditRequest converts a Raksha image edit request to Runway's text_to_image format.
+// ToRunwayImageEditRequest converts a Gateway image edit request to Runway's text_to_image format.
 // Runway has no dedicated edit endpoint, so the input images are sent as reference images.
-func ToRunwayImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*RunwayImageGenerationRequest, error) {
-	if rakshaReq.Input == nil {
+func ToRunwayImageEditRequest(gatewayReq *schemas.GatewayImageEditRequest) (*RunwayImageGenerationRequest, error) {
+	if gatewayReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
 	// Field support varies by model; only attach what the target model accepts.
-	caps := runwayImageModelCapabilities(rakshaReq.Model)
+	caps := runwayImageModelCapabilities(gatewayReq.Model)
 
 	request := &RunwayImageGenerationRequest{
-		Model:      rakshaReq.Model,
-		PromptText: rakshaReq.Input.Prompt,
-		Ratio:      defaultRunwayImageRatio(rakshaReq.Model),
+		Model:      gatewayReq.Model,
+		PromptText: gatewayReq.Input.Prompt,
+		Ratio:      defaultRunwayImageRatio(gatewayReq.Model),
 	}
 
 	// Map edit input images (raw bytes) to reference images as data URIs.
-	for _, img := range rakshaReq.Input.Images {
+	for _, img := range gatewayReq.Input.Images {
 		if len(img.Image) == 0 {
 			continue
 		}
 		request.ReferenceImages = append(request.ReferenceImages, ReferenceImage{URI: providerUtils.FileBytesToBase64DataURL(img.Image)})
 	}
 
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		if params.Size != nil && *params.Size != "" {
 			// convert 1920x1080 to 1920:1080
@@ -182,13 +182,13 @@ func ToRunwayImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*Runwa
 	return request, nil
 }
 
-// ToRakshaImageGenerationResponse converts Runway task details to Raksha image generation response format.
-func ToRakshaImageGenerationResponse(taskDetails *RunwayTaskDetailsResponse) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+// ToGatewayImageGenerationResponse converts Runway task details to Gateway image generation response format.
+func ToGatewayImageGenerationResponse(taskDetails *RunwayTaskDetailsResponse) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if taskDetails == nil {
-		return nil, providerUtils.NewRakshaOperationError("task details is nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("task details is nil", nil)
 	}
 
-	response := &schemas.RakshaImageGenerationResponse{
+	response := &schemas.GatewayImageGenerationResponse{
 		ID:   taskDetails.ID,
 		Data: []schemas.ImageData{},
 	}

@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/mcp"
-	"github.com/raksha/raksha/core/mcp/codemode/starlark"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/mcp"
+	"github.com/gateway/gateway/core/mcp/codemode/starlark"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,7 +31,7 @@ var (
 		EdgeCaseServer     string
 		ParallelTestServer string
 		ErrorTestServer    string
-		RakshaRoot        string
+		GatewayRoot        string
 		ExamplesRoot       string
 	}
 )
@@ -39,14 +39,14 @@ var (
 // InitMCPServerPaths initializes the global MCP server paths
 // Call this in tests that need STDIO MCP servers
 func InitMCPServerPaths(t *testing.T) {
-	if mcpServerPaths.RakshaRoot != "" {
+	if mcpServerPaths.GatewayRoot != "" {
 		return // Already initialized
 	}
 
-	rakshaRoot := GetRakshaRoot(t)
-	examplesRoot := filepath.Join(rakshaRoot, "..", "examples")
+	gatewayRoot := GetGatewayRoot(t)
+	examplesRoot := filepath.Join(gatewayRoot, "..", "examples")
 
-	mcpServerPaths.RakshaRoot = rakshaRoot
+	mcpServerPaths.GatewayRoot = gatewayRoot
 	mcpServerPaths.ExamplesRoot = examplesRoot
 	mcpServerPaths.TemperatureServer = filepath.Join(examplesRoot, "mcps", "temperature", "dist", "index.js")
 	mcpServerPaths.GoTestServer = filepath.Join(examplesRoot, "mcps", "go-test-server", "bin", "go-test-server")
@@ -55,7 +55,7 @@ func InitMCPServerPaths(t *testing.T) {
 	mcpServerPaths.ErrorTestServer = filepath.Join(examplesRoot, "mcps", "error-test-server", "bin", "error-test-server")
 
 	t.Logf("Initialized MCP server paths:")
-	t.Logf("  - Raksha Root: %s", mcpServerPaths.RakshaRoot)
+	t.Logf("  - Gateway Root: %s", mcpServerPaths.GatewayRoot)
 	t.Logf("  - Examples Root: %s", mcpServerPaths.ExamplesRoot)
 	t.Logf("  - Temperature: %s", mcpServerPaths.TemperatureServer)
 	t.Logf("  - GoTest: %s", mcpServerPaths.GoTestServer)
@@ -247,7 +247,7 @@ func GetSampleCalculatorToolCall(id string, operation string, x, y float64) sche
 		ID:   &id,
 		Type: schemas.Ptr("function"),
 		Function: schemas.ChatAssistantMessageToolCallFunction{
-			Name:      schemas.Ptr("rakshaInternal-calculator"),
+			Name:      schemas.Ptr("gatewayInternal-calculator"),
 			Arguments: string(argsJSON),
 		},
 	}
@@ -264,7 +264,7 @@ func GetSampleEchoToolCall(id string, message string) schemas.ChatAssistantMessa
 		ID:   &id,
 		Type: schemas.Ptr("function"),
 		Function: schemas.ChatAssistantMessageToolCallFunction{
-			Name:      schemas.Ptr("rakshaInternal-echo"),
+			Name:      schemas.Ptr("gatewayInternal-echo"),
 			Arguments: string(argsJSON),
 		},
 	}
@@ -284,7 +284,7 @@ func GetSampleWeatherToolCall(id string, location string, units string) schemas.
 		ID:   &id,
 		Type: schemas.Ptr("function"),
 		Function: schemas.ChatAssistantMessageToolCallFunction{
-			Name:      schemas.Ptr("rakshaInternal-get_weather"),
+			Name:      schemas.Ptr("gatewayInternal-get_weather"),
 			Arguments: string(argsJSON),
 		},
 	}
@@ -301,7 +301,7 @@ func GetSampleDelayToolCall(id string, seconds float64) schemas.ChatAssistantMes
 		ID:   &id,
 		Type: schemas.Ptr("function"),
 		Function: schemas.ChatAssistantMessageToolCallFunction{
-			Name:      schemas.Ptr("rakshaInternal-delay"),
+			Name:      schemas.Ptr("gatewayInternal-delay"),
 			Arguments: string(argsJSON),
 		},
 	}
@@ -587,7 +587,7 @@ func RegisterGetTemperatureTool(manager *mcp.MCPManager) error {
 				"temperature": 68,
 				"unit":        "F",
 				"condition":   "InProcess Mock Data",
-				"source":      "rakshaInternal",
+				"source":      "gatewayInternal",
 			}
 			resultJSON, _ := json.Marshal(result)
 			return string(resultJSON), nil
@@ -776,7 +776,7 @@ func RegisterThrowErrorTool(manager *mcp.MCPManager) error {
 	)
 }
 
-// SetInternalClientAutoExecute configures which tools should be auto-executed for the internal Raksha client
+// SetInternalClientAutoExecute configures which tools should be auto-executed for the internal Gateway client
 func SetInternalClientAutoExecute(manager *mcp.MCPManager, toolNames []string) error {
 	// Get the current internal client config
 	clients := manager.GetClients()
@@ -784,14 +784,14 @@ func SetInternalClientAutoExecute(manager *mcp.MCPManager, toolNames []string) e
 	// Find the internal client
 	var internalClient *schemas.MCPClientState
 	for i := range clients {
-		if clients[i].ExecutionConfig.ID == "rakshaInternal" {
+		if clients[i].ExecutionConfig.ID == "gatewayInternal" {
 			internalClient = &clients[i]
 			break
 		}
 	}
 
 	if internalClient == nil {
-		return fmt.Errorf("internal raksha client not found")
+		return fmt.Errorf("internal gateway client not found")
 	}
 
 	// Update the ToolsToAutoExecute field
@@ -801,7 +801,7 @@ func SetInternalClientAutoExecute(manager *mcp.MCPManager, toolNames []string) e
 	return manager.UpdateClient(internalClient.ExecutionConfig.ID, internalClient.ExecutionConfig)
 }
 
-// SetInternalClientAsCodeMode configures the internal Raksha client as a CodeMode client
+// SetInternalClientAsCodeMode configures the internal Gateway client as a CodeMode client
 func SetInternalClientAsCodeMode(manager *mcp.MCPManager, toolsToExecute []string) error {
 	// Get the current internal client config
 	clients := manager.GetClients()
@@ -809,14 +809,14 @@ func SetInternalClientAsCodeMode(manager *mcp.MCPManager, toolsToExecute []strin
 	// Find the internal client
 	var internalClient *schemas.MCPClientState
 	for i := range clients {
-		if clients[i].ExecutionConfig.ID == "rakshaInternal" {
+		if clients[i].ExecutionConfig.ID == "gatewayInternal" {
 			internalClient = &clients[i]
 			break
 		}
 	}
 
 	if internalClient == nil {
-		return fmt.Errorf("internal raksha client not found")
+		return fmt.Errorf("internal gateway client not found")
 	}
 
 	// Update the config
@@ -938,12 +938,12 @@ func GetSampleInProcessClientConfig() schemas.MCPClientConfig {
 
 // GetTemperatureMCPClientConfig returns a STDIO client configuration for the temperature MCP server
 // located in examples/mcps/temperature. This requires the temperature server to be built first.
-// The path is relative to the raksha root directory.
-func GetTemperatureMCPClientConfig(rakshaRoot string) schemas.MCPClientConfig {
+// The path is relative to the gateway root directory.
+func GetTemperatureMCPClientConfig(gatewayRoot string) schemas.MCPClientConfig {
 	// Use global path if available, otherwise fall back to parameter
 	serverPath := mcpServerPaths.TemperatureServer
 	if serverPath == "" {
-		serverPath = rakshaRoot + "/examples/mcps/temperature-server/dist/index.js"
+		serverPath = gatewayRoot + "/examples/mcps/temperature-server/dist/index.js"
 	}
 
 	return schemas.MCPClientConfig{
@@ -963,11 +963,11 @@ func GetTemperatureMCPClientConfig(rakshaRoot string) schemas.MCPClientConfig {
 // located in examples/mcps/go-test-server. Provides tools for string manipulation,
 // JSON validation, UUID generation, hashing, and encoding/decoding.
 // The server must be built first using: go build -o bin/go-test-server
-func GetGoTestServerConfig(rakshaRoot string) schemas.MCPClientConfig {
+func GetGoTestServerConfig(gatewayRoot string) schemas.MCPClientConfig {
 	// Use global path if available, otherwise fall back to parameter
 	serverPath := mcpServerPaths.GoTestServer
 	if serverPath == "" {
-		serverPath = rakshaRoot + "/../examples/mcps/go-test-server/bin/go-test-server"
+		serverPath = gatewayRoot + "/../examples/mcps/go-test-server/bin/go-test-server"
 	}
 
 	return schemas.MCPClientConfig{
@@ -988,11 +988,11 @@ func GetGoTestServerConfig(rakshaRoot string) schemas.MCPClientConfig {
 // located in examples/mcps/edge-case-server. Provides tools for testing edge cases
 // like unicode, binary data, large payloads, nested structures, null values, and special characters.
 // The server must be built first using: go build -o bin/edge-case-server
-func GetEdgeCaseServerConfig(rakshaRoot string) schemas.MCPClientConfig {
+func GetEdgeCaseServerConfig(gatewayRoot string) schemas.MCPClientConfig {
 	// Use global path if available, otherwise fall back to parameter
 	serverPath := mcpServerPaths.EdgeCaseServer
 	if serverPath == "" {
-		serverPath = rakshaRoot + "/../examples/mcps/edge-case-server/bin/edge-case-server"
+		serverPath = gatewayRoot + "/../examples/mcps/edge-case-server/bin/edge-case-server"
 	}
 
 	return schemas.MCPClientConfig{
@@ -1013,11 +1013,11 @@ func GetEdgeCaseServerConfig(rakshaRoot string) schemas.MCPClientConfig {
 // located in examples/mcps/error-test-server. Provides tools for testing error scenarios
 // including timeouts, malformed JSON, various error types, intermittent failures, and memory intensive operations.
 // The server must be built first using: go build -o bin/error-test-server
-func GetErrorTestServerConfig(rakshaRoot string) schemas.MCPClientConfig {
+func GetErrorTestServerConfig(gatewayRoot string) schemas.MCPClientConfig {
 	// Use global path if available, otherwise fall back to parameter
 	serverPath := mcpServerPaths.ErrorTestServer
 	if serverPath == "" {
-		serverPath = rakshaRoot + "/../examples/mcps/error-test-server/bin/error-test-server"
+		serverPath = gatewayRoot + "/../examples/mcps/error-test-server/bin/error-test-server"
 	}
 
 	return schemas.MCPClientConfig{
@@ -1038,11 +1038,11 @@ func GetErrorTestServerConfig(rakshaRoot string) schemas.MCPClientConfig {
 // located in examples/mcps/parallel-test-server. Provides tools with different execution times
 // for testing parallel execution and timing behavior (fast, medium, slow, very slow operations).
 // The server must be built first using: go build -o bin/parallel-test-server
-func GetParallelTestServerConfig(rakshaRoot string) schemas.MCPClientConfig {
+func GetParallelTestServerConfig(gatewayRoot string) schemas.MCPClientConfig {
 	// Use global path if available, otherwise fall back to parameter
 	serverPath := mcpServerPaths.ParallelTestServer
 	if serverPath == "" {
-		serverPath = rakshaRoot + "/../examples/mcps/parallel-test-server/bin/parallel-test-server"
+		serverPath = gatewayRoot + "/../examples/mcps/parallel-test-server/bin/parallel-test-server"
 	}
 
 	return schemas.MCPClientConfig{
@@ -1059,25 +1059,25 @@ func GetParallelTestServerConfig(rakshaRoot string) schemas.MCPClientConfig {
 	}
 }
 
-// GetRakshaRoot returns the raksha root directory by walking up from the current directory
-func GetRakshaRoot(t *testing.T) string {
+// GetGatewayRoot returns the gateway root directory by walking up from the current directory
+func GetGatewayRoot(t *testing.T) string {
 	// Start from current working directory
 	cwd, err := os.Getwd()
 	require.NoError(t, err, "should get current working directory")
 
-	// Walk up the directory tree to find the raksha root (contains go.mod with module github.com/raksha/raksha)
+	// Walk up the directory tree to find the gateway root (contains go.mod with module github.com/gateway/gateway)
 	dir := cwd
 	for {
 		goModPath := filepath.Join(dir, "go.mod")
 		if _, err := os.Stat(goModPath); err == nil {
-			// Found go.mod, this is likely the raksha root
+			// Found go.mod, this is likely the gateway root
 			return dir
 		}
 
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			// Reached filesystem root without finding go.mod
-			t.Fatal("could not find raksha root (go.mod not found)")
+			t.Fatal("could not find gateway root (go.mod not found)")
 		}
 		dir = parent
 	}
@@ -1187,15 +1187,15 @@ func GetFilteringScenarios() []FilteringScenario {
 			Name:             "config_nil_context_nil",
 			ConfigTools:      nil,
 			ContextTools:     nil,
-			RequestedTool:    "rakshaInternal-echo",
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    false,
 			ExpectedBehavior: "nil config defaults to deny-all",
 		},
 		{
 			Name:             "config_nil_context_tool1",
 			ConfigTools:      nil,
-			ContextTools:     []string{"rakshaInternal-echo"},
-			RequestedTool:    "rakshaInternal-echo",
+			ContextTools:     []string{"gatewayInternal-echo"},
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    true,
 			ExpectedBehavior: "context overrides nil config",
 		},
@@ -1203,7 +1203,7 @@ func GetFilteringScenarios() []FilteringScenario {
 			Name:             "config_nil_context_wildcard",
 			ConfigTools:      nil,
 			ContextTools:     []string{"*"},
-			RequestedTool:    "rakshaInternal-echo",
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    true,
 			ExpectedBehavior: "context wildcard overrides nil config",
 		},
@@ -1213,15 +1213,15 @@ func GetFilteringScenarios() []FilteringScenario {
 			Name:             "config_empty_context_nil",
 			ConfigTools:      []string{},
 			ContextTools:     nil,
-			RequestedTool:    "rakshaInternal-echo",
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    false,
 			ExpectedBehavior: "empty config denies all",
 		},
 		{
 			Name:             "config_empty_context_tool1",
 			ConfigTools:      []string{},
-			ContextTools:     []string{"rakshaInternal-echo"},
-			RequestedTool:    "rakshaInternal-echo",
+			ContextTools:     []string{"gatewayInternal-echo"},
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    true,
 			ExpectedBehavior: "context overrides empty config",
 		},
@@ -1231,23 +1231,23 @@ func GetFilteringScenarios() []FilteringScenario {
 			Name:             "config_wildcard_context_nil",
 			ConfigTools:      []string{"*"},
 			ContextTools:     nil,
-			RequestedTool:    "rakshaInternal-echo",
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    true,
 			ExpectedBehavior: "wildcard allows all",
 		},
 		{
 			Name:             "config_wildcard_context_tool1",
 			ConfigTools:      []string{"*"},
-			ContextTools:     []string{"rakshaInternal-echo"},
-			RequestedTool:    "rakshaInternal-echo",
+			ContextTools:     []string{"gatewayInternal-echo"},
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    true,
 			ExpectedBehavior: "context restricts wildcard config",
 		},
 		{
 			Name:             "config_wildcard_context_tool2",
 			ConfigTools:      []string{"*"},
-			ContextTools:     []string{"rakshaInternal-echo"},
-			RequestedTool:    "rakshaInternal-calculator",
+			ContextTools:     []string{"gatewayInternal-echo"},
+			RequestedTool:    "gatewayInternal-calculator",
 			ShouldExecute:    false,
 			ExpectedBehavior: "context filters out calculator despite wildcard config",
 		},
@@ -1257,7 +1257,7 @@ func GetFilteringScenarios() []FilteringScenario {
 			Name:             "config_tool1_context_nil",
 			ConfigTools:      []string{"echo"},
 			ContextTools:     nil,
-			RequestedTool:    "rakshaInternal-echo",
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    true,
 			ExpectedBehavior: "config allows echo",
 		},
@@ -1265,23 +1265,23 @@ func GetFilteringScenarios() []FilteringScenario {
 			Name:             "config_tool1_context_nil_request_tool2",
 			ConfigTools:      []string{"echo"},
 			ContextTools:     nil,
-			RequestedTool:    "rakshaInternal-calculator",
+			RequestedTool:    "gatewayInternal-calculator",
 			ShouldExecute:    false,
 			ExpectedBehavior: "config denies calculator",
 		},
 		{
 			Name:             "config_tool1_tool2_context_tool2",
 			ConfigTools:      []string{"echo", "calculator"},
-			ContextTools:     []string{"rakshaInternal-calculator"},
-			RequestedTool:    "rakshaInternal-calculator",
+			ContextTools:     []string{"gatewayInternal-calculator"},
+			RequestedTool:    "gatewayInternal-calculator",
 			ShouldExecute:    true,
 			ExpectedBehavior: "context and config both allow calculator",
 		},
 		{
 			Name:             "config_tool1_tool2_context_tool2_request_tool1",
 			ConfigTools:      []string{"echo", "calculator"},
-			ContextTools:     []string{"rakshaInternal-calculator"},
-			RequestedTool:    "rakshaInternal-echo",
+			ContextTools:     []string{"gatewayInternal-calculator"},
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    false,
 			ExpectedBehavior: "context filters out echo despite config allowing it",
 		},
@@ -1291,7 +1291,7 @@ func GetFilteringScenarios() []FilteringScenario {
 			Name:             "config_tool1_context_wildcard",
 			ConfigTools:      []string{"echo"},
 			ContextTools:     []string{"*"},
-			RequestedTool:    "rakshaInternal-calculator",
+			RequestedTool:    "gatewayInternal-calculator",
 			ShouldExecute:    false,
 			ExpectedBehavior: "config is more restrictive than context wildcard",
 		},
@@ -1299,7 +1299,7 @@ func GetFilteringScenarios() []FilteringScenario {
 			Name:             "config_wildcard_context_empty",
 			ConfigTools:      []string{"*"},
 			ContextTools:     []string{},
-			RequestedTool:    "rakshaInternal-echo",
+			RequestedTool:    "gatewayInternal-echo",
 			ShouldExecute:    false,
 			ExpectedBehavior: "empty context overrides wildcard config",
 		},
@@ -1392,10 +1392,10 @@ const (
 	EnvMCPHTTPHeaders   = "MCP_HTTP_HEADERS" // JSON string of headers, e.g. {"Authorization":"Bearer token"}
 	EnvMCPSSEHeaders    = "MCP_SSE_HEADERS"  // JSON string of headers, e.g. {"Authorization":"Bearer token"}
 
-	// Raksha API configuration
-	EnvRakshaAPIKey       = "OPENAI_API_KEY"
-	EnvRakshaTestProvider = "RAKSHA_TEST_PROVIDER"
-	EnvRakshaTestModel    = "RAKSHA_TEST_MODEL"
+	// Gateway API configuration
+	EnvGatewayAPIKey       = "OPENAI_API_KEY"
+	EnvGatewayTestProvider = "GATEWAY_TEST_PROVIDER"
+	EnvGatewayTestModel    = "GATEWAY_TEST_MODEL"
 
 	// Default values
 	DefaultTestProvider = "openai"
@@ -1403,7 +1403,7 @@ const (
 )
 
 // =============================================================================
-// RAKSHA SETUP
+// GATEWAY SETUP
 // =============================================================================
 
 // testAccount is a minimal account implementation for MCP tests
@@ -1415,7 +1415,7 @@ func (a *testAccount) GetConfiguredProviders() ([]schemas.ModelProvider, error) 
 
 func (a *testAccount) GetKeysForProvider(ctx context.Context, providerKey schemas.ModelProvider) ([]schemas.Key, error) {
 	// Get API key directly from environment (can't use GetTestConfig here as it's called from goroutines)
-	apiKey := os.Getenv(EnvRakshaAPIKey)
+	apiKey := os.Getenv(EnvGatewayAPIKey)
 	if apiKey == "" {
 		return []schemas.Key{}, nil
 	}
@@ -1439,36 +1439,36 @@ func (a *testAccount) GetConfigForProvider(providerKey schemas.ModelProvider) (*
 	return nil, fmt.Errorf("provider %s not supported", providerKey)
 }
 
-// setupRaksha creates a Raksha instance for testing
-func setupRaksha(t *testing.T) *raksha.Raksha {
+// setupGateway creates a Gateway instance for testing
+func setupGateway(t *testing.T) *gateway.Gateway {
 	t.Helper()
 
 	account := &testAccount{}
 
-	// Create raksha instance
-	rakshaInstance, err := raksha.Init(context.Background(), schemas.RakshaConfig{
+	// Create gateway instance
+	gatewayInstance, err := gateway.Init(context.Background(), schemas.GatewayConfig{
 		Account: account,
-		Logger:  raksha.NewDefaultLogger(schemas.LogLevelError),
+		Logger:  gateway.NewDefaultLogger(schemas.LogLevelError),
 	})
-	require.NoError(t, err, "failed to create raksha instance")
+	require.NoError(t, err, "failed to create gateway instance")
 
 	// Cleanup
 	t.Cleanup(func() {
-		rakshaInstance.Shutdown()
+		gatewayInstance.Shutdown()
 	})
 
-	return rakshaInstance
+	return gatewayInstance
 }
 
 // noopPluginPipeline is a passthrough pipeline used in tests that don't need plugin hooks.
 type noopPluginPipeline struct{}
 
-func (n *noopPluginPipeline) RunMCPPreHooks(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, int) {
+func (n *noopPluginPipeline) RunMCPPreHooks(ctx *schemas.GatewayContext, req *schemas.GatewayMCPRequest) (*schemas.GatewayMCPRequest, *schemas.MCPPluginShortCircuit, int) {
 	return req, nil, 0
 }
 
-func (n *noopPluginPipeline) RunMCPPostHooks(ctx *schemas.RakshaContext, mcpResp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError, runFrom int) (*schemas.RakshaMCPResponse, *schemas.RakshaError) {
-	return mcpResp, rakshaErr
+func (n *noopPluginPipeline) RunMCPPostHooks(ctx *schemas.GatewayContext, mcpResp *schemas.GatewayMCPResponse, gatewayErr *schemas.GatewayError, runFrom int) (*schemas.GatewayMCPResponse, *schemas.GatewayError) {
+	return mcpResp, gatewayErr
 }
 
 // setupMCPManager creates an MCP manager for testing
@@ -1484,7 +1484,7 @@ func setupMCPManager(t *testing.T, clientConfigs ...schemas.MCPClientConfig) *mc
 	}
 
 	// Create MCP config with a no-op plugin pipeline so that codemode tool calls
-	// work correctly even when no Raksha instance is attached.
+	// work correctly even when no Gateway instance is attached.
 	mcpConfig := &schemas.MCPConfig{
 		ClientConfigs: clientConfigPtrs,
 		PluginPipelineProvider: func() interface{} {
@@ -1574,10 +1574,10 @@ func loadTestConfig() *TestConfig {
 		HTTPHeaders:   httpHeaders,
 		SSEServerURL:  os.Getenv(EnvMCPSSEServerURL),
 		SSEHeaders:    sseHeaders,
-		APIKey:        os.Getenv(EnvRakshaAPIKey),
-		Provider:      schemas.ModelProvider(getEnvOrDefault(EnvRakshaTestProvider, DefaultTestProvider)),
-		Model:         getEnvOrDefault(EnvRakshaTestModel, DefaultTestModel),
-		UseRealLLM:    os.Getenv(EnvRakshaAPIKey) != "",
+		APIKey:        os.Getenv(EnvGatewayAPIKey),
+		Provider:      schemas.ModelProvider(getEnvOrDefault(EnvGatewayTestProvider, DefaultTestProvider)),
+		Model:         getEnvOrDefault(EnvGatewayTestModel, DefaultTestModel),
+		UseRealLLM:    os.Getenv(EnvGatewayAPIKey) != "",
 		MaxRetries:    3,
 		RetryDelay:    time.Second,
 	}
@@ -1624,7 +1624,7 @@ func applyTestConfigHeaders(t *testing.T, clientConfig *schemas.MCPClientConfig)
 // =============================================================================
 
 // AssertToolResponse asserts that a tool response is valid
-func AssertToolResponse(t *testing.T, resp *schemas.RakshaMCPResponse, expectedContent string) {
+func AssertToolResponse(t *testing.T, resp *schemas.GatewayMCPResponse, expectedContent string) {
 	t.Helper()
 	require.NotNil(t, resp, "response should not be nil")
 
@@ -1648,7 +1648,7 @@ func AssertToolResponse(t *testing.T, resp *schemas.RakshaMCPResponse, expectedC
 }
 
 // AssertToolExecuted asserts that a tool was successfully executed
-func AssertToolExecuted(t *testing.T, resp *schemas.RakshaMCPResponse, err error) {
+func AssertToolExecuted(t *testing.T, resp *schemas.GatewayMCPResponse, err error) {
 	t.Helper()
 	require.NoError(t, err, "tool execution should not error")
 	require.NotNil(t, resp, "tool response should not be nil")
@@ -1798,7 +1798,7 @@ func AssertCodeExecutionError(t *testing.T, result *schemas.ChatMessage, expecte
 }
 
 // AssertToolResponseContains asserts that tool response contains expected text
-func AssertToolResponseContains(t *testing.T, resp *schemas.RakshaMCPResponse, expectedText string) {
+func AssertToolResponseContains(t *testing.T, resp *schemas.GatewayMCPResponse, expectedText string) {
 	t.Helper()
 	require.NotNil(t, resp, "response should not be nil")
 
@@ -1823,12 +1823,12 @@ func AssertToolResponseContains(t *testing.T, resp *schemas.RakshaMCPResponse, e
 	assert.True(t, found, "response should contain expected text in at least one format")
 }
 
-// AssertRakshaErrorContains asserts that raksha error contains expected message
-func AssertRakshaErrorContains(t *testing.T, rakshaErr *schemas.RakshaError, expectedMessage string) {
+// AssertGatewayErrorContains asserts that gateway error contains expected message
+func AssertGatewayErrorContains(t *testing.T, gatewayErr *schemas.GatewayError, expectedMessage string) {
 	t.Helper()
-	require.NotNil(t, rakshaErr, "raksha error should not be nil")
-	require.NotNil(t, rakshaErr.Error, "raksha error.Error should not be nil")
-	assert.Contains(t, rakshaErr.Error.Message, expectedMessage, "error message should contain expected text")
+	require.NotNil(t, gatewayErr, "gateway error should not be nil")
+	require.NotNil(t, gatewayErr.Error, "gateway error.Error should not be nil")
+	assert.Contains(t, gatewayErr.Error.Message, expectedMessage, "error message should contain expected text")
 }
 
 // AssertToolCallExtracted asserts that tool calls are correctly extracted from code
@@ -1842,7 +1842,7 @@ func AssertToolCallExtracted(t *testing.T, code string, expectedServerName strin
 }
 
 // AssertResponseHasToolCalls asserts that response has tool calls
-func AssertResponseHasToolCalls(t *testing.T, resp *schemas.RakshaChatResponse, expectedCount int) {
+func AssertResponseHasToolCalls(t *testing.T, resp *schemas.GatewayChatResponse, expectedCount int) {
 	t.Helper()
 	require.NotNil(t, resp, "response should not be nil")
 	require.NotEmpty(t, resp.Choices, "response should have choices")
@@ -1857,12 +1857,12 @@ func AssertResponseHasToolCalls(t *testing.T, resp *schemas.RakshaChatResponse, 
 }
 
 // AssertAgentCompletedSuccessfully asserts that agent completed without errors
-func AssertAgentCompletedSuccessfully(t *testing.T, resp *schemas.RakshaChatResponse, rakshaErr *schemas.RakshaError) {
+func AssertAgentCompletedSuccessfully(t *testing.T, resp *schemas.GatewayChatResponse, gatewayErr *schemas.GatewayError) {
 	t.Helper()
-	if rakshaErr != nil && rakshaErr.Error != nil {
-		fmt.Println("rakshaErr", rakshaErr.Error.Message)
+	if gatewayErr != nil && gatewayErr.Error != nil {
+		fmt.Println("gatewayErr", gatewayErr.Error.Message)
 	}
-	assert.Nil(t, rakshaErr, "agent should complete without error")
+	assert.Nil(t, gatewayErr, "agent should complete without error")
 	require.NotNil(t, resp, "agent should return response")
 	require.NotEmpty(t, resp.Choices, "agent response should have choices")
 }
@@ -1999,7 +1999,7 @@ func AssertExecutionTimeUnder(t *testing.T, fn func(), maxDuration time.Duration
 // =============================================================================
 
 // CreateTestContextWithMCPFilter creates a test context with MCP filtering
-func CreateTestContextWithMCPFilter(includeClients []string, includeTools []string) *schemas.RakshaContext {
+func CreateTestContextWithMCPFilter(includeClients []string, includeTools []string) *schemas.GatewayContext {
 	baseCtx := context.Background()
 	if includeClients != nil {
 		baseCtx = context.WithValue(baseCtx, schemas.MCPContextKeyIncludeClients, includeClients)
@@ -2007,13 +2007,13 @@ func CreateTestContextWithMCPFilter(includeClients []string, includeTools []stri
 	if includeTools != nil {
 		baseCtx = context.WithValue(baseCtx, schemas.MCPContextKeyIncludeTools, includeTools)
 	}
-	return schemas.NewRakshaContext(baseCtx, schemas.NoDeadline)
+	return schemas.NewGatewayContext(baseCtx, schemas.NoDeadline)
 }
 
 // CreateTestContextWithTimeout creates a test context with custom timeout
-func CreateTestContextWithCustomTimeout(timeout time.Duration) (*schemas.RakshaContext, context.CancelFunc) {
+func CreateTestContextWithCustomTimeout(timeout time.Duration) (*schemas.GatewayContext, context.CancelFunc) {
 	baseCtx, cancel := context.WithTimeout(context.Background(), timeout)
-	return schemas.NewRakshaContext(baseCtx, schemas.NoDeadline), cancel
+	return schemas.NewGatewayContext(baseCtx, schemas.NoDeadline), cancel
 }
 
 // =============================================================================
@@ -2136,7 +2136,7 @@ func SetupManagerWithAutoExecuteTools(t *testing.T, tools []string, autoExecuteT
 	// Set auto-execute tools
 	clients := manager.GetClients()
 	for i := range clients {
-		if clients[i].ExecutionConfig.ID == "rakshaInternal" {
+		if clients[i].ExecutionConfig.ID == "gatewayInternal" {
 			clients[i].ExecutionConfig.ToolsToAutoExecute = autoExecuteTools
 			err := manager.UpdateClient(clients[i].ExecutionConfig.ID, clients[i].ExecutionConfig)
 			require.NoError(t, err)
@@ -2154,14 +2154,14 @@ func SetupManagerWithAutoExecuteTools(t *testing.T, tools []string, autoExecuteT
 // GetTestDataPath returns path to test data file
 func GetTestDataPath(t *testing.T, filename string) string {
 	t.Helper()
-	rakshaRoot := GetRakshaRoot(t)
-	return filepath.Join(rakshaRoot, "core", "internal", "mcptests", "testdata", filename)
+	gatewayRoot := GetGatewayRoot(t)
+	return filepath.Join(gatewayRoot, "core", "internal", "mcptests", "testdata", filename)
 }
 
 // CreateTempTestFile creates a temporary test file
 func CreateTempTestFile(t *testing.T, content string) string {
 	t.Helper()
-	tmpFile, err := os.CreateTemp("", "raksha-test-*")
+	tmpFile, err := os.CreateTemp("", "gateway-test-*")
 	require.NoError(t, err)
 
 	_, err = tmpFile.WriteString(content)
@@ -2249,10 +2249,10 @@ func (l *testLogger) LogHTTPRequest(level schemas.LogLevel, msg string) schemas.
 // =============================================================================
 
 // ChatResponseFunc is a function that generates a Chat response based on message history
-type ChatResponseFunc func(history []schemas.ChatMessage) (*schemas.RakshaChatResponse, *schemas.RakshaError)
+type ChatResponseFunc func(history []schemas.ChatMessage) (*schemas.GatewayChatResponse, *schemas.GatewayError)
 
 // ResponsesResponseFunc is a function that generates a Responses response based on message history
-type ResponsesResponseFunc func(history []schemas.ResponsesMessage) (*schemas.RakshaResponsesResponse, *schemas.RakshaError)
+type ResponsesResponseFunc func(history []schemas.ResponsesMessage) (*schemas.GatewayResponsesResponse, *schemas.GatewayError)
 
 // DynamicLLMMocker provides dynamic LLM responses that can inspect message history
 type DynamicLLMMocker struct {
@@ -2287,15 +2287,15 @@ func (m *DynamicLLMMocker) AddResponsesResponse(fn ResponsesResponseFunc) {
 }
 
 // AddStaticChatResponse adds a static Chat response (backwards compatible)
-func (m *DynamicLLMMocker) AddStaticChatResponse(response *schemas.RakshaChatResponse) {
-	m.AddChatResponse(func(history []schemas.ChatMessage) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func (m *DynamicLLMMocker) AddStaticChatResponse(response *schemas.GatewayChatResponse) {
+	m.AddChatResponse(func(history []schemas.ChatMessage) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 		return response, nil
 	})
 }
 
 // AddStaticResponsesResponse adds a static Responses response (backwards compatible)
-func (m *DynamicLLMMocker) AddStaticResponsesResponse(response *schemas.RakshaResponsesResponse) {
-	m.AddResponsesResponse(func(history []schemas.ResponsesMessage) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (m *DynamicLLMMocker) AddStaticResponsesResponse(response *schemas.GatewayResponsesResponse) {
+	m.AddResponsesResponse(func(history []schemas.ResponsesMessage) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 		return response, nil
 	})
 }
@@ -2311,21 +2311,21 @@ func (m *DynamicLLMMocker) SetDefaultResponsesResponse(fn ResponsesResponseFunc)
 }
 
 // SetDefaultStaticChatResponse sets a static default Chat response
-func (m *DynamicLLMMocker) SetDefaultStaticChatResponse(response *schemas.RakshaChatResponse) {
-	m.SetDefaultChatResponse(func(history []schemas.ChatMessage) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func (m *DynamicLLMMocker) SetDefaultStaticChatResponse(response *schemas.GatewayChatResponse) {
+	m.SetDefaultChatResponse(func(history []schemas.ChatMessage) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 		return response, nil
 	})
 }
 
 // SetDefaultStaticResponsesResponse sets a static default Responses response
-func (m *DynamicLLMMocker) SetDefaultStaticResponsesResponse(response *schemas.RakshaResponsesResponse) {
-	m.SetDefaultResponsesResponse(func(history []schemas.ResponsesMessage) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (m *DynamicLLMMocker) SetDefaultStaticResponsesResponse(response *schemas.GatewayResponsesResponse) {
+	m.SetDefaultResponsesResponse(func(history []schemas.ResponsesMessage) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 		return response, nil
 	})
 }
 
 // MakeChatRequest implements the LLM caller interface for Chat API
-func (m *DynamicLLMMocker) MakeChatRequest(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func (m *DynamicLLMMocker) MakeChatRequest(ctx *schemas.GatewayContext, req *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	// Store the message history
 	m.chatHistory = append(m.chatHistory, req.Input)
 
@@ -2341,8 +2341,8 @@ func (m *DynamicLLMMocker) MakeChatRequest(ctx *schemas.RakshaContext, req *sche
 		m.chatCallCount++
 	} else {
 		// No response available - don't increment call count for failed attempts
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "no more mock chat responses available",
 			},
@@ -2353,7 +2353,7 @@ func (m *DynamicLLMMocker) MakeChatRequest(ctx *schemas.RakshaContext, req *sche
 }
 
 // MakeResponsesRequest implements the LLM caller interface for Responses API
-func (m *DynamicLLMMocker) MakeResponsesRequest(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (m *DynamicLLMMocker) MakeResponsesRequest(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	// Store the message history
 	m.responsesHistory = append(m.responsesHistory, req.Input)
 
@@ -2370,8 +2370,8 @@ func (m *DynamicLLMMocker) MakeResponsesRequest(ctx *schemas.RakshaContext, req 
 	} else {
 		// No response available
 		m.responsesCallCount++
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "no more mock responses api responses available",
 			},
@@ -2527,7 +2527,7 @@ func HasToolCallInChatHistory(history []schemas.ChatMessage, toolName string) bo
 						fullName := *tc.Function.Name
 						// Check for exact match or with client prefix
 						if fullName == toolName ||
-							fullName == "rakshaInternal-"+toolName ||
+							fullName == "gatewayInternal-"+toolName ||
 							// Also check if toolName already has a prefix and matches exactly
 							(strings.Contains(toolName, "-") && fullName == toolName) {
 							return true
@@ -2541,7 +2541,7 @@ func HasToolCallInChatHistory(history []schemas.ChatMessage, toolName string) bo
 }
 
 // HasToolCallInResponsesHistory checks if a specific tool was called in Responses history
-// Supports both prefixed (rakshaInternal-toolName) and unprefixed tool names
+// Supports both prefixed (gatewayInternal-toolName) and unprefixed tool names
 func HasToolCallInResponsesHistory(history []schemas.ResponsesMessage, toolName string) bool {
 	for _, msg := range history {
 		if msg.Type != nil && *msg.Type == schemas.ResponsesMessageTypeFunctionCall {
@@ -2551,8 +2551,8 @@ func HasToolCallInResponsesHistory(history []schemas.ResponsesMessage, toolName 
 				if fullName == toolName {
 					return true
 				}
-				// Check with rakshaInternal- prefix
-				if fullName == "rakshaInternal-"+toolName {
+				// Check with gatewayInternal- prefix
+				if fullName == "gatewayInternal-"+toolName {
 					return true
 				}
 				// Check if toolName already has a prefix (format: "prefix-toolName")
@@ -2567,9 +2567,9 @@ func HasToolCallInResponsesHistory(history []schemas.ResponsesMessage, toolName 
 }
 
 // CreateChatResponseWithToolCalls creates a Chat response with tool calls
-func CreateChatResponseWithToolCalls(toolCalls []schemas.ChatAssistantMessageToolCall) *schemas.RakshaChatResponse {
-	return &schemas.RakshaChatResponse{
-		Choices: []schemas.RakshaResponseChoice{
+func CreateChatResponseWithToolCalls(toolCalls []schemas.ChatAssistantMessageToolCall) *schemas.GatewayChatResponse {
+	return &schemas.GatewayChatResponse{
+		Choices: []schemas.GatewayResponseChoice{
 			{
 				FinishReason: schemas.Ptr("tool_calls"),
 				ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -2589,9 +2589,9 @@ func CreateChatResponseWithToolCalls(toolCalls []schemas.ChatAssistantMessageToo
 }
 
 // CreateChatResponseWithText creates a Chat response with text
-func CreateChatResponseWithText(text string) *schemas.RakshaChatResponse {
-	return &schemas.RakshaChatResponse{
-		Choices: []schemas.RakshaResponseChoice{
+func CreateChatResponseWithText(text string) *schemas.GatewayChatResponse {
+	return &schemas.GatewayChatResponse{
+		Choices: []schemas.GatewayResponseChoice{
 			{
 				FinishReason: schemas.Ptr("stop"),
 				ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -2608,7 +2608,7 @@ func CreateChatResponseWithText(text string) *schemas.RakshaChatResponse {
 }
 
 // CreateResponsesResponseWithToolCalls creates a Responses response with tool calls
-func CreateResponsesResponseWithToolCalls(toolCalls []schemas.ResponsesToolMessage) *schemas.RakshaResponsesResponse {
+func CreateResponsesResponseWithToolCalls(toolCalls []schemas.ResponsesToolMessage) *schemas.GatewayResponsesResponse {
 	output := []schemas.ResponsesMessage{}
 	for _, tc := range toolCalls {
 		msgType := schemas.ResponsesMessageTypeFunctionCall
@@ -2619,16 +2619,16 @@ func CreateResponsesResponseWithToolCalls(toolCalls []schemas.ResponsesToolMessa
 			ResponsesToolMessage: &tc,
 		})
 	}
-	return &schemas.RakshaResponsesResponse{
+	return &schemas.GatewayResponsesResponse{
 		Output: output,
 	}
 }
 
 // CreateResponsesResponseWithText creates a Responses response with text
-func CreateResponsesResponseWithText(text string) *schemas.RakshaResponsesResponse {
+func CreateResponsesResponseWithText(text string) *schemas.GatewayResponsesResponse {
 	msgType := schemas.ResponsesMessageTypeMessage
 	role := schemas.ResponsesInputMessageRoleAssistant
-	return &schemas.RakshaResponsesResponse{
+	return &schemas.GatewayResponsesResponse{
 		Output: []schemas.ResponsesMessage{
 			{
 				Type: &msgType,
@@ -2642,15 +2642,15 @@ func CreateResponsesResponseWithText(text string) *schemas.RakshaResponsesRespon
 }
 
 // CreateDynamicChatResponse is a convenience function for creating a dynamic Chat response
-func CreateDynamicChatResponse(fn func(history []schemas.ChatMessage) *schemas.RakshaChatResponse) ChatResponseFunc {
-	return func(history []schemas.ChatMessage) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func CreateDynamicChatResponse(fn func(history []schemas.ChatMessage) *schemas.GatewayChatResponse) ChatResponseFunc {
+	return func(history []schemas.ChatMessage) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 		return fn(history), nil
 	}
 }
 
 // CreateDynamicResponsesResponse is a convenience function for creating a dynamic Responses response
-func CreateDynamicResponsesResponse(fn func(history []schemas.ResponsesMessage) *schemas.RakshaResponsesResponse) ResponsesResponseFunc {
-	return func(history []schemas.ResponsesMessage) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func CreateDynamicResponsesResponse(fn func(history []schemas.ResponsesMessage) *schemas.GatewayResponsesResponse) ResponsesResponseFunc {
+	return func(history []schemas.ResponsesMessage) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 		return fn(history), nil
 	}
 }
@@ -2662,7 +2662,7 @@ func CreateDynamicResponsesResponse(fn func(history []schemas.ResponsesMessage) 
 // CreateValidatingChatResponse creates a Chat response that validates tool results before responding
 // Example: CreateValidatingChatResponse("call-1", []string{"15", "C"}, "The temperature is 15°C", "Unexpected result")
 func CreateValidatingChatResponse(callID string, mustContain []string, successText string, failureText string) ChatResponseFunc {
-	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
+	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.GatewayChatResponse {
 		result, found := GetToolResultFromChatHistory(history, callID)
 		if !found {
 			return CreateChatResponseWithText(failureText + " (tool result not found)")
@@ -2736,8 +2736,8 @@ func containsInJSON(data interface{}, search string) bool {
 }
 
 // CreateConditionalChatResponse creates a Chat response based on a condition function
-func CreateConditionalChatResponse(condition func(history []schemas.ChatMessage) bool, trueResponse, falseResponse *schemas.RakshaChatResponse) ChatResponseFunc {
-	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
+func CreateConditionalChatResponse(condition func(history []schemas.ChatMessage) bool, trueResponse, falseResponse *schemas.GatewayChatResponse) ChatResponseFunc {
+	return CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.GatewayChatResponse {
 		if condition(history) {
 			return trueResponse
 		}
@@ -2746,11 +2746,11 @@ func CreateConditionalChatResponse(condition func(history []schemas.ChatMessage)
 }
 
 // CreateSequentialChatResponses creates multiple response functions that return responses in sequence
-func CreateSequentialChatResponses(responses []*schemas.RakshaChatResponse) []ChatResponseFunc {
+func CreateSequentialChatResponses(responses []*schemas.GatewayChatResponse) []ChatResponseFunc {
 	funcs := make([]ChatResponseFunc, len(responses))
 	for i, resp := range responses {
 		r := resp // Capture for closure
-		funcs[i] = CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
+		funcs[i] = CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.GatewayChatResponse {
 			return r
 		})
 	}
@@ -2774,7 +2774,7 @@ func CreateToolCallSequence(sequences []struct {
 
 		if isLast {
 			// Last one - check for expected text and return final text
-			funcs = append(funcs, CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
+			funcs = append(funcs, CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.GatewayChatResponse {
 				if toolCall.ID != nil {
 					result, found := GetToolResultFromChatHistory(history, *toolCall.ID)
 					if found && (expectedText == "" || containsString(result, expectedText)) {
@@ -2785,7 +2785,7 @@ func CreateToolCallSequence(sequences []struct {
 			}))
 		} else {
 			// Not last - return next tool call
-			funcs = append(funcs, CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
+			funcs = append(funcs, CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.GatewayChatResponse {
 				return CreateChatResponseWithToolCalls([]schemas.ChatAssistantMessageToolCall{toolCall})
 			}))
 		}
@@ -2829,7 +2829,7 @@ Example 3: Multi-turn agent scenario
 mocker := NewDynamicLLMMocker()
 
 // Turn 1: Request weather
-mocker.AddChatResponse(CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
+mocker.AddChatResponse(CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.GatewayChatResponse {
 	return CreateChatResponseWithToolCalls([]schemas.ChatAssistantMessageToolCall{
 		GetSampleWeatherToolCall("call-1", "London", "celsius"),
 	})
@@ -2850,7 +2850,7 @@ Example 4: Complex multi-turn with multiple tool calls
 mocker := NewDynamicLLMMocker()
 
 // Turn 1: Call multiple tools in parallel
-mocker.AddChatResponse(CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
+mocker.AddChatResponse(CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.GatewayChatResponse {
 	return CreateChatResponseWithToolCalls([]schemas.ChatAssistantMessageToolCall{
 		GetSampleWeatherToolCall("call-1", "Tokyo", "celsius"),
 		GetSampleWeatherToolCall("call-2", "London", "celsius"),
@@ -2858,7 +2858,7 @@ mocker.AddChatResponse(CreateDynamicChatResponse(func(history []schemas.ChatMess
 }))
 
 // Turn 2: Validate both results and respond
-mocker.AddChatResponse(CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.RakshaChatResponse {
+mocker.AddChatResponse(CreateDynamicChatResponse(func(history []schemas.ChatMessage) *schemas.GatewayChatResponse {
 	results := GetAllToolResultsFromChatHistory(history)
 
 	tokyo, hasTokyo := results["call-1"]
@@ -2878,11 +2878,11 @@ mocker.AddChatResponse(CreateDynamicChatResponse(func(history []schemas.ChatMess
 
 // CreateToolCallForExecution creates a tool call with the proper client prefix
 // for direct execution via ExecuteChatMCPTool.
-// The tool name is automatically prefixed with "rakshaInternal-" to match
+// The tool name is automatically prefixed with "gatewayInternal-" to match
 // how tools are stored in the MCP manager.
 func CreateToolCallForExecution(callID string, toolName string, args map[string]interface{}) schemas.ChatAssistantMessageToolCall {
 	argsJSON, _ := json.Marshal(args)
-	prefixedToolName := "rakshaInternal-" + toolName
+	prefixedToolName := "gatewayInternal-" + toolName
 
 	return schemas.ChatAssistantMessageToolCall{
 		ID:   &callID,
@@ -2896,12 +2896,12 @@ func CreateToolCallForExecution(callID string, toolName string, args map[string]
 
 // CreateResponsesToolCallForExecution creates a Responses API tool call with the proper client prefix
 // for direct execution via ExecuteResponsesMCPTool.
-// The tool name is automatically prefixed with "rakshaInternal-" to match
+// The tool name is automatically prefixed with "gatewayInternal-" to match
 // how tools are stored in the MCP manager.
 func CreateResponsesToolCallForExecution(callID string, toolName string, args map[string]interface{}) schemas.ResponsesToolMessage {
 	argsJSON, _ := json.Marshal(args)
 	argsStr := string(argsJSON)
-	prefixedToolName := "rakshaInternal-" + toolName
+	prefixedToolName := "gatewayInternal-" + toolName
 
 	return schemas.ResponsesToolMessage{
 		CallID:    &callID,

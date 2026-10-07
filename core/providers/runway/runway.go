@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -19,8 +19,8 @@ type RunwayProvider struct {
 	logger              schemas.Logger        // Logger for provider operations
 	client              *fasthttp.Client      // HTTP client for API requests
 	networkConfig       schemas.NetworkConfig // Network configuration including extra headers
-	sendBackRawRequest  bool                  // Whether to include raw request in RakshaResponse
-	sendBackRawResponse bool                  // Whether to include raw response in RakshaResponse
+	sendBackRawRequest  bool                  // Whether to include raw request in GatewayResponse
+	sendBackRawResponse bool                  // Whether to include raw response in GatewayResponse
 }
 
 // NewRunwayProvider creates a new Runway provider instance.
@@ -66,97 +66,97 @@ func (provider *RunwayProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // ListModels is not supported by the Runway provider.
-func (provider *RunwayProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ListModelsRequest, provider.GetProviderKey())
 }
 
 // TextCompletion is not supported by the Runway provider.
-func (provider *RunwayProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionRequest, provider.GetProviderKey())
 }
 
 // TextCompletionStream is not supported by the Runway provider.
-func (provider *RunwayProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *RunwayProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionStreamRequest, provider.GetProviderKey())
 }
 
 // ChatCompletion is not supported by the Runway provider.
-func (provider *RunwayProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ChatCompletionRequest, provider.GetProviderKey())
 }
 
 // ChatCompletionStream is not supported by the Runway provider.
-func (provider *RunwayProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *RunwayProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ChatCompletionStreamRequest, provider.GetProviderKey())
 }
 
 // Responses is not supported by the Runway provider.
-func (provider *RunwayProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ResponsesRequest, provider.GetProviderKey())
 }
 
 // ResponsesStream is not supported by the Runway provider.
-func (provider *RunwayProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *RunwayProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ResponsesStreamRequest, provider.GetProviderKey())
 }
 
 // Embedding is not supported by the Runway provider.
-func (provider *RunwayProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.EmbeddingRequest, provider.GetProviderKey())
 }
 
 // Speech is not supported by the Runway provider.
-func (provider *RunwayProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechRequest, provider.GetProviderKey())
 }
 
 // SpeechStream is not supported by the Runway provider.
-func (provider *RunwayProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *RunwayProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, provider.GetProviderKey())
 }
 
 // Transcription is not supported by the Runway provider.
-func (provider *RunwayProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionRequest, provider.GetProviderKey())
 }
 
 // TranscriptionStream is not supported by the Runway provider.
-func (provider *RunwayProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *RunwayProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, provider.GetProviderKey())
 }
 
 // Rerank is not supported by the Runway provider.
-func (provider *RunwayProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Runway provider.
-func (provider *RunwayProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // ImageGeneration performs a text-to-image generation request to Runway's API.
 // Runway image generation is task-based: a task is created and then polled until it
 // reaches a terminal state, after which the generated image URLs are returned.
-func (provider *RunwayProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
-	// Convert Raksha request to Runway format
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+func (provider *RunwayProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key, gatewayReq *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
+	// Convert Gateway request to Runway format
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
-		rakshaReq,
+		gatewayReq,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
-			return ToRunwayImageGenerationRequest(rakshaReq)
+			return ToRunwayImageGenerationRequest(gatewayReq)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	return provider.HandleRunwayImageTask(ctx, key, rakshaReq.Model, jsonData)
+	return provider.HandleRunwayImageTask(ctx, key, gatewayReq.Model, jsonData)
 }
 
 // HandleRunwayImageTask posts a prebuilt text_to_image body, polls the task to completion,
-// and builds the Raksha image response. Shared by ImageGeneration and ImageEdit since both
+// and builds the Gateway image response. Shared by ImageGeneration and ImageEdit since both
 // use the same /v1/text_to_image endpoint and response shape.
-func (provider *RunwayProvider) HandleRunwayImageTask(ctx *schemas.RakshaContext, key schemas.Key, model string, jsonData []byte) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) HandleRunwayImageTask(ctx *schemas.GatewayContext, key schemas.Key, model string, jsonData []byte) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 
@@ -178,10 +178,10 @@ func (provider *RunwayProvider) HandleRunwayImageTask(ctx *schemas.RakshaContext
 
 	req.SetBody(jsonData)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -193,75 +193,75 @@ func (provider *RunwayProvider) HandleRunwayImageTask(ctx *schemas.RakshaContext
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
 		rawErrBody := append([]byte(nil), resp.Body()...)
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, rawErrBody, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, rawErrBody, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Parse task creation response
 	var taskResp RunwayTaskCreationResponse
-	rawRequest, _, rakshaErr := providerUtils.HandleProviderResponse(body, &taskResp, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, providerUtils.SetErrorLatency(rakshaErr, latency)
+	rawRequest, _, gatewayErr := providerUtils.HandleProviderResponse(body, &taskResp, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, providerUtils.SetErrorLatency(gatewayErr, latency)
 	}
 
 	// Poll the task until it reaches a terminal state
-	taskDetails, rawResponse, rakshaErr := provider.pollRunwayTask(ctx, key, taskResp.ID, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	taskDetails, rawResponse, gatewayErr := provider.pollRunwayTask(ctx, key, taskResp.ID, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
-	// Convert to Raksha response
-	rakshaResp, rakshaErr := ToRakshaImageGenerationResponse(taskDetails)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	// Convert to Gateway response
+	gatewayResp, gatewayErr := ToGatewayImageGenerationResponse(taskDetails)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	rakshaResp.Model = model
-	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResp.Model = model
+	gatewayResp.ExtraFields.Latency = latency.Milliseconds()
 
 	if sendBackRawRequest {
-		rakshaResp.ExtraFields.RawRequest = rawRequest
+		gatewayResp.ExtraFields.RawRequest = rawRequest
 	}
 	if sendBackRawResponse {
-		rakshaResp.ExtraFields.RawResponse = rawResponse
+		gatewayResp.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // runwayImagePollingInterval is the interval between Runway task status polls for image generation.
 const runwayImagePollingInterval = 2 * time.Second
 
 // pollRunwayTask polls a Runway task until it reaches a terminal state or the context times out.
-func (provider *RunwayProvider) pollRunwayTask(ctx *schemas.RakshaContext, key schemas.Key, taskID string, sendBackRawResponse bool) (*RunwayTaskDetailsResponse, interface{}, *schemas.RakshaError) {
-	pollCtx, cancel := schemas.NewRakshaContextWithTimeout(ctx, time.Duration(provider.networkConfig.DefaultRequestTimeoutInSeconds)*time.Second)
+func (provider *RunwayProvider) pollRunwayTask(ctx *schemas.GatewayContext, key schemas.Key, taskID string, sendBackRawResponse bool) (*RunwayTaskDetailsResponse, interface{}, *schemas.GatewayError) {
+	pollCtx, cancel := schemas.NewGatewayContextWithTimeout(ctx, time.Duration(provider.networkConfig.DefaultRequestTimeoutInSeconds)*time.Second)
 	defer cancel()
 
 	ticker := time.NewTicker(runwayImagePollingInterval)
 	defer ticker.Stop()
 
 	for {
-		taskDetails, rawResponse, rakshaErr := provider.retrieveRunwayTask(pollCtx, key, taskID, sendBackRawResponse)
-		if rakshaErr != nil {
-			return nil, nil, rakshaErr
+		taskDetails, rawResponse, gatewayErr := provider.retrieveRunwayTask(pollCtx, key, taskID, sendBackRawResponse)
+		if gatewayErr != nil {
+			return nil, nil, gatewayErr
 		}
 
 		switch taskDetails.Status {
 		case RunwayTaskStatusSucceeded:
 			return taskDetails, rawResponse, nil
 		case RunwayTaskStatusFailed, RunwayTaskStatusCancelled:
-			return nil, nil, providerUtils.NewRakshaOperationError(fmt.Sprintf("runway task %s", taskDetails.Status), nil)
+			return nil, nil, providerUtils.NewGatewayOperationError(fmt.Sprintf("runway task %s", taskDetails.Status), nil)
 		}
 
 		select {
 		case <-pollCtx.Done():
-			return nil, nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestTimedOut, fmt.Errorf("runway task polling timed out"))
+			return nil, nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestTimedOut, fmt.Errorf("runway task polling timed out"))
 		case <-ticker.C:
 		}
 	}
 }
 
 // retrieveRunwayTask fetches the current state of a Runway task.
-func (provider *RunwayProvider) retrieveRunwayTask(ctx *schemas.RakshaContext, key schemas.Key, taskID string, sendBackRawResponse bool) (*RunwayTaskDetailsResponse, interface{}, *schemas.RakshaError) {
+func (provider *RunwayProvider) retrieveRunwayTask(ctx *schemas.GatewayContext, key schemas.Key, taskID string, sendBackRawResponse bool) (*RunwayTaskDetailsResponse, interface{}, *schemas.GatewayError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -276,10 +276,10 @@ func (provider *RunwayProvider) retrieveRunwayTask(ctx *schemas.RakshaContext, k
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, nil, gatewayErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -288,68 +288,68 @@ func (provider *RunwayProvider) retrieveRunwayTask(ctx *schemas.RakshaContext, k
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), latency)
+		return nil, nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), latency)
 	}
 
 	var taskDetails RunwayTaskDetailsResponse
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &taskDetails, nil, false, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, nil, providerUtils.SetErrorLatency(rakshaErr, latency)
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &taskDetails, nil, false, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, nil, providerUtils.SetErrorLatency(gatewayErr, latency)
 	}
 
 	return &taskDetails, rawResponse, nil
 }
 
 // ImageGenerationStream is not supported by the Runway provider.
-func (provider *RunwayProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *RunwayProvider) ImageGenerationStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageGenerationRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationStreamRequest, provider.GetProviderKey())
 }
 
 // ImageEdit performs an image edit request to Runway's API. Runway has no dedicated edit
 // endpoint, so the input images are passed as reference images to /v1/text_to_image.
-func (provider *RunwayProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
-	// Convert Raksha request to Runway format
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+func (provider *RunwayProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, gatewayReq *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
+	// Convert Gateway request to Runway format
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
-		rakshaReq,
+		gatewayReq,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
-			return ToRunwayImageEditRequest(rakshaReq)
+			return ToRunwayImageEditRequest(gatewayReq)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	return provider.HandleRunwayImageTask(ctx, key, rakshaReq.Model, jsonData)
+	return provider.HandleRunwayImageTask(ctx, key, gatewayReq.Model, jsonData)
 }
 
 // ImageEditStream is not supported by the Runway provider.
-func (provider *RunwayProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *RunwayProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditStreamRequest, provider.GetProviderKey())
 }
 
 // ImageVariation is not supported by the Runway provider.
-func (provider *RunwayProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration performs a video generation request to Runway's API.
-func (provider *RunwayProvider) VideoGeneration(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) VideoGeneration(ctx *schemas.GatewayContext, key schemas.Key, gatewayReq *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
-	model := rakshaReq.Model
+	model := gatewayReq.Model
 
-	// Convert Raksha request to Runway format
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	// Convert Gateway request to Runway format
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
-		rakshaReq,
+		gatewayReq,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
-			return ToRunwayVideoGenerationRequest(rakshaReq)
+			return ToRunwayVideoGenerationRequest(gatewayReq)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Determine the endpoint based on request type
-	endpoint := getRunwayEndpoint(rakshaReq)
+	endpoint := getRunwayEndpoint(gatewayReq)
 
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
@@ -374,10 +374,10 @@ func (provider *RunwayProvider) VideoGeneration(ctx *schemas.RakshaContext, key 
 
 	req.SetBody(jsonData)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -389,41 +389,41 @@ func (provider *RunwayProvider) VideoGeneration(ctx *schemas.RakshaContext, key 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
 		rawErrBody := append([]byte(nil), resp.Body()...)
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, rawErrBody, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, rawErrBody, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Parse response
 	var taskResp RunwayTaskCreationResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &taskResp, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, providerUtils.SetErrorLatency(rakshaErr, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &taskResp, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, providerUtils.SetErrorLatency(gatewayErr, latency)
 	}
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaVideoGenerationResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayVideoGenerationResponse{
 		ID:     providerUtils.AddVideoIDProviderSuffix(taskResp.ID, providerName),
 		Model:  model,
 		Object: "video",
 		Status: schemas.VideoStatusQueued,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 
 	if sendBackRawRequest {
-		rakshaResp.ExtraFields.RawRequest = rawRequest
+		gatewayResp.ExtraFields.RawRequest = rawRequest
 	}
 	if sendBackRawResponse {
-		rakshaResp.ExtraFields.RawResponse = rawResponse
+		gatewayResp.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // VideoRetrieve retrieves the status of a video generation task from Runway's API.
-func (provider *RunwayProvider) VideoRetrieve(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) VideoRetrieve(ctx *schemas.GatewayContext, key schemas.Key, gatewayReq *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
-	taskID := providerUtils.StripVideoIDProviderSuffix(rakshaReq.ID, providerName)
+	taskID := providerUtils.StripVideoIDProviderSuffix(gatewayReq.ID, providerName)
 
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
@@ -445,10 +445,10 @@ func (provider *RunwayProvider) VideoRetrieve(ctx *schemas.RakshaContext, key sc
 		req.Header.Set("Authorization", "Bearer "+key.Value.GetValue())
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -460,61 +460,61 @@ func (provider *RunwayProvider) VideoRetrieve(ctx *schemas.RakshaContext, key sc
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
 		rawErrBody := append([]byte(nil), resp.Body()...)
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), nil, rawErrBody, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), nil, rawErrBody, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Parse response
 	var taskDetails RunwayTaskDetailsResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &taskDetails, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, providerUtils.SetErrorLatency(rakshaErr, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &taskDetails, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, providerUtils.SetErrorLatency(gatewayErr, latency)
 	}
 
-	// Convert to Raksha response
-	rakshaResp, rakshaErr := ToRakshaVideoGenerationResponse(&taskDetails)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	// Convert to Gateway response
+	gatewayResp, gatewayErr := ToGatewayVideoGenerationResponse(&taskDetails)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	rakshaResp.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResp.ID, providerName)
-	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResp.ID = providerUtils.AddVideoIDProviderSuffix(gatewayResp.ID, providerName)
+	gatewayResp.ExtraFields.Latency = latency.Milliseconds()
 
 	if sendBackRawRequest {
-		rakshaResp.ExtraFields.RawRequest = rawRequest
+		gatewayResp.ExtraFields.RawRequest = rawRequest
 	}
 	if sendBackRawResponse {
-		rakshaResp.ExtraFields.RawResponse = rawResponse
+		gatewayResp.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // VideoDownload retrieves a video from Runway's API.
-func (provider *RunwayProvider) VideoDownload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) VideoDownload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	// Retrieve task status to get the video URL
-	rakshaVideoRetrieveRequest := &schemas.RakshaVideoRetrieveRequest{
+	gatewayVideoRetrieveRequest := &schemas.GatewayVideoRetrieveRequest{
 		Provider: request.Provider,
 		ID:       request.ID,
 	}
-	taskDetails, rakshaErr := provider.VideoRetrieve(ctx, key, rakshaVideoRetrieveRequest)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	taskDetails, gatewayErr := provider.VideoRetrieve(ctx, key, gatewayVideoRetrieveRequest)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	// Check if video is ready
 	if taskDetails.Status != schemas.VideoStatusCompleted {
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("video not ready, current status: %s", taskDetails.Status),
 			nil)
 	}
 	if len(taskDetails.Videos) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("video URL not available", nil)
+		return nil, providerUtils.NewGatewayOperationError("video URL not available", nil)
 	}
 	var videoUrl string
 	if taskDetails.Videos[0].URL != nil {
 		videoUrl = *taskDetails.Videos[0].URL
 	}
 	if videoUrl == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid video output type", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid video output type", nil)
 	}
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
@@ -526,13 +526,13 @@ func (provider *RunwayProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 	defer fasthttp.ReleaseResponse(resp)
 	req.SetRequestURI(videoUrl)
 	req.Header.SetMethod("GET")
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK {
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("failed to download video: HTTP %d", resp.StatusCode()),
 			nil), latency)
 	}
@@ -540,7 +540,7 @@ func (provider *RunwayProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
 		rawErrBody := append([]byte(nil), resp.Body()...)
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), nil, rawErrBody, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), nil, rawErrBody, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 	contentType := string(resp.Header.ContentType())
 	if contentType == "" {
@@ -548,25 +548,25 @@ func (provider *RunwayProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 	}
 	// Copy the binary content
 	content := append([]byte(nil), body...)
-	rakshaResp := &schemas.RakshaVideoDownloadResponse{
+	gatewayResp := &schemas.GatewayVideoDownloadResponse{
 		VideoID:     request.ID,
 		Content:     content,
 		ContentType: contentType,
 	}
 
-	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResp.ExtraFields.Latency = latency.Milliseconds()
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // VideoDelete cancels or deletes a task in Runway.
 // Tasks that are running, pending, or throttled can be canceled by invoking this method.
 // Invoking this method for other tasks will delete them.
-func (provider *RunwayProvider) VideoDelete(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) VideoDelete(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("task_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("task_id is required", nil)
 	}
 
 	taskID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
@@ -590,10 +590,10 @@ func (provider *RunwayProvider) VideoDelete(ctx *schemas.RakshaContext, key sche
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response - Runway returns 204 No Content on success
@@ -602,7 +602,7 @@ func (provider *RunwayProvider) VideoDelete(ctx *schemas.RakshaContext, key sche
 	}
 
 	// Build response - Runway returns empty body on 204
-	response := &schemas.RakshaVideoDeleteResponse{
+	response := &schemas.GatewayVideoDeleteResponse{
 		ID:      request.ID, // Return with provider prefix
 		Object:  "video.deleted",
 		Deleted: true,
@@ -614,130 +614,130 @@ func (provider *RunwayProvider) VideoDelete(ctx *schemas.RakshaContext, key sche
 }
 
 // VideoList is not supported by Runway provider.
-func (provider *RunwayProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) VideoList(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by Runway provider.
-func (provider *RunwayProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) VideoRemix(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // FileUpload is not supported by Runway provider.
-func (provider *RunwayProvider) FileUpload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) FileUpload(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileUploadRequest, provider.GetProviderKey())
 }
 
 // FileList is not supported by Runway provider.
-func (provider *RunwayProvider) FileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) FileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileListRequest, provider.GetProviderKey())
 }
 
 // FileRetrieve is not supported by Runway provider.
-func (provider *RunwayProvider) FileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) FileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileRetrieveRequest, provider.GetProviderKey())
 }
 
 // FileDelete is not supported by Runway provider.
-func (provider *RunwayProvider) FileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) FileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileDeleteRequest, provider.GetProviderKey())
 }
 
 // FileContent is not supported by Runway provider.
-func (provider *RunwayProvider) FileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) FileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileContentRequest, provider.GetProviderKey())
 }
 
 // BatchCreate is not supported by Runway provider.
-func (provider *RunwayProvider) BatchCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) BatchCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCreateRequest, provider.GetProviderKey())
 }
 
 // BatchList is not supported by Runway provider.
-func (provider *RunwayProvider) BatchList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) BatchList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchListRequest, provider.GetProviderKey())
 }
 
 // BatchRetrieve is not supported by Runway provider.
-func (provider *RunwayProvider) BatchRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) BatchRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchRetrieveRequest, provider.GetProviderKey())
 }
 
 // BatchCancel is not supported by Runway provider.
-func (provider *RunwayProvider) BatchCancel(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) BatchCancel(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCancelRequest, provider.GetProviderKey())
 }
 
 // BatchDelete is not supported by Runway provider.
-func (provider *RunwayProvider) BatchDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) BatchDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults is not supported by Runway provider.
-func (provider *RunwayProvider) BatchResults(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) BatchResults(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchResultsRequest, provider.GetProviderKey())
 }
 
 // CountTokens is not supported by the Runway provider.
-func (provider *RunwayProvider) CountTokens(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) CountTokens(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CountTokensRequest, provider.GetProviderKey())
 }
 
 // Compaction is not supported by the Runway provider.
-func (provider *RunwayProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Runway provider.
-func (provider *RunwayProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ContainerCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Runway provider.
-func (provider *RunwayProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ContainerList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Runway provider.
-func (provider *RunwayProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ContainerRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Runway provider.
-func (provider *RunwayProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ContainerDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Runway provider.
-func (provider *RunwayProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ContainerFileCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Runway provider.
-func (provider *RunwayProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ContainerFileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Runway provider.
-func (provider *RunwayProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ContainerFileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Runway provider.
-func (provider *RunwayProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ContainerFileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Runway provider.
-func (provider *RunwayProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) ContainerFileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 // Passthrough is not supported by the Runway provider.
-func (provider *RunwayProvider) Passthrough(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+func (provider *RunwayProvider) Passthrough(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughRequest, provider.GetProviderKey())
 }
 
-func (provider *RunwayProvider) PassthroughStream(_ *schemas.RakshaContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *RunwayProvider) PassthroughStream(_ *schemas.GatewayContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughStreamRequest, provider.GetProviderKey())
 }

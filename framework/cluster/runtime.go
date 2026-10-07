@@ -3,7 +3,7 @@ package cluster
 import (
 	"sync"
 
-	"github.com/raksha/raksha/framework/kvstore"
+	"github.com/gateway/gateway/framework/kvstore"
 )
 
 // SyncDelegate bridges cluster config to the in-memory KV store.

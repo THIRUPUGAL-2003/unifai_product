@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -18,7 +19,7 @@ const defaults: LoadBalancerConfig = {
 };
 
 export default function LoadBalancerSettingsView() {
-	const { data, isLoading: loading } = useGetLoadBalancerConfigQuery();
+	const { data, isLoading: loading, isError, error, refetch } = useGetLoadBalancerConfigQuery();
 	const [updateConfig, { isLoading: saving }] = useUpdateLoadBalancerConfigMutation();
 	const [config, setConfig] = useState<LoadBalancerConfig>(defaults);
 
@@ -53,6 +54,20 @@ export default function LoadBalancerSettingsView() {
 
 	if (loading) {
 		return <div className="text-muted-foreground p-6 text-sm">Loading settings…</div>;
+	}
+
+	if (isError) {
+		return (
+			<div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-1">
+				<QueryErrorBanner
+					testId="load-balancer-settings-query-error"
+					message={getErrorMessage(error) || "Failed to load load balancer settings."}
+				/>
+				<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetch()}>
+					Retry
+				</Button>
+			</div>
+		);
 	}
 
 	const rows: { key: keyof LoadBalancerConfig; title: string; description: string }[] = [

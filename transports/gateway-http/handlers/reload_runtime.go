@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/cluster"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/connectors"
-	"github.com/raksha/raksha/framework/loadbalancer"
-	"github.com/raksha/raksha/framework/mcptoolgroups"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/cluster"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/connectors"
+	"github.com/gateway/gateway/framework/loadbalancer"
+	"github.com/gateway/gateway/framework/mcptoolgroups"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 )
 
 // ReloadEnterpriseRuntimeFromStore refreshes all workspace-backed runtimes.

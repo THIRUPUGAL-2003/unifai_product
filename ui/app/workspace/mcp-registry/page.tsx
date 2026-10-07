@@ -3,7 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { getErrorMessage, useGetMCPClientsQuery } from "@/lib/store";
 import { parseAsArrayOf, parseAsBoolean, parseAsInteger, parseAsString, useQueryStates } from "nuqs";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MCPClientsFilterSidebar, type MCPClientFilters } from "./views/mcpClientsFilterSidebar";
 import MCPClientsTable from "./views/mcpClientsTable";
 
@@ -72,6 +72,8 @@ export default function MCPServersPage() {
 		[setUrlState],
 	);
 
+	const [clientsPollMs, setClientsPollMs] = useState(POLLING_INTERVAL);
+
 	const filtersActive =
 		filters.connection_types.length > 0 ||
 		filters.auth_types.length > 0 ||
@@ -102,9 +104,13 @@ export default function MCPServersPage() {
 			disabled: resolveBooleanFacet(filters.status),
 		},
 		{
-			pollingInterval: POLLING_INTERVAL,
+			pollingInterval: clientsPollMs,
 		},
 	);
+
+	useEffect(() => {
+		setClientsPollMs(isError ? 0 : POLLING_INTERVAL);
+	}, [isError]);
 
 	const mcpClients = mcpClientsData?.clients || [];
 	const totalCount = mcpClientsData?.total_count || 0;
@@ -120,7 +126,7 @@ export default function MCPServersPage() {
 	useEffect(() => {
 		if (error) {
 			const message = getErrorMessage(error);
-			if (message.toLowerCase().includes("mcp is not configured in this raksha instance")) return;
+			if (message.toLowerCase().includes("mcp is not configured in this gateway instance")) return;
 			toast({
 				title: "Error",
 				description: message,

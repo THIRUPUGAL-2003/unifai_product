@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -26,7 +26,7 @@ func NewUIHandler(uiContent embed.FS) *UIHandler {
 }
 
 // RegisterRoutes registers the UI routes with the provided router.
-func (h *UIHandler) RegisterRoutes(router *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *UIHandler) RegisterRoutes(router *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	router.GET("/", lib.ChainMiddlewares(h.serveDashboard, middlewares...))
 	router.GET("/{filepath:*}", lib.ChainMiddlewares(h.serveDashboard, middlewares...))
 }

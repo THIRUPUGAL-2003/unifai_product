@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
 	"gorm.io/gorm"
 )
 

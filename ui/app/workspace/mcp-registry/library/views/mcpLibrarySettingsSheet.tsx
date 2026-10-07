@@ -37,8 +37,8 @@ interface MCPLibrarySettingsSheetProps {
 
 export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsSheetProps) {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Update);
-	const { data: rakshaConfig, isLoading: isConfigLoading, isError: isConfigError } = useGetCoreConfigQuery({ fromDB: true });
-	const config = rakshaConfig?.framework_config;
+	const { data: gatewayConfig, isLoading: isConfigLoading, isError: isConfigError } = useGetCoreConfigQuery({ fromDB: true });
+	const config = gatewayConfig?.framework_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [forceSyncMCPLibrary, { isLoading: isForceSyncing }] = useForceSyncMCPLibraryMutation();
 
@@ -74,15 +74,15 @@ export function MCPLibrarySettingsSheet({ open, onClose }: MCPLibrarySettingsShe
 	}, [config, formValues, isDirty]);
 
 	const onSubmit = async (data: MCPLibrarySettingsFormData) => {
-		if (!rakshaConfig) {
+		if (!gatewayConfig) {
 			toast.error("Unable to load current settings. Please retry.");
 			return;
 		}
 		try {
 			await updateCoreConfig({
-				...rakshaConfig,
+				...gatewayConfig,
 				framework_config: {
-					...rakshaConfig.framework_config,
+					...gatewayConfig.framework_config,
 					mcp_library_url: data.mcp_library_url,
 					mcp_library_sync_interval: data.mcp_library_sync_interval_hours * 3600,
 				},

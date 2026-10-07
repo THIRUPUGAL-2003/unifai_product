@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import {
 	useGetLogsProviderCostHistogramQuery,
 	useGetLogsProviderLatencyHistogramQuery,
@@ -7,7 +8,7 @@ import {
 	useLazyGetLogsProviderTokenHistogramQuery,
 } from "@/lib/store";
 import type { LogFilters } from "@/lib/types/logs";
-import { forwardRef, useCallback, useImperativeHandle, useMemo } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import type { DashboardData } from "../../utils/exportUtils";
 import type { ChartType } from "../charts/chartTypeToggle";
 import { ProviderUsageTab } from "../providerUsageTab";
@@ -66,14 +67,24 @@ export const ProviderUsageTabView = forwardRef<ProviderUsageTabViewHandle, Provi
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
+	const [pollMs, setPollMs] = useState(pollingInterval ?? 0);
 	const skipOpts = useMemo(
-		() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
-		[active, pollingInterval],
+		() => ({ skip: !active, pollingInterval: pollMs, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
+		[active, pollMs],
 	);
 
-	const { data: providerCostData, isLoading: loadingProviderCost } = useGetLogsProviderCostHistogramQuery(fetchArg, skipOpts);
-	const { data: providerTokenData, isLoading: loadingProviderTokens } = useGetLogsProviderTokenHistogramQuery(fetchArg, skipOpts);
-	const { data: providerLatencyData, isLoading: loadingProviderLatency } = useGetLogsProviderLatencyHistogramQuery(fetchArg, skipOpts);
+	const { data: providerCostData, isLoading: loadingProviderCost, isError: errCost } = useGetLogsProviderCostHistogramQuery(fetchArg, skipOpts);
+	const { data: providerTokenData, isLoading: loadingProviderTokens, isError: errTokens } = useGetLogsProviderTokenHistogramQuery(fetchArg, skipOpts);
+	const {
+		data: providerLatencyData,
+		isLoading: loadingProviderLatency,
+		isError: errLatency,
+	} = useGetLogsProviderLatencyHistogramQuery(fetchArg, skipOpts);
+	const queryFailed = errCost || errTokens || errLatency;
+
+	useEffect(() => {
+		setPollMs(queryFailed ? 0 : (pollingInterval ?? 0));
+	}, [queryFailed, pollingInterval]);
 
 	const [triggerProviderCost] = useLazyGetLogsProviderCostHistogramQuery();
 	const [triggerProviderTokens] = useLazyGetLogsProviderTokenHistogramQuery();
@@ -119,31 +130,34 @@ export const ProviderUsageTabView = forwardRef<ProviderUsageTabViewHandle, Provi
 	const providerLatencyProviders = useMemo(() => sanitizeSeriesLabels(providerLatencyData?.providers), [providerLatencyData?.providers]);
 
 	return (
-		<ProviderUsageTab
-			providerCostData={providerCostData ?? null}
-			providerTokenData={providerTokenData ?? null}
-			providerLatencyData={providerLatencyData ?? null}
-			loadingProviderCost={loadingProviderCost}
-			loadingProviderTokens={loadingProviderTokens}
-			loadingProviderLatency={loadingProviderLatency}
-			startTime={startTime}
-			endTime={endTime}
-			providerCostChartType={providerCostChartType}
-			providerTokenChartType={providerTokenChartType}
-			providerLatencyChartType={providerLatencyChartType}
-			providerCostProvider={providerCostProvider}
-			providerTokenProvider={providerTokenProvider}
-			providerLatencyProvider={providerLatencyProvider}
-			availableProviders={availableProviders}
-			providerCostProviders={providerCostProviders}
-			providerTokenProviders={providerTokenProviders}
-			providerLatencyProviders={providerLatencyProviders}
-			onProviderCostChartToggle={onProviderCostChartToggle}
-			onProviderTokenChartToggle={onProviderTokenChartToggle}
-			onProviderLatencyChartToggle={onProviderLatencyChartToggle}
-			onProviderCostProviderChange={onProviderCostProviderChange}
-			onProviderTokenProviderChange={onProviderTokenProviderChange}
-			onProviderLatencyProviderChange={onProviderLatencyProviderChange}
-		/>
+		<div className="flex h-full flex-col gap-3">
+			{queryFailed ? <QueryErrorBanner testId="dashboard-provider-usage-query-error" /> : null}
+			<ProviderUsageTab
+				providerCostData={providerCostData ?? null}
+				providerTokenData={providerTokenData ?? null}
+				providerLatencyData={providerLatencyData ?? null}
+				loadingProviderCost={loadingProviderCost}
+				loadingProviderTokens={loadingProviderTokens}
+				loadingProviderLatency={loadingProviderLatency}
+				startTime={startTime}
+				endTime={endTime}
+				providerCostChartType={providerCostChartType}
+				providerTokenChartType={providerTokenChartType}
+				providerLatencyChartType={providerLatencyChartType}
+				providerCostProvider={providerCostProvider}
+				providerTokenProvider={providerTokenProvider}
+				providerLatencyProvider={providerLatencyProvider}
+				availableProviders={availableProviders}
+				providerCostProviders={providerCostProviders}
+				providerTokenProviders={providerTokenProviders}
+				providerLatencyProviders={providerLatencyProviders}
+				onProviderCostChartToggle={onProviderCostChartToggle}
+				onProviderTokenChartToggle={onProviderTokenChartToggle}
+				onProviderLatencyChartToggle={onProviderLatencyChartToggle}
+				onProviderCostProviderChange={onProviderCostProviderChange}
+				onProviderTokenProviderChange={onProviderTokenProviderChange}
+				onProviderLatencyProviderChange={onProviderLatencyProviderChange}
+			/>
+		</div>
 	);
 });

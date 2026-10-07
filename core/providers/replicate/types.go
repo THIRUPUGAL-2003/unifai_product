@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // ==================== REQUEST TYPES ====================
@@ -456,8 +456,8 @@ func ParseReplicateTimestamp(timestamp string) int64 {
 	return t.Unix()
 }
 
-// ToRakshaPredictionStatus converts Replicate status to Raksha status
-func ToRakshaPredictionStatus(status ReplicatePredictionStatus) string {
+// ToGatewayPredictionStatus converts Replicate status to Gateway status
+func ToGatewayPredictionStatus(status ReplicatePredictionStatus) string {
 	switch status {
 	case ReplicatePredictionStatusStarting:
 		return "starting"

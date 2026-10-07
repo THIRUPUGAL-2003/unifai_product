@@ -5,12 +5,12 @@ import (
 	"os"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunTextCompletionTest tests text completion functionality
-func RunTextCompletionTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunTextCompletionTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.TextCompletion || testConfig.TextModel == "" {
 		t.Logf("⏭️ Text completion not supported for provider %s", testConfig.Provider)
 		return
@@ -22,14 +22,14 @@ func RunTextCompletionTest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 		}
 
 		prompt := "In fruits, A is for apple and B is for"
-		request := &schemas.RakshaTextCompletionRequest{
+		request := &schemas.GatewayTextCompletionRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.TextModel,
 			Input: &schemas.TextCompletionInput{
 				PromptStr: &prompt,
 			},
 			Params: &schemas.TextCompletionParameters{
-				MaxTokens: raksha.Ptr(100),
+				MaxTokens: gateway.Ptr(100),
 			},
 			Fallbacks: testConfig.TextCompletionFallbacks,
 		}
@@ -65,13 +65,13 @@ func RunTextCompletionTest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		response, rakshaErr := WithTextCompletionTestRetry(t, textCompletionRetryConfig, retryContext, expectations, "TextCompletion", func() (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		response, gatewayErr := WithTextCompletionTestRetry(t, textCompletionRetryConfig, retryContext, expectations, "TextCompletion", func() (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.TextCompletionRequest(bfCtx, request)
 		})
 
-		if rakshaErr != nil {
-			t.Fatalf("❌ TextCompletion request failed after retries: %v", GetErrorMessage(rakshaErr))
+		if gatewayErr != nil {
+			t.Fatalf("❌ TextCompletion request failed after retries: %v", GetErrorMessage(gatewayErr))
 		}
 
 		content := GetTextCompletionContent(response)

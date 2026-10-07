@@ -4,20 +4,20 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/raksha/raksha/core/providers/anthropic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/anthropic"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToCohereChatCompletionRequest converts a Raksha request to Cohere v2 format
-func ToCohereChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) (*CohereChatRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil {
-		return nil, fmt.Errorf("raksha request is nil")
+// ToCohereChatCompletionRequest converts a Gateway request to Cohere v2 format
+func ToCohereChatCompletionRequest(gatewayReq *schemas.GatewayChatRequest) (*CohereChatRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil {
+		return nil, fmt.Errorf("gateway request is nil")
 	}
 
-	messages := rakshaReq.Input
+	messages := gatewayReq.Input
 	cohereReq := &CohereChatRequest{
-		Model: rakshaReq.Model,
+		Model: gatewayReq.Model,
 	}
 
 	// Convert messages to Cohere v2 format
@@ -110,35 +110,35 @@ func ToCohereChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) (*Coher
 	cohereReq.Messages = cohereMessages
 
 	// Convert parameters
-	if rakshaReq.Params != nil {
-		cohereReq.MaxTokens = rakshaReq.Params.MaxCompletionTokens
-		cohereReq.Temperature = rakshaReq.Params.Temperature
-		cohereReq.P = rakshaReq.Params.TopP
-		cohereReq.StopSequences = rakshaReq.Params.Stop
-		cohereReq.FrequencyPenalty = rakshaReq.Params.FrequencyPenalty
-		cohereReq.PresencePenalty = rakshaReq.Params.PresencePenalty
+	if gatewayReq.Params != nil {
+		cohereReq.MaxTokens = gatewayReq.Params.MaxCompletionTokens
+		cohereReq.Temperature = gatewayReq.Params.Temperature
+		cohereReq.P = gatewayReq.Params.TopP
+		cohereReq.StopSequences = gatewayReq.Params.Stop
+		cohereReq.FrequencyPenalty = gatewayReq.Params.FrequencyPenalty
+		cohereReq.PresencePenalty = gatewayReq.Params.PresencePenalty
 
 		// Convert reasoning
-		if rakshaReq.Params.Reasoning != nil {
-			if rakshaReq.Params.Reasoning.MaxTokens != nil {
+		if gatewayReq.Params.Reasoning != nil {
+			if gatewayReq.Params.Reasoning.MaxTokens != nil {
 				thinking := &CohereThinking{
 					Type: ThinkingTypeEnabled,
 				}
-				if *rakshaReq.Params.Reasoning.MaxTokens == -1 {
+				if *gatewayReq.Params.Reasoning.MaxTokens == -1 {
 					// cohere does not support dynamic reasoning budget like gemini
 					// setting it to minimum reasoning budget
 					thinking.TokenBudget = schemas.Ptr(anthropic.MinimumReasoningMaxTokens)
 				} else {
-					thinking.TokenBudget = rakshaReq.Params.Reasoning.MaxTokens
+					thinking.TokenBudget = gatewayReq.Params.Reasoning.MaxTokens
 				}
 				cohereReq.Thinking = thinking
-			} else if rakshaReq.Params.Reasoning.Effort != nil {
-				if *rakshaReq.Params.Reasoning.Effort != "none" {
-					maxCompletionTokens := providerUtils.GetMaxOutputTokensOrDefault(rakshaReq.Model, DefaultCompletionMaxTokens)
-					if rakshaReq.Params.MaxCompletionTokens != nil {
-						maxCompletionTokens = *rakshaReq.Params.MaxCompletionTokens
+			} else if gatewayReq.Params.Reasoning.Effort != nil {
+				if *gatewayReq.Params.Reasoning.Effort != "none" {
+					maxCompletionTokens := providerUtils.GetMaxOutputTokensOrDefault(gatewayReq.Model, DefaultCompletionMaxTokens)
+					if gatewayReq.Params.MaxCompletionTokens != nil {
+						maxCompletionTokens = *gatewayReq.Params.MaxCompletionTokens
 					}
-					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*rakshaReq.Params.Reasoning.Effort, MinimumReasoningMaxTokens, maxCompletionTokens)
+					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*gatewayReq.Params.Reasoning.Effort, MinimumReasoningMaxTokens, maxCompletionTokens)
 					if err != nil {
 						return nil, err
 					}
@@ -155,15 +155,15 @@ func ToCohereChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) (*Coher
 		}
 
 		// Convert response format
-		if rakshaReq.Params.ResponseFormat != nil {
-			cohereReq.ResponseFormat = convertResponseFormatToCohere(rakshaReq.Params.ResponseFormat)
+		if gatewayReq.Params.ResponseFormat != nil {
+			cohereReq.ResponseFormat = convertResponseFormatToCohere(gatewayReq.Params.ResponseFormat)
 		}
 
 		// Convert extra params
-		if rakshaReq.Params.ExtraParams != nil {
+		if gatewayReq.Params.ExtraParams != nil {
 			// Handle thinking parameter
-			cohereReq.ExtraParams = rakshaReq.Params.ExtraParams
-			if thinkingParam, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "thinking"); ok {
+			cohereReq.ExtraParams = gatewayReq.Params.ExtraParams
+			if thinkingParam, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "thinking"); ok {
 				if thinkingMap, ok := thinkingParam.(map[string]interface{}); ok {
 					thinking := &CohereThinking{}
 					if typeStr, ok := schemas.SafeExtractString(thinkingMap["type"]); ok {
@@ -180,26 +180,26 @@ func ToCohereChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) (*Coher
 			}
 
 			// Handle other Cohere-specific extra params
-			if safetyMode, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["safety_mode"]); ok {
+			if safetyMode, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["safety_mode"]); ok {
 				delete(cohereReq.ExtraParams, "safety_mode")
 				cohereReq.SafetyMode = safetyMode
 			}
 
-			if logProbs, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["log_probs"]); ok {
+			if logProbs, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["log_probs"]); ok {
 				delete(cohereReq.ExtraParams, "log_probs")
 				cohereReq.LogProbs = logProbs
 			}
 
-			if strictToolChoice, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["strict_tool_choice"]); ok {
+			if strictToolChoice, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["strict_tool_choice"]); ok {
 				delete(cohereReq.ExtraParams, "strict_tool_choice")
 				cohereReq.StrictToolChoice = strictToolChoice
 			}
 		}
 
 		// Convert tools to Cohere-specific format (without "strict" field)
-		if rakshaReq.Params.Tools != nil {
-			cohereTools := make([]CohereChatRequestTool, len(rakshaReq.Params.Tools))
-			for i, tool := range rakshaReq.Params.Tools {
+		if gatewayReq.Params.Tools != nil {
+			cohereTools := make([]CohereChatRequestTool, len(gatewayReq.Params.Tools))
+			for i, tool := range gatewayReq.Params.Tools {
 				cohereTools[i] = CohereChatRequestTool{
 					Type: string(tool.Type),
 				}
@@ -216,8 +216,8 @@ func ToCohereChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) (*Coher
 		}
 
 		// Convert tool choice
-		if rakshaReq.Params.ToolChoice != nil {
-			toolChoice := rakshaReq.Params.ToolChoice
+		if gatewayReq.Params.ToolChoice != nil {
+			toolChoice := gatewayReq.Params.ToolChoice
 
 			if toolChoice.ChatToolChoiceStr != nil {
 				switch schemas.ChatToolChoiceType(*toolChoice.ChatToolChoiceStr) {
@@ -244,71 +244,71 @@ func ToCohereChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) (*Coher
 	return cohereReq, nil
 }
 
-// ToRakshaChatRequest converts a Cohere v2 chat request to Raksha format
-func (req *CohereChatRequest) ToRakshaChatRequest(ctx *schemas.RakshaContext) *schemas.RakshaChatRequest {
+// ToGatewayChatRequest converts a Cohere v2 chat request to Gateway format
+func (req *CohereChatRequest) ToGatewayChatRequest(ctx *schemas.GatewayContext) *schemas.GatewayChatRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	rakshaReq := &schemas.RakshaChatRequest{
+	gatewayReq := &schemas.GatewayChatRequest{
 		Provider: provider,
 		Model:    model,
 		Params:   &schemas.ChatParameters{},
 	}
 	// Convert messages
 	if req.Messages != nil {
-		rakshaMessages := make([]schemas.ChatMessage, len(req.Messages))
+		gatewayMessages := make([]schemas.ChatMessage, len(req.Messages))
 		for i, message := range req.Messages {
-			rakshaMessages[i] = *message.ToRakshaChatMessage()
+			gatewayMessages[i] = *message.ToGatewayChatMessage()
 		}
-		rakshaReq.Input = rakshaMessages
+		gatewayReq.Input = gatewayMessages
 	}
 	// Convert parameters
 	if req.MaxTokens != nil {
-		rakshaReq.Params.MaxCompletionTokens = req.MaxTokens
+		gatewayReq.Params.MaxCompletionTokens = req.MaxTokens
 	}
 	if req.Temperature != nil {
-		rakshaReq.Params.Temperature = req.Temperature
+		gatewayReq.Params.Temperature = req.Temperature
 	}
 	if req.P != nil {
-		rakshaReq.Params.TopP = req.P
+		gatewayReq.Params.TopP = req.P
 	}
 	if req.StopSequences != nil {
-		rakshaReq.Params.Stop = req.StopSequences
+		gatewayReq.Params.Stop = req.StopSequences
 	}
 	if req.FrequencyPenalty != nil {
-		rakshaReq.Params.FrequencyPenalty = req.FrequencyPenalty
+		gatewayReq.Params.FrequencyPenalty = req.FrequencyPenalty
 	}
 	if req.PresencePenalty != nil {
-		rakshaReq.Params.PresencePenalty = req.PresencePenalty
+		gatewayReq.Params.PresencePenalty = req.PresencePenalty
 	}
 
 	// Convert reasoning
 	if req.Thinking != nil {
 		if req.Thinking.Type == ThinkingTypeDisabled {
-			rakshaReq.Params.Reasoning = &schemas.ChatReasoning{
+			gatewayReq.Params.Reasoning = &schemas.ChatReasoning{
 				Effort: schemas.Ptr("none"),
 			}
 		} else {
-			rakshaReq.Params.Reasoning = &schemas.ChatReasoning{
+			gatewayReq.Params.Reasoning = &schemas.ChatReasoning{
 				Effort: schemas.Ptr("auto"),
 			}
 			if req.Thinking.TokenBudget != nil {
-				rakshaReq.Params.Reasoning.MaxTokens = req.Thinking.TokenBudget
+				gatewayReq.Params.Reasoning.MaxTokens = req.Thinking.TokenBudget
 			}
 		}
 	}
 	if req.ResponseFormat != nil {
-		rakshaReq.Params.ResponseFormat = convertCohereResponseFormatToRaksha(req.ResponseFormat)
+		gatewayReq.Params.ResponseFormat = convertCohereResponseFormatToGateway(req.ResponseFormat)
 	}
 
 	// Convert tools
 	if req.Tools != nil {
-		rakshaTools := make([]schemas.ChatTool, len(req.Tools))
+		gatewayTools := make([]schemas.ChatTool, len(req.Tools))
 		for i, tool := range req.Tools {
-			rakshaTools[i] = schemas.ChatTool{
+			gatewayTools[i] = schemas.ChatTool{
 				Type: schemas.ChatToolTypeFunction,
 				Function: &schemas.ChatToolFunction{
 					Name:        tool.Function.Name,
@@ -317,22 +317,22 @@ func (req *CohereChatRequest) ToRakshaChatRequest(ctx *schemas.RakshaContext) *s
 				},
 			}
 		}
-		rakshaReq.Params.Tools = rakshaTools
+		gatewayReq.Params.Tools = gatewayTools
 	}
 
 	// Convert tool choice
 	if req.ToolChoice != nil {
 		switch *req.ToolChoice {
 		case ToolChoiceNone:
-			rakshaReq.Params.ToolChoice = &schemas.ChatToolChoice{
+			gatewayReq.Params.ToolChoice = &schemas.ChatToolChoice{
 				ChatToolChoiceStr: schemas.Ptr(string(schemas.ChatToolChoiceTypeNone)),
 			}
 		case ToolChoiceRequired:
-			rakshaReq.Params.ToolChoice = &schemas.ChatToolChoice{
+			gatewayReq.Params.ToolChoice = &schemas.ChatToolChoice{
 				ChatToolChoiceStr: schemas.Ptr(string(schemas.ChatToolChoiceTypeRequired)),
 			}
 		case ToolChoiceAuto:
-			rakshaReq.Params.ToolChoice = &schemas.ChatToolChoice{
+			gatewayReq.Params.ToolChoice = &schemas.ChatToolChoice{
 				ChatToolChoiceStr: schemas.Ptr(string(schemas.ChatToolChoiceTypeAny)),
 			}
 		}
@@ -359,47 +359,47 @@ func (req *CohereChatRequest) ToRakshaChatRequest(ctx *schemas.RakshaContext) *s
 		extraParams["thinking"] = thinkingMap
 	}
 	if len(extraParams) > 0 {
-		rakshaReq.Params.ExtraParams = extraParams
+		gatewayReq.Params.ExtraParams = extraParams
 	}
 
-	return rakshaReq
+	return gatewayReq
 }
 
-// ToRakshaChatResponse converts a Cohere v2 response to Raksha format
-func (response *CohereChatResponse) ToRakshaChatResponse(model string) *schemas.RakshaChatResponse {
+// ToGatewayChatResponse converts a Cohere v2 response to Gateway format
+func (response *CohereChatResponse) ToGatewayChatResponse(model string) *schemas.GatewayChatResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaChatResponse{
+	gatewayResponse := &schemas.GatewayChatResponse{
 		ID:     response.ID,
 		Model:  model,
 		Object: "chat.completion",
-		Choices: []schemas.RakshaResponseChoice{
+		Choices: []schemas.GatewayResponseChoice{
 			{
 				Index:                       0,
 				ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{},
 			},
 		},
 		Created:     int(time.Now().Unix()),
-		ExtraFields: schemas.RakshaResponseExtraFields{},
+		ExtraFields: schemas.GatewayResponseExtraFields{},
 	}
 
 	// Convert messages
 	if response.Message != nil {
-		rakshaMessage := response.Message.ToRakshaChatMessage()
-		rakshaResponse.Choices[0].ChatNonStreamResponseChoice.Message = rakshaMessage
+		gatewayMessage := response.Message.ToGatewayChatMessage()
+		gatewayResponse.Choices[0].ChatNonStreamResponseChoice.Message = gatewayMessage
 	}
 
 	// Convert finish reason
 	if response.FinishReason != nil {
-		finishReason := ConvertCohereFinishReasonToRaksha(*response.FinishReason)
-		rakshaResponse.Choices[0].FinishReason = schemas.Ptr(finishReason)
+		finishReason := ConvertCohereFinishReasonToGateway(*response.FinishReason)
+		gatewayResponse.Choices[0].FinishReason = schemas.Ptr(finishReason)
 	}
 
 	// Convert usage information
 	if response.Usage != nil {
-		usage := &schemas.RakshaLLMUsage{}
+		usage := &schemas.GatewayLLMUsage{}
 
 		if response.Usage.Tokens != nil {
 			if response.Usage.Tokens.InputTokens != nil {
@@ -416,20 +416,20 @@ func (response *CohereChatResponse) ToRakshaChatResponse(model string) *schemas.
 			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 		}
 
-		rakshaResponse.Usage = usage
+		gatewayResponse.Usage = usage
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
-func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaChatResponse, *schemas.RakshaError, bool) {
+func (chunk *CohereStreamEvent) ToGatewayChatCompletionStream() (*schemas.GatewayChatResponse, *schemas.GatewayError, bool) {
 	switch chunk.Type {
 	case StreamEventMessageStart:
 		if chunk.Delta != nil && chunk.Delta.Message != nil && chunk.Delta.Message.Role != nil {
 			// Create streaming response for this delta
-			streamResponse := &schemas.RakshaChatResponse{
+			streamResponse := &schemas.GatewayChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.RakshaResponseChoice{
+				Choices: []schemas.GatewayResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -451,9 +451,9 @@ func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaC
 			chunk.Delta.Message.Content.CohereStreamContentObject != nil {
 			if chunk.Delta.Message.Content.CohereStreamContentObject.Text != nil {
 				// Try to cast content to CohereStreamContent
-				streamResponse := &schemas.RakshaChatResponse{
+				streamResponse := &schemas.GatewayChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.RakshaResponseChoice{
+					Choices: []schemas.GatewayResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -468,9 +468,9 @@ func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaC
 				return streamResponse, nil, false
 			} else if chunk.Delta.Message.Content.CohereStreamContentObject.Thinking != nil {
 				thinkingText := *chunk.Delta.Message.Content.CohereStreamContentObject.Thinking
-				streamResponse := &schemas.RakshaChatResponse{
+				streamResponse := &schemas.GatewayChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.RakshaResponseChoice{
+					Choices: []schemas.GatewayResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -479,7 +479,7 @@ func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaC
 									ReasoningDetails: []schemas.ChatReasoningDetails{
 										{
 											Index: 0,
-											Type:  schemas.RakshaReasoningDetailsTypeText,
+											Type:  schemas.GatewayReasoningDetailsTypeText,
 											Text:  schemas.Ptr(thinkingText),
 										},
 									},
@@ -495,9 +495,9 @@ func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaC
 
 	case StreamEventToolPlanDelta:
 		if chunk.Delta != nil && chunk.Delta.Message != nil && chunk.Delta.Message.ToolPlan != nil {
-			streamResponse := &schemas.RakshaChatResponse{
+			streamResponse := &schemas.GatewayChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.RakshaResponseChoice{
+				Choices: []schemas.GatewayResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -537,9 +537,9 @@ func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaC
 				toolCall.Function.Arguments = cohereToolCall.Function.Arguments
 			}
 
-			streamResponse := &schemas.RakshaChatResponse{
+			streamResponse := &schemas.GatewayChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.RakshaResponseChoice{
+				Choices: []schemas.GatewayResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -563,10 +563,10 @@ func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaC
 	case StreamEventMessageEnd:
 		if chunk.Delta != nil {
 			var finishReason string
-			usage := &schemas.RakshaLLMUsage{}
+			usage := &schemas.GatewayLLMUsage{}
 			// Set finish reason
 			if chunk.Delta.FinishReason != nil {
-				finishReason = ConvertCohereFinishReasonToRaksha(*chunk.Delta.FinishReason)
+				finishReason = ConvertCohereFinishReasonToGateway(*chunk.Delta.FinishReason)
 			}
 
 			// Set usage information
@@ -582,9 +582,9 @@ func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaC
 				}
 			}
 
-			streamResponse := &schemas.RakshaChatResponse{
+			streamResponse := &schemas.GatewayChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.RakshaResponseChoice{
+				Choices: []schemas.GatewayResponseChoice{
 					{
 						Index:        0,
 						FinishReason: &finishReason,
@@ -604,7 +604,7 @@ func (chunk *CohereStreamEvent) ToRakshaChatCompletionStream() (*schemas.RakshaC
 	return nil, nil, false
 }
 
-func (cm *CohereMessage) ToRakshaChatMessage() *schemas.ChatMessage {
+func (cm *CohereMessage) ToGatewayChatMessage() *schemas.ChatMessage {
 	if cm == nil {
 		return nil
 	}
@@ -643,7 +643,7 @@ func (cm *CohereMessage) ToRakshaChatMessage() *schemas.ChatMessage {
 				} else if block.Type == CohereContentBlockTypeThinking && block.Thinking != nil {
 					reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 						Index: len(reasoningDetails),
-						Type:  schemas.RakshaReasoningDetailsTypeText,
+						Type:  schemas.GatewayReasoningDetailsTypeText,
 						Text:  block.Thinking,
 					})
 					if len(reasoningText) > 0 {
@@ -689,7 +689,7 @@ func (cm *CohereMessage) ToRakshaChatMessage() *schemas.ChatMessage {
 			// Arguments is a string, not a pointer, so it's safe to access directly
 			functionArguments = toolCall.Function.Arguments
 
-			rakshaToolCall := schemas.ChatAssistantMessageToolCall{
+			gatewayToolCall := schemas.ChatAssistantMessageToolCall{
 				Index: uint16(len(toolCalls)),
 				ID:    toolCall.ID,
 				Function: schemas.ChatAssistantMessageToolCallFunction{
@@ -697,7 +697,7 @@ func (cm *CohereMessage) ToRakshaChatMessage() *schemas.ChatMessage {
 					Arguments: functionArguments,
 				},
 			}
-			toolCalls = append(toolCalls, rakshaToolCall)
+			toolCalls = append(toolCalls, gatewayToolCall)
 		}
 	}
 
@@ -717,16 +717,16 @@ func (cm *CohereMessage) ToRakshaChatMessage() *schemas.ChatMessage {
 		assistantMessage.Reasoning = schemas.Ptr(reasoningText)
 	}
 
-	rakshaMessage := &schemas.ChatMessage{
+	gatewayMessage := &schemas.ChatMessage{
 		Role:                 schemas.ChatMessageRole(cm.Role),
 		Content:              messageContent,
 		ChatAssistantMessage: assistantMessage,
 	}
 
 	if cm.Role == "tool" {
-		rakshaMessage.ChatToolMessage = &schemas.ChatToolMessage{
+		gatewayMessage.ChatToolMessage = &schemas.ChatToolMessage{
 			ToolCallID: cm.ToolCallID,
 		}
 	}
-	return rakshaMessage
+	return gatewayMessage
 }

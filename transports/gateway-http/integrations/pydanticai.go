@@ -4,9 +4,9 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 )
 
 // PydanticAIRouter holds route registrations for Pydantic AI endpoints.
@@ -17,8 +17,8 @@ type PydanticAIRouter struct {
 	*GenericRouter
 }
 
-// NewPydanticAIRouter creates a new PydanticAIRouter with the given raksha client.
-func NewPydanticAIRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *PydanticAIRouter {
+// NewPydanticAIRouter creates a new PydanticAIRouter with the given gateway client.
+func NewPydanticAIRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *PydanticAIRouter {
 	routes := []RouteConfig{}
 	// Add OpenAI routes to Pydantic AI for OpenAI API compatibility
 	// Supports: chat completions, embeddings, speech, transcriptions, responses
@@ -47,8 +47,8 @@ func withPydanticResponsesNullNormalization(routes []RouteConfig) []RouteConfig 
 		}
 
 		if routes[i].ResponsesResponseConverter != nil {
-			routes[i].ResponsesResponseConverter = func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
-				// For pydantic responses endpoint, prefer normalized raksha output
+			routes[i].ResponsesResponseConverter = func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesResponse) (interface{}, error) {
+				// For pydantic responses endpoint, prefer normalized gateway output
 				// instead of raw passthrough, to keep null handling consistent.
 				return resp.WithDefaults(), nil
 			}
@@ -56,7 +56,7 @@ func withPydanticResponsesNullNormalization(routes []RouteConfig) []RouteConfig 
 
 		if routes[i].StreamConfig != nil && routes[i].StreamConfig.ResponsesStreamResponseConverter != nil {
 			// Match non-stream behavior: prefer normalized output (raw->normalizePydanticResponsesRawStreamChunk, typed->resp.WithDefaults()+ensurePydanticResponsesStreamTextFields).
-			routes[i].StreamConfig.ResponsesStreamResponseConverter = func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
+			routes[i].StreamConfig.ResponsesStreamResponseConverter = func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
 				if resp == nil {
 					return "", nil, nil
 				}
@@ -78,7 +78,7 @@ func withPydanticResponsesNullNormalization(routes []RouteConfig) []RouteConfig 
 	return routes
 }
 
-func ensurePydanticResponsesStreamTextFields(resp *schemas.RakshaResponsesStreamResponse) {
+func ensurePydanticResponsesStreamTextFields(resp *schemas.GatewayResponsesStreamResponse) {
 	if resp == nil {
 		return
 	}
@@ -86,11 +86,11 @@ func ensurePydanticResponsesStreamTextFields(resp *schemas.RakshaResponsesStream
 	switch resp.Type {
 	case schemas.ResponsesStreamResponseTypeOutputTextDelta:
 		if resp.Delta == nil {
-			resp.Delta = raksha.Ptr("")
+			resp.Delta = gateway.Ptr("")
 		}
 	case schemas.ResponsesStreamResponseTypeOutputTextDone:
 		if resp.Text == nil {
-			resp.Text = raksha.Ptr("")
+			resp.Text = gateway.Ptr("")
 		}
 	}
 }

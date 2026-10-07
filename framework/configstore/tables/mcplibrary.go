@@ -3,7 +3,7 @@ package tables
 import (
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // TableMCPLibrary represents a single discoverable MCP server in the MCP

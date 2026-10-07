@@ -1,4 +1,4 @@
-// Package lib provides core functionality for the Raksha HTTP service,
+// Package lib provides core functionality for the Gateway HTTP service,
 // including context propagation, header management, and integration with monitoring systems.
 package lib
 
@@ -21,35 +21,35 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/mcp"
-	mcputils "github.com/raksha/raksha/core/mcp/utils"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
-	"github.com/raksha/raksha/framework/envutils"
-	"github.com/raksha/raksha/framework/featureflags"
-	"github.com/raksha/raksha/framework/kvstore"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/mcp_headers"
-	"github.com/raksha/raksha/framework/mcpcatalog"
-	"github.com/raksha/raksha/framework/modelcatalog"
-	"github.com/raksha/raksha/framework/oauth2"
-	"github.com/raksha/raksha/framework/objectstore"
-	plugins "github.com/raksha/raksha/framework/plugins"
-	"github.com/raksha/raksha/framework/vectorstore"
-	"github.com/raksha/raksha/plugins/compat"
-	"github.com/raksha/raksha/plugins/governance"
-	"github.com/raksha/raksha/plugins/governance/complexity"
-	"github.com/raksha/raksha/plugins/guardrails"
-	"github.com/raksha/raksha/plugins/logging"
-	"github.com/raksha/raksha/plugins/maxim"
-	"github.com/raksha/raksha/plugins/otel"
-	"github.com/raksha/raksha/plugins/prompts"
-	"github.com/raksha/raksha/plugins/semanticcache"
-	"github.com/raksha/raksha/plugins/telemetry"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/mcp"
+	mcputils "github.com/gateway/gateway/core/mcp/utils"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/gateway/gateway/framework/envutils"
+	"github.com/gateway/gateway/framework/featureflags"
+	"github.com/gateway/gateway/framework/kvstore"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/mcp_headers"
+	"github.com/gateway/gateway/framework/mcpcatalog"
+	"github.com/gateway/gateway/framework/modelcatalog"
+	"github.com/gateway/gateway/framework/oauth2"
+	"github.com/gateway/gateway/framework/objectstore"
+	plugins "github.com/gateway/gateway/framework/plugins"
+	"github.com/gateway/gateway/framework/vectorstore"
+	"github.com/gateway/gateway/plugins/compat"
+	"github.com/gateway/gateway/plugins/governance"
+	"github.com/gateway/gateway/plugins/governance/complexity"
+	"github.com/gateway/gateway/plugins/guardrails"
+	"github.com/gateway/gateway/plugins/logging"
+	"github.com/gateway/gateway/plugins/maxim"
+	"github.com/gateway/gateway/plugins/otel"
+	"github.com/gateway/gateway/plugins/prompts"
+	"github.com/gateway/gateway/plugins/semanticcache"
+	"github.com/gateway/gateway/plugins/telemetry"
 	"gorm.io/gorm"
 )
 
@@ -59,7 +59,7 @@ import (
 type StreamChunkInterceptor interface {
 	// InterceptChunk processes a chunk before it's written to the client.
 	// Returns the (potentially modified) chunk, or nil to skip the chunk entirely.
-	InterceptChunk(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error)
+	InterceptChunk(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, chunk *schemas.GatewayStreamChunk) (*schemas.GatewayStreamChunk, error)
 }
 
 // HandlerStore provides access to runtime configuration values for handlers.
@@ -87,7 +87,7 @@ type HandlerStore interface {
 	ShouldAllowPerRequestRawOverride() bool
 	// ShouldAllowDirectKeys returns whether callers may bypass the registered key pool via x-uf-direct-key header
 	ShouldAllowDirectKeys() bool
-	// GetMCPExternalClientURL returns the configured external base URL Raksha uses as the
+	// GetMCPExternalClientURL returns the configured external base URL Gateway uses as the
 	// redirect_uri when acting as an OAuth client to upstream MCP servers, or empty string
 	// if not configured (falls back to dynamic Host-header-based URL).
 	GetMCPExternalClientURL() string
@@ -154,7 +154,7 @@ type ServerConfig struct {
 	ReadBufferSize int `json:"read_buffer_size,omitempty"`
 }
 
-// ConfigData represents the configuration data for the Raksha HTTP transport.
+// ConfigData represents the configuration data for the Gateway HTTP transport.
 // It contains the client configuration, provider configurations, MCP configuration,
 // vector store configuration, config store configuration, and logs store configuration.
 type ConfigData struct {
@@ -266,7 +266,7 @@ type FeatureFlagFileValue struct {
 }
 
 // UnmarshalJSON accepts {"enabled": true} (literal bool), {"enabled": "true"}
-// (string literal), or {"enabled": "env.RAKSHA_FOO"} (env-var indirection).
+// (string literal), or {"enabled": "env.GATEWAY_FOO"} (env-var indirection).
 // The string form is critical for Helm because chart values are stringly
 // typed when sourced from env vars.
 func (v *FeatureFlagFileValue) UnmarshalJSON(data []byte) error {
@@ -499,7 +499,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Config represents a high-performance in-memory configuration store for Raksha.
+// Config represents a high-performance in-memory configuration store for Gateway.
 // It provides thread-safe access to provider configurations with database persistence.
 //
 // Features:
@@ -513,7 +513,7 @@ func (cd *ConfigData) UnmarshalJSON(data []byte) error {
 type Config struct {
 	Mu     sync.RWMutex // Exported for direct access from handlers (governance plugin)
 	muMCP  sync.RWMutex
-	client *raksha.Raksha
+	client *gateway.Gateway
 
 	configPath string
 
@@ -526,7 +526,7 @@ type Config struct {
 	ObjectStore     objectstore.ObjectStore
 
 	// oauth2SigningKey caches the immutable OAuth2 signing key used to sign and
-	// verify Raksha-issued /mcp JWTs. The key is created once via an idempotent
+	// verify Gateway-issued /mcp JWTs. The key is created once via an idempotent
 	// insert and never rotated, so it is identical across nodes and immutable for
 	// the process lifetime. Caching it here lets the JWKS, token-issuance, and
 	// JWT-verify paths share a single load — sparing each a DB read + private-key
@@ -569,7 +569,7 @@ type Config struct {
 	OAuthSweepWorker   *oauth2.PerUserOAuthSweepWorker
 
 	// MCPHeadersProvider backs MCPAuthTypePerUserHeaders credential storage.
-	// Constructed alongside OAuthProvider and passed into the Raksha core
+	// Constructed alongside OAuthProvider and passed into the Gateway core
 	// init so the per-user-headers resolver can resolve / persist values
 	// scoped by (auth_mode, identity, mcp_client).
 	MCPHeadersProvider    *mcp_headers.Provider
@@ -595,7 +595,7 @@ type Config struct {
 	EventBroadcaster schemas.EventBroadcaster
 
 	// EnvLabel is a short label (max 10 chars) displayed in the UI sidebar to identify the
-	// environment (e.g. "staging", "prod"). Set via config.json env_label or RAKSHA_ENV_LABEL env var.
+	// environment (e.g. "staging", "prod"). Set via config.json env_label or GATEWAY_ENV_LABEL env var.
 	EnvLabel string
 
 	// StreamingDecompressThreshold overrides the default threshold (10MB) for
@@ -842,10 +842,10 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 		if err := json.Unmarshal(data, &schema); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal schema: %w", err)
 		}
-		if schema["$schema"] != "https://www.getraksha.ai/schema" {
+		if schema["$schema"] != "https://www.getgateway.ai/schema" {
 			yellowColor := "\033[33m"
 			resetColor := "\033[0m"
-			message := fmt.Sprintf("config file %s does not include \"$schema\":\"https://www.getraksha.ai/schema\". Use our official schema file to avoid unexpected behavior.", absConfigFilePath)
+			message := fmt.Sprintf("config file %s does not include \"$schema\":\"https://www.getgateway.ai/schema\". Use our official schema file to avoid unexpected behavior.", absConfigFilePath)
 			boxWidth := 100
 			contentWidth := boxWidth - 4
 			words := strings.Fields(message)
@@ -874,7 +874,7 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 			}
 			fmt.Printf("%s╚%s╝%s\n", yellowColor, strings.Repeat("═", boxWidth-2), resetColor)
 			fmt.Println("")
-			logger.Warn("config file %s does not include \"$schema\":\"https://www.getraksha.ai/schema\". Use our official schema file to avoid unexpected behavior.", absConfigFilePath)
+			logger.Warn("config file %s does not include \"$schema\":\"https://www.getgateway.ai/schema\". Use our official schema file to avoid unexpected behavior.", absConfigFilePath)
 		}
 		// Parse config data
 		if err := json.Unmarshal(data, &configData); err != nil {
@@ -937,7 +937,7 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 	initFrameworkConfig(ctx, config, &configData)
 	// 12. Encryption sync
 	syncEncryption(ctx, config)
-	// 12. Env label (config.json takes precedence over RAKSHA_ENV_LABEL env var)
+	// 12. Env label (config.json takes precedence over GATEWAY_ENV_LABEL env var)
 	truncateLabel := func(s string) string {
 		r := []rune(s)
 		if len(r) > 14 {
@@ -947,7 +947,7 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 	}
 	if label := strings.TrimSpace(configData.EnvLabel); label != "" {
 		config.EnvLabel = truncateLabel(label)
-	} else if label := strings.TrimSpace(os.Getenv("RAKSHA_ENV_LABEL")); label != "" {
+	} else if label := strings.TrimSpace(GatewayEnv("ENV_LABEL")); label != "" {
 		config.EnvLabel = truncateLabel(label)
 	}
 	// 13. WebSocket defaults
@@ -1858,10 +1858,10 @@ func applyMCPGlobalSettingsToClientConfig(ctx context.Context, config *Config, m
 		return
 	}
 
-	// Backfill MCPConfig.ToolManagerConfig from ClientConfig so raksha.Init always receives
+	// Backfill MCPConfig.ToolManagerConfig from ClientConfig so gateway.Init always receives
 	// the authoritative values (which may be DB values preserved by hash reconciliation in
 	// loadClientConfig, or file values applied there on hash mismatch).
-	// Allocate if absent so raksha.Init never falls back to hardcoded defaults.
+	// Allocate if absent so gateway.Init never falls back to hardcoded defaults.
 	if mcpCfg.ToolManagerConfig == nil {
 		mcpCfg.ToolManagerConfig = &schemas.MCPToolManagerConfig{}
 	}
@@ -2175,7 +2175,7 @@ func resolveGovernanceKeyReferences(ctx context.Context, config *Config, governa
 				if err != nil {
 					return fmt.Errorf("routing rule %q target provider_key_name resolution failed: %w", governanceConfig.RoutingRules[i].ID, err)
 				}
-				target.KeyID = raksha.Ptr(keyID)
+				target.KeyID = gateway.Ptr(keyID)
 				target.ProviderKeyName = nil
 			}
 		}
@@ -2199,7 +2199,7 @@ func resolveGovernanceKeyReferences(ctx context.Context, config *Config, governa
 			if err != nil {
 				return fmt.Errorf("pricing override %q provider_key_name resolution failed: %w", override.ID, err)
 			}
-			override.ProviderKeyID = raksha.Ptr(keyID)
+			override.ProviderKeyID = gateway.Ptr(keyID)
 			override.ProviderKeyName = nil
 		}
 
@@ -3691,7 +3691,7 @@ func mergePlugins(ctx context.Context, config *Config, configData *ConfigData) {
 		// Merge new plugins and update if version is higher
 		for _, plugin := range configData.Plugins {
 			if plugin.Version == nil {
-				plugin.Version = raksha.Ptr(int16(1))
+				plugin.Version = gateway.Ptr(int16(1))
 			}
 			existingIdx := slices.IndexFunc(config.PluginConfigs, func(p *schemas.PluginConfig) bool {
 				return p.Name == plugin.Name
@@ -3724,7 +3724,7 @@ func mergePlugins(ctx context.Context, config *Config, configData *ConfigData) {
 				continue
 			}
 			if plugin.Version == nil {
-				plugin.Version = raksha.Ptr(int16(1))
+				plugin.Version = gateway.Ptr(int16(1))
 			}
 			pluginConfig := &configstoreTables.TablePlugin{
 				Name:      plugin.Name,
@@ -3778,7 +3778,7 @@ func syncPluginsFromFile(ctx context.Context, config *Config, configData *Config
 				return fmt.Errorf("failed to deep copy plugin config for %s: %w", plugin.Name, err)
 			}
 			if plugin.Version == nil {
-				plugin.Version = raksha.Ptr(int16(1))
+				plugin.Version = gateway.Ptr(int16(1))
 			}
 			tablePlugin := &configstoreTables.TablePlugin{
 				Name:      plugin.Name,
@@ -4279,9 +4279,13 @@ func initFrameworkConfig(ctx context.Context, config *Config, configData *Config
 // When configData.EncryptionKey is nil (no config file), falls through to env var check.
 func initEncryption(configData *ConfigData) error {
 	if configData.EncryptionKey == nil || configData.EncryptionKey.GetValue() == "" {
-		// Checking if RAKSHA_ENCRYPTION_KEY environment variable is set
-		if os.Getenv("RAKSHA_ENCRYPTION_KEY") != "" {
-			configData.EncryptionKey = schemas.NewSecretVar("env.RAKSHA_ENCRYPTION_KEY")
+		// Prefer GATEWAY_ENCRYPTION_KEY; legacy GATEWAY_ENCRYPTION_KEY still works via GatewayEnv.
+		if GatewayEnv("ENCRYPTION_KEY") != "" {
+			if strings.TrimSpace(os.Getenv("GATEWAY_ENCRYPTION_KEY")) != "" {
+				configData.EncryptionKey = schemas.NewSecretVar("env.GATEWAY_ENCRYPTION_KEY")
+			} else {
+				configData.EncryptionKey = schemas.NewSecretVar("env.GATEWAY_ENCRYPTION_KEY")
+			}
 		}
 	}
 	// Checking if encryption key is set
@@ -4583,7 +4587,7 @@ func (c *Config) GetProviderConfigRaw(provider schemas.ModelProvider) (*configst
 	if !exists {
 		return nil, ErrNotFound
 	}
-	// Return direct reference for maximum performance - this is used by Raksha core
+	// Return direct reference for maximum performance - this is used by Gateway core
 	// CRITICAL: Never modify the returned data as it's shared
 	return &config, nil
 }
@@ -4605,7 +4609,7 @@ func (c *Config) ShouldAllowDirectKeys() bool {
 	return c.ClientConfig.AllowDirectKeys
 }
 
-// GetMCPExternalClientURL returns the configured external base URL Raksha uses as the
+// GetMCPExternalClientURL returns the configured external base URL Gateway uses as the
 // redirect_uri when acting as an OAuth client to upstream MCP servers, or empty string
 // if not configured. Resolves env var references automatically.
 func (c *Config) GetMCPExternalClientURL() string {
@@ -4725,12 +4729,12 @@ type pluginChunkInterceptor struct {
 
 // InterceptChunk processes a chunk through all plugin HTTPTransportStreamChunkHook methods.
 // Plugins are called in reverse order (same as PostHook) so modifications chain correctly.
-func (i *pluginChunkInterceptor) InterceptChunk(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, stream *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
+func (i *pluginChunkInterceptor) InterceptChunk(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, stream *schemas.GatewayStreamChunk) (*schemas.GatewayStreamChunk, error) {
 	for j := len(i.plugins) - 1; j >= 0; j-- {
 		plugin := i.plugins[j]
 		pluginName := plugin.GetName()
 		var (
-			modified *schemas.RakshaStreamChunk
+			modified *schemas.GatewayStreamChunk
 			err      error
 		)
 		func() {
@@ -4845,7 +4849,7 @@ func initFeatureFlags(ctx context.Context, config *Config, configData *ConfigDat
 	// behavior of the previous `!= nil` check. The schemas comment for this
 	// context key declares it as bool, so the assertion is the documented
 	// shape; the comma-ok zero-value handles the unset path cleanly.
-	isEnterprise, _ := ctx.Value(schemas.RakshaContextKeyIsEnterprise).(bool)
+	isEnterprise, _ := ctx.Value(schemas.GatewayContextKeyIsEnterprise).(bool)
 	store, err := featureflags.New(featureflags.Config{IsEnterprise: isEnterprise})
 	if err != nil {
 		return fmt.Errorf("failed to initialize feature flags: %w", err)
@@ -5440,8 +5444,8 @@ func (c *Config) AddProvider(ctx context.Context, provider schemas.ModelProvider
 	}
 	// First add the provider to the store
 	skipDBUpdate := false
-	if ctx.Value(schemas.RakshaContextKeySkipDBUpdate) != nil {
-		if skip, ok := ctx.Value(schemas.RakshaContextKeySkipDBUpdate).(bool); ok {
+	if ctx.Value(schemas.GatewayContextKeySkipDBUpdate) != nil {
+		if skip, ok := ctx.Value(schemas.GatewayContextKeySkipDBUpdate).(bool); ok {
 			skipDBUpdate = skip
 		}
 	}
@@ -5507,8 +5511,8 @@ func (c *Config) UpdateProviderConfig(ctx context.Context, provider schemas.Mode
 		}
 	}
 	skipDBUpdate := false
-	if ctx.Value(schemas.RakshaContextKeySkipDBUpdate) != nil {
-		if skip, ok := ctx.Value(schemas.RakshaContextKeySkipDBUpdate).(bool); ok {
+	if ctx.Value(schemas.GatewayContextKeySkipDBUpdate) != nil {
+		if skip, ok := ctx.Value(schemas.GatewayContextKeySkipDBUpdate).(bool); ok {
 			skipDBUpdate = skip
 		}
 	}
@@ -5572,8 +5576,8 @@ func (c *Config) AddProviderKey(ctx context.Context, provider schemas.ModelProvi
 	updatedConfig.Keys = append(append([]schemas.Key(nil), existingConfig.Keys...), key)
 
 	skipDBUpdate := false
-	if ctx.Value(schemas.RakshaContextKeySkipDBUpdate) != nil {
-		if skip, ok := ctx.Value(schemas.RakshaContextKeySkipDBUpdate).(bool); ok {
+	if ctx.Value(schemas.GatewayContextKeySkipDBUpdate) != nil {
+		if skip, ok := ctx.Value(schemas.GatewayContextKeySkipDBUpdate).(bool); ok {
 			skipDBUpdate = skip
 		}
 	}
@@ -5644,8 +5648,8 @@ func (c *Config) UpdateProviderKey(ctx context.Context, provider schemas.ModelPr
 	updatedConfig.Keys[index] = key
 
 	skipDBUpdate := false
-	if ctx.Value(schemas.RakshaContextKeySkipDBUpdate) != nil {
-		if skip, ok := ctx.Value(schemas.RakshaContextKeySkipDBUpdate).(bool); ok {
+	if ctx.Value(schemas.GatewayContextKeySkipDBUpdate) != nil {
+		if skip, ok := ctx.Value(schemas.GatewayContextKeySkipDBUpdate).(bool); ok {
 			skipDBUpdate = skip
 		}
 	}
@@ -5713,8 +5717,8 @@ func (c *Config) RemoveProviderKey(ctx context.Context, provider schemas.ModelPr
 	updatedConfig.Keys = append(updatedConfig.Keys, existingConfig.Keys[index+1:]...)
 
 	skipDBUpdate := false
-	if ctx.Value(schemas.RakshaContextKeySkipDBUpdate) != nil {
-		if skip, ok := ctx.Value(schemas.RakshaContextKeySkipDBUpdate).(bool); ok {
+	if ctx.Value(schemas.GatewayContextKeySkipDBUpdate) != nil {
+		if skip, ok := ctx.Value(schemas.GatewayContextKeySkipDBUpdate).(bool); ok {
 			skipDBUpdate = skip
 		}
 	}
@@ -5750,8 +5754,8 @@ func (c *Config) RemoveProvider(ctx context.Context, provider schemas.ModelProvi
 	defer c.Mu.Unlock()
 	// Delete from DB first to avoid memory/DB inconsistency if DB delete fails
 	skipDBUpdate := false
-	if ctx.Value(schemas.RakshaContextKeySkipDBUpdate) != nil {
-		if skip, ok := ctx.Value(schemas.RakshaContextKeySkipDBUpdate).(bool); ok {
+	if ctx.Value(schemas.GatewayContextKeySkipDBUpdate) != nil {
+		if skip, ok := ctx.Value(schemas.GatewayContextKeySkipDBUpdate).(bool); ok {
 			skipDBUpdate = skip
 		}
 	}
@@ -5790,7 +5794,7 @@ func (c *Config) GetAllKeys() ([]configstoreTables.TableKey, error) {
 				Value:             *key.Value.Redacted(),
 				Models:            models,
 				BlacklistedModels: blacklisted,
-				Weight:            raksha.Ptr(key.Weight),
+				Weight:            gateway.Ptr(key.Weight),
 				Provider:          string(providerKey),
 				ConfigHash:        key.ConfigHash,
 			}
@@ -5858,10 +5862,10 @@ func (c *Config) GetAllKeys() ([]configstoreTables.TableKey, error) {
 	return keys, nil
 }
 
-// SetRakshaClient sets the Raksha client in the store.
-// This is used to allow the store to access the Raksha client.
-// This is useful for the MCP handler to access the Raksha client.
-func (c *Config) SetRakshaClient(client *raksha.Raksha) {
+// SetGatewayClient sets the Gateway client in the store.
+// This is used to allow the store to access the Gateway client.
+// This is useful for the MCP handler to access the Gateway client.
+func (c *Config) SetGatewayClient(client *gateway.Gateway) {
 	c.muMCP.Lock()
 	defer c.muMCP.Unlock()
 
@@ -5882,7 +5886,7 @@ func (c *Config) GetMCPClient(id string) (*schemas.MCPClientConfig, error) {
 	defer c.muMCP.RUnlock()
 
 	if c.client == nil {
-		return nil, fmt.Errorf("raksha client not set")
+		return nil, fmt.Errorf("gateway client not set")
 	}
 
 	if c.MCPConfig == nil {
@@ -5907,7 +5911,7 @@ func (c *Config) GetMCPClient(id string) (*schemas.MCPClientConfig, error) {
 //   - Stores the processed configuration in memory
 func (c *Config) AddMCPClient(ctx context.Context, clientConfig *schemas.MCPClientConfig) error {
 	if c.client == nil {
-		return fmt.Errorf("raksha client not set")
+		return fmt.Errorf("gateway client not set")
 	}
 	c.muMCP.Lock()
 	defer c.muMCP.Unlock()
@@ -5945,7 +5949,7 @@ func (c *Config) AddMCPClient(ctx context.Context, clientConfig *schemas.MCPClie
 //   - updatedConfig: Updated MCP client configuration
 func (c *Config) UpdateMCPClient(ctx context.Context, id string, updatedConfig *schemas.MCPClientConfig) error {
 	if c.client == nil {
-		return fmt.Errorf("raksha client not set")
+		return fmt.Errorf("gateway client not set")
 	}
 	c.muMCP.Lock()
 	defer c.muMCP.Unlock()
@@ -5969,7 +5973,7 @@ func (c *Config) UpdateMCPClient(ctx context.Context, id string, updatedConfig *
 		return fmt.Errorf("MCP client '%s' not found", id)
 	}
 	oldDisabled := oldConfig.Disabled
-	// Check if client is registered in Raksha (can be not registered if client initialization failed)
+	// Check if client is registered in Gateway (can be not registered if client initialization failed)
 	clientRegistered := false
 	if clients, err := c.client.GetMCPClients(); err == nil && len(clients) > 0 {
 		for _, client := range clients {
@@ -6024,7 +6028,7 @@ func (c *Config) UpdateMCPClient(ctx context.Context, id string, updatedConfig *
 	c.MCPConfig.ClientConfigs[configIndex].PerUserHeaderKeys = updatedConfig.PerUserHeaderKeys
 
 	// Handle disable/enable lifecycle when the Disabled flag toggles and the client
-	// is registered at runtime. We call the core raksha methods directly (not the
+	// is registered at runtime. We call the core gateway methods directly (not the
 	// Config wrappers) to avoid a redundant DB write — the caller is responsible for
 	// persisting the disabled flag to the DB before calling UpdateMCPClient.
 	if oldDisabled != updatedConfig.Disabled && clientRegistered {
@@ -6046,10 +6050,10 @@ func (c *Config) UpdateMCPClient(ctx context.Context, id string, updatedConfig *
 }
 
 // UpdateMCPClientConnection updates the auth credentials (headers) for an existing MCP client.
-// It delegates the actual reconnection (with the new credentials) to the Raksha client.
+// It delegates the actual reconnection (with the new credentials) to the Gateway client.
 func (c *Config) UpdateMCPClientConnection(ctx context.Context, id string, newConfig *schemas.MCPClientConfig) error {
 	if c.client == nil {
-		return fmt.Errorf("raksha client not set")
+		return fmt.Errorf("gateway client not set")
 	}
 
 	c.muMCP.RLock()
@@ -6112,17 +6116,17 @@ func (c *Config) UpdateMCPClientConnection(ctx context.Context, id string, newCo
 // The method:
 //   - Validates that the MCP client exists
 //   - Removes the MCP client from the configuration
-//   - Removes the MCP client from the Raksha client
+//   - Removes the MCP client from the Gateway client
 func (c *Config) RemoveMCPClient(ctx context.Context, id string) error {
 	if c.client == nil {
-		return fmt.Errorf("raksha client not set")
+		return fmt.Errorf("gateway client not set")
 	}
 	c.muMCP.Lock()
 	defer c.muMCP.Unlock()
 	if c.MCPConfig == nil {
 		return fmt.Errorf("no MCP config found")
 	}
-	// Check if client is registered in Raksha (can be not registered if client initialization failed)
+	// Check if client is registered in Gateway (can be not registered if client initialization failed)
 	if clients, err := c.client.GetMCPClients(); err == nil && len(clients) > 0 {
 		for _, client := range clients {
 			if client.Config.ID == id {
@@ -6147,7 +6151,7 @@ func (c *Config) RemoveMCPClient(ctx context.Context, id string) error {
 // connection, health monitor, and tool syncer at runtime.
 func (c *Config) DisableMCPClient(ctx context.Context, id string) error {
 	if c.client == nil {
-		return fmt.Errorf("raksha client not set")
+		return fmt.Errorf("gateway client not set")
 	}
 
 	if c.ConfigStore == nil {
@@ -6185,7 +6189,7 @@ func (c *Config) DisableMCPClient(ctx context.Context, id string) error {
 // at runtime, restarting its health monitor and tool syncer.
 func (c *Config) EnableMCPClient(ctx context.Context, id string) error {
 	if c.client == nil {
-		return fmt.Errorf("raksha client not set")
+		return fmt.Errorf("gateway client not set")
 	}
 	if c.ConfigStore == nil {
 		return fmt.Errorf("config store not set")
@@ -6617,7 +6621,7 @@ func ValidateCustomProvider(config configstore.ProviderConfig, provider schemas.
 		return nil
 	}
 
-	if raksha.IsStandardProvider(provider) {
+	if gateway.IsStandardProvider(provider) {
 		return fmt.Errorf("custom provider validation failed: cannot be created on standard providers: %s", provider)
 	}
 
@@ -6629,7 +6633,7 @@ func ValidateCustomProvider(config configstore.ProviderConfig, provider schemas.
 	}
 
 	// Check if base provider is a supported base provider
-	if !raksha.IsSupportedBaseProvider(cpc.BaseProviderType) {
+	if !gateway.IsSupportedBaseProvider(cpc.BaseProviderType) {
 		return fmt.Errorf("custom provider validation failed: unsupported base_provider_type: %s", cpc.BaseProviderType)
 	}
 

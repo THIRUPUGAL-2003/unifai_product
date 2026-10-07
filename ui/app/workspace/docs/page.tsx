@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +9,7 @@ import { BookOpen, Code, ExternalLink, FileText, GitBranch, Play, Shield, Users,
 const docSections = [
 	{
 		title: "Quick Start",
-		description: "Get Raksha running in under 30 seconds",
+		description: `Get ${PRODUCT_NAME} running in under 30 seconds`,
 		icon: Play,
 		url: DOCS.quickStart,
 		badge: "Popular",
@@ -16,7 +17,7 @@ const docSections = [
 	},
 	{
 		title: "Architecture",
-		description: "Deep dive into Raksha's design and performance",
+		description: `Deep dive into ${PRODUCT_NAME}'s design and performance`,
 		icon: GitBranch,
 		url: DOCS.architecture,
 		items: ["System Overview", "Request Flow", "Concurrency Model", "Design Decisions"],
@@ -31,7 +32,7 @@ const docSections = [
 	},
 	{
 		title: "Contributing",
-		description: "Help improve Raksha for everyone",
+		description: `Help improve ${PRODUCT_NAME} for everyone`,
 		icon: Users,
 		url: DOCS.contributing,
 		items: ["Contributing Guide", "Adding Providers", "Plugin Development", "Code Conventions"],
@@ -88,9 +89,9 @@ export default function DocsPage() {
 							<BookOpen className="h-4 w-4" />
 							<span className="font-semibold">Documentation</span>
 						</div>
-						<GradientHeader title="Power Up Your Raksha Stack" />
+						<GradientHeader title={`Power Up Your ${PRODUCT_NAME} Stack`} />
 						<p className="text-muted-foreground mx-auto max-w-2xl text-lg">
-							Everything you need to know about building production AI applications with Raksha
+							Everything you need to know about building production AI applications with {PRODUCT_NAME}
 						</p>
 						<div className="flex justify-center gap-4">
 							<Button asChild>

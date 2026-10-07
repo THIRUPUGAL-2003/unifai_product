@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )

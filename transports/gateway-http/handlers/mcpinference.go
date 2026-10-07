@@ -5,19 +5,19 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
 type MCPInferenceHandler struct {
-	client *raksha.Raksha
+	client *gateway.Gateway
 	config *lib.Config
 }
 
 // NewMCPInferenceHandler creates a new MCP inference handler instance
-func NewMCPInferenceHandler(client *raksha.Raksha, config *lib.Config) *MCPInferenceHandler {
+func NewMCPInferenceHandler(client *gateway.Gateway, config *lib.Config) *MCPInferenceHandler {
 	return &MCPInferenceHandler{
 		client: client,
 		config: config,
@@ -25,7 +25,7 @@ func NewMCPInferenceHandler(client *raksha.Raksha, config *lib.Config) *MCPInfer
 }
 
 // RegisterRoutes registers the MCP inference routes
-func (h *MCPInferenceHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *MCPInferenceHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.POST("/v1/mcp/tool/execute", lib.ChainMiddlewares(h.executeTool, middlewares...))
 }
 
@@ -59,17 +59,17 @@ func (h *MCPInferenceHandler) executeChatMCPTool(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel() // Ensure cleanup on function exit
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
 	// Execute MCP tool
-	toolMessage, rakshaErr := h.client.ExecuteChatMCPTool(rakshaCtx, &req)
-	if rakshaErr != nil {
-		SendRakshaError(ctx, rakshaErr)
+	toolMessage, gatewayErr := h.client.ExecuteChatMCPTool(gatewayCtx, &req)
+	if gatewayErr != nil {
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -92,17 +92,17 @@ func (h *MCPInferenceHandler) executeResponsesMCPTool(ctx *fasthttp.RequestCtx) 
 	}
 
 	// Convert context
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.config)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.config)
 	defer cancel() // Ensure cleanup on function exit
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
 
 	// Execute MCP tool
-	toolMessage, rakshaErr := h.client.ExecuteResponsesMCPTool(rakshaCtx, &req)
-	if rakshaErr != nil {
-		SendRakshaError(ctx, rakshaErr)
+	toolMessage, gatewayErr := h.client.ExecuteResponsesMCPTool(gatewayCtx, &req)
+	if gatewayErr != nil {
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 

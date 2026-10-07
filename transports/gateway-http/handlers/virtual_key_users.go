@@ -3,8 +3,8 @@ package handlers
 import (
 	"encoding/json"
 
-	"github.com/raksha/raksha/framework/configstore"
-	tables "github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/configstore"
+	tables "github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
 

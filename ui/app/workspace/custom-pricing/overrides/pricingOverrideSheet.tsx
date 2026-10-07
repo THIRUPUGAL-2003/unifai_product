@@ -465,7 +465,7 @@ function isCompleteScopeLock(scopeLock?: PricingOverrideDrawerProps["scopeLock"]
 export default function PricingOverrideSheet({ open, onOpenChange, editingOverride, scopeLock, onSaved }: PricingOverrideDrawerProps) {
 	const { data: providersData, isLoading: isProvidersLoading, error: providersError } = useGetProvidersQuery();
 	const { data: virtualKeysData, isLoading: isVirtualKeysLoading, error: virtualKeysError } = useGetVirtualKeysQuery();
-	const { data: allKeysData = [] } = useGetAllKeysQuery();
+	const { data: allKeysData = [], isError: allKeysFailed, error: allKeysError } = useGetAllKeysQuery();
 	const [createOverride, { isLoading: isCreating }] = useCreatePricingOverrideMutation();
 	const [updateOverride, { isLoading: isPatching }] = useUpdatePricingOverrideMutation();
 
@@ -946,10 +946,16 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 																	value={field.value || null}
 																	onValueChange={(value) => field.onChange(value ?? "")}
 																	placeholder="All provider keys"
+																	disabled={allKeysFailed}
 																	noPortal
 																	className="h-9"
 																/>
 															</FormControl>
+															{allKeysFailed ? (
+																<p className="text-destructive mt-1 text-xs">
+																	Failed to load provider keys: {getErrorMessage(allKeysError)}
+																</p>
+															) : null}
 														</FormItem>
 													)}
 												/>

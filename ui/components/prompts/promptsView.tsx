@@ -16,8 +16,17 @@ import { isPromptMemberRole } from "./utils/memberRole";
 import PromptHistoryControls from "./components/promptHistoryControls";
 
 export default function PromptsView() {
-	const { folders, prompts, foldersLoading, promptsLoading, foldersError, promptsError, isLoadingPlayground, selectedPromptId } =
-		usePromptContext();
+	const {
+		folders,
+		prompts,
+		foldersLoading,
+		promptsLoading,
+		foldersError,
+		promptsError,
+		isLoadingPlayground,
+		playgroundError,
+		selectedPromptId,
+	} = usePromptContext();
 
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isUserRole = isPromptMemberRole(authStatus?.role);
@@ -57,7 +66,14 @@ export default function PromptsView() {
 							<div className="flex h-full flex-col">
 								<PromptsViewHeader />
 
-								{isLoadingPlayground ? (
+								{playgroundError ? (
+									<div className="flex flex-1 items-center justify-center p-4">
+										<Alert variant="destructive" className="max-w-md">
+											<AlertCircle className="h-4 w-4" />
+											<AlertDescription>{playgroundError}</AlertDescription>
+										</Alert>
+									</div>
+								) : isLoadingPlayground ? (
 									<div className="flex flex-1 items-center justify-center">
 										<Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
 									</div>

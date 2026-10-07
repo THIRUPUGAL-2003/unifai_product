@@ -50,6 +50,7 @@ import {
 	KeyRound,
 	Clock,
 } from "lucide-react";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { Badge } from "@/components/ui/badge";
@@ -350,7 +351,7 @@ export default function BrowserAiPage() {
 	const [editRuleGeneratedPattern, setEditRuleGeneratedPattern] = useState("");
 	const [editRuleGenerateError, setEditRuleGenerateError] = useState("");
 
-	const activePolling = liveUpdatesEnabled ? 3000 : undefined;
+	const [activePolling, setActivePolling] = useState<number | undefined>(liveUpdatesEnabled ? 3000 : undefined);
 
 	// --- Violation Notification State ---
 	const [violationToasts, setViolationToasts] = useState<
@@ -389,15 +390,20 @@ export default function BrowserAiPage() {
 		}
 	);
 	// Overview cards aggregate every log server-side, independent of the page/filters above.
-	const { data: overviewStats } = useGetBrowserAiLogStatsQuery(undefined, {
+	const { data: overviewStats, isError: overviewStatsFailed, error: overviewStatsError } = useGetBrowserAiLogStatsQuery(undefined, {
 		pollingInterval: activePolling,
 		skip: activeTab !== "overview",
 	});
 
 	const { data: rulesData, refetch: refetchRules, isFetching: rulesLoading, isError: rulesFailed, error: rulesError } = useGetBrowserAiRulesQuery(undefined, { pollingInterval: activePolling });
 	const { data: targetsData, refetch: refetchTargets, isFetching: targetsLoading, isError: targetsFailed, error: targetsError } = useGetBrowserAiTargetsQuery(undefined, { pollingInterval: activePolling });
-	const { data: controlsData, isFetching: controlsLoading } = useGetBrowserAiControlsQuery(undefined, { pollingInterval: activePolling });
-	const { data: providersData } = useGetProvidersQuery();
+	const {
+		data: controlsData,
+		isFetching: controlsLoading,
+		isError: controlsFailed,
+		error: controlsError,
+	} = useGetBrowserAiControlsQuery(undefined, { pollingInterval: activePolling });
+	const { data: providersData, isError: providersFailed, error: providersError } = useGetProvidersQuery();
 	// Outsource = configured Model Providers (OpenRouter, OpenAI, …). Download = Ollama on server.
 	const outsourceProviderOptions = useMemo(() => {
 		const opts = (providersData || [])
@@ -424,10 +430,20 @@ export default function BrowserAiPage() {
 		{ pollingInterval: activePolling }
 	);
 
-	const { data: setupInfo, refetch: refetchSetupInfo } = useGetBrowserAiSetupInfoQuery(undefined, {
+	const {
+		data: setupInfo,
+		refetch: refetchSetupInfo,
+		isError: setupFailed,
+		error: setupError,
+	} = useGetBrowserAiSetupInfoQuery(undefined, {
 		skip: activeTab !== "setup" && activeTab !== "agents",
 	});
-	const { data: rebuildHistoryData, refetch: refetchRebuildHistory } = useGetBrowserAiRebuildHistoryQuery(20, {
+	const {
+		data: rebuildHistoryData,
+		refetch: refetchRebuildHistory,
+		isError: rebuildHistoryFailed,
+		error: rebuildHistoryError,
+	} = useGetBrowserAiRebuildHistoryQuery(20, {
 		skip: activeTab !== "setup",
 	});
 	const rebuildHistory = rebuildHistoryData?.history || [];
@@ -438,15 +454,15 @@ export default function BrowserAiPage() {
 	const TELEMETRY_AGENT_LIMIT = 2000;
 	const TELEMETRY_LOG_LIMIT = 5000;
 	const telemetryTabActive = activeTab === "telemetry";
-	const { data: telemetryAgentsRaw } = useGetBrowserAiAgentsQuery(
+	const { data: telemetryAgentsRaw, isError: telemetryAgentsFailed, error: telemetryAgentsError } = useGetBrowserAiAgentsQuery(
 		{ limit: TELEMETRY_AGENT_LIMIT, offset: 0 },
 		{ pollingInterval: activePolling, skip: !telemetryTabActive }
 	);
-	const { data: telemetryLogsRaw } = useGetBrowserAiLogsQuery(
+	const { data: telemetryLogsRaw, isError: telemetryLogsFailed, error: telemetryLogsError } = useGetBrowserAiLogsQuery(
 		{ limit: TELEMETRY_LOG_LIMIT, offset: 0 },
 		{ pollingInterval: activePolling, skip: !telemetryTabActive }
 	);
-	const { data: insightStatsRaw } = useGetBrowserAiInsightStatsQuery(undefined, {
+	const { data: insightStatsRaw, isError: insightStatsFailed, error: insightStatsError } = useGetBrowserAiInsightStatsQuery(undefined, {
 		pollingInterval: activePolling,
 		skip: !telemetryTabActive,
 	});
@@ -601,7 +617,12 @@ export default function BrowserAiPage() {
 	const queriesSearchCount = searchLogsData?.queries_count || 0;
 	const clicksSearchCount = searchLogsData?.clicks_count || 0;
 
-	const { data: agentSettingsData, refetch: refetchAgentSettings } = useGetBrowserAiAgentSettingsQuery();
+	const {
+		data: agentSettingsData,
+		refetch: refetchAgentSettings,
+		isError: agentSettingsFailed,
+		error: agentSettingsError,
+	} = useGetBrowserAiAgentSettingsQuery();
 	useEffect(() => {
 		if (agentSettingsData?.uninstall_key) {
 			setSavedUninstallKeyDisplay(agentSettingsData.uninstall_key);
@@ -740,7 +761,29 @@ export default function BrowserAiPage() {
 
 	const { toast } = useToast();
 	const [sendWarningEmail, { isLoading: isSendingWarningEmail }] = useSendBrowserAiWarningEmailMutation();
-	const { data: smtpConfig } = useGetSMTPConfigQuery();
+	const { data: smtpConfig, isError: smtpFailed, error: smtpError } = useGetSMTPConfigQuery();
+
+	const anyBrowserAiQueryFailed =
+		logsFailed ||
+		rulesFailed ||
+		targetsFailed ||
+		agentsFailed ||
+		searchLogsFailed ||
+		overviewStatsFailed ||
+		controlsFailed ||
+		providersFailed ||
+		setupFailed ||
+		rebuildHistoryFailed ||
+		telemetryAgentsFailed ||
+		telemetryLogsFailed ||
+		insightStatsFailed ||
+		smtpFailed ||
+		agentSettingsFailed;
+
+	useEffect(() => {
+		setActivePolling(liveUpdatesEnabled && !anyBrowserAiQueryFailed ? 3000 : undefined);
+	}, [liveUpdatesEnabled, anyBrowserAiQueryFailed]);
+
 	const smtpReady = !!(smtpConfig?.enabled && (smtpConfig.host || "").trim());
 	const [warningMailTarget, setWarningMailTarget] = useState<BrowserAIAgent | null>(null);
 	const [warningMailTo, setWarningMailTo] = useState("");
@@ -767,13 +810,13 @@ export default function BrowserAiPage() {
 					? agent.username
 					: "") || ""
 		);
-		setWarningMailSubject(`[Security Alert] Raksha Browser Guard Policy Warning — ${agent.hostname || "Device"}`);
+		setWarningMailSubject(`[Security Alert] ${PRODUCT_NAME} Browser Guard Policy Warning — ${agent.hostname || "Device"}`);
 		const host = agent.hostname || "unknown-device";
 		const user = agent.username || "—";
 		const ip = agent.ip_address || "—";
 		setWarningMailMessage(
 			`Dear Employee,\n\n` +
-				`This is an official Raksha Browser Guard security compliance report for your assigned workstation.\n\n` +
+				`This is an official ${PRODUCT_NAME} Browser Guard security compliance report for your assigned workstation.\n\n` +
 				`--- DEVICE REPORT ---\n` +
 				`Hostname: ${host}\n` +
 				`User: ${user}\n` +
@@ -815,7 +858,7 @@ export default function BrowserAiPage() {
 		try {
 			const res = await sendWarningEmail({
 				to,
-				subject: warningMailSubject.trim() || "Raksha Security Policy Warning",
+				subject: warningMailSubject.trim() || `${PRODUCT_NAME} Security Policy Warning`,
 				message: warningMailMessage.trim(),
 				agent_id: warningMailTarget?.id,
 				agent_hostname: warningMailTarget?.hostname,
@@ -1786,7 +1829,7 @@ export default function BrowserAiPage() {
 			const url = window.URL.createObjectURL(blob);
 			const link = document.createElement("a");
 			link.href = url;
-			link.download = platform === "mac" ? "Raksha_Guard_macOS.zip" : "Raksha_Guard_Windows.zip";
+			link.download = platform === "mac" ? "Gateway_Guard_macOS.zip" : "Gateway_Guard_Windows.zip";
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
@@ -2190,7 +2233,7 @@ export default function BrowserAiPage() {
 					user: a.username || "—",
 					ip: a.ip_address || "—",
 					mac: a.mac_address || "—",
-					transport: a.transport_name || (a.agent_type === "network" ? "Network Proxy" : "Raksha Guard"),
+					transport: a.transport_name || (a.agent_type === "network" ? "Network Proxy" : `${PRODUCT_NAME} Guard`),
 					version: `v${a.agent_version || "1.0"}`,
 					agent_type: a.agent_type || "endpoint",
 					status: a.status || "",
@@ -2223,7 +2266,7 @@ export default function BrowserAiPage() {
 						user: agent.username || "—",
 						ip: agent.ip_address || "—",
 						mac: agent.mac_address || "—",
-						transport: agent.transport_name || (agent.agent_type === "network" ? "Network Proxy" : "Raksha Guard"),
+						transport: agent.transport_name || (agent.agent_type === "network" ? "Network Proxy" : `${PRODUCT_NAME} Guard`),
 						version: `v${agent.agent_version || "1.0"}`,
 						allowed: allowedCount,
 						blocked: blockedCount,
@@ -2590,10 +2633,56 @@ export default function BrowserAiPage() {
 				</div>
 			</div>
 
-			{(logsFailed || rulesFailed || targetsFailed || agentsFailed || searchLogsFailed) ? (
-				<div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-					{getErrorMessage(logsError || rulesError || targetsError || agentsError || searchLogsError) ||
-						"Browser AI database is not connected"}
+			{(logsFailed ||
+				rulesFailed ||
+				targetsFailed ||
+				agentsFailed ||
+				searchLogsFailed ||
+				overviewStatsFailed ||
+				controlsFailed ||
+				providersFailed ||
+				setupFailed ||
+				rebuildHistoryFailed ||
+				telemetryAgentsFailed ||
+				telemetryLogsFailed ||
+				insightStatsFailed ||
+				smtpFailed ||
+				agentSettingsFailed) ? (
+				<div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive flex items-center justify-between gap-3">
+					<span>
+						{getErrorMessage(
+							logsError ||
+								rulesError ||
+								targetsError ||
+								agentsError ||
+								searchLogsError ||
+								overviewStatsError ||
+								controlsError ||
+								providersError ||
+								setupError ||
+								rebuildHistoryError ||
+								telemetryAgentsError ||
+								telemetryLogsError ||
+								insightStatsError ||
+								smtpError ||
+								agentSettingsError
+						) || "Failed to load Browser AI data."}
+					</span>
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={() => {
+							if (logsFailed) void refetchLogs();
+							if (rulesFailed) void refetchRules();
+							if (targetsFailed) void refetchTargets();
+							if (agentsFailed) void refetchAgents();
+							if (setupFailed) void refetchSetupInfo();
+							if (rebuildHistoryFailed) void refetchRebuildHistory();
+							if (agentSettingsFailed) void refetchAgentSettings();
+						}}
+					>
+						Retry
+					</Button>
 				</div>
 			) : null}
 
@@ -3545,7 +3634,7 @@ export default function BrowserAiPage() {
 												Create Guard Rule
 											</DialogTitle>
 											<DialogDescription className="text-xs">
-												Add your own regex or AI policy. Raksha does not ship default guard patterns — only what you save here is enforced.
+												Add your own regex or AI policy. {PRODUCT_NAME} does not ship default guard patterns — only what you save here is enforced.
 											</DialogDescription>
 										</DialogHeader>
 
@@ -4923,7 +5012,7 @@ export default function BrowserAiPage() {
 									) : agents.length === 0 ? (
 										<TableRow>
 											<TableCell colSpan={12} className="text-center py-10 text-muted-foreground text-sm">
-												No Guard agents yet. Install Raksha_Guard_Setup.exe (Windows) or Raksha_Guard_macOS.zip (Mac) on laptops and/or run the network proxy: docker compose --profile network-proxy up -d raksha_browser_ai_proxy (or Guard with server_mode). Same dashboard for both.
+												No Guard agents yet. Install Gateway_Guard_Setup.exe (Windows) or Gateway_Guard_macOS.zip (Mac) on laptops and/or run the network proxy: docker compose --profile network-proxy up -d gateway_browser_ai_proxy (or Guard with server_mode). Same dashboard for both.
 											</TableCell>
 										</TableRow>
 									) : null}
@@ -5416,7 +5505,7 @@ export default function BrowserAiPage() {
 								{[
 									{
 										label: "Windows",
-										file: "Raksha_Guard_Windows.zip",
+										file: "Gateway_Guard_Windows.zip",
 										contents: "Setup.exe · auto-start · proxy routing",
 										dot: "bg-sky-500",
 										ready: setupInfo?.windows_ready,
@@ -5425,8 +5514,8 @@ export default function BrowserAiPage() {
 									},
 									{
 										label: "macOS",
-										file: "Raksha_Guard_macOS.zip",
-										contents: "Raksha_Guard.app · Install .command",
+										file: "Gateway_Guard_macOS.zip",
+										contents: "Gateway_Guard.app · Install .command",
 										dot: "bg-primary",
 										ready: setupInfo?.macos_ready,
 										version: latestMacVersion,
@@ -5569,10 +5658,10 @@ export default function BrowserAiPage() {
 								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
 									Run{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Raksha_Guard_Setup.exe
+										Gateway_Guard_Setup.exe
 									</code>
 									. Keep autostart enabled so Guard starts at Windows login. To turn OFF / uninstall: Windows Settings → Apps →
-									Raksha Guard → Uninstall (company uninstall key).
+									{PRODUCT_NAME} Guard → Uninstall (company uninstall key).
 								</p>
 							</div>
 
@@ -5584,17 +5673,17 @@ export default function BrowserAiPage() {
 								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
 									Unzip{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Raksha_Guard_macOS.zip
+										Gateway_Guard_macOS.zip
 									</code>
 									, then double-click{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Install_Raksha_Guard.command
+										Install_Gateway_Guard.command
 									</code>{" "}
 									(Right-click → Open if Gatekeeper blocks). See{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">INSTALL_MACOS.txt</code>. To
 									turn OFF / uninstall: double-click{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Uninstall_Raksha_Guard.command
+										Uninstall_Gateway_Guard.command
 									</code>{" "}
 									and enter the same company uninstall key (
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">UNINSTALL_MACOS.txt</code>
@@ -5617,20 +5706,20 @@ export default function BrowserAiPage() {
 								<ul className="list-disc pl-5 text-foreground/80 space-y-1.5">
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											Raksha_Guard_Windows.zip
+											Gateway_Guard_Windows.zip
 										</code>{" "}
 										— Windows{" "}
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											Raksha_Guard_Setup.exe
+											Gateway_Guard_Setup.exe
 										</code>{" "}
 										installer &amp; docs
 									</li>
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											Raksha_Guard_macOS.zip
+											Gateway_Guard_macOS.zip
 										</code>{" "}
 										— macOS{" "}
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">Raksha_Guard.app</code> +
+										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">Gateway_Guard.app</code> +
 										Install &amp; Uninstall scripts
 									</li>
 									<li>
@@ -5870,7 +5959,7 @@ export default function BrowserAiPage() {
 														</TableCell>
 														<TableCell className="text-muted-foreground">
 															<div className="font-medium text-foreground truncate max-w-[140px]">
-																{agent.transport_name || (agent.agent_type === "network" ? "Network Proxy" : "Raksha Guard")}
+																{agent.transport_name || (agent.agent_type === "network" ? "Network Proxy" : `${PRODUCT_NAME} Guard`)}
 															</div>
 															<div className="text-[10px] text-muted-foreground">v{agent.agent_version || "1.0"}</div>
 														</TableCell>
@@ -6024,7 +6113,7 @@ export default function BrowserAiPage() {
 								<div className="rounded-md border border-border bg-background p-3 space-y-1">
 									<p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Transport / OS / Version</p>
 									<p className="font-mono text-xs text-foreground">
-										{selectedTelemetryAgent.transport_name || "Raksha Guard"} ({selectedTelemetryAgent.os_version || "OS"})
+										{selectedTelemetryAgent.transport_name || `${PRODUCT_NAME} Guard`} ({selectedTelemetryAgent.os_version || "OS"})
 									</p>
 									<p className="font-mono text-xs text-primary font-semibold mt-0.5">
 										Guard v{selectedTelemetryAgent.agent_version || "—"}
@@ -6619,7 +6708,7 @@ export default function BrowserAiPage() {
 							Uninstall Guard (Permanent)
 						</DialogTitle>
 						<DialogDescription className="text-xs">
-							Permanently uninstall Raksha Guard from{" "}
+							Permanently uninstall {PRODUCT_NAME} Guard from{" "}
 							<strong className="text-foreground">{targetAgentToUninstall?.hostname || targetAgentToUninstall?.id}</strong>.
 							The laptop will clear PAC/autostart, terminate Guard, and delete the installed EXE from disk on the next heartbeat.
 							<span className="block mt-1 text-amber-300">
@@ -6712,7 +6801,7 @@ export default function BrowserAiPage() {
 							Remote Push &amp; Network Reinstall Script
 						</DialogTitle>
 						<DialogDescription className="text-xs">
-							Run one of these commands to silently install or reinstall Raksha Guard on{" "}
+							Run one of these commands to silently install or reinstall {PRODUCT_NAME} Guard on{" "}
 							<strong className="text-foreground">{targetAgentForDeploy?.hostname || targetAgentForDeploy?.ip_address || "the target laptop"}</strong> without employee popups.
 						</DialogDescription>
 					</DialogHeader>
@@ -6739,7 +6828,7 @@ export default function BrowserAiPage() {
 									className="h-7 text-xs gap-1 text-blue-400 hover:text-blue-300"
 									onClick={() => {
 										const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:8080";
-										const script = `curl.exe -fSL -o "$env:TEMP\\Raksha_Guard_Setup.exe" "${origin}/api/browser-ai/setup/Raksha_Guard_Setup.exe"; Start-Process "$env:TEMP\\Raksha_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Raksha_Guard_Setup.exe"`;
+										const script = `curl.exe -fSL -o "$env:TEMP\\Gateway_Guard_Setup.exe" "${origin}/api/browser-ai/setup/Gateway_Guard_Setup.exe"; Start-Process "$env:TEMP\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Gateway_Guard_Setup.exe"`;
 										navigator.clipboard.writeText(script);
 										setNetworkDeployCopied("ps");
 										setTimeout(() => setNetworkDeployCopied(""), 2500);
@@ -6753,7 +6842,7 @@ export default function BrowserAiPage() {
 								Downloads the installer and runs silently in the background (no popups, no restart). Ideal for remote terminal or local PowerShell.
 							</p>
 							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`curl.exe -fSL -o "$env:TEMP\\Raksha_Guard_Setup.exe" "${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Raksha_Guard_Setup.exe"; Start-Process "$env:TEMP\\Raksha_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Raksha_Guard_Setup.exe"`}
+								{`curl.exe -fSL -o "$env:TEMP\\Gateway_Guard_Setup.exe" "${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Gateway_Guard_Setup.exe"; Start-Process "$env:TEMP\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Gateway_Guard_Setup.exe"`}
 							</pre>
 						</div>
 
@@ -6771,7 +6860,7 @@ export default function BrowserAiPage() {
 									onClick={() => {
 										const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:8080";
 										const ip = targetAgentForDeploy?.ip_address || "<laptop-ip>";
-										const script = `psexec \\\\${ip} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${origin}/api/browser-ai/setup/Raksha_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`;
+										const script = `psexec \\\\${ip} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${origin}/api/browser-ai/setup/Gateway_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`;
 										navigator.clipboard.writeText(script);
 										setNetworkDeployCopied("psexec");
 										setTimeout(() => setNetworkDeployCopied(""), 2500);
@@ -6785,7 +6874,7 @@ export default function BrowserAiPage() {
 								Push directly from your admin machine across the office LAN/VPN to this laptop without touching the employee screen.
 							</p>
 							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-purple-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`psexec \\\\${targetAgentForDeploy?.ip_address || "<laptop-ip>"} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Raksha_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`}
+								{`psexec \\\\${targetAgentForDeploy?.ip_address || "<laptop-ip>"} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Gateway_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`}
 							</pre>
 						</div>
 
@@ -6801,7 +6890,7 @@ export default function BrowserAiPage() {
 									variant="ghost"
 									className="h-7 text-xs gap-1 text-amber-400 hover:text-amber-300"
 									onClick={() => {
-										navigator.clipboard.writeText("Raksha_Guard_Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART");
+										navigator.clipboard.writeText("Gateway_Guard_Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART");
 										setNetworkDeployCopied("flags");
 										setTimeout(() => setNetworkDeployCopied(""), 2500);
 									}}
@@ -6814,19 +6903,19 @@ export default function BrowserAiPage() {
 								If you run the installer from a shared network drive or pen drive:
 							</p>
 							<pre className="p-2 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-amber-300">
-								Raksha_Guard_Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+								Gateway_Guard_Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
 							</pre>
 						</div>
 					</div>
 
 					<DialogFooter className="flex-col sm:flex-row gap-2 justify-between items-center">
 						<a
-							href="/api/browser-ai/setup/Raksha_Guard_Setup.exe"
-							download="Raksha_Guard_Setup.exe"
+							href="/api/browser-ai/setup/Gateway_Guard_Setup.exe"
+							download="Gateway_Guard_Setup.exe"
 							className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
 						>
 							<HardDriveDownload className="h-3.5 w-3.5" />
-							Direct Download Raksha_Guard_Setup.exe
+							Direct Download Gateway_Guard_Setup.exe
 						</a>
 						<Button variant="outline" size="sm" onClick={() => setNetworkDeployDialogOpen(false)}>
 							Close

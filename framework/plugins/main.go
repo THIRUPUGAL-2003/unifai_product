@@ -2,7 +2,7 @@
 package plugins
 
 import (
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // PluginConfig is the generic configuration for any plugin type

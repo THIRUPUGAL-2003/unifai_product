@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 func buildVertexRankingConfig(projectID, rankingConfigOverride string) (string, error) {
@@ -81,27 +81,27 @@ func getVertexRerankOptions(projectID string, params *schemas.RerankParameters) 
 	return options, nil
 }
 
-// ToVertexRankRequest converts a Raksha rerank request to Discovery Engine rank API format.
-func ToVertexRankRequest(rakshaReq *schemas.RakshaRerankRequest, options *vertexRerankOptions) (*VertexRankRequest, error) {
-	if rakshaReq == nil {
-		return nil, fmt.Errorf("raksha rerank request is nil")
+// ToVertexRankRequest converts a Gateway rerank request to Discovery Engine rank API format.
+func ToVertexRankRequest(gatewayReq *schemas.GatewayRerankRequest, options *vertexRerankOptions) (*VertexRankRequest, error) {
+	if gatewayReq == nil {
+		return nil, fmt.Errorf("gateway rerank request is nil")
 	}
 	if options == nil {
 		return nil, fmt.Errorf("vertex rerank options are nil")
 	}
-	if len(rakshaReq.Documents) == 0 {
+	if len(gatewayReq.Documents) == 0 {
 		return nil, fmt.Errorf("documents are required for rerank request")
 	}
-	if len(rakshaReq.Documents) > vertexMaxRerankRecordsPerQuery {
+	if len(gatewayReq.Documents) > vertexMaxRerankRecordsPerQuery {
 		return nil, fmt.Errorf("vertex rerank supports up to %d records per request", vertexMaxRerankRecordsPerQuery)
 	}
 
 	rankRequest := &VertexRankRequest{
-		Query:   rakshaReq.Query,
-		Records: make([]VertexRankRecord, len(rakshaReq.Documents)),
+		Query:   gatewayReq.Query,
+		Records: make([]VertexRankRecord, len(gatewayReq.Documents)),
 	}
 
-	for i, doc := range rakshaReq.Documents {
+	for i, doc := range gatewayReq.Documents {
 		recordID := fmt.Sprintf("%s%d", vertexSyntheticRecordPrefix, i)
 		content := doc.Text
 		record := VertexRankRecord{
@@ -120,18 +120,18 @@ func ToVertexRankRequest(rakshaReq *schemas.RakshaRerankRequest, options *vertex
 		rankRequest.Records[i] = record
 	}
 
-	if rakshaReq.Params != nil && rakshaReq.Params.TopN != nil {
-		topN := *rakshaReq.Params.TopN
+	if gatewayReq.Params != nil && gatewayReq.Params.TopN != nil {
+		topN := *gatewayReq.Params.TopN
 		if topN < 1 {
 			return nil, fmt.Errorf("top_n must be at least 1")
 		}
-		if topN > len(rakshaReq.Documents) {
-			topN = len(rakshaReq.Documents)
+		if topN > len(gatewayReq.Documents) {
+			topN = len(gatewayReq.Documents)
 		}
 		rankRequest.TopN = &topN
 	}
 
-	trimmedModel := strings.TrimSpace(rakshaReq.Model)
+	trimmedModel := strings.TrimSpace(gatewayReq.Model)
 	if trimmedModel == "" {
 		trimmedModel = vertexDefaultRerankModel
 	}
@@ -147,8 +147,8 @@ func ToVertexRankRequest(rakshaReq *schemas.RakshaRerankRequest, options *vertex
 	return rankRequest, nil
 }
 
-// ToRakshaRerankRequest converts a Discovery Engine rank request to Raksha format.
-func (req *VertexRankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext) *schemas.RakshaRerankRequest {
+// ToGatewayRerankRequest converts a Discovery Engine rank request to Gateway format.
+func (req *VertexRankRequest) ToGatewayRerankRequest(ctx *schemas.GatewayContext) *schemas.GatewayRerankRequest {
 	if req == nil {
 		return nil
 	}
@@ -161,7 +161,7 @@ func (req *VertexRankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext) 
 		provider = schemas.Vertex
 	}
 
-	rakshaReq := &schemas.RakshaRerankRequest{
+	gatewayReq := &schemas.GatewayRerankRequest{
 		Provider: provider,
 		Model:    model,
 		Query:    req.Query,
@@ -181,12 +181,12 @@ func (req *VertexRankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext) 
 				"title": *record.Title,
 			}
 		}
-		rakshaReq.Documents = append(rakshaReq.Documents, doc)
+		gatewayReq.Documents = append(gatewayReq.Documents, doc)
 	}
 
 	// Extract TopN
 	if req.TopN != nil {
-		rakshaReq.Params.TopN = req.TopN
+		gatewayReq.Params.TopN = req.TopN
 	}
 
 	// Pass extra fields as ExtraParams
@@ -198,10 +198,10 @@ func (req *VertexRankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext) 
 		extraParams["user_labels"] = req.UserLabels
 	}
 	if len(extraParams) > 0 {
-		rakshaReq.Params.ExtraParams = extraParams
+		gatewayReq.Params.ExtraParams = extraParams
 	}
 
-	return rakshaReq
+	return gatewayReq
 }
 
 func parseVertexSyntheticRecordIndex(recordID string, maxDocs int) (int, error) {
@@ -219,8 +219,8 @@ func parseVertexSyntheticRecordIndex(recordID string, maxDocs int) (int, error) 
 	return index, nil
 }
 
-// ToRakshaRerankResponse converts a Discovery Engine rank response to Raksha format.
-func (response *VertexRankResponse) ToRakshaRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) (*schemas.RakshaRerankResponse, error) {
+// ToGatewayRerankResponse converts a Discovery Engine rank response to Gateway format.
+func (response *VertexRankResponse) ToGatewayRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) (*schemas.GatewayRerankResponse, error) {
 	if response == nil {
 		return nil, fmt.Errorf("vertex rerank response is nil")
 	}
@@ -259,7 +259,7 @@ func (response *VertexRankResponse) ToRakshaRerankResponse(documents []schemas.R
 		return results[i].RelevanceScore > results[j].RelevanceScore
 	})
 
-	return &schemas.RakshaRerankResponse{
+	return &schemas.GatewayRerankResponse{
 		Results: results,
 	}, nil
 }

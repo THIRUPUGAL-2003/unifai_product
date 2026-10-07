@@ -9,12 +9,12 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/providers/anthropic"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/providers/anthropic"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/tidwall/gjson"
 
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -35,15 +35,15 @@ func createAnthropicCompleteRouteConfig(pathPrefix string) RouteConfig {
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &anthropic.AnthropicTextRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if anthropicReq, ok := req.(*anthropic.AnthropicTextRequest); ok {
-				return &schemas.RakshaRequest{
-					TextCompletionRequest: anthropicReq.ToRakshaTextCompletionRequest(ctx),
+				return &schemas.GatewayRequest{
+					TextCompletionRequest: anthropicReq.ToGatewayTextCompletionRequest(ctx),
 				}, nil
 			}
 			return nil, errors.New("invalid request type")
 		},
-		TextResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTextCompletionResponse) (interface{}, error) {
+		TextResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTextCompletionResponse) (interface{}, error) {
 			if shouldUsePassthrough(ctx, resp.ExtraFields.Provider, resp.ExtraFields.OriginalModelRequested, resp.ExtraFields.ResolvedModelUsed) {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -51,7 +51,7 @@ func createAnthropicCompleteRouteConfig(pathPrefix string) RouteConfig {
 			}
 			return anthropic.ToAnthropicTextCompletionResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: checkAnthropicPassthrough,
@@ -75,18 +75,18 @@ func createAnthropicMessagesRouteConfig(pathPrefix string, logger schemas.Logger
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &anthropic.AnthropicMessageRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if anthropicReq, ok := req.(*anthropic.AnthropicMessageRequest); ok {
-					rakshaReq := anthropicReq.ToRakshaResponsesRequest(ctx)
-					normalizeRakshaInputContentBlocks(rakshaReq)
-					return &schemas.RakshaRequest{
-						ResponsesRequest: rakshaReq,
+					gatewayReq := anthropicReq.ToGatewayResponsesRequest(ctx)
+					normalizeGatewayInputContentBlocks(gatewayReq)
+					return &schemas.GatewayRequest{
+						ResponsesRequest: gatewayReq,
 					}, nil
 				}
 				return nil, errors.New("invalid request type")
 			},
-			ResponsesResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
-				soToolName, _ := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string)
+			ResponsesResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesResponse) (interface{}, error) {
+				soToolName, _ := ctx.Value(schemas.GatewayContextKeyStructuredOutputToolName).(string)
 				if soToolName == "" && isClaudeModel(resp.ExtraFields.OriginalModelRequested, resp.ExtraFields.ResolvedModelUsed, string(resp.ExtraFields.Provider)) {
 					if resp.ExtraFields.RawResponse != nil {
 						return resp.ExtraFields.RawResponse, nil
@@ -94,9 +94,9 @@ func createAnthropicMessagesRouteConfig(pathPrefix string, logger schemas.Logger
 				}
 				return anthropic.ToAnthropicResponsesResponse(ctx, resp), nil
 			},
-			AsyncResponsesResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.AsyncJobResponse, responsesResponseConverter ResponsesResponseConverter) (interface{}, map[string]string, error) {
+			AsyncResponsesResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.AsyncJobResponse, responsesResponseConverter ResponsesResponseConverter) (interface{}, map[string]string, error) {
 				if resp.Status == schemas.AsyncJobStatusCompleted {
-					responsesResp, ok := resp.Result.(*schemas.RakshaResponsesResponse)
+					responsesResp, ok := resp.Result.(*schemas.GatewayResponsesResponse)
 					if !ok {
 						return nil, nil, errors.New("invalid responses response type")
 					}
@@ -110,14 +110,14 @@ func createAnthropicMessagesRouteConfig(pathPrefix string, logger schemas.Logger
 					ID: resp.ID,
 				}, nil, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return anthropic.ToAnthropicChatCompletionError(err)
 			},
 			StreamConfig: &StreamConfig{
-				ResponsesStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
-					soToolName, _ := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string)
+				ResponsesStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
+					soToolName, _ := ctx.Value(schemas.GatewayContextKeyStructuredOutputToolName).(string)
 					if soToolName == "" && shouldUsePassthrough(ctx, resp.ExtraFields.Provider, resp.ExtraFields.OriginalModelRequested, resp.ExtraFields.ResolvedModelUsed) {
-						// Skip passthrough for ContentPartAdded: it's a synthetic raksha event whose
+						// Skip passthrough for ContentPartAdded: it's a synthetic gateway event whose
 						// RawResponse carries the parent content_block_start already emitted by OutputItemAdded.
 						// Passing through here would produce a duplicate content_block_start that causes
 						// the Anthropic SDK to error and drop all subsequent content_block_delta events.
@@ -130,7 +130,7 @@ func createAnthropicMessagesRouteConfig(pathPrefix string, logger schemas.Logger
 								return t.String(), raw, nil
 							}
 						}
-						// Fallback: if RawResponse is not available, use raksha-to-anthropic conversion
+						// Fallback: if RawResponse is not available, use gateway-to-anthropic conversion
 						// instead of silently dropping all events
 					}
 					anthropicResponse := anthropic.ToAnthropicResponsesStreamResponse(ctx, resp)
@@ -152,7 +152,7 @@ func createAnthropicMessagesRouteConfig(pathPrefix string, logger schemas.Logger
 					}
 					return string(anthropicResponse[0].Type), anthropicResponse[0], nil
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return anthropic.ToAnthropicResponsesStreamError(err)
 				},
 			},
@@ -242,20 +242,20 @@ func CreateAnthropicListModelsRouteConfigs(pathPrefix string, handlerStore lib.H
 				return schemas.ListModelsRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaListModelsRequest{}
+				return &schemas.GatewayListModelsRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-				if listModelsReq, ok := req.(*schemas.RakshaListModelsRequest); ok {
-					return &schemas.RakshaRequest{
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+				if listModelsReq, ok := req.(*schemas.GatewayListModelsRequest); ok {
+					return &schemas.GatewayRequest{
 						ListModelsRequest: listModelsReq,
 					}, nil
 				}
 				return nil, errors.New("invalid request type")
 			},
-			ListModelsResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaListModelsResponse) (interface{}, error) {
+			ListModelsResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayListModelsResponse) (interface{}, error) {
 				return anthropic.ToAnthropicListModelsResponse(resp), nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return anthropic.ToAnthropicChatCompletionError(err)
 			},
 			PreCallback: extractAnthropicListModelsParams,
@@ -263,15 +263,15 @@ func CreateAnthropicListModelsRouteConfigs(pathPrefix string, handlerStore lib.H
 	}
 }
 
-func hydrateAnthropicRequestFromLargePayloadMetadata(rakshaCtx *schemas.RakshaContext, req interface{}) {
-	if rakshaCtx == nil {
+func hydrateAnthropicRequestFromLargePayloadMetadata(gatewayCtx *schemas.GatewayContext, req interface{}) {
+	if gatewayCtx == nil {
 		return
 	}
-	isLargePayload, _ := rakshaCtx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool)
+	isLargePayload, _ := gatewayCtx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool)
 	if !isLargePayload {
 		return
 	}
-	metadata := resolveLargePayloadMetadata(rakshaCtx)
+	metadata := resolveLargePayloadMetadata(gatewayCtx)
 	if metadata == nil {
 		return
 	}
@@ -296,9 +296,9 @@ func hydrateAnthropicRequestFromLargePayloadMetadata(rakshaCtx *schemas.RakshaCo
 
 // checkAnthropicPassthrough pre-callback checks if the request is for a claude model.
 // If it is, it attaches the raw request body for direct use by the provider.
-// It also checks for anthropic oauth headers and sets the raksha context.
-func checkAnthropicPassthrough(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req any) error {
-	hydrateAnthropicRequestFromLargePayloadMetadata(rakshaCtx, req)
+// It also checks for anthropic oauth headers and sets the gateway context.
+func checkAnthropicPassthrough(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req any) error {
+	hydrateAnthropicRequestFromLargePayloadMetadata(gatewayCtx, req)
 
 	var provider schemas.ModelProvider
 	var model string
@@ -312,32 +312,32 @@ func checkAnthropicPassthrough(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.Raks
 	}
 
 	headers := extractHeadersFromRequest(ctx)
-	schemas.ExtractAndSetUserAgentFromHeaders(headers, rakshaCtx)
+	schemas.ExtractAndSetUserAgentFromHeaders(headers, gatewayCtx)
 
 	// Check if anthropic oauth headers are present
-	if shouldUsePassthrough(rakshaCtx, provider, model, "") {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyPassthroughOverridesPresent, true)
-		rakshaCtx.SetValue(schemas.RakshaContextKeyUseRawRequestBody, true)
-		rakshaCtx.SetValue(schemas.RakshaContextKeySendBackRawResponse, true)
+	if shouldUsePassthrough(gatewayCtx, provider, model, "") {
+		gatewayCtx.SetValue(schemas.GatewayContextKeyPassthroughOverridesPresent, true)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyUseRawRequestBody, true)
+		gatewayCtx.SetValue(schemas.GatewayContextKeySendBackRawResponse, true)
 		if !isAnthropicAPIKeyAuth(ctx) && (provider == schemas.Anthropic || provider == "") {
 			url := extractExactPath(ctx)
 			if !strings.HasPrefix(url, "/") {
 				url = "/" + url
 			}
-			rakshaCtx.SetValue(schemas.RakshaContextKeyExtraHeaders, headers)
-			rakshaCtx.SetValue(schemas.RakshaContextKeyURLPath, url)
+			gatewayCtx.SetValue(schemas.GatewayContextKeyExtraHeaders, headers)
+			gatewayCtx.SetValue(schemas.GatewayContextKeyURLPath, url)
 			// This key is also used in IsClaudeCodeMaxMode
 			// So if you are changing the behaviour of this key, make sure to change IsClaudeCodeMaxMode as well
-			rakshaCtx.SetValue(schemas.RakshaContextKeySkipKeySelection, true)
+			gatewayCtx.SetValue(schemas.GatewayContextKeySkipKeySelection, true)
 		} else {
 			// API key flow: pass only whitelisted safe headers (like anthropic-beta for feature detection)
 			passthroughHeaders := extractPassthroughHeaders(headers)
 			if len(passthroughHeaders) > 0 {
-				rakshaCtx.SetValue(schemas.RakshaContextKeyExtraHeaders, passthroughHeaders)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyExtraHeaders, passthroughHeaders)
 			}
 		}
 		if provider == schemas.Vertex && (hasPromptCachingScopeBetaHeader(headers) || hasFastModeBetaHeader(headers) || hasOutputConfigFormat(req)) {
-			rakshaCtx.SetValue(schemas.RakshaContextKeyUseRawRequestBody, false)
+			gatewayCtx.SetValue(schemas.GatewayContextKeyUseRawRequestBody, false)
 			return nil
 		}
 	}
@@ -345,7 +345,7 @@ func checkAnthropicPassthrough(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.Raks
 }
 
 // shouldUsePassthrough checks if the request should be sent to the passthrough endpoint.
-func shouldUsePassthrough(ctx *schemas.RakshaContext, provider schemas.ModelProvider, model string, alias string) bool {
+func shouldUsePassthrough(ctx *schemas.GatewayContext, provider schemas.ModelProvider, model string, alias string) bool {
 	return anthropic.IsClaudeCodeRequest(ctx) && isClaudeModel(model, alias, string(provider))
 }
 
@@ -358,8 +358,8 @@ func isClaudeModel(model, alias, provider string) bool {
 }
 
 // extractAnthropicListModelsParams extracts query parameters for list models request
-func extractAnthropicListModelsParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-	if listModelsReq, ok := req.(*schemas.RakshaListModelsRequest); ok {
+func extractAnthropicListModelsParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+	if listModelsReq, ok := req.(*schemas.GatewayListModelsRequest); ok {
 
 		// Extract limit from query parameters
 		if limitStr := string(ctx.QueryArgs().Peek("limit")); limitStr != "" {
@@ -402,20 +402,20 @@ func CreateAnthropicCountTokensRouteConfigs(pathPrefix string, handlerStore lib.
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
 				return &anthropic.AnthropicMessageRequest{}
 			},
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if anthropicReq, ok := req.(*anthropic.AnthropicMessageRequest); ok {
-					rakshaReq := anthropicReq.ToRakshaResponsesRequest(ctx)
-					normalizeRakshaInputContentBlocks(rakshaReq)
-					return &schemas.RakshaRequest{
-						CountTokensRequest: rakshaReq,
+					gatewayReq := anthropicReq.ToGatewayResponsesRequest(ctx)
+					normalizeGatewayInputContentBlocks(gatewayReq)
+					return &schemas.GatewayRequest{
+						CountTokensRequest: gatewayReq,
 					}, nil
 				}
 				return nil, errors.New("invalid request type for Anthropic count tokens")
 			},
-			CountTokensResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCountTokensResponse) (interface{}, error) {
+			CountTokensResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCountTokensResponse) (interface{}, error) {
 				return anthropic.ToAnthropicCountTokensResponse(resp), nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return anthropic.ToAnthropicChatCompletionError(err)
 			},
 			PreCallback: checkAnthropicPassthrough,
@@ -437,13 +437,13 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &anthropic.AnthropicBatchCreateRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req any) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req any) (*BatchRequest, error) {
 			if anthropicReq, ok := req.(*anthropic.AnthropicBatchCreateRequest); ok {
-				// Convert Anthropic batch request items to Raksha format
+				// Convert Anthropic batch request items to Gateway format
 				isNonAnthropicProvider := false
 				var provider schemas.ModelProvider
 				var ok bool
-				if provider, ok = ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider); ok && provider != schemas.Anthropic {
+				if provider, ok = ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider); ok && provider != schemas.Anthropic {
 					isNonAnthropicProvider = true
 				}
 				var model *string
@@ -467,7 +467,7 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 				}
 				br := &BatchRequest{
 					Type: schemas.BatchCreateRequest,
-					CreateRequest: &schemas.RakshaBatchCreateRequest{
+					CreateRequest: &schemas.GatewayBatchCreateRequest{
 						Model:    model,
 						Provider: provider,
 						Requests: requests,
@@ -492,13 +492,13 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return nil, errors.New("invalid batch create request type")
 		},
-		BatchCreateResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCreateResponse) (interface{}, error) {
+		BatchCreateResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCreateResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini {
 				resp.ID = strings.Replace(resp.ID, "batches/", "batches-", 1)
 			}
 			return anthropic.ToAnthropicBatchCreateResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: extractAnthropicBatchCreateParams,
@@ -515,15 +515,15 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &anthropic.AnthropicBatchListRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if listReq, ok := req.(*anthropic.AnthropicBatchListRequest); ok {
-				provider, ok := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider, ok := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				if !ok {
 					return nil, errors.New("provider not found in context")
 				}
 				return &BatchRequest{
 					Type: schemas.BatchListRequest,
-					ListRequest: &schemas.RakshaBatchListRequest{
+					ListRequest: &schemas.GatewayBatchListRequest{
 						Provider:  provider,
 						PageSize:  listReq.PageSize,
 						PageToken: listReq.PageToken,
@@ -532,7 +532,7 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return nil, errors.New("invalid batch list request type")
 		},
-		BatchListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchListResponse) (interface{}, error) {
+		BatchListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchListResponse) (interface{}, error) {
 			if resp.ExtraFields.RawResponse != nil && resp.ExtraFields.Provider == schemas.Anthropic {
 				return resp.ExtraFields.RawResponse, nil
 			}
@@ -543,7 +543,7 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return anthropic.ToAnthropicBatchListResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: extractAnthropicBatchListQueryParams,
@@ -560,15 +560,15 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &anthropic.AnthropicBatchRetrieveRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if retrieveReq, ok := req.(*anthropic.AnthropicBatchRetrieveRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				if provider == schemas.Gemini {
 					retrieveReq.BatchID = strings.Replace(retrieveReq.BatchID, "batches-", "batches/", 1)
 				}
 				return &BatchRequest{
 					Type: schemas.BatchRetrieveRequest,
-					RetrieveRequest: &schemas.RakshaBatchRetrieveRequest{
+					RetrieveRequest: &schemas.GatewayBatchRetrieveRequest{
 						BatchID:  retrieveReq.BatchID,
 						Provider: provider,
 					},
@@ -576,13 +576,13 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return nil, errors.New("invalid batch retrieve request type")
 		},
-		BatchRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchRetrieveResponse) (interface{}, error) {
+		BatchRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchRetrieveResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini {
 				resp.ID = strings.Replace(resp.ID, "batches/", "batches-", 1)
 			}
 			return anthropic.ToAnthropicBatchRetrieveResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: extractAnthropicBatchIDFromPath,
@@ -599,15 +599,15 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &anthropic.AnthropicBatchCancelRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if cancelReq, ok := req.(*anthropic.AnthropicBatchCancelRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				if provider == schemas.Gemini {
 					cancelReq.BatchID = strings.Replace(cancelReq.BatchID, "batches-", "batches/", 1)
 				}
 				return &BatchRequest{
 					Type: schemas.BatchCancelRequest,
-					CancelRequest: &schemas.RakshaBatchCancelRequest{
+					CancelRequest: &schemas.GatewayBatchCancelRequest{
 						BatchID:  cancelReq.BatchID,
 						Provider: provider,
 					},
@@ -615,13 +615,13 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return nil, errors.New("invalid batch cancel request type")
 		},
-		BatchCancelResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCancelResponse) (interface{}, error) {
+		BatchCancelResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCancelResponse) (interface{}, error) {
 			if resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return anthropic.ToAnthropicBatchCancelResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: extractAnthropicBatchIDFromPath,
@@ -638,15 +638,15 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &anthropic.AnthropicBatchResultsRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if resultsReq, ok := req.(*anthropic.AnthropicBatchResultsRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				if provider == schemas.Gemini {
 					resultsReq.BatchID = strings.Replace(resultsReq.BatchID, "batches-", "batches/", 1)
 				}
 				return &BatchRequest{
 					Type: schemas.BatchResultsRequest,
-					ResultsRequest: &schemas.RakshaBatchResultsRequest{
+					ResultsRequest: &schemas.GatewayBatchResultsRequest{
 						BatchID:  resultsReq.BatchID,
 						Provider: provider,
 					},
@@ -654,13 +654,13 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return nil, errors.New("invalid batch results request type")
 		},
-		BatchResultsResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchResultsResponse) (interface{}, error) {
+		BatchResultsResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchResultsResponse) (interface{}, error) {
 			if resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return resp, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: extractAnthropicBatchIDFromPath,
@@ -670,26 +670,26 @@ func CreateAnthropicBatchRouteConfigs(pathPrefix string, handlerStore lib.Handle
 }
 
 // extractAnthropicBatchCreateParams extracts provider from header for batch create requests
-func extractAnthropicBatchCreateParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractAnthropicBatchCreateParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	// Extract provider from header, default to Anthropic
 	provider := string(ctx.Request.Header.Peek("x-model-provider"))
 	if provider == "" {
 		provider = string(schemas.Anthropic)
 	}
 	// Store provider in context for batch create converter to use
-	rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+	gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 	return nil
 }
 
 // extractAnthropicBatchListQueryParams extracts provider from header and query parameters for Anthropic batch list requests
-func extractAnthropicBatchListQueryParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractAnthropicBatchListQueryParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	if listReq, ok := req.(*anthropic.AnthropicBatchListRequest); ok {
 		// Extract provider from header, default to Anthropic
 		provider := string(ctx.Request.Header.Peek("x-model-provider"))
 		if provider == "" {
 			provider = string(schemas.Anthropic)
 		}
-		rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+		gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 		// Printing all query parameters
 		// Extract limit from query parameters
 		if limitStr := string(ctx.QueryArgs().Peek("page_size")); limitStr != "" {
@@ -708,13 +708,13 @@ func extractAnthropicBatchListQueryParams(ctx *fasthttp.RequestCtx, rakshaCtx *s
 }
 
 // extractAnthropicBatchIDFromPath extracts provider from header and batch_id from path parameters
-func extractAnthropicBatchIDFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractAnthropicBatchIDFromPath(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	// Extract provider from header, default to Anthropic
 	provider := string(ctx.Request.Header.Peek("x-model-provider"))
 	if provider == "" {
 		provider = string(schemas.Anthropic)
 	}
-	rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+	gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 	batchID := ctx.UserValue("batch_id")
 	if batchID == nil {
 		return errors.New("batch_id is required")
@@ -735,17 +735,17 @@ func extractAnthropicBatchIDFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schema
 }
 
 // extractAnthropicFileUploadParams extracts provider from header for file upload requests
-func extractAnthropicFileUploadParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractAnthropicFileUploadParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	provider := string(ctx.Request.Header.Peek("x-model-provider"))
 	if provider == "" {
 		provider = string(schemas.Anthropic)
 	}
-	rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+	gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 	return nil
 }
 
 // extractAnthropicFileListQueryParams extracts provider from header and query parameters for Anthropic file list requests
-func extractAnthropicFileListQueryParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractAnthropicFileListQueryParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	if listReq, ok := req.(*anthropic.AnthropicFileListRequest); ok {
 		// Extract provider from header, default to Anthropic
 		provider := string(ctx.Request.Header.Peek("x-model-provider"))
@@ -753,7 +753,7 @@ func extractAnthropicFileListQueryParams(ctx *fasthttp.RequestCtx, rakshaCtx *sc
 			provider = string(schemas.Anthropic)
 		}
 
-		rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+		gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 
 		// Extract limit from query parameters
 		if limitStr := string(ctx.QueryArgs().Peek("limit")); limitStr != "" {
@@ -775,13 +775,13 @@ func extractAnthropicFileListQueryParams(ctx *fasthttp.RequestCtx, rakshaCtx *sc
 }
 
 // extractAnthropicFileIDFromPath extracts provider from header and file_id from path parameters
-func extractAnthropicFileIDFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractAnthropicFileIDFromPath(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	// Extract provider from header, default to Anthropic
 	provider := string(ctx.Request.Header.Peek("x-model-provider"))
 	if provider == "" {
 		provider = string(schemas.Anthropic)
 	}
-	rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+	gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 	fileID := ctx.UserValue("file_id")
 	if fileID == nil {
 		return errors.New("file_id is required")
@@ -864,10 +864,10 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			uploadReq.Filename = fileHeader.Filename
 			return nil
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req any) (*FileRequest, error) {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req any) (*FileRequest, error) {
 			if uploadReq, ok := req.(*anthropic.AnthropicFileUploadRequest); ok {
 				// Here if provider is OpenAI and purpose is empty then we override it with "batch"
-				provider, ok := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider, ok := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				if !ok {
 					return nil, errors.New("provider not found in context")
 				}
@@ -876,7 +876,7 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 				}
 				return &FileRequest{
 					Type: schemas.FileUploadRequest,
-					UploadRequest: &schemas.RakshaFileUploadRequest{
+					UploadRequest: &schemas.GatewayFileUploadRequest{
 						File:     uploadReq.File,
 						Filename: uploadReq.Filename,
 						Purpose:  schemas.FilePurpose(uploadReq.Purpose),
@@ -886,7 +886,7 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return nil, errors.New("invalid file upload request type")
 		},
-		FileUploadResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileUploadResponse) (interface{}, error) {
+		FileUploadResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileUploadResponse) (interface{}, error) {
 			if resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
@@ -896,7 +896,7 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return anthropic.ToAnthropicFileUploadResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: extractAnthropicFileUploadParams,
@@ -913,12 +913,12 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &anthropic.AnthropicFileListRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
 			if listReq, ok := req.(*anthropic.AnthropicFileListRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				return &FileRequest{
 					Type: schemas.FileListRequest,
-					ListRequest: &schemas.RakshaFileListRequest{
+					ListRequest: &schemas.GatewayFileListRequest{
 						Limit:    listReq.Limit,
 						After:    listReq.After,
 						Order:    listReq.Order,
@@ -928,7 +928,7 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return nil, errors.New("invalid file list request type")
 		},
-		FileListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileListResponse) (interface{}, error) {
+		FileListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileListResponse) (interface{}, error) {
 			if resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
@@ -940,7 +940,7 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return anthropic.ToAnthropicFileListResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: extractAnthropicFileListQueryParams,
@@ -957,16 +957,16 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &anthropic.AnthropicFileRetrieveRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
 			if retrieveReq, ok := req.(*anthropic.AnthropicFileRetrieveRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				// Handle file id conversion for Gemini
 				if provider == schemas.Gemini {
 					retrieveReq.FileID = strings.Replace(retrieveReq.FileID, "files-", "files/", 1)
 				}
 				return &FileRequest{
 					Type: schemas.FileRetrieveRequest,
-					RetrieveRequest: &schemas.RakshaFileRetrieveRequest{
+					RetrieveRequest: &schemas.GatewayFileRetrieveRequest{
 						FileID:   retrieveReq.FileID,
 						Provider: provider,
 					},
@@ -974,13 +974,13 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return nil, errors.New("invalid file retrieve request type")
 		},
-		FileRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileRetrieveResponse) (interface{}, error) {
+		FileRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileRetrieveResponse) (interface{}, error) {
 			if resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return anthropic.ToAnthropicFileRetrieveResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: extractAnthropicFileIDFromPath,
@@ -997,16 +997,16 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &anthropic.AnthropicFileDeleteRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
 			if deleteReq, ok := req.(*anthropic.AnthropicFileDeleteRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				if provider == schemas.Gemini {
 					// Here we will convert fileId to replace files/ with files-
 					deleteReq.FileID = strings.Replace(deleteReq.FileID, "files-", "files/", 1)
 				}
 				return &FileRequest{
 					Type: schemas.FileDeleteRequest,
-					DeleteRequest: &schemas.RakshaFileDeleteRequest{
+					DeleteRequest: &schemas.GatewayFileDeleteRequest{
 						FileID:   deleteReq.FileID,
 						Provider: provider,
 					},
@@ -1014,13 +1014,13 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 			}
 			return nil, errors.New("invalid file delete request type")
 		},
-		FileDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileDeleteResponse) (interface{}, error) {
+		FileDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileDeleteResponse) (interface{}, error) {
 			if resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return anthropic.ToAnthropicFileDeleteResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return anthropic.ToAnthropicChatCompletionError(err)
 		},
 		PreCallback: extractAnthropicFileIDFromPath,
@@ -1028,8 +1028,8 @@ func CreateAnthropicFilesRouteConfigs(pathPrefix string, handlerStore lib.Handle
 	return routes
 }
 
-// NewAnthropicRouter creates a new AnthropicRouter with the given raksha client.
-func NewAnthropicRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *AnthropicRouter {
+// NewAnthropicRouter creates a new AnthropicRouter with the given gateway client.
+func NewAnthropicRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *AnthropicRouter {
 	routes := CreateAnthropicRouteConfigs("/anthropic", logger)
 	routes = append(routes, CreateAnthropicListModelsRouteConfigs("/anthropic", handlerStore)...)
 	routes = append(routes, CreateAnthropicCountTokensRouteConfigs("/anthropic", handlerStore)...)

@@ -11,27 +11,27 @@ import (
 var NoDeadline time.Time
 
 var reservedKeys = []any{
-	RakshaContextKeyVirtualKey,
-	RakshaContextKeyAPIKeyName,
-	RakshaContextKeyAPIKeyID,
-	RakshaContextKeyDirectKey,
-	RakshaContextKeyRequestID,
-	RakshaContextKeyFallbackRequestID,
-	RakshaContextKeySelectedKeyID,
-	RakshaContextKeySelectedKeyName,
-	RakshaContextKeyNumberOfRetries,
-	RakshaContextKeyFallbackIndex,
-	RakshaContextKeySkipKeySelection,
-	RakshaContextKeySkipBudgetAndRateLimits,
-	RakshaContextKeyURLPath,
-	RakshaContextKeyDeferTraceCompletion,
-	RakshaContextKeyAttemptTrail,
-	RakshaContextKeyStreamGated,
-	RakshaContextKeyMCPHealthCheckRequest,
+	GatewayContextKeyVirtualKey,
+	GatewayContextKeyAPIKeyName,
+	GatewayContextKeyAPIKeyID,
+	GatewayContextKeyDirectKey,
+	GatewayContextKeyRequestID,
+	GatewayContextKeyFallbackRequestID,
+	GatewayContextKeySelectedKeyID,
+	GatewayContextKeySelectedKeyName,
+	GatewayContextKeyNumberOfRetries,
+	GatewayContextKeyFallbackIndex,
+	GatewayContextKeySkipKeySelection,
+	GatewayContextKeySkipBudgetAndRateLimits,
+	GatewayContextKeyURLPath,
+	GatewayContextKeyDeferTraceCompletion,
+	GatewayContextKeyAttemptTrail,
+	GatewayContextKeyStreamGated,
+	GatewayContextKeyMCPHealthCheckRequest,
 }
 
 // pluginLogStore holds plugin log entries accumulated during request processing.
-// It is shared between the root RakshaContext and all scoped contexts derived from it.
+// It is shared between the root GatewayContext and all scoped contexts derived from it.
 // Uses a flat slice (not map) to minimize heap allocations.
 type pluginLogStore struct {
 	mu   sync.Mutex
@@ -45,10 +45,10 @@ var pluginLogStorePool = sync.Pool{
 	},
 }
 
-// RakshaContext is a custom context.Context implementation that tracks user-set values.
+// GatewayContext is a custom context.Context implementation that tracks user-set values.
 // It supports deadlines, can be derived from other contexts, and provides layered
-// value inheritance when derived from another RakshaContext.
-type RakshaContext struct {
+// value inheritance when derived from another GatewayContext.
+type GatewayContext struct {
 	parent                context.Context
 	deadline              time.Time
 	hasDeadline           bool
@@ -63,29 +63,29 @@ type RakshaContext struct {
 	// Plugin scoping fields
 	pluginScope   *string                        // Non-nil when this is a scoped plugin context
 	pluginLogs    atomic.Pointer[pluginLogStore] // Shared log store; lazily initialized on root, shared by scoped contexts
-	valueDelegate *RakshaContext                // For scoped contexts: delegate Value/SetValue to this root context
+	valueDelegate *GatewayContext                // For scoped contexts: delegate Value/SetValue to this root context
 }
 
-// NewRakshaContext creates a new RakshaContext with the given parent context and deadline.
+// NewGatewayContext creates a new GatewayContext with the given parent context and deadline.
 // If the deadline is zero, no deadline is set on this context (though the parent may have one).
 // The context will be cancelled when the deadline expires or when the parent context is cancelled.
-func NewRakshaContext(parent context.Context, deadline time.Time) *RakshaContext {
+func NewGatewayContext(parent context.Context, deadline time.Time) *GatewayContext {
 	if parent == nil {
 		parent = context.Background()
 	}
-	// Unwrap pooled scoped RakshaContexts to their delegate root. A scoped
+	// Unwrap pooled scoped GatewayContexts to their delegate root. A scoped
 	// context (from WithPluginScope) is reset and returned to a sync.Pool when
 	// ReleasePluginScope is called, which can happen before a derived context's
 	// watchCancellation goroutine has finished observing parent.Deadline()/Done().
 	// Pointing the derived parent at the long-lived root avoids that race.
 	for {
-		bc, ok := parent.(*RakshaContext)
+		bc, ok := parent.(*GatewayContext)
 		if !ok || bc.valueDelegate == nil {
 			break
 		}
 		parent = bc.valueDelegate
 	}
-	ctx := &RakshaContext{
+	ctx := &GatewayContext{
 		parent:                parent,
 		deadline:              deadline,
 		hasDeadline:           !deadline.IsZero(),
@@ -106,42 +106,42 @@ func NewRakshaContext(parent context.Context, deadline time.Time) *RakshaContext
 	return ctx
 }
 
-// NewRakshaContextWithValue creates a new RakshaContext with the given value set.
-func NewRakshaContextWithValue(parent context.Context, deadline time.Time, key any, value any) *RakshaContext {
-	ctx := NewRakshaContext(parent, deadline)
+// NewGatewayContextWithValue creates a new GatewayContext with the given value set.
+func NewGatewayContextWithValue(parent context.Context, deadline time.Time, key any, value any) *GatewayContext {
+	ctx := NewGatewayContext(parent, deadline)
 	ctx.SetValue(key, value)
 	return ctx
 }
 
-// NewRakshaContextWithTimeout creates a new RakshaContext with a timeout duration.
-// This is a convenience wrapper around NewRakshaContext.
+// NewGatewayContextWithTimeout creates a new GatewayContext with a timeout duration.
+// This is a convenience wrapper around NewGatewayContext.
 // Returns the context and a cancel function that should be called to release resources.
-func NewRakshaContextWithTimeout(parent context.Context, timeout time.Duration) (*RakshaContext, context.CancelFunc) {
-	ctx := NewRakshaContext(parent, time.Now().Add(timeout))
+func NewGatewayContextWithTimeout(parent context.Context, timeout time.Duration) (*GatewayContext, context.CancelFunc) {
+	ctx := NewGatewayContext(parent, time.Now().Add(timeout))
 	return ctx, func() { ctx.Cancel() }
 }
 
-// NewRakshaContextWithCancel creates a new RakshaContext with a cancel function.
-// This is a convenience wrapper around NewRakshaContext.
+// NewGatewayContextWithCancel creates a new GatewayContext with a cancel function.
+// This is a convenience wrapper around NewGatewayContext.
 // Returns the context and a cancel function that should be called to release resources.
-func NewRakshaContextWithCancel(parent context.Context) (*RakshaContext, context.CancelFunc) {
-	ctx := NewRakshaContext(parent, NoDeadline)
+func NewGatewayContextWithCancel(parent context.Context) (*GatewayContext, context.CancelFunc) {
+	ctx := NewGatewayContext(parent, NoDeadline)
 	return ctx, func() { ctx.Cancel() }
 }
 
 // WithValue returns a new context with the given value set.
-func (bc *RakshaContext) WithValue(key any, value any) *RakshaContext {
+func (bc *GatewayContext) WithValue(key any, value any) *GatewayContext {
 	bc.SetValue(key, value)
 	return bc
 }
 
-// Root returns the underlying root RakshaContext. For root contexts this is
+// Root returns the underlying root GatewayContext. For root contexts this is
 // the receiver itself; for plugin-scoped contexts it is the underlying root
 // that scoped Value/SetValue calls delegate to.
 //
 // PLUGIN AUTHORS: capture Root() synchronously inside Pre/PostLLMHook (or
 // any other hook) when you need to write to the context from a goroutine
-// that outlives the hook. The plugin-scoped *RakshaContext passed into your
+// that outlives the hook. The plugin-scoped *GatewayContext passed into your
 // hook is reclaimed by an internal sync.Pool the moment the hook returns —
 // any later SetValue/Value call on it lands in detached storage that nobody
 // downstream can read (and can leak into a future pool reuse). The root,
@@ -150,15 +150,15 @@ func (bc *RakshaContext) WithValue(key any, value any) *RakshaContext {
 //
 // Example:
 //
-//	func (p *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req ...) (...) {
+//	func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req ...) (...) {
 //	    rootCtx := ctx.Root() // capture before the scope is released
 //	    go func() {
 //	        // ... long-running work that produces stream chunks ...
-//	        rootCtx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+//	        rootCtx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 //	    }()
 //	    return req, &schemas.LLMPluginShortCircuit{Stream: ch}, nil
 //	}
-func (bc *RakshaContext) Root() *RakshaContext {
+func (bc *GatewayContext) Root() *GatewayContext {
 	// Unwrap the full delegation chain. A scoped context can in principle be
 	// derived from another scoped context (e.g. nested plugin scopes), and
 	// stopping at the first valueDelegate would return an intermediate pooled
@@ -171,22 +171,22 @@ func (bc *RakshaContext) Root() *RakshaContext {
 }
 
 // BlockRestrictedWrites returns true if restricted writes are blocked.
-func (bc *RakshaContext) BlockRestrictedWrites() {
+func (bc *GatewayContext) BlockRestrictedWrites() {
 	bc.blockRestrictedWrites.Store(true)
 }
 
 // UnblockRestrictedWrites unblocks restricted writes.
-func (bc *RakshaContext) UnblockRestrictedWrites() {
+func (bc *GatewayContext) UnblockRestrictedWrites() {
 	bc.blockRestrictedWrites.Store(false)
 }
 
 // Cancel cancels the context, closing the Done channel and setting the error to context.Canceled.
-func (bc *RakshaContext) Cancel() {
+func (bc *GatewayContext) Cancel() {
 	bc.cancel(context.Canceled)
 }
 
 // watchCancellation monitors for deadline expiration and parent cancellation.
-func (bc *RakshaContext) watchCancellation() {
+func (bc *GatewayContext) watchCancellation() {
 	var timer <-chan time.Time
 
 	// Use effective deadline (considers both own and parent deadlines)
@@ -227,7 +227,7 @@ func (bc *RakshaContext) watchCancellation() {
 }
 
 // cancel closes the done channel and sets the error.
-func (bc *RakshaContext) cancel(err error) {
+func (bc *GatewayContext) cancel(err error) {
 	bc.doneOnce.Do(func() {
 		bc.errMu.Lock()
 		bc.err = err
@@ -239,7 +239,7 @@ func (bc *RakshaContext) cancel(err error) {
 // Deadline returns the deadline for this context.
 // For scoped contexts, delegates to the root context.
 // If both this context and the parent have deadlines, the earlier one is returned.
-func (bc *RakshaContext) Deadline() (time.Time, bool) {
+func (bc *GatewayContext) Deadline() (time.Time, bool) {
 	if bc.valueDelegate != nil {
 		return bc.valueDelegate.Deadline()
 	}
@@ -265,14 +265,14 @@ func (bc *RakshaContext) Deadline() (time.Time, bool) {
 }
 
 // Done returns a channel that is closed when the context is cancelled.
-func (bc *RakshaContext) Done() <-chan struct{} {
+func (bc *GatewayContext) Done() <-chan struct{} {
 	return bc.done
 }
 
 // Err returns the error explaining why the context was cancelled.
 // For scoped contexts, delegates to the root context.
 // Returns nil if the context has not been cancelled.
-func (bc *RakshaContext) Err() error {
+func (bc *GatewayContext) Err() error {
 	if bc.valueDelegate != nil {
 		return bc.valueDelegate.Err()
 	}
@@ -284,7 +284,7 @@ func (bc *RakshaContext) Err() error {
 // Value returns the value associated with the key.
 // For scoped contexts, delegates to the root context via valueDelegate.
 // Otherwise checks the internal userValues map, then delegates to the parent context.
-func (bc *RakshaContext) Value(key any) any {
+func (bc *GatewayContext) Value(key any) any {
 	if bc.valueDelegate != nil {
 		return bc.valueDelegate.Value(key)
 	}
@@ -316,17 +316,17 @@ func (bc *RakshaContext) Value(key any) any {
 // VK, no session header), so callers that branch on the returned mode alone
 // cannot mistake an unauthenticated request for a session-mode caller.
 //
-// VK check uses RakshaContextKeyGovernanceVirtualKeyID (the resolved VK row
-// ID) rather than RakshaContextKeyVirtualKey (the raw header value) because
+// VK check uses GatewayContextKeyGovernanceVirtualKeyID (the resolved VK row
+// ID) rather than GatewayContextKeyVirtualKey (the raw header value) because
 // vk-mode token rows are keyed by the resolved VK ID.
-func (bc *RakshaContext) MCPAuthMode() MCPAuthMode {
-	if userID, ok := bc.Value(RakshaContextKeyUserID).(string); ok && userID != "" {
+func (bc *GatewayContext) MCPAuthMode() MCPAuthMode {
+	if userID, ok := bc.Value(GatewayContextKeyUserID).(string); ok && userID != "" {
 		return MCPAuthModeUser
 	}
-	if vkID, ok := bc.Value(RakshaContextKeyGovernanceVirtualKeyID).(string); ok && vkID != "" {
+	if vkID, ok := bc.Value(GatewayContextKeyGovernanceVirtualKeyID).(string); ok && vkID != "" {
 		return MCPAuthModeVK
 	}
-	if sid, ok := bc.Value(RakshaContextKeyMCPSessionID).(string); ok && sid != "" {
+	if sid, ok := bc.Value(GatewayContextKeyMCPSessionID).(string); ok && sid != "" {
 		return MCPAuthModeSession
 	}
 	return MCPAuthModeNone
@@ -335,7 +335,7 @@ func (bc *RakshaContext) MCPAuthMode() MCPAuthMode {
 // SetValue sets a value in the internal userValues map.
 // For scoped contexts, delegates to the root context via valueDelegate.
 // This is thread-safe and can be called concurrently.
-func (bc *RakshaContext) SetValue(key, value any) {
+func (bc *GatewayContext) SetValue(key, value any) {
 	if bc.valueDelegate != nil {
 		bc.valueDelegate.SetValue(key, value)
 		return
@@ -353,11 +353,11 @@ func (bc *RakshaContext) SetValue(key, value any) {
 	bc.userValues[key] = value
 }
 
-// setReservedValue writes a Raksha-owned reserved key, bypassing the
+// setReservedValue writes a Gateway-owned reserved key, bypassing the
 // blockRestrictedWrites check that gates the public SetValue path. It mirrors
 // SetValue's valueDelegate recursion so writes from scoped plugin contexts
 // reach the root. Internal use only — exposing this would defeat reservedKeys.
-func (bc *RakshaContext) setReservedValue(key, value any) {
+func (bc *GatewayContext) setReservedValue(key, value any) {
 	if bc.valueDelegate != nil {
 		bc.valueDelegate.setReservedValue(key, value)
 		return
@@ -372,7 +372,7 @@ func (bc *RakshaContext) setReservedValue(key, value any) {
 
 // ClearValue clears a value from the internal userValues map.
 // For scoped contexts, delegates to the root context via valueDelegate.
-func (bc *RakshaContext) ClearValue(key any) {
+func (bc *GatewayContext) ClearValue(key any) {
 	if bc.valueDelegate != nil {
 		bc.valueDelegate.ClearValue(key)
 		return
@@ -391,7 +391,7 @@ func (bc *RakshaContext) ClearValue(key any) {
 
 // GetAndSetValue gets a value from the internal userValues map and sets it.
 // For scoped contexts, delegates to the root context via valueDelegate.
-func (bc *RakshaContext) GetAndSetValue(key any, value any) any {
+func (bc *GatewayContext) GetAndSetValue(key any, value any) any {
 	if bc.valueDelegate != nil {
 		return bc.valueDelegate.GetAndSetValue(key, value)
 	}
@@ -413,11 +413,11 @@ func (bc *RakshaContext) GetAndSetValue(key any, value any) any {
 // GetUserValues returns a copy of all user-set values in this context.
 // If the parent is also a PluginContext, the values are merged with parent values
 // (this context's values take precedence over parent values).
-func (bc *RakshaContext) GetUserValues() map[any]any {
+func (bc *GatewayContext) GetUserValues() map[any]any {
 	result := make(map[any]any)
 
 	// First, get parent's user values if parent is a PluginContext
-	if parentCtx, ok := bc.parent.(*RakshaContext); ok {
+	if parentCtx, ok := bc.parent.(*GatewayContext); ok {
 		for k, v := range parentCtx.GetUserValues() {
 			result[k] = v
 		}
@@ -434,7 +434,7 @@ func (bc *RakshaContext) GetUserValues() map[any]any {
 }
 
 // GetParentCtxWithUserValues returns a copy of the parent context with all user-set values merged in.
-func (bc *RakshaContext) GetParentCtxWithUserValues() context.Context {
+func (bc *GatewayContext) GetParentCtxWithUserValues() context.Context {
 	parentCtx := bc.parent
 	bc.valuesMu.RLock()
 	for k, v := range bc.userValues {
@@ -454,19 +454,19 @@ func (bc *RakshaContext) GetParentCtxWithUserValues() context.Context {
 // send sites switch from a direct channel send to Tracer.GateSend. Streams that
 // never call Pause/Resume/End pay no extra cost.
 //
-// Requires a real Tracer to be wired via the Raksha config (e.g.
+// Requires a real Tracer to be wired via the Gateway config (e.g.
 // `framework/streaming/Accumulator`). Under `DefaultTracer()` (the
 // `*NoOpTracer` fall-back used when `config.Tracer` is nil), this call is
 // silently inert — chunks continue to flow direct to the client. See
 // `DefaultTracer()` for the architectural reason core cannot ship a built-in
 // gate impl.
-func (bc *RakshaContext) PauseStream() {
-	tr, _ := bc.Value(RakshaContextKeyTracer).(Tracer)
-	tid, _ := bc.Value(RakshaContextKeyTraceID).(string)
+func (bc *GatewayContext) PauseStream() {
+	tr, _ := bc.Value(GatewayContextKeyTracer).(Tracer)
+	tid, _ := bc.Value(GatewayContextKeyTraceID).(string)
 	if tr == nil || tid == "" {
 		return
 	}
-	bc.setReservedValue(RakshaContextKeyStreamGated, true)
+	bc.setReservedValue(GatewayContextKeyStreamGated, true)
 	tr.PauseStream(tid)
 }
 
@@ -476,13 +476,13 @@ func (bc *RakshaContext) PauseStream() {
 //
 // Engages the pause/resume gate (see PauseStream). Requires a real Tracer
 // (e.g. `framework/streaming/Accumulator`); inert under `DefaultTracer()`.
-func (bc *RakshaContext) ResumeStream() {
-	tr, _ := bc.Value(RakshaContextKeyTracer).(Tracer)
-	tid, _ := bc.Value(RakshaContextKeyTraceID).(string)
+func (bc *GatewayContext) ResumeStream() {
+	tr, _ := bc.Value(GatewayContextKeyTracer).(Tracer)
+	tid, _ := bc.Value(GatewayContextKeyTraceID).(string)
 	if tr == nil || tid == "" {
 		return
 	}
-	bc.setReservedValue(RakshaContextKeyStreamGated, true)
+	bc.setReservedValue(GatewayContextKeyStreamGated, true)
 	tr.ResumeStream(tid)
 }
 
@@ -494,13 +494,13 @@ func (bc *RakshaContext) ResumeStream() {
 //
 // Engages the pause/resume gate (see PauseStream). Requires a real Tracer
 // (e.g. `framework/streaming/Accumulator`); inert under `DefaultTracer()`.
-func (bc *RakshaContext) EndStream(err *RakshaError) {
-	tr, _ := bc.Value(RakshaContextKeyTracer).(Tracer)
-	tid, _ := bc.Value(RakshaContextKeyTraceID).(string)
+func (bc *GatewayContext) EndStream(err *GatewayError) {
+	tr, _ := bc.Value(GatewayContextKeyTracer).(Tracer)
+	tid, _ := bc.Value(GatewayContextKeyTraceID).(string)
 	if tr == nil || tid == "" {
 		return
 	}
-	bc.setReservedValue(RakshaContextKeyStreamGated, true)
+	bc.setReservedValue(GatewayContextKeyStreamGated, true)
 	tr.EndStream(tid, err)
 }
 
@@ -509,9 +509,9 @@ func (bc *RakshaContext) EndStream(err *RakshaError) {
 // flowing through the gate while Active). Read-only: does not engage the
 // gate or create any tracer state. Returns false when no Tracer or trace ID
 // is present in ctx, or when no accumulator exists for this stream.
-func (bc *RakshaContext) IsStreamEnded() bool {
-	tr, _ := bc.Value(RakshaContextKeyTracer).(Tracer)
-	tid, _ := bc.Value(RakshaContextKeyTraceID).(string)
+func (bc *GatewayContext) IsStreamEnded() bool {
+	tr, _ := bc.Value(GatewayContextKeyTracer).(Tracer)
+	tid, _ := bc.Value(GatewayContextKeyTraceID).(string)
 	if tr == nil || tid == "" {
 		return false
 	}
@@ -522,25 +522,25 @@ func (bc *RakshaContext) IsStreamEnded() bool {
 // context is currently paused. Read-only: does not engage the gate or create
 // any tracer state. Returns false when no Tracer or trace ID is present in
 // ctx, or when no accumulator exists for this stream.
-func (bc *RakshaContext) IsStreamPaused() bool {
-	tr, _ := bc.Value(RakshaContextKeyTracer).(Tracer)
-	tid, _ := bc.Value(RakshaContextKeyTraceID).(string)
+func (bc *GatewayContext) IsStreamPaused() bool {
+	tr, _ := bc.Value(GatewayContextKeyTracer).(Tracer)
+	tid, _ := bc.Value(GatewayContextKeyTraceID).(string)
 	if tr == nil || tid == "" {
 		return false
 	}
 	return tr.IsStreamPaused(tid)
 }
 
-// GetAccumulatedResponse returns a snapshot of the RakshaResponse assembled
+// GetAccumulatedResponse returns a snapshot of the GatewayResponse assembled
 // from chunks received so far on the streaming response associated with this
 // context. Built on demand — useful from PostLLMHook (including while paused)
 // to inspect the assembled output before deciding next steps. Read-only: does
 // not engage the gate or mutate accumulator state. Returns nil if no Tracer
 // or trace ID is present, no accumulator exists, no chunks have been
 // accumulated yet, or the stream type is indeterminable.
-func (bc *RakshaContext) GetAccumulatedResponse() *RakshaResponse {
-	tr, _ := bc.Value(RakshaContextKeyTracer).(Tracer)
-	tid, _ := bc.Value(RakshaContextKeyTraceID).(string)
+func (bc *GatewayContext) GetAccumulatedResponse() *GatewayResponse {
+	tr, _ := bc.Value(GatewayContextKeyTracer).(Tracer)
+	tid, _ := bc.Value(GatewayContextKeyTraceID).(string)
 	if tr == nil || tid == "" {
 		return nil
 	}
@@ -549,27 +549,27 @@ func (bc *RakshaContext) GetAccumulatedResponse() *RakshaResponse {
 
 // AppendRoutingEngineLog appends a routing engine log entry to the context.
 // Parameters:
-//   - ctx: The Raksha context
+//   - ctx: The Gateway context
 //   - engineName: Name of the routing engine (e.g., "governance", "routing-rule")
 //   - message: Human-readable log message describing the decision/action
-func (bc *RakshaContext) AppendRoutingEngineLog(engineName string, level LogLevel, message string) {
+func (bc *GatewayContext) AppendRoutingEngineLog(engineName string, level LogLevel, message string) {
 	entry := RoutingEngineLogEntry{
 		Engine:    engineName,
 		Level:     level,
 		Message:   message,
 		Timestamp: time.Now().UnixMilli(),
 	}
-	AppendToContextList(bc, RakshaContextKeyRoutingEngineLogs, entry)
+	AppendToContextList(bc, GatewayContextKeyRoutingEngineLogs, entry)
 }
 
 // GetRoutingEngineLogs retrieves all routing engine logs from the context.
 // Parameters:
-//   - ctx: The Raksha context
+//   - ctx: The Gateway context
 //
 // Returns:
 //   - []RoutingEngineLogEntry: Slice of routing engine log entries (nil if none)
-func (bc *RakshaContext) GetRoutingEngineLogs() []RoutingEngineLogEntry {
-	if val := bc.Value(RakshaContextKeyRoutingEngineLogs); val != nil {
+func (bc *GatewayContext) GetRoutingEngineLogs() []RoutingEngineLogEntry {
+	if val := bc.Value(GatewayContextKeyRoutingEngineLogs); val != nil {
 		if logs, ok := val.([]RoutingEngineLogEntry); ok {
 			return logs
 		}
@@ -581,7 +581,7 @@ func (bc *RakshaContext) GetRoutingEngineLogs() []RoutingEngineLogEntry {
 // append when value already exists in the list. Downstream consumers of these
 // lists (notably `routing_engines_used` → Prometheus labels) treat duplicate
 // entries as bugs, so set semantics are enforced at the write site.
-func AppendToContextList[T comparable](ctx *RakshaContext, key RakshaContextKey, value T) {
+func AppendToContextList[T comparable](ctx *GatewayContext, key GatewayContextKey, value T) {
 	if ctx == nil {
 		return
 	}
@@ -595,7 +595,7 @@ func AppendToContextList[T comparable](ctx *RakshaContext, key RakshaContextKey,
 	ctx.SetValue(key, append(existingValues, value))
 }
 
-// WithPluginScope returns a scoped RakshaContext that shares the root's
+// WithPluginScope returns a scoped GatewayContext that shares the root's
 // pluginLogs store and delegates Value/SetValue/Deadline/Err/Done operations
 // to the root.
 //
@@ -606,7 +606,7 @@ func AppendToContextList[T comparable](ctx *RakshaContext, key RakshaContextKey,
 // the struct across requests would race those reads. Allocating fresh is
 // idiomatic Go context handling (the stdlib context types are not pooled
 // either) and keeps the lifecycle race-free without atomics.
-func (bc *RakshaContext) WithPluginScope(name *string) *RakshaContext {
+func (bc *GatewayContext) WithPluginScope(name *string) *GatewayContext {
 	// Lazily initialize the plugin log store on the root context (CAS to avoid race)
 	if bc.pluginLogs.Load() == nil {
 		newStore := pluginLogStorePool.Get().(*pluginLogStore)
@@ -616,7 +616,7 @@ func (bc *RakshaContext) WithPluginScope(name *string) *RakshaContext {
 		}
 	}
 
-	scoped := &RakshaContext{
+	scoped := &GatewayContext{
 		parent:        bc.parent,
 		done:          bc.done,
 		pluginScope:   name,
@@ -637,7 +637,7 @@ func (bc *RakshaContext) WithPluginScope(name *string) *RakshaContext {
 //
 // We still release the plugin log store reference so it can be drained or
 // reclaimed independently of the scope's lifetime.
-func (bc *RakshaContext) ReleasePluginScope() {
+func (bc *GatewayContext) ReleasePluginScope() {
 	if bc.valueDelegate == nil {
 		return // not a scoped context
 	}
@@ -646,9 +646,9 @@ func (bc *RakshaContext) ReleasePluginScope() {
 
 // SetTraceAttribute adds an attribute to the root span for the current trace.
 // This is thread-safe and can be called concurrently.
-func (bc *RakshaContext) SetTraceAttribute(key string, value any) {
-	tr, _ := bc.Value(RakshaContextKeyTracer).(Tracer)
-	tid, _ := bc.Value(RakshaContextKeyTraceID).(string)
+func (bc *GatewayContext) SetTraceAttribute(key string, value any) {
+	tr, _ := bc.Value(GatewayContextKeyTracer).(Tracer)
+	tid, _ := bc.Value(GatewayContextKeyTraceID).(string)
 	if tr == nil || tid == "" {
 		return
 	}
@@ -661,7 +661,7 @@ func (bc *RakshaContext) SetTraceAttribute(key string, value any) {
 
 // Log appends a structured log entry for the current plugin scope.
 // No-op if the context is not scoped to a plugin or has no log store.
-func (bc *RakshaContext) Log(level LogLevel, msg string) {
+func (bc *GatewayContext) Log(level LogLevel, msg string) {
 	store := bc.pluginLogs.Load()
 	if bc.pluginScope == nil || store == nil {
 		return
@@ -678,7 +678,7 @@ func (bc *RakshaContext) Log(level LogLevel, msg string) {
 
 // GetPluginLogs returns a deep copy of all accumulated plugin log entries.
 // Thread-safe. Returns nil if no logs have been recorded.
-func (bc *RakshaContext) GetPluginLogs() []PluginLogEntry {
+func (bc *GatewayContext) GetPluginLogs() []PluginLogEntry {
 	store := bc.pluginLogs.Load()
 	if store == nil {
 		return nil
@@ -697,7 +697,7 @@ func (bc *RakshaContext) GetPluginLogs() []PluginLogEntry {
 // The internal log store is returned to the pool after draining.
 // Returns nil if no logs have been recorded.
 // This should be called once on the root context after all plugin hooks have completed.
-func (bc *RakshaContext) DrainPluginLogs() []PluginLogEntry {
+func (bc *GatewayContext) DrainPluginLogs() []PluginLogEntry {
 	if bc.valueDelegate != nil {
 		return nil // scoped contexts must not drain the shared log store
 	}

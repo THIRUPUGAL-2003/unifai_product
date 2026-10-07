@@ -1,10 +1,11 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Message, type MessageContent, extractVariablesFromMessages, mergeVariables } from "@/lib/message";
-import { useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
+import { getErrorMessage, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
 import { AlertTriangle, Paperclip, Play, Plus, Square } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { usePromptContext } from "../context";
 import { filesToAttachments, isImageFile, attachmentNeedsAudio, attachmentNeedsVision } from "../utils/attachment";
@@ -33,9 +34,29 @@ export function NewMessageInputView() {
 	const [attachments, setAttachments] = useState<MessageContent[]>([]);
 	const userInputRef = useRef<HTMLTextAreaElement>(null);
 
-	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
-	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { pollingInterval: 5000 });
-	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { pollingInterval: 5000 });
+	const POLL_MS = 5000;
+	const [authPollMs, setAuthPollMs] = useState(POLL_MS);
+	const [vkPollMs, setVkPollMs] = useState(POLL_MS);
+	const [billingPollMs, setBillingPollMs] = useState(POLL_MS);
+	const { data: authStatus, error: authError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
+	const { data: virtualKeysData, error: vkError, isError: vkFailed } = useGetVirtualKeysQuery(undefined, {
+		pollingInterval: vkPollMs,
+	});
+	const { data: billingBlocks, error: billingError, isError: billingFailed } = useGetVirtualKeyBillingBlocksQuery(undefined, {
+		pollingInterval: billingPollMs,
+	});
+	const vkBillingQueryFailed = vkFailed || billingFailed;
+	const vkBillingQueryError = vkError || billingError;
+
+	useEffect(() => {
+		setAuthPollMs(authError ? 0 : POLL_MS);
+	}, [authError]);
+	useEffect(() => {
+		setVkPollMs(vkError ? 0 : POLL_MS);
+	}, [vkError]);
+	useEffect(() => {
+		setBillingPollMs(billingError ? 0 : POLL_MS);
+	}, [billingError]);
 
 	const budgetAlert = useMemo(() => {
 		// 1. Check User Personal Budget
@@ -320,6 +341,13 @@ export function NewMessageInputView() {
 					))}
 				</div>
 			)}
+			{vkBillingQueryFailed ? (
+				<QueryErrorBanner
+					className="mb-2"
+					testId="prompt-vk-billing-query-error"
+					message={getErrorMessage(vkBillingQueryError) || "Failed to load virtual keys or billing blocks."}
+				/>
+			) : null}
 			{budgetAlert && (
 				<div
 					data-testid="prompt-budget-alert-banner"

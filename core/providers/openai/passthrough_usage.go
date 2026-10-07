@@ -7,15 +7,15 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // ExtractOpenAIPassthroughUsage extracts usage from a passthrough response payload. method is the
 // HTTP method (used to bill only generation routes); path is the stripped request path; reqBody is
 // the original request body (needed for speech char count and image/video parameters); body is a
 // single SSE data event (streaming) or the full response body (non-streaming).
-func ExtractOpenAIPassthroughUsage(method, path string, reqBody, body []byte) *schemas.RakshaPassthroughUsage {
+func ExtractOpenAIPassthroughUsage(method, path string, reqBody, body []byte) *schemas.GatewayPassthroughUsage {
 	if idx := strings.IndexByte(path, '?'); idx >= 0 {
 		path = path[:idx]
 	}
@@ -67,7 +67,7 @@ func HasOpenAIPassthroughUsage(event []byte) bool {
 // ---- video generation ----
 const openAIVideoDefaultSeconds = 4
 
-func extractOAIVideoUsage(reqBody []byte) *schemas.RakshaPassthroughUsage {
+func extractOAIVideoUsage(reqBody []byte) *schemas.GatewayPassthroughUsage {
 	secs := openAIVideoDefaultSeconds
 	if len(reqBody) > 0 {
 		// JSON body: OpenAI documents `seconds` as a top-level request field. gjson .Float()
@@ -83,7 +83,7 @@ func extractOAIVideoUsage(reqBody []byte) *schemas.RakshaPassthroughUsage {
 			}
 		}
 	}
-	return &schemas.RakshaPassthroughUsage{VideoSeconds: &secs}
+	return &schemas.GatewayPassthroughUsage{VideoSeconds: &secs}
 }
 
 // parseMultipartFormValues sniffs the multipart boundary from the first line of body and returns
@@ -118,14 +118,14 @@ func firstFormValue(form map[string][]string, key string) string {
 }
 
 // ---- chat / text completions ----
-// RakshaLLMUsage is OpenAI-compatible so we can unmarshal directly.
+// GatewayLLMUsage is OpenAI-compatible so we can unmarshal directly.
 
 type oaiChatUsageWrapper struct {
-	Usage       *schemas.RakshaLLMUsage `json:"usage"`
+	Usage       *schemas.GatewayLLMUsage `json:"usage"`
 	ServiceTier *string                  `json:"service_tier"`
 }
 
-func extractOAIChatUsage(body []byte) *schemas.RakshaPassthroughUsage {
+func extractOAIChatUsage(body []byte) *schemas.GatewayPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -133,9 +133,9 @@ func extractOAIChatUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	if err := sonic.Unmarshal(body, &w); err != nil || w.Usage == nil || w.Usage.TotalTokens == 0 {
 		return nil
 	}
-	u := &schemas.RakshaPassthroughUsage{LLMUsage: w.Usage}
+	u := &schemas.GatewayPassthroughUsage{LLMUsage: w.Usage}
 	if w.ServiceTier != nil {
-		t := schemas.RakshaServiceTier(*w.ServiceTier)
+		t := schemas.GatewayServiceTier(*w.ServiceTier)
 		u.ServiceTier = &t
 	}
 	return u
@@ -154,7 +154,7 @@ type oaiResponsesWrapper struct {
 	ServiceTier *string                         `json:"service_tier"`
 }
 
-func extractOAIResponsesUsage(body []byte) *schemas.RakshaPassthroughUsage {
+func extractOAIResponsesUsage(body []byte) *schemas.GatewayPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -175,8 +175,8 @@ func extractOAIResponsesUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	return buildOAIResponsesUsage(ru, tier)
 }
 
-func buildOAIResponsesUsage(ru *schemas.ResponsesResponseUsage, serviceTier *string) *schemas.RakshaPassthroughUsage {
-	usage := &schemas.RakshaLLMUsage{
+func buildOAIResponsesUsage(ru *schemas.ResponsesResponseUsage, serviceTier *string) *schemas.GatewayPassthroughUsage {
+	usage := &schemas.GatewayLLMUsage{
 		PromptTokens:     ru.InputTokens,
 		CompletionTokens: ru.OutputTokens,
 		TotalTokens:      ru.TotalTokens,
@@ -195,9 +195,9 @@ func buildOAIResponsesUsage(ru *schemas.ResponsesResponseUsage, serviceTier *str
 			usage.CompletionTokensDetails.NumSearchQueries = ru.OutputTokensDetails.NumSearchQueries
 		}
 	}
-	u := &schemas.RakshaPassthroughUsage{LLMUsage: usage}
+	u := &schemas.GatewayPassthroughUsage{LLMUsage: usage}
 	if serviceTier != nil {
-		t := schemas.RakshaServiceTier(*serviceTier)
+		t := schemas.GatewayServiceTier(*serviceTier)
 		u.ServiceTier = &t
 	}
 	return u
@@ -206,7 +206,7 @@ func buildOAIResponsesUsage(ru *schemas.ResponsesResponseUsage, serviceTier *str
 // ---- embeddings ----
 // Embeddings are not typically streamed; body is plain JSON.
 
-func extractOAIEmbeddingUsage(body []byte) *schemas.RakshaPassthroughUsage {
+func extractOAIEmbeddingUsage(body []byte) *schemas.GatewayPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -214,13 +214,13 @@ func extractOAIEmbeddingUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	if err := sonic.Unmarshal(body, &w); err != nil || w.Usage == nil || w.Usage.TotalTokens == 0 {
 		return nil
 	}
-	return &schemas.RakshaPassthroughUsage{LLMUsage: w.Usage}
+	return &schemas.GatewayPassthroughUsage{LLMUsage: w.Usage}
 }
 
 // ---- speech (TTS) ----
 // Response is binary audio; pricing is based on input character count from the request.
 
-func extractOAISpeechUsage(reqBody []byte) *schemas.RakshaPassthroughUsage {
+func extractOAISpeechUsage(reqBody []byte) *schemas.GatewayPassthroughUsage {
 	if len(reqBody) == 0 {
 		return nil
 	}
@@ -228,7 +228,7 @@ func extractOAISpeechUsage(reqBody []byte) *schemas.RakshaPassthroughUsage {
 	if err := sonic.Unmarshal(reqBody, &req); err != nil || req.Input == "" {
 		return nil
 	}
-	return &schemas.RakshaPassthroughUsage{
+	return &schemas.GatewayPassthroughUsage{
 		AudioInputChars: len([]rune(req.Input)),
 	}
 }
@@ -240,18 +240,18 @@ type oaiTranscriptionResponseWrapper struct {
 	Duration float64                     `json:"duration"` // seconds fallback for older models
 }
 
-func extractOAITranscriptionUsage(body []byte) *schemas.RakshaPassthroughUsage {
+func extractOAITranscriptionUsage(body []byte) *schemas.GatewayPassthroughUsage {
 	var r oaiTranscriptionResponseWrapper
 	if err := sonic.Unmarshal(body, &r); err != nil {
 		return nil
 	}
-	u := &schemas.RakshaPassthroughUsage{}
+	u := &schemas.GatewayPassthroughUsage{}
 	if r.Usage != nil && r.Usage.TotalTokens != nil && *r.Usage.TotalTokens > 0 {
 		promptTokens := 0
 		if r.Usage.InputTokens != nil {
 			promptTokens = *r.Usage.InputTokens
 		}
-		u.LLMUsage = &schemas.RakshaLLMUsage{
+		u.LLMUsage = &schemas.GatewayLLMUsage{
 			PromptTokens: promptTokens,
 			TotalTokens:  *r.Usage.TotalTokens,
 		}
@@ -275,8 +275,8 @@ func extractOAITranscriptionUsage(body []byte) *schemas.RakshaPassthroughUsage {
 // ---- image generation / edit / variation ----
 // Size, Quality, N come from the request body; usage/data count from the response.
 
-func extractOAIImageUsage(reqBody, body []byte) *schemas.RakshaPassthroughUsage {
-	u := &schemas.RakshaPassthroughUsage{}
+func extractOAIImageUsage(reqBody, body []byte) *schemas.GatewayPassthroughUsage {
+	u := &schemas.GatewayPassthroughUsage{}
 
 	// Request body: size, quality, n. /v1/images/{edits,variations} are sent as
 	// multipart/form-data (binary image upload) with these as form fields; /v1/images/generations
@@ -359,7 +359,7 @@ func extractOAIImageUsage(reqBody, body []byte) *schemas.RakshaPassthroughUsage 
 	}
 	// Populate LLMUsage from image token counts so logs show token totals.
 	if u.ImageUsage.TotalTokens > 0 {
-		u.LLMUsage = &schemas.RakshaLLMUsage{
+		u.LLMUsage = &schemas.GatewayLLMUsage{
 			PromptTokens:     u.ImageUsage.InputTokens,
 			CompletionTokens: u.ImageUsage.OutputTokens,
 			TotalTokens:      u.ImageUsage.TotalTokens,
@@ -376,7 +376,7 @@ func extractOAIImageUsage(reqBody, body []byte) *schemas.RakshaPassthroughUsage 
 // returns {"object":"list", "data":[...]}. Retrieve/delete hit /containers/{id} and never
 // reach this extractor. Containers are never streamed, so body is plain JSON.
 
-func extractOAIContainerUsage(body []byte) *schemas.RakshaPassthroughUsage {
+func extractOAIContainerUsage(body []byte) *schemas.GatewayPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -396,5 +396,5 @@ func extractOAIContainerUsage(body []byte) *schemas.RakshaPassthroughUsage {
 	if resp.MemoryLimit != "" {
 		identifier = "container-" + resp.MemoryLimit
 	}
-	return &schemas.RakshaPassthroughUsage{ContainerIdentifier: identifier}
+	return &schemas.GatewayPassthroughUsage{ContainerIdentifier: identifier}
 }

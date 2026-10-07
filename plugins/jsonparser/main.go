@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 const (
@@ -48,7 +48,7 @@ type PluginConfig struct {
 }
 
 const (
-	EnableStreamingJSONParser schemas.RakshaContextKey = "enable-streaming-json-parser"
+	EnableStreamingJSONParser schemas.GatewayContextKey = "enable-streaming-json-parser"
 )
 
 // Init creates a new JSON parser plugin instance with custom configuration
@@ -84,49 +84,49 @@ func (p *JsonParserPlugin) GetName() string {
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (p *JsonParserPlugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *JsonParserPlugin) HTTPTransportPreHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (p *JsonParserPlugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *JsonParserPlugin) HTTPTransportPostHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (p *JsonParserPlugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
+func (p *JsonParserPlugin) HTTPTransportStreamChunkHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, chunk *schemas.GatewayStreamChunk) (*schemas.GatewayStreamChunk, error) {
 	return chunk, nil
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (p *JsonParserPlugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
+func (p *JsonParserPlugin) PreRequestHook(_ *schemas.GatewayContext, _ *schemas.GatewayRequest) error {
 	return nil
 }
 
 // PreLLMHook is not used for this plugin as we only process responses
 // Parameters:
-//   - ctx: The Raksha context
-//   - req: The Raksha request
+//   - ctx: The Gateway context
+//   - req: The Gateway request
 //
 // Returns:
-//   - *schemas.RakshaRequest: The processed request
+//   - *schemas.GatewayRequest: The processed request
 //   - *schemas.LLMPluginShortCircuit: The plugin short circuit if the request is not allowed
 //   - error: Any error that occurred during processing
-func (p *JsonParserPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *JsonParserPlugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	return req, nil, nil
 }
 
 // PostLLMHook processes streaming responses by accumulating chunks and making accumulated content valid JSON
 // Parameters:
-//   - ctx: The Raksha context
-//   - result: The Raksha response to be processed
-//   - err: The Raksha error to be processed
+//   - ctx: The Gateway context
+//   - result: The Gateway response to be processed
+//   - err: The Gateway error to be processed
 //
 // Returns:
-//   - *schemas.RakshaResponse: The processed response
-//   - *schemas.RakshaError: The processed error
+//   - *schemas.GatewayResponse: The processed response
+//   - *schemas.GatewayError: The processed error
 //   - error: Any error that occurred during processing
-func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
+func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error) {
 	// If there's an error, don't process
 	if err != nil {
 		return result, err, nil
@@ -156,7 +156,7 @@ func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 
 	// Create a deep copy of the result to avoid modifying the original pointer
 	// This ensures other plugins using the same pointer don't get corrupted data
-	resultCopy := p.deepCopyRakshaResponse(result)
+	resultCopy := p.deepCopyGatewayResponse(result)
 	if resultCopy == nil {
 		return result, err, nil
 	}
@@ -183,12 +183,12 @@ func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 							fixedContent := p.parsePartialJSON(accumulated)
 
 							if !p.isValidJSON(fixedContent) {
-								err = &schemas.RakshaError{
+								err = &schemas.GatewayError{
 									Error: &schemas.ErrorField{
 										Message: "Invalid JSON in streaming response",
 									},
 									StreamControl: &schemas.StreamControl{
-										SkipStream: raksha.Ptr(true),
+										SkipStream: gateway.Ptr(true),
 									},
 								}
 
@@ -216,12 +216,12 @@ func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 			fixedContent := p.parsePartialJSON(accumulated)
 
 			if !p.isValidJSON(fixedContent) {
-				err = &schemas.RakshaError{
+				err = &schemas.GatewayError{
 					Error: &schemas.ErrorField{
 						Message: "Invalid JSON in streaming response",
 					},
 					StreamControl: &schemas.StreamControl{
-						SkipStream: raksha.Ptr(true),
+						SkipStream: gateway.Ptr(true),
 					},
 				}
 
@@ -233,7 +233,7 @@ func (p *JsonParserPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 	}
 
 	// If this is the final chunk, cleanup the accumulated content for this request
-	if streamEndIndicatorValue := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator); streamEndIndicatorValue != nil {
+	if streamEndIndicatorValue := ctx.Value(schemas.GatewayContextKeyStreamEndIndicator); streamEndIndicatorValue != nil {
 		isFinalChunk, ok := streamEndIndicatorValue.(bool)
 		if ok && isFinalChunk {
 			p.ClearRequestState(requestID)

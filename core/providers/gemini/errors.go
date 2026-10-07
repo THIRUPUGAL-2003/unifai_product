@@ -4,27 +4,27 @@ import (
 	"strconv"
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-// ToGeminiError derives a GeminiGenerationError from a RakshaError
-func ToGeminiError(rakshaErr *schemas.RakshaError) *GeminiGenerationError {
-	if rakshaErr == nil {
+// ToGeminiError derives a GeminiGenerationError from a GatewayError
+func ToGeminiError(gatewayErr *schemas.GatewayError) *GeminiGenerationError {
+	if gatewayErr == nil {
 		return nil
 	}
 	code := 500
 	status := ""
-	if rakshaErr.Error != nil && rakshaErr.Error.Type != nil {
-		status = *rakshaErr.Error.Type
+	if gatewayErr.Error != nil && gatewayErr.Error.Type != nil {
+		status = *gatewayErr.Error.Type
 	}
 	message := ""
-	if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
-		message = rakshaErr.Error.Message
+	if gatewayErr.Error != nil && gatewayErr.Error.Message != "" {
+		message = gatewayErr.Error.Message
 	}
-	if rakshaErr.StatusCode != nil {
-		code = *rakshaErr.StatusCode
+	if gatewayErr.StatusCode != nil {
+		code = *gatewayErr.StatusCode
 	}
 	return &GeminiGenerationError{
 		Error: &GeminiGenerationErrorStruct{
@@ -36,10 +36,10 @@ func ToGeminiError(rakshaErr *schemas.RakshaError) *GeminiGenerationError {
 }
 
 // parseGeminiError parses Gemini error responses
-func parseGeminiError(resp *fasthttp.Response) *schemas.RakshaError {
+func parseGeminiError(resp *fasthttp.Response) *schemas.GatewayError {
 	// Try to parse as []GeminiGenerationError
 	var errorResps []GeminiGenerationError
-	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResps)
+	gatewayErr := providerUtils.HandleProviderAPIError(resp, &errorResps)
 	if len(errorResps) > 0 {
 		var message string
 		var firstError *GeminiGenerationErrorStruct
@@ -53,27 +53,27 @@ func parseGeminiError(resp *fasthttp.Response) *schemas.RakshaError {
 		}
 		// Trim trailing newline
 		message = strings.TrimSuffix(message, "\n")
-		if rakshaErr.Error == nil {
-			rakshaErr.Error = &schemas.ErrorField{}
+		if gatewayErr.Error == nil {
+			gatewayErr.Error = &schemas.ErrorField{}
 		}
 		// Set Code from first error if available
 		if firstError != nil {
-			rakshaErr.Error.Code = schemas.Ptr(strconv.Itoa(firstError.Code))
+			gatewayErr.Error.Code = schemas.Ptr(strconv.Itoa(firstError.Code))
 		}
 		// Set Message to trimmed concatenated message
-		rakshaErr.Error.Message = message
-		return rakshaErr
+		gatewayErr.Error.Message = message
+		return gatewayErr
 	}
 
 	// Try to parse as GeminiGenerationError
 	var errorResp GeminiGenerationError
-	rakshaErr = providerUtils.HandleProviderAPIError(resp, &errorResp)
+	gatewayErr = providerUtils.HandleProviderAPIError(resp, &errorResp)
 	if errorResp.Error != nil {
-		if rakshaErr.Error == nil {
-			rakshaErr.Error = &schemas.ErrorField{}
+		if gatewayErr.Error == nil {
+			gatewayErr.Error = &schemas.ErrorField{}
 		}
-		rakshaErr.Error.Code = schemas.Ptr(strconv.Itoa(errorResp.Error.Code))
-		rakshaErr.Error.Message = errorResp.Error.Message
+		gatewayErr.Error.Code = schemas.Ptr(strconv.Itoa(errorResp.Error.Code))
+		gatewayErr.Error.Message = errorResp.Error.Message
 	}
-	return rakshaErr
+	return gatewayErr
 }

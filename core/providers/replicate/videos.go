@@ -5,26 +5,26 @@ import (
 	"strconv"
 	"strings"
 
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-func ToReplicateVideoGenerationInput(rakshaReq *schemas.RakshaVideoGenerationRequest) (*ReplicatePredictionRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil {
-		return nil, fmt.Errorf("raksha request or input is nil")
+func ToReplicateVideoGenerationInput(gatewayReq *schemas.GatewayVideoGenerationRequest) (*ReplicatePredictionRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil {
+		return nil, fmt.Errorf("gateway request or input is nil")
 	}
 
 	input := &ReplicatePredictionRequestInput{
-		Prompt: &rakshaReq.Input.Prompt,
+		Prompt: &gatewayReq.Input.Prompt,
 	}
 
-	if rakshaReq.Input.InputReference != nil {
+	if gatewayReq.Input.InputReference != nil {
 		// convert input reference to base64
 		// if provider is openai, set input reference to base64
-		sanitizedURL, err := schemas.SanitizeImageURL(*rakshaReq.Input.InputReference)
+		sanitizedURL, err := schemas.SanitizeImageURL(*gatewayReq.Input.InputReference)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input reference: %w", err)
 		}
-		if strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) {
+		if strings.HasPrefix(gatewayReq.Model, string(schemas.OpenAI)) {
 			input.InputReference = schemas.Ptr(sanitizedURL)
 		} else {
 			input.Image = schemas.Ptr(sanitizedURL)
@@ -32,8 +32,8 @@ func ToReplicateVideoGenerationInput(rakshaReq *schemas.RakshaVideoGenerationReq
 	}
 
 	// Map parameters if available
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		if params.Seconds != nil {
 			seconds, err := strconv.Atoi(*params.Seconds)
@@ -61,17 +61,17 @@ func ToReplicateVideoGenerationInput(rakshaReq *schemas.RakshaVideoGenerationReq
 	}
 
 	// Check if model is a version ID and set version field accordingly
-	if isVersionID(rakshaReq.Model) {
-		request.Version = &rakshaReq.Model
+	if isVersionID(gatewayReq.Model) {
+		request.Version = &gatewayReq.Model
 	}
 
-	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
-		request.ExtraParams = rakshaReq.Params.ExtraParams
-		if webhook, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["webhook"]); ok {
+	if gatewayReq.Params != nil && gatewayReq.Params.ExtraParams != nil {
+		request.ExtraParams = gatewayReq.Params.ExtraParams
+		if webhook, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["webhook"]); ok {
 			delete(request.ExtraParams, "webhook")
 			request.Webhook = webhook
 		}
-		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["webhook_events_filter"]); ok {
+		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(gatewayReq.Params.ExtraParams["webhook_events_filter"]); ok {
 			delete(request.ExtraParams, "webhook_events_filter")
 			request.WebhookEventsFilter = webhookEventsFilter
 		}
@@ -80,24 +80,24 @@ func ToReplicateVideoGenerationInput(rakshaReq *schemas.RakshaVideoGenerationReq
 	return request, nil
 }
 
-func ToRakshaVideoGenerationResponse(prediction *ReplicatePredictionResponse) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func ToGatewayVideoGenerationResponse(prediction *ReplicatePredictionResponse) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if prediction == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: "prediction response is nil",
 			},
 		}
 	}
 
-	response := &schemas.RakshaVideoGenerationResponse{
+	response := &schemas.GatewayVideoGenerationResponse{
 		ID:        prediction.ID,
 		CreatedAt: ParseReplicateTimestamp(prediction.CreatedAt),
 		Model:     prediction.Model,
 		Object:    "video",
 	}
 
-	// Map Replicate status to Raksha video status.
+	// Map Replicate status to Gateway video status.
 	switch prediction.Status {
 	case ReplicatePredictionStatusStarting:
 		response.Status = schemas.VideoStatusQueued

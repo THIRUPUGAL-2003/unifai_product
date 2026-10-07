@@ -5,11 +5,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaResponsesRequest converts a Cohere count tokens request to Raksha format.
-func (req *CohereCountTokensRequest) ToRakshaResponsesRequest(ctx *schemas.RakshaContext) *schemas.RakshaResponsesRequest {
+// ToGatewayResponsesRequest converts a Cohere count tokens request to Gateway format.
+func (req *CohereCountTokensRequest) ToGatewayResponsesRequest(ctx *schemas.GatewayContext) *schemas.GatewayResponsesRequest {
 	if req == nil {
 		return nil
 	}
@@ -17,7 +17,7 @@ func (req *CohereCountTokensRequest) ToRakshaResponsesRequest(ctx *schemas.Raksh
 	provider, model := schemas.ParseModelString(req.Model, "")
 
 	userRole := schemas.ResponsesInputMessageRoleUser
-	return &schemas.RakshaResponsesRequest{
+	return &schemas.GatewayResponsesRequest{
 		Provider: provider,
 		Model:    model,
 		Input: []schemas.ResponsesMessage{
@@ -31,17 +31,17 @@ func (req *CohereCountTokensRequest) ToRakshaResponsesRequest(ctx *schemas.Raksh
 	}
 }
 
-// ToCohereCountTokensRequest converts a Raksha count tokens request to Cohere's tokenize payload.
-func ToCohereCountTokensRequest(rakshaReq *schemas.RakshaResponsesRequest) (*CohereCountTokensRequest, error) {
-	if rakshaReq == nil {
+// ToCohereCountTokensRequest converts a Gateway count tokens request to Cohere's tokenize payload.
+func ToCohereCountTokensRequest(gatewayReq *schemas.GatewayResponsesRequest) (*CohereCountTokensRequest, error) {
+	if gatewayReq == nil {
 		return nil, nil
 	}
 
-	if rakshaReq.Input == nil {
+	if gatewayReq.Input == nil {
 		return nil, fmt.Errorf("count tokens input is not provided")
 	}
 
-	text := buildCohereCountTokensText(rakshaReq.Input)
+	text := buildCohereCountTokensText(gatewayReq.Input)
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return nil, fmt.Errorf("count tokens text is empty after conversion")
@@ -52,18 +52,18 @@ func ToCohereCountTokensRequest(rakshaReq *schemas.RakshaResponsesRequest) (*Coh
 	}
 
 	cohereReq := &CohereCountTokensRequest{
-		Model: rakshaReq.Model,
+		Model: gatewayReq.Model,
 		Text:  trimmed,
 	}
-	if rakshaReq.Params != nil {
-		cohereReq.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		cohereReq.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 
 	return cohereReq, nil
 }
 
-// ToRakshaCountTokensResponse converts a Cohere tokenize response to Raksha format.
-func (resp *CohereCountTokensResponse) ToRakshaCountTokensResponse(model string) *schemas.RakshaCountTokensResponse {
+// ToGatewayCountTokensResponse converts a Cohere tokenize response to Gateway format.
+func (resp *CohereCountTokensResponse) ToGatewayCountTokensResponse(model string) *schemas.GatewayCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
@@ -74,7 +74,7 @@ func (resp *CohereCountTokensResponse) ToRakshaCountTokensResponse(model string)
 	}
 	totalTokens := inputTokens
 
-	return &schemas.RakshaCountTokensResponse{
+	return &schemas.GatewayCountTokensResponse{
 		Model:        model,
 		InputTokens:  inputTokens,
 		TotalTokens:  &totalTokens,

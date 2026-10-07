@@ -3,8 +3,8 @@ package bedrock
 import (
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // BedrockRerankRequest is the Bedrock Agent Runtime rerank request body.
@@ -81,12 +81,12 @@ type BedrockRerankResponseDocument struct {
 	TextDocument *BedrockRerankTextValue `json:"textDocument,omitempty"`
 }
 
-func (response *BedrockListModelsResponse) ToRakshaListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
+func (response *BedrockListModelsResponse) ToGatewayListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.GatewayListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaListModelsResponse{
+	gatewayResponse := &schemas.GatewayListModelsResponse{
 		Data: make([]schemas.Model, 0, len(response.ModelSummaries)),
 	}
 
@@ -99,7 +99,7 @@ func (response *BedrockListModelsResponse) ToRakshaListModelsResponse(providerKe
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return rakshaResponse
+		return gatewayResponse
 	}
 
 	included := make(map[string]bool)
@@ -118,13 +118,13 @@ func (response *BedrockListModelsResponse) ToRakshaListModelsResponse(providerKe
 			if result.AliasValue != "" {
 				modelEntry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			rakshaResponse.Data = append(rakshaResponse.Data, modelEntry)
+			gatewayResponse.Data = append(gatewayResponse.Data, modelEntry)
 			included[strings.ToLower(result.ResolvedID)] = true
 		}
 	}
 
-	rakshaResponse.Data = append(rakshaResponse.Data,
+	gatewayResponse.Data = append(gatewayResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return rakshaResponse
+	return gatewayResponse
 }

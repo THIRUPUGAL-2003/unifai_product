@@ -21,7 +21,7 @@ export default function DatadogConnectorView({ onDelete, isDeleting }: DatadogCo
 			fields={[
 				{ key: "api_key", label: "API key", type: "password", placeholder: "env.DATADOG_API_KEY" },
 				{ key: "site", label: "Site", placeholder: "datadoghq.com" },
-				{ key: "service", label: "Service name", placeholder: "raksha" },
+				{ key: "service", label: "Service name", placeholder: "gateway" },
 			]}
 			onDelete={onDelete}
 			isDeleting={isDeleting}

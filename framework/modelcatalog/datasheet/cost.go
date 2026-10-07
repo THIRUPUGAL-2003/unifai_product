@@ -6,15 +6,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 )
 
-// CalculateCost calculates the cost of a Raksha response.
+// CalculateCost calculates the cost of a Gateway response.
 // It handles all request types, cache debug billing, and tiered pricing.
 // If scopes is nil, an empty LookupScopes is used; global and provider-scoped
 // overrides may still apply since the provider is derived from the response.
-func (s *Store) CalculateCost(result *schemas.RakshaResponse, scopes *LookupScopes) float64 {
+func (s *Store) CalculateCost(result *schemas.GatewayResponse, scopes *LookupScopes) float64 {
 	if result == nil {
 		return 0
 	}
@@ -34,13 +34,13 @@ func (s *Store) CalculateCost(result *schemas.RakshaResponse, scopes *LookupScop
 }
 
 // CalculateCostForUsage computes the dollar cost from a bare usage object plus
-// provider / model / request type, for cases where no full RakshaResponse
+// provider / model / request type, for cases where no full GatewayResponse
 // exists. The primary use is billing partial usage carried on a failed or
-// cancelled request via RakshaError.ExtraFields.BilledUsage: the
+// cancelled request via GatewayError.ExtraFields.BilledUsage: the
 // provider consumed tokens, so we must charge for them even though there is no
 // success response to read. It mirrors CalculateCost's compute path so success
 // and failure billing use identical rates. Returns 0 when usage is nil.
-func (s *Store) CalculateCostForUsage(usage *schemas.RakshaLLMUsage, provider schemas.ModelProvider, model string, requestType schemas.RequestType, scopes *LookupScopes) float64 {
+func (s *Store) CalculateCostForUsage(usage *schemas.GatewayLLMUsage, provider schemas.ModelProvider, model string, requestType schemas.RequestType, scopes *LookupScopes) float64 {
 	if usage == nil {
 		return 0
 	}
@@ -64,7 +64,7 @@ func (s *Store) CalculateCostForUsage(usage *schemas.RakshaLLMUsage, provider sc
 }
 
 // calculateCostWithCache handles cost calculation when semantic cache debug info is present.
-func (s *Store) calculateCostWithCache(result *schemas.RakshaResponse, cacheDebug *schemas.RakshaCacheDebug, scopes LookupScopes) float64 {
+func (s *Store) calculateCostWithCache(result *schemas.GatewayResponse, cacheDebug *schemas.GatewayCacheDebug, scopes LookupScopes) float64 {
 	if cacheDebug.CacheHit {
 		// Direct cache hit — no LLM call, no cost
 		if cacheDebug.HitType != nil && *cacheDebug.HitType == "direct" {
@@ -84,7 +84,7 @@ func (s *Store) calculateCostWithCache(result *schemas.RakshaResponse, cacheDebu
 }
 
 // computeCacheEmbeddingCost calculates the embedding cost for a semantic cache lookup.
-func (s *Store) computeCacheEmbeddingCost(cacheDebug *schemas.RakshaCacheDebug, scopes LookupScopes) float64 {
+func (s *Store) computeCacheEmbeddingCost(cacheDebug *schemas.GatewayCacheDebug, scopes LookupScopes) float64 {
 	if cacheDebug == nil || cacheDebug.ProviderUsed == nil || cacheDebug.ModelUsed == nil || cacheDebug.InputTokens == nil {
 		return 0
 	}
@@ -113,13 +113,13 @@ func computeContainerCreationCost(pricing *configstoreTables.TableModelPricing) 
 }
 
 // calculateBaseCost extracts usage from the response and routes to the appropriate compute function.
-func (s *Store) calculateBaseCost(result *schemas.RakshaResponse, scopes LookupScopes) float64 {
+func (s *Store) calculateBaseCost(result *schemas.GatewayResponse, scopes LookupScopes) float64 {
 	extraFields := result.GetExtraFields()
 	if extraFields == nil {
 		return 0
 	}
 
-	// Read routing info populated by core.raksha at request time.
+	// Read routing info populated by core.gateway at request time.
 	//
 	// Backward-compat fallback: when the caller (e.g. LoggerPlugin's
 	// RecalculateCosts replaying logs written before RoutingInfo existed,
@@ -213,7 +213,7 @@ func (s *Store) computeCostFromInput(input costInput, routingInfo schemas.Routin
 // Usage extraction
 // ---------------------------------------------------------------------------
 
-func extractCostInput(result *schemas.RakshaResponse) costInput {
+func extractCostInput(result *schemas.GatewayResponse) costInput {
 	var input costInput
 
 	switch {
@@ -228,14 +228,14 @@ func extractCostInput(result *schemas.RakshaResponse) costInput {
 		input.tier = tierFromResponse(result.ChatResponse.ServiceTier, result.ChatResponse.Speed)
 
 	case result.ResponsesResponse != nil && result.ResponsesResponse.Usage != nil:
-		input.usage = responsesUsageToRakshaUsage(result.ResponsesResponse.Usage)
+		input.usage = responsesUsageToGatewayUsage(result.ResponsesResponse.Usage)
 		input.tier = tierFromResponse(result.ResponsesResponse.ServiceTier, result.ResponsesResponse.Speed)
 
 	case result.CompactionResponse != nil && result.CompactionResponse.Usage != nil:
-		input.usage = responsesUsageToRakshaUsage(result.CompactionResponse.Usage)
+		input.usage = responsesUsageToGatewayUsage(result.CompactionResponse.Usage)
 
 	case result.ResponsesStreamResponse != nil && result.ResponsesStreamResponse.Response != nil && result.ResponsesStreamResponse.Response.Usage != nil:
-		input.usage = responsesUsageToRakshaUsage(result.ResponsesStreamResponse.Response.Usage)
+		input.usage = responsesUsageToGatewayUsage(result.ResponsesStreamResponse.Response.Usage)
 		input.tier = tierFromResponse(result.ResponsesStreamResponse.Response.ServiceTier, result.ResponsesStreamResponse.Response.Speed)
 
 	case result.EmbeddingResponse != nil && result.EmbeddingResponse.Usage != nil:
@@ -245,11 +245,11 @@ func extractCostInput(result *schemas.RakshaResponse) costInput {
 		input.usage = result.RerankResponse.Usage
 
 	case result.SpeechResponse != nil && result.SpeechResponse.Usage != nil:
-		input.usage = speechUsageToRakshaUsage(result.SpeechResponse.Usage)
+		input.usage = speechUsageToGatewayUsage(result.SpeechResponse.Usage)
 		input.audioTextInputChars = result.SpeechResponse.Usage.InputChars
 
 	case result.SpeechStreamResponse != nil && result.SpeechStreamResponse.Usage != nil:
-		input.usage = speechUsageToRakshaUsage(result.SpeechStreamResponse.Usage)
+		input.usage = speechUsageToGatewayUsage(result.SpeechStreamResponse.Usage)
 		input.audioTextInputChars = result.SpeechStreamResponse.Usage.InputChars
 
 	case result.TranscriptionResponse != nil && result.TranscriptionResponse.Usage != nil:
@@ -260,7 +260,7 @@ func extractCostInput(result *schemas.RakshaResponse) costInput {
 
 	case result.ImageGenerationResponse != nil:
 		// Defensive copy: populateOutputImageCount writes into imageUsage,
-		// and we must not mutate the caller's RakshaResponse during what is
+		// and we must not mutate the caller's GatewayResponse during what is
 		// otherwise a pure read path.
 		if result.ImageGenerationResponse.Usage != nil {
 			input.imageUsage = result.ImageGenerationResponse.Usage.DeepCopy()
@@ -313,8 +313,8 @@ func extractCostInput(result *schemas.RakshaResponse) costInput {
 	return input
 }
 
-func responsesUsageToRakshaUsage(u *schemas.ResponsesResponseUsage) *schemas.RakshaLLMUsage {
-	usage := &schemas.RakshaLLMUsage{
+func responsesUsageToGatewayUsage(u *schemas.ResponsesResponseUsage) *schemas.GatewayLLMUsage {
+	usage := &schemas.GatewayLLMUsage{
 		PromptTokens:     u.InputTokens,
 		CompletionTokens: u.OutputTokens,
 		TotalTokens:      u.TotalTokens,
@@ -343,16 +343,16 @@ func responsesUsageToRakshaUsage(u *schemas.ResponsesResponseUsage) *schemas.Rak
 	return usage
 }
 
-func speechUsageToRakshaUsage(u *schemas.SpeechUsage) *schemas.RakshaLLMUsage {
-	return &schemas.RakshaLLMUsage{
+func speechUsageToGatewayUsage(u *schemas.SpeechUsage) *schemas.GatewayLLMUsage {
+	return &schemas.GatewayLLMUsage{
 		PromptTokens:     u.InputTokens,
 		CompletionTokens: u.OutputTokens,
 		TotalTokens:      u.TotalTokens,
 	}
 }
 
-func extractTranscriptionUsage(u *schemas.TranscriptionUsage) (*schemas.RakshaLLMUsage, *int, *schemas.TranscriptionUsageInputTokenDetails) {
-	usage := &schemas.RakshaLLMUsage{}
+func extractTranscriptionUsage(u *schemas.TranscriptionUsage) (*schemas.GatewayLLMUsage, *int, *schemas.TranscriptionUsageInputTokenDetails) {
+	usage := &schemas.GatewayLLMUsage{}
 	if u.InputTokens != nil {
 		usage.PromptTokens = *u.InputTokens
 	}
@@ -381,7 +381,7 @@ func extractTranscriptionUsage(u *schemas.TranscriptionUsage) (*schemas.RakshaLL
 // ---------------------------------------------------------------------------
 
 // computeTextCost handles chat, text completion, and responses requests.
-func computeTextCost(pricing *configstoreTables.TableModelPricing, usage *schemas.RakshaLLMUsage, tier serviceTier) float64 {
+func computeTextCost(pricing *configstoreTables.TableModelPricing, usage *schemas.GatewayLLMUsage, tier serviceTier) float64 {
 	if usage == nil {
 		return 0
 	}
@@ -479,7 +479,7 @@ func computeTextCost(pricing *configstoreTables.TableModelPricing, usage *schema
 }
 
 // computeEmbeddingCost handles embedding requests (input-only).
-func computeEmbeddingCost(pricing *configstoreTables.TableModelPricing, usage *schemas.RakshaLLMUsage, tier serviceTier) float64 {
+func computeEmbeddingCost(pricing *configstoreTables.TableModelPricing, usage *schemas.GatewayLLMUsage, tier serviceTier) float64 {
 	if usage == nil {
 		return 0
 	}
@@ -487,7 +487,7 @@ func computeEmbeddingCost(pricing *configstoreTables.TableModelPricing, usage *s
 }
 
 // computeRerankCost handles rerank requests.
-func computeRerankCost(pricing *configstoreTables.TableModelPricing, usage *schemas.RakshaLLMUsage, tier serviceTier) float64 {
+func computeRerankCost(pricing *configstoreTables.TableModelPricing, usage *schemas.GatewayLLMUsage, tier serviceTier) float64 {
 	if usage == nil {
 		return 0
 	}
@@ -510,7 +510,7 @@ func computeRerankCost(pricing *configstoreTables.TableModelPricing, usage *sche
 // input text rather than per token. PromptTokens from usage is treated as the character count
 // since TTS providers report their billable unit in that field.
 // Output falls back to per-second duration when no audio token rate is configured.
-func computeSpeechCost(pricing *configstoreTables.TableModelPricing, usage *schemas.RakshaLLMUsage, audioSeconds *int, audioTextInputChars int, tier serviceTier) float64 {
+func computeSpeechCost(pricing *configstoreTables.TableModelPricing, usage *schemas.GatewayLLMUsage, audioSeconds *int, audioTextInputChars int, tier serviceTier) float64 {
 	totalTokens := safeTotalTokens(usage)
 
 	// Input: per-character rate takes precedence for TTS/audio models
@@ -534,7 +534,7 @@ func computeSpeechCost(pricing *configstoreTables.TableModelPricing, usage *sche
 // computeTranscriptionCost handles transcription (STT) requests.
 // Input is audio, output is text (CompletionTokens).
 // Input and output are calculated independently — tokens first, then per-second fallback.
-func computeTranscriptionCost(pricing *configstoreTables.TableModelPricing, usage *schemas.RakshaLLMUsage, audioSeconds *int, audioTokenDetails *schemas.TranscriptionUsageInputTokenDetails, tier serviceTier) float64 {
+func computeTranscriptionCost(pricing *configstoreTables.TableModelPricing, usage *schemas.GatewayLLMUsage, audioSeconds *int, audioTokenDetails *schemas.TranscriptionUsageInputTokenDetails, tier serviceTier) float64 {
 	totalTokens := safeTotalTokens(usage)
 
 	// Input: audio tokens/details first, then per-second fallback
@@ -551,7 +551,7 @@ func computeTranscriptionCost(pricing *configstoreTables.TableModelPricing, usag
 
 // computeAudioInputCost calculates input cost for audio: audio token details first,
 // then generic input tokens, then per-second duration fallback.
-func computeAudioInputCost(pricing *configstoreTables.TableModelPricing, usage *schemas.RakshaLLMUsage, audioSeconds *int, audioTokenDetails *schemas.TranscriptionUsageInputTokenDetails, totalTokens int, tier serviceTier) float64 {
+func computeAudioInputCost(pricing *configstoreTables.TableModelPricing, usage *schemas.GatewayLLMUsage, audioSeconds *int, audioTokenDetails *schemas.TranscriptionUsageInputTokenDetails, totalTokens int, tier serviceTier) float64 {
 	// Audio token detail pricing (audio + text token breakdown)
 	if audioTokenDetails != nil && (audioTokenDetails.AudioTokens > 0 || audioTokenDetails.TextTokens > 0) {
 		return float64(audioTokenDetails.AudioTokens)*tieredAudioTokenInputRate(pricing, totalTokens, tier) +
@@ -575,7 +575,7 @@ func computeAudioInputCost(pricing *configstoreTables.TableModelPricing, usage *
 
 // computeAudioOutputCost calculates output cost for audio: audio tokens first,
 // then generic output tokens, then per-second duration fallback.
-func computeAudioOutputCost(pricing *configstoreTables.TableModelPricing, usage *schemas.RakshaLLMUsage, audioSeconds *int, totalTokens int, tier serviceTier) float64 {
+func computeAudioOutputCost(pricing *configstoreTables.TableModelPricing, usage *schemas.GatewayLLMUsage, audioSeconds *int, totalTokens int, tier serviceTier) float64 {
 	// Audio-specific output tokens
 	if usage != nil && usage.CompletionTokens > 0 {
 		return float64(usage.CompletionTokens) * tieredAudioTokenOutputRate(pricing, totalTokens, tier)
@@ -719,7 +719,7 @@ func computeImageOutputCost(pricing *configstoreTables.TableModelPricing, imageU
 
 // computeVideoCost handles video generation requests.
 // Input and output are calculated independently — tokens first, then per-second fallback.
-func computeVideoCost(pricing *configstoreTables.TableModelPricing, usage *schemas.RakshaLLMUsage, videoSeconds *int, tier serviceTier) float64 {
+func computeVideoCost(pricing *configstoreTables.TableModelPricing, usage *schemas.GatewayLLMUsage, videoSeconds *int, tier serviceTier) float64 {
 	totalTokens := safeTotalTokens(usage)
 
 	// Input: text prompt tokens first, then per-second fallback
@@ -773,13 +773,13 @@ func computeOCRCost(pricing *configstoreTables.TableModelPricing, ocrProcessedPa
 // (fast mode). speed == "fast" means fast mode was actually served — the
 // provider echoes the served speed, so stripped/fell-back requests report
 // "standard" and bill at standard rates.
-func tierFromResponse(s *schemas.RakshaServiceTier, speed *string) serviceTier {
+func tierFromResponse(s *schemas.GatewayServiceTier, speed *string) serviceTier {
 	var tier serviceTier
 	if s != nil {
 		switch *s {
-		case schemas.RakshaServiceTierPriority:
+		case schemas.GatewayServiceTierPriority:
 			tier.isPriority = true
-		case schemas.RakshaServiceTierFlex:
+		case schemas.GatewayServiceTierFlex:
 			tier.isFlex = true
 		}
 	}
@@ -984,7 +984,7 @@ func tieredCacheCreationInputAbove1hrTokenRate(pricing *configstoreTables.TableM
 	return tieredCacheCreationInputTokenRate(pricing, totalTokens, tier)
 }
 
-func safeTotalTokens(usage *schemas.RakshaLLMUsage) int {
+func safeTotalTokens(usage *schemas.GatewayLLMUsage) int {
 	if usage == nil {
 		return 0
 	}
@@ -1031,7 +1031,7 @@ func populateOutputImageCount(imageUsage *schemas.ImageUsage, dataLen int) {
 // ---------------------------------------------------------------------------
 
 // resolvePricing resolves the pricing entry for a request directly from the
-// RoutingInfo populated on the response/error by core.raksha at request time.
+// RoutingInfo populated on the response/error by core.gateway at request time.
 //
 // Lookup precedence — AliasModelName → AliasModelID → ModelName. Each
 // non-empty candidate is tried against the base catalog in order; the first
@@ -1323,7 +1323,7 @@ func detectPassthroughRequestType(provider schemas.ModelProvider, path string) s
 
 // inferPassthroughRequestType determines the request type from usage fields (primary)
 // and falls back to path detection for text/embedding/responses where LLMUsage is ambiguous.
-func inferPassthroughRequestType(provider schemas.ModelProvider, path string, su *schemas.RakshaPassthroughUsage) schemas.RequestType {
+func inferPassthroughRequestType(provider schemas.ModelProvider, path string, su *schemas.GatewayPassthroughUsage) schemas.RequestType {
 	if su != nil {
 		if su.ContainerIdentifier != "" {
 			return schemas.ContainerCreateRequest
@@ -1344,8 +1344,8 @@ func inferPassthroughRequestType(provider schemas.ModelProvider, path string, su
 	return detectPassthroughRequestType(provider, path)
 }
 
-// passthroughUsageToCostInput converts RakshaPassthroughUsage into costInput.
-func passthroughUsageToCostInput(su *schemas.RakshaPassthroughUsage) costInput {
+// passthroughUsageToCostInput converts GatewayPassthroughUsage into costInput.
+func passthroughUsageToCostInput(su *schemas.GatewayPassthroughUsage) costInput {
 	var input costInput
 	if su.LLMUsage != nil {
 		input.usage = su.LLMUsage

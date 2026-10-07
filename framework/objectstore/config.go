@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // StoreType identifies the object storage backend.
@@ -21,7 +21,7 @@ type Config struct {
 	Bucket schemas.SecretVar `json:"bucket"`
 
 	// Common fields (apply to all store types)
-	Prefix   string `json:"prefix,omitempty"`   // Key prefix for all stored objects. Default: "raksha".
+	Prefix   string `json:"prefix,omitempty"`   // Key prefix for all stored objects. Default: "gateway".
 	Compress bool   `json:"compress,omitempty"` // Enables gzip compression for stored objects. Default: false.
 
 	// S3 fields (used when Type == "s3")
@@ -39,12 +39,12 @@ type Config struct {
 	ProjectID       *schemas.SecretVar `json:"project_id,omitempty"`       // GCP project ID override
 }
 
-// GetPrefix returns the configured prefix or "raksha" as default.
+// GetPrefix returns the configured prefix or "gateway" as default.
 func (c *Config) GetPrefix() string {
 	if c.Prefix != "" {
 		return c.Prefix
 	}
-	return "raksha"
+	return "gateway"
 }
 
 // NewObjectStore creates the appropriate ObjectStore implementation based on config type.

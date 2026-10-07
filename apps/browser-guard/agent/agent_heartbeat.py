@@ -11,7 +11,7 @@ import time
 import agent_config
 from agent_autoupdate import check_and_update_if_needed, nudge_update_check
 from agent_browser_policy import set_browser_quic
-from agent_config import HEARTBEAT_SECONDS, SERVER_MODE, RAKSHA_BACKEND_URL
+from agent_config import HEARTBEAT_SECONDS, SERVER_MODE, GATEWAY_BACKEND_URL
 from agent_http import _http_json
 from agent_identity import collect_agent_info
 from agent_lifecycle import launch_windows_uninstaller, schedule_install_removal
@@ -33,7 +33,7 @@ def pause_guard(agent_id: str) -> None:
     if _guard_paused:
         return
     _guard_paused = True
-    print("[Raksha Guard] PAUSE command: disabling proxy PAC & QUIC bypass (standby mode).")
+    print("[Gateway Guard] PAUSE command: disabling proxy PAC & QUIC bypass (standby mode).")
     clear_guard_runtime(clear_startup=False)
 
 
@@ -42,20 +42,20 @@ def resume_guard(agent_id: str) -> None:
     if not _guard_paused:
         return
     _guard_paused = False
-    print("[Raksha Guard] RESUME command: re-enabling proxy PAC & monitoring.")
+    print("[Gateway Guard] RESUME command: re-enabling proxy PAC & monitoring.")
     pac_restore_strict_proxy()
     set_browser_quic(enable_quic=False)
 
 
 def send_heartbeat(agent_id: str, status: str = "active") -> dict | None:
     info = collect_agent_info(agent_id, status=status)
-    code, data = _http_json("POST", f"{RAKSHA_BACKEND_URL}/api/browser-ai/agents/heartbeat", info)
+    code, data = _http_json("POST", f"{GATEWAY_BACKEND_URL}/api/browser-ai/agents/heartbeat", info)
     if code == 200:
-        print(f"[Raksha Guard] Heartbeat OK ({info.get('hostname')} / {info.get('ip_address')} / {info.get('mac_address')} / {status})")
+        print(f"[Gateway Guard] Heartbeat OK ({info.get('hostname')} / {info.get('ip_address')} / {info.get('mac_address')} / {status})")
         apply_fleet_config_from_heartbeat(data if isinstance(data, dict) else None)
         apply_release_hints_from_heartbeat(data if isinstance(data, dict) else None)
         return data if isinstance(data, dict) else {}
-    print(f"[Raksha Guard WARNING] Heartbeat failed status={code} body={data}")
+    print(f"[Gateway Guard WARNING] Heartbeat failed status={code} body={data}")
     return None
 
 
@@ -70,13 +70,15 @@ def apply_fleet_config_from_heartbeat(data: dict | None) -> None:
         sync = int(fleet.get("pac_sync_seconds") or 0)
         if sync >= 2:
             agent_config.PAC_SYNC_SECONDS = min(sync, 600)
-            os.environ["RAKSHA_PAC_SYNC_SECONDS"] = str(agent_config.PAC_SYNC_SECONDS)
+            os.environ["GATEWAY_PAC_SYNC_SECONDS"] = str(agent_config.PAC_SYNC_SECONDS)
+            os.environ["GATEWAY_PAC_SYNC_SECONDS"] = str(agent_config.PAC_SYNC_SECONDS)
     except Exception:
         pass
     adv = str(fleet.get("pac_advertise_addr") or "").strip()
     if adv and SERVER_MODE:
         agent_config.PAC_ADVERTISE_ADDR = adv
-        os.environ["RAKSHA_PAC_ADVERTISE_ADDR"] = adv
+        os.environ["GATEWAY_PAC_ADVERTISE_ADDR"] = adv
+        os.environ["GATEWAY_PAC_ADVERTISE_ADDR"] = adv
     # Persist a copy for support under data_dir
     try:
         path = os.path.join(data_dir(), "fleet_config_from_db.json")
@@ -94,11 +96,11 @@ def apply_release_hints_from_heartbeat(data: dict | None) -> None:
         key = "latest_mac_guard_version" if IS_MAC else "latest_guard_version"
         nudge_update_check(str(data.get(key) or ""))
     except Exception as e:
-        print(f"[Raksha Guard WARNING] Update hint ignored: {e}")
+        print(f"[Gateway Guard WARNING] Update hint ignored: {e}")
     try:
         maybe_apply_bundle_async(data.get("proxy_bundle"))
     except Exception as e:
-        print(f"[Raksha Guard WARNING] Guard code hint ignored: {e}")
+        print(f"[Gateway Guard WARNING] Guard code hint ignored: {e}")
 
 
 def heartbeat_wants_uninstall(data: dict | None) -> bool:
@@ -116,10 +118,10 @@ def apply_admin_uninstall(agent_id: str) -> None:
 
     Stops Guard, clears PAC/autostart, then deletes the installed EXE / .app.
     """
-    print("[Raksha Guard] Remote uninstall authorized — stopping Guard + removing install.")
+    print("[Gateway Guard] Remote uninstall authorized — stopping Guard + removing install.")
     _http_json(
         "POST",
-        f"{RAKSHA_BACKEND_URL}/api/browser-ai/agents/uninstall-ack",
+        f"{GATEWAY_BACKEND_URL}/api/browser-ai/agents/uninstall-ack",
         {"agent_id": agent_id},
     )
     clear_guard_runtime(clear_startup=True)
@@ -174,7 +176,7 @@ COMMAND_WAIT_TIMEOUT = 40  # server holds the request ~25s
 
 def command_wait_loop(agent_id: str, stop_event: threading.Event) -> None:
     """Long-poll the server so remote uninstall / Rebuild & Publish land in ~1s, not on the next heartbeat."""
-    url = f"{RAKSHA_BACKEND_URL}/api/browser-ai/agents/wait-command"
+    url = f"{GATEWAY_BACKEND_URL}/api/browser-ai/agents/wait-command"
     failures = 0
     while not stop_event.is_set():
         started = time.monotonic()
@@ -183,7 +185,7 @@ def command_wait_loop(agent_id: str, stop_event: threading.Event) -> None:
             failures = 0
             event = str((data or {}).get("event") or "").strip().lower() if isinstance(data, dict) else ""
             if event:
-                print(f"[Raksha Guard] Server event: {event}")
+                print(f"[Gateway Guard] Server event: {event}")
                 if event == "rebuild":
                     # Spread fleet-wide bundle downloads so the server is not hit by every Guard at once.
                     stop_event.wait(random.uniform(0.0, 3.0))

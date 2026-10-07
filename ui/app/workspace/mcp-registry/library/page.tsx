@@ -11,6 +11,7 @@ import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { LayoutGrid, Library, List, Plus, Search, Settings } from "lucide-react";
 import { parseAsArrayOf, parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { MCPLibraryAddServerSheet } from "./views/mcpLibraryAddServerSheet";
 import { MCPLibraryFilterSidebar, type MCPLibraryFilters } from "./views/mcpLibraryFilterSidebar";
@@ -20,6 +21,7 @@ import { MCPLibraryServersTable, MCPLibraryServersTableSkeleton } from "./views/
 import { MCPLibrarySettingsSheet } from "./views/mcpLibrarySettingsSheet";
 
 const PAGE_SIZE = 24;
+const POLLING_INTERVAL = 5000;
 const VIEW_MODE_STORAGE_KEY = "mcp-library-view-mode";
 type MCPLibraryViewMode = "grid" | "table";
 
@@ -98,24 +100,48 @@ export default function MCPLibraryPage() {
 		[debouncedSearch, filters, urlState.limit, urlState.offset],
 	);
 
-	const { data: libraryData, error: libraryError, isFetching, isError: isLibraryError, refetch } = useGetMCPLibraryQuery(queryParams);
+	const [libraryPollMs, setLibraryPollMs] = useState(POLLING_INTERVAL);
+	const [clientsPollMs, setClientsPollMs] = useState(POLLING_INTERVAL);
+
+	const {
+		data: libraryData,
+		error: libraryError,
+		isFetching,
+		isError: isLibraryError,
+		refetch,
+	} = useGetMCPLibraryQuery(queryParams, { pollingInterval: libraryPollMs });
 
 	const servers = useMemo(() => libraryData?.servers || [], [libraryData?.servers]);
 	const totalCount = libraryData?.total_count || 0;
 
 	// Installed-detection: match on connection_url or name (incl. canva2-style suffixes).
 	// High limit so Install badge stays accurate past the first 100 clients.
-	const { data: mcpClientsData, error: mcpClientsError, refetch: refetchMCPClients } = useGetMCPClientsQuery({
-		limit: 1000,
-		offset: 0,
-	});
+	const {
+		data: mcpClientsData,
+		error: mcpClientsError,
+		isError: isMcpClientsError,
+		refetch: refetchMCPClients,
+	} = useGetMCPClientsQuery(
+		{
+			limit: 1000,
+			offset: 0,
+		},
+		{ pollingInterval: clientsPollMs },
+	);
+
+	useEffect(() => {
+		setLibraryPollMs(isLibraryError ? 0 : POLLING_INTERVAL);
+	}, [isLibraryError]);
+	useEffect(() => {
+		setClientsPollMs(isMcpClientsError ? 0 : POLLING_INTERVAL);
+	}, [isMcpClientsError]);
 
 	useEffect(() => {
 		if (!libraryError && !mcpClientsError) return;
 		const err = libraryError || mcpClientsError;
 		if (!err) return;
 		const message = getErrorMessage(err);
-		if (message.toLowerCase().includes("mcp is not configured in this raksha instance")) return;
+		if (message.toLowerCase().includes("mcp is not configured in this gateway instance")) return;
 		toast({ title: "Error", description: message, variant: "destructive" });
 	}, [libraryError, mcpClientsError, toast]);
 
@@ -242,6 +268,13 @@ export default function MCPLibraryPage() {
 							</div>
 						)}
 						<div className="flex grow flex-col overflow-hidden">
+							{isMcpClientsError && !isLibraryError && servers.length > 0 ? (
+								<QueryErrorBanner
+									className="mb-3 shrink-0"
+									testId="mcp-library-clients-query-error"
+									message={getErrorMessage(mcpClientsError) || "Failed to load installed-server status. Install badges may be inaccurate."}
+								/>
+							) : null}
 							{/* Loading skeletons */}
 							{isFetching && servers.length === 0 ? (
 								viewMode === "grid" ? (

@@ -3,6 +3,7 @@
  * Create/Edit form for routing rules
  */
 
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { ComboboxSelect } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
@@ -61,15 +62,51 @@ const CELRuleBuilder = (props: React.ComponentProps<typeof CELRuleBuilderLazy>) 
 );
 
 export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }: RoutingRuleDialogProps) {
-	const { data: rulesData } = useGetRoutingRulesQuery();
+	const { data: rulesData, isError: rulesError, error: rulesErr } = useGetRoutingRulesQuery();
 	const rules = rulesData?.rules || [];
-	const { data: providersData = [] } = useGetProvidersQuery();
-	const { data: allKeysData = [] } = useGetAllKeysQuery();
-	const { data: vksData } = useGetVirtualKeysQuery();
-	const { data: teamsData } = useGetTeamsQuery();
-	const { data: customersData } = useGetCustomersQuery();
+	const { data: providersData = [], isError: providersError, error: providersErr } = useGetProvidersQuery();
+	const { data: allKeysData = [], isError: keysError, error: keysErr } = useGetAllKeysQuery();
+	const { data: vksData, isError: vksError, error: vksErr } = useGetVirtualKeysQuery();
+	const { data: teamsData, isError: teamsError, error: teamsErr } = useGetTeamsQuery();
+	const { data: customersData, isError: customersError, error: customersErr } = useGetCustomersQuery();
 	const [createRoutingRule, { isLoading: isCreating }] = useCreateRoutingRuleMutation();
 	const [updateRoutingRule, { isLoading: isUpdating }] = useUpdateRoutingRuleMutation();
+
+	const helperQueryFailed =
+		rulesError || providersError || keysError || vksError || teamsError || customersError;
+	const helperQueryError = rulesErr || providersErr || keysErr || vksErr || teamsErr || customersErr;
+
+	useEffect(() => {
+		if (!open) return;
+		const failed = [
+			rulesError && rulesErr,
+			providersError && providersErr,
+			keysError && keysErr,
+			vksError && vksErr,
+			teamsError && teamsErr,
+			customersError && customersErr,
+		].find(Boolean);
+		if (failed) {
+			toast.error("Failed to load routing form data", {
+				id: "routing-rule-sheet-load",
+				description: getErrorMessage(failed),
+			});
+		}
+	}, [
+		open,
+		rulesError,
+		providersError,
+		keysError,
+		vksError,
+		teamsError,
+		customersError,
+		rulesErr,
+		providersErr,
+		keysErr,
+		vksErr,
+		teamsErr,
+		customersErr,
+	]);
 
 	const virtualKeys = useMemo(
 		() => (Array.isArray(vksData?.virtual_keys) ? vksData.virtual_keys : []),
@@ -290,6 +327,15 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						{isEditing ? "Update the routing rule configuration" : "Create a new CEL-based routing rule for intelligent request routing"}
 					</SheetDescription>
 				</SheetHeader>
+
+				{helperQueryFailed ? (
+					<div className="px-8">
+						<QueryErrorBanner
+							testId="routing-rule-sheet-query-error"
+							message={getErrorMessage(helperQueryError) || "Failed to load routing form data."}
+						/>
+					</div>
+				) : null}
 
 				<form onSubmit={handleSubmit(onSubmit)} className="flex grow flex-col">
 					<div className="flex grow flex-col gap-6 px-8 pb-6">

@@ -1,11 +1,11 @@
-// Package logstore provides a logs store for Raksha.
+// Package logstore provides a logs store for Gateway.
 package logstore
 
 import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/raksha/raksha/framework/objectstore"
+	"github.com/gateway/gateway/framework/objectstore"
 )
 
 // Config represents the configuration for the logs store.

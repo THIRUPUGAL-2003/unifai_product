@@ -5,21 +5,21 @@ import (
 	"maps"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // processPassthroughStreamingResponse handles accumulation of passthrough streaming responses.
 // Passthrough responses carry raw bytes, so we accumulate the body and metadata across chunks.
-func (a *Accumulator) processPassthroughStreamingResponse(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*ProcessedStreamResponse, error) {
+func (a *Accumulator) processPassthroughStreamingResponse(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*ProcessedStreamResponse, error) {
 	// Extract accumulator ID from context
 	requestID, ok := getAccumulatorID(ctx)
 	if !ok || requestID == "" {
 		return nil, fmt.Errorf("accumulator-id not found in context or is empty")
 	}
 
-	_, provider, requestedModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
-	isFinalChunk := raksha.IsFinalChunk(ctx)
+	_, provider, requestedModel, resolvedModel := gateway.GetResponseFields(result, gatewayErr)
+	isFinalChunk := gateway.IsFinalChunk(ctx)
 
 	// Get or create accumulator for this request
 	accumulator := a.getOrCreateStreamAccumulator(requestID)
@@ -61,7 +61,7 @@ func (a *Accumulator) processPassthroughStreamingResponse(ctx *schemas.RakshaCon
 			StreamType:     StreamTypePassthrough,
 			RequestedModel: requestedModel,
 			ResolvedModel:  resolvedModel,
-			RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
+			RoutingInfo:    gateway.GetResponseRoutingInfo(result, gatewayErr),
 			Provider:       provider,
 			Data:           nil,
 		}, nil
@@ -75,13 +75,13 @@ func (a *Accumulator) processPassthroughStreamingResponse(ctx *schemas.RakshaCon
 
 	// PassthroughUsage is set by the provider on the final EOF chunk before any
 	// plugin runs — read it from result rather than re-extracting here.
-	var passthroughUsage *schemas.RakshaPassthroughUsage
+	var passthroughUsage *schemas.GatewayPassthroughUsage
 	if result != nil && result.PassthroughResponse != nil {
 		passthroughUsage = result.PassthroughResponse.PassthroughUsage
 	}
 
 	// Build the accumulated passthrough response
-	passthroughResp := &schemas.RakshaPassthroughResponse{
+	passthroughResp := &schemas.GatewayPassthroughResponse{
 		StatusCode:       accumulator.PassthroughStatusCode,
 		Headers:          accumulator.PassthroughHeaders,
 		Body:             accumulator.PassthroughBody,
@@ -106,9 +106,9 @@ func (a *Accumulator) processPassthroughStreamingResponse(ctx *schemas.RakshaCon
 	}
 
 	// Set error status if there was an error
-	if rakshaErr != nil {
+	if gatewayErr != nil {
 		data.Status = "error"
-		data.ErrorDetails = rakshaErr
+		data.ErrorDetails = gatewayErr
 	}
 
 	// Set latency and other metadata from final response
@@ -135,7 +135,7 @@ func (a *Accumulator) processPassthroughStreamingResponse(ctx *schemas.RakshaCon
 		StreamType:     StreamTypePassthrough,
 		RequestedModel: requestedModel,
 		ResolvedModel:  resolvedModel,
-		RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
+		RoutingInfo:    gateway.GetResponseRoutingInfo(result, gatewayErr),
 		Provider:       provider,
 		Data:           data,
 		RawRequest:     &rawRequest,

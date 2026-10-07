@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/jaswdr/faker/v2"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 const (
-	PluginName = "raksha-mocker"
+	PluginName = "gateway-mocker"
 )
 
 // Constants for type checking and validation
@@ -481,34 +481,34 @@ func (p *MockerPlugin) GetName() string {
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (p *MockerPlugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *MockerPlugin) HTTPTransportPreHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (p *MockerPlugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *MockerPlugin) HTTPTransportPostHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (p *MockerPlugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
+func (p *MockerPlugin) HTTPTransportStreamChunkHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, chunk *schemas.GatewayStreamChunk) (*schemas.GatewayStreamChunk, error) {
 	return chunk, nil
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (p *MockerPlugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
+func (p *MockerPlugin) PreRequestHook(_ *schemas.GatewayContext, _ *schemas.GatewayRequest) error {
 	return nil
 }
 
 // PreLLMHook intercepts requests and applies mocking rules based on configuration
 // This is called before the actual provider request and can short-circuit the flow
-func (p *MockerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *MockerPlugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	// Skip processing if plugin is disabled
 	if !p.config.Enabled {
 		return req, nil, nil
 	}
 
-	skipMocker, ok := ctx.Value(schemas.RakshaContextKey("skip-mocker")).(bool)
+	skipMocker, ok := ctx.Value(schemas.GatewayContextKey("skip-mocker")).(bool)
 	if ok && skipMocker {
 		return req, nil, nil
 	}
@@ -560,7 +560,7 @@ func (p *MockerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 	p.ruleHitsMu.Unlock()
 
 	// Generate appropriate mock response based on type
-	var modifiedReq *schemas.RakshaRequest
+	var modifiedReq *schemas.GatewayRequest
 	var shortCircuit *schemas.LLMPluginShortCircuit
 	var err error
 
@@ -576,15 +576,15 @@ func (p *MockerPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksh
 
 	// For streaming requests with a short-circuit response, mark the stream as complete
 	// This is required for plugins like semantic cache that need to know when the stream ends
-	if shortCircuit != nil && shortCircuit.Response != nil && raksha.IsStreamRequestType(req.RequestType) {
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+	if shortCircuit != nil && shortCircuit.Response != nil && gateway.IsStreamRequestType(req.RequestType) {
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 	}
 
 	return modifiedReq, shortCircuit, err
 }
 
 // PostLLMHook processes responses after provider calls
-func (p *MockerPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
+func (p *MockerPlugin) PostLLMHook(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error) {
 	return result, err, nil
 }
 
@@ -614,7 +614,7 @@ func (p *MockerPlugin) Cleanup() error {
 }
 
 // findMatchingCompiledRule finds the first rule that matches the request using pre-compiled rules
-func (p *MockerPlugin) findMatchingCompiledRule(req *schemas.RakshaRequest) *compiledRule {
+func (p *MockerPlugin) findMatchingCompiledRule(req *schemas.GatewayRequest) *compiledRule {
 	for i := range p.compiledRules {
 		rule := &p.compiledRules[i]
 		if !rule.Enabled {
@@ -629,7 +629,7 @@ func (p *MockerPlugin) findMatchingCompiledRule(req *schemas.RakshaRequest) *com
 }
 
 // matchesConditionsFast checks if request matches rule conditions with optimized performance
-func (p *MockerPlugin) matchesConditionsFast(req *schemas.RakshaRequest, conditions *Conditions, compiledRegex *regexp.Regexp) bool {
+func (p *MockerPlugin) matchesConditionsFast(req *schemas.GatewayRequest, conditions *Conditions, compiledRegex *regexp.Regexp) bool {
 	provider, model, _ := req.GetRequestFields()
 
 	// Check providers - optimized string comparison
@@ -677,7 +677,7 @@ func (p *MockerPlugin) matchesConditionsFast(req *schemas.RakshaRequest, conditi
 }
 
 // extractMessageContentFast extracts message content with optimized performance
-func (p *MockerPlugin) extractMessageContentFast(req *schemas.RakshaRequest) string {
+func (p *MockerPlugin) extractMessageContentFast(req *schemas.GatewayRequest) string {
 	switch req.RequestType {
 	case schemas.TextCompletionRequest:
 		// Handle text completion input
@@ -755,7 +755,7 @@ func (p *MockerPlugin) extractMessageContentFast(req *schemas.RakshaRequest) str
 }
 
 // calculateRequestSizeFast calculates request size with minimal overhead
-func (p *MockerPlugin) calculateRequestSizeFast(req *schemas.RakshaRequest) int {
+func (p *MockerPlugin) calculateRequestSizeFast(req *schemas.GatewayRequest) int {
 	provider, model, _ := req.GetRequestFields()
 
 	// Approximate size calculation to avoid expensive JSON marshaling
@@ -794,7 +794,7 @@ func (p *MockerPlugin) calculateRequestSizeFast(req *schemas.RakshaRequest) int 
 }
 
 // generateSuccessShortCircuit creates a success response short-circuit with optimized allocations
-func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.RakshaRequest, response *Response, startTime time.Time) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.GatewayRequest, response *Response, startTime time.Time) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	if response.Content == nil {
 		return req, nil, nil
 	}
@@ -808,16 +808,16 @@ func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.RakshaRequest, r
 	}
 
 	// Apply defaults for token usage if not provided
-	var usage schemas.RakshaLLMUsage
+	var usage schemas.GatewayLLMUsage
 	if content.Usage != nil {
-		usage = schemas.RakshaLLMUsage{
+		usage = schemas.GatewayLLMUsage{
 			PromptTokens:     p.getOrDefault(content.Usage.PromptTokens, 10),
 			CompletionTokens: p.getOrDefault(content.Usage.CompletionTokens, 20),
 			TotalTokens:      p.getOrDefault(content.Usage.TotalTokens, content.Usage.PromptTokens+content.Usage.CompletionTokens),
 		}
 	} else {
 		// Default usage when none specified
-		usage = schemas.RakshaLLMUsage{
+		usage = schemas.GatewayLLMUsage{
 			PromptTokens:     10,
 			CompletionTokens: 20,
 			TotalTokens:      30,
@@ -837,13 +837,13 @@ func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.RakshaRequest, r
 	provider, model, _ := req.GetRequestFields()
 
 	// Create mock response with proper structure
-	mockResponse := &schemas.RakshaResponse{}
+	mockResponse := &schemas.GatewayResponse{}
 
 	if req.RequestType == schemas.ChatCompletionRequest || req.RequestType == schemas.ChatCompletionStreamRequest {
-		mockResponse.ChatResponse = &schemas.RakshaChatResponse{
+		mockResponse.ChatResponse = &schemas.GatewayChatResponse{
 			Model: model,
 			Usage: &usage,
-			Choices: []schemas.RakshaResponseChoice{
+			Choices: []schemas.GatewayResponseChoice{
 				{
 					Index: 0,
 					ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -857,7 +857,7 @@ func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.RakshaRequest, r
 					FinishReason: finishReason,
 				},
 			},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RequestType:            req.RequestType,
 				Provider:               provider,
 				OriginalModelRequested: model,
@@ -865,15 +865,15 @@ func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.RakshaRequest, r
 			},
 		}
 	} else if req.RequestType == schemas.ResponsesRequest {
-		mockResponse.ResponsesResponse = &schemas.RakshaResponsesResponse{
+		mockResponse.ResponsesResponse = &schemas.GatewayResponsesResponse{
 			CreatedAt: int(time.Now().Unix()),
 			Output: []schemas.ResponsesMessage{
 				{
-					Role: raksha.Ptr(schemas.ResponsesInputMessageRoleAssistant),
+					Role: gateway.Ptr(schemas.ResponsesInputMessageRoleAssistant),
 					Content: &schemas.ResponsesMessageContent{
 						ContentStr: &message,
 					},
-					Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
+					Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
 				},
 			},
 			Usage: &schemas.ResponsesResponseUsage{
@@ -881,7 +881,7 @@ func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.RakshaRequest, r
 				OutputTokens: usage.CompletionTokens,
 				TotalTokens:  usage.TotalTokens,
 			},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RequestType:            schemas.ResponsesRequest,
 				Provider:               provider,
 				OriginalModelRequested: model,
@@ -889,18 +889,18 @@ func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.RakshaRequest, r
 			},
 		}
 	} else if req.RequestType == schemas.ResponsesStreamRequest {
-		mockResponse.ResponsesStreamResponse = &schemas.RakshaResponsesStreamResponse{
+		mockResponse.ResponsesStreamResponse = &schemas.GatewayResponsesStreamResponse{
 			Type:           schemas.ResponsesStreamResponseTypeCompleted,
 			SequenceNumber: 0,
-			Response: &schemas.RakshaResponsesResponse{
+			Response: &schemas.GatewayResponsesResponse{
 				CreatedAt: int(time.Now().Unix()),
 				Output: []schemas.ResponsesMessage{
 					{
-						Role: raksha.Ptr(schemas.ResponsesInputMessageRoleAssistant),
+						Role: gateway.Ptr(schemas.ResponsesInputMessageRoleAssistant),
 						Content: &schemas.ResponsesMessageContent{
 							ContentStr: &message,
 						},
-						Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
+						Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
 					},
 				},
 				Usage: &schemas.ResponsesResponseUsage{
@@ -909,7 +909,7 @@ func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.RakshaRequest, r
 					TotalTokens:  usage.TotalTokens,
 				},
 			},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RequestType:            schemas.ResponsesStreamRequest,
 				Provider:               provider,
 				OriginalModelRequested: model,
@@ -947,7 +947,7 @@ func (p *MockerPlugin) generateSuccessShortCircuit(req *schemas.RakshaRequest, r
 }
 
 // generateErrorShortCircuit creates an error response short-circuit with optimized performance
-func (p *MockerPlugin) generateErrorShortCircuit(req *schemas.RakshaRequest, response *Response) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *MockerPlugin) generateErrorShortCircuit(req *schemas.GatewayRequest, response *Response) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	if response.Error == nil {
 		return req, nil, nil
 	}
@@ -958,12 +958,12 @@ func (p *MockerPlugin) generateErrorShortCircuit(req *schemas.RakshaRequest, res
 	allowFallbacks := response.AllowFallbacks
 
 	// Create mock error
-	mockError := &schemas.RakshaError{
+	mockError := &schemas.GatewayError{
 		Error: &schemas.ErrorField{
 			Message: errorContent.Message,
 		},
 		AllowFallbacks: allowFallbacks,
-		ExtraFields: schemas.RakshaErrorExtraFields{
+		ExtraFields: schemas.GatewayErrorExtraFields{
 			RequestType:            req.RequestType,
 			Provider:               provider,
 			OriginalModelRequested: model,
@@ -1050,13 +1050,13 @@ func (p *MockerPlugin) calculateLatency(latency *Latency) time.Duration {
 }
 
 // handleDefaultBehavior handles requests when no rules match
-func (p *MockerPlugin) handleDefaultBehavior(req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *MockerPlugin) handleDefaultBehavior(req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	provider, model, _ := req.GetRequestFields()
 
 	switch p.config.DefaultBehavior {
 	case DefaultBehaviorError:
 		return req, &schemas.LLMPluginShortCircuit{
-			Error: &schemas.RakshaError{
+			Error: &schemas.GatewayError{
 				Error: &schemas.ErrorField{
 					Message: "Mock plugin default error",
 				},
@@ -1065,29 +1065,29 @@ func (p *MockerPlugin) handleDefaultBehavior(req *schemas.RakshaRequest) (*schem
 	case DefaultBehaviorSuccess:
 		finishReason := "stop"
 		return req, &schemas.LLMPluginShortCircuit{
-			Response: &schemas.RakshaResponse{
-				ChatResponse: &schemas.RakshaChatResponse{
+			Response: &schemas.GatewayResponse{
+				ChatResponse: &schemas.GatewayChatResponse{
 					Model: model,
-					Usage: &schemas.RakshaLLMUsage{
+					Usage: &schemas.GatewayLLMUsage{
 						PromptTokens:     5,
 						CompletionTokens: 10,
 						TotalTokens:      15,
 					},
-					Choices: []schemas.RakshaResponseChoice{
+					Choices: []schemas.GatewayResponseChoice{
 						{
 							Index: 0,
 							ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
 								Message: &schemas.ChatMessage{
 									Role: schemas.ChatMessageRoleAssistant,
 									Content: &schemas.ChatMessageContent{
-										ContentStr: raksha.Ptr("Mock plugin default response"),
+										ContentStr: gateway.Ptr("Mock plugin default response"),
 									},
 								},
 							},
 							FinishReason: &finishReason,
 						},
 					},
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						RequestType:            schemas.ChatCompletionRequest,
 						Provider:               provider,
 						OriginalModelRequested: model,
@@ -1110,7 +1110,7 @@ func (p *MockerPlugin) sortCompiledRulesByPriority() {
 }
 
 // applyTemplate applies template variables with optimized string operations including faker support
-func (p *MockerPlugin) applyTemplate(template string, req *schemas.RakshaRequest) string {
+func (p *MockerPlugin) applyTemplate(template string, req *schemas.GatewayRequest) string {
 	provider, model, _ := req.GetRequestFields()
 
 	// Fast path: no template variables

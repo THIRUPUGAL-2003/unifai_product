@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // BedrockBatchJobRequest represents a request to create a batch inference job.
@@ -124,8 +124,8 @@ type BedrockBatchCancelResponse struct {
 	Status string `json:"status"`
 }
 
-// ToRakshaBatchStatus converts Bedrock status to Raksha status.
-func ToRakshaBatchStatus(status string) schemas.BatchStatus {
+// ToGatewayBatchStatus converts Bedrock status to Gateway status.
+func ToGatewayBatchStatus(status string) schemas.BatchStatus {
 	switch status {
 	case "Submitted", "Validating":
 		return schemas.BatchStatusValidating
@@ -148,7 +148,7 @@ func ToRakshaBatchStatus(status string) schemas.BatchStatus {
 	}
 }
 
-// parseBatchResultsJSONL parses JSONL content from Bedrock batch output into Raksha format.
+// parseBatchResultsJSONL parses JSONL content from Bedrock batch output into Gateway format.
 // Returns the parsed results and any parse errors encountered.
 func parseBatchResultsJSONL(content []byte, provider *BedrockProvider) ([]schemas.BatchResultItem, []schemas.BatchError) {
 	var results []schemas.BatchResultItem
@@ -160,7 +160,7 @@ func parseBatchResultsJSONL(content []byte, provider *BedrockProvider) ([]schema
 			return err
 		}
 
-		// Convert Bedrock format to Raksha format
+		// Convert Bedrock format to Gateway format
 		resultItem := schemas.BatchResultItem{
 			CustomID: bedrockResult.RecordID,
 		}
@@ -200,8 +200,8 @@ func parseBatchResultsJSONL(content []byte, provider *BedrockProvider) ([]schema
 	return results, parseResult.Errors
 }
 
-// ToBedrockBatchJobResponse converts a Raksha batch create response to Bedrock format.
-func ToBedrockBatchJobResponse(resp *schemas.RakshaBatchCreateResponse) *BedrockBatchJobResponse {
+// ToBedrockBatchJobResponse converts a Gateway batch create response to Bedrock format.
+func ToBedrockBatchJobResponse(resp *schemas.GatewayBatchCreateResponse) *BedrockBatchJobResponse {
 	// Here if the provider is not Bedrock - then we create a dummy arn and string using the batch ID
 	if resp.ExtraFields.Provider != schemas.Bedrock {
 		return &BedrockBatchJobResponse{
@@ -229,8 +229,8 @@ func ToBedrockBatchJobResponse(resp *schemas.RakshaBatchCreateResponse) *Bedrock
 	return result
 }
 
-// ToBedrockBatchJobListResponse converts a Raksha batch list response to Bedrock format.
-func ToBedrockBatchJobListResponse(resp *schemas.RakshaBatchListResponse) *BedrockBatchJobListResponse {
+// ToBedrockBatchJobListResponse converts a Gateway batch list response to Bedrock format.
+func ToBedrockBatchJobListResponse(resp *schemas.GatewayBatchListResponse) *BedrockBatchJobListResponse {
 	result := &BedrockBatchJobListResponse{
 		InvocationJobSummaries: make([]BedrockBatchJobSummary, len(resp.Data)),
 	}
@@ -270,8 +270,8 @@ func ToBedrockBatchJobListResponse(resp *schemas.RakshaBatchListResponse) *Bedro
 	return result
 }
 
-// ToBedrockBatchJobRetrieveResponse converts a Raksha batch retrieve response to Bedrock format.
-func ToBedrockBatchJobRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse) *BedrockBatchJobResponse {
+// ToBedrockBatchJobRetrieveResponse converts a Gateway batch retrieve response to Bedrock format.
+func ToBedrockBatchJobRetrieveResponse(resp *schemas.GatewayBatchRetrieveResponse) *BedrockBatchJobResponse {
 	result := &BedrockBatchJobResponse{
 		JobArn: resp.ID,
 		Status: toBedrockBatchStatus(resp.Status),
@@ -318,7 +318,7 @@ func ToBedrockBatchJobRetrieveResponse(resp *schemas.RakshaBatchRetrieveResponse
 	return result
 }
 
-// toBedrockBatchStatus converts Raksha batch status to Bedrock status.
+// toBedrockBatchStatus converts Gateway batch status to Bedrock status.
 func toBedrockBatchStatus(status schemas.BatchStatus) string {
 	switch status {
 	case schemas.BatchStatusValidating:
@@ -342,9 +342,9 @@ func toBedrockBatchStatus(status schemas.BatchStatus) string {
 	}
 }
 
-// ToRakshaBatchListRequest converts a Bedrock batch list request to Raksha format.
-func ToRakshaBatchListRequest(req *BedrockBatchListRequest, provider schemas.ModelProvider) *schemas.RakshaBatchListRequest {
-	result := &schemas.RakshaBatchListRequest{
+// ToGatewayBatchListRequest converts a Bedrock batch list request to Gateway format.
+func ToGatewayBatchListRequest(req *BedrockBatchListRequest, provider schemas.ModelProvider) *schemas.GatewayBatchListRequest {
+	result := &schemas.GatewayBatchListRequest{
 		Provider: provider,
 		Limit:    req.MaxResults,
 	}
@@ -366,24 +366,24 @@ func ToRakshaBatchListRequest(req *BedrockBatchListRequest, provider schemas.Mod
 	return result
 }
 
-// ToRakshaBatchRetrieveRequest converts a Bedrock batch retrieve request to Raksha format.
-func ToRakshaBatchRetrieveRequest(req *BedrockBatchRetrieveRequest, provider schemas.ModelProvider) *schemas.RakshaBatchRetrieveRequest {
-	return &schemas.RakshaBatchRetrieveRequest{
+// ToGatewayBatchRetrieveRequest converts a Bedrock batch retrieve request to Gateway format.
+func ToGatewayBatchRetrieveRequest(req *BedrockBatchRetrieveRequest, provider schemas.ModelProvider) *schemas.GatewayBatchRetrieveRequest {
+	return &schemas.GatewayBatchRetrieveRequest{
 		Provider: provider,
 		BatchID:  req.JobIdentifier,
 	}
 }
 
-// ToRakshaBatchCancelRequest converts a Bedrock batch cancel request to Raksha format.
-func ToRakshaBatchCancelRequest(req *BedrockBatchCancelRequest, provider schemas.ModelProvider) *schemas.RakshaBatchCancelRequest {
-	return &schemas.RakshaBatchCancelRequest{
+// ToGatewayBatchCancelRequest converts a Bedrock batch cancel request to Gateway format.
+func ToGatewayBatchCancelRequest(req *BedrockBatchCancelRequest, provider schemas.ModelProvider) *schemas.GatewayBatchCancelRequest {
+	return &schemas.GatewayBatchCancelRequest{
 		Provider: provider,
 		BatchID:  req.JobIdentifier,
 	}
 }
 
-// ToBedrockBatchCancelResponse converts a Raksha batch cancel response to Bedrock format.
-func ToBedrockBatchCancelResponse(resp *schemas.RakshaBatchCancelResponse) *BedrockBatchCancelResponse {
+// ToBedrockBatchCancelResponse converts a Gateway batch cancel response to Bedrock format.
+func ToBedrockBatchCancelResponse(resp *schemas.GatewayBatchCancelResponse) *BedrockBatchCancelResponse {
 	return &BedrockBatchCancelResponse{
 		JobArn: resp.ID,
 		Status: toBedrockBatchStatus(resp.Status),

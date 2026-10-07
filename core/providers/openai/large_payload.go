@@ -1,4 +1,4 @@
-// Package openai provides the OpenAI provider implementation for the Raksha framework.
+// Package openai provides the OpenAI provider implementation for the Gateway framework.
 package openai
 
 import (
@@ -8,13 +8,13 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/valyala/fasthttp"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // largePayloadResult holds the lightweight metadata extracted from a large payload passthrough.
 type largePayloadResult struct {
-	Usage        *schemas.RakshaLLMUsage
+	Usage        *schemas.GatewayLLMUsage
 	Latency      int64
 	ResponseBody []byte // non-nil for request types that need the raw upstream response (transcription, speech, etc.)
 }
@@ -23,7 +23,7 @@ type largePayloadResult struct {
 // In normal mode it uses the marshaled jsonBody. In large payload mode it delegates to
 // ApplyLargePayloadRequestBodyWithModelNormalization which streams the original request
 // body to upstream with model prefix rewriting.
-func setStreamingRequestBody(ctx *schemas.RakshaContext, req *fasthttp.Request, jsonBody []byte, providerName schemas.ModelProvider) {
+func setStreamingRequestBody(ctx *schemas.GatewayContext, req *fasthttp.Request, jsonBody []byte, providerName schemas.ModelProvider) {
 	if !providerUtils.ApplyLargePayloadRequestBodyWithModelNormalization(ctx, req, providerName) {
 		req.SetBody(jsonBody)
 	}
@@ -36,15 +36,15 @@ func setStreamingRequestBody(ctx *schemas.RakshaContext, req *fasthttp.Request, 
 // Returns (result, nil, true) on success, (nil, err, true) on error, or (nil, nil, false) when
 // large payload mode is not active and the caller should use the normal path.
 func handleOpenAILargePayloadPassthrough(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
 	authHeader map[string]string,
 	extraHeaders map[string]string,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) (*largePayloadResult, *schemas.RakshaError, bool) {
-	isLargePayload, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool)
+) (*largePayloadResult, *schemas.GatewayError, bool) {
+	isLargePayload, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool)
 	if !isLargePayload {
 		return nil, nil, false
 	}
@@ -74,16 +74,16 @@ func handleOpenAILargePayloadPassthrough(
 	// Choose client: enable response body streaming when threshold is configured
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, client, resp)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	wait()
-	if rakshaErr != nil {
+	if gatewayErr != nil {
 		fasthttp.ReleaseResponse(resp)
-		return nil, rakshaErr, true
+		return nil, gatewayErr, true
 	}
 
 	// Extract provider response headers early so they're available on error and large-response paths
 	if headers := providerUtils.ExtractProviderResponseHeaders(resp); headers != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 	}
 
 	// Error responses are always small — materialize stream body for error parsing
@@ -118,20 +118,20 @@ func handleOpenAILargePayloadPassthrough(
 //     wrapped in reader (released on reader Close).
 //   - (nil, nil, err) — error; resp released.
 func finalizeOpenAIResponse(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	resp *fasthttp.Response,
 	latency time.Duration,
 	providerName schemas.ModelProvider,
 	logger schemas.Logger,
-) ([]byte, *largePayloadResult, *schemas.RakshaError) {
-	body, isLarge, rakshaErr := providerUtils.FinalizeResponseWithLargeDetection(ctx, resp, logger)
-	if rakshaErr != nil {
+) ([]byte, *largePayloadResult, *schemas.GatewayError) {
+	body, isLarge, gatewayErr := providerUtils.FinalizeResponseWithLargeDetection(ctx, resp, logger)
+	if gatewayErr != nil {
 		fasthttp.ReleaseResponse(resp)
-		return nil, nil, rakshaErr
+		return nil, nil, gatewayErr
 	}
 	if isLarge {
 		// Extract usage from the response preview stored in context by FinalizeResponseWithLargeDetection
-		preview, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadResponsePreview).(string)
+		preview, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadResponsePreview).(string)
 		usage := extractOpenAIUsageFromBytes([]byte(preview))
 		// resp owned by LargeResponseReader in context — don't release
 		return nil, &largePayloadResult{Usage: usage, Latency: latency.Milliseconds()}, nil
@@ -143,7 +143,7 @@ func finalizeOpenAIResponse(
 
 // extractOpenAIUsageFromBytes extracts usage metadata from OpenAI response bytes using sonic.Get.
 // OpenAI responses have "usage" at the top level with prompt_tokens, completion_tokens, total_tokens.
-func extractOpenAIUsageFromBytes(data []byte) *schemas.RakshaLLMUsage {
+func extractOpenAIUsageFromBytes(data []byte) *schemas.GatewayLLMUsage {
 	node, err := sonic.Get(data, "usage")
 	if err != nil {
 		return nil

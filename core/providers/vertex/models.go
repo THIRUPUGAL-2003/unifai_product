@@ -3,8 +3,8 @@ package vertex
 import (
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // VertexRankRequest represents the Discovery Engine rank API request.
@@ -55,7 +55,7 @@ type vertexRerankOptions struct {
 	UserLabels                    map[string]string
 }
 
-// ToRakshaListModelsResponse converts a Vertex AI list models response to Raksha's format.
+// ToGatewayListModelsResponse converts a Vertex AI list models response to Gateway's format.
 // It processes both custom models (from the API response) and non-custom models (from deployments and allowedModels).
 //
 // Custom models are those with digit-only deployment values, extracted from the API response.
@@ -70,12 +70,12 @@ type vertexRerankOptions struct {
 // - If allowedModels is empty, all models are allowed
 // - If allowedModels is non-empty, only models/deployments with keys in allowedModels are included
 // - Deployments map is used to match model IDs to aliases and filter accordingly
-func (response *VertexListModelsResponse) ToRakshaListModelsResponse(allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
+func (response *VertexListModelsResponse) ToGatewayListModelsResponse(allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.GatewayListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaListModelsResponse{
+	gatewayResponse := &schemas.GatewayListModelsResponse{
 		Data: make([]schemas.Model, 0, len(response.Models)),
 	}
 
@@ -88,7 +88,7 @@ func (response *VertexListModelsResponse) ToRakshaListModelsResponse(allowedMode
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return rakshaResponse
+		return gatewayResponse
 	}
 
 	included := make(map[string]bool)
@@ -124,28 +124,28 @@ func (response *VertexListModelsResponse) ToRakshaListModelsResponse(allowedMode
 				if result.AliasValue != "" {
 					modelEntry.Alias = schemas.Ptr(result.AliasValue)
 				}
-				rakshaResponse.Data = append(rakshaResponse.Data, modelEntry)
+				gatewayResponse.Data = append(gatewayResponse.Data, modelEntry)
 				included[resolvedKey] = true
 			}
 		}
 	}
 
-	rakshaResponse.Data = append(rakshaResponse.Data,
+	gatewayResponse.Data = append(gatewayResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	rakshaResponse.NextPageToken = response.NextPageToken
+	gatewayResponse.NextPageToken = response.NextPageToken
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
-// ToRakshaListModelsResponse converts a Vertex AI publisher models response to Raksha's format.
+// ToGatewayListModelsResponse converts a Vertex AI publisher models response to Gateway's format.
 // This is for foundation models from the Model Garden (publishers.models.list endpoint).
-func (response *VertexListPublisherModelsResponse) ToRakshaListModelsResponse(allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
+func (response *VertexListPublisherModelsResponse) ToGatewayListModelsResponse(allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.GatewayListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaListModelsResponse{
+	gatewayResponse := &schemas.GatewayListModelsResponse{
 		Data: make([]schemas.Model, 0, len(response.PublisherModels)),
 	}
 
@@ -158,7 +158,7 @@ func (response *VertexListPublisherModelsResponse) ToRakshaListModelsResponse(al
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return rakshaResponse
+		return gatewayResponse
 	}
 
 	included := make(map[string]bool)
@@ -183,15 +183,15 @@ func (response *VertexListPublisherModelsResponse) ToRakshaListModelsResponse(al
 			if result.AliasValue != "" {
 				modelEntry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			rakshaResponse.Data = append(rakshaResponse.Data, modelEntry)
+			gatewayResponse.Data = append(gatewayResponse.Data, modelEntry)
 			included[strings.ToLower(result.ResolvedID)] = true
 		}
 	}
 
-	rakshaResponse.Data = append(rakshaResponse.Data,
+	gatewayResponse.Data = append(gatewayResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	rakshaResponse.NextPageToken = response.NextPageToken
+	gatewayResponse.NextPageToken = response.NextPageToken
 
-	return rakshaResponse
+	return gatewayResponse
 }

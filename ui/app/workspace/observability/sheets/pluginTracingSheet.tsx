@@ -1,3 +1,5 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -63,11 +65,17 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 	// All currently loaded plugins (built-in, enterprise, custom, and auto-loaded) that can
 	// emit spans, named to match the connector's span filter. One flat list — the backend
 	// already returns the complete set, so there's no built-in/custom split to maintain.
-	const { data: allPlugins = [], isLoading: isLoadingLoadedPlugins } = useGetLoadedPluginsQuery();
-	const { data: targetPlugin } = useGetPluginQuery(pluginName);
+	const {
+		data: allPlugins = [],
+		isLoading: isLoadingLoadedPlugins,
+		isError: loadedPluginsFailed,
+		error: loadedPluginsError,
+	} = useGetLoadedPluginsQuery();
+	const { data: targetPlugin, isError: targetPluginFailed, error: targetPluginError } = useGetPluginQuery(pluginName);
 	const [updatePlugin, { isLoading }] = useUpdatePluginMutation();
 	const [toggles, setToggles] = useState<Record<string, boolean>>({});
 	const wasOpenRef = useRef(false);
+	const queryFailed = loadedPluginsFailed || targetPluginFailed;
 
 	useEffect(() => {
 		if (open && !wasOpenRef.current) {
@@ -124,32 +132,39 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 				</SheetHeader>
 
 				<div className="mt-4 flex-1 overflow-y-auto">
-					<div className="flex flex-col gap-4">
-						<div>
-							<div className="mb-2 flex items-center justify-between">
-								<p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Plugins</p>
-								<TriStateCheckbox
-									allIds={allPlugins}
-									selectedIds={allPlugins.filter((n) => toggles[n] ?? true)}
-									onChange={(next) => {
-										const nextSet = new Set(next);
-										setToggles((prev) => {
-											const updated = { ...prev };
-											for (const n of allPlugins) updated[n] = nextSet.has(n);
-											return updated;
-										});
-									}}
-									ariaLabel="Toggle all plugin tracing"
-									data-testid="plugin-tracing-select-all"
-								/>
-							</div>
-							<div className="flex flex-col gap-1.5">
-								{allPlugins.map((name) => (
-									<PluginRow key={name} name={name} checked={toggles[name] ?? true} onChange={(v) => setToggle(name, v)} />
-								))}
+					{queryFailed ? (
+						<QueryErrorBanner
+							message={getErrorMessage(loadedPluginsError || targetPluginError) || "Failed to load plugin tracing settings."}
+							testId="plugin-tracing-query-error"
+						/>
+					) : (
+						<div className="flex flex-col gap-4">
+							<div>
+								<div className="mb-2 flex items-center justify-between">
+									<p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">Plugins</p>
+									<TriStateCheckbox
+										allIds={allPlugins}
+										selectedIds={allPlugins.filter((n) => toggles[n] ?? true)}
+										onChange={(next) => {
+											const nextSet = new Set(next);
+											setToggles((prev) => {
+												const updated = { ...prev };
+												for (const n of allPlugins) updated[n] = nextSet.has(n);
+												return updated;
+											});
+										}}
+										ariaLabel="Toggle all plugin tracing"
+										data-testid="plugin-tracing-select-all"
+									/>
+								</div>
+								<div className="flex flex-col gap-1.5">
+									{allPlugins.map((name) => (
+										<PluginRow key={name} name={name} checked={toggles[name] ?? true} onChange={(v) => setToggle(name, v)} />
+									))}
+								</div>
 							</div>
 						</div>
-					</div>
+					)}
 				</div>
 
 				<div className="flex flex-col gap-2 pt-4">
@@ -157,7 +172,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 						<AlertDescription>
 							<span>
 								If <strong className="inline">plugin_span_filter</strong> is set in the <strong className="inline">{pluginName}</strong>{" "}
-								plugin config in config.json, it takes precedence over these settings after restarting Raksha.
+								plugin config in config.json, it takes precedence over these settings after restarting {PRODUCT_NAME}.
 							</span>
 						</AlertDescription>
 					</Alert>
@@ -167,7 +182,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 						</Button>
 						<Button
 							onClick={handleSave}
-							disabled={isLoading || !wasOpenRef.current}
+							disabled={isLoading || queryFailed || !wasOpenRef.current}
 							isLoading={isLoading}
 							data-testid="plugin-tracing-save-button"
 							type="button"

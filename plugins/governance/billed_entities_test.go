@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 )
 
 func strPtr(s string) *string { return &s }

@@ -16,6 +16,7 @@ import {
 	ChevronRight,
 	Loader2,
 } from "lucide-react";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -100,7 +101,10 @@ function isUserRole(role: string): boolean {
 }
 
 function UserTeamCell({ userId }: { userId: string }) {
-	const { data } = useGetUserTeamsQuery(userId);
+	const { data, isError } = useGetUserTeamsQuery(userId);
+	if (isError) {
+		return <span className="text-destructive text-xs italic">Failed to load</span>;
+	}
 	const team = data?.teams?.[0];
 	if (!team) {
 		return <span className="text-muted-foreground text-xs italic">No Team (Standalone)</span>;
@@ -119,7 +123,10 @@ function UserTeamCell({ userId }: { userId: string }) {
 
 // Direct, team and customer keys: team/customer keys reach the user without a direct assignment.
 function UserVirtualKeysCell({ userId, allVirtualKeys }: { userId: string; allVirtualKeys: VirtualKey[] }) {
-	const { data } = useGetUserVirtualKeysQuery(userId);
+	const { data, isError } = useGetUserVirtualKeysQuery(userId);
+	if (isError) {
+		return <span className="text-destructive text-xs italic">Failed to load</span>;
+	}
 	const keys = (data?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
 	if (keys.length === 0) {
 		return <span className="text-muted-foreground text-xs italic">No key</span>;
@@ -165,19 +172,25 @@ export default function UsersView() {
 	const hasUpdateAccess = useRbac(RbacResource.Users, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.Users, RbacOperation.Delete);
 
+	const [usersPollMs, setUsersPollMs] = useState(15_000);
 	const {
 		data: users = [],
 		isLoading: loading,
 		isError: usersError,
 		error: usersErrorDetail,
 		refetch: refetchUsers,
-	} = useGetSessionUsersQuery(undefined, { pollingInterval: 15_000, refetchOnFocus: true });
-	const { data: promptsData } = useGetPromptsQuery();
-	const { data: teamsData } = useGetTeamsQuery({ limit: 500, offset: 0 });
+	} = useGetSessionUsersQuery(undefined, { pollingInterval: usersPollMs, refetchOnFocus: true });
+	useEffect(() => {
+		setUsersPollMs(usersError ? 0 : 15_000);
+	}, [usersError]);
+	const { data: promptsData, isError: promptsFailed, error: promptsError } = useGetPromptsQuery();
+	const { data: teamsData, isError: teamsFailed, error: teamsError } = useGetTeamsQuery({ limit: 500, offset: 0 });
 	const teams = teamsData?.teams || [];
-	const { data: virtualKeysData } = useGetVirtualKeysQuery({ limit: 500, offset: 0 });
+	const { data: virtualKeysData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery({ limit: 500, offset: 0 });
 	const virtualKeys = (virtualKeysData?.virtual_keys || []).filter((vk) => vk.is_active !== false);
-	const { data: rolesData } = useGetRolesQuery();
+	const { data: rolesData, isError: rolesFailed, error: rolesError } = useGetRolesQuery();
+	const helperQueryFailed = teamsFailed || vkFailed || rolesFailed || promptsFailed;
+	const helperQueryError = teamsError || vkError || rolesError || promptsError;
 	const roleOptions = (rolesData?.roles || []).slice().sort((a, b) => {
 		const rank = (name: string) => (name === "admin" ? 0 : name === "user" ? 1 : 2);
 		const diff = rank(a.name) - rank(b.name);
@@ -219,12 +232,22 @@ export default function UsersView() {
 	const [expandedSections, setExpandedSections] = useState<Set<WorkspaceSectionKey>>(new Set());
 	const [autoCreatePrompt, setAutoCreatePrompt] = useState(false);
 
-	const { data: editUserTeams } = useGetUserTeamsQuery(selectedUser?.id || "", {
+	const {
+		data: editUserTeams,
+		isError: editTeamsFailed,
+		error: editTeamsError,
+	} = useGetUserTeamsQuery(selectedUser?.id || "", {
 		skip: !selectedUser?.id || !isEditOpen,
 	});
-	const { data: editUserVKs } = useGetUserVirtualKeysQuery(selectedUser?.id || "", {
+	const {
+		data: editUserVKs,
+		isError: editVksFailed,
+		error: editVksError,
+	} = useGetUserVirtualKeysQuery(selectedUser?.id || "", {
 		skip: !selectedUser?.id || !isEditOpen,
 	});
+	const editDialogQueryFailed = editTeamsFailed || editVksFailed;
+	const editDialogQueryError = editTeamsError || editVksError;
 
 	useEffect(() => {
 		if (!isEditOpen || !selectedUser?.id) return;
@@ -845,6 +868,13 @@ export default function UsersView() {
 				</Button>
 			</div>
 
+			{helperQueryFailed ? (
+				<QueryErrorBanner
+					testId="users-helper-query-error"
+					message={getErrorMessage(helperQueryError) || "Failed to load teams, virtual keys, roles, or prompts."}
+				/>
+			) : null}
+
 			{/* Search + role filter */}
 			<div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div className="relative w-full max-w-sm">
@@ -1360,6 +1390,12 @@ export default function UsersView() {
 						</DialogTitle>
 					</DialogHeader>
 					<form onSubmit={handleEditUser} className="space-y-4 py-4">
+						{editDialogQueryFailed ? (
+							<QueryErrorBanner
+								testId="users-edit-dialog-query-error"
+								message={getErrorMessage(editDialogQueryError) || "Failed to load team or virtual key assignments."}
+							/>
+						) : null}
 						<div className="space-y-2">
 							<label className="text-muted-foreground text-sm font-medium">Username</label>
 							<Input

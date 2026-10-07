@@ -3,14 +3,13 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -27,7 +26,7 @@ func NewHealthHandler(config *lib.Config) *HealthHandler {
 }
 
 // RegisterRoutes registers the health-related routes.
-func (h *HealthHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *HealthHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/health", lib.ChainMiddlewares(h.getHealth, middlewares...))
 	r.GET("/api/health", lib.ChainMiddlewares(h.getHealth, middlewares...))
 	r.GET("/api/governance/debug/health", lib.ChainMiddlewares(h.getHealth, middlewares...))
@@ -105,19 +104,24 @@ func (h *HealthHandler) getHealth(ctx *fasthttp.RequestCtx) {
 
 // getBranding returns live branding configuration loaded from environment variables.
 func (h *HealthHandler) getBranding(ctx *fasthttp.RequestCtx) {
-	prodName := strings.TrimSpace(os.Getenv("RAKSHA_PRODUCT_NAME"))
-	if prodName == "" {
-		prodName = "Raksha"
+	// Home-page brand mark (operator product name). In-app / email copy uses product_name.
+	brandName := strings.TrimSpace(gatewayEnv("BRAND_NAME"))
+	if brandName == "" {
+		brandName = "Gateway"
 	}
-	prodSubtitle := strings.TrimSpace(os.Getenv("RAKSHA_PRODUCT_SUBTITLE"))
+	prodName := strings.TrimSpace(gatewayEnv("PRODUCT_NAME"))
+	if prodName == "" {
+		prodName = "Gateway"
+	}
+	prodSubtitle := strings.TrimSpace(gatewayEnv("PRODUCT_SUBTITLE"))
 	if prodSubtitle == "" {
 		prodSubtitle = "Real-time AI Knowledge Screening & Hazard Audit"
 	}
-	companyName := strings.TrimSpace(os.Getenv("RAKSHA_COMPANY_NAME"))
+	companyName := strings.TrimSpace(gatewayEnv("COMPANY_NAME"))
 	if companyName == "" {
 		companyName = "YesPanchi Group of Companies"
 	}
-	companyShortName := strings.TrimSpace(os.Getenv("RAKSHA_COMPANY_SHORT_NAME"))
+	companyShortName := strings.TrimSpace(gatewayEnv("COMPANY_SHORT_NAME"))
 	if companyShortName == "" {
 		parts := strings.Fields(companyName)
 		if len(parts) > 0 {
@@ -126,20 +130,21 @@ func (h *HealthHandler) getBranding(ctx *fasthttp.RequestCtx) {
 			companyShortName = "YesPanchi"
 		}
 	}
-	companyLogo := strings.TrimSpace(os.Getenv("RAKSHA_COMPANY_LOGO"))
+	companyLogo := strings.TrimSpace(gatewayEnv("COMPANY_LOGO"))
 	if companyLogo == "" {
 		companyLogo = "/yes-panchi-logo.png"
 	}
-	footerCopyright := strings.TrimSpace(os.Getenv("RAKSHA_FOOTER_COPYRIGHT"))
-	footerSubtitle := strings.TrimSpace(os.Getenv("RAKSHA_FOOTER_SUBTITLE"))
+	footerCopyright := strings.TrimSpace(gatewayEnv("FOOTER_COPYRIGHT"))
+	footerSubtitle := strings.TrimSpace(gatewayEnv("FOOTER_SUBTITLE"))
 	if footerSubtitle == "" {
-		footerSubtitle = "Raksha - Real-time AI Knowledge Screening & Hazard Audit"
+		footerSubtitle = "Gateway - Real-time AI Knowledge Screening & Hazard Audit"
 	}
 	if footerCopyright == "" {
 		footerCopyright = fmt.Sprintf("© %d %s. All rights reserved. %s", time.Now().Year(), companyName, footerSubtitle)
 	}
 
 	SendJSON(ctx, map[string]any{
+		"brand_name":         brandName,
 		"product_name":       prodName,
 		"product_subtitle":   prodSubtitle,
 		"company_name":       companyName,

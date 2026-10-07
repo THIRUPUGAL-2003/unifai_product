@@ -1,11 +1,11 @@
-# Prometheus + Push Gateway + Grafana for testing Raksha push-based metrics (development only)
+# Prometheus + Push Gateway + Grafana for testing Gateway push-based metrics (development only)
 #
 # Usage:
 #   docker compose -f docker-compose.pushgateway.yml up -d
 #
-# Then configure Raksha telemetry plugin with:
+# Then configure Gateway telemetry plugin with:
 #   push_gateway_url: http://localhost:9091
-#   job_name: raksha
+#   job_name: gateway
 #   push_interval: 15
 #   basic_auth:
 #     username: admin
@@ -24,7 +24,7 @@ services:
         target: /etc/pushgateway/web.yml
     restart: always
     networks:
-      - raksha_pushgateway_network
+      - gateway_pushgateway_network
 
   prometheus-pg:
     image: prom/prometheus:latest
@@ -38,7 +38,7 @@ services:
         target: /etc/prometheus/prometheus.yml
     restart: always
     networks:
-      - raksha_pushgateway_network
+      - gateway_pushgateway_network
 
   grafana-pg:
     image: grafana/grafana:latest
@@ -50,7 +50,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: "admin"
     volumes:
-      - ./sample-grafana-dashboard.json:/var/lib/grafana/dashboards/raksha-dashboard.json
+      - ./sample-grafana-dashboard.json:/var/lib/grafana/dashboards/gateway-dashboard.json
     configs:
       - source: grafana-datasources
         target: /etc/grafana/provisioning/datasources/datasources.yml
@@ -58,10 +58,10 @@ services:
         target: /etc/grafana/provisioning/dashboards/dashboards.yml
     restart: always
     networks:
-      - raksha_pushgateway_network
+      - gateway_pushgateway_network
 
 networks:
-  raksha_pushgateway_network:
+  gateway_pushgateway_network:
     driver: bridge
 
 configs:

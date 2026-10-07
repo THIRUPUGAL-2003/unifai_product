@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { IS_ENTERPRISE } from "@/lib/constants/config";
+import { IS_ENTERPRISE, PRODUCT_NAME } from "@/lib/constants/config";
 import { getErrorMessage, useGetCoreConfigQuery, useUpdateProxyConfigMutation } from "@/lib/store";
 import { DefaultGlobalProxyConfig, GlobalProxyConfig } from "@/lib/types/config";
 import { globalProxyConfigSchema } from "@/lib/types/schemas";
@@ -21,8 +21,8 @@ import { toast } from "sonner";
 
 export default function ProxyView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const proxyConfig = rakshaConfig?.proxy_config;
+	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const proxyConfig = gatewayConfig?.proxy_config;
 	const [updateProxyConfig, { isLoading }] = useUpdateProxyConfigMutation();
 
 	const form = useForm<GlobalProxyConfig>({
@@ -345,7 +345,7 @@ export default function ProxyView() {
 							{!IS_ENTERPRISE && (
 								<Alert>
 									<Info className="h-4 w-4" />
-									<AlertDescription>SCIM proxy support is available in Raksha Enterprise.</AlertDescription>
+									<AlertDescription>SCIM proxy support is available in {PRODUCT_NAME} Enterprise.</AlertDescription>
 								</Alert>
 							)}
 						</div>

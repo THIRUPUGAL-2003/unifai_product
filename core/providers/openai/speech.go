@@ -1,14 +1,14 @@
 package openai
 
 import (
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaSpeechRequest converts an OpenAI speech request to Raksha format
-func (request *OpenAISpeechRequest) ToRakshaSpeechRequest(ctx *schemas.RakshaContext) *schemas.RakshaSpeechRequest {
+// ToGatewaySpeechRequest converts an OpenAI speech request to Gateway format
+func (request *OpenAISpeechRequest) ToGatewaySpeechRequest(ctx *schemas.GatewayContext) *schemas.GatewaySpeechRequest {
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	return &schemas.RakshaSpeechRequest{
+	return &schemas.GatewaySpeechRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     &schemas.SpeechInput{Input: request.Input},
@@ -17,17 +17,17 @@ func (request *OpenAISpeechRequest) ToRakshaSpeechRequest(ctx *schemas.RakshaCon
 	}
 }
 
-// ToOpenAISpeechRequest converts a Raksha speech request to OpenAI format
-func ToOpenAISpeechRequest(rakshaReq *schemas.RakshaSpeechRequest) *OpenAISpeechRequest {
-	if rakshaReq == nil || rakshaReq.Input.Input == "" {
+// ToOpenAISpeechRequest converts a Gateway speech request to OpenAI format
+func ToOpenAISpeechRequest(gatewayReq *schemas.GatewaySpeechRequest) *OpenAISpeechRequest {
+	if gatewayReq == nil || gatewayReq.Input.Input == "" {
 		return nil
 	}
 
-	speechInput := rakshaReq.Input
-	params := rakshaReq.Params
+	speechInput := gatewayReq.Input
+	params := gatewayReq.Params
 
 	openaiReq := &OpenAISpeechRequest{
-		Model: rakshaReq.Model,
+		Model: gatewayReq.Model,
 		Input: speechInput.Input,
 	}
 
@@ -35,8 +35,8 @@ func ToOpenAISpeechRequest(rakshaReq *schemas.RakshaSpeechRequest) *OpenAISpeech
 		openaiReq.SpeechParameters = *params
 	}
 
-	if rakshaReq.Params != nil {
-		openaiReq.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		openaiReq.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 	return openaiReq
 }

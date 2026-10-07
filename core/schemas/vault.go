@@ -9,7 +9,7 @@ import (
 	"unicode"
 )
 
-const defaultVaultPrefix = "raksha"
+const defaultVaultPrefix = "gateway"
 
 // VaultResolveHook is wired by enterprise startup to the vault registry's ResolveString.
 // It is nil in OSS deployments; GetValue() is a no-op when nil.
@@ -24,8 +24,8 @@ var VaultRemoveHook func(ctx context.Context, path string) error
 // registry's StoreString and is nil in OSS deployments (store helpers no-op).
 var VaultStoreHook func(ctx context.Context, path string, value *string) error
 
-// VaultPrefixHook returns the configured vault path prefix (e.g. "raksha").
-// It is nil in OSS deployments; VaultPrefix() falls back to "raksha".
+// VaultPrefixHook returns the configured vault path prefix (e.g. "gateway").
+// It is nil in OSS deployments; VaultPrefix() falls back to "gateway".
 var VaultPrefixHook func() string
 
 // VaultStoreWriteEnabled reports whether vault write storage is available (i.e. VaultStoreHook
@@ -35,7 +35,7 @@ func VaultStoreWriteEnabled() bool {
 	return VaultStoreHook != nil && VaultRemoveHook != nil
 }
 
-// VaultPrefix returns the configured vault path prefix, defaulting to "raksha".
+// VaultPrefix returns the configured vault path prefix, defaulting to "gateway".
 func VaultPrefix() string {
 	if VaultPrefixHook != nil {
 		return VaultPrefixHook()

@@ -1,4 +1,4 @@
-# Part of Raksha browser_ai_proxy — do not import directly.
+# Part of Gateway browser_ai_proxy — do not import directly.
 import hashlib
 
 
@@ -167,12 +167,12 @@ def _looks_like_site_or_tab_label_not_file(name: str) -> bool:
     if _AI_SITE_LABEL_RE.fullmatch(compact) or _HOSTNAME_LABEL_RE.fullmatch(compact):
         return True
     # Extensionless chat-tab / product titles — not user file picks.
-    # Keep Gemini-style extensionless names that include digits/parens (e.g. 'Raksha Product (1)').
+    # Keep Gemini-style extensionless names that include digits/parens (e.g. 'Gateway Product (1)').
     if not _has_any_file_extension(n):
         if _AI_SITE_LABEL_RE.fullmatch(n.strip()):
             return True
         words = [w for w in re.split(r"\s+", n.strip()) if w]
-        # Single brand/chat token ("Raksha", "Greeting") with no digits/parens.
+        # Single brand/chat token ("Gateway", "Greeting") with no digits/parens.
         if (
             len(words) == 1
             and not re.search(r"[\d()_\-./\\]", n)
@@ -229,7 +229,7 @@ def _is_real_user_upload_name(name: str) -> bool:
     """True when filename looks like a user-picked name (not Guard/site placeholder).
 
     Applies to ALL file types (office, images, audio, zip, code, config, …).
-    Gemini/Google often send display names WITHOUT an extension (e.g. 'Raksha Product (1)').
+    Gemini/Google often send display names WITHOUT an extension (e.g. 'Gateway Product (1)').
     Those are still real user names — do not treat as fake — unless they look like
     a site host or chat-tab title leaked from ChatGPT wire.
     """
@@ -279,7 +279,7 @@ def _ensure_name_has_extension(name: str, raw: bytes = b"", content_type: str = 
 def _name_from_pdf_metadata(raw: bytes) -> str:
     """Last-resort label from PDF Title / metadata when the wire omits filename.
 
-    PDF /Title is a *document* title (often a product brand like "Raksha"), NOT the
+    PDF /Title is a *document* title (often a product brand like "Gateway"), NOT the
     user's picked filesystem name (01-User-Manual.pdf). Only accept metadata that
     already looks like a real filename with an extension.
     """
@@ -989,7 +989,7 @@ def rename_recent_nameless_caches(domain: str, name: str, file_id: str = "") -> 
             changed += 1
             already.add(entry["file_name"].lower())
             print(
-                f"[Raksha Proxy] FILE NAME retro-bound | {domain} | "
+                f"[Gateway Proxy] FILE NAME retro-bound | {domain} | "
                 f"{cur or 'attachment'} -> {entry['file_name']}"
             )
     return changed
@@ -1372,7 +1372,7 @@ def _drop_stale_and_partial_uploads(cached_list: list[dict]) -> list[dict]:
     keep = keep[-_UPLOAD_SEND_MAX_FILES:]
     if len(keep) != len(cached_list):
         print(
-            f"[Raksha Proxy] FILE CACHE trimmed {len(cached_list)} -> {len(keep)} "
+            f"[Gateway Proxy] FILE CACHE trimmed {len(cached_list)} -> {len(keep)} "
             f"(stale/partial dropped) | dropped="
             + ", ".join(
                 f"{(e.get('file_name') or 'attachment')}:{len(_raw(e))}B:{_raw(e)[:4]!r}"
@@ -1409,7 +1409,7 @@ def _trim_phantom_upload_caches(
         strong = [e for e in cached_list if _upload_evidence(e) >= 2]
         if len(strong) != len(cached_list):
             print(
-                f"[Raksha Proxy] FILE CACHE phantom blobs ignored: {len(cached_list) - len(strong)} "
+                f"[Gateway Proxy] FILE CACHE phantom blobs ignored: {len(cached_list) - len(strong)} "
                 "(no file reference in Send, no file magic/name)"
             )
         cached_list = strong
@@ -2126,7 +2126,7 @@ def remember_file_create_handshake(raw_text: str, domain: str, raw_bytes: bytes 
         ingest_upload_filenames_from_body(raw_text or "", domain)
         for n in extract_all_attachment_filenames_from_send(raw_text or ""):
             remember_pending_upload_name_for_domain(domain, n)
-            print(f"[Raksha Proxy] FILE NAME from create-file | {domain} | {n} (await Send)")
+            print(f"[Gateway Proxy] FILE NAME from create-file | {domain} | {n} (await Send)")
     return True
 
 
@@ -2145,7 +2145,7 @@ def _is_finished_user_file_send(
         return False
     if _is_typing_or_draft_path(path_l, body):
         return False
-    if _is_raksha_inject_frame(body):
+    if _is_gateway_inject_frame(body):
         return False
     if _is_file_metadata_handshake(raw_bytes or b"", body, path):
         return False
@@ -2231,7 +2231,7 @@ def wait_bind_real_upload_names(
             remember_upload_filename(fid, new_name)
         if raw:
             remember_upload_name_by_bytes(bytes(raw), new_name)
-        print(f"[Raksha Proxy] FILE NAME bound on Send | {domain} | {old} -> {new_name}")
+        print(f"[Gateway Proxy] FILE NAME bound on Send | {domain} | {old} -> {new_name}")
 
     def _try_bind() -> None:
         try:
@@ -2405,7 +2405,7 @@ def cache_upload_file(
             if len(q) > _UPLOAD_FILE_QUEUE_MAX:
                 _UPLOAD_FILE_QUEUES[qkey] = q[-_UPLOAD_FILE_QUEUE_MAX:]
     print(
-        f"[Raksha Proxy] FILE CACHED (await Send) | {domain} | {entry['file_name']} | "
+        f"[Gateway Proxy] FILE CACHED (await Send) | {domain} | {entry['file_name']} | "
         f"{len(entry['raw_bytes'])} bytes | ct={final_ct} | reason={(upload_reason or '')[:60]} | "
         f"magic={bytes(entry['raw_bytes'][:6])!r} | evidence={_upload_evidence(entry)} | "
         f"rule_hit={rule_hit} | aliases={len(keys)}"
@@ -2977,10 +2977,10 @@ def file_send_block_matches(domain: str, raw_text: str) -> str:
             return ""
         for fid in rec.get("ids") or []:
             if fid and fid in body:
-                return rec.get("msg") or "This request was blocked by Raksha Guard."
+                return rec.get("msg") or "This request was blocked by Gateway Guard."
         for name in rec.get("names") or []:
             if name and len(name) >= 4 and name in body:
-                return rec.get("msg") or "This request was blocked by Raksha Guard."
+                return rec.get("msg") or "This request was blocked by Gateway Guard."
     return ""
 
 
@@ -3002,7 +3002,7 @@ def _file_policy_applies_on_send(
         return False
     if "/realtime" in path_l:
         return False
-    if _is_raksha_inject_frame(raw_text or ""):
+    if _is_gateway_inject_frame(raw_text or ""):
         return False
     if _is_typing_or_draft_path(path_l, raw_text or ""):
         return False
@@ -3216,12 +3216,12 @@ def _scan_upload_for_rules(
             try:
                 scanned = extract_upload_text_for_rules(raw_bytes, content_type, raw_text or "", file_label) or ""
             except Exception as e:
-                print(f"[Raksha Proxy] extract_upload_text_for_rules failed (allowed): {e}")
+                print(f"[Gateway Proxy] extract_upload_text_for_rules failed (allowed): {e}")
                 scanned = ""
         try:
             upload_images = _upload_images_for_vision(raw_bytes or b"", content_type, file_label) if raw_bytes else []
         except Exception as e:
-            print(f"[Raksha Proxy] upload vision images failed (allowed): {e}")
+            print(f"[Gateway Proxy] upload vision images failed (allowed): {e}")
             upload_images = []
         eval_blob = "\n\n".join(
             x for x in ((extra_context or "").strip(), (scanned or "").strip()) if x
@@ -3231,7 +3231,7 @@ def _scan_upload_for_rules(
             try:
                 rule_hit, rule_name, rule_action = match_guard_rules_on_text(eval_blob)
             except Exception as e:
-                print(f"[Raksha Proxy] local file regex failed (allowed): {e}")
+                print(f"[Gateway Proxy] local file regex failed (allowed): {e}")
                 rule_hit, rule_name, rule_action = False, "", ""
             rule_action = (rule_action or "").upper()
             if rule_action == "ALERT":
@@ -3292,13 +3292,13 @@ def _scan_upload_for_rules(
                 else:
                     scan_eval_error = str(eval_err).strip()
                     scan_evaluated = False
-                    print(f"[Raksha Proxy] AI bot file scan eval_error (will re-check on log): {scan_eval_error}")
+                    print(f"[Gateway Proxy] AI bot file scan eval_error (will re-check on log): {scan_eval_error}")
             except Exception as e:
                 scan_evaluated = False
                 scan_eval_error = str(e).strip()[:300] or "backend file scan failed"
-                print(f"[Raksha Proxy] AI bot file scan failed (allowed): {e}")
+                print(f"[Gateway Proxy] AI bot file scan failed (allowed): {e}")
     except Exception as e:
-        print(f"[Raksha Proxy] file rule scan failed (allowed): {e}")
+        print(f"[Gateway Proxy] file rule scan failed (allowed): {e}")
         # Keep any partial extract/local regex already computed — do not wipe on late errors.
         if not scanned:
             rule_hit = False

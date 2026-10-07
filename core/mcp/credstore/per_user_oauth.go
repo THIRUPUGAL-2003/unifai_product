@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/raksha/raksha/core/mcp/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/mcp/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // perUserOAuthResolver handles MCPAuthTypePerUserOauth — each caller's
@@ -27,7 +27,7 @@ type perUserOAuthResolver struct {
 	provider schemas.OAuth2Provider
 }
 
-func (r *perUserOAuthResolver) ConnectionHeaders(ctx *schemas.RakshaContext, config *schemas.MCPClientConfig) (http.Header, error) {
+func (r *perUserOAuthResolver) ConnectionHeaders(ctx *schemas.GatewayContext, config *schemas.MCPClientConfig) (http.Header, error) {
 	if r.provider == nil {
 		return nil, fmt.Errorf("per-user OAuth requires an OAuth2Provider but none is configured")
 	}

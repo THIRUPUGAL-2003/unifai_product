@@ -8,25 +8,25 @@ import (
 	"time"
 
 	"github.com/fasthttp/router"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/plugins/governance"
-	"github.com/raksha/raksha/plugins/modelcatalogresolver"
-	"github.com/raksha/raksha/transports/raksha-http/integrations"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/plugins/governance"
+	"github.com/gateway/gateway/plugins/modelcatalogresolver"
+	"github.com/gateway/gateway/transports/gateway-http/integrations"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
 // RealtimeClientSecretsHandler exposes OpenAI-compatible HTTP routes for
 // minting short-lived Realtime client secrets.
 type RealtimeClientSecretsHandler struct {
-	client       *raksha.Raksha
+	client       *gateway.Gateway
 	config       *lib.Config
 	handlerStore lib.HandlerStore
 	routeSpecs   map[string]schemas.RealtimeSessionRoute
 }
 
-func NewRealtimeClientSecretsHandler(client *raksha.Raksha, config *lib.Config) *RealtimeClientSecretsHandler {
+func NewRealtimeClientSecretsHandler(client *gateway.Gateway, config *lib.Config) *RealtimeClientSecretsHandler {
 	return &RealtimeClientSecretsHandler{
 		client:       client,
 		config:       config,
@@ -35,7 +35,7 @@ func NewRealtimeClientSecretsHandler(client *raksha.Raksha, config *lib.Config) 
 	}
 }
 
-func (h *RealtimeClientSecretsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *RealtimeClientSecretsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	handler := lib.ChainMiddlewares(h.handleRequest, middlewares...)
 	for _, route := range h.realtimeSessionRoutes() {
 		h.routeSpecs[route.Path] = route
@@ -60,7 +60,7 @@ func (h *RealtimeClientSecretsHandler) findGovernancePlugin() governance.BaseGov
 
 func (h *RealtimeClientSecretsHandler) handleRequest(ctx *fasthttp.RequestCtx) {
 	if !isJSONContentType(string(ctx.Request.Header.ContentType())) {
-		SendRakshaError(ctx, newRealtimeClientSecretHandlerError(
+		SendGatewayError(ctx, newRealtimeClientSecretHandlerError(
 			fasthttp.StatusBadRequest,
 			"invalid_request_error",
 			"Content-Type must be application/json",
@@ -72,7 +72,7 @@ func (h *RealtimeClientSecretsHandler) handleRequest(ctx *fasthttp.RequestCtx) {
 	body := append([]byte(nil), ctx.Request.Body()...)
 	route, ok := h.routeSpecs[string(ctx.Path())]
 	if !ok {
-		SendRakshaError(ctx, newRealtimeClientSecretHandlerError(
+		SendGatewayError(ctx, newRealtimeClientSecretHandlerError(
 			fasthttp.StatusNotFound,
 			"invalid_request_error",
 			"unsupported realtime client secret route",
@@ -83,33 +83,33 @@ func (h *RealtimeClientSecretsHandler) handleRequest(ctx *fasthttp.RequestCtx) {
 
 	providerKey, model, normalizedBody, err := resolveRealtimeClientSecretTarget(ctx, h.config, route, body)
 	if err != nil {
-		SendRakshaError(ctx, err)
+		SendGatewayError(ctx, err)
 		return
 	}
 
 	logger.Info("[realtime-client-secrets] request: path=%s provider=%s model=%s endpoint_type=%s",
 		string(ctx.Path()), providerKey, model, route.EndpointType)
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
 	defer cancel()
-	rakshaCtx.SetValue(schemas.RakshaContextKeyHTTPRequestType, schemas.RealtimeRequest)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyHTTPRequestType, schemas.RealtimeRequest)
 	if route.DefaultProvider == schemas.OpenAI {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyIntegrationType, "openai")
+		gatewayCtx.SetValue(schemas.GatewayContextKeyIntegrationType, "openai")
 	}
-	if governanceUserID, ok := ctx.UserValue(schemas.RakshaContextKeyUserID).(string); ok && governanceUserID != "" {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyUserID, governanceUserID)
+	if governanceUserID, ok := ctx.UserValue(schemas.GatewayContextKeyUserID).(string); ok && governanceUserID != "" {
+		gatewayCtx.SetValue(schemas.GatewayContextKeyUserID, governanceUserID)
 	}
-	if userName, ok := ctx.UserValue(schemas.RakshaContextKeyUserName).(string); ok && userName != "" {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyUserName, userName)
+	if userName, ok := ctx.UserValue(schemas.GatewayContextKeyUserName).(string); ok && userName != "" {
+		gatewayCtx.SetValue(schemas.GatewayContextKeyUserName, userName)
 	}
-	if rakshaErr := h.evaluateMintingGovernance(rakshaCtx, providerKey, model); rakshaErr != nil {
-		SendRakshaError(ctx, rakshaErr)
+	if gatewayErr := h.evaluateMintingGovernance(gatewayCtx, providerKey, model); gatewayErr != nil {
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	provider := h.client.GetProviderByKey(providerKey)
 	if provider == nil {
-		SendRakshaError(ctx, newRealtimeClientSecretHandlerError(
+		SendGatewayError(ctx, newRealtimeClientSecretHandlerError(
 			fasthttp.StatusBadRequest,
 			"invalid_request_error",
 			"provider not found: "+string(providerKey),
@@ -118,9 +118,9 @@ func (h *RealtimeClientSecretsHandler) handleRequest(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	key, keyErr := h.client.SelectKeyForProviderRequestType(rakshaCtx, schemas.RealtimeRequest, providerKey, model)
+	key, keyErr := h.client.SelectKeyForProviderRequestType(gatewayCtx, schemas.RealtimeRequest, providerKey, model)
 	if keyErr != nil {
-		SendRakshaError(ctx, newRealtimeClientSecretHandlerError(
+		SendGatewayError(ctx, newRealtimeClientSecretHandlerError(
 			fasthttp.StatusBadRequest,
 			"invalid_request_error",
 			keyErr.Error(),
@@ -135,12 +135,12 @@ func (h *RealtimeClientSecretsHandler) handleRequest(ctx *fasthttp.RequestCtx) {
 		model = resolved
 		reparsed, parseErr := schemas.ParseRealtimeClientSecretBody(normalizedBody)
 		if parseErr != nil {
-			SendRakshaError(ctx, parseErr)
+			SendGatewayError(ctx, parseErr)
 			return
 		}
 		rewritten, normalizeErr := normalizeRealtimeClientSecretBody(reparsed, model)
 		if normalizeErr != nil {
-			SendRakshaError(ctx, normalizeErr)
+			SendGatewayError(ctx, normalizeErr)
 			return
 		}
 		normalizedBody = rewritten
@@ -148,15 +148,15 @@ func (h *RealtimeClientSecretsHandler) handleRequest(ctx *fasthttp.RequestCtx) {
 
 	sessionProvider, ok := provider.(schemas.RealtimeSessionProvider)
 	if !ok {
-		SendRakshaError(ctx, realtimeSessionNotSupportedError(providerKey, provider))
+		SendGatewayError(ctx, realtimeSessionNotSupportedError(providerKey, provider))
 		return
 	}
 
-	resp, rakshaErr := sessionProvider.CreateRealtimeClientSecret(rakshaCtx, key, route.EndpointType, normalizedBody)
-	if rakshaErr != nil {
+	resp, gatewayErr := sessionProvider.CreateRealtimeClientSecret(gatewayCtx, key, route.EndpointType, normalizedBody)
+	if gatewayErr != nil {
 		logger.Error("[realtime-client-secrets] upstream error: provider=%s model=%s error=%s",
-			providerKey, model, rakshaErr.Error)
-		SendRakshaError(ctx, rakshaErr)
+			providerKey, model, gatewayErr.Error)
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -166,29 +166,29 @@ func (h *RealtimeClientSecretsHandler) handleRequest(ctx *fasthttp.RequestCtx) {
 		h.handlerStore.GetKVStore(),
 		resp.Body,
 		key.ID,
-		raksha.GetStringFromContext(rakshaCtx, schemas.RakshaContextKeyVirtualKey),
+		gateway.GetStringFromContext(gatewayCtx, schemas.GatewayContextKeyVirtualKey),
 	)
 
 	writeRealtimeClientSecretResponse(ctx, resp)
 }
 
 func (h *RealtimeClientSecretsHandler) evaluateMintingGovernance(
-	rakshaCtx *schemas.RakshaContext,
+	gatewayCtx *schemas.GatewayContext,
 	providerKey schemas.ModelProvider,
 	model string,
-) *schemas.RakshaError {
+) *schemas.GatewayError {
 	governancePlugin := h.findGovernancePlugin()
 	if governancePlugin == nil {
 		return nil
 	}
 
-	_, rakshaErr := governancePlugin.EvaluateGovernanceRequest(rakshaCtx, &governance.EvaluationRequest{
-		VirtualKey: raksha.GetStringFromContext(rakshaCtx, schemas.RakshaContextKeyVirtualKey),
+	_, gatewayErr := governancePlugin.EvaluateGovernanceRequest(gatewayCtx, &governance.EvaluationRequest{
+		VirtualKey: gateway.GetStringFromContext(gatewayCtx, schemas.GatewayContextKeyVirtualKey),
 		Provider:   providerKey,
 		Model:      model,
-		UserID:     raksha.GetStringFromContext(rakshaCtx, schemas.RakshaContextKeyUserID),
+		UserID:     gateway.GetStringFromContext(gatewayCtx, schemas.GatewayContextKeyUserID),
 	}, schemas.RealtimeRequest)
-	return rakshaErr
+	return gatewayErr
 }
 
 func (h *RealtimeClientSecretsHandler) realtimeSessionRoutes() []schemas.RealtimeSessionRoute {
@@ -217,7 +217,7 @@ func (h *RealtimeClientSecretsHandler) realtimeSessionRoutes() []schemas.Realtim
 	return routes
 }
 
-func resolveRealtimeClientSecretTarget(ctx *fasthttp.RequestCtx, config *lib.Config, route schemas.RealtimeSessionRoute, body []byte) (schemas.ModelProvider, string, []byte, *schemas.RakshaError) {
+func resolveRealtimeClientSecretTarget(ctx *fasthttp.RequestCtx, config *lib.Config, route schemas.RealtimeSessionRoute, body []byte) (schemas.ModelProvider, string, []byte, *schemas.GatewayError) {
 	root, err := schemas.ParseRealtimeClientSecretBody(body)
 	if err != nil {
 		return "", "", nil, err
@@ -269,7 +269,7 @@ func resolveRealtimeClientSecretTarget(ctx *fasthttp.RequestCtx, config *lib.Con
 	return providerKey, model, normalizedBody, nil
 }
 
-func normalizeRealtimeClientSecretBody(root map[string]json.RawMessage, bareModel string) ([]byte, *schemas.RakshaError) {
+func normalizeRealtimeClientSecretBody(root map[string]json.RawMessage, bareModel string) ([]byte, *schemas.GatewayError) {
 	normalizedModel, marshalErr := json.Marshal(bareModel)
 	if marshalErr != nil {
 		return nil, newRealtimeClientSecretHandlerError(fasthttp.StatusInternalServerError, "server_error", "failed to encode normalized model", marshalErr)
@@ -371,7 +371,7 @@ func buildRealtimeEphemeralKeyMappingKey(token string) string {
 	return realtimeEphemeralKeyMappingPrefix + strings.TrimSpace(token)
 }
 
-func realtimeSessionNotSupportedError(providerKey schemas.ModelProvider, provider schemas.Provider) *schemas.RakshaError {
+func realtimeSessionNotSupportedError(providerKey schemas.ModelProvider, provider schemas.Provider) *schemas.GatewayError {
 	if rtProvider, ok := provider.(schemas.RealtimeProvider); ok && rtProvider.SupportsRealtimeAPI() {
 		return newRealtimeClientSecretHandlerError(
 			fasthttp.StatusBadRequest,
@@ -389,24 +389,24 @@ func realtimeSessionNotSupportedError(providerKey schemas.ModelProvider, provide
 	)
 }
 
-func newRealtimeClientSecretHandlerError(status int, errorType, message string, err error) *schemas.RakshaError {
-	return &schemas.RakshaError{
-		IsRakshaError: false,
+func newRealtimeClientSecretHandlerError(status int, errorType, message string, err error) *schemas.GatewayError {
+	return &schemas.GatewayError{
+		IsGatewayError: false,
 		StatusCode:    schemas.Ptr(status),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr(errorType),
 			Message: message,
 			Error:   err,
 		},
-		ExtraFields: schemas.RakshaErrorExtraFields{
+		ExtraFields: schemas.GatewayErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 		},
 	}
 }
 
-func writeRealtimeClientSecretResponse(ctx *fasthttp.RequestCtx, resp *schemas.RakshaPassthroughResponse) {
+func writeRealtimeClientSecretResponse(ctx *fasthttp.RequestCtx, resp *schemas.GatewayPassthroughResponse) {
 	if resp == nil {
-		SendRakshaError(ctx, newRealtimeClientSecretHandlerError(
+		SendGatewayError(ctx, newRealtimeClientSecretHandlerError(
 			fasthttp.StatusInternalServerError,
 			"server_error",
 			"provider returned an empty realtime client secret response",

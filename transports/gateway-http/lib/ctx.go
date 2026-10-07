@@ -1,7 +1,7 @@
-// Package lib provides core functionality for the Raksha HTTP service,
+// Package lib provides core functionality for the Gateway HTTP service,
 // including context propagation, header management, and integration with monitoring systems.
 //
-// This package handles the conversion of FastHTTP request contexts to Raksha contexts,
+// This package handles the conversion of FastHTTP request contexts to Gateway contexts,
 // ensuring that important metadata and tracking information is preserved across the system.
 // It supports propagation of both Prometheus metrics and Maxim tracing data through HTTP headers.
 package lib
@@ -16,31 +16,31 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/plugins/governance"
-	"github.com/raksha/raksha/plugins/maxim"
-	"github.com/raksha/raksha/plugins/semanticcache"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/plugins/governance"
+	"github.com/gateway/gateway/plugins/maxim"
+	"github.com/gateway/gateway/plugins/semanticcache"
 	"github.com/valyala/fasthttp"
 )
 
 const (
-	// FastHTTPUserValueRakshaContext stores the active *schemas.RakshaContext on fasthttp.RequestCtx.
+	// FastHTTPUserValueGatewayContext stores the active *schemas.GatewayContext on fasthttp.RequestCtx.
 	// This allows transport middleware and request handlers to share the same context instance.
-	FastHTTPUserValueRakshaContext = "__raksha_context"
-	// FastHTTPUserValueRakshaCancel stores the cancel func for the active shared Raksha context.
-	FastHTTPUserValueRakshaCancel = "__raksha_context_cancel"
+	FastHTTPUserValueGatewayContext = "__gateway_context"
+	// FastHTTPUserValueGatewayCancel stores the cancel func for the active shared Gateway context.
+	FastHTTPUserValueGatewayCancel = "__gateway_context_cancel"
 	// FastHTTPUserValueLargeResponseMode marks requests that streamed a large response body.
 	// It is used by transport middleware to avoid re-buffering response bodies for post-hooks.
-	FastHTTPUserValueLargeResponseMode = "__raksha_large_response_mode"
+	FastHTTPUserValueLargeResponseMode = "__gateway_large_response_mode"
 	// FastHTTPUserValueModelCatalogResolution stores model catalog resolution metadata
 	// set by prepare*Request functions (and inline realtime catalog lookups) when a
-	// provider was auto-resolved. Picked up centrally in ConvertToRakshaContext to
+	// provider was auto-resolved. Picked up centrally in ConvertToGatewayContext to
 	// add the routing engine log via EmitModelCatalogRoutingLog.
-	FastHTTPUserValueModelCatalogResolution = "__raksha_model_catalog_resolution"
+	FastHTTPUserValueModelCatalogResolution = "__gateway_model_catalog_resolution"
 )
 
 // ModelCatalogResolution carries the result of an automatic provider lookup so
-// that ConvertToRakshaContext can emit the routing engine log in one place.
+// that ConvertToGatewayContext can emit the routing engine log in one place.
 type ModelCatalogResolution struct {
 	Model            string
 	ResolvedProvider schemas.ModelProvider
@@ -48,23 +48,23 @@ type ModelCatalogResolution struct {
 }
 
 // EmitModelCatalogRoutingLog appends a RoutingEngineModelCatalog log entry and
-// engines-used marker to rakshaCtx for an inline catalog resolution. Used by
-// ConvertToRakshaContext (normal HTTP path) and by realtime handlers that
+// engines-used marker to gatewayCtx for an inline catalog resolution. Used by
+// ConvertToGatewayContext (normal HTTP path) and by realtime handlers that
 // bypass it (WebRTC, realtime client_secrets) so all paths emit observability
 // in the same shape regardless of which routing layer did the lookup.
-func EmitModelCatalogRoutingLog(rakshaCtx *schemas.RakshaContext, res *ModelCatalogResolution) {
-	if rakshaCtx == nil || res == nil {
+func EmitModelCatalogRoutingLog(gatewayCtx *schemas.GatewayContext, res *ModelCatalogResolution) {
+	if gatewayCtx == nil || res == nil {
 		return
 	}
 	providerStrs := make([]string, len(res.AllProviders))
 	for i, p := range res.AllProviders {
 		providerStrs[i] = string(p)
 	}
-	rakshaCtx.AppendRoutingEngineLog(schemas.RoutingEngineModelCatalog, schemas.LogLevelInfo, fmt.Sprintf(
+	gatewayCtx.AppendRoutingEngineLog(schemas.RoutingEngineModelCatalog, schemas.LogLevelInfo, fmt.Sprintf(
 		"No provider specified for model %s, found %d options in model catalog: [%s], selected: %s",
 		res.Model, len(res.AllProviders), strings.Join(providerStrs, ", "), res.ResolvedProvider,
 	))
-	schemas.AppendToContextList(rakshaCtx, schemas.RakshaContextKeyRoutingEnginesUsed, schemas.RoutingEngineModelCatalog)
+	schemas.AppendToContextList(gatewayCtx, schemas.GatewayContextKeyRoutingEnginesUsed, schemas.RoutingEngineModelCatalog)
 }
 
 // ParseSessionIDFromBaggage extracts the session-id baggage member value.
@@ -98,13 +98,13 @@ func ParseSessionIDFromBaggage(header string) string {
 	return ""
 }
 
-// ConvertToRakshaContext converts a FastHTTP RequestCtx to a Raksha context,
+// ConvertToGatewayContext converts a FastHTTP RequestCtx to a Gateway context,
 // preserving important header values for monitoring and tracing purposes.
 //
 // The function processes several types of special headers:
 // 1. Dimension Headers (x-uf-dim-*):
 //   - All headers prefixed with 'x-uf-dim-' are collected into a map[string]string stored under
-//     schemas.RakshaContextKeyDimensions and are forwarded to all observability integrations
+//     schemas.GatewayContextKeyDimensions and are forwarded to all observability integrations
 //     (internal logs, OTEL spans, Prometheus custom labels, Datadog, etc.).
 //   - The prefix is stripped and the remainder becomes the dimension key.
 //   - Example: 'x-uf-dim-environment' with value 'production' stores {"environment": "production"}.
@@ -130,7 +130,7 @@ func ParseSessionIDFromBaggage(header string) string {
 //   - x-api-key: Direct API key value - Anthropic style
 //   - x-goog-api-key: Direct API key value - Google Gemini style
 // 	 - x-uf-api-key references a stored API key name rather than the raw secret.
-//   - Keys are extracted and stored in the context using schemas.RakshaContextKey
+//   - Keys are extracted and stored in the context using schemas.GatewayContextKey
 //   - This enables explicit key usage for requests via headers
 //
 // 6. Cancellable Context:
@@ -139,7 +139,7 @@ func ParseSessionIDFromBaggage(header string) string {
 //   - Also useful for non-streaming requests to allow provider-level cancellation
 //
 // 7. Extra Headers (x-uf-eh-*):
-//   - Any header starting with 'x-uf-eh-' is collected and added to the map stored under schemas.RakshaContextKeyExtraHeaders
+//   - Any header starting with 'x-uf-eh-' is collected and added to the map stored under schemas.GatewayContextKeyExtraHeaders
 //   - The prefix is stripped, the remainder is lower-cased, and duplicate names append values
 //   - This allows callers to send arbitrary context metadata without needing to extend the public schema
 //
@@ -148,8 +148,8 @@ func ParseSessionIDFromBaggage(header string) string {
 //   - x-uf-session-ttl: Per-request TTL override (duration string e.g. "30m" or seconds integer)
 //
 // 9. Raw Capture Headers (per-request override of provider config; accepts "true" or "false"):
-//   - x-uf-send-back-raw-request: include raw provider request in the RakshaResponse returned to the caller
-//   - x-uf-send-back-raw-response: include raw provider response in the RakshaResponse returned to the caller
+//   - x-uf-send-back-raw-request: include raw provider request in the GatewayResponse returned to the caller
+//   - x-uf-send-back-raw-response: include raw provider response in the GatewayResponse returned to the caller
 //   - x-uf-store-raw-request-response: capture raw request/response for logging only (stripped from client response)
 
 // Parameters:
@@ -157,19 +157,19 @@ func ParseSessionIDFromBaggage(header string) string {
 //   - store: HandlerStore providing per-request policy flags and header matchers
 //
 // Returns:
-//   - *schemas.RakshaContext: A new cancellable context containing the propagated values
+//   - *schemas.GatewayContext: A new cancellable context containing the propagated values
 //   - context.CancelFunc: Function to cancel the context (should be called when request completes)
 //
 // Example Usage:
 //
 //	fastCtx := &fasthttp.RequestCtx{...}
-//	rakshaCtx, cancel := ConvertToRakshaContext(fastCtx, handlerStore)
+//	gatewayCtx, cancel := ConvertToGatewayContext(fastCtx, handlerStore)
 //	defer cancel() // Ensure cleanup
-//	// rakshaCtx now contains propagated header values including Prometheus metrics,
+//	// gatewayCtx now contains propagated header values including Prometheus metrics,
 //	// Maxim tracing data, MCP filters, governance keys, API keys, cache settings,
 //	// session stickiness, and extra headers
 
-func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*schemas.RakshaContext, context.CancelFunc) {
+func ConvertToGatewayContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*schemas.GatewayContext, context.CancelFunc) {
 	var matcher *HeaderMatcher
 	mcpHeaderCombinedAllowlist := schemas.WhiteList{}
 	allowPerRequestStorageOverride := false
@@ -181,20 +181,20 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 		allowPerRequestRawOverride = store.ShouldAllowPerRequestRawOverride()
 	}
 	// Reuse a shared request-scoped context when available.
-	var rakshaCtx *schemas.RakshaContext
+	var gatewayCtx *schemas.GatewayContext
 	var cancel context.CancelFunc
-	if existing, ok := ctx.UserValue(FastHTTPUserValueRakshaContext).(*schemas.RakshaContext); ok && existing != nil {
-		if existingCancel, ok := ctx.UserValue(FastHTTPUserValueRakshaCancel).(context.CancelFunc); ok && existingCancel != nil {
-			rakshaCtx = existing
+	if existing, ok := ctx.UserValue(FastHTTPUserValueGatewayContext).(*schemas.GatewayContext); ok && existing != nil {
+		if existingCancel, ok := ctx.UserValue(FastHTTPUserValueGatewayCancel).(context.CancelFunc); ok && existingCancel != nil {
+			gatewayCtx = existing
 			cancel = existingCancel
 		} else {
 			// Create one cancellable child context and promote it as the shared context.
-			rakshaCtx, cancel = schemas.NewRakshaContextWithCancel(existing)
-			ctx.SetUserValue(FastHTTPUserValueRakshaContext, rakshaCtx)
-			ctx.SetUserValue(FastHTTPUserValueRakshaCancel, cancel)
+			gatewayCtx, cancel = schemas.NewGatewayContextWithCancel(existing)
+			ctx.SetUserValue(FastHTTPUserValueGatewayContext, gatewayCtx)
+			ctx.SetUserValue(FastHTTPUserValueGatewayCancel, cancel)
 		}
 	}
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		// Create cancellable context for requests that don't have a shared context yet.
 		parent := context.Context(ctx)
 		func() {
@@ -206,30 +206,30 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 			}()
 			_ = ctx.Done()
 		}()
-		rakshaCtx, cancel = schemas.NewRakshaContextWithCancel(parent)
-		ctx.SetUserValue(FastHTTPUserValueRakshaContext, rakshaCtx)
-		ctx.SetUserValue(FastHTTPUserValueRakshaCancel, cancel)
+		gatewayCtx, cancel = schemas.NewGatewayContextWithCancel(parent)
+		ctx.SetUserValue(FastHTTPUserValueGatewayContext, gatewayCtx)
+		ctx.SetUserValue(FastHTTPUserValueGatewayCancel, cancel)
 	}
 
 	// Preserve existing request-id if already present on the shared context.
-	if existingRequestID, ok := rakshaCtx.Value(schemas.RakshaContextKeyRequestID).(string); !ok || existingRequestID == "" {
+	if existingRequestID, ok := gatewayCtx.Value(schemas.GatewayContextKeyRequestID).(string); !ok || existingRequestID == "" {
 		// First, check if x-request-id header exists
 		requestID := string(ctx.Request.Header.Peek("x-request-id"))
 		if requestID == "" {
 			requestID = uuid.New().String()
 		}
-		rakshaCtx.SetValue(schemas.RakshaContextKeyRequestID, requestID)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyRequestID, requestID)
 	}
 	// Populating all user values from the request context
 	ctx.VisitUserValuesAll(func(key, value any) {
-		rakshaCtx.SetValue(key, value)
+		gatewayCtx.SetValue(key, value)
 	})
 
 	// When a prepare*Request function resolved a provider via the model catalog,
 	// it stores the resolution info on the fasthttp context. Emit the routing
 	// engine log and mark the engine as used centrally here.
 	if res, ok := ctx.UserValue(FastHTTPUserValueModelCatalogResolution).(*ModelCatalogResolution); ok && res != nil {
-		EmitModelCatalogRoutingLog(rakshaCtx, res)
+		EmitModelCatalogRoutingLog(gatewayCtx, res)
 	}
 
 	// Initialize tags map for collecting maxim tags
@@ -273,7 +273,7 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 		keyStr := strings.ToLower(string(key))
 		if keyStr == "baggage" {
 			if sessionID := ParseSessionIDFromBaggage(string(value)); sessionID != "" {
-				rakshaCtx.SetValue(schemas.RakshaContextKeyParentRequestID, sessionID)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyParentRequestID, sessionID)
 			}
 			return true
 		}
@@ -292,17 +292,17 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 		if labelName, ok := strings.CutPrefix(keyStr, "x-uf-maxim-"); ok {
 			switch labelName {
 			case string(maxim.GenerationIDKey):
-				rakshaCtx.SetValue(schemas.RakshaContextKey(labelName), string(value))
+				gatewayCtx.SetValue(schemas.GatewayContextKey(labelName), string(value))
 			case string(maxim.TraceIDKey):
-				rakshaCtx.SetValue(schemas.RakshaContextKey(labelName), string(value))
+				gatewayCtx.SetValue(schemas.GatewayContextKey(labelName), string(value))
 			case string(maxim.SessionIDKey):
-				rakshaCtx.SetValue(schemas.RakshaContextKey(labelName), string(value))
+				gatewayCtx.SetValue(schemas.GatewayContextKey(labelName), string(value))
 			case string(maxim.TraceNameKey):
-				rakshaCtx.SetValue(schemas.RakshaContextKey(labelName), string(value))
+				gatewayCtx.SetValue(schemas.GatewayContextKey(labelName), string(value))
 			case string(maxim.GenerationNameKey):
-				rakshaCtx.SetValue(schemas.RakshaContextKey(labelName), string(value))
+				gatewayCtx.SetValue(schemas.GatewayContextKey(labelName), string(value))
 			case string(maxim.LogRepoIDKey):
-				rakshaCtx.SetValue(schemas.RakshaContextKey(labelName), string(value))
+				gatewayCtx.SetValue(schemas.GatewayContextKey(labelName), string(value))
 			default:
 				// apart from these all headers starting with x-uf-maxim- are keys for tags
 				// collect them in the maximTags map
@@ -329,7 +329,7 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 				} else {
 					parsedValues = []string{""}
 				}
-				rakshaCtx.SetValue(schemas.RakshaContextKey("mcp-"+labelName), parsedValues)
+				gatewayCtx.SetValue(schemas.GatewayContextKey("mcp-"+labelName), parsedValues)
 				return true
 			}
 		}
@@ -349,13 +349,13 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 					}
 					return true
 				}
-				rakshaCtx.SetValue(schemas.RakshaContextKeyMCPSessionID, v)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyMCPSessionID, v)
 			}
 			return true
 		}
 		// Handle virtual key header (x-uf-vk, authorization, x-api-key, x-goog-api-key headers)
-		if keyStr == string(schemas.RakshaContextKeyVirtualKey) {
-			rakshaCtx.SetValue(schemas.RakshaContextKeyVirtualKey, string(value))
+		if keyStr == string(schemas.GatewayContextKeyVirtualKey) {
+			gatewayCtx.SetValue(schemas.GatewayContextKeyVirtualKey, string(value))
 			return true
 		}
 		if keyStr == "authorization" {
@@ -364,34 +364,34 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 			if strings.HasPrefix(strings.ToLower(valueStr), "bearer ") {
 				authHeaderValue := strings.TrimSpace(valueStr[7:]) // Remove "Bearer " prefix
 				if authHeaderValue != "" && strings.HasPrefix(strings.ToLower(authHeaderValue), governance.VirtualKeyPrefix) {
-					rakshaCtx.SetValue(schemas.RakshaContextKeyVirtualKey, authHeaderValue)
+					gatewayCtx.SetValue(schemas.GatewayContextKeyVirtualKey, authHeaderValue)
 					return true
 				}
 			}
 		}
 		if keyStr == "x-api-key" && strings.HasPrefix(strings.ToLower(string(value)), governance.VirtualKeyPrefix) {
-			rakshaCtx.SetValue(schemas.RakshaContextKeyVirtualKey, string(value))
+			gatewayCtx.SetValue(schemas.GatewayContextKeyVirtualKey, string(value))
 			return true
 		}
 		if keyStr == "x-goog-api-key" && strings.HasPrefix(strings.ToLower(string(value)), governance.VirtualKeyPrefix) {
-			rakshaCtx.SetValue(schemas.RakshaContextKeyVirtualKey, string(value))
+			gatewayCtx.SetValue(schemas.GatewayContextKeyVirtualKey, string(value))
 			return true
 		}
 		if keyStr == "x-uf-api-key" {
 			if keyName := strings.TrimSpace(string(value)); keyName != "" {
-				rakshaCtx.SetValue(schemas.RakshaContextKeyAPIKeyName, keyName)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyAPIKeyName, keyName)
 			}
 			return true
 		}
 		if keyStr == "x-uf-api-key-id" {
 			if keyID := strings.TrimSpace(string(value)); keyID != "" {
-				rakshaCtx.SetValue(schemas.RakshaContextKeyAPIKeyID, keyID)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyAPIKeyID, keyID)
 			}
 			return true
 		}
 		// Handle cache key header (x-uf-cache-key)
 		if keyStr == "x-uf-cache-key" {
-			rakshaCtx.SetValue(semanticcache.CacheKey, string(value))
+			gatewayCtx.SetValue(semanticcache.CacheKey, string(value))
 			return true
 		}
 		// Handle cache TTL header (x-uf-cache-ttl)
@@ -410,7 +410,7 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 			}
 
 			if err == nil {
-				rakshaCtx.SetValue(semanticcache.CacheTTLKey, ttlDuration)
+				gatewayCtx.SetValue(semanticcache.CacheTTLKey, ttlDuration)
 			}
 			// If both parsing attempts fail, we silently ignore the header and use default TTL
 			return true
@@ -425,27 +425,27 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 				} else if threshold > 1.0 {
 					threshold = 1.0
 				}
-				rakshaCtx.SetValue(semanticcache.CacheThresholdKey, threshold)
+				gatewayCtx.SetValue(semanticcache.CacheThresholdKey, threshold)
 			}
 			// If parsing fails, silently ignore the header (no context value set)
 			return true
 		}
 		// Cache type header
 		if keyStr == "x-uf-cache-type" {
-			rakshaCtx.SetValue(semanticcache.CacheTypeKey, semanticcache.CacheType(string(value)))
+			gatewayCtx.SetValue(semanticcache.CacheTypeKey, semanticcache.CacheType(string(value)))
 			return true
 		}
 		// Cache no store header
 		if keyStr == "x-uf-cache-no-store" {
 			if valueStr := string(value); valueStr == "true" {
-				rakshaCtx.SetValue(semanticcache.CacheNoStoreKey, true)
+				gatewayCtx.SetValue(semanticcache.CacheNoStoreKey, true)
 			}
 			return true
 		}
 		// Session stickiness: session ID for key binding
 		if keyStr == "x-uf-session-id" {
 			if valueStr := strings.TrimSpace(string(value)); valueStr != "" {
-				rakshaCtx.SetValue(schemas.RakshaContextKeySessionID, valueStr)
+				gatewayCtx.SetValue(schemas.GatewayContextKeySessionID, valueStr)
 			}
 			return true
 		}
@@ -461,7 +461,7 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 				}
 			}
 			if err == nil && ttlDuration > 0 {
-				rakshaCtx.SetValue(schemas.RakshaContextKeySessionTTL, ttlDuration)
+				gatewayCtx.SetValue(schemas.GatewayContextKeySessionTTL, ttlDuration)
 			}
 			return true
 		}
@@ -516,45 +516,45 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 		// provider-level config for this request.
 		if keyStr == "x-uf-send-back-raw-request" {
 			if b, err := strconv.ParseBool(string(value)); err == nil {
-				rakshaCtx.SetValue(schemas.RakshaContextKeySendBackRawRequest, b)
+				gatewayCtx.SetValue(schemas.GatewayContextKeySendBackRawRequest, b)
 			}
 			return true
 		}
 		if keyStr == "x-uf-send-back-raw-response" {
 			if b, err := strconv.ParseBool(string(value)); err == nil {
-				rakshaCtx.SetValue(schemas.RakshaContextKeySendBackRawResponse, b)
+				gatewayCtx.SetValue(schemas.GatewayContextKeySendBackRawResponse, b)
 			}
 			return true
 		}
 		if keyStr == "x-uf-store-raw-request-response" {
 			if b, err := strconv.ParseBool(string(value)); err == nil {
-				rakshaCtx.SetValue(schemas.RakshaContextKeyStoreRawRequestResponse, b)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyStoreRawRequestResponse, b)
 			}
 			return true
 		}
 		if keyStr == "x-uf-disable-content-logging" {
 			if b, err := strconv.ParseBool(string(value)); err == nil {
-				rakshaCtx.SetValue(schemas.RakshaContextKeyDisableContentLogging, b)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyDisableContentLogging, b)
 			}
 			return true
 		}
 		// Parent request ID header (for linking MCP tool calls to parent LLM requests)
 		if keyStr == "x-uf-parent-request-id" {
 			if valueStr := strings.TrimSpace(string(value)); valueStr != "" {
-				rakshaCtx.SetValue(schemas.RakshaMCPAgentOriginalRequestID, valueStr)
+				gatewayCtx.SetValue(schemas.GatewayMCPAgentOriginalRequestID, valueStr)
 			}
 			return true
 		}
 		// Add passthrough extra params header support
 		if keyStr == "x-uf-passthrough-extra-params" {
 			if valueStr := string(value); valueStr == "true" {
-				rakshaCtx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
 			}
 			return true
 		}
 		if keyStr == "x-uf-disable-content-logging" {
 			if b, err := strconv.ParseBool(string(value)); err == nil {
-				rakshaCtx.SetValue(schemas.RakshaContextKeyDisableContentLogging, b)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyDisableContentLogging, b)
 			}
 			return true
 		}
@@ -563,35 +563,35 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 		// Accepts: "true" (enable all), JSON array of feature names, or ["*"] (enable all).
 		// An empty array [] or absent header means no overrides.
 		if keyStr == "x-uf-compat" {
-			rakshaCtx.ClearValue(schemas.RakshaContextKeyCompatConvertTextToChat)
-			rakshaCtx.ClearValue(schemas.RakshaContextKeyCompatConvertChatToResponses)
-			rakshaCtx.ClearValue(schemas.RakshaContextKeyCompatShouldDropParams)
-			rakshaCtx.ClearValue(schemas.RakshaContextKeyCompatShouldConvertParams)
+			gatewayCtx.ClearValue(schemas.GatewayContextKeyCompatConvertTextToChat)
+			gatewayCtx.ClearValue(schemas.GatewayContextKeyCompatConvertChatToResponses)
+			gatewayCtx.ClearValue(schemas.GatewayContextKeyCompatShouldDropParams)
+			gatewayCtx.ClearValue(schemas.GatewayContextKeyCompatShouldConvertParams)
 			valueStr := strings.TrimSpace(string(value))
 			if valueStr == "true" {
-				rakshaCtx.SetValue(schemas.RakshaContextKeyCompatConvertTextToChat, true)
-				rakshaCtx.SetValue(schemas.RakshaContextKeyCompatConvertChatToResponses, true)
-				rakshaCtx.SetValue(schemas.RakshaContextKeyCompatShouldDropParams, true)
-				rakshaCtx.SetValue(schemas.RakshaContextKeyCompatShouldConvertParams, true)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyCompatConvertTextToChat, true)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyCompatConvertChatToResponses, true)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyCompatShouldDropParams, true)
+				gatewayCtx.SetValue(schemas.GatewayContextKeyCompatShouldConvertParams, true)
 			} else if strings.HasPrefix(valueStr, "[") {
 				var features []string
 				if err := json.Unmarshal([]byte(valueStr), &features); err == nil {
 					if len(features) == 1 && features[0] == "*" {
-						rakshaCtx.SetValue(schemas.RakshaContextKeyCompatConvertTextToChat, true)
-						rakshaCtx.SetValue(schemas.RakshaContextKeyCompatConvertChatToResponses, true)
-						rakshaCtx.SetValue(schemas.RakshaContextKeyCompatShouldDropParams, true)
-						rakshaCtx.SetValue(schemas.RakshaContextKeyCompatShouldConvertParams, true)
+						gatewayCtx.SetValue(schemas.GatewayContextKeyCompatConvertTextToChat, true)
+						gatewayCtx.SetValue(schemas.GatewayContextKeyCompatConvertChatToResponses, true)
+						gatewayCtx.SetValue(schemas.GatewayContextKeyCompatShouldDropParams, true)
+						gatewayCtx.SetValue(schemas.GatewayContextKeyCompatShouldConvertParams, true)
 					} else {
 						for _, f := range features {
 							switch f {
 							case "convert_text_to_chat":
-								rakshaCtx.SetValue(schemas.RakshaContextKeyCompatConvertTextToChat, true)
+								gatewayCtx.SetValue(schemas.GatewayContextKeyCompatConvertTextToChat, true)
 							case "convert_chat_to_responses":
-								rakshaCtx.SetValue(schemas.RakshaContextKeyCompatConvertChatToResponses, true)
+								gatewayCtx.SetValue(schemas.GatewayContextKeyCompatConvertChatToResponses, true)
 							case "should_drop_params":
-								rakshaCtx.SetValue(schemas.RakshaContextKeyCompatShouldDropParams, true)
+								gatewayCtx.SetValue(schemas.GatewayContextKeyCompatShouldDropParams, true)
 							case "should_convert_params":
-								rakshaCtx.SetValue(schemas.RakshaContextKeyCompatShouldConvertParams, true)
+								gatewayCtx.SetValue(schemas.GatewayContextKeyCompatShouldConvertParams, true)
 							}
 						}
 					}
@@ -604,22 +604,22 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 
 	// Store the collected maxim tags in the context
 	if len(maximTags) > 0 {
-		rakshaCtx.SetValue(schemas.RakshaContextKey(maxim.TagsKey), maximTags)
+		gatewayCtx.SetValue(schemas.GatewayContextKey(maxim.TagsKey), maximTags)
 	}
 
 	// Store collected dimensions (x-uf-dim-* only) in the context
 	if len(dimensions) > 0 {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyDimensions, dimensions)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyDimensions, dimensions)
 	}
 
 	// Store collected extra headers in the context if any were found
 	if len(extraHeaders) > 0 {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyExtraHeaders, extraHeaders)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyExtraHeaders, extraHeaders)
 	}
 
 	// Store collected MCP extra headers in the context if any were found
 	if len(mcpExtraHeaders) > 0 {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyMCPExtraHeaders, mcpExtraHeaders)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyMCPExtraHeaders, mcpExtraHeaders)
 	}
 
 	// Collect all request headers for downstream use (e.g., governance required headers check)
@@ -629,7 +629,7 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 		allHeaders[strings.ToLower(string(key))] = string(value)
 		return true
 	})
-	rakshaCtx.SetValue(schemas.RakshaContextKeyRequestHeaders, allHeaders)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyRequestHeaders, allHeaders)
 
 	// Collect all request query params for downstream use (e.g., governance routing CEL rules
 	// that read params["..."]). Keys are lowercased for case-insensitive lookup.
@@ -640,12 +640,12 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 			allQuery[strings.ToLower(string(key))] = string(value)
 			return true
 		})
-		rakshaCtx.SetValue(schemas.RakshaContextKeyRequestQuery, allQuery)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyRequestQuery, allQuery)
 	}
 
 	// Build and set the MCP callback base URL. Used by per-user OAuth (appends
 	// /api/oauth/callback) and per-user headers (appends the workspace submit
-	// path) resolvers when initiating their respective auth flows. Raksha is
+	// path) resolvers when initiating their respective auth flows. Gateway is
 	// acting as the OAuth client to upstream MCP servers here, so the client-
 	// side override applies.
 	var externalClientURL string
@@ -654,11 +654,11 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 	}
 	baseURL := BuildBaseURL(ctx, externalClientURL)
 	if baseURL != "" {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyMCPCallbackBaseURL, baseURL)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyMCPCallbackBaseURL, baseURL)
 	}
 
-	rakshaCtx.SetValue(schemas.RakshaContextKeyAllowPerRequestStorageOverride, allowPerRequestStorageOverride)
-	rakshaCtx.SetValue(schemas.RakshaContextKeyAllowPerRequestRawOverride, allowPerRequestRawOverride)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyAllowPerRequestStorageOverride, allowPerRequestStorageOverride)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyAllowPerRequestRawOverride, allowPerRequestRawOverride)
 
 	// Direct key bypass: requires both the server-side AllowDirectKeys setting and the
 	// per-request x-uf-direct-key: true header. The server setting is the admin opt-in;
@@ -693,11 +693,11 @@ func ConvertToRakshaContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sche
 				Models: []string{},
 				Weight: 1.0,
 			}
-			rakshaCtx.SetValue(schemas.RakshaContextKeyDirectKey, key)
+			gatewayCtx.SetValue(schemas.GatewayContextKeyDirectKey, key)
 		}
 	}
 
-	return rakshaCtx, cancel
+	return gatewayCtx, cancel
 }
 
 // ValidateBaseURL checks that a URL is parseable with both scheme and host —
@@ -721,7 +721,7 @@ func ValidateBaseURL(val string) error {
 // BuildBaseURL returns the effective base URL for OAuth callbacks and metadata discovery.
 // When externalBaseURL is non-empty (set via config/UI/API), it takes priority so that
 // deployments behind a reverse proxy advertise the proxy's public URL rather than the
-// internal Host header seen by Raksha.
+// internal Host header seen by Gateway.
 func BuildBaseURL(ctx *fasthttp.RequestCtx, externalBaseURL string) string {
 	if override := strings.TrimRight(strings.TrimSpace(externalBaseURL), "/"); override != "" {
 		if parsed, err := url.Parse(override); err == nil && parsed.Scheme != "" && parsed.Host != "" {
@@ -774,8 +774,8 @@ func BuildHTTPRequestFromFastHTTP(ctx *fasthttp.RequestCtx) *schemas.HTTPRequest
 		if !keyIsString || !valueIsString {
 			return
 		}
-		if strings.HasPrefix(keyStr, "raksha-") ||
-			keyStr == "RakshaContextKeyRequestID" ||
+		if strings.HasPrefix(keyStr, "gateway-") ||
+			keyStr == "GatewayContextKeyRequestID" ||
 			keyStr == "trace_id" ||
 			keyStr == "span_id" {
 			return

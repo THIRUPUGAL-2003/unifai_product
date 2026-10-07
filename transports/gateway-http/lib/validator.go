@@ -1,4 +1,4 @@
-// Package lib provides core functionality for the Raksha HTTP service.
+// Package lib provides core functionality for the Gateway HTTP service.
 // This file contains JSON schema validation for config files.
 package lib
 
@@ -17,8 +17,8 @@ import (
 // when running from a source checkout. Checked in order before falling back to the remote URL.
 var localSchemaCandidates = []string{
 	"config.schema.json",            // running from transports/
-	"../config.schema.json",         // running from transports/raksha-http/
-	"../../config.schema.json",      // running from transports/raksha-http/lib/
+	"../config.schema.json",         // running from transports/gateway-http/
+	"../../config.schema.json",      // running from transports/gateway-http/lib/
 	"transports/config.schema.json", // running from repo root
 }
 
@@ -46,8 +46,8 @@ func ValidateConfigSchema(data []byte, schemaOverride ...[]byte) error {
 		// This avoids validating against a potentially stale remote schema.
 		configSchemaJSONBytes = localSchema
 	} else {
-		// Pulling config.schema from https://www.getraksha.ai/schema
-		configSchemaJSON, err := http.Get("https://www.getraksha.ai/schema")
+		// Pulling config.schema from https://www.getgateway.ai/schema
+		configSchemaJSON, err := http.Get("https://www.getgateway.ai/schema")
 		if err != nil {
 			return fmt.Errorf("failed to get config schema: %w", err)
 		}

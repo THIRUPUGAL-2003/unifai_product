@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/raksha/raksha/framework/logstore"
+	"github.com/gateway/gateway/framework/logstore"
 )
 
 const browserAIAttachmentMaxBytes = 20 << 20 // 20 MiB

@@ -1,6 +1,6 @@
 package oauth2
 
-import "github.com/raksha/raksha/core/schemas"
+import "github.com/gateway/gateway/core/schemas"
 
 var logger schemas.Logger
 

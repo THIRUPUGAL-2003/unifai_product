@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/tidwall/sjson"
 )
 
@@ -272,7 +272,7 @@ type AnthropicTextRequest struct {
 	Stream            *bool    `json:"stream,omitempty"`
 	StopSequences     []string `json:"stop_sequences,omitempty"`
 
-	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
+	// Gateway specific field (only parsed when converting from Provider -> Gateway request)
 	Fallbacks   []string               `json:"fallbacks,omitempty"`
 	ExtraParams map[string]interface{} `json:"-"`
 }
@@ -400,7 +400,7 @@ type AnthropicMessageRequest struct {
 	// Extra params for advanced use cases
 	ExtraParams map[string]interface{} `json:"-"`
 
-	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
+	// Gateway specific field (only parsed when converting from Provider -> Gateway request)
 	Fallbacks []string `json:"fallbacks,omitempty"`
 
 	// Internal field to track whether to strip scope from cache control blocks (for Vertex + prompt caching scope)
@@ -1789,9 +1789,9 @@ type AnthropicFileDeleteResponse struct {
 	Type string `json:"type"`
 }
 
-// ToRakshaFileUploadResponse converts an Anthropic file response to Raksha file upload response.
-func (r *AnthropicFileResponse) ToRakshaFileUploadResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileUploadResponse {
-	resp := &schemas.RakshaFileUploadResponse{
+// ToGatewayFileUploadResponse converts an Anthropic file response to Gateway file upload response.
+func (r *AnthropicFileResponse) ToGatewayFileUploadResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayFileUploadResponse {
+	resp := &schemas.GatewayFileUploadResponse{
 		ID:             r.ID,
 		Object:         r.Type,
 		Bytes:          r.SizeBytes,
@@ -1800,7 +1800,7 @@ func (r *AnthropicFileResponse) ToRakshaFileUploadResponse(latency time.Duration
 		Purpose:        schemas.FilePurposeBatch, // We hardcode as purpose is not supported by Anthropic
 		Status:         schemas.FileStatusProcessed,
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -1816,9 +1816,9 @@ func (r *AnthropicFileResponse) ToRakshaFileUploadResponse(latency time.Duration
 	return resp
 }
 
-// ToRakshaFileRetrieveResponse converts an Anthropic file response to Raksha file retrieve response.
-func (r *AnthropicFileResponse) ToRakshaFileRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileRetrieveResponse {
-	resp := &schemas.RakshaFileRetrieveResponse{
+// ToGatewayFileRetrieveResponse converts an Anthropic file response to Gateway file retrieve response.
+func (r *AnthropicFileResponse) ToGatewayFileRetrieveResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayFileRetrieveResponse {
+	resp := &schemas.GatewayFileRetrieveResponse{
 		ID:             r.ID,
 		Object:         r.Type,
 		Bytes:          r.SizeBytes,
@@ -1827,7 +1827,7 @@ func (r *AnthropicFileResponse) ToRakshaFileRetrieveResponse(latency time.Durati
 		Purpose:        schemas.FilePurposeBatch,
 		Status:         schemas.FileStatusProcessed,
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}

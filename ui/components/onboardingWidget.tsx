@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { IS_ENTERPRISE } from "@/lib/constants/config";
@@ -14,7 +15,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCookies } from "react-cookie";
 import { toast } from "sonner";
 
-const ONBOARDING_DISMISSED_COOKIE = "raksha_onboarding_dismissed";
+const ONBOARDING_DISMISSED_COOKIE = "gateway_onboarding_dismissed";
 const METADATA_DISMISSED_KEY = "onboarding_dismissed";
 const METADATA_SKIPPED_KEY = "onboarding_skipped";
 
@@ -66,33 +67,38 @@ export default function OnboardingWidget() {
 	const skipWriteChainRef = useRef<Promise<void>>(Promise.resolve());
 	const [pendingSkippedIds, setPendingSkippedIds] = useState<string[]>([]);
 
-	const { data: rakshaConfig } = useGetCoreConfigQuery({}, { skip: shouldSkipCoreConfigQuery });
+	const { data: gatewayConfig, isError: coreConfigFailed, error: coreConfigError } = useGetCoreConfigQuery({}, { skip: shouldSkipCoreConfigQuery });
 	// A widget dismissed for everyone only needs the core-config query (to learn
 	// the dismiss flag). Once isDismissedForAll is known, skip the provider and
 	// governance queries so they don't hit the network on every page load.
-	const isDismissedForAll = rakshaConfig?.metadata?.[METADATA_DISMISSED_KEY] === true;
+	const isDismissedForAll = gatewayConfig?.metadata?.[METADATA_DISMISSED_KEY] === true;
 	const shouldSkipChecklistQueries = shouldSkipCoreConfigQuery || isDismissedForAll;
-	const { data: allKeys } = useGetAllKeysQuery(undefined, { skip: shouldSkipChecklistQueries });
-	const { data: vksResponse } = useGetVirtualKeysQuery(undefined, {
+	const { data: allKeys, isError: allKeysFailed, error: allKeysError } = useGetAllKeysQuery(undefined, { skip: shouldSkipChecklistQueries });
+	const { data: vksResponse, isError: vksFailed, error: vksError } = useGetVirtualKeysQuery(undefined, {
 		skip: shouldSkipChecklistQueries || !IS_ENTERPRISE,
 	});
-	const { data: modelConfigsResponse } = useGetModelConfigsQuery(undefined, {
+	const { data: modelConfigsResponse, isError: modelsFailed, error: modelsError } = useGetModelConfigsQuery(undefined, {
 		skip: shouldSkipChecklistQueries || !IS_ENTERPRISE,
 	});
-	const { data: scimProviders } = useGetSCIMProvidersQuery(undefined, {
+	const { data: scimProviders, isError: scimFailed, error: scimError } = useGetSCIMProvidersQuery(undefined, {
 		skip: shouldSkipChecklistQueries || !IS_ENTERPRISE,
 	});
+	const checklistQueryFailed =
+		(!shouldSkipCoreConfigQuery && coreConfigFailed) ||
+		(!shouldSkipChecklistQueries &&
+			(allKeysFailed || (IS_ENTERPRISE && (vksFailed || modelsFailed || scimFailed))));
+	const checklistQueryError = coreConfigError || allKeysError || vksError || modelsError || scimError;
 	const checklistReady =
-		rakshaConfig !== undefined &&
+		gatewayConfig !== undefined &&
 		allKeys !== undefined &&
 		(!IS_ENTERPRISE || (vksResponse !== undefined && modelConfigsResponse !== undefined && scimProviders !== undefined));
 
 	const skippedIds = useMemo<string[]>(() => {
-		return parseSkippedIds(rakshaConfig?.metadata?.[METADATA_SKIPPED_KEY]);
-	}, [rakshaConfig?.metadata]);
+		return parseSkippedIds(gatewayConfig?.metadata?.[METADATA_SKIPPED_KEY]);
+	}, [gatewayConfig?.metadata]);
 
-	const authConfig = rakshaConfig?.auth_config;
-	const clientConfig = rakshaConfig?.client_config;
+	const authConfig = gatewayConfig?.auth_config;
+	const clientConfig = gatewayConfig?.client_config;
 	const authValueSet = (secretVar: { value?: string; ref?: string; type?: string } | undefined) => {
 		if (!secretVar) return false;
 		return !!secretVar.value || !!secretVar.ref;
@@ -209,6 +215,22 @@ export default function OnboardingWidget() {
 
 	if (closedForSession || isDismissedForMe) {
 		return null;
+	}
+
+	if (checklistQueryFailed) {
+		return (
+			<Card className="fixed bottom-4 right-4 z-40 w-[min(100vw-2rem,22rem)] shadow-lg">
+				<CardHeader className="pb-2">
+					<p className="text-sm font-medium">Setup checklist</p>
+				</CardHeader>
+				<CardContent>
+					<QueryErrorBanner
+						testId="onboarding-checklist-query-error"
+						message={getErrorMessage(checklistQueryError) || "Could not load setup checklist data."}
+					/>
+				</CardContent>
+			</Card>
+		);
 	}
 
 	if (!checklistReady) {

@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -13,15 +12,15 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/logstore"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/logstore"
 	"github.com/valyala/fasthttp"
 )
 
 func guardBotEvalBudget() time.Duration {
 	// Per-bot LLM budget. Allows enough time for Outsource API roundtrips and local CPU Ollama inference.
 	sec := 22
-	if v := strings.TrimSpace(os.Getenv("RAKSHA_GUARD_BOT_TIMEOUT_SEC")); v != "" {
+	if v := strings.TrimSpace(gatewayEnv("GUARD_BOT_TIMEOUT_SEC")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 3 && n <= 60 {
 			sec = n
 		}
@@ -133,7 +132,7 @@ type aiBotEvalResult struct {
 	Explanation string `json:"explanation"`
 }
 
-func evaluatorChoiceText(resp *schemas.RakshaChatResponse) string {
+func evaluatorChoiceText(resp *schemas.GatewayChatResponse) string {
 	if resp == nil || len(resp.Choices) == 0 {
 		return ""
 	}
@@ -197,7 +196,7 @@ func assistantMessageText(msg *schemas.ChatMessage) string {
 	return ""
 }
 
-func evaluatorEmptyReason(resp *schemas.RakshaChatResponse) string {
+func evaluatorEmptyReason(resp *schemas.GatewayChatResponse) string {
 	if resp == nil || len(resp.Choices) == 0 {
 		return "empty evaluator response (no choices from model)"
 	}
@@ -402,31 +401,31 @@ Derive the pattern only from SECURITY_POLICY.`
 			return raw, nil
 		}
 		if h.client == nil {
-			return "", fmt.Errorf("raksha client not available for outsource model")
+			return "", fmt.Errorf("gateway client not available for outsource model")
 		}
 		prov := schemas.ModelProvider(provider)
-		rakshaReq := buildGuardOutsourceChatRequest(prov, model, systemPrompt, user, false, preferJSON && !isWeakGuardEvalModel(model) && !isReasoningGuardModel(model))
-		if rakshaReq.Params != nil {
+		gatewayReq := buildGuardOutsourceChatRequest(prov, model, systemPrompt, user, false, preferJSON && !isWeakGuardEvalModel(model) && !isReasoningGuardModel(model))
+		if gatewayReq.Params != nil {
 			maxTokens := 512
 			if isReasoningGuardModel(model) {
 				maxTokens = 1024
 			}
 			temp := 0.1
-			rakshaReq.Params.Temperature = &temp
-			if rakshaReq.Params.ExtraParams == nil {
-				rakshaReq.Params.ExtraParams = map[string]interface{}{}
+			gatewayReq.Params.Temperature = &temp
+			if gatewayReq.Params.ExtraParams == nil {
+				gatewayReq.Params.ExtraParams = map[string]interface{}{}
 			}
-			rakshaReq.Params.ExtraParams["max_tokens"] = maxTokens
-			rakshaReq.Params.MaxCompletionTokens = &maxTokens
+			gatewayReq.Params.ExtraParams["max_tokens"] = maxTokens
+			gatewayReq.Params.MaxCompletionTokens = &maxTokens
 		}
 		deadline := time.Now().Add(75 * time.Second)
-		rakshaCtx := schemas.NewRakshaContext(context.Background(), deadline)
-		rakshaCtx.SetValue(schemas.RakshaContextKeySkipBudgetAndRateLimits, true)
-		rakshaCtx.SetValue(schemas.RakshaContextKeySkipPluginPipeline, true)
-		rakshaCtx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
-		resp, rakshaErr := h.client.ChatCompletionRequest(rakshaCtx, rakshaReq)
-		if rakshaErr != nil {
-			return "", fmt.Errorf("%s", rakshaErrorMessage(rakshaErr))
+		gatewayCtx := schemas.NewGatewayContext(context.Background(), deadline)
+		gatewayCtx.SetValue(schemas.GatewayContextKeySkipBudgetAndRateLimits, true)
+		gatewayCtx.SetValue(schemas.GatewayContextKeySkipPluginPipeline, true)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
+		resp, gatewayErr := h.client.ChatCompletionRequest(gatewayCtx, gatewayReq)
+		if gatewayErr != nil {
+			return "", fmt.Errorf("%s", gatewayErrorMessage(gatewayErr))
 		}
 		return evaluatorChoiceText(resp), nil
 	}
@@ -860,12 +859,12 @@ func (h *BrowserAIHandler) evaluateAIBotRuleDetailed(rule logstore.BrowserGuardR
 	}
 
 	if h.client == nil {
-		return false, "raksha client not available", ""
+		return false, "gateway client not available", ""
 	}
 
 	// Preflight: selected Model Provider must have a usable API key.
 	{
-		keyCtx := schemas.NewRakshaContext(context.Background(), time.Now().Add(10*time.Second))
+		keyCtx := schemas.NewGatewayContext(context.Background(), time.Now().Add(10*time.Second))
 		if _, keyErr := h.client.SelectKeyForProviderRequestType(keyCtx, schemas.ChatCompletionRequest, providerName, modelName); keyErr != nil {
 			return false, fmt.Sprintf("no usable API key for provider %s — add/enable the key under Model Providers (model=%s): %v", providerName, modelName, keyErr), ""
 		}
@@ -879,14 +878,14 @@ func (h *BrowserAIHandler) evaluateAIBotRuleDetailed(rule logstore.BrowserGuardR
 		if remaining < 2*time.Second {
 			return false, "guard bot eval budget exceeded", ""
 		}
-		rakshaReq := buildGuardOutsourceChatRequest(providerName, modelName, systemPrompt, user, withSystem, withJSON)
-		rakshaCtx := schemas.NewRakshaContext(context.Background(), time.Now().Add(remaining))
-		rakshaCtx.SetValue(schemas.RakshaContextKeySkipBudgetAndRateLimits, true)
-		rakshaCtx.SetValue(schemas.RakshaContextKeySkipPluginPipeline, true)
-		rakshaCtx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
-		resp, rakshaErr := h.client.ChatCompletionRequest(rakshaCtx, rakshaReq)
-		if rakshaErr != nil {
-			return false, truncateRunes(rakshaErrorMessage(rakshaErr), 220), ""
+		gatewayReq := buildGuardOutsourceChatRequest(providerName, modelName, systemPrompt, user, withSystem, withJSON)
+		gatewayCtx := schemas.NewGatewayContext(context.Background(), time.Now().Add(remaining))
+		gatewayCtx.SetValue(schemas.GatewayContextKeySkipBudgetAndRateLimits, true)
+		gatewayCtx.SetValue(schemas.GatewayContextKeySkipPluginPipeline, true)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
+		resp, gatewayErr := h.client.ChatCompletionRequest(gatewayCtx, gatewayReq)
+		if gatewayErr != nil {
+			return false, truncateRunes(gatewayErrorMessage(gatewayErr), 220), ""
 		}
 		rawText := stripEvalMarkdown(evaluatorChoiceText(resp))
 		if rawText == "" {
@@ -962,7 +961,7 @@ func (h *BrowserAIHandler) evaluateAIBotRuleDetailed(rule logstore.BrowserGuardR
 // buildGuardOutsourceChatRequest builds a chat request that works across OpenAI-native
 // and OpenAI-compatible providers (OpenRouter, Groq, DeepSeek, etc.) when the
 // configured API key matches the selected provider.
-func buildGuardOutsourceChatRequest(provider schemas.ModelProvider, model, systemPrompt, user string, withSystem, withJSON bool) *schemas.RakshaChatRequest {
+func buildGuardOutsourceChatRequest(provider schemas.ModelProvider, model, systemPrompt, user string, withSystem, withJSON bool) *schemas.GatewayChatRequest {
 	// 128 was too low for reasoner models (finish_reason=length + empty content).
 	maxTokens := 384
 	if isReasoningGuardModel(model) {
@@ -1016,7 +1015,7 @@ func buildGuardOutsourceChatRequest(provider schemas.ModelProvider, model, syste
 		}
 	}
 
-	return &schemas.RakshaChatRequest{
+	return &schemas.GatewayChatRequest{
 		Provider: provider,
 		Model:    model,
 		Input:    input,
@@ -1162,10 +1161,10 @@ JSON only: {"violation":true} or {"violation":false}`,
 	}
 
 	if h.client == nil {
-		return false, "raksha client not available"
+		return false, "gateway client not available"
 	}
 
-	// Outsource vision: send text + image data-URLs via Raksha multimodal chat.
+	// Outsource vision: send text + image data-URLs via Gateway multimodal chat.
 	maxImages := 6
 	if len(images) > maxImages {
 		images = images[:maxImages]
@@ -1198,7 +1197,7 @@ JSON only: {"violation":true} or {"violation":false}`,
 	maxTokens := 384
 	temp := 0.0
 	responseFormat := any(map[string]any{"type": "json_object"})
-	rakshaReq := &schemas.RakshaChatRequest{
+	gatewayReq := &schemas.GatewayChatRequest{
 		Provider: providerName,
 		Model:    modelName,
 		Input: []schemas.ChatMessage{
@@ -1227,13 +1226,13 @@ JSON only: {"violation":true} or {"violation":false}`,
 
 	runOnce := func() (bool, string) {
 		deadline := time.Now().Add(45 * time.Second)
-		rakshaCtx := schemas.NewRakshaContext(context.Background(), deadline)
-		rakshaCtx.SetValue(schemas.RakshaContextKeySkipBudgetAndRateLimits, true)
-		rakshaCtx.SetValue(schemas.RakshaContextKeySkipPluginPipeline, true)
-		rakshaCtx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
-		resp, rakshaErr := h.client.ChatCompletionRequest(rakshaCtx, rakshaReq)
-		if rakshaErr != nil {
-			return false, truncateRunes(rakshaErrorMessage(rakshaErr), 180)
+		gatewayCtx := schemas.NewGatewayContext(context.Background(), deadline)
+		gatewayCtx.SetValue(schemas.GatewayContextKeySkipBudgetAndRateLimits, true)
+		gatewayCtx.SetValue(schemas.GatewayContextKeySkipPluginPipeline, true)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
+		resp, gatewayErr := h.client.ChatCompletionRequest(gatewayCtx, gatewayReq)
+		if gatewayErr != nil {
+			return false, truncateRunes(gatewayErrorMessage(gatewayErr), 180)
 		}
 		rawText := stripEvalMarkdown(evaluatorChoiceText(resp))
 		if rawText == "" {
@@ -1250,8 +1249,8 @@ JSON only: {"violation":true} or {"violation":false}`,
 	if errMsg == "" {
 		return violated, ""
 	}
-	if rakshaReq.Params != nil {
-		rakshaReq.Params.ResponseFormat = nil
+	if gatewayReq.Params != nil {
+		gatewayReq.Params.ResponseFormat = nil
 	}
 	violated, errMsg2 := runOnce()
 	if errMsg2 == "" {
@@ -1260,7 +1259,7 @@ JSON only: {"violation":true} or {"violation":false}`,
 	return false, errMsg + "; retry: " + errMsg2
 }
 
-func rakshaErrorMessage(err *schemas.RakshaError) string {
+func gatewayErrorMessage(err *schemas.GatewayError) string {
 	if err == nil {
 		return "unknown evaluator error"
 	}
@@ -1420,7 +1419,7 @@ func (h *BrowserAIHandler) generateReplyBotText(ctx *fasthttp.RequestCtx, provid
 	provider, model = applyGuardBotDefaults(provider, model)
 	providerName, modelName := resolveGuardBotModel(provider, model)
 
-	systemPrompt := `You are Raksha Guard, an enterprise security assistant embedded in browser AI chats.
+	systemPrompt := `You are Gateway Guard, an enterprise security assistant embedded in browser AI chats.
 A user tried to send sensitive or policy-violating content to a public AI website.
 Write a short, professional in-chat reply (4-8 sentences max) that:
 1) Clearly states the request was BLOCKED by security policy
@@ -1437,7 +1436,7 @@ Do NOT include the secret itself. Do NOT help bypass the policy. Plain text only
 	)
 
 	if kind != "violation" {
-		systemPrompt = `You are Raksha Reply Bot, answering on behalf of an enterprise policy that routes this website's chat through Raksha.
+		systemPrompt = `You are Gateway Reply Bot, answering on behalf of an enterprise policy that routes this website's chat through Gateway.
 Answer the user's question helpfully and accurately in plain text (no markdown headings).
 Keep replies concise (typically under 12 sentences) unless the user asks for detail.
 If the question is unsafe or asks for secrets/credentials, refuse briefly and explain.`
@@ -1453,7 +1452,7 @@ If the question is unsafe or asks for secrets/credentials, refuse briefly and ex
 	}
 
 	if h.client == nil {
-		return "", fmt.Errorf("raksha client not available")
+		return "", fmt.Errorf("gateway client not available")
 	}
 
 	maxTokens := 350
@@ -1462,7 +1461,7 @@ If the question is unsafe or asks for secrets/credentials, refuse briefly and ex
 		maxTokens = 900
 		temp = 0.5
 	}
-	rakshaReq := &schemas.RakshaChatRequest{
+	gatewayReq := &schemas.GatewayChatRequest{
 		Provider: providerName,
 		Model:    modelName,
 		Input: []schemas.ChatMessage{
@@ -1486,14 +1485,14 @@ If the question is unsafe or asks for secrets/credentials, refuse briefly and ex
 	}
 
 	deadline := time.Now().Add(18 * time.Second)
-	rakshaCtx := schemas.NewRakshaContext(context.Background(), deadline)
-	rakshaCtx.SetValue(schemas.RakshaContextKeySkipBudgetAndRateLimits, true)
-	rakshaCtx.SetValue(schemas.RakshaContextKeySkipPluginPipeline, true)
+	gatewayCtx := schemas.NewGatewayContext(context.Background(), deadline)
+	gatewayCtx.SetValue(schemas.GatewayContextKeySkipBudgetAndRateLimits, true)
+	gatewayCtx.SetValue(schemas.GatewayContextKeySkipPluginPipeline, true)
 	_ = ctx
 
-	resp, rakshaErr := h.client.ChatCompletionRequest(rakshaCtx, rakshaReq)
-	if rakshaErr != nil {
-		return "", fmt.Errorf("reply bot completion failed: %v", rakshaErr)
+	resp, gatewayErr := h.client.ChatCompletionRequest(gatewayCtx, gatewayReq)
+	if gatewayErr != nil {
+		return "", fmt.Errorf("reply bot completion failed: %v", gatewayErr)
 	}
 	if resp == nil || len(resp.Choices) == 0 || resp.Choices[0].Message == nil || resp.Choices[0].Message.Content == nil {
 		return "", fmt.Errorf("empty reply bot response")

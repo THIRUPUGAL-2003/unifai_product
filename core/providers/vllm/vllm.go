@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/core/providers/openai"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/openai"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -23,8 +23,8 @@ type VLLMProvider struct {
 	client              *fasthttp.Client      // HTTP client for unary API requests (ReadTimeout bounds overall response)
 	streamingClient     *fasthttp.Client      // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig       schemas.NetworkConfig // Network configuration including extra headers
-	sendBackRawRequest  bool                  // Whether to include raw request in RakshaResponse
-	sendBackRawResponse bool                  // Whether to include raw response in RakshaResponse
+	sendBackRawRequest  bool                  // Whether to include raw request in GatewayResponse
+	sendBackRawResponse bool                  // Whether to include raw response in GatewayResponse
 }
 
 // NewVLLMProvider creates a new vLLM provider instance.
@@ -73,11 +73,11 @@ func (provider *VLLMProvider) getBaseURL(key schemas.Key) string {
 	return ""
 }
 
-// baseURLOrError returns the resolved base URL or a RakshaError when none is configured.
-func (provider *VLLMProvider) baseURLOrError(key schemas.Key) (string, *schemas.RakshaError) {
+// baseURLOrError returns the resolved base URL or a GatewayError when none is configured.
+func (provider *VLLMProvider) baseURLOrError(key schemas.Key) (string, *schemas.GatewayError) {
 	u := provider.getBaseURL(key)
 	if u == "" {
-		return "", providerUtils.NewRakshaOperationError(
+		return "", providerUtils.NewGatewayOperationError(
 			"no base URL configured: set vllm_key_config.url on the key",
 			nil)
 	}
@@ -86,10 +86,10 @@ func (provider *VLLMProvider) baseURLOrError(key schemas.Key) (string, *schemas.
 
 // listModelsByKey performs a list models request for a single vLLM key,
 // resolving the per-key URL so each backend is queried individually.
-func (provider *VLLMProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
-	baseURL, rakshaErr := provider.baseURLOrError(key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+func (provider *VLLMProvider) listModelsByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
+	baseURL, gatewayErr := provider.baseURLOrError(key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	url := baseURL + providerUtils.GetPathFromContext(ctx, "/v1/models")
 	return openai.ListModelsByKey(
@@ -108,7 +108,7 @@ func (provider *VLLMProvider) listModelsByKey(ctx *schemas.RakshaContext, key sc
 // ListModels performs a list models request to vLLM's API.
 // Requests are made concurrently per key so that each backend is queried
 // with its own URL (from vllm_key_config).
-func (provider *VLLMProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	return providerUtils.HandleMultipleListModelsRequests(
 		ctx,
 		keys,
@@ -118,11 +118,11 @@ func (provider *VLLMProvider) ListModels(ctx *schemas.RakshaContext, keys []sche
 }
 
 // TextCompletion performs a text completion request to vLLM's API.
-func (provider *VLLMProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
-	ctx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
-	baseURL, rakshaErr := provider.baseURLOrError(key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+func (provider *VLLMProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
+	ctx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
+	baseURL, gatewayErr := provider.baseURLOrError(key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	return openai.HandleOpenAITextCompletionRequest(
 		ctx,
@@ -141,11 +141,11 @@ func (provider *VLLMProvider) TextCompletion(ctx *schemas.RakshaContext, key sch
 }
 
 // TextCompletionStream performs a streaming text completion request to vLLM's API.
-func (provider *VLLMProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-	ctx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
-	baseURL, rakshaErr := provider.baseURLOrError(key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+func (provider *VLLMProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+	ctx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
+	baseURL, gatewayErr := provider.baseURLOrError(key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	return openai.HandleOpenAITextCompletionStreaming(
 		ctx,
@@ -168,11 +168,11 @@ func (provider *VLLMProvider) TextCompletionStream(ctx *schemas.RakshaContext, p
 }
 
 // ChatCompletion performs a chat completion request to vLLM's API.
-func (provider *VLLMProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-	ctx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
-	baseURL, rakshaErr := provider.baseURLOrError(key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+func (provider *VLLMProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+	ctx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
+	baseURL, gatewayErr := provider.baseURLOrError(key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	return openai.HandleOpenAIChatCompletionRequest(
 		ctx,
@@ -192,11 +192,11 @@ func (provider *VLLMProvider) ChatCompletion(ctx *schemas.RakshaContext, key sch
 }
 
 // ChatCompletionStream performs a streaming chat completion request to vLLM's API.
-func (provider *VLLMProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-	ctx.SetValue(schemas.RakshaContextKeyPassthroughExtraParams, true)
-	baseURL, rakshaErr := provider.baseURLOrError(key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+func (provider *VLLMProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+	ctx.SetValue(schemas.GatewayContextKeyPassthroughExtraParams, true)
+	baseURL, gatewayErr := provider.baseURLOrError(key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	return openai.HandleOpenAIChatCompletionStreaming(
 		ctx,
@@ -222,10 +222,10 @@ func (provider *VLLMProvider) ChatCompletionStream(ctx *schemas.RakshaContext, p
 }
 
 // Embedding performs an embedding request to vLLM's API.
-func (provider *VLLMProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
-	baseURL, rakshaErr := provider.baseURLOrError(key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+func (provider *VLLMProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
+	baseURL, gatewayErr := provider.baseURLOrError(key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	return openai.HandleOpenAIEmbeddingRequest(
 		ctx,
@@ -243,18 +243,18 @@ func (provider *VLLMProvider) Embedding(ctx *schemas.RakshaContext, key schemas.
 }
 
 // Responses performs a responses request to vLLM's API (via chat completion).
-func (provider *VLLMProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	chatResponse, err := provider.ChatCompletion(ctx, key, request.ToChatRequest())
 	if err != nil {
 		return nil, err
 	}
-	response := chatResponse.ToRakshaResponsesResponse()
+	response := chatResponse.ToGatewayResponsesResponse()
 	return response, nil
 }
 
 // ResponsesStream performs a streaming responses request to vLLM's API (via chat completion stream).
-func (provider *VLLMProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-	ctx.SetValue(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback, true)
+func (provider *VLLMProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+	ctx.SetValue(schemas.GatewayContextKeyIsResponsesToChatCompletionFallback, true)
 	return provider.ChatCompletionStream(
 		ctx,
 		postHookRunner,
@@ -265,7 +265,7 @@ func (provider *VLLMProvider) ResponsesStream(ctx *schemas.RakshaContext, postHo
 }
 
 // Speech is not supported by the vLLM provider.
-func (provider *VLLMProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechRequest, provider.GetProviderKey())
 }
 
@@ -278,15 +278,15 @@ func isRerankFallbackStatus(statusCode int) bool {
 }
 
 func (provider *VLLMProvider) callVLLMRerankEndpoint(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
-	request *schemas.RakshaRerankRequest,
+	request *schemas.GatewayRerankRequest,
 	endpointPath string,
 	jsonData []byte,
-) (map[string]interface{}, interface{}, interface{}, []byte, int, time.Duration, *schemas.RakshaError) {
-	baseURL, rakshaErr := provider.baseURLOrError(key)
-	if rakshaErr != nil {
-		return nil, nil, nil, nil, 0, 0, rakshaErr
+) (map[string]interface{}, interface{}, interface{}, []byte, int, time.Duration, *schemas.GatewayError) {
+	baseURL, gatewayErr := provider.baseURLOrError(key)
+	if gatewayErr != nil {
+		return nil, nil, nil, nil, 0, 0, gatewayErr
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -307,10 +307,10 @@ func (provider *VLLMProvider) callVLLMRerankEndpoint(
 		req.SetBody(jsonData)
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, nil, nil, nil, 0, latency, rakshaErr
+	if gatewayErr != nil {
+		return nil, nil, nil, nil, 0, latency, gatewayErr
 	}
 
 	statusCode := resp.StatusCode()
@@ -322,31 +322,31 @@ func (provider *VLLMProvider) callVLLMRerankEndpoint(
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
 		rawErrBody := append([]byte(nil), resp.Body()...)
-		return nil, nil, nil, rawErrBody, statusCode, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, nil, nil, rawErrBody, statusCode, latency, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
 	responsePayload := make(map[string]interface{})
-	rawRequest, rawResponse, rakshaErr := HandleVLLMResponse(body, &responsePayload, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, nil, nil, body, statusCode, latency, rakshaErr
+	rawRequest, rawResponse, gatewayErr := HandleVLLMResponse(body, &responsePayload, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, nil, nil, body, statusCode, latency, gatewayErr
 	}
 
 	return responsePayload, rawRequest, rawResponse, body, statusCode, latency, nil
 }
 
 // Rerank performs a rerank request to vLLM's API.
-func (provider *VLLMProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+func (provider *VLLMProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToVLLMRerankRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	resolvedPath := providerUtils.GetPathFromContext(ctx, "")
@@ -360,22 +360,22 @@ func (provider *VLLMProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	responsePayload, rawRequest, rawResponse, responseBody, statusCode, latency, rakshaErr := provider.callVLLMRerankEndpoint(ctx, key, request, resolvedPath, jsonData)
-	if rakshaErr != nil && !hasPathOverride && isRerankFallbackStatus(statusCode) {
+	responsePayload, rawRequest, rawResponse, responseBody, statusCode, latency, gatewayErr := provider.callVLLMRerankEndpoint(ctx, key, request, resolvedPath, jsonData)
+	if gatewayErr != nil && !hasPathOverride && isRerankFallbackStatus(statusCode) {
 		var fallbackLatency time.Duration
-		responsePayload, rawRequest, rawResponse, responseBody, statusCode, fallbackLatency, rakshaErr = provider.callVLLMRerankEndpoint(ctx, key, request, "/rerank", jsonData)
+		responsePayload, rawRequest, rawResponse, responseBody, statusCode, fallbackLatency, gatewayErr = provider.callVLLMRerankEndpoint(ctx, key, request, "/rerank", jsonData)
 		latency += fallbackLatency
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, responseBody, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	returnDocuments := request.Params != nil && request.Params.ReturnDocuments != nil && *request.Params.ReturnDocuments
-	rakshaResponse, err := ToRakshaRerankResponse(responsePayload, request.Documents, returnDocuments)
+	gatewayResponse, err := ToGatewayRerankResponse(responsePayload, request.Documents, returnDocuments)
 	if err != nil {
 		return nil, providerUtils.EnrichError(
 			ctx,
-			providerUtils.NewRakshaOperationError("error converting rerank response", err),
+			providerUtils.NewGatewayOperationError("error converting rerank response", err),
 			jsonData,
 			responseBody,
 			sendBackRawRequest,
@@ -384,35 +384,35 @@ func (provider *VLLMProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key
 		)
 	}
 
-	// Keep requested model as the canonical model in Raksha response.
-	rakshaResponse.Model = request.Model
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	// Keep requested model as the canonical model in Gateway response.
+	gatewayResponse.Model = request.Model
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // OCR is not supported by the Vllm provider.
-func (provider *VLLMProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // SpeechStream is not supported by the vLLM provider.
-func (provider *VLLMProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *VLLMProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, provider.GetProviderKey())
 }
 
 // Transcription performs a transcription request to vLLM's API.
-func (provider *VLLMProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
-	baseURL, rakshaErr := provider.baseURLOrError(key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+func (provider *VLLMProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
+	baseURL, gatewayErr := provider.baseURLOrError(key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	return openai.HandleOpenAITranscriptionRequest(
 		ctx,
@@ -429,10 +429,10 @@ func (provider *VLLMProvider) Transcription(ctx *schemas.RakshaContext, key sche
 }
 
 // TranscriptionStream performs a streaming transcription request to vLLM's API.
-func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-	baseURL, rakshaErr := provider.baseURLOrError(key)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+	baseURL, gatewayErr := provider.baseURLOrError(key)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	{
 		logger := provider.logger
@@ -440,7 +440,7 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 		// Use centralized converter
 		reqBody := openai.ToOpenAITranscriptionRequest(request)
 		if reqBody == nil {
-			return nil, providerUtils.NewRakshaOperationError("transcription input is not provided", nil)
+			return nil, providerUtils.NewGatewayOperationError("transcription input is not provided", nil)
 		}
 		reqBody.Stream = schemas.Ptr(true)
 
@@ -448,8 +448,8 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 		var body bytes.Buffer
 		writer := multipart.NewWriter(&body)
 
-		if rakshaErr := openai.ParseTranscriptionFormDataBodyFromRequest(writer, reqBody, providerName); rakshaErr != nil {
-			return nil, rakshaErr
+		if gatewayErr := openai.ParseTranscriptionFormDataBodyFromRequest(writer, reqBody, providerName); gatewayErr != nil {
+			return nil, gatewayErr
 		}
 
 		// Prepare OpenAI headers
@@ -488,8 +488,8 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 		if err != nil {
 			defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 			if errors.Is(err, context.Canceled) {
-				return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-					IsRakshaError: false,
+				return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+					IsGatewayError: false,
 					Error: &schemas.ErrorField{
 						Type:    schemas.Ptr(schemas.RequestCancelled),
 						Message: schemas.ErrRequestCancelled,
@@ -498,13 +498,13 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 				}, latency)
 			}
 			if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-				return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+				return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 			}
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err), latency)
 		}
 
 		// Store provider response headers in context before status check so error responses also forward them
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 		// Check for HTTP errors
 		if resp.StatusCode() != fasthttp.StatusOK {
@@ -514,13 +514,13 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 
 		// Large payload streaming passthrough — pipe raw upstream SSE to client
 		if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-			responseChan := make(chan *schemas.RakshaStreamChunk)
+			responseChan := make(chan *schemas.GatewayStreamChunk)
 			providerUtils.CloseStream(ctx, responseChan)
 			return responseChan, nil
 		}
 
 		// Create response channel
-		responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+		responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 		providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -568,7 +568,7 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 						return
 					}
 					if readErr != io.EOF {
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 						logger.Warn("Error reading stream: %v", readErr)
 						providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 					}
@@ -582,13 +582,13 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 					continue
 				}
 
-				var response schemas.RakshaTranscriptionStreamResponse
-				var rakshaErr *schemas.RakshaError
+				var response schemas.GatewayTranscriptionStreamResponse
+				var gatewayErr *schemas.GatewayError
 
-				_, _, rakshaErr = HandleVLLMResponse(dataBytes, &response, nil, false, false)
-				if rakshaErr != nil {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, body.Bytes(), dataBytes, false, providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse), latency), responseChan, logger, postHookSpanFinalizer)
+				_, _, gatewayErr = HandleVLLMResponse(dataBytes, &response, nil, false, false)
+				if gatewayErr != nil {
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, body.Bytes(), dataBytes, false, providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse), latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 
@@ -604,7 +604,7 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 					fullTranscriptionText.WriteString(*response.Delta)
 				}
 
-				response.ExtraFields = schemas.RakshaResponseExtraFields{
+				response.ExtraFields = schemas.GatewayResponseExtraFields{
 					ChunkIndex: chunkIndex,
 					Latency:    time.Since(lastChunkTime).Milliseconds(),
 				}
@@ -616,12 +616,12 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 				if response.Usage != nil || response.Type == schemas.TranscriptionStreamResponseTypeDone {
 					response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
 					response.Text = fullTranscriptionText.String()
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, &response, nil), responseChan, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, &response, nil), responseChan, postHookSpanFinalizer)
 					return
 				}
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, &response, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, &response, nil), responseChan, postHookSpanFinalizer)
 			}
 		}()
 
@@ -630,175 +630,175 @@ func (provider *VLLMProvider) TranscriptionStream(ctx *schemas.RakshaContext, po
 }
 
 // ImageGeneration is not supported by the vLLM provider.
-func (provider *VLLMProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationRequest, provider.GetProviderKey())
 }
 
 // ImageGenerationStream is not supported by the vLLM provider.
-func (provider *VLLMProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *VLLMProvider) ImageGenerationStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageGenerationRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationStreamRequest, provider.GetProviderKey())
 }
 
 // ImageEdit is not supported by the vLLM provider.
-func (provider *VLLMProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditRequest, provider.GetProviderKey())
 }
 
 // ImageEditStream is not supported by the vLLM provider.
-func (provider *VLLMProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *VLLMProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditStreamRequest, provider.GetProviderKey())
 }
 
 // ImageVariation is not supported by the vLLM provider.
-func (provider *VLLMProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration is not supported by the vLLM provider.
-func (provider *VLLMProvider) VideoGeneration(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) VideoGeneration(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoGenerationRequest, provider.GetProviderKey())
 }
 
 // VideoRetrieve is not supported by the vLLM provider.
-func (provider *VLLMProvider) VideoRetrieve(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) VideoRetrieve(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRetrieveRequest, provider.GetProviderKey())
 }
 
 // VideoDownload is not supported by the vLLM provider.
-func (provider *VLLMProvider) VideoDownload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) VideoDownload(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDownloadRequest, provider.GetProviderKey())
 }
 
 // VideoDelete is not supported by the vLLM provider.
-func (provider *VLLMProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) VideoDelete(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by the vLLM provider.
-func (provider *VLLMProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) VideoList(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by the vLLM provider.
-func (provider *VLLMProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) VideoRemix(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // FileUpload is not supported by the vLLM provider.
-func (provider *VLLMProvider) FileUpload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) FileUpload(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileUploadRequest, provider.GetProviderKey())
 }
 
 // FileList is not supported by the vLLM provider.
-func (provider *VLLMProvider) FileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) FileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileListRequest, provider.GetProviderKey())
 }
 
 // FileRetrieve is not supported by the vLLM provider.
-func (provider *VLLMProvider) FileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) FileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileRetrieveRequest, provider.GetProviderKey())
 }
 
 // FileDelete is not supported by the vLLM provider.
-func (provider *VLLMProvider) FileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) FileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileDeleteRequest, provider.GetProviderKey())
 }
 
 // FileContent is not supported by the vLLM provider.
-func (provider *VLLMProvider) FileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) FileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileContentRequest, provider.GetProviderKey())
 }
 
 // BatchCreate is not supported by the vLLM provider.
-func (provider *VLLMProvider) BatchCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) BatchCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCreateRequest, provider.GetProviderKey())
 }
 
 // BatchList is not supported by the vLLM provider.
-func (provider *VLLMProvider) BatchList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) BatchList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchListRequest, provider.GetProviderKey())
 }
 
 // BatchRetrieve is not supported by the vLLM provider.
-func (provider *VLLMProvider) BatchRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) BatchRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchRetrieveRequest, provider.GetProviderKey())
 }
 
 // BatchCancel is not supported by the vLLM provider.
-func (provider *VLLMProvider) BatchCancel(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) BatchCancel(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCancelRequest, provider.GetProviderKey())
 }
 
 // BatchDelete is not supported by the vLLM provider.
-func (provider *VLLMProvider) BatchDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) BatchDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults is not supported by the vLLM provider.
-func (provider *VLLMProvider) BatchResults(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) BatchResults(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchResultsRequest, provider.GetProviderKey())
 }
 
 // CountTokens is not supported by the vLLM provider.
-func (provider *VLLMProvider) CountTokens(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) CountTokens(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CountTokensRequest, provider.GetProviderKey())
 }
 
 // Compaction is not supported by the vLLM provider.
-func (provider *VLLMProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the vLLM provider.
-func (provider *VLLMProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ContainerCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the vLLM provider.
-func (provider *VLLMProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ContainerList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the vLLM provider.
-func (provider *VLLMProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ContainerRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the vLLM provider.
-func (provider *VLLMProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ContainerDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the vLLM provider.
-func (provider *VLLMProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ContainerFileCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the vLLM provider.
-func (provider *VLLMProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ContainerFileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the vLLM provider.
-func (provider *VLLMProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ContainerFileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the vLLM provider.
-func (provider *VLLMProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ContainerFileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the vLLM provider.
-func (provider *VLLMProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) ContainerFileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 // Passthrough is not supported by the vLLM provider.
-func (provider *VLLMProvider) Passthrough(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+func (provider *VLLMProvider) Passthrough(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughRequest, provider.GetProviderKey())
 }
 
-func (provider *VLLMProvider) PassthroughStream(_ *schemas.RakshaContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *VLLMProvider) PassthroughStream(_ *schemas.GatewayContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughStreamRequest, provider.GetProviderKey())
 }

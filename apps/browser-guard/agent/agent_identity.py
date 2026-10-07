@@ -32,7 +32,7 @@ def get_or_create_agent_id() -> str:
     if os.name == "nt":
         try:
             import winreg
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Raksha\Guard", 0, winreg.KEY_READ) as k:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Gateway\Guard", 0, winreg.KEY_READ) as k:
                 val, _ = winreg.QueryValueEx(k, "AgentId")
                 if val and str(val).strip():
                     new_id = str(val).strip()
@@ -50,13 +50,13 @@ def get_or_create_agent_id() -> str:
         with open(path, "w", encoding="utf-8") as f:
             f.write(new_id)
     except Exception as e:
-        print(f"[Raksha Guard WARNING] Could not persist agent_id: {e}")
+        print(f"[Gateway Guard WARNING] Could not persist agent_id: {e}")
 
     # Persist in Windows Registry for future reinstalls
     if os.name == "nt":
         try:
             import winreg
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Raksha\Guard") as k:
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Gateway\Guard") as k:
                 winreg.SetValueEx(k, "AgentId", 0, winreg.REG_SZ, new_id)
         except Exception:
             pass

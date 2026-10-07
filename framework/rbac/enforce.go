@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/raksha/raksha/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore"
 )
 
 // PermissionSet maps resource -> operation -> allowed.

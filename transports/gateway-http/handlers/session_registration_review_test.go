@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
 
@@ -19,7 +19,7 @@ func TestRegistrationReviewToken_AcceptDenyAndGovernanceVisibility(t *testing.T)
 
 	regCtx := makeFastHTTPCtx("POST", "/api/session/register", map[string]string{
 		"username": "review_candidate",
-		"email":    "review.candidate@rakshatech.io",
+		"email":    "review.candidate@gatewaytech.io",
 		"password": "StrongPassword123!",
 	}, "192.168.1.40")
 	handler.register(regCtx)
@@ -52,7 +52,7 @@ func TestRegistrationReviewToken_AcceptDenyAndGovernanceVisibility(t *testing.T)
 	revCtx := &fasthttp.RequestCtx{}
 	revCtx.Request.Header.SetMethod("GET")
 	revCtx.Request.SetRequestURI("/api/session/users/review?token=" + url.QueryEscape(approveTok))
-	revCtx.Request.SetHost("raksha.example.com")
+	revCtx.Request.SetHost("gateway.example.com")
 	handler.reviewRegistrationByToken(revCtx)
 	if revCtx.Response.StatusCode() != fasthttp.StatusOK {
 		t.Fatalf("accept link: %d %s", revCtx.Response.StatusCode(), revCtx.Response.Body())

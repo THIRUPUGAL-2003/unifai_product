@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import {
 	Combobox,
 	ComboboxContent,
@@ -10,11 +11,12 @@ import {
 } from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getErrorMessage } from "@/lib/store";
 import { useGetVirtualKeyBillingBlocksQuery } from "@/lib/store/apis/governanceApi";
 import { useIsAuthEnabledQuery } from "@/lib/store/apis/sessionApi";
 import type { DBKey, VirtualKey } from "@/lib/types/governance";
 import { AlertTriangle } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export function ApiKeySelectorView({
 	providerKeys,
@@ -32,8 +34,20 @@ export function ApiKeySelectorView({
 	placeholder?: string;
 }) {
 	const [query, setQuery] = useState("");
-	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
-	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { pollingInterval: 5000 });
+	const POLL_MS = 5000;
+	const [authPollMs, setAuthPollMs] = useState(POLL_MS);
+	const [billingPollMs, setBillingPollMs] = useState(POLL_MS);
+	const { data: authStatus, error: authError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
+	const { data: billingBlocks, error: billingError, isError: billingFailed } = useGetVirtualKeyBillingBlocksQuery(undefined, {
+		pollingInterval: billingPollMs,
+	});
+
+	useEffect(() => {
+		setAuthPollMs(authError ? 0 : POLL_MS);
+	}, [authError]);
+	useEffect(() => {
+		setBillingPollMs(billingError ? 0 : POLL_MS);
+	}, [billingError]);
 	const blocks = billingBlocks?.blocks;
 
 	const allOptions = useMemo(() => {
@@ -84,6 +98,12 @@ export function ApiKeySelectorView({
 
 	return (
 		<div className="flex flex-col gap-2">
+			{billingFailed ? (
+				<QueryErrorBanner
+					testId="api-key-selector-billing-query-error"
+					message={getErrorMessage(billingError) || "Failed to load virtual key billing blocks."}
+				/>
+			) : null}
 			{hasAssignedKeys && (
 				<>
 					<Label className="text-muted-foreground text-xs font-medium uppercase">Virtual key / API Key</Label>

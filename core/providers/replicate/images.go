@@ -3,8 +3,8 @@ package replicate
 import (
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // modelInputImageFieldMap maps model identifiers to their input image field names.
@@ -27,22 +27,22 @@ var modelInputImageFieldMap = map[string]string{
 	"black-forest-labs/flux-krea-dev": "image",
 }
 
-// ToReplicateImageGenerationInput converts a Raksha image generation request to Replicate prediction input
-func ToReplicateImageGenerationInput(rakshaReq *schemas.RakshaImageGenerationRequest) *ReplicatePredictionRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil {
+// ToReplicateImageGenerationInput converts a Gateway image generation request to Replicate prediction input
+func ToReplicateImageGenerationInput(gatewayReq *schemas.GatewayImageGenerationRequest) *ReplicatePredictionRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil {
 		return nil
 	}
 
 	input := &ReplicatePredictionRequestInput{
-		Prompt: &rakshaReq.Input.Prompt,
+		Prompt: &gatewayReq.Input.Prompt,
 	}
 
 	// Map parameters if available
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
-		if rakshaReq.Params.N != nil {
-			input.NumberOfImages = rakshaReq.Params.N
+		if gatewayReq.Params.N != nil {
+			input.NumberOfImages = gatewayReq.Params.N
 		}
 
 		if params.AspectRatio != nil {
@@ -98,15 +98,15 @@ func ToReplicateImageGenerationInput(rakshaReq *schemas.RakshaImageGenerationReq
 	}
 
 	// Check if model is a version ID and set version field accordingly
-	if isVersionID(rakshaReq.Model) {
-		request.Version = &rakshaReq.Model
+	if isVersionID(gatewayReq.Model) {
+		request.Version = &gatewayReq.Model
 	}
 
-	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
-		if webhook, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["webhook"]); ok {
+	if gatewayReq.Params != nil && gatewayReq.Params.ExtraParams != nil {
+		if webhook, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["webhook"]); ok {
 			request.Webhook = webhook
 		}
-		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["webhook_events_filter"]); ok {
+		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(gatewayReq.Params.ExtraParams["webhook_events_filter"]); ok {
 			request.WebhookEventsFilter = webhookEventsFilter
 		}
 	}
@@ -114,20 +114,20 @@ func ToReplicateImageGenerationInput(rakshaReq *schemas.RakshaImageGenerationReq
 	return request
 }
 
-// ToRakshaImageGenerationResponse converts a Replicate prediction response to Raksha format
-func ToRakshaImageGenerationResponse(
+// ToGatewayImageGenerationResponse converts a Replicate prediction response to Gateway format
+func ToGatewayImageGenerationResponse(
 	prediction *ReplicatePredictionResponse,
-) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if prediction == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: "prediction response is nil",
 			},
 		}
 	}
 
-	response := &schemas.RakshaImageGenerationResponse{
+	response := &schemas.GatewayImageGenerationResponse{
 		ID:      prediction.ID,
 		Created: ParseReplicateTimestamp(prediction.CreatedAt),
 		Model:   prediction.Model,
@@ -187,20 +187,20 @@ func getInputImageFieldName(model string) string {
 	return "input_images"
 }
 
-// ToReplicateImageEditInput converts a Raksha image edit request to Replicate prediction input
-func ToReplicateImageEditInput(rakshaReq *schemas.RakshaImageEditRequest) *ReplicatePredictionRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil {
+// ToReplicateImageEditInput converts a Gateway image edit request to Replicate prediction input
+func ToReplicateImageEditInput(gatewayReq *schemas.GatewayImageEditRequest) *ReplicatePredictionRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil {
 		return nil
 	}
 
 	input := &ReplicatePredictionRequestInput{
-		Prompt: &rakshaReq.Input.Prompt,
+		Prompt: &gatewayReq.Input.Prompt,
 	}
 
 	// Map image URLs - Replicate requires image URLs, not file bytes
-	if len(rakshaReq.Input.Images) > 0 {
-		images := make([]string, 0, len(rakshaReq.Input.Images))
-		for _, img := range rakshaReq.Input.Images {
+	if len(gatewayReq.Input.Images) > 0 {
+		images := make([]string, 0, len(gatewayReq.Input.Images))
+		for _, img := range gatewayReq.Input.Images {
 			if len(img.Image) > 0 {
 				images = append(images, providerUtils.FileBytesToBase64DataURL(img.Image))
 			}
@@ -208,7 +208,7 @@ func ToReplicateImageEditInput(rakshaReq *schemas.RakshaImageEditRequest) *Repli
 
 		if len(images) > 0 {
 			// Determine the appropriate field based on model
-			fieldName := getInputImageFieldName(rakshaReq.Model)
+			fieldName := getInputImageFieldName(gatewayReq.Model)
 
 			switch fieldName {
 			case "image_prompt":
@@ -231,8 +231,8 @@ func ToReplicateImageEditInput(rakshaReq *schemas.RakshaImageEditRequest) *Repli
 	}
 
 	// Map parameters if available
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		if params.N != nil {
 			input.NumberOfImages = params.N
@@ -284,8 +284,8 @@ func ToReplicateImageEditInput(rakshaReq *schemas.RakshaImageEditRequest) *Repli
 	}
 
 	// Check if model is a version ID and set version field accordingly
-	if isVersionID(rakshaReq.Model) {
-		request.Version = &rakshaReq.Model
+	if isVersionID(gatewayReq.Model) {
+		request.Version = &gatewayReq.Model
 	}
 
 	return request

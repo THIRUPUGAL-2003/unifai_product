@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunMultipleImagesTest executes the multiple images test scenario
-func RunMultipleImagesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunMultipleImagesTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.MultipleImages {
 		t.Logf("Multiple images not supported for provider %s", testConfig.Provider)
 		return
@@ -46,7 +46,7 @@ func RunMultipleImagesTest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 					ContentBlocks: []schemas.ChatContentBlock{
 						{
 							Type: schemas.ChatContentBlockTypeText,
-							Text: raksha.Ptr(prompt),
+							Text: gateway.Ptr(prompt),
 						},
 						{
 							Type: schemas.ChatContentBlockTypeImage,
@@ -65,12 +65,12 @@ func RunMultipleImagesTest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 			},
 		}
 
-		request := &schemas.RakshaChatRequest{
+		request := &schemas.GatewayChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.VisionModel,
 			Input:    messages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: raksha.Ptr(300),
+				MaxCompletionTokens: gateway.Ptr(300),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -116,14 +116,14 @@ func RunMultipleImagesTest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 			"single image", "unable to view the second",
 		}...) // Failure to process multiple images indicators
 
-		response, rakshaError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "MultipleImages", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		response, gatewayError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "MultipleImages", func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionRequest(bfCtx, request)
 		})
 
 		// Validation now happens inside WithTestRetry - no need to check again
-		if rakshaError != nil {
-			t.Fatalf("❌ Multiple images request failed after retries: %v", GetErrorMessage(rakshaError))
+		if gatewayError != nil {
+			t.Fatalf("❌ Multiple images request failed after retries: %v", GetErrorMessage(gatewayError))
 		}
 
 		content := GetChatContent(response)

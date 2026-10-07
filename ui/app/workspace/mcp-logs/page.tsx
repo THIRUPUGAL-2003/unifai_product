@@ -127,16 +127,21 @@ export default function MCPLogsPage() {
 		[urlState.limit, urlState.offset, urlState.sort_by, urlState.order],
 	);
 
+	const [logsPollMs, setLogsPollMs] = useState(0);
+	const [statsPollMs, setStatsPollMs] = useState(0);
+	const [histogramPollMs, setHistogramPollMs] = useState(0);
+
 	const {
 		data: logsData,
 		isLoading: logsIsLoading,
 		isFetching: logsIsFetching,
 		error: logsError,
+		isError: logsIsError,
 		refetch: refetchLogs,
 	} = useGetMCPLogsQuery(
 		{ filters, pagination },
 		{
-			pollingInterval: showEmptyState || polling ? 10000 : 0,
+			pollingInterval: logsPollMs,
 			skipPollingIfUnfocused: true,
 		},
 	);
@@ -144,11 +149,13 @@ export default function MCPLogsPage() {
 	const {
 		data: statsData,
 		isFetching: statsIsFetching,
+		error: statsError,
+		isError: statsIsError,
 		refetch: refetchStats,
 	} = useGetMCPLogsStatsQuery(
 		{ filters },
 		{
-			pollingInterval: polling ? 10000 : 0,
+			pollingInterval: statsPollMs,
 			skipPollingIfUnfocused: true,
 		},
 	);
@@ -156,14 +163,28 @@ export default function MCPLogsPage() {
 	const {
 		data: histogram,
 		isLoading: histogramIsLoading,
+		error: histogramError,
+		isError: histogramIsError,
 		refetch: refetchHistogram,
 	} = useGetMCPHistogramQuery(
 		{ filters },
 		{
-			pollingInterval: polling ? 10000 : 0,
+			pollingInterval: histogramPollMs,
 			skipPollingIfUnfocused: true,
 		},
 	);
+
+	useEffect(() => {
+		setLogsPollMs(!logsIsError && (showEmptyState || polling) ? 10000 : 0);
+	}, [logsIsError, showEmptyState, polling]);
+
+	useEffect(() => {
+		setStatsPollMs(!statsIsError && polling ? 10000 : 0);
+	}, [statsIsError, polling]);
+
+	useEffect(() => {
+		setHistogramPollMs(!histogramIsError && polling ? 10000 : 0);
+	}, [histogramIsError, polling]);
 
 	const refreshAllData = useCallback(() => {
 		refetchLogs();
@@ -382,7 +403,7 @@ export default function MCPLogsPage() {
 	} = useColumnConfig({
 		columnIds,
 		paramName: "mcp_cols",
-		storageKey: "raksha.mcp_logs.cols",
+		storageKey: "gateway.mcp_logs.cols",
 		defaultHidden: ["virtual_key", "user", "team", "customer", "business_unit"],
 		fixedColumns: hasDeleteAccess ? { right: ["actions"] } : undefined,
 	});
@@ -452,7 +473,15 @@ export default function MCPLogsPage() {
 		[selectedLogId, selectedLogIndex, logs, pagination, totalItems, filters, setUrlState, triggerGetLogs],
 	);
 
-	const displayError = error ?? (logsError ? getErrorMessage(logsError as Parameters<typeof getErrorMessage>[0]) : null);
+	const displayError =
+		error ??
+		(logsError
+			? getErrorMessage(logsError as Parameters<typeof getErrorMessage>[0])
+			: statsIsError
+				? `Stats failed: ${getErrorMessage(statsError)}`
+				: histogramIsError
+					? `Chart failed: ${getErrorMessage(histogramError)}`
+					: null);
 
 	return (
 		<div className="dark:bg-card bg-white">

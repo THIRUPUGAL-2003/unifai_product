@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 type dummyLogger struct{}
@@ -66,9 +66,9 @@ func TestVirtualKeyBinding(t *testing.T) {
 	secretText := "This contains TOP_SECRET content"
 	cleanText := "This is safe text"
 
-	makeReq := func(text string) *schemas.RakshaRequest {
-		return &schemas.RakshaRequest{
-			ChatRequest: &schemas.RakshaChatRequest{
+	makeReq := func(text string) *schemas.GatewayRequest {
+		return &schemas.GatewayRequest{
+			ChatRequest: &schemas.GatewayChatRequest{
 				Model: "gpt-4",
 				Input: []schemas.ChatMessage{
 					{
@@ -88,8 +88,8 @@ func TestVirtualKeyBinding(t *testing.T) {
 	}
 
 	// 1. Request with matching virtual key should be evaluated and blocked on violation
-	ctxMatching := &schemas.RakshaContext{}
-	ctxMatching.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyID, "vk-scoped-123")
+	ctxMatching := &schemas.GatewayContext{}
+	ctxMatching.SetValue(schemas.GatewayContextKeyGovernanceVirtualKeyID, "vk-scoped-123")
 	_, shortCircuit, err := gp.PreLLMHook(ctxMatching, makeReq(secretText))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -114,23 +114,23 @@ func TestVirtualKeyBinding(t *testing.T) {
 	pScopedOnly, _ := Init(context.Background(), cfgScopedOnly, &dummyLogger{})
 	gpScopedOnly := pScopedOnly.(*GuardrailsPlugin)
 
-	ctxOtherVK := &schemas.RakshaContext{}
-	ctxOtherVK.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyID, "vk-other-999")
+	ctxOtherVK := &schemas.GatewayContext{}
+	ctxOtherVK.SetValue(schemas.GatewayContextKeyGovernanceVirtualKeyID, "vk-other-999")
 	_, scOther, _ := gpScopedOnly.PreLLMHook(ctxOtherVK, makeReq(secretText))
 	if scOther != nil {
 		t.Fatal("expected request with different VK to skip scoped rule, but it was blocked")
 	}
 
 	// 4. Request with no VK should also skip scoped rule
-	ctxNoVK := &schemas.RakshaContext{}
+	ctxNoVK := &schemas.GatewayContext{}
 	_, scNoVK, _ := gpScopedOnly.PreLLMHook(ctxNoVK, makeReq(secretText))
 	if scNoVK != nil {
 		t.Fatal("expected request without VK to skip scoped rule, but it was blocked")
 	}
 
 	// 5. Raw VK matching
-	ctxRawVK := &schemas.RakshaContext{}
-	ctxRawVK.SetValue(schemas.RakshaContextKeyVirtualKey, "vk-scoped-123")
+	ctxRawVK := &schemas.GatewayContext{}
+	ctxRawVK.SetValue(schemas.GatewayContextKeyVirtualKey, "vk-scoped-123")
 	_, scRaw, _ := gpScopedOnly.PreLLMHook(ctxRawVK, makeReq(secretText))
 	if scRaw == nil {
 		t.Fatal("expected raw VK header match to trigger rule and block violation")

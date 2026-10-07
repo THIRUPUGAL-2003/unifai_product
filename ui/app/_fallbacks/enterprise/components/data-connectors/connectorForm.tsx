@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,7 @@ interface ConnectorFormProps {
 }
 
 export function ConnectorForm({ name, title, description, fields, onDelete, isDeleting }: ConnectorFormProps) {
-	const { data } = useGetConnectorQuery(name);
+	const { data, isLoading, isError, error, refetch } = useGetConnectorQuery(name);
 	const [updateConnector, { isLoading: saving }] = useUpdateConnectorMutation();
 	const [testConnector, { isLoading: testing }] = useTestConnectorMutation();
 	const [enabled, setEnabled] = useState(false);
@@ -104,6 +105,18 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 					Credentials are stored in the workspace DB. When enabled, inference traces are exported live on each request.
 				</p>
 			</div>
+			{isLoading ? <p className="text-muted-foreground text-sm">Loading connector…</p> : null}
+			{isError ? (
+				<div className="flex flex-col gap-2">
+					<QueryErrorBanner
+						testId={`${name}-connector-query-error`}
+						message={getErrorMessage(error) || `Failed to load ${title} connector.`}
+					/>
+					<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetch()}>
+						Retry
+					</Button>
+				</div>
+			) : null}
 			<div className="flex items-center justify-between rounded-lg border p-3">
 				<Label>Enable connector</Label>
 				<Switch checked={enabled} disabled={saving} onCheckedChange={(checked) => void handleToggle(checked)} />

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/framework/circuitbreaker"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/circuitbreaker"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
 

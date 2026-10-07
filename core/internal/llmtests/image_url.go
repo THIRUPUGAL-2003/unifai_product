@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunImageURLTest executes the image URL test scenario using dual API testing framework
-func RunImageURLTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageURLTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ImageURL {
 		t.Logf("Image URL not supported for provider %s", testConfig.Provider)
 		return
@@ -56,13 +56,13 @@ func RunImageURLTest(t *testing.T, client *raksha.Raksha, ctx context.Context, t
 		expectations.ShouldNotContainWords = append(expectations.ShouldNotContainWords, []string{"cannot see", "unable to view", "no image"}...) // Vision failure indicators
 
 		// Create operations for both Chat Completions and Responses API
-		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.VisionModel,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(200),
+					MaxCompletionTokens: gateway.Ptr(200),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -70,13 +70,13 @@ func RunImageURLTest(t *testing.T, client *raksha.Raksha, ctx context.Context, t
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.VisionModel,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: raksha.Ptr(200),
+					MaxOutputTokens: gateway.Ptr(200),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -109,12 +109,12 @@ func RunImageURLTest(t *testing.T, client *raksha.Raksha, ctx context.Context, t
 		}
 
 		// Additional vision-specific validation using universal content extraction
-		validateChatImageProcessing := func(response *schemas.RakshaChatResponse, apiName string) {
+		validateChatImageProcessing := func(response *schemas.GatewayChatResponse, apiName string) {
 			content := GetChatContent(response)
 			validateImageProcessingContent(t, content, apiName)
 		}
 
-		validateResponsesImageProcessing := func(response *schemas.RakshaResponsesResponse, apiName string) {
+		validateResponsesImageProcessing := func(response *schemas.GatewayResponsesResponse, apiName string) {
 			content := GetResponsesContent(response)
 			validateImageProcessingContent(t, content, apiName)
 		}

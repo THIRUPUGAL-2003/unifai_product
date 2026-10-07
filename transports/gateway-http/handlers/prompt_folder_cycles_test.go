@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/configstore/tables"
 )
 
 func TestFolderCycleBreakPoints(t *testing.T) {

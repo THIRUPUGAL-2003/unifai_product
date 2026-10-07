@@ -8,11 +8,11 @@ import (
 	"maps"
 
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/plugins"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/plugins"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -93,7 +93,7 @@ func (h *PluginsHandler) expandPluginConfigForAPI(name string, config map[string
 }
 
 // RegisterRoutes registers the routes for the PluginsHandler
-func (h *PluginsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *PluginsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/plugins", lib.ChainMiddlewares(h.getPlugins, middlewares...))
 	r.GET("/api/plugins/builtins", lib.ChainMiddlewares(h.getBuiltinPlugins, middlewares...))
 	r.GET("/api/plugins/loaded", lib.ChainMiddlewares(h.getLoadedPlugins, middlewares...))

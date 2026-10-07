@@ -1,13 +1,13 @@
-module github.com/raksha/raksha/plugins/semanticcache
+module github.com/gateway/gateway/plugins/semanticcache
 
 go 1.26.4
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/google/uuid v1.6.0
-	github.com/raksha/raksha/core v1.6.2
-	github.com/raksha/raksha/framework v1.4.2
-	github.com/raksha/raksha/plugins/mocker v1.5.19
+	github.com/gateway/gateway/core v1.6.2
+	github.com/gateway/gateway/framework v1.4.2
+	github.com/gateway/gateway/plugins/mocker v1.5.19
 )
 
 require (

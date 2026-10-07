@@ -1,14 +1,14 @@
 package lib
 
 import (
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
 // ChainMiddlewares chains multiple middlewares together
 // Middlewares are applied in order: the first middleware wraps the second, etc.
 // This allows earlier middlewares to short-circuit by not calling next(ctx)
-func ChainMiddlewares(handler fasthttp.RequestHandler, middlewares ...schemas.RakshaHTTPMiddleware) fasthttp.RequestHandler {
+func ChainMiddlewares(handler fasthttp.RequestHandler, middlewares ...schemas.GatewayHTTPMiddleware) fasthttp.RequestHandler {
 	// If no middlewares, return the original handler
 	if len(middlewares) == 0 {
 		return handler

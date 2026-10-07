@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the Raksha system.
+// Package schemas defines the core schemas and types used by the Gateway system.
 package schemas
 
 // FilePurpose represents the purpose of an uploaded file.
@@ -51,8 +51,8 @@ type FileObject struct {
 	ExpiresAt     *int64      `json:"expires_at,omitempty"`
 }
 
-// RakshaFileUploadRequest represents a request to upload a file.
-type RakshaFileUploadRequest struct {
+// GatewayFileUploadRequest represents a request to upload a file.
+type GatewayFileUploadRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -98,8 +98,8 @@ type FileStorageConfig struct {
 	GCS *GCSStorageConfig `json:"gcs,omitempty"`
 }
 
-// RakshaFileUploadResponse represents the response from uploading a file.
-type RakshaFileUploadResponse struct {
+// GatewayFileUploadResponse represents the response from uploading a file.
+type GatewayFileUploadResponse struct {
 	ID            string      `json:"id"`
 	Object        string      `json:"object,omitempty"` // "file"
 	Bytes         int64       `json:"bytes"`
@@ -115,14 +115,14 @@ type RakshaFileUploadResponse struct {
 	StorageURI     string             `json:"storage_uri,omitempty"` // S3/GCS URI if applicable
 
 	// GCS resumable upload session URL (Vertex only, set when File bytes are not provided).
-	// Client PUTs file bytes directly to this URL; Raksha stays out of the data path.
+	// Client PUTs file bytes directly to this URL; Gateway stays out of the data path.
 	UploadURL *string `json:"upload_url,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaFileListRequest represents a request to list files.
-type RakshaFileListRequest struct {
+// GatewayFileListRequest represents a request to list files.
+type GatewayFileListRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -144,22 +144,22 @@ type RakshaFileListRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *RakshaFileListRequest) GetRawRequestBody() []byte {
+func (request *GatewayFileListRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// RakshaFileListResponse represents the response from listing files.
-type RakshaFileListResponse struct {
+// GatewayFileListResponse represents the response from listing files.
+type GatewayFileListResponse struct {
 	Object  string       `json:"object,omitempty"` // "list"
 	Data    []FileObject `json:"data"`
 	HasMore bool         `json:"has_more,omitempty"`
 	After   *string      `json:"after,omitempty"` // Continuation token for pagination
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaFileRetrieveRequest represents a request to retrieve file metadata.
-type RakshaFileRetrieveRequest struct {
+// GatewayFileRetrieveRequest represents a request to retrieve file metadata.
+type GatewayFileRetrieveRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -175,12 +175,12 @@ type RakshaFileRetrieveRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *RakshaFileRetrieveRequest) GetRawRequestBody() []byte {
+func (request *GatewayFileRetrieveRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// RakshaFileRetrieveResponse represents the response from retrieving file metadata.
-type RakshaFileRetrieveResponse struct {
+// GatewayFileRetrieveResponse represents the response from retrieving file metadata.
+type GatewayFileRetrieveResponse struct {
 	ID            string      `json:"id"`
 	Object        string      `json:"object,omitempty"` // "file"
 	Bytes         int64       `json:"bytes"`
@@ -196,11 +196,11 @@ type RakshaFileRetrieveResponse struct {
 	StorageBackend FileStorageBackend `json:"storage_backend,omitempty"`
 	StorageURI     string             `json:"storage_uri,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaFileDeleteRequest represents a request to delete a file.
-type RakshaFileDeleteRequest struct {
+// GatewayFileDeleteRequest represents a request to delete a file.
+type GatewayFileDeleteRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	FileID   string        `json:"file_id"` // ID of the file to delete
@@ -215,21 +215,21 @@ type RakshaFileDeleteRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *RakshaFileDeleteRequest) GetRawRequestBody() []byte {
+func (request *GatewayFileDeleteRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// RakshaFileDeleteResponse represents the response from deleting a file.
-type RakshaFileDeleteResponse struct {
+// GatewayFileDeleteResponse represents the response from deleting a file.
+type GatewayFileDeleteResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object,omitempty"` // "file"
 	Deleted bool   `json:"deleted"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaFileContentRequest represents a request to download file content.
-type RakshaFileContentRequest struct {
+// GatewayFileContentRequest represents a request to download file content.
+type GatewayFileContentRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	FileID   string        `json:"file_id"` // ID of the file to download
@@ -244,15 +244,15 @@ type RakshaFileContentRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *RakshaFileContentRequest) GetRawRequestBody() []byte {
+func (request *GatewayFileContentRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// RakshaFileContentResponse represents the response from downloading file content.
-type RakshaFileContentResponse struct {
+// GatewayFileContentResponse represents the response from downloading file content.
+type GatewayFileContentResponse struct {
 	FileID      string `json:"file_id"`
 	Content     []byte `json:"-"`                      // Raw file content (not serialized)
 	ContentType string `json:"content_type,omitempty"` // MIME type
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }

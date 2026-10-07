@@ -89,14 +89,14 @@ func SaveAndValidateAudio(t *testing.T, audioData []byte) (string, error) {
 		return "", fmt.Errorf("detected format %q is not in allowed formats: %v", detectedFormat, allowedList)
 	}
 
-	// Create temp file with unique name in raksha subdirectory
+	// Create temp file with unique name in gateway subdirectory
 	tempDir := os.TempDir()
-	rakshaDir := filepath.Join(tempDir, "raksha")
-	fileName := fmt.Sprintf("raksha_test_speech_%s.%s", uuid.New().String(), detectedFormat)
-	filePath := filepath.Join(rakshaDir, fileName)
+	gatewayDir := filepath.Join(tempDir, "gateway")
+	fileName := fmt.Sprintf("gateway_test_speech_%s.%s", uuid.New().String(), detectedFormat)
+	filePath := filepath.Join(gatewayDir, fileName)
 
-	// Ensure raksha subdirectory exists
-	if err := os.MkdirAll(rakshaDir, 0755); err != nil {
+	// Ensure gateway subdirectory exists
+	if err := os.MkdirAll(gatewayDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
 

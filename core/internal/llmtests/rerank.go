@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // BasicRerankExpectations validates common rerank invariants for provider tests.
-func BasicRerankExpectations(t *testing.T, rerankResponse *schemas.RakshaRerankResponse, documents []schemas.RerankDocument) {
+func BasicRerankExpectations(t *testing.T, rerankResponse *schemas.GatewayRerankResponse, documents []schemas.RerankDocument) {
 	t.Helper()
 
 	if rerankResponse == nil {
@@ -57,7 +57,7 @@ func BasicRerankExpectations(t *testing.T, rerankResponse *schemas.RakshaRerankR
 }
 
 // RunRerankTest executes the rerank test scenario
-func RunRerankTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunRerankTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Rerank {
 		t.Logf("Rerank not supported for provider %s", testConfig.Provider)
 		return
@@ -81,22 +81,22 @@ func RunRerankTest(t *testing.T, client *raksha.Raksha, ctx context.Context, tes
 			{Text: "France is a country in Western Europe."},
 		}
 
-		request := &schemas.RakshaRerankRequest{
+		request := &schemas.GatewayRerankRequest{
 			Provider:  testConfig.Provider,
 			Model:     testConfig.RerankModel,
 			Query:     query,
 			Documents: documents,
 			Params: &schemas.RerankParameters{
-				ReturnDocuments: raksha.Ptr(true),
+				ReturnDocuments: gateway.Ptr(true),
 			},
 			Fallbacks: testConfig.RerankFallbacks,
 		}
 
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-		rerankResponse, rakshaErr := client.RerankRequest(bfCtx, request)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+		rerankResponse, gatewayErr := client.RerankRequest(bfCtx, request)
 
-		if rakshaErr != nil {
-			t.Fatalf("❌ Rerank request failed: %v", GetErrorMessage(rakshaErr))
+		if gatewayErr != nil {
+			t.Fatalf("❌ Rerank request failed: %v", GetErrorMessage(gatewayErr))
 		}
 
 		if rerankResponse == nil {

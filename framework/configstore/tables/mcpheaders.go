@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/raksha/raksha/framework/encrypt"
+	"github.com/gateway/gateway/framework/encrypt"
 	"gorm.io/gorm"
 )
 
@@ -93,7 +93,7 @@ func (TableMCPPerUserHeaderCredential) TableName() string {
 
 // BeforeSave encrypts HeadersJSON when encryption is enabled. The JSON
 // serialization is the caller's responsibility (see SetHeaders). When
-// encryption is not configured (no RAKSHA_ENCRYPTION_KEY), the field
+// encryption is not configured (no GATEWAY_ENCRYPTION_KEY), the field
 // is stored as plaintext and EncryptionStatus stays "plain_text" — same
 // convention as TableOauthUserToken.
 func (c *TableMCPPerUserHeaderCredential) BeforeSave(tx *gorm.DB) error {

@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // getRequestID extracts a unique identifier for the request to maintain state
-func (p *JsonParserPlugin) getRequestID(ctx *schemas.RakshaContext, result *schemas.RakshaResponse) string {
+func (p *JsonParserPlugin) getRequestID(ctx *schemas.GatewayContext, result *schemas.GatewayResponse) string {
 
 	// Try to get from chat result
 	if result != nil && result.ChatResponse != nil && result.ChatResponse.ID != "" {
@@ -25,7 +25,7 @@ func (p *JsonParserPlugin) getRequestID(ctx *schemas.RakshaContext, result *sche
 
 	// Try to get from context if not available in result
 	if ctx != nil {
-		if requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); ok && requestID != "" {
+		if requestID, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string); ok && requestID != "" {
 			return requestID
 		}
 	}
@@ -34,7 +34,7 @@ func (p *JsonParserPlugin) getRequestID(ctx *schemas.RakshaContext, result *sche
 }
 
 // shouldRun determines if the plugin should process the request based on usage type
-func (p *JsonParserPlugin) shouldRun(ctx *schemas.RakshaContext, requestType schemas.RequestType) bool {
+func (p *JsonParserPlugin) shouldRun(ctx *schemas.GatewayContext, requestType schemas.RequestType) bool {
 	// Run only for streaming requests
 	if requestType != schemas.ChatCompletionStreamRequest && requestType != schemas.ResponsesStreamRequest {
 		return false
@@ -216,18 +216,18 @@ func (p *JsonParserPlugin) isValidJSON(s string) bool {
 
 // DEEP COPY METHODS
 
-// deepCopyRakshaResponse creates a deep copy of RakshaResponse to avoid modifying the original
-func (p *JsonParserPlugin) deepCopyRakshaResponse(original *schemas.RakshaResponse) *schemas.RakshaResponse {
+// deepCopyGatewayResponse creates a deep copy of GatewayResponse to avoid modifying the original
+func (p *JsonParserPlugin) deepCopyGatewayResponse(original *schemas.GatewayResponse) *schemas.GatewayResponse {
 	if original == nil {
 		return nil
 	}
 
-	// Create a new RakshaResponse
-	result := &schemas.RakshaResponse{}
+	// Create a new GatewayResponse
+	result := &schemas.GatewayResponse{}
 
 	// Copy ChatResponse if it exists (this is what we're interested in for the JSON parser)
 	if original.ChatResponse != nil {
-		result.ChatResponse = p.deepCopyRakshaChatResponse(original.ChatResponse)
+		result.ChatResponse = p.deepCopyGatewayChatResponse(original.ChatResponse)
 	}
 
 	// Deep copy ResponsesStreamResponse since we modify its Delta field
@@ -247,12 +247,12 @@ func (p *JsonParserPlugin) deepCopyRakshaResponse(original *schemas.RakshaRespon
 	return result
 }
 
-// deepCopyResponsesStreamResponse returns a shallow copy of RakshaResponsesStreamResponse.
+// deepCopyResponsesStreamResponse returns a shallow copy of GatewayResponsesStreamResponse.
 // Delta is the only field this plugin reassigns, and it is a top-level pointer slot, so a
 // struct value copy is sufficient — writing result.Delta = &x does not affect original.Delta.
 // Pointer fields such as Response, Item, and Part share the same underlying data as the
 // original; do not mutate them through this copy.
-func (p *JsonParserPlugin) deepCopyResponsesStreamResponse(original *schemas.RakshaResponsesStreamResponse) *schemas.RakshaResponsesStreamResponse {
+func (p *JsonParserPlugin) deepCopyResponsesStreamResponse(original *schemas.GatewayResponsesStreamResponse) *schemas.GatewayResponsesStreamResponse {
 	if original == nil {
 		return nil
 	}
@@ -260,13 +260,13 @@ func (p *JsonParserPlugin) deepCopyResponsesStreamResponse(original *schemas.Rak
 	return &result
 }
 
-// deepCopyRakshaChatResponse creates a deep copy of RakshaChatResponse
-func (p *JsonParserPlugin) deepCopyRakshaChatResponse(original *schemas.RakshaChatResponse) *schemas.RakshaChatResponse {
+// deepCopyGatewayChatResponse creates a deep copy of GatewayChatResponse
+func (p *JsonParserPlugin) deepCopyGatewayChatResponse(original *schemas.GatewayChatResponse) *schemas.GatewayChatResponse {
 	if original == nil {
 		return nil
 	}
 
-	result := &schemas.RakshaChatResponse{
+	result := &schemas.GatewayChatResponse{
 		ID:                original.ID,
 		Created:           original.Created,
 		Model:             original.Model,
@@ -279,18 +279,18 @@ func (p *JsonParserPlugin) deepCopyRakshaChatResponse(original *schemas.RakshaCh
 
 	// Deep copy Choices slice
 	if original.Choices != nil {
-		result.Choices = make([]schemas.RakshaResponseChoice, len(original.Choices))
+		result.Choices = make([]schemas.GatewayResponseChoice, len(original.Choices))
 		for i, choice := range original.Choices {
-			result.Choices[i] = p.deepCopyRakshaResponseChoice(choice)
+			result.Choices[i] = p.deepCopyGatewayResponseChoice(choice)
 		}
 	}
 
 	return result
 }
 
-// deepCopyRakshaResponseChoice creates a deep copy of RakshaResponseChoice
-func (p *JsonParserPlugin) deepCopyRakshaResponseChoice(original schemas.RakshaResponseChoice) schemas.RakshaResponseChoice {
-	result := schemas.RakshaResponseChoice{
+// deepCopyGatewayResponseChoice creates a deep copy of GatewayResponseChoice
+func (p *JsonParserPlugin) deepCopyGatewayResponseChoice(original schemas.GatewayResponseChoice) schemas.GatewayResponseChoice {
+	result := schemas.GatewayResponseChoice{
 		Index:        original.Index,
 		FinishReason: original.FinishReason,
 		LogProbs:     original.LogProbs,

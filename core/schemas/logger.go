@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the Raksha system.
+// Package schemas defines the core schemas and types used by the Gateway system.
 package schemas
 
 // LogLevel represents the severity level of a log message.
@@ -22,7 +22,7 @@ const (
 	LoggerOutputTypePretty LoggerOutputType = "pretty"
 )
 
-// Logger defines the interface for logging operations in the Raksha system.
+// Logger defines the interface for logging operations in the Gateway system.
 // Implementations of this interface should provide methods for logging messages
 // at different severity levels.
 type Logger interface {

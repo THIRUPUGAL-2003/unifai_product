@@ -7,7 +7,7 @@ import json
 import threading
 
 import agent_state
-from agent_config import AGENT_VERSION, PAC_HTTP_HOST, PAC_HTTP_PORT, RAKSHA_BACKEND_URL
+from agent_config import AGENT_VERSION, PAC_HTTP_HOST, PAC_HTTP_PORT, GATEWAY_BACKEND_URL
 from agent_pac_content import local_pac_path
 
 
@@ -42,20 +42,20 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             report = agent_state._LAST_HEALTH if isinstance(agent_state._LAST_HEALTH, dict) else {}
             st = html_escape(str(report.get("status") or "starting"))
             ver = html_escape(AGENT_VERSION)
-            backend = html_escape(RAKSHA_BACKEND_URL)
+            backend = html_escape(GATEWAY_BACKEND_URL)
             checks = report.get("checks") if isinstance(report.get("checks"), dict) else {}
             rows = "".join(
                 f"<tr><td>{html_escape(k)}</td><td>{'OK' if v else 'FAIL'}</td></tr>" for k, v in checks.items()
             )
             details = report.get("details") if isinstance(report.get("details"), list) else []
             det = "<br/>".join(html_escape(str(d)) for d in details) or "—"
-            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Raksha Guard</title>
+            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Gateway Guard</title>
 <style>body{{font-family:Segoe UI,sans-serif;background:#0b1220;color:#e2e8f0;padding:24px}}
 .card{{background:#111827;border:1px solid #334155;border-radius:12px;padding:20px;max-width:720px}}
 h1{{margin:0 0 8px;font-size:20px}} .ok{{color:#34d399}} .bad{{color:#f87171}} .deg{{color:#fbbf24}}
 table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-bottom:1px solid #334155;padding:8px;text-align:left;font-size:13px}}
 </style></head><body><div class="card">
-<h1>Raksha Guard {ver}</h1>
+<h1>Gateway Guard {ver}</h1>
 <p>Status: <strong class="{'ok' if st=='ok' else 'deg' if st=='degraded' else 'bad'}">{st}</strong></p>
 <p>PAC mode: <code>{html_escape(str(report.get("pac_mode") or "unknown"))}</code> (strict_proxy = intercepts; fail_open_direct / bypass_chain = Prompt Logs stay 0)</p>
 <p>Backend: <code>{backend}</code></p>
@@ -103,9 +103,9 @@ def start_local_pac_http_server() -> str:
             thread = threading.Thread(target=httpd.serve_forever, daemon=True)
             thread.start()
             agent_state._PAC_HTTP_URL = f"http://{PAC_HTTP_HOST}:{port}/proxy.pac"
-            print(f"[Raksha Guard] Local PAC HTTP server: {agent_state._PAC_HTTP_URL}")
+            print(f"[Gateway Guard] Local PAC HTTP server: {agent_state._PAC_HTTP_URL}")
             return agent_state._PAC_HTTP_URL
         except Exception as e:
             last_err = e
-    print(f"[Raksha Guard ERROR] Could not bind local PAC HTTP server: {last_err}")
+    print(f"[Gateway Guard ERROR] Could not bind local PAC HTTP server: {last_err}")
     return agent_state._PAC_HTTP_URL

@@ -10,10 +10,12 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
 import { Badge } from "@/components/ui/badge";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Button } from "@/components/ui/button";
 import { Fragment } from "react";
 import { DOCS } from "@/lib/constants/docs";
 
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { SheetNavigationButtons } from "@/components/sheetNavigationButtons";
 import { CodeEditor } from "@/components/ui/codeEditor";
 import { SecretVarInput } from "@/components/ui/secretVarInput";
@@ -96,8 +98,8 @@ export default function MCPClientSheet({
 
 	const [pendingNavDirection, setPendingNavDirection] = useState<"prev" | "next" | null>(null);
 
-	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const globalToolSyncInterval = rakshaConfig?.client_config?.mcp_tool_sync_interval ?? 10;
+	const { data: gatewayConfig, isError: coreConfigFailed, error: coreConfigError } = useGetCoreConfigQuery({ fromDB: true });
+	const globalToolSyncInterval = gatewayConfig?.client_config?.mcp_tool_sync_interval ?? 10;
 	const { toast } = useToast();
 	const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
 
@@ -105,7 +107,11 @@ export default function MCPClientSheet({
 	const [vkSearch, setVKSearch] = useState("");
 	const [vkPopoverOpen, setVKPopoverOpen] = useState(false);
 	const debouncedVkSearch = useDebouncedValue(vkSearch, 300);
-	const { data: vksData } = useGetVirtualKeysQuery({ limit: 20, search: debouncedVkSearch || undefined });
+	const { data: vksData, isError: vkLookupFailed, error: vkLookupError } = useGetVirtualKeysQuery({
+		limit: 20,
+		search: debouncedVkSearch || undefined,
+	});
+	const helperQueryFailed = coreConfigFailed || vkLookupFailed;
 	const allToolNames = useMemo(() => mcpClient.tools?.map((t) => t.name) ?? [], [mcpClient.tools]);
 
 	// Initial VK configs come directly from the MCP client response — always complete, no pagination issue.
@@ -480,6 +486,15 @@ export default function MCPClientSheet({
 					<Form {...form}>
 						<form onSubmit={form.handleSubmit(onSubmit)} className="flex h-full flex-col">
 							<div className="gap-6 space-y-6 px-8">
+								{helperQueryFailed ? (
+									<QueryErrorBanner
+										testId="mcp-client-sheet-query-error"
+										message={
+											getErrorMessage(coreConfigError || vkLookupError) ||
+											"Failed to load gateway config or virtual keys for this form."
+										}
+									/>
+								) : null}
 								{/* Name and Header Section */}
 								<div className="space-y-4">
 									<h3 className="font-semibold">Basic Information</h3>
@@ -1152,7 +1167,7 @@ export default function MCPClientSheet({
 																		</TooltipTrigger>
 																		<TooltipContent className="max-w-xs">
 																			<p>
-																				Applies only when Raksha runs the LLM loop in Agent Mode. In MCP Gateway mode, the connected client
+																				Applies only when {PRODUCT_NAME} runs the LLM loop in Agent Mode. In MCP Gateway mode, the connected client
 																				(Claude Desktop, Cursor, etc.) controls tool approval and this setting is ignored. Click to learn
 																				more.
 																			</p>

@@ -1,5 +1,5 @@
 # Backward-compatible shim. Canonical copy: deploy/docker/Dockerfile.local
-# Build: docker build -f deploy/docker/Dockerfile.local -t raksha-local:latest .
+# Build: docker build -f deploy/docker/Dockerfile.local -t gateway-local:latest .
 # This file delegates to the same build (paths are relative to repo root).
 
 # Dockerfile.local - Uses local module sources via go workspace
@@ -17,7 +17,7 @@
   COPY ui/ ./
 
   # Build UI (skip the copy-build step)
-  RUN npm run build:raksha
+  RUN npm run build:gateway
   # Skip the copy-build step since we'll copy the files in the Go build stage
 
   # --- Go Build Stage: Compile the Go binary using local modules ---
@@ -59,7 +59,7 @@
     go work use ./transports
 
   # Copy UI build output into transports
-  COPY --from=ui-builder /app/out ./transports/raksha-http/ui
+  COPY --from=ui-builder /app/out ./transports/gateway-http/ui
 
   # Build the binary with CGO enabled and static SQLite linking.
   # Leave VERSION unset for local images so the UI does not show "vunknown".
@@ -76,7 +76,7 @@
       -a -trimpath \
       -tags "sqlite_static" \
       -o /app/main \
-      ./transports/raksha-http
+      ./transports/gateway-http
 
   # Verify build succeeded
   RUN test -f /app/main || (echo "Build failed" && exit 1)
@@ -97,11 +97,11 @@
   RUN mkdir -p /app/release
   COPY apps/browser-guard/release/ /app/release/
   COPY apps/browser-guard/proxy/browser_ai_proxy.py /app/guard-proxy/browser_ai_proxy.py
-  COPY apps/browser-guard/proxy/raksha_proxy_parts/ /app/guard-proxy/raksha_proxy_parts/
+  COPY apps/browser-guard/proxy/gateway_proxy_parts/ /app/guard-proxy/gateway_proxy_parts/
   COPY apps/browser-guard/agent/*.py /app/guard-agent/
 
   COPY apps/browser-guard/installer/EMPLOYEE_README.txt /app/installer/EMPLOYEE_README.txt
-  COPY apps/browser-guard/config/raksha_guard_config.json /app/raksha_guard_config.json
+  COPY apps/browser-guard/config/gateway_guard_config.json /app/gateway_guard_config.json
 
   # Getting arguments
   ARG ARG_APP_PORT=8080

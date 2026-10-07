@@ -2,6 +2,9 @@ import { Budget, RateLimit, VirtualKey } from "@/lib/types/governance";
 import { useGetUserAccessProfilesQuery } from "@enterprise/lib/store/apis/accessProfileApi";
 import { useGetVirtualKeyUsersQuery, VirtualKeyUser } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
 import { UserAccessProfile } from "@enterprise/lib/types/accessProfile";
+import { useEffect, useState } from "react";
+
+const AP_POLLING_INTERVAL = 5000;
 
 /**
  * When a VK is attached to users via an access profile, the governance plugin tracks usage on the
@@ -24,16 +27,23 @@ export function useVirtualKeyUsage(vk: VirtualKey | null | undefined): {
 	displayBudgets: Budget[] | undefined;
 	displayRateLimit: RateLimit | undefined;
 	isExhausted: boolean;
+	isApUsageError?: boolean;
+	isVkUsersError?: boolean;
 } {
-	const { data: vkUsersData } = useGetVirtualKeyUsersQuery(vk?.id ?? "", { skip: !vk?.id });
+	const { data: vkUsersData, isError: vkUsersFailed } = useGetVirtualKeyUsersQuery(vk?.id ?? "", { skip: !vk?.id });
 	const assignedUsers = vkUsersData?.users ?? [];
 	const directUsers = assignedUsers.filter((u) => !u.origin || u.origin === "direct");
 
 	const managingUserId = directUsers[0]?.id;
-	const { data: userAPsData } = useGetUserAccessProfilesQuery(managingUserId ?? "", {
+	const [apPollMs, setApPollMs] = useState(managingUserId ? AP_POLLING_INTERVAL : 0);
+	const { data: userAPsData, isError: apUsageFailed } = useGetUserAccessProfilesQuery(managingUserId ?? "", {
 		skip: !managingUserId,
-		pollingInterval: managingUserId ? 5000 : 0,
+		pollingInterval: apPollMs,
 	});
+
+	useEffect(() => {
+		setApPollMs(!managingUserId || apUsageFailed ? 0 : AP_POLLING_INTERVAL);
+	}, [managingUserId, apUsageFailed]);
 	const userAPs = userAPsData?.access_profiles ?? [];
 
 	// Only treat the VK as AP-managed when an AP explicitly lists this VK in its virtual_key_ids.
@@ -82,5 +92,16 @@ export function useVirtualKeyUsage(vk: VirtualKey | null | undefined): {
 			displayRateLimit.request_max_limit > 0 &&
 			displayRateLimit.request_current_usage >= displayRateLimit.request_max_limit);
 
-	return { assignedUsers, directUsers, isManagedByProfile, managingProfile, hasApRateLimit, displayBudgets, displayRateLimit, isExhausted };
+	return {
+		assignedUsers,
+		directUsers,
+		isManagedByProfile,
+		managingProfile,
+		hasApRateLimit,
+		displayBudgets,
+		displayRateLimit,
+		isExhausted,
+		isApUsageError: apUsageFailed,
+		isVkUsersError: vkUsersFailed,
+	};
 }

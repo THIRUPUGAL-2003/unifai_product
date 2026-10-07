@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,10 +11,11 @@ import { Save, UserRoundCog, Copy, Eye, EyeOff } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getExampleBaseUrl } from "@/lib/utils/port";
 
 export default function SCIMView() {
-	const { data, isLoading: loading } = useGetSCIMConfigQuery();
+	const { data, isLoading: loading, isError, error, refetch } = useGetSCIMConfigQuery();
 	const [updateConfig, { isLoading: saving }] = useUpdateSCIMConfigMutation();
 	const [config, setConfig] = useState<SCIMConfig>({ enabled: false, provider: "okta", config: {} });
 	const { copy: copyToClipboard } = useCopyToClipboard();
@@ -64,6 +66,17 @@ export default function SCIMView() {
 		return <div className="text-muted-foreground p-6 text-sm">Loading SCIM config…</div>;
 	}
 
+	if (isError) {
+		return (
+			<div className="mx-auto flex w-full max-w-3xl flex-col gap-3 p-6">
+				<QueryErrorBanner testId="scim-query-error" message={getErrorMessage(error) || "Failed to load SCIM configuration."} />
+				<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetch()}>
+					Retry
+				</Button>
+			</div>
+		);
+	}
+
 	return (
 		<div className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
 			<div>
@@ -82,9 +95,9 @@ export default function SCIMView() {
 
 			<Card>
 				<CardHeader>
-					<CardTitle className="text-base">Connect chain (IdP → Raksha)</CardTitle>
+					<CardTitle className="text-base">Connect chain (IdP → {PRODUCT_NAME})</CardTitle>
 					<CardDescription>
-						Provisioning is inbound SCIM: the identity provider pushes create / update / deactivate / delete to Raksha.
+						Provisioning is inbound SCIM: the identity provider pushes create / update / deactivate / delete to {PRODUCT_NAME}.
 						Optional provider fields below are metadata only — connection requires Enable + bearer token + Tenant URL in the IdP.
 					</CardDescription>
 				</CardHeader>
@@ -109,7 +122,7 @@ export default function SCIMView() {
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-base">SCIM endpoints (for your IdP)</CardTitle>
-					<CardDescription>Configure these in Okta, Entra, or Keycloak when provisioning users into Raksha.</CardDescription>
+					<CardDescription>Configure these in Okta, Entra, or Keycloak when provisioning users into {PRODUCT_NAME}.</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-3 text-sm">
 					<EndpointRow label="Base URL (Tenant URL)" value={scimBase} onCopy={copyToClipboard} />
@@ -189,7 +202,7 @@ export default function SCIMView() {
 					)}
 
 					<div className="space-y-1">
-						<Label>SCIM bearer token (for IdP → Raksha)</Label>
+						<Label>SCIM bearer token (for IdP → {PRODUCT_NAME})</Label>
 						<div className="flex gap-2">
 							<Input
 								type={showToken ? "text" : "password"}

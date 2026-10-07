@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the Raksha system.
+// Package schemas defines the core schemas and types used by the Gateway system.
 package schemas
 
 // BatchStatus represents the status of a batch job.
@@ -62,8 +62,8 @@ type BatchError struct {
 	Line    *int   `json:"line,omitempty"`
 }
 
-// RakshaBatchCreateRequest represents a request to create a batch job.
-type RakshaBatchCreateRequest struct {
+// GatewayBatchCreateRequest represents a request to create a batch job.
+type GatewayBatchCreateRequest struct {
 	Provider       ModelProvider `json:"provider"`
 	Model          *string       `json:"model,omitempty"` // Model hint for routing (optional for file-based) it may or may not present depending on the provider and usage of integration vs direct API
 	RawRequestBody []byte        `json:"-"`               // Raw request body (not serialized)
@@ -100,12 +100,12 @@ type BatchExpiresAfter struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *RakshaBatchCreateRequest) GetRawRequestBody() []byte {
+func (request *GatewayBatchCreateRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// RakshaBatchCreateResponse represents the response from creating a batch job.
-type RakshaBatchCreateResponse struct {
+// GatewayBatchCreateResponse represents the response from creating a batch job.
+type GatewayBatchCreateResponse struct {
 	ID               string             `json:"id"`
 	Object           string             `json:"object,omitempty"`       // "batch" for OpenAI
 	DisplayName      *string            `json:"display_name,omitempty"` // Human-readable job name (e.g. Vertex displayName)
@@ -134,11 +134,11 @@ type RakshaBatchCreateResponse struct {
 	OutputBlob *string `json:"output_blob,omitempty"`
 	ErrorBlob  *string `json:"error_blob,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaBatchListRequest represents a request to list batch jobs.
-type RakshaBatchListRequest struct {
+// GatewayBatchListRequest represents a request to list batch jobs.
+type GatewayBatchListRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 
@@ -155,10 +155,10 @@ type RakshaBatchListRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-// RakshaBatchListResponse represents the response from listing batch jobs.
-type RakshaBatchListResponse struct {
+// GatewayBatchListResponse represents the response from listing batch jobs.
+type GatewayBatchListResponse struct {
 	Object  string                         `json:"object,omitempty"` // "list"
-	Data    []RakshaBatchRetrieveResponse `json:"data"`
+	Data    []GatewayBatchRetrieveResponse `json:"data"`
 	FirstID *string                        `json:"first_id,omitempty"`
 	LastID  *string                        `json:"last_id,omitempty"`
 	HasMore bool                           `json:"has_more,omitempty"`
@@ -166,11 +166,11 @@ type RakshaBatchListResponse struct {
 	// Anthropic pagination
 	NextCursor *string `json:"next_cursor,omitempty"` // For cursor-based pagination
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaBatchRetrieveRequest represents a request to retrieve a batch job.
-type RakshaBatchRetrieveRequest struct {
+// GatewayBatchRetrieveRequest represents a request to retrieve a batch job.
+type GatewayBatchRetrieveRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	BatchID  string        `json:"batch_id"` // ID of the batch to retrieve
@@ -182,12 +182,12 @@ type RakshaBatchRetrieveRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *RakshaBatchRetrieveRequest) GetRawRequestBody() []byte {
+func (request *GatewayBatchRetrieveRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// RakshaBatchRetrieveResponse represents the response from retrieving a batch job.
-type RakshaBatchRetrieveResponse struct {
+// GatewayBatchRetrieveResponse represents the response from retrieving a batch job.
+type GatewayBatchRetrieveResponse struct {
 	ID               string             `json:"id"`
 	Object           string             `json:"object,omitempty"`
 	DisplayName      *string            `json:"display_name,omitempty"` // Human-readable job name (e.g. Vertex displayName)
@@ -227,11 +227,11 @@ type RakshaBatchRetrieveResponse struct {
 	OutputBlob *string `json:"output_blob,omitempty"`
 	ErrorBlob  *string `json:"error_blob,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaBatchCancelRequest represents a request to cancel a batch job.
-type RakshaBatchCancelRequest struct {
+// GatewayBatchCancelRequest represents a request to cancel a batch job.
+type GatewayBatchCancelRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	BatchID  string        `json:"batch_id"` // ID of the batch to cancel
@@ -243,12 +243,12 @@ type RakshaBatchCancelRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *RakshaBatchCancelRequest) GetRawRequestBody() []byte {
+func (request *GatewayBatchCancelRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// RakshaBatchCancelResponse represents the response from cancelling a batch job.
-type RakshaBatchCancelResponse struct {
+// GatewayBatchCancelResponse represents the response from cancelling a batch job.
+type GatewayBatchCancelResponse struct {
 	ID            string             `json:"id"`
 	Object        string             `json:"object,omitempty"`
 	Status        BatchStatus        `json:"status"`
@@ -256,11 +256,11 @@ type RakshaBatchCancelResponse struct {
 	CancellingAt  *int64             `json:"cancelling_at,omitempty"`
 	CancelledAt   *int64             `json:"cancelled_at,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaBatchDeleteRequest represents a request to delete a batch job.
-type RakshaBatchDeleteRequest struct {
+// GatewayBatchDeleteRequest represents a request to delete a batch job.
+type GatewayBatchDeleteRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	BatchID  string        `json:"batch_id"` // ID of the batch to delete
@@ -272,22 +272,22 @@ type RakshaBatchDeleteRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *RakshaBatchDeleteRequest) GetRawRequestBody() []byte {
+func (request *GatewayBatchDeleteRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
-// RakshaBatchDeleteResponse represents the response from deleting a batch job.
-type RakshaBatchDeleteResponse struct {
+// GatewayBatchDeleteResponse represents the response from deleting a batch job.
+type GatewayBatchDeleteResponse struct {
 	ID            string             `json:"id"`
 	Object        string             `json:"object,omitempty"`
 	Status        BatchStatus        `json:"status"`
 	RequestCounts BatchRequestCounts `json:"request_counts,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaBatchResultsRequest represents a request to retrieve batch results.
-type RakshaBatchResultsRequest struct {
+// GatewayBatchResultsRequest represents a request to retrieve batch results.
+type GatewayBatchResultsRequest struct {
 	Provider ModelProvider `json:"provider"`
 	Model    *string       `json:"model"`
 	BatchID  string        `json:"batch_id"` // ID of the batch to get results for
@@ -302,7 +302,7 @@ type RakshaBatchResultsRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body.
-func (request *RakshaBatchResultsRequest) GetRawRequestBody() []byte {
+func (request *GatewayBatchResultsRequest) GetRawRequestBody() []byte {
 	return request.RawRequestBody
 }
 
@@ -337,8 +337,8 @@ type BatchResultError struct {
 	Message string `json:"message,omitempty"`
 }
 
-// RakshaBatchResultsResponse represents the response from retrieving batch results.
-type RakshaBatchResultsResponse struct {
+// GatewayBatchResultsResponse represents the response from retrieving batch results.
+type GatewayBatchResultsResponse struct {
 	BatchID string            `json:"batch_id"`
 	Results []BatchResultItem `json:"results"`
 
@@ -346,5 +346,5 @@ type RakshaBatchResultsResponse struct {
 	HasMore    bool    `json:"has_more,omitempty"`
 	NextCursor *string `json:"next_cursor,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }

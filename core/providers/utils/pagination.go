@@ -1,7 +1,7 @@
 package utils
 
 import (
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // SerialListHelper manages serial key pagination for list operations.

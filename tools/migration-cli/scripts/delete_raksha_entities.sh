@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# delete_raksha_entities.sh — delete all migration entities from a running Raksha
+# delete_gateway_entities.sh — delete all migration entities from a running Gateway
 # instance: virtual keys, model configs, teams, customers, users, provider keys 
 # and providers.
 #
@@ -10,18 +10,18 @@
 # its own governance settings, team memberships and access profiles.
 #
 # Usage:
-#   RAKSHA_URL=http://localhost:8080 RAKSHA_API_KEY=<token> ./delete_raksha_entities.sh
+#   GATEWAY_URL=http://localhost:8080 GATEWAY_API_KEY=<token> ./delete_gateway_entities.sh
 #
-#   DRY_RUN=1 ./delete_raksha_entities.sh              # list what would be deleted, delete nothing
-#   DELETE_VKS=0 ./delete_raksha_entities.sh           # skip virtual keys (default: 1)
-#   DELETE_MODEL_CONFIGS=0 ./delete_raksha_entities.sh # skip model configs
-#   DELETE_TEAMS=0 ./delete_raksha_entities.sh        # skip teams
-#   DELETE_CUSTOMERS=0 ./delete_raksha_entities.sh     # skip customers
-#   DELETE_USERS=0 ./delete_raksha_entities.sh         # skip users
-#   DELETE_KEYS=0 ./delete_raksha_entities.sh          # skip provider keys
-#   DELETE_PROVIDERS=0 ./delete_raksha_entities.sh     # skip providers
+#   DRY_RUN=1 ./delete_gateway_entities.sh              # list what would be deleted, delete nothing
+#   DELETE_VKS=0 ./delete_gateway_entities.sh           # skip virtual keys (default: 1)
+#   DELETE_MODEL_CONFIGS=0 ./delete_gateway_entities.sh # skip model configs
+#   DELETE_TEAMS=0 ./delete_gateway_entities.sh        # skip teams
+#   DELETE_CUSTOMERS=0 ./delete_gateway_entities.sh     # skip customers
+#   DELETE_USERS=0 ./delete_gateway_entities.sh         # skip users
+#   DELETE_KEYS=0 ./delete_gateway_entities.sh          # skip provider keys
+#   DELETE_PROVIDERS=0 ./delete_gateway_entities.sh     # skip providers
 #
-# Endpoints used (Raksha management API, all require a management bearer token):
+# Endpoints used (Gateway management API, all require a management bearer token):
 #   GET    {url}/api/governance/virtual-keys        DELETE {url}/api/governance/virtual-keys/{id}
 #   GET    {url}/api/governance/model-configs       DELETE {url}/api/governance/model-configs/{id}
 #   GET    {url}/api/governance/teams               DELETE {url}/api/governance/teams/{id}
@@ -30,7 +30,7 @@
 #   GET    {url}/api/providers                      DELETE {url}/api/providers/{provider}
 #   GET    {url}/api/providers/{provider}/keys      DELETE {url}/api/providers/{provider}/keys/{key_id}
 #
-# Note: Raksha exposes no batch delete for these entities, so each row is
+# Note: Gateway exposes no batch delete for these entities, so each row is
 # deleted individually. Deleting your own user is rejected by the API; such a
 # failure is logged and counted, and does not abort the run.
 #
@@ -38,8 +38,8 @@
 
 set -euo pipefail
 
-RAKSHA_URL="${RAKSHA_URL:-http://localhost:8080}"
-RAKSHA_API_KEY="${RAKSHA_API_KEY:-}"
+GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
+GATEWAY_API_KEY="${GATEWAY_API_KEY:-}"
 DRY_RUN="${DRY_RUN:-0}"
 DELETE_VKS="${DELETE_VKS:-1}"
 DELETE_MODEL_CONFIGS="${DELETE_MODEL_CONFIGS:-1}"
@@ -52,13 +52,13 @@ DELETE_PROVIDERS="${DELETE_PROVIDERS:-1}"
 # curl_args adds the management bearer token only when one is configured, so the
 # script also works against a local dev instance with auth disabled.
 curl_args=(-sS --fail-with-body)
-if [[ -n "${RAKSHA_API_KEY}" ]]; then
-  curl_args+=(--header "Authorization: Bearer ${RAKSHA_API_KEY}")
+if [[ -n "${GATEWAY_API_KEY}" ]]; then
+  curl_args+=(--header "Authorization: Bearer ${GATEWAY_API_KEY}")
 fi
 
-# get issues an authenticated GET against a Raksha path and prints the body.
+# get issues an authenticated GET against a Gateway path and prints the body.
 get() {
-  curl "${curl_args[@]}" --location "${RAKSHA_URL}$1"
+  curl "${curl_args[@]}" --location "${GATEWAY_URL}$1"
 }
 
 # urlenc percent-encodes one URL path segment using jq's URI encoder.
@@ -70,7 +70,7 @@ urlenc() {
 # OK/FAIL and returning non-zero on failure.
 delete_one() {
   local label="$1" path="$2"
-  if curl "${curl_args[@]}" --request DELETE --location "${RAKSHA_URL}${path}" >/dev/null; then
+  if curl "${curl_args[@]}" --request DELETE --location "${GATEWAY_URL}${path}" >/dev/null; then
     echo "    OK deleted ${label}"
     return 0
   fi
@@ -121,7 +121,7 @@ delete_all_virtual_keys() {
 
 # delete_all_model_configs pages through /api/governance/model-configs and
 # deletes every model config individually. Deleting a model config also deletes
-# its owned budgets and rate limits in Raksha.
+# its owned budgets and rate limits in Gateway.
 delete_all_model_configs() {
   echo "==> Listing model configs"
   local ids limit=100 offset=0 page batch

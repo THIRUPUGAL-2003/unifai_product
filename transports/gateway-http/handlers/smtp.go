@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
-	"github.com/raksha/raksha/framework/mailer"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/gateway/gateway/framework/mailer"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -38,7 +38,7 @@ func NewSMTPHandler(store *lib.Config) *SMTPHandler {
 	return &SMTPHandler{store: store}
 }
 
-func (h *SMTPHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *SMTPHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/smtp-config", lib.ChainMiddlewares(h.getSMTPConfig, middlewares...))
 	r.PUT("/api/smtp-config", lib.ChainMiddlewares(h.updateSMTPConfig, middlewares...))
 	r.POST("/api/smtp-config/test", lib.ChainMiddlewares(h.testSMTPConfig, middlewares...))
@@ -135,7 +135,7 @@ func (h *SMTPHandler) updateSMTPConfig(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	if strings.TrimSpace(password) != "" && !encrypt.IsEnabled() {
-		SendError(ctx, fasthttp.StatusBadRequest, "Set RAKSHA_ENCRYPTION_KEY before saving SMTP passwords so credentials are encrypted at rest")
+		SendError(ctx, fasthttp.StatusBadRequest, "Set GATEWAY_ENCRYPTION_KEY before saving SMTP passwords so credentials are encrypted at rest")
 		return
 	}
 
@@ -182,10 +182,10 @@ func (h *SMTPHandler) testSMTPConfig(ctx *fasthttp.RequestCtx) {
 	}
 	err = mailer.Send(smtpToMailer(row), mailer.Message{
 		To:      to,
-		Subject: "Raksha SMTP test",
-		Body:    "This is a test email from Raksha Security → SMTP settings.",
+		Subject: "Gateway SMTP test",
+		Body:    "This is a test email from Gateway Security → SMTP settings.",
 	})
-	recordEmailAudit(store, ctx, to, "Raksha SMTP test", err)
+	recordEmailAudit(store, ctx, to, "Gateway SMTP test", err)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("SMTP test failed: %v", err))
 		return
@@ -238,7 +238,7 @@ func sendSMTPEmail(ctx context.Context, store configstore.ConfigStore, to, subje
 			}
 			fromName := strings.TrimSpace(os.Getenv("SMTP_FROM_NAME"))
 			if fromName == "" {
-				fromName = "Raksha Security"
+				fromName = "Gateway Security"
 			}
 			useTLS := os.Getenv("SMTP_USE_TLS") != "false"
 			row = &tables.TableSMTPConfig{
@@ -306,14 +306,14 @@ func welcomeAccountEmailBody(username, email, tempPassword string) string {
 		passInfo = "\nSign in with the temporary password provided by your administrator. You will be required to set a new permanent password upon your first sign in.\n"
 	}
 	return fmt.Sprintf(
-		"Hello %s,\n\nYour Raksha Enterprise account has been created.\n\nUsername: %s\nEmail: %s%s\nPlease keep your credentials confidential.\n",
+		"Hello %s,\n\nYour Gateway Enterprise account has been created.\n\nUsername: %s\nEmail: %s%s\nPlease keep your credentials confidential.\n",
 		username, username, email, passInfo,
 	)
 }
 
 func provisionedAccountEmailBody(username, email string) string {
 	return fmt.Sprintf(
-		"Hello %s,\n\nYour Raksha account was created by your organization's identity provider.\n\nEmail: %s\nUsername: %s\n\nTo sign in for the first time, open the Raksha login page, choose Forgot password, and set your password with the code we email you.\n",
+		"Hello %s,\n\nYour Gateway account was created by your organization's identity provider.\n\nEmail: %s\nUsername: %s\n\nTo sign in for the first time, open the Gateway login page, choose Forgot password, and set your password with the code we email you.\n",
 		username, email, username,
 	)
 }
@@ -329,7 +329,7 @@ func trySendProvisionedEmail(store configstore.ConfigStore, ctx *fasthttp.Reques
 	if err != nil || smtpRow == nil || !smtpRow.Enabled || !smtpRow.NotifyOnUserCreate {
 		return
 	}
-	if err := sendAuthEmail(store, ctx, email, "Your Raksha account", provisionedAccountEmailBody(username, email)); err != nil {
+	if err := sendAuthEmail(store, ctx, email, "Your Gateway account", provisionedAccountEmailBody(username, email)); err != nil {
 		logger.Warn("scim welcome email failed username=%s: %v", username, err)
 	}
 }
@@ -363,7 +363,7 @@ func trySendTemporaryPasswordEmail(store configstore.ConfigStore, ctx *fasthttp.
 	if smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
 		return false, "SMTP is not enabled. Turn it on under Security settings so the temporary password can be emailed."
 	}
-	if err := sendAuthEmail(store, ctx, email, "Your Raksha Account - Login Credentials", welcomeAccountEmailBody(username, email, password)); err != nil {
+	if err := sendAuthEmail(store, ctx, email, "Your Gateway Account - Login Credentials", welcomeAccountEmailBody(username, email, password)); err != nil {
 		return false, err.Error()
 	}
 	return true, ""
@@ -383,7 +383,7 @@ func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx
 	if smtpRow == nil || !smtpRow.Enabled || !smtpRow.NotifyOnUserCreate {
 		return false, ""
 	}
-	if err := sendAuthEmail(store, ctx, email, "Your Raksha Account - Login Credentials", welcomeAccountEmailBody(username, email, password)); err != nil {
+	if err := sendAuthEmail(store, ctx, email, "Your Gateway Account - Login Credentials", welcomeAccountEmailBody(username, email, password)); err != nil {
 		return false, err.Error()
 	}
 	return true, ""
@@ -391,14 +391,14 @@ func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx
 
 func accountApprovedEmailBody(username string) string {
 	return fmt.Sprintf(
-		"Hello %s,\n\nYour Raksha registration was approved by an administrator.\n\nYou can sign in now with the username and password you registered with.\n\nIf you forgot your password, use Forgot password on the login page.\n",
+		"Hello %s,\n\nYour Gateway registration was approved by an administrator.\n\nYou can sign in now with the username and password you registered with.\n\nIf you forgot your password, use Forgot password on the login page.\n",
 		username,
 	)
 }
 
 func accountRejectedEmailBody(username string) string {
 	return fmt.Sprintf(
-		"Hello %s,\n\nYour Raksha registration was reviewed and was not approved.\n\nYou will not be able to sign in with this account. Contact your administrator if you believe this is a mistake.\n",
+		"Hello %s,\n\nYour Gateway registration was reviewed and was not approved.\n\nYou will not be able to sign in with this account. Contact your administrator if you believe this is a mistake.\n",
 		username,
 	)
 }
@@ -420,10 +420,10 @@ func trySendRegistrationDecisionEmail(store configstore.ConfigStore, ctx *fastht
 	var subject, body string
 	switch strings.ToLower(strings.TrimSpace(decision)) {
 	case "approved", "approve", "accepted", "accept":
-		subject = "Raksha account approved"
+		subject = "Gateway account approved"
 		body = accountApprovedEmailBody(username)
 	case "rejected", "reject", "denied", "deny":
-		subject = "Raksha registration not approved"
+		subject = "Gateway registration not approved"
 		body = accountRejectedEmailBody(username)
 	default:
 		return false, "unknown registration decision"
@@ -672,10 +672,10 @@ func trySendLoginNoticeEmail(store configstore.ConfigStore, ctx *fasthttp.Reques
 		return // same device — no email
 	}
 	body := fmt.Sprintf(
-		"Hello %s,\n\nYour Raksha account signed in from a new device or for the first time.\n\nIP: %s\nBrowser: %s\n\nIf this was not you, reset your password immediately.\n",
+		"Hello %s,\n\nYour Gateway account signed in from a new device or for the first time.\n\nIP: %s\nBrowser: %s\n\nIf this was not you, reset your password immediately.\n",
 		username, ip, truncateASCII(ua, 200),
 	)
-	_ = sendAuthEmail(store, ctx, email, "Raksha login notice", body)
+	_ = sendAuthEmail(store, ctx, email, "Gateway login notice", body)
 }
 
 func truncateASCII(s string, max int) string {

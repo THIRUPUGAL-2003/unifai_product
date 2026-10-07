@@ -1,13 +1,13 @@
-// Package handlers provides HTTP request handlers for the Raksha HTTP transport.
+// Package handlers provides HTTP request handlers for the Gateway HTTP transport.
 // This file contains integration management handlers for AI provider integrations.
 package handlers
 
 import (
 	"github.com/fasthttp/router"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/integrations"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/integrations"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 )
 
 // IntegrationHandler manages HTTP requests for AI provider integrations
@@ -21,7 +21,7 @@ type IntegrationHandler struct {
 
 // NewIntegrationHandler creates a new integration handler instance.
 // WebSocket handlers may be nil if WebSocket support is not configured.
-func NewIntegrationHandler(client *raksha.Raksha, handlerStore lib.HandlerStore, wsResponses *WSResponsesHandler, wsRealtime *WSRealtimeHandler, webrtcRealtime *WebRTCRealtimeHandler, realtimeClientSecrets *RealtimeClientSecretsHandler) *IntegrationHandler {
+func NewIntegrationHandler(client *gateway.Gateway, handlerStore lib.HandlerStore, wsResponses *WSResponsesHandler, wsRealtime *WSRealtimeHandler, webrtcRealtime *WebRTCRealtimeHandler, realtimeClientSecrets *RealtimeClientSecretsHandler) *IntegrationHandler {
 	// Initialize all available integration routers
 	extensions := []integrations.ExtensionRouter{
 		integrations.NewOpenAIRouter(client, handlerStore, logger),
@@ -50,7 +50,7 @@ func NewIntegrationHandler(client *raksha.Raksha, handlerStore lib.HandlerStore,
 }
 
 // RegisterRoutes registers all integration routes for AI provider compatibility endpoints
-func (h *IntegrationHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *IntegrationHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	// Register routes for each integration extension
 	for _, extension := range h.extensions {
 		extension.RegisterRoutes(r, middlewares...)

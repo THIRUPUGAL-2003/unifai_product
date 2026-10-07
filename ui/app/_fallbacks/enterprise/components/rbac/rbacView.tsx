@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -188,13 +189,13 @@ export default function RBACView() {
 	const [newRoleDac, setNewRoleDac] = useState("all-data");
 
 	// Queries
-	const { data: roleData } = useGetRolesQuery();
-	const { data: permData } = useGetPermissionsQuery();
-	const { data: sessionUsersData } = useGetSessionUsersQuery();
+	const { data: roleData, isError: rolesFailed, error: rolesError } = useGetRolesQuery();
+	const { data: permData, isError: permsFailed, error: permsError } = useGetPermissionsQuery();
+	const { data: sessionUsersData, isError: usersFailed, error: usersError } = useGetSessionUsersQuery();
 	const sessionUsers = useMemo(() => sessionUsersData ?? [], [sessionUsersData]);
-	const { data: teamsData } = useGetTeamsQuery();
-	const { data: customersData } = useGetCustomersQuery();
-	const { data: scopeGrants } = useGetRBACScopeGrantsQuery();
+	const { data: teamsData, isError: teamsFailed, error: teamsError } = useGetTeamsQuery();
+	const { data: customersData, isError: customersFailed, error: customersError } = useGetCustomersQuery();
+	const { data: scopeGrants, isError: scopeGrantsFailed, error: scopeGrantsError } = useGetRBACScopeGrantsQuery();
 
 	const roles = useMemo(() => roleData?.roles ?? [], [roleData]);
 	const permissions = useMemo(() => permData?.permissions ?? [], [permData]);
@@ -226,12 +227,37 @@ export default function RBACView() {
 		return 0;
 	}, [target, roles, targetUser]);
 
-	const { currentData: rolePermData } = useGetRolePermissionsQuery(activeRoleId, { skip: activeRoleId === 0 });
+	const { currentData: rolePermData, isError: rolePermsFailed, error: rolePermsError } = useGetRolePermissionsQuery(activeRoleId, {
+		skip: activeRoleId === 0,
+	});
 
 	const scope = useMemo(() => targetScope(target, scopeGrants), [target, scopeGrants]);
 
 	const userUsesSectionScope = Boolean(targetUser && sectionScopeApplies(targetUser.role));
-	const { data: targetUserTeams } = useGetUserTeamsQuery(targetUser?.id ?? "", { skip: !userUsesSectionScope });
+	const {
+		data: targetUserTeams,
+		isError: targetUserTeamsFailed,
+		error: targetUserTeamsError,
+	} = useGetUserTeamsQuery(targetUser?.id ?? "", { skip: !userUsesSectionScope });
+
+	const rbacListQueryFailed =
+		rolesFailed ||
+		permsFailed ||
+		usersFailed ||
+		teamsFailed ||
+		customersFailed ||
+		scopeGrantsFailed ||
+		rolePermsFailed ||
+		targetUserTeamsFailed;
+	const rbacListQueryError =
+		rolesError ||
+		permsError ||
+		usersError ||
+		teamsError ||
+		customersError ||
+		scopeGrantsError ||
+		rolePermsError ||
+		targetUserTeamsError;
 
 	// Mirrors effectiveAllowedSections on the server: what the selected user gets from
 	// their teams and those teams' customers, on top of their own sections.
@@ -618,6 +644,16 @@ export default function RBACView() {
 					</Button>
 				</div>
 			</div>
+
+			{rbacListQueryFailed ? (
+				<QueryErrorBanner
+					testId="rbac-list-query-error"
+					message={
+						getErrorMessage(rbacListQueryError) ||
+						"Failed to load roles, permissions, scope grants, users, teams, or customers."
+					}
+				/>
+			) : null}
 
 			{/* Main Split Layout: Left Hierarchy Navigation | Right Permissions Matrix */}
 			<div className="grid h-[calc(100%-4rem)] grid-cols-1 gap-4 lg:grid-cols-[340px_1fr] overflow-hidden">

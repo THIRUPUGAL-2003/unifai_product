@@ -41,6 +41,7 @@ export function RoutingRulesView() {
 	const canDelete = useRbac(RbacResource.RoutingRules, RbacOperation.Delete);
 	const canUpdate = useRbac(RbacResource.RoutingRules, RbacOperation.Update);
 
+	const [rulesPollMs, setRulesPollMs] = useState(POLLING_INTERVAL);
 	// API
 	const { data: rulesData, isLoading, isError, error, isFetching, refetch } = useGetRoutingRulesQuery(
 		{
@@ -49,9 +50,13 @@ export function RoutingRulesView() {
 			search: debouncedSearch || undefined,
 		},
 		{
-			pollingInterval: POLLING_INTERVAL,
+			pollingInterval: rulesPollMs,
 		},
 	);
+
+	useEffect(() => {
+		setRulesPollMs(isError ? 0 : POLLING_INTERVAL);
+	}, [isError]);
 
 	const rules = rulesData?.rules || [];
 	const totalCount = rulesData?.total_count || 0;

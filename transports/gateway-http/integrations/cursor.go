@@ -10,16 +10,16 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/providers/openai"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/providers/openai"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
 // Chat completion chunk types for Cursor responses
 // These lightweight structs produce clean chat completion JSON without the
-// extra_fields that RakshaChatResponse would include.
+// extra_fields that GatewayChatResponse would include.
 
 type cursorChatChunk struct {
 	ID      string             `json:"id"`
@@ -98,12 +98,12 @@ type cursorToolCallFn struct {
 // Converter helpers
 
 // cursorChunkID builds a deterministic chunk ID from the response extra fields.
-func cursorChunkID(extras *schemas.RakshaResponseExtraFields) string {
-	return "chatcmpl-raksha-" + strconv.Itoa(extras.ChunkIndex)
+func cursorChunkID(extras *schemas.GatewayResponseExtraFields) string {
+	return "chatcmpl-gateway-" + strconv.Itoa(extras.ChunkIndex)
 }
 
 // cursorModel returns the best model name available from extra fields.
-func cursorModel(extras *schemas.RakshaResponseExtraFields) string {
+func cursorModel(extras *schemas.GatewayResponseExtraFields) string {
 	if extras.ResolvedModelUsed != "" {
 		return extras.ResolvedModelUsed
 	}
@@ -112,7 +112,7 @@ func cursorModel(extras *schemas.RakshaResponseExtraFields) string {
 
 // convertResponsesStreamToChatChunk maps a Responses API stream event to a
 // chat completion chunk. Returns ("", nil, nil) for events that should be skipped.
-func convertResponsesStreamToChatChunk(resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
+func convertResponsesStreamToChatChunk(resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
 	switch resp.Type {
 	case schemas.ResponsesStreamResponseTypeOutputItemAdded:
 		if resp.Item == nil {
@@ -289,7 +289,7 @@ func convertResponsesStreamToChatChunk(resp *schemas.RakshaResponsesStreamRespon
 
 // convertResponsesResponseToChatCompletion converts a non-streaming Responses API
 // response to a chat completion response object.
-func convertResponsesResponseToChatCompletion(resp *schemas.RakshaResponsesResponse) *cursorChatCompletion {
+func convertResponsesResponseToChatCompletion(resp *schemas.GatewayResponsesResponse) *cursorChatCompletion {
 	// Extract text content and tool calls from output messages
 	var sb strings.Builder
 	var toolCalls []cursorToolCall
@@ -333,7 +333,7 @@ func convertResponsesResponseToChatCompletion(resp *schemas.RakshaResponsesRespo
 	}
 	content := sb.String()
 
-	id := "chatcmpl-raksha"
+	id := "chatcmpl-gateway"
 	if resp.ID != nil {
 		id = "chatcmpl-" + *resp.ID
 	}
@@ -827,10 +827,10 @@ func isEffectivelyEmptyContent(content *schemas.ResponsesMessageContent) bool {
 	return true
 }
 
-// normalizeRakshaInputContentBlocks ensures all input messages in a RakshaResponsesRequest
+// normalizeGatewayInputContentBlocks ensures all input messages in a GatewayResponsesRequest
 // have ContentBlocks instead of ContentStr. This is a defense-in-depth normalization that runs
-// AFTER ToRakshaResponsesRequest, which can re-introduce ContentStr when the input is a string.
-func normalizeRakshaInputContentBlocks(req *schemas.RakshaResponsesRequest) {
+// AFTER ToGatewayResponsesRequest, which can re-introduce ContentStr when the input is a string.
+func normalizeGatewayInputContentBlocks(req *schemas.GatewayResponsesRequest) {
 	if req == nil {
 		return
 	}
@@ -998,36 +998,36 @@ func CreateCursorChatCompletionsRouteConfigs(pathPrefix string, handlerStore lib
 				return &openai.OpenAIResponsesRequest{}
 			},
 			RequestParser: cursorRequestParser,
-			RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+			RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 				if openaiReq, ok := req.(*openai.OpenAIResponsesRequest); ok {
-					rakshaReq := openaiReq.ToRakshaResponsesRequest(ctx)
-					if rakshaReq == nil {
-						return nil, errors.New("raksha responses request conversion returned nil")
+					gatewayReq := openaiReq.ToGatewayResponsesRequest(ctx)
+					if gatewayReq == nil {
+						return nil, errors.New("gateway responses request conversion returned nil")
 					}
-					normalizeRakshaInputContentBlocks(rakshaReq)
-					return &schemas.RakshaRequest{
-						ResponsesRequest: rakshaReq,
+					normalizeGatewayInputContentBlocks(gatewayReq)
+					return &schemas.GatewayRequest{
+						ResponsesRequest: gatewayReq,
 					}, nil
 				}
 				return nil, errors.New("invalid request type")
 			},
-			ResponsesResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
+			ResponsesResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesResponse) (interface{}, error) {
 				return convertResponsesResponseToChatCompletion(resp), nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return err
 			},
 			StreamConfig: &StreamConfig{
-				ResponsesStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
+				ResponsesStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
 					return convertResponsesStreamToChatChunk(resp)
 				},
-				ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+				ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 					return err
 				},
 			},
-			PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+			PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 				// Set the user agent to cursor for tool manager duplicate checks
-				rakshaCtx.SetValue(schemas.RakshaContextKeyUserAgent, schemas.Cursor.String())
+				gatewayCtx.SetValue(schemas.GatewayContextKeyUserAgent, schemas.Cursor.String())
 				return nil
 			},
 		})
@@ -1036,8 +1036,8 @@ func CreateCursorChatCompletionsRouteConfigs(pathPrefix string, handlerStore lib
 	return routes
 }
 
-// NewCursorRouter creates a new CursorRouter with the given raksha client.
-func NewCursorRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *CursorRouter {
+// NewCursorRouter creates a new CursorRouter with the given gateway client.
+func NewCursorRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *CursorRouter {
 	routes := []RouteConfig{}
 
 	// Custom Responses-based chat completions handler for Cursor's hybrid payloads

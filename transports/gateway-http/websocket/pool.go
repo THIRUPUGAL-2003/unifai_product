@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 const (

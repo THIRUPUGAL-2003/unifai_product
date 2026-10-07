@@ -4,47 +4,47 @@ import (
 	"sort"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"gopkg.in/yaml.v3"
 )
 
-// ToCohereRerankRequest converts a Raksha rerank request to Cohere format
-func ToCohereRerankRequest(rakshaReq *schemas.RakshaRerankRequest) *CohereRerankRequest {
-	if rakshaReq == nil {
+// ToCohereRerankRequest converts a Gateway rerank request to Cohere format
+func ToCohereRerankRequest(gatewayReq *schemas.GatewayRerankRequest) *CohereRerankRequest {
+	if gatewayReq == nil {
 		return nil
 	}
 
 	cohereReq := &CohereRerankRequest{
-		Model: rakshaReq.Model,
-		Query: rakshaReq.Query,
+		Model: gatewayReq.Model,
+		Query: gatewayReq.Query,
 	}
 
 	// Cohere v2 expects documents as a list of strings.
-	documents := make([]string, len(rakshaReq.Documents))
-	for i, doc := range rakshaReq.Documents {
+	documents := make([]string, len(gatewayReq.Documents))
+	for i, doc := range gatewayReq.Documents {
 		documents[i] = formatCohereRerankDocument(doc)
 	}
 	cohereReq.Documents = documents
 
-	if rakshaReq.Params != nil {
-		cohereReq.TopN = rakshaReq.Params.TopN
-		cohereReq.MaxTokensPerDoc = rakshaReq.Params.MaxTokensPerDoc
-		cohereReq.Priority = rakshaReq.Params.Priority
-		cohereReq.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		cohereReq.TopN = gatewayReq.Params.TopN
+		cohereReq.MaxTokensPerDoc = gatewayReq.Params.MaxTokensPerDoc
+		cohereReq.Priority = gatewayReq.Params.Priority
+		cohereReq.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 
 	return cohereReq
 }
 
-// ToRakshaRerankRequest converts a Cohere rerank request to Raksha format
-func (req *CohereRerankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext) *schemas.RakshaRerankRequest {
+// ToGatewayRerankRequest converts a Cohere rerank request to Gateway format
+func (req *CohereRerankRequest) ToGatewayRerankRequest(ctx *schemas.GatewayContext) *schemas.GatewayRerankRequest {
 	if req == nil {
 		return nil
 	}
 
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	rakshaReq := &schemas.RakshaRerankRequest{
+	gatewayReq := &schemas.GatewayRerankRequest{
 		Provider: provider,
 		Model:    model,
 		Query:    req.Query,
@@ -53,34 +53,34 @@ func (req *CohereRerankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext
 
 	// Convert documents
 	for _, doc := range req.Documents {
-		rakshaReq.Documents = append(rakshaReq.Documents, schemas.RerankDocument{
+		gatewayReq.Documents = append(gatewayReq.Documents, schemas.RerankDocument{
 			Text: doc,
 		})
 	}
 
 	if req.TopN != nil {
-		rakshaReq.Params.TopN = req.TopN
+		gatewayReq.Params.TopN = req.TopN
 	}
 	if req.MaxTokensPerDoc != nil {
-		rakshaReq.Params.MaxTokensPerDoc = req.MaxTokensPerDoc
+		gatewayReq.Params.MaxTokensPerDoc = req.MaxTokensPerDoc
 	}
 	if req.Priority != nil {
-		rakshaReq.Params.Priority = req.Priority
+		gatewayReq.Params.Priority = req.Priority
 	}
 	if req.ExtraParams != nil {
-		rakshaReq.Params.ExtraParams = req.ExtraParams
+		gatewayReq.Params.ExtraParams = req.ExtraParams
 	}
 
-	return rakshaReq
+	return gatewayReq
 }
 
-// ToRakshaRerankResponse converts a Cohere rerank response to Raksha format.
-func (response *CohereRerankResponse) ToRakshaRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) *schemas.RakshaRerankResponse {
+// ToGatewayRerankResponse converts a Cohere rerank response to Gateway format.
+func (response *CohereRerankResponse) ToGatewayRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) *schemas.GatewayRerankResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaRerankResponse{
+	gatewayResponse := &schemas.GatewayRerankResponse{
 		ID: response.ID,
 	}
 
@@ -131,19 +131,19 @@ func (response *CohereRerankResponse) ToRakshaRerankResponse(documents []schemas
 			}
 		}
 
-		rakshaResponse.Results = append(rakshaResponse.Results, rerankResult)
+		gatewayResponse.Results = append(gatewayResponse.Results, rerankResult)
 	}
-	sort.SliceStable(rakshaResponse.Results, func(i, j int) bool {
-		if rakshaResponse.Results[i].RelevanceScore == rakshaResponse.Results[j].RelevanceScore {
-			return rakshaResponse.Results[i].Index < rakshaResponse.Results[j].Index
+	sort.SliceStable(gatewayResponse.Results, func(i, j int) bool {
+		if gatewayResponse.Results[i].RelevanceScore == gatewayResponse.Results[j].RelevanceScore {
+			return gatewayResponse.Results[i].Index < gatewayResponse.Results[j].Index
 		}
-		return rakshaResponse.Results[i].RelevanceScore > rakshaResponse.Results[j].RelevanceScore
+		return gatewayResponse.Results[i].RelevanceScore > gatewayResponse.Results[j].RelevanceScore
 	})
 	if returnDocuments {
-		for i := range rakshaResponse.Results {
-			resultIndex := rakshaResponse.Results[i].Index
+		for i := range gatewayResponse.Results {
+			resultIndex := gatewayResponse.Results[i].Index
 			if resultIndex >= 0 && resultIndex < len(documents) {
-				rakshaResponse.Results[i].Document = schemas.Ptr(documents[resultIndex])
+				gatewayResponse.Results[i].Document = schemas.Ptr(documents[resultIndex])
 			}
 		}
 	}
@@ -173,7 +173,7 @@ func (response *CohereRerankResponse) ToRakshaRerankResponse(documents []schemas
 			}
 		}
 		if hasTokenUsage {
-			rakshaResponse.Usage = &schemas.RakshaLLMUsage{
+			gatewayResponse.Usage = &schemas.GatewayLLMUsage{
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
 				TotalTokens:      promptTokens + completionTokens,
@@ -181,7 +181,7 @@ func (response *CohereRerankResponse) ToRakshaRerankResponse(documents []schemas
 		}
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
 func formatCohereRerankDocument(doc schemas.RerankDocument) string {

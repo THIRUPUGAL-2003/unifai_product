@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // escapeS3KeyForURL escapes each segment of an S3 key path individually.
@@ -136,8 +136,8 @@ func parseS3ListResponse(body []byte, resp *S3ListObjectsResponse) error {
 
 // ==================== BEDROCK FILE TYPE CONVERTERS ====================
 
-// ToBedrockFileUploadResponse converts a Raksha file upload response to Bedrock format.
-func ToBedrockFileUploadResponse(resp *schemas.RakshaFileUploadResponse) *BedrockFileUploadResponse {
+// ToBedrockFileUploadResponse converts a Gateway file upload response to Bedrock format.
+func ToBedrockFileUploadResponse(resp *schemas.GatewayFileUploadResponse) *BedrockFileUploadResponse {
 	if resp == nil {
 		return nil
 	}
@@ -155,8 +155,8 @@ func ToBedrockFileUploadResponse(resp *schemas.RakshaFileUploadResponse) *Bedroc
 	}
 }
 
-// ToBedrockFileListResponse converts a Raksha file list response to Bedrock format.
-func ToBedrockFileListResponse(resp *schemas.RakshaFileListResponse) *BedrockFileListResponse {
+// ToBedrockFileListResponse converts a Gateway file list response to Bedrock format.
+func ToBedrockFileListResponse(resp *schemas.GatewayFileListResponse) *BedrockFileListResponse {
 	if resp == nil {
 		return nil
 	}
@@ -178,8 +178,8 @@ func ToBedrockFileListResponse(resp *schemas.RakshaFileListResponse) *BedrockFil
 	}
 }
 
-// ToBedrockFileRetrieveResponse converts a Raksha file retrieve response to Bedrock format.
-func ToBedrockFileRetrieveResponse(resp *schemas.RakshaFileRetrieveResponse) *BedrockFileRetrieveResponse {
+// ToBedrockFileRetrieveResponse converts a Gateway file retrieve response to Bedrock format.
+func ToBedrockFileRetrieveResponse(resp *schemas.GatewayFileRetrieveResponse) *BedrockFileRetrieveResponse {
 	if resp == nil {
 		return nil
 	}
@@ -195,8 +195,8 @@ func ToBedrockFileRetrieveResponse(resp *schemas.RakshaFileRetrieveResponse) *Be
 	}
 }
 
-// ToBedrockFileDeleteResponse converts a Raksha file delete response to Bedrock format.
-func ToBedrockFileDeleteResponse(resp *schemas.RakshaFileDeleteResponse) *BedrockFileDeleteResponse {
+// ToBedrockFileDeleteResponse converts a Gateway file delete response to Bedrock format.
+func ToBedrockFileDeleteResponse(resp *schemas.GatewayFileDeleteResponse) *BedrockFileDeleteResponse {
 	if resp == nil {
 		return nil
 	}
@@ -207,8 +207,8 @@ func ToBedrockFileDeleteResponse(resp *schemas.RakshaFileDeleteResponse) *Bedroc
 	}
 }
 
-// ToBedrockFileContentResponse converts a Raksha file content response to Bedrock format.
-func ToBedrockFileContentResponse(resp *schemas.RakshaFileContentResponse) *BedrockFileContentResponse {
+// ToBedrockFileContentResponse converts a Gateway file content response to Bedrock format.
+func ToBedrockFileContentResponse(resp *schemas.GatewayFileContentResponse) *BedrockFileContentResponse {
 	if resp == nil {
 		return nil
 	}
@@ -223,8 +223,8 @@ func ToBedrockFileContentResponse(resp *schemas.RakshaFileContentResponse) *Bedr
 
 // ==================== S3 API XML FORMATTERS ====================
 
-// ToS3ListObjectsV2XML converts a Raksha file list response to S3 ListObjectsV2 XML format.
-func ToS3ListObjectsV2XML(resp *schemas.RakshaFileListResponse, bucket, prefix string, maxKeys int) []byte {
+// ToS3ListObjectsV2XML converts a Gateway file list response to S3 ListObjectsV2 XML format.
+func ToS3ListObjectsV2XML(resp *schemas.GatewayFileListResponse, bucket, prefix string, maxKeys int) []byte {
 	if resp == nil {
 		return []byte(`<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></ListBucketResult>`)
 	}

@@ -1,4 +1,4 @@
-// Package maxim provides attachment extraction from Raksha requests for Maxim logging.
+// Package maxim provides attachment extraction from Gateway requests for Maxim logging.
 package maxim
 
 import (
@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/maximhq/maxim-go/logging"
 )
 
@@ -19,7 +19,7 @@ import (
 // converting them to maxim-go attachment types.
 // Returns a slice of *logging.UrlAttachment or *logging.FileDataAttachment for use with
 // Logger.GenerationAddAttachment.
-func ExtractAttachmentsFromRequest(req *schemas.RakshaRequest) []interface{} {
+func ExtractAttachmentsFromRequest(req *schemas.GatewayRequest) []interface{} {
 	if req == nil {
 		return nil
 	}
@@ -38,7 +38,7 @@ func ExtractAttachmentsFromRequest(req *schemas.RakshaRequest) []interface{} {
 	}
 }
 
-func extractFromImageGenerationRequest(igr *schemas.RakshaImageGenerationRequest) []interface{} {
+func extractFromImageGenerationRequest(igr *schemas.GatewayImageGenerationRequest) []interface{} {
 	if igr == nil || igr.Params == nil || len(igr.Params.InputImages) == 0 {
 		return nil
 	}
@@ -51,7 +51,7 @@ func extractFromImageGenerationRequest(igr *schemas.RakshaImageGenerationRequest
 	return attachments
 }
 
-func extractFromImageEditRequest(ier *schemas.RakshaImageEditRequest) []interface{} {
+func extractFromImageEditRequest(ier *schemas.GatewayImageEditRequest) []interface{} {
 	if ier == nil || ier.Input == nil || len(ier.Input.Images) == 0 {
 		return nil
 	}
@@ -125,7 +125,7 @@ func inputImageStringToAttachment(s string) interface{} {
 	}
 }
 
-func extractFromChatRequest(cr *schemas.RakshaChatRequest) []interface{} {
+func extractFromChatRequest(cr *schemas.GatewayChatRequest) []interface{} {
 	if cr == nil || cr.Input == nil {
 		return nil
 	}
@@ -144,7 +144,7 @@ func extractFromChatRequest(cr *schemas.RakshaChatRequest) []interface{} {
 	return attachments
 }
 
-func extractFromResponsesRequest(rr *schemas.RakshaResponsesRequest) []interface{} {
+func extractFromResponsesRequest(rr *schemas.GatewayResponsesRequest) []interface{} {
 	if rr == nil || rr.Input == nil {
 		return nil
 	}

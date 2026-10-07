@@ -1,11 +1,11 @@
 package schemas
 
 // OTelOperationNameExecuteTool is the gen_ai.operation.name value for MCP tool
-// executions. execute_tool is an MCPRequestType, not a Raksha RequestType, so it
+// executions. execute_tool is an MCPRequestType, not a Gateway RequestType, so it
 // can't flow through OTelOperationName.
 const OTelOperationNameExecuteTool = "execute_tool"
 
-// OTelOperationName maps a Raksha RequestType to the value that should be
+// OTelOperationName maps a Gateway RequestType to the value that should be
 // emitted under gen_ai.operation.name. Values not modeled by the spec fall
 // through to the raw RequestType string.
 func OTelOperationName(rt RequestType) string {
@@ -27,9 +27,9 @@ func OTelOperationName(rt RequestType) string {
 	}
 }
 
-// OTelProviderName maps a Raksha ModelProvider to the value that should be
+// OTelProviderName maps a Gateway ModelProvider to the value that should be
 // emitted under gen_ai.provider.name. Providers not covered by the spec keep
-// their Raksha short name.
+// their Gateway short name.
 func OTelProviderName(p ModelProvider) string {
 	switch p {
 	case Bedrock:

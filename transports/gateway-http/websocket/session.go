@@ -8,7 +8,7 @@ import (
 
 	ws "github.com/fasthttp/websocket"
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // Session tracks the binding between a client WebSocket connection and its upstream state.
@@ -94,7 +94,7 @@ func NewSession(clientConn *ws.Conn) *Session {
 	}
 }
 
-// ID returns the stable Raksha session identifier for this websocket session.
+// ID returns the stable Gateway session identifier for this websocket session.
 func (s *Session) ID() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -7,21 +7,21 @@ import (
 	"math"
 	"slices"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/plugins/compat"
-	"github.com/raksha/raksha/plugins/connectors"
-	"github.com/raksha/raksha/plugins/governance"
-	"github.com/raksha/raksha/plugins/guardrails"
-	"github.com/raksha/raksha/plugins/logging"
-	"github.com/raksha/raksha/plugins/maxim"
-	"github.com/raksha/raksha/plugins/modelcatalogresolver"
-	"github.com/raksha/raksha/plugins/otel"
-	"github.com/raksha/raksha/plugins/prompts"
-	"github.com/raksha/raksha/plugins/semanticcache"
-	"github.com/raksha/raksha/plugins/telemetry"
-	"github.com/raksha/raksha/transports/raksha-http/handlers"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/plugins/compat"
+	"github.com/gateway/gateway/plugins/connectors"
+	"github.com/gateway/gateway/plugins/governance"
+	"github.com/gateway/gateway/plugins/guardrails"
+	"github.com/gateway/gateway/plugins/logging"
+	"github.com/gateway/gateway/plugins/maxim"
+	"github.com/gateway/gateway/plugins/modelcatalogresolver"
+	"github.com/gateway/gateway/plugins/otel"
+	"github.com/gateway/gateway/plugins/prompts"
+	"github.com/gateway/gateway/plugins/semanticcache"
+	"github.com/gateway/gateway/plugins/telemetry"
+	"github.com/gateway/gateway/transports/gateway-http/handlers"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 )
 
 // InferPluginTypes determines which interface types a plugin implements
@@ -43,22 +43,22 @@ func InferPluginTypes(plugin schemas.BasePlugin) []schemas.PluginType {
 
 // InstantiatePlugin creates a plugin instance but does NOT register it
 // Registration is done separately via Config.RegisterPlugin()
-func InstantiatePlugin(ctx context.Context, name string, path *string, pluginConfig any, rakshaConfig *lib.Config) (schemas.BasePlugin, error) {
+func InstantiatePlugin(ctx context.Context, name string, path *string, pluginConfig any, gatewayConfig *lib.Config) (schemas.BasePlugin, error) {
 	// Custom plugin (has path)
 	if path != nil {
-		return loadCustomPlugin(ctx, path, pluginConfig, rakshaConfig)
+		return loadCustomPlugin(ctx, path, pluginConfig, gatewayConfig)
 	}
 
 	// Built-in plugin (by name)
-	return loadBuiltinPlugin(ctx, name, pluginConfig, rakshaConfig)
+	return loadBuiltinPlugin(ctx, name, pluginConfig, gatewayConfig)
 }
 
 // loadBuiltinPlugin instantiates a built-in plugin by name
-func loadBuiltinPlugin(ctx context.Context, name string, pluginConfig any, rakshaConfig *lib.Config) (schemas.BasePlugin, error) {
+func loadBuiltinPlugin(ctx context.Context, name string, pluginConfig any, gatewayConfig *lib.Config) (schemas.BasePlugin, error) {
 	switch name {
 	case telemetry.PluginName:
 		telConfig := &telemetry.Config{
-			CustomLabels: rakshaConfig.ClientConfig.PrometheusLabels,
+			CustomLabels: gatewayConfig.ClientConfig.PrometheusLabels,
 		}
 		// Merge persisted config if provided.
 		if pluginConfig != nil {
@@ -75,28 +75,28 @@ func loadBuiltinPlugin(ctx context.Context, name string, pluginConfig any, raksh
 				}
 			}
 		}
-		return telemetry.Init(telConfig, rakshaConfig.ModelCatalog, logger)
+		return telemetry.Init(telConfig, gatewayConfig.ModelCatalog, logger)
 
 	case prompts.PluginName:
-		return prompts.Init(ctx, rakshaConfig.ConfigStore, logger)
+		return prompts.Init(ctx, gatewayConfig.ConfigStore, logger)
 
 	case logging.PluginName:
 		loggingConfig, err := MarshalPluginConfig[logging.Config](pluginConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal logging plugin config: %w", err)
 		}
-		return logging.Init(ctx, loggingConfig, logger, rakshaConfig.LogsStore,
-			rakshaConfig.ModelCatalog, rakshaConfig.MCPCatalog)
+		return logging.Init(ctx, loggingConfig, logger, gatewayConfig.LogsStore,
+			gatewayConfig.ModelCatalog, gatewayConfig.MCPCatalog)
 
 	case governance.PluginName:
 		governanceConfig, err := MarshalPluginConfig[governance.Config](pluginConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal governance plugin config: %w", err)
 		}
-		inMemoryStore := &GovernanceInMemoryStore{Config: rakshaConfig}
-		return governance.Init(ctx, governanceConfig, logger, rakshaConfig.ConfigStore,
-			rakshaConfig.GovernanceConfig, rakshaConfig.ModelCatalog,
-			rakshaConfig.MCPCatalog, inMemoryStore)
+		inMemoryStore := &GovernanceInMemoryStore{Config: gatewayConfig}
+		return governance.Init(ctx, governanceConfig, logger, gatewayConfig.ConfigStore,
+			gatewayConfig.GovernanceConfig, gatewayConfig.ModelCatalog,
+			gatewayConfig.MCPCatalog, inMemoryStore)
 
 	case maxim.PluginName:
 		maximConfig, err := MarshalPluginConfig[maxim.Config](pluginConfig)
@@ -110,28 +110,28 @@ func loadBuiltinPlugin(ctx context.Context, name string, pluginConfig any, raksh
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal semantic cache plugin config: %w", err)
 		}
-		return semanticcache.Init(ctx, semanticConfig, logger, rakshaConfig.VectorStore)
+		return semanticcache.Init(ctx, semanticConfig, logger, gatewayConfig.VectorStore)
 
 	case otel.PluginName:
 		otelConfig, err := MarshalPluginConfig[otel.Config](pluginConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal otel plugin config: %w", err)
 		}
-		return otel.Init(ctx, otelConfig, logger, rakshaConfig.ModelCatalog, handlers.GetVersion())
+		return otel.Init(ctx, otelConfig, logger, gatewayConfig.ModelCatalog, handlers.GetVersion())
 
 	case compat.PluginName:
 		compatConfig, err := MarshalPluginConfig[compat.Config](pluginConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal compat plugin config: %w", err)
 		}
-		return compat.Init(*compatConfig, logger, rakshaConfig.ModelCatalog)
+		return compat.Init(*compatConfig, logger, gatewayConfig.ModelCatalog)
 
 	case guardrails.PluginName:
 		guardrailsConfig := &guardrails.Config{}
 		// We have to copy the lib config to the local plugin config.
 		// Since we want to avoid import cycles, we marshal and unmarshal.
-		if rakshaConfig.GuardrailsConfig != nil {
-			bytes, err := json.Marshal(rakshaConfig.GuardrailsConfig)
+		if gatewayConfig.GuardrailsConfig != nil {
+			bytes, err := json.Marshal(gatewayConfig.GuardrailsConfig)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal guardrails config: %w", err)
 			}
@@ -142,7 +142,7 @@ func loadBuiltinPlugin(ctx context.Context, name string, pluginConfig any, raksh
 		return guardrails.Init(ctx, guardrailsConfig, logger)
 
 	case modelcatalogresolver.PluginName:
-		return modelcatalogresolver.Init(rakshaConfig.ModelCatalog, logger)
+		return modelcatalogresolver.Init(gatewayConfig.ModelCatalog, logger)
 
 	case connectors.PluginName:
 		return connectors.Init()
@@ -153,10 +153,10 @@ func loadBuiltinPlugin(ctx context.Context, name string, pluginConfig any, raksh
 }
 
 // loadCustomPlugin loads a plugin from a shared object file
-func loadCustomPlugin(ctx context.Context, path *string, pluginConfig any, rakshaConfig *lib.Config) (schemas.BasePlugin, error) {
+func loadCustomPlugin(ctx context.Context, path *string, pluginConfig any, gatewayConfig *lib.Config) (schemas.BasePlugin, error) {
 	logger.Info("loading custom plugin from path %s", *path)
 
-	plugin, err := rakshaConfig.PluginLoader.LoadPlugin(*path, pluginConfig)
+	plugin, err := gatewayConfig.PluginLoader.LoadPlugin(*path, pluginConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load custom plugin: %w", err)
 	}
@@ -164,7 +164,7 @@ func loadCustomPlugin(ctx context.Context, path *string, pluginConfig any, raksh
 }
 
 // LoadPlugins loads the plugins for the server.
-func (s *RakshaHTTPServer) LoadPlugins(ctx context.Context) error {
+func (s *GatewayHTTPServer) LoadPlugins(ctx context.Context) error {
 	// Load built-in plugins first (order matters)
 	if err := s.loadBuiltinPlugins(ctx); err != nil {
 		return err
@@ -179,7 +179,7 @@ func (s *RakshaHTTPServer) LoadPlugins(ctx context.Context) error {
 }
 
 // getPluginConfig retrieves a plugin's config from PluginConfigs by name
-func (s *RakshaHTTPServer) getPluginConfig(name string) *schemas.PluginConfig {
+func (s *GatewayHTTPServer) getPluginConfig(name string) *schemas.PluginConfig {
 	for _, cfg := range s.Config.PluginConfigs {
 		if cfg.Name == name {
 			return cfg
@@ -189,7 +189,7 @@ func (s *RakshaHTTPServer) getPluginConfig(name string) *schemas.PluginConfig {
 }
 
 // loadBuiltinPlugins loads required built-in plugins in specific order
-func (s *RakshaHTTPServer) loadBuiltinPlugins(ctx context.Context) error {
+func (s *GatewayHTTPServer) loadBuiltinPlugins(ctx context.Context) error {
 	builtinPlacement := schemas.Ptr(schemas.PluginPlacementBuiltin)
 
 	// 1. Telemetry (always first - tracks everything).
@@ -203,7 +203,7 @@ func (s *RakshaHTTPServer) loadBuiltinPlugins(ctx context.Context) error {
 	s.Config.SetPluginOrderInfo(telemetry.PluginName, builtinPlacement, schemas.Ptr(1))
 
 	// 2. Prompts (requires config store for prompt repository; disabled in enterprise)
-	if s.Config.ConfigStore != nil && ctx.Value(schemas.RakshaContextKeyIsEnterprise) == nil {
+	if s.Config.ConfigStore != nil && ctx.Value(schemas.GatewayContextKeyIsEnterprise) == nil {
 		s.registerPluginWithStatus(ctx, prompts.PluginName, nil, nil, false)
 	} else {
 		s.markPluginDisabled(prompts.PluginName)
@@ -226,7 +226,7 @@ func (s *RakshaHTTPServer) loadBuiltinPlugins(ctx context.Context) error {
 	s.Config.SetPluginOrderInfo(logging.PluginName, builtinPlacement, schemas.Ptr(3))
 
 	// 4. Governance (if enabled and not enterprise)
-	if ctx.Value(schemas.RakshaContextKeyIsEnterprise) == nil {
+	if ctx.Value(schemas.GatewayContextKeyIsEnterprise) == nil {
 		config := &governance.Config{
 			IsVkMandatory:         &s.Config.ClientConfig.EnforceAuthOnInference,
 			RequiredHeaders:       &s.Config.ClientConfig.RequiredHeaders,
@@ -307,7 +307,7 @@ func (s *RakshaHTTPServer) loadBuiltinPlugins(ctx context.Context) error {
 }
 
 // loadCustomPlugins loads plugins from PluginConfigs
-func (s *RakshaHTTPServer) loadCustomPlugins(ctx context.Context) error {
+func (s *GatewayHTTPServer) loadCustomPlugins(ctx context.Context) error {
 	for _, cfg := range s.Config.PluginConfigs {
 		// Skip built-ins (already loaded)
 		if lib.IsBuiltinPlugin(cfg.Name) {

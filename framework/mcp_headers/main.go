@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/temptoken"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/temptoken"
 )
 
 // SubmissionFlowTTL caps how long a pending headers submission flow row
@@ -47,11 +47,11 @@ type Provider struct {
 }
 
 // NewProvider constructs a configstore-backed MCPHeadersProvider. Mirrors
-// oauth2.NewOAuth2Provider so the wiring in transports/raksha-http stays
+// oauth2.NewOAuth2Provider so the wiring in transports/gateway-http stays
 // symmetric between the two per-user auth surfaces.
 func NewProvider(configStore configstore.ConfigStore, logger schemas.Logger) *Provider {
 	if logger == nil {
-		logger = raksha.NewDefaultLogger(schemas.LogLevelInfo)
+		logger = gateway.NewDefaultLogger(schemas.LogLevelInfo)
 	}
 	return &Provider{configStore: configStore, logger: logger}
 }

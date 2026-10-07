@@ -1,4 +1,5 @@
 import FullPageLoader from "@/components/fullPageLoader";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { RenderProviderIcon } from "@/lib/constants/icons";
 import { ProviderLabels, ProviderName } from "@/lib/constants/logs";
-import { ModelDetails, useGetModelDetailsQuery, useGetProvidersQuery } from "@/lib/store";
+import { getErrorMessage, ModelDetails, useGetModelDetailsQuery, useGetProvidersQuery } from "@/lib/store";
 import { KnownProvider } from "@/lib/types/config";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { ChevronLeft, ChevronRight, Edit, Search } from "lucide-react";
@@ -60,7 +61,9 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 		setOffset(0);
 	}, [debouncedSearch, providerFilter]);
 
-	const { data: providersData } = useGetProvidersQuery(undefined, { skip: !hasAccess });
+	const { data: providersData, isError: providersFailed, error: providersError } = useGetProvidersQuery(undefined, {
+		skip: !hasAccess,
+	});
 	const { data, isLoading, error, refetch } = useGetModelDetailsQuery(
 		{
 			query: debouncedSearch || undefined,
@@ -115,6 +118,14 @@ export default function AttributesTab({ hasAccess }: AttributesTabProps) {
 						<p className="text-muted-foreground text-sm">Attach descriptions and tags to specific models.</p>
 					</div>
 				</div>
+
+				{providersFailed ? (
+					<QueryErrorBanner
+						className="mb-4 shrink-0"
+						testId="model-catalog-providers-query-error"
+						message={getErrorMessage(providersError) || "Failed to load providers for the filter."}
+					/>
+				) : null}
 
 				<div className="mb-4 flex shrink-0 items-center gap-3">
 					<div className="relative max-w-sm flex-1">

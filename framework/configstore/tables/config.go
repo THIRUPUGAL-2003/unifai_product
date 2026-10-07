@@ -1,6 +1,6 @@
 package tables
 
-import "github.com/raksha/raksha/core/network"
+import "github.com/gateway/gateway/core/network"
 
 const (
 	ConfigAdminUsernameKey = "admin_username"

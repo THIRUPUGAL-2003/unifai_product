@@ -4,11 +4,11 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-func ToHuggingFaceTranscriptionRequest(request *schemas.RakshaTranscriptionRequest) (*HuggingFaceTranscriptionRequest, error) {
+func ToHuggingFaceTranscriptionRequest(request *schemas.GatewayTranscriptionRequest) (*HuggingFaceTranscriptionRequest, error) {
 	if request == nil {
 		return nil, nil
 	}
@@ -132,7 +132,7 @@ func ToHuggingFaceTranscriptionRequest(request *schemas.RakshaTranscriptionReque
 	return hfRequest, nil
 }
 
-func (response *HuggingFaceTranscriptionResponse) ToRakshaTranscriptionResponse(requestedModel string) (*schemas.RakshaTranscriptionResponse, error) {
+func (response *HuggingFaceTranscriptionResponse) ToGatewayTranscriptionResponse(requestedModel string) (*schemas.GatewayTranscriptionResponse, error) {
 	if response == nil {
 		return nil, nil
 	}
@@ -141,8 +141,8 @@ func (response *HuggingFaceTranscriptionResponse) ToRakshaTranscriptionResponse(
 		return nil, fmt.Errorf("model name cannot be empty")
 	}
 
-	// Create the base Raksha response
-	rakshaResponse := &schemas.RakshaTranscriptionResponse{
+	// Create the base Gateway response
+	gatewayResponse := &schemas.GatewayTranscriptionResponse{
 		Text: response.Text,
 	}
 
@@ -163,8 +163,8 @@ func (response *HuggingFaceTranscriptionResponse) ToRakshaTranscriptionResponse(
 				Text:  chunk.Text,
 			}
 		}
-		rakshaResponse.Segments = segments
+		gatewayResponse.Segments = segments
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }

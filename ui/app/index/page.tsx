@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getApiBaseUrl } from "@/lib/utils/port";
-import { COMPANY_LOGO, COMPANY_NAME, DEFAULT_FOOTER_TEXT, PRODUCT_NAME, PRODUCT_FULL_NAME } from "@/lib/constants/config";
+import { COMPANY_LOGO, COMPANY_NAME, DEFAULT_FOOTER_TEXT } from "@/lib/constants/config";
 import { useBranding } from "@/lib/hooks/useBranding";
 
 export default function LandingPage() {
@@ -111,8 +111,8 @@ export default function LandingPage() {
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://raksha.yourcompany.com/v1",
-    api_key="raksha_vk_live_enterprise_99x"
+    base_url="https://gateway.yourcompany.com/v1",
+    api_key="gateway_vk_live_enterprise_99x"
 )
 
 # Unified routing across OpenAI, Claude, Gemini, DeepSeek
@@ -123,9 +123,9 @@ response = client.chat.completions.create(
 
 print(response.choices[0].message.content)`,
 		curl: `# Universal OpenAI-compatible cURL endpoint
-curl -X POST https://raksha.yourcompany.com/v1/chat/completions \\
+curl -X POST https://gateway.yourcompany.com/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer raksha_vk_live_enterprise_99x" \\
+  -H "Authorization: Bearer gateway_vk_live_enterprise_99x" \\
   -d '{
     "model": "gpt-4o",
     "messages": [
@@ -139,8 +139,8 @@ curl -X POST https://raksha.yourcompany.com/v1/chat/completions \\
 import OpenAI from "openai";
 
 const openai = new OpenAI({
-  baseURL: "https://raksha.yourcompany.com/v1",
-  apiKey: "raksha_vk_live_enterprise_99x"
+  baseURL: "https://gateway.yourcompany.com/v1",
+  apiKey: "gateway_vk_live_enterprise_99x"
 });
 
 const response = await openai.chat.completions.create({
@@ -163,7 +163,7 @@ console.log(response.choices[0].message.content);`
 	const faqs = [
 		{
 			q: "How does Browser Guard protect corporate data in employee AI web tools?",
-			a: "RAKSHA Browser Guard runs as a lightweight, zero-latency endpoint daemon on macOS and Windows. When staff interact with ChatGPT, Claude, or Grok, Browser Guard intercepts prompts and document attachments in-flight, immediately sanitizing API keys, passwords, customer PII, and proprietary code before packets exit the machine."
+			a: "GATEWAY Browser Guard runs as a lightweight, zero-latency endpoint daemon on macOS and Windows. When staff interact with ChatGPT, Claude, or Grok, Browser Guard intercepts prompts and document attachments in-flight, immediately sanitizing API keys, passwords, customer PII, and proprietary code before packets exit the machine."
 		},
 		{
 			q: "Does Browser Guard slow down employee network connection or browsing?",
@@ -171,20 +171,21 @@ console.log(response.choices[0].message.content);`
 		},
 		{
 			q: "How does the Universal AI Gateway save API spend with Semantic Caching?",
-			a: "The gateway maintains a pgvector vectorized semantic memory. When incoming prompts are semantically equivalent to previously answered queries, RAKSHA serves the response directly with sub-10ms latency and 0 provider token cost, routinely cutting corporate LLM bills by 70% to 85%."
+			a: "The gateway maintains a pgvector vectorized semantic memory. When incoming prompts are semantically equivalent to previously answered queries, GATEWAY serves the response directly with sub-10ms latency and 0 provider token cost, routinely cutting corporate LLM bills by 70% to 85%."
 		},
 		{
-			q: "Can RAKSHA run in an air-gapped on-premise datacenter or private VPC?",
-			a: "Yes. RAKSHA compiles to a standalone high-performance Go binary with PostgreSQL. You can deploy it seamlessly across Kubernetes, Docker, AWS ECS/EKS, Azure, or air-gapped bare metal so that sensitive data never leaves your internal cloud perimeter."
+			q: "Can GATEWAY run in an air-gapped on-premise datacenter or private VPC?",
+			a: "Yes. GATEWAY compiles to a standalone high-performance Go binary with PostgreSQL. You can deploy it seamlessly across Kubernetes, Docker, AWS ECS/EKS, Azure, or air-gapped bare metal so that sensitive data never leaves your internal cloud perimeter."
 		},
 		{
 			q: "How do we deploy the desktop agent across hundreds of employee workstations?",
-			a: "RAKSHA ships with pre-configured silent installers for Windows (MSI/EXE) and macOS (PKG/ZIP). IT administrators can roll it out in minutes via Microsoft Intune, Jamf Pro, Kandji, or Active Directory Group Policy."
+			a: "GATEWAY ships with pre-configured silent installers for Windows (MSI/EXE) and macOS (PKG/ZIP). IT administrators can roll it out in minutes via Microsoft Intune, Jamf Pro, Kandji, or Active Directory Group Policy."
 		}
 	];
 
 	const companyLogoSrc = branding.companyLogo;
-	const productName = branding.productName;
+	// Home page keeps the Gateway brand mark; workspace/emails use productName (Gateway).
+	const productName = branding.brandName;
 	const productFullName = branding.productFullName;
 	const companyFullName = branding.companyName;
 
@@ -380,7 +381,7 @@ console.log(response.choices[0].message.content);`
 					</h1>
 
 					<p className="text-base sm:text-lg text-slate-300 max-w-2xl mx-auto mb-10 leading-relaxed font-normal">
-						RAKSHA provides in-flight DLP protection for employee AI browser sessions, while delivering a drop-in high-performance reverse proxy for production LLM APIs.
+						GATEWAY provides in-flight DLP protection for employee AI browser sessions, while delivering a drop-in high-performance reverse proxy for production LLM APIs.
 					</p>
 
 					{/* Dual High-Contrast CTAs */}
@@ -437,7 +438,7 @@ console.log(response.choices[0].message.content);`
 									<div className="h-3 w-3 rounded-full bg-emerald-500/90" />
 								</div>
 								<span className="text-xs font-mono font-semibold text-slate-300 ml-2">
-									raksha-perimeter :: active security enforcement
+									gateway-perimeter :: active security enforcement
 								</span>
 							</div>
 							<div className="flex items-center gap-3 text-xs font-mono">
@@ -588,7 +589,7 @@ console.log(response.choices[0].message.content);`
 							</div>
 
 							<div className="space-y-2">
-								<h3 className="text-2xl font-bold text-white">RAKSHA Browser Guard</h3>
+								<h3 className="text-2xl font-bold text-white">GATEWAY Browser Guard</h3>
 								<p className="text-slate-400 text-sm leading-relaxed">
 									Endpoint DLP daemon for macOS and Windows. Automatically protects confidential IP whenever employees utilize ChatGPT, Claude, Grok, or custom AI portals.
 								</p>
@@ -625,7 +626,7 @@ console.log(response.choices[0].message.content);`
 							</div>
 
 							<div className="space-y-2">
-								<h3 className="text-2xl font-bold text-white">RAKSHA Universal Gateway</h3>
+								<h3 className="text-2xl font-bold text-white">GATEWAY Universal Gateway</h3>
 								<p className="text-slate-400 text-sm leading-relaxed">
 									Centralized LLM reverse proxy for production apps. Unifies model routing, semantic vector caching, rate limits, and team access tokens behind a single drop-in API.
 								</p>
@@ -730,7 +731,7 @@ console.log(response.choices[0].message.content);`
 								One Line of Code to Supercharge AI
 							</h2>
 							<p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-								RAKSHA is 100% compliant with standard OpenAI SDKs and specs. Simply update your connection base URL to instantly unlock semantic caching, virtual key quotas, and automatic multi-model failover.
+								GATEWAY is 100% compliant with standard OpenAI SDKs and specs. Simply update your connection base URL to instantly unlock semantic caching, virtual key quotas, and automatic multi-model failover.
 							</p>
 
 							<div className="space-y-3 pt-2">

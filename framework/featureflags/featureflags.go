@@ -91,7 +91,7 @@ type Config struct {
 	// Flags registered with EnterpriseOnly=true are inert when this is
 	// false: IsEnabled returns false, Set rejects with ErrFlagEnterpriseOnly,
 	// and the UI renders them disabled. Wired from initFeatureFlags by
-	// checking schemas.RakshaContextKeyIsEnterprise on the bootstrap ctx.
+	// checking schemas.GatewayContextKeyIsEnterprise on the bootstrap ctx.
 	IsEnterprise bool
 }
 

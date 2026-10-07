@@ -14,8 +14,8 @@ const MaxPaginationRequests = 20
 
 // Structure to collect results from goroutines
 type ListModelsByKeyResult struct {
-	Response *RakshaListModelsResponse
-	Err      *RakshaError
+	Response *GatewayListModelsResponse
+	Err      *GatewayError
 	KeyID    string
 }
 
@@ -24,11 +24,11 @@ type KeyStatus struct {
 	KeyID    string        `json:"key_id"`   // Empty for keyless providers
 	Status   KeyStatusType `json:"status"`   // "success", "failed"
 	Provider ModelProvider `json:"provider"` // Always populated
-	Error    *RakshaError `json:"error,omitempty"`
+	Error    *GatewayError `json:"error,omitempty"`
 }
 
 // MarshalJSON implements custom JSON marshaling for KeyStatus to prevent
-// circular reference: KeyStatus.Error → RakshaError.ExtraFields.KeyStatuses → KeyStatus.
+// circular reference: KeyStatus.Error → GatewayError.ExtraFields.KeyStatuses → KeyStatus.
 func (k KeyStatus) MarshalJSON() ([]byte, error) {
 	type Alias KeyStatus
 	alias := Alias(k)
@@ -40,7 +40,7 @@ func (k KeyStatus) MarshalJSON() ([]byte, error) {
 	return MarshalSorted(alias)
 }
 
-type RakshaListModelsRequest struct {
+type GatewayListModelsRequest struct {
 	Provider ModelProvider `json:"provider"`
 
 	PageSize int `json:"page_size"`
@@ -48,12 +48,12 @@ type RakshaListModelsRequest struct {
 	// PageToken: Token received from previous request to retrieve next page
 	PageToken string `json:"page_token"`
 
-	// Unfiltered: If true, the response will include all models for the provider, regardless of the allowed models (internal raksha use only, not sent to the provider)
+	// Unfiltered: If true, the response will include all models for the provider, regardless of the allowed models (internal gateway use only, not sent to the provider)
 	Unfiltered bool `json:"-"`
 
 	// KeyID: If non-nil, scope the call to a single key (matched by Key.ID).
 	// Lets callers cache list-models output per-key for fine-grained
-	// invalidation. Internal raksha use only; not sent to the provider.
+	// invalidation. Internal gateway use only; not sent to the provider.
 	//
 	// Matching runs against the already-filtered set of supported keys for the
 	// provider — keys that are disabled (Enabled == false) or fail validation
@@ -68,9 +68,9 @@ type RakshaListModelsRequest struct {
 	ExtraParams map[string]interface{} `json:"-"`
 }
 
-type RakshaListModelsResponse struct {
+type GatewayListModelsResponse struct {
 	Data          []Model                    `json:"data"`
-	ExtraFields   RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields   GatewayResponseExtraFields `json:"extra_fields"`
 	NextPageToken string                     `json:"next_page_token,omitempty"` // Token to retrieve next page
 
 	// Key-level status tracking for multi-key providers
@@ -82,7 +82,7 @@ type RakshaListModelsResponse struct {
 	HasMore *bool   `json:"-"`
 }
 
-func (response *RakshaListModelsResponse) FilterDeprecatedModels() {
+func (response *GatewayListModelsResponse) FilterDeprecatedModels() {
 	if response == nil || len(response.Data) == 0 {
 		return
 	}
@@ -96,10 +96,10 @@ func (response *RakshaListModelsResponse) FilterDeprecatedModels() {
 	response.Data = models
 }
 
-// ApplyPagination applies offset-based pagination to a RakshaListModelsResponse.
+// ApplyPagination applies offset-based pagination to a GatewayListModelsResponse.
 // Uses opaque tokens with LastID validation to ensure cursor integrity.
 // Returns the paginated response with properly set NextPageToken.
-func (response *RakshaListModelsResponse) ApplyPagination(pageSize int, pageToken string) *RakshaListModelsResponse {
+func (response *GatewayListModelsResponse) ApplyPagination(pageSize int, pageToken string) *GatewayListModelsResponse {
 	if response == nil {
 		return nil
 	}
@@ -121,7 +121,7 @@ func (response *RakshaListModelsResponse) ApplyPagination(pageSize int, pageToke
 
 	if offset >= totalItems {
 		// Return empty page, no next token
-		return &RakshaListModelsResponse{
+		return &GatewayListModelsResponse{
 			Data:          []Model{},
 			ExtraFields:   response.ExtraFields,
 			NextPageToken: "",
@@ -136,7 +136,7 @@ func (response *RakshaListModelsResponse) ApplyPagination(pageSize int, pageToke
 
 	paginatedData := response.Data[offset:endIndex]
 
-	paginatedResponse := &RakshaListModelsResponse{
+	paginatedResponse := &GatewayListModelsResponse{
 		Data:        paginatedData,
 		ExtraFields: response.ExtraFields,
 		KeyStatuses: response.KeyStatuses,
@@ -189,7 +189,7 @@ type Model struct {
 	SupportedMethods []string `json:"supported_methods,omitempty"`
 
 	// ProviderExtra carries opaque provider-specific data (e.g. Anthropic capabilities)
-	// through the Raksha pipeline for integration reverse-conversion. Never serialized.
+	// through the Gateway pipeline for integration reverse-conversion. Never serialized.
 	ProviderExtra json.RawMessage `json:"-"`
 }
 

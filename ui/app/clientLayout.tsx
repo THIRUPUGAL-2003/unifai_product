@@ -9,7 +9,7 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import { useStoreSync } from "@/hooks/useStoreSync";
 import { WebSocketProvider } from "@/hooks/useWebSocket";
 import { getErrorMessage, ReduxProvider, useGetCoreConfigQuery, useIsAuthEnabledQuery } from "@/lib/store";
-import { RakshaConfig } from "@/lib/types/config";
+import { GatewayConfig } from "@/lib/types/config";
 import { RbacProvider, useRbacContext } from "@enterprise/lib/contexts/rbacContext";
 import { useLocation, useMatches } from "@tanstack/react-router";
 import { NuqsAdapter } from "nuqs/adapters/tanstack-router";
@@ -71,7 +71,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
 	const useMinimalShell = tempTokenScoped && !!authState?.is_auth_enabled && !authState?.has_valid_token && hadFragmentTempToken;
 
 	const {
-		data: rakshaConfig,
+		data: gatewayConfig,
 		error,
 		isLoading,
 		refetch: refetchConfig,
@@ -88,7 +88,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
 	// on the active route. Gate the full dashboard chrome on it; the cached read is
 	// a single frame so this is imperceptible. Minimal/public shells don't use RBAC
 	// and are handled by the early returns below.
-	const { isLoading: rbacLoading } = useRbacContext();
+	const { isLoading: rbacLoading, isError: rbacError, error: rbacErr, refetch: refetchRbac } = useRbacContext();
 
 	useEffect(() => {
 		if (error) {
@@ -110,6 +110,25 @@ function AppContent({ children }: { children: React.ReactNode }) {
 		return <FullPageLoader />;
 	}
 
+	if (rbacError) {
+		return (
+			<div className="flex h-[100dvh] w-full flex-col items-center justify-center gap-3 p-6">
+				<p className="text-destructive text-sm font-medium">Failed to load permissions</p>
+				<p className="text-muted-foreground max-w-md text-center text-sm">
+					{getErrorMessage(rbacErr) || "Could not load your access permissions. Retry or sign in again."}
+				</p>
+				<button
+					type="button"
+					className="text-sm underline"
+					onClick={() => void refetchRbac()}
+					data-testid="rbac-permissions-retry"
+				>
+					Retry
+				</button>
+			</div>
+		);
+	}
+
 	if (onWorkspace && authLoading) {
 		return <FullPageLoader />;
 	}
@@ -129,7 +148,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
 							{isLoading ? (
 								<FullPageLoader />
 							) : (
-								<FullPage config={rakshaConfig} error={error} onRetry={refetchConfig}>
+								<FullPage config={gatewayConfig} error={error} onRetry={refetchConfig}>
 									{children}
 								</FullPage>
 							)}
@@ -164,7 +183,7 @@ function FullPage({
 	onRetry,
 	children,
 }: {
-	config: RakshaConfig | undefined;
+	config: GatewayConfig | undefined;
 	error?: unknown;
 	onRetry?: () => void;
 	children: React.ReactNode;
@@ -227,7 +246,9 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 					<NuqsAdapter>
 						<RbacProvider>
 							<AppContent>{children}</AppContent>
-							{process.env.NODE_ENV === "development" && !process.env.RAKSHA_DISABLE_PROFILER && <DevProfiler />}
+							{process.env.NODE_ENV === "development" &&
+								!process.env.GATEWAY_DISABLE_PROFILER &&
+								!process.env.GATEWAY_DISABLE_PROFILER && <DevProfiler />}
 						</RbacProvider>
 					</NuqsAdapter>
 				</ReduxProvider>

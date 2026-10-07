@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunAutomaticFunctionCallingTest executes the automatic function calling test scenario using dual API testing framework
-func RunAutomaticFunctionCallingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunAutomaticFunctionCallingTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.AutomaticFunctionCall {
 		t.Logf("Automatic function calling not supported for provider %s", testConfig.Provider)
 		return
@@ -64,9 +64,9 @@ func RunAutomaticFunctionCallingTest(t *testing.T, client *raksha.Raksha, ctx co
 		}
 
 		// Create operations for both Chat Completions and Responses API
-		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatMessages,
@@ -89,9 +89,9 @@ func RunAutomaticFunctionCallingTest(t *testing.T, client *raksha.Raksha, ctx co
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
@@ -102,7 +102,7 @@ func RunAutomaticFunctionCallingTest(t *testing.T, client *raksha.Raksha, ctx co
 					ToolChoice: &schemas.ResponsesToolChoice{
 						ResponsesToolChoiceStruct: &schemas.ResponsesToolChoiceStruct{
 							Type: schemas.ResponsesToolChoiceTypeFunction,
-							Name: raksha.Ptr(string(SampleToolTypeTime)),
+							Name: gateway.Ptr(string(SampleToolTypeTime)),
 						},
 					},
 				},
@@ -137,12 +137,12 @@ func RunAutomaticFunctionCallingTest(t *testing.T, client *raksha.Raksha, ctx co
 		}
 
 		// Additional validation specific to automatic function calling using universal tool extraction
-		validateChatAutomaticToolCall := func(response *schemas.RakshaChatResponse, apiName string) {
+		validateChatAutomaticToolCall := func(response *schemas.GatewayChatResponse, apiName string) {
 			toolCalls := ExtractChatToolCalls(response)
 			validateAutomaticToolCall(t, toolCalls, apiName)
 		}
 
-		validateResponsesAutomaticToolCall := func(response *schemas.RakshaResponsesResponse, apiName string) {
+		validateResponsesAutomaticToolCall := func(response *schemas.GatewayResponsesResponse, apiName string) {
 			toolCalls := ExtractResponsesToolCalls(response)
 			validateAutomaticToolCall(t, toolCalls, apiName)
 		}

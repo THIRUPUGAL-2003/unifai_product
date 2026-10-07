@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/raksha/raksha/core/providers/gemini"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/gemini"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // resolveVertexProjectID returns the GCP project ID for the current attempt.
@@ -14,7 +14,7 @@ import (
 // VertexKeyConfig.ProjectID. Per-alias override lets one Vertex credential
 // span deployments across distinct GCP projects (e.g. Anthropic models in
 // one project, Gemini in another).
-func resolveVertexProjectID(ctx *schemas.RakshaContext, key schemas.Key) string {
+func resolveVertexProjectID(ctx *schemas.GatewayContext, key schemas.Key) string {
 	if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.VertexAliasCfg != nil && ra.Config.VertexAliasCfg.ProjectID != nil {
 		if v := ra.Config.VertexAliasCfg.ProjectID.GetValue(); v != "" {
 			return v
@@ -28,7 +28,7 @@ func resolveVertexProjectID(ctx *schemas.RakshaContext, key schemas.Key) string 
 
 // resolveVertexProjectNumber returns the GCP project number for the current
 // attempt. Same precedence as resolveVertexProjectID.
-func resolveVertexProjectNumber(ctx *schemas.RakshaContext, key schemas.Key) string {
+func resolveVertexProjectNumber(ctx *schemas.GatewayContext, key schemas.Key) string {
 	if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.VertexAliasCfg != nil && ra.Config.VertexAliasCfg.ProjectNumber != nil {
 		if v := ra.Config.VertexAliasCfg.ProjectNumber.GetValue(); v != "" {
 			return v
@@ -46,7 +46,7 @@ func resolveVertexProjectNumber(ctx *schemas.RakshaContext, key schemas.Key) str
 // families publish in different regions (Anthropic on us-east5, Gemini on
 // us-central1, …), so per-alias overrides let one credential reach all of
 // them.
-func resolveVertexRegion(ctx *schemas.RakshaContext, key schemas.Key) string {
+func resolveVertexRegion(ctx *schemas.GatewayContext, key schemas.Key) string {
 	if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.Region != nil {
 		if v := ra.Config.Region.GetValue(); v != "" {
 			return v
@@ -215,16 +215,16 @@ var vertexFlexModels = []string{
 // isVertexModelSupportedForTier reports whether a model supports the given service tier.
 // Custom/fine-tuned models (all-digits IDs) are passed through without restriction since
 // their base model cannot be determined from the ID alone.
-func isVertexModelSupportedForTier(model string, tier schemas.RakshaServiceTier) bool {
+func isVertexModelSupportedForTier(model string, tier schemas.GatewayServiceTier) bool {
 	if schemas.IsAllDigitsASCII(model) {
 		return true
 	}
 	normalized := gemini.NormalizeModelName(model)
 	var prefixes []string
 	switch tier {
-	case schemas.RakshaServiceTierPriority:
+	case schemas.GatewayServiceTierPriority:
 		prefixes = vertexPriorityModels
-	case schemas.RakshaServiceTierFlex:
+	case schemas.GatewayServiceTierFlex:
 		prefixes = vertexFlexModels
 	default:
 		return false
@@ -239,7 +239,7 @@ func isVertexModelSupportedForTier(model string, tier schemas.RakshaServiceTier)
 
 // vertexServiceTierHeaderValue returns the value for the X-Vertex-AI-LLM-Shared-Request-Type header,
 // or "" if no header should be set. Requires the global endpoint and a supported model.
-func vertexServiceTierHeaderValue(region string, model string, tier schemas.RakshaServiceTier) string {
+func vertexServiceTierHeaderValue(region string, model string, tier schemas.GatewayServiceTier) string {
 	if region != "global" {
 		return ""
 	}
@@ -247,9 +247,9 @@ func vertexServiceTierHeaderValue(region string, model string, tier schemas.Raks
 		return ""
 	}
 	switch tier {
-	case schemas.RakshaServiceTierPriority:
+	case schemas.GatewayServiceTierPriority:
 		return "priority"
-	case schemas.RakshaServiceTierFlex:
+	case schemas.GatewayServiceTierFlex:
 		return "flex"
 	default:
 		return ""
@@ -258,8 +258,8 @@ func vertexServiceTierHeaderValue(region string, model string, tier schemas.Raks
 
 // buildResponseFromConfig builds a list models response from configured deployments and allowedModels.
 // This is used when the user has explicitly configured which models they want to use.
-func buildResponseFromConfig(deployments schemas.KeyAliases, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList) *schemas.RakshaListModelsResponse {
-	response := &schemas.RakshaListModelsResponse{
+func buildResponseFromConfig(deployments schemas.KeyAliases, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList) *schemas.GatewayListModelsResponse {
+	response := &schemas.GatewayListModelsResponse{
 		Data: make([]schemas.Model, 0),
 	}
 

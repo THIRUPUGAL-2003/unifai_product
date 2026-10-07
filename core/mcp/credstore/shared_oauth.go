@@ -3,7 +3,7 @@ package credstore
 import (
 	"net/http"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // sharedOAuthResolver handles MCPAuthTypeOauth — admin-once OAuth where the
@@ -14,7 +14,7 @@ type sharedOAuthResolver struct {
 	provider schemas.OAuth2Provider
 }
 
-func (r *sharedOAuthResolver) ConnectionHeaders(ctx *schemas.RakshaContext, config *schemas.MCPClientConfig) (http.Header, error) {
+func (r *sharedOAuthResolver) ConnectionHeaders(ctx *schemas.GatewayContext, config *schemas.MCPClientConfig) (http.Header, error) {
 	if config.OauthConfigID == nil || *config.OauthConfigID == "" {
 		return nil, schemas.ErrOAuth2ConfigNotFound
 	}

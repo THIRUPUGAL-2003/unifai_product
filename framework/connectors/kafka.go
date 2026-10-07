@@ -8,7 +8,7 @@ import (
 
 	"github.com/segmentio/kafka-go"
 	"github.com/segmentio/kafka-go/sasl/plain"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 func kafkaWriter(cfg Settings) (*kafka.Writer, error) {
@@ -69,8 +69,8 @@ func testKafka(ctx context.Context, cfg Settings) error {
 	testCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	return writer.WriteMessages(testCtx, kafka.Message{
-		Key:   []byte("raksha-connector-test"),
-		Value: []byte(`{"message":"raksha connector test"}`),
+		Key:   []byte("gateway-connector-test"),
+		Value: []byte(`{"message":"gateway connector test"}`),
 		Time:  time.Now().UTC(),
 	})
 }

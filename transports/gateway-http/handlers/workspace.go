@@ -9,9 +9,9 @@ import (
 
 	"github.com/fasthttp/router"
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -43,7 +43,7 @@ func NewEnterpriseFeaturesHandler(store *lib.Config, governanceManager ...Govern
 	return NewWorkspaceHandler(store, governanceManager...)
 }
 
-func (h *WorkspaceHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *WorkspaceHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	wrap := func(fn fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return lib.ChainMiddlewares(fn, middlewares...)
 	}

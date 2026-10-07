@@ -85,7 +85,7 @@ func isGuardSyncRateLimited(ip string) bool {
 }
 
 func configuredGuardSecret() string {
-	s := strings.TrimSpace(os.Getenv("RAKSHA_GUARD_SECRET"))
+	s := strings.TrimSpace(gatewayEnv("GUARD_SECRET"))
 	if s == "" {
 		s = strings.TrimSpace(os.Getenv("GUARD_SECRET_KEY"))
 	}
@@ -93,7 +93,7 @@ func configuredGuardSecret() string {
 }
 
 func guardSecretRequired() bool {
-	v := strings.TrimSpace(os.Getenv("RAKSHA_GUARD_REQUIRE_SECRET"))
+	v := strings.TrimSpace(gatewayEnv("GUARD_REQUIRE_SECRET"))
 	if v == "0" || strings.EqualFold(v, "false") || strings.EqualFold(v, "no") || strings.EqualFold(v, "off") {
 		return false
 	}
@@ -111,14 +111,14 @@ func guardSecretMatches(provided, configured string) bool {
 	return subtle.ConstantTimeCompare(a[:], b[:]) == 1
 }
 
-const guardKeyHeader = "X-Raksha-Guard-Key"
+const guardKeyHeader = "X-Gateway-Guard-Key"
 
 // guardKeyHeaderPrefix returns "X-<Brand>-" for a request authenticated with an
 // X-<Brand>-Guard-Key header. Older Guard builds use a different brand in the header
 // name; accepting any brand lets them authenticate and auto-update to the current build.
 func guardKeyHeaderPrefix(ctx *fasthttp.RequestCtx) (prefix, key string) {
 	if v := strings.TrimSpace(string(ctx.Request.Header.Peek(guardKeyHeader))); v != "" {
-		return "X-Raksha-", v
+		return "X-Gateway-", v
 	}
 	for name, value := range ctx.Request.Header.All() {
 		n := string(name)
@@ -139,8 +139,8 @@ func guardKeyHeaderPrefix(ctx *fasthttp.RequestCtx) (prefix, key string) {
 // setGuardVersionHeaders advertises the release version under the current header name and,
 // for an older Guard, under the header name that build reads.
 func setGuardVersionHeaders(ctx *fasthttp.RequestCtx, version string) {
-	ctx.Response.Header.Set("X-Raksha-Guard-Version", version)
-	if prefix, _ := guardKeyHeaderPrefix(ctx); prefix != "" && !strings.EqualFold(prefix, "X-Raksha-") {
+	ctx.Response.Header.Set("X-Gateway-Guard-Version", version)
+	if prefix, _ := guardKeyHeaderPrefix(ctx); prefix != "" && !strings.EqualFold(prefix, "X-Gateway-") {
 		ctx.Response.Header.Set(prefix+"Guard-Version", version)
 	}
 }
@@ -162,7 +162,7 @@ func (h *BrowserAIHandler) verifyGuardSecurity(ctx *fasthttp.RequestCtx) bool {
 	configuredSecret := configuredGuardSecret()
 	if guardSecretRequired() {
 		if configuredSecret == "" {
-			SendError(ctx, fasthttp.StatusServiceUnavailable, "Guard agent secret not configured — set RAKSHA_GUARD_SECRET in .env")
+			SendError(ctx, fasthttp.StatusServiceUnavailable, "Guard agent secret not configured — set GATEWAY_GUARD_SECRET in .env")
 			return false
 		}
 		if !guardSecretMatches(extractGuardKey(ctx), configuredSecret) {

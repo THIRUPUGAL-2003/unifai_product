@@ -5,7 +5,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
@@ -14,11 +13,11 @@ import (
 	"time"
 )
 
-// Start launches the pprof debug server when RAKSHA_PPROF_PORT is set and
+// Start launches the pprof debug server when GATEWAY_PPROF_PORT is set and
 // returns the *http.Server so the caller can shut it down gracefully alongside
 // the main server. It returns nil when profiling is disabled.
 func Start() *http.Server {
-	port := os.Getenv("RAKSHA_PPROF_PORT")
+	port := GatewayEnv("PPROF_PORT")
 	if port == "" {
 		return nil // nothing imported touches DefaultServeMux; truly inert
 	}
@@ -26,14 +25,14 @@ func Start() *http.Server {
 	// Profiling rates are tunable via env so operators can trade overhead for
 	// resolution. Defaults are intentionally lighter than full sampling since
 	// this server may run alongside production traffic.
-	//   RAKSHA_PPROF_BLOCK_RATE    nanoseconds blocked per sample (lower = more overhead); default 10µs
-	//   RAKSHA_PPROF_MUTEX_FRACTION 1/N contention events sampled (lower = more overhead); default 1%
+	//   GATEWAY_PPROF_BLOCK_RATE    nanoseconds blocked per sample (lower = more overhead); default 10µs
+	//   GATEWAY_PPROF_MUTEX_FRACTION 1/N contention events sampled (lower = more overhead); default 1%
 	blockRate := 10000
-	if v, err := strconv.Atoi(os.Getenv("RAKSHA_PPROF_BLOCK_RATE")); err == nil && v > 0 {
+	if v, err := strconv.Atoi(GatewayEnv("PPROF_BLOCK_RATE")); err == nil && v > 0 {
 		blockRate = v
 	}
 	mutexFraction := 100
-	if v, err := strconv.Atoi(os.Getenv("RAKSHA_PPROF_MUTEX_FRACTION")); err == nil && v > 0 {
+	if v, err := strconv.Atoi(GatewayEnv("PPROF_MUTEX_FRACTION")); err == nil && v > 0 {
 		mutexFraction = v
 	}
 	runtime.SetBlockProfileRate(blockRate)
@@ -110,8 +109,8 @@ func Start() *http.Server {
 
 	// Bind to localhost by default so profiling data (heap dumps, goroutine
 	// stacks, traces) is not exposed on the network unless an operator
-	// deliberately opts in via RAKSHA_PPROF_HOST (e.g. "0.0.0.0").
-	host := os.Getenv("RAKSHA_PPROF_HOST")
+	// deliberately opts in via GATEWAY_PPROF_HOST (e.g. "0.0.0.0").
+	host := GatewayEnv("PPROF_HOST")
 	if host == "" {
 		host = "127.0.0.1"
 	}
@@ -122,8 +121,8 @@ func Start() *http.Server {
 	// Loopback-without-auth stays allowed since that's the standard pprof
 	// workflow (reach it via SSH tunnel or a sidecar).
 	if !isLoopbackHost(host) &&
-		(os.Getenv("RAKSHA_PPROF_USERNAME") == "" || os.Getenv("RAKSHA_PPROF_PASSWORD") == "") {
-		log.Printf("pprof: refusing to expose profiling on non-loopback host %q without RAKSHA_PPROF_USERNAME and RAKSHA_PPROF_PASSWORD", host)
+		(GatewayEnv("PPROF_USERNAME") == "" || GatewayEnv("PPROF_PASSWORD") == "") {
+		log.Printf("pprof: refusing to expose profiling on non-loopback host %q without GATEWAY_PPROF_USERNAME and GATEWAY_PPROF_PASSWORD", host)
 		return nil
 	}
 
@@ -154,13 +153,13 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// basicAuth wraps h with HTTP Basic Auth when both RAKSHA_PPROF_USERNAME and
-// RAKSHA_PPROF_PASSWORD are set. If either is unset/empty, h is returned
+// basicAuth wraps h with HTTP Basic Auth when both GATEWAY_PPROF_USERNAME and
+// GATEWAY_PPROF_PASSWORD are set. If either is unset/empty, h is returned
 // unwrapped; Start only allows that on a loopback bind (see the fail-closed
 // check there), so an open endpoint is reachable from localhost only.
 func basicAuth(h http.Handler) http.Handler {
-	wantUser := os.Getenv("RAKSHA_PPROF_USERNAME")
-	wantPass := os.Getenv("RAKSHA_PPROF_PASSWORD")
+	wantUser := GatewayEnv("PPROF_USERNAME")
+	wantPass := GatewayEnv("PPROF_PASSWORD")
 	if wantUser == "" || wantPass == "" {
 		return h
 	}

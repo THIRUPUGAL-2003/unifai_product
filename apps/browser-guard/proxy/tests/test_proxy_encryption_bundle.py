@@ -1,4 +1,4 @@
-"""Test suite for Raksha Guard Proxy Bundle AES-256-GCM encryption & in-memory decryption."""
+"""Test suite for Gateway Guard Proxy Bundle AES-256-GCM encryption & in-memory decryption."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-PARTS_DIR = ROOT / "proxy" / "raksha_proxy_parts"
+PARTS_DIR = ROOT / "proxy" / "gateway_proxy_parts"
 
 import sys
 sys.path.insert(0, str(PARTS_DIR))

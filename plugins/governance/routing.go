@@ -9,9 +9,9 @@ import (
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/plugins/governance/complexity"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/plugins/governance/complexity"
 )
 
 // DefaultRoutingChainMaxDepth is the default maximum depth for routing rule chain evaluation.
@@ -88,7 +88,7 @@ func NewRoutingEngine(store GovernanceStore, logger schemas.Logger, chainMaxDept
 //  2. A terminal rule matches (chain_rule=false, the default)
 //  3. Every chain-rule that could match has already fired once (all candidates exhausted)
 //  4. The chain exceeds the configured max depth (chainMaxDepth, default 10)
-func (re *RoutingEngine) EvaluateRoutingRules(ctx *schemas.RakshaContext, routingCtx *RoutingContext) (*RoutingDecision, error) {
+func (re *RoutingEngine) EvaluateRoutingRules(ctx *schemas.GatewayContext, routingCtx *RoutingContext) (*RoutingDecision, error) {
 	if routingCtx == nil {
 		return nil, fmt.Errorf("routing context cannot be nil")
 	}
@@ -273,8 +273,8 @@ func (re *RoutingEngine) EvaluateRoutingRules(ctx *schemas.RakshaContext, routin
 
 		// Accumulate: last match wins for all fields.
 		finalDecision = stepDecision
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceRoutingRuleID, stepDecision.MatchedRuleID)
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceRoutingRuleName, stepDecision.MatchedRuleName)
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceRoutingRuleID, stepDecision.MatchedRuleID)
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceRoutingRuleName, stepDecision.MatchedRuleName)
 
 		chainSuffix := ""
 		if matchedRule.ChainRule {

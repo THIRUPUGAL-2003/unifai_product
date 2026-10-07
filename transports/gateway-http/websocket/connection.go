@@ -1,4 +1,4 @@
-// Package websocket provides upstream WebSocket connection management for the Raksha gateway.
+// Package websocket provides upstream WebSocket connection management for the Gateway HTTP transport.
 // It manages pooled connections to provider WebSocket APIs (e.g., OpenAI Responses WS mode,
 // Realtime API) and client session bindings.
 package websocket
@@ -13,7 +13,7 @@ import (
 	"time"
 
 	ws "github.com/fasthttp/websocket"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // UpstreamConn wraps a WebSocket connection to an upstream provider.

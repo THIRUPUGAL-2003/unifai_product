@@ -1,4 +1,4 @@
-// Package lib provides core functionality for the Raksha HTTP service,
+// Package lib provides core functionality for the Gateway HTTP service,
 // including context propagation, header management, and integration with monitoring systems.
 package lib
 
@@ -6,10 +6,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// BaseAccount implements the Account interface for Raksha.
+// BaseAccount implements the Account interface for Gateway.
 // It manages provider configurations using a in-memory store for persistent storage.
 // All data processing (environment variables, key configs) is done upfront in the store.
 type BaseAccount struct {
@@ -44,7 +44,7 @@ func (baseAccount *BaseAccount) GetKeysForProvider(ctx context.Context, provider
 		return nil, err
 	}
 	keys := config.Keys
-	if v := ctx.Value(schemas.RakshaContextKeyGovernanceIncludeOnlyKeys); v != nil {
+	if v := ctx.Value(schemas.GatewayContextKeyGovernanceIncludeOnlyKeys); v != nil {
 		if includeOnlyKeys, ok := v.([]string); ok {
 			if len(includeOnlyKeys) == 0 {
 				// header present but empty means "no keys allowed"

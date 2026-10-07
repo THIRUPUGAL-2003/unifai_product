@@ -1,21 +1,21 @@
 package cohere
 
 import (
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-func parseCohereError(resp *fasthttp.Response) *schemas.RakshaError {
+func parseCohereError(resp *fasthttp.Response) *schemas.GatewayError {
 	var errorResp CohereError
-	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
-	rakshaErr.Type = &errorResp.Type
-	if rakshaErr.Error == nil {
-		rakshaErr.Error = &schemas.ErrorField{}
+	gatewayErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	gatewayErr.Type = &errorResp.Type
+	if gatewayErr.Error == nil {
+		gatewayErr.Error = &schemas.ErrorField{}
 	}
-	rakshaErr.Error.Message = errorResp.Message
+	gatewayErr.Error.Message = errorResp.Message
 	if errorResp.Code != nil {
-		rakshaErr.Error.Code = errorResp.Code
+		gatewayErr.Error.Code = errorResp.Code
 	}
-	return rakshaErr
+	return gatewayErr
 }

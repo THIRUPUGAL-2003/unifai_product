@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunResponsesStreamTest executes the responses streaming test scenario
-func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunResponsesStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.CompletionStream {
 		t.Logf("Responses completion stream not supported for provider %s", testConfig.Provider)
 		return
@@ -33,12 +33,12 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 			},
 		}
 
-		request := &schemas.RakshaResponsesRequest{
+		request := &schemas.GatewayResponsesRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    messages,
 			Params: &schemas.ResponsesParameters{
-				MaxOutputTokens: raksha.Ptr(300),
+				MaxOutputTokens: gateway.Ptr(300),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -62,14 +62,14 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 
 		// Use validation retry wrapper that validates stream content and retries on validation failures
 		validationResult := WithResponsesStreamValidationRetry(t, retryConfig, retryContext,
-			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.ResponsesStreamRequest(bfCtx, request)
 			},
-			func(responseChannel chan *schemas.RakshaStreamChunk) ResponsesStreamValidationResult {
+			func(responseChannel chan *schemas.GatewayStreamChunk) ResponsesStreamValidationResult {
 				var fullContent strings.Builder
 				var responseCount int
-				var lastResponse *schemas.RakshaStreamChunk
+				var lastResponse *schemas.GatewayStreamChunk
 
 				// Track streaming events for validation
 				eventTypes := make(map[schemas.ResponsesStreamResponseType]int)
@@ -125,19 +125,19 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 						})
 						lastChunkTime = now
 
-						lastResponse = DeepCopyRakshaStreamChunk(response)
+						lastResponse = DeepCopyGatewayStreamChunk(response)
 
 						// Basic validation of streaming response structure
-						if response.RakshaResponsesStreamResponse != nil {
-							if response.RakshaResponsesStreamResponse.ExtraFields.Provider != testConfig.Provider {
-								t.Logf("⚠️ Warning: Provider mismatch - expected %s, got %s", testConfig.Provider, response.RakshaResponsesStreamResponse.ExtraFields.Provider)
+						if response.GatewayResponsesStreamResponse != nil {
+							if response.GatewayResponsesStreamResponse.ExtraFields.Provider != testConfig.Provider {
+								t.Logf("⚠️ Warning: Provider mismatch - expected %s, got %s", testConfig.Provider, response.GatewayResponsesStreamResponse.ExtraFields.Provider)
 							}
 
 							// Log latency for each chunk (can be 0 for inter-chunks)
-							t.Logf("📊 Chunk %d latency: %d ms", responseCount+1, response.RakshaResponsesStreamResponse.ExtraFields.Latency)
+							t.Logf("📊 Chunk %d latency: %d ms", responseCount+1, response.GatewayResponsesStreamResponse.ExtraFields.Latency)
 
 							// Process the streaming response
-							streamResp := response.RakshaResponsesStreamResponse
+							streamResp := response.GatewayResponsesStreamResponse
 
 							// Track event types
 							eventTypes[streamResp.Type]++
@@ -357,12 +357,12 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 				},
 			}
 
-			request := &schemas.RakshaResponsesRequest{
+			request := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    messages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: raksha.Ptr(300),
+					MaxOutputTokens: gateway.Ptr(300),
 					Tools:           []schemas.ResponsesTool{*tool},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -385,8 +385,8 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 			}
 
 			// Use proper streaming retry wrapper for the stream request
-			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.ResponsesStreamRequest(bfCtx, request)
 			})
 
@@ -434,8 +434,8 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 
 					responseCount++
 
-					if response.RakshaResponsesStreamResponse != nil {
-						streamResp := response.RakshaResponsesStreamResponse
+					if response.GatewayResponsesStreamResponse != nil {
+						streamResp := response.GatewayResponsesStreamResponse
 
 						// Check for function call events
 						switch streamResp.Type {
@@ -530,15 +530,15 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 				},
 			}
 
-			request := &schemas.RakshaResponsesRequest{
+			request := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ReasoningModel,
 				Input:    messages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: raksha.Ptr(1800),
+					MaxOutputTokens: gateway.Ptr(1800),
 					Reasoning: &schemas.ResponsesParametersReasoning{
-						Effort: raksha.Ptr("high"),
-						// Summary: raksha.Ptr("detailed"),
+						Effort: gateway.Ptr("high"),
+						// Summary: gateway.Ptr("detailed"),
 					},
 					Include: []string{"reasoning.encrypted_content"},
 				},
@@ -562,8 +562,8 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 			}
 
 			// Use proper streaming retry wrapper for the stream request
-			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.ResponsesStreamRequest(bfCtx, request)
 			})
 
@@ -611,8 +611,8 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 
 					responseCount++
 
-					if response.RakshaResponsesStreamResponse != nil {
-						streamResp := response.RakshaResponsesStreamResponse
+					if response.GatewayResponsesStreamResponse != nil {
+						streamResp := response.GatewayResponsesStreamResponse
 
 						// Check for reasoning-specific events
 						switch streamResp.Type {
@@ -684,12 +684,12 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 			},
 		}
 
-		request := &schemas.RakshaResponsesRequest{
+		request := &schemas.GatewayResponsesRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    messages,
 			Params: &schemas.ResponsesParameters{
-				MaxOutputTokens: raksha.Ptr(500),
+				MaxOutputTokens: gateway.Ptr(500),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -710,11 +710,11 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 
 		// Use validation retry wrapper that validates lifecycle events and retries on validation failures
 		validationResult := WithResponsesStreamValidationRetry(t, retryConfig, retryContext,
-			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.ResponsesStreamRequest(bfCtx, request)
 			},
-			func(responseChannel chan *schemas.RakshaStreamChunk) ResponsesStreamValidationResult {
+			func(responseChannel chan *schemas.GatewayStreamChunk) ResponsesStreamValidationResult {
 				// Track lifecycle events
 				var hasResponseCreated, hasResponseInProgress, hasResponseCompleted, hasResponseIncomplete bool
 				var hasOutputItemAdded bool
@@ -766,8 +766,8 @@ func RunResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 
 						responseCount++
 
-						if response.RakshaResponsesStreamResponse != nil {
-							streamResp := response.RakshaResponsesStreamResponse
+						if response.GatewayResponsesStreamResponse != nil {
+							streamResp := response.GatewayResponsesStreamResponse
 							seqNum := streamResp.SequenceNumber
 
 							switch streamResp.Type {
@@ -1034,7 +1034,7 @@ type StreamingValidationResult struct {
 }
 
 // validateResponsesStreamingResponse validates streaming-specific aspects of responses API
-func validateResponsesStreamingResponse(t *testing.T, eventTypes map[schemas.ResponsesStreamResponseType]int, sequenceNumbers []int, finalContent string, lastResponse *schemas.RakshaStreamChunk, testConfig ComprehensiveTestConfig) StreamingValidationResult {
+func validateResponsesStreamingResponse(t *testing.T, eventTypes map[schemas.ResponsesStreamResponseType]int, sequenceNumbers []int, finalContent string, lastResponse *schemas.GatewayStreamChunk, testConfig ComprehensiveTestConfig) StreamingValidationResult {
 	var errors []string
 
 	// Basic content validation
@@ -1096,11 +1096,11 @@ func validateResponsesStreamingResponse(t *testing.T, eventTypes map[schemas.Res
 	if lastResponse == nil {
 		errors = append(errors, "Should have at least one streaming response")
 	} else {
-		if lastResponse.RakshaResponsesStreamResponse == nil {
-			errors = append(errors, "Last streaming response should have RakshaResponsesStreamResponse")
+		if lastResponse.GatewayResponsesStreamResponse == nil {
+			errors = append(errors, "Last streaming response should have GatewayResponsesStreamResponse")
 		} else {
-			if lastResponse.RakshaResponsesStreamResponse.ExtraFields.Provider != testConfig.Provider {
-				errors = append(errors, fmt.Sprintf("Provider mismatch: expected %s, got %s", testConfig.Provider, lastResponse.RakshaResponsesStreamResponse.ExtraFields.Provider))
+			if lastResponse.GatewayResponsesStreamResponse.ExtraFields.Provider != testConfig.Provider {
+				errors = append(errors, fmt.Sprintf("Provider mismatch: expected %s, got %s", testConfig.Provider, lastResponse.GatewayResponsesStreamResponse.ExtraFields.Provider))
 			}
 		}
 	}
@@ -1124,11 +1124,11 @@ func validateResponsesStreamingResponse(t *testing.T, eventTypes map[schemas.Res
 	// Note: 0 ms is acceptable — sub-millisecond streams (regional cache hits,
 	// fast SSE multiplex) truncate to 0 via int64 .Milliseconds(); negative
 	// would still indicate a real bug.
-	if lastResponse != nil && lastResponse.RakshaResponsesStreamResponse != nil {
-		if lastResponse.RakshaResponsesStreamResponse.ExtraFields.Latency < 0 {
-			errors = append(errors, fmt.Sprintf("Last streaming chunk has negative latency (got %d ms)", lastResponse.RakshaResponsesStreamResponse.ExtraFields.Latency))
+	if lastResponse != nil && lastResponse.GatewayResponsesStreamResponse != nil {
+		if lastResponse.GatewayResponsesStreamResponse.ExtraFields.Latency < 0 {
+			errors = append(errors, fmt.Sprintf("Last streaming chunk has negative latency (got %d ms)", lastResponse.GatewayResponsesStreamResponse.ExtraFields.Latency))
 		} else {
-			t.Logf("✅ Total streaming latency: %d ms", lastResponse.RakshaResponsesStreamResponse.ExtraFields.Latency)
+			t.Logf("✅ Total streaming latency: %d ms", lastResponse.GatewayResponsesStreamResponse.ExtraFields.Latency)
 		}
 	}
 

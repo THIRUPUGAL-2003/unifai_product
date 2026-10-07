@@ -1,10 +1,10 @@
-// Package tracing provides distributed tracing infrastructure for Raksha
+// Package tracing provides distributed tracing infrastructure for Gateway
 package tracing
 
 import (
 	"context"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // GetTraceID retrieves the trace ID from the context
@@ -12,7 +12,7 @@ func GetTraceID(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
+	traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string)
 	if !ok {
 		return ""
 	}

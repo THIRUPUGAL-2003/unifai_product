@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // mapQualityToBedrock maps quality values to Bedrock format:
@@ -47,9 +47,9 @@ func isPromptOnlyImageGenerationModel(model string) bool {
 	return strings.Contains(m, "image")
 }
 
-// ToStabilityAIImageGenerationRequest converts a Raksha image generation request to the Stability AI
+// ToStabilityAIImageGenerationRequest converts a Gateway image generation request to the Stability AI
 // flat request format used by Bedrock (stability.stable-image-* models).
-func ToStabilityAIImageGenerationRequest(request *schemas.RakshaImageGenerationRequest) (*StabilityAIImageGenerationRequest, error) {
+func ToStabilityAIImageGenerationRequest(request *schemas.GatewayImageGenerationRequest) (*StabilityAIImageGenerationRequest, error) {
 	if request == nil {
 		return nil, fmt.Errorf("request is nil")
 	}
@@ -89,8 +89,8 @@ func ToStabilityAIImageGenerationRequest(request *schemas.RakshaImageGenerationR
 	return req, nil
 }
 
-// ToBedrockImageGenerationRequest converts a Raksha image generation request to a Bedrock image generation request
-func ToBedrockImageGenerationRequest(request *schemas.RakshaImageGenerationRequest) (*BedrockImageGenerationRequest, error) {
+// ToBedrockImageGenerationRequest converts a Gateway image generation request to a Bedrock image generation request
+func ToBedrockImageGenerationRequest(request *schemas.GatewayImageGenerationRequest) (*BedrockImageGenerationRequest, error) {
 	if request == nil {
 		return nil, fmt.Errorf("request is nil")
 	}
@@ -155,10 +155,10 @@ func ToBedrockImageGenerationRequest(request *schemas.RakshaImageGenerationReque
 	return bedrockReq, nil
 }
 
-// ToStabilityAIImageGenerationResponse converts a RakshaImageGenerationResponse back to
+// ToStabilityAIImageGenerationResponse converts a GatewayImageGenerationResponse back to
 // the native Bedrock invoke API response format used by Stability AI models.
 // Stability AI models use the same BedrockImageGenerationResponse format as Titan/Nova Canvas.
-func ToStabilityAIImageGenerationResponse(response *schemas.RakshaImageGenerationResponse) (*BedrockImageGenerationResponse, error) {
+func ToStabilityAIImageGenerationResponse(response *schemas.GatewayImageGenerationResponse) (*BedrockImageGenerationResponse, error) {
 	if response == nil {
 		return nil, fmt.Errorf("response is nil")
 	}
@@ -173,8 +173,8 @@ func ToStabilityAIImageGenerationResponse(response *schemas.RakshaImageGeneratio
 	return result, nil
 }
 
-// ToBedrockImageVariationRequest converts a Raksha image variation request to a Bedrock image variation request
-func ToBedrockImageVariationRequest(request *schemas.RakshaImageVariationRequest) (*BedrockImageVariationRequest, error) {
+// ToBedrockImageVariationRequest converts a Gateway image variation request to a Bedrock image variation request
+func ToBedrockImageVariationRequest(request *schemas.GatewayImageVariationRequest) (*BedrockImageVariationRequest, error) {
 	if request == nil {
 		return nil, fmt.Errorf("request is nil")
 	}
@@ -273,8 +273,8 @@ func ToBedrockImageVariationRequest(request *schemas.RakshaImageVariationRequest
 	return bedrockReq, nil
 }
 
-// ToBedrockImageEditRequest converts a Raksha image edit request to a Bedrock image edit request
-func ToBedrockImageEditRequest(request *schemas.RakshaImageEditRequest) (*BedrockImageEditRequest, error) {
+// ToBedrockImageEditRequest converts a Gateway image edit request to a Bedrock image edit request
+func ToBedrockImageEditRequest(request *schemas.GatewayImageEditRequest) (*BedrockImageEditRequest, error) {
 	// Validate request
 	if request == nil || request.Input == nil {
 		return nil, fmt.Errorf("request or input is nil")
@@ -322,7 +322,7 @@ func ToBedrockImageEditRequest(request *schemas.RakshaImageEditRequest) (*Bedroc
 }
 
 // Helper functions
-func buildInPaintingParams(imageBase64 string, request *schemas.RakshaImageEditRequest) *BedrockInPaintingParams {
+func buildInPaintingParams(imageBase64 string, request *schemas.GatewayImageEditRequest) *BedrockInPaintingParams {
 	params := &BedrockInPaintingParams{
 		Image: imageBase64,
 		Text:  request.Input.Prompt,
@@ -352,7 +352,7 @@ func buildInPaintingParams(imageBase64 string, request *schemas.RakshaImageEditR
 	return params
 }
 
-func buildOutPaintingParams(imageBase64 string, request *schemas.RakshaImageEditRequest) *BedrockOutPaintingParams {
+func buildOutPaintingParams(imageBase64 string, request *schemas.GatewayImageEditRequest) *BedrockOutPaintingParams {
 	params := &BedrockOutPaintingParams{
 		Text:  request.Input.Prompt,
 		Image: imageBase64,
@@ -430,7 +430,7 @@ func buildImageGenerationConfig(params *schemas.ImageEditParameters) *ImageGener
 	return config
 }
 
-// getStabilityAITaskTypeFromParams maps the generic RakshaImageEditParameters.Type value
+// getStabilityAITaskTypeFromParams maps the generic GatewayImageEditParameters.Type value
 // to a Stability AI task type string. Returns "" if the value is not a recognized Stability AI task type.
 func getStabilityAITaskTypeFromParams(t string) string {
 	switch strings.ToLower(t) {
@@ -501,11 +501,11 @@ func getStabilityAIEditTaskType(model string) (string, error) {
 	}
 }
 
-// ToStabilityAIImageEditRequest converts a Raksha image edit request to the Stability AI flat request
+// ToStabilityAIImageEditRequest converts a Gateway image edit request to the Stability AI flat request
 // format used by Bedrock edit models. Only fields valid for the detected task type are populated.
 // deployment is the resolved model identifier (after applying any deployment alias mapping); it is
 // used for task-type inference so that alias-mapped models route correctly.
-func ToStabilityAIImageEditRequest(request *schemas.RakshaImageEditRequest, deployment string) (*StabilityAIImageEditRequest, error) {
+func ToStabilityAIImageEditRequest(request *schemas.GatewayImageEditRequest, deployment string) (*StabilityAIImageEditRequest, error) {
 	if request == nil || request.Input == nil {
 		return nil, fmt.Errorf("request or input is nil")
 	}
@@ -716,27 +716,27 @@ func ToStabilityAIImageEditRequest(request *schemas.RakshaImageEditRequest, depl
 	return req, nil
 }
 
-// ToRakshaImageGenerationResponse converts a Bedrock image generation response to a Raksha image generation response
-func ToRakshaImageGenerationResponse(response *BedrockImageGenerationResponse) *schemas.RakshaImageGenerationResponse {
+// ToGatewayImageGenerationResponse converts a Bedrock image generation response to a Gateway image generation response
+func ToGatewayImageGenerationResponse(response *BedrockImageGenerationResponse) *schemas.GatewayImageGenerationResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaImageGenerationResponse{}
+	gatewayResponse := &schemas.GatewayImageGenerationResponse{}
 
 	if len(response.FinishReasons) > 0 || len(response.Seeds) > 0 {
-		rakshaResponse.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{
+		gatewayResponse.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{
 			FinishReasons: append([]*string(nil), response.FinishReasons...),
 			Seeds:         append([]int(nil), response.Seeds...),
 		}
 	}
 
 	for index, image := range response.Images {
-		rakshaResponse.Data = append(rakshaResponse.Data, schemas.ImageData{
+		gatewayResponse.Data = append(gatewayResponse.Data, schemas.ImageData{
 			B64JSON: image,
 			Index:   index,
 		})
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }

@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/queryscope"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/queryscope"
 	"github.com/valyala/fasthttp"
 	"gorm.io/gorm"
 )
@@ -154,7 +154,7 @@ func (h *LoggingHandler) scopeFilterData(next fasthttp.RequestHandler) fasthttp.
 	return func(ctx *fasthttp.RequestCtx) {
 		allowed, filter := h.allowedVKs(ctx)
 		if filter {
-			ctx.SetUserValue(schemas.RakshaContextKeyQueryScope, vkQueryScope(allowed))
+			ctx.SetUserValue(schemas.GatewayContextKeyQueryScope, vkQueryScope(allowed))
 		}
 		next(ctx)
 		if !filter || ctx.Response.StatusCode() != fasthttp.StatusOK {

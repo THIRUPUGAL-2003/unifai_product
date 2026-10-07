@@ -3,7 +3,7 @@ package lib
 import (
 	"strings"
 
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 )
 
 // HeaderMatchesPattern returns true if headerName matches the pattern.

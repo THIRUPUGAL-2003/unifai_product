@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/modelcatalog"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/modelcatalog"
 )
 
 // buildCompleteMessageFromTranscriptionStreamChunks builds a complete message from accumulated transcription chunks
-func (a *Accumulator) buildCompleteMessageFromTranscriptionStreamChunks(chunks []*TranscriptionStreamChunk) *schemas.RakshaTranscriptionResponse {
-	completeMessage := &schemas.RakshaTranscriptionResponse{}
+func (a *Accumulator) buildCompleteMessageFromTranscriptionStreamChunks(chunks []*TranscriptionStreamChunk) *schemas.GatewayTranscriptionResponse {
+	completeMessage := &schemas.GatewayTranscriptionResponse{}
 	finalContent := ""
 	sort.Slice(chunks, func(i, j int) bool {
 		return chunks[i].ChunkIndex < chunks[j].ChunkIndex
@@ -32,7 +32,7 @@ func (a *Accumulator) buildCompleteMessageFromTranscriptionStreamChunks(chunks [
 }
 
 // processAccumulatedTranscriptionStreamingChunks processes all accumulated transcription chunks in order
-func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID string, rakshaErr *schemas.RakshaError, isFinalChunk bool) (*AccumulatedData, error) {
+func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID string, gatewayErr *schemas.GatewayError, isFinalChunk bool) (*AccumulatedData, error) {
 	accumulator := a.getOrCreateStreamAccumulator(requestID)
 	// Lock the accumulator
 	accumulator.mu.Lock()
@@ -68,7 +68,7 @@ func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID s
 		return data, nil
 	}
 	data.Status = "success"
-	if rakshaErr != nil {
+	if gatewayErr != nil {
 		data.Status = "error"
 	}
 	if accumulator.StartTimestamp.IsZero() || accumulator.FinalTimestamp.IsZero() {
@@ -78,11 +78,11 @@ func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID s
 	}
 	data.EndTimestamp = accumulator.FinalTimestamp
 	data.TranscriptionOutput = completeMessage
-	data.ErrorDetails = rakshaErr
+	data.ErrorDetails = gatewayErr
 	// Update metadata from the chunk with highest index (contains TokenUsage, Cost, CacheDebug)
 	if lastChunk := accumulator.getLastTranscriptionChunkLocked(); lastChunk != nil {
 		if lastChunk.TokenUsage != nil {
-			data.TokenUsage = &schemas.RakshaLLMUsage{}
+			data.TokenUsage = &schemas.GatewayLLMUsage{}
 			if lastChunk.TokenUsage.InputTokens != nil {
 				data.TokenUsage.PromptTokens = *lastChunk.TokenUsage.InputTokens
 			}
@@ -124,21 +124,21 @@ func (a *Accumulator) processAccumulatedTranscriptionStreamingChunks(requestID s
 }
 
 // processTranscriptionStreamingResponse processes a transcription streaming response
-func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*ProcessedStreamResponse, error) {
+func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*ProcessedStreamResponse, error) {
 	// Extract accumulator ID from context
 	requestID, ok := getAccumulatorID(ctx)
 	if !ok || requestID == "" {
 		// Log error but don't fail the request
 		return nil, fmt.Errorf("accumulator-id not found in context or is empty")
 	}
-	_, provider, requestedModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
-	isFinalChunk := raksha.IsFinalChunk(ctx)
+	_, provider, requestedModel, resolvedModel := gateway.GetResponseFields(result, gatewayErr)
+	isFinalChunk := gateway.IsFinalChunk(ctx)
 	// For audio, all the data comes in the final chunk
 	chunk := a.getTranscriptionStreamChunk()
 	chunk.Timestamp = time.Now()
-	chunk.ErrorDetails = rakshaErr
-	if rakshaErr != nil {
-		chunk.FinishReason = raksha.Ptr("error")
+	chunk.ErrorDetails = gatewayErr
+	if gatewayErr != nil {
+		chunk.FinishReason = gateway.Ptr("error")
 	} else if result != nil && result.TranscriptionStreamResponse != nil {
 		// Set delta for all chunks (not just final chunks with usage)
 		// We create a deep copy of the delta to avoid pointing to stack memory
@@ -147,7 +147,7 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.RakshaC
 			deltaValue := *result.TranscriptionStreamResponse.Delta
 			deltaCopy = &deltaValue
 		}
-		newDelta := &schemas.RakshaTranscriptionStreamResponse{
+		newDelta := &schemas.GatewayTranscriptionStreamResponse{
 			Type:  result.TranscriptionStreamResponse.Type,
 			Delta: deltaCopy,
 		}
@@ -159,12 +159,12 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.RakshaC
 		}
 		chunk.ChunkIndex = result.TranscriptionStreamResponse.ExtraFields.ChunkIndex
 		if result.TranscriptionStreamResponse.ExtraFields.RawResponse != nil {
-			chunk.RawResponse = raksha.Ptr(fmt.Sprintf("%v", result.TranscriptionStreamResponse.ExtraFields.RawResponse))
+			chunk.RawResponse = gateway.Ptr(fmt.Sprintf("%v", result.TranscriptionStreamResponse.ExtraFields.RawResponse))
 		}
 		if isFinalChunk {
 			if a.pricingManager != nil {
 				cost := a.pricingManager.CalculateCost(result, modelcatalog.PricingLookupScopesFromContext(ctx, string(result.GetExtraFields().Provider)))
-				chunk.Cost = raksha.Ptr(cost)
+				chunk.Cost = gateway.Ptr(cost)
 			}
 			chunk.SemanticCacheDebug = result.GetExtraFields().CacheDebug
 		}
@@ -184,7 +184,7 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.RakshaC
 
 		// Always process and return data on final chunk
 		// Multiple plugins can call this - the processing is idempotent
-		data, processErr := a.processAccumulatedTranscriptionStreamingChunks(requestID, rakshaErr, isFinalChunk)
+		data, processErr := a.processAccumulatedTranscriptionStreamingChunks(requestID, gatewayErr, isFinalChunk)
 		if processErr != nil {
 			a.logger.Error("failed to process accumulated chunks for request %s: %v", requestID, processErr)
 			return nil, processErr
@@ -199,7 +199,7 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.RakshaC
 			Provider:       provider,
 			RequestedModel: requestedModel,
 			ResolvedModel:  resolvedModel,
-			RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
+			RoutingInfo:    gateway.GetResponseRoutingInfo(result, gatewayErr),
 			Data:           data,
 			RawRequest:     &rawRequest,
 		}, nil
@@ -212,7 +212,7 @@ func (a *Accumulator) processTranscriptionStreamingResponse(ctx *schemas.RakshaC
 		Provider:       provider,
 		RequestedModel: requestedModel,
 		ResolvedModel:  resolvedModel,
-		RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
+		RoutingInfo:    gateway.GetResponseRoutingInfo(result, gatewayErr),
 		Data:           nil,
 	}, nil
 }

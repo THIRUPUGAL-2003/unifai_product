@@ -438,11 +438,11 @@ export interface ListProviderKeysResponse {
 	total: number;
 }
 
-// RakshaErrorResponse matching Go's schemas.RakshaError
-export interface RakshaErrorResponse {
+// GatewayErrorResponse matching Go's schemas.GatewayError
+export interface GatewayErrorResponse {
 	event_id?: string;
 	type?: string;
-	is_raksha_error: boolean;
+	is_gateway_error: boolean;
 	status_code?: number;
 	error: {
 		message: string;
@@ -527,7 +527,7 @@ export interface RestartRequiredConfig {
 	reason?: string;
 }
 
-// Raksha Config
+// Gateway Config
 export type PluginSpanFilterMode = "include" | "exclude";
 
 export interface PluginSpanFilter {
@@ -535,7 +535,7 @@ export interface PluginSpanFilter {
 	plugins: string[];
 }
 
-export interface RakshaConfig {
+export interface GatewayConfig {
 	client_config: CoreConfig;
 	framework_config: FrameworkConfig;
 	auth_config?: AuthConfig;
@@ -568,7 +568,7 @@ export interface CompatConfig {
 	should_convert_params: boolean;
 }
 
-// Core Raksha configuration types
+// Core Gateway configuration types
 export interface CoreConfig {
 	drop_excess_requests: boolean;
 	initial_pool_size: number;

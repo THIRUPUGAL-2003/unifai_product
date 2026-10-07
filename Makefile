@@ -1,4 +1,4 @@
-# Makefile for Raksha
+# Makefile for Gateway
 
 # Variables
 HOST ?= localhost
@@ -78,7 +78,7 @@ include recipes/local-k8s.mk
 
 # Default target
 help: ## Show this help message
-	@$(ECHO) "$(BLUE)Raksha Development - Available Commands:$(NC)"
+	@$(ECHO) "$(BLUE)Gateway Development - Available Commands:$(NC)"
 	@$(ECHO) ""
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@$(ECHO) ""
@@ -212,7 +212,7 @@ dev: install-ui install-air setup-workspace $(if $(DEBUG),install-delve) ## Star
 	}; \
 	trap cleanup EXIT; \
 	trap stop_dev INT TERM HUP; \
-	$(ECHO) "$(GREEN)Starting Raksha complete development environment...$(NC)"; \
+	$(ECHO) "$(GREEN)Starting Gateway complete development environment...$(NC)"; \
 	$(ECHO) "$(YELLOW)This will start:$(NC)"; \
 	$(ECHO) "  1. UI development server (localhost:3000)"; \
 	$(ECHO) "  2. API server with UI proxy (localhost:$(PORT))"; \
@@ -220,16 +220,16 @@ dev: install-ui install-air setup-workspace $(if $(DEBUG),install-delve) ## Star
 	if [ -n "$(DEBUG)" ]; then \
 		$(ECHO) "$(CYAN)  3. Debugger (delve) listening on port 2345$(NC)"; \
 	fi; \
-	if [ ! -d "transports/raksha-http/ui" ]; then \
-		$(ECHO) "$(YELLOW)Creating transports/raksha-http/ui directory...$(NC)"; \
-		mkdir -p transports/raksha-http/ui; \
-		touch transports/raksha-http/ui/.tmp; \
+	if [ ! -d "transports/gateway-http/ui" ]; then \
+		$(ECHO) "$(YELLOW)Creating transports/gateway-http/ui directory...$(NC)"; \
+		mkdir -p transports/gateway-http/ui; \
+		touch transports/gateway-http/ui/.tmp; \
 	fi; \
 	$(ECHO) ""; \
 	$(ECHO) "$(YELLOW)Starting UI development server...$(NC)"; \
 	$(USE_NODE); if [ -n "$(DISABLE_PROFILER)" ]; then \
 		$(ECHO) "$(CYAN)DevProfiler disabled for testing$(NC)"; \
-		(cd ui && RAKSHA_DISABLE_PROFILER=1 npm run dev) & \
+		(cd ui && GATEWAY_DISABLE_PROFILER=1 npm run dev) & \
 	else \
 		(cd ui && npm run dev) & \
 	fi; \
@@ -241,7 +241,7 @@ dev: install-ui install-air setup-workspace $(if $(DEBUG),install-delve) ## Star
 	if [ -n "$(DEBUG)" ]; then \
 		$(ECHO) "$(CYAN)Starting with air + delve debugger on port 2345...$(NC)"; \
 		$(ECHO) "$(YELLOW)Attach your debugger to localhost:2345$(NC)"; \
-		(cd transports/raksha-http && RAKSHA_UI_DEV=true air -c .air.debug.toml -- \
+		(cd transports/gateway-http && GATEWAY_UI_DEV=true air -c .air.debug.toml -- \
 			-host "$(HOST)" \
 			-port "$(PORT)" \
 			-log-style "$(LOG_STYLE)" \
@@ -249,7 +249,7 @@ dev: install-ui install-air setup-workspace $(if $(DEBUG),install-delve) ## Star
 			$(if $(PROMETHEUS_LABELS),-prometheus-labels "$(PROMETHEUS_LABELS)") \
 			$(if $(APP_DIR),-app-dir "$(abspath $(APP_DIR))")) & \
 	else \
-		(cd transports/raksha-http && RAKSHA_UI_DEV=true air -c .air.toml -- \
+		(cd transports/gateway-http && GATEWAY_UI_DEV=true air -c .air.toml -- \
 			-host "$(HOST)" \
 			-port "$(PORT)" \
 			-log-style "$(LOG_STYLE)" \
@@ -298,7 +298,7 @@ dev-pulse: install-ui install-pulse setup-workspace $(if $(DEBUG),install-delve)
 	}; \
 	trap cleanup EXIT; \
 	trap stop_dev INT TERM HUP; \
-	$(ECHO) "$(GREEN)Starting Raksha complete development environment (pulse)...$(NC)"; \
+	$(ECHO) "$(GREEN)Starting Gateway complete development environment (pulse)...$(NC)"; \
 	$(ECHO) "$(YELLOW)This will start:$(NC)"; \
 	$(ECHO) "  1. UI development server (localhost:3000)"; \
 	$(ECHO) "  2. API server with UI proxy (localhost:$(PORT))"; \
@@ -306,16 +306,16 @@ dev-pulse: install-ui install-pulse setup-workspace $(if $(DEBUG),install-delve)
 	if [ -n "$(DEBUG)" ]; then \
 		$(ECHO) "$(CYAN)  3. Debugger (delve) listening on port 2345$(NC)"; \
 	fi; \
-	if [ ! -d "transports/raksha-http/ui" ]; then \
-		$(ECHO) "$(YELLOW)Creating transports/raksha-http/ui directory...$(NC)"; \
-		mkdir -p transports/raksha-http/ui; \
-		touch transports/raksha-http/ui/.tmp; \
+	if [ ! -d "transports/gateway-http/ui" ]; then \
+		$(ECHO) "$(YELLOW)Creating transports/gateway-http/ui directory...$(NC)"; \
+		mkdir -p transports/gateway-http/ui; \
+		touch transports/gateway-http/ui/.tmp; \
 	fi; \
 	$(ECHO) ""; \
 	$(ECHO) "$(YELLOW)Starting UI development server...$(NC)"; \
 	$(USE_NODE); if [ -n "$(DISABLE_PROFILER)" ]; then \
 		$(ECHO) "$(CYAN)DevProfiler disabled for testing$(NC)"; \
-		(cd ui && RAKSHA_DISABLE_PROFILER=1 npm run dev) & \
+		(cd ui && GATEWAY_DISABLE_PROFILER=1 npm run dev) & \
 	else \
 		(cd ui && npm run dev) & \
 	fi; \
@@ -327,10 +327,10 @@ dev-pulse: install-ui install-pulse setup-workspace $(if $(DEBUG),install-delve)
 	if [ -n "$(DEBUG)" ]; then \
 		$(ECHO) "$(CYAN)Starting with pulse + delve debugger on port 2345...$(NC)"; \
 		$(ECHO) "$(YELLOW)Attach your debugger to localhost:2345$(NC)"; \
-		PORT="$(PORT)" HOST="$(HOST)" LOG_STYLE="$(LOG_STYLE)" LOG_LEVEL="$(LOG_LEVEL)" RAKSHA_UI_DEV=true \
+		PORT="$(PORT)" HOST="$(HOST)" LOG_STYLE="$(LOG_STYLE)" LOG_LEVEL="$(LOG_LEVEL)" GATEWAY_UI_DEV=true \
 			$(if $(APP_DIR),APP_DIR="$(abspath $(APP_DIR))") pulse & \
 	else \
-		PORT="$(PORT)" HOST="$(HOST)" LOG_STYLE="$(LOG_STYLE)" LOG_LEVEL="$(LOG_LEVEL)" RAKSHA_UI_DEV=true \
+		PORT="$(PORT)" HOST="$(HOST)" LOG_STYLE="$(LOG_STYLE)" LOG_LEVEL="$(LOG_LEVEL)" GATEWAY_UI_DEV=true \
 			$(if $(APP_DIR),APP_DIR="$(abspath $(APP_DIR))") pulse & \
 	fi; \
 	pulse_pid="$$!"; \
@@ -345,14 +345,14 @@ build-ui: install-ui ## Build ui
 	@rm -rf ui/.next
 	@$(USE_NODE); cd ui && npm run build && npm run copy-build
 
-build: build-ui ## Build raksha-http binary
+build: build-ui ## Build gateway-http binary
 	@if [ -n "$(LOCAL)" ]; then \
 		$(ECHO) "$(GREEN)╔═══════════════════════════════════════════════╗$(NC)"; \
-		$(ECHO) "$(GREEN)║  Building raksha-http with local go.work...  ║$(NC)"; \
+		$(ECHO) "$(GREEN)║  Building gateway-http with local go.work...  ║$(NC)"; \
 		$(ECHO) "$(GREEN)╚═══════════════════════════════════════════════╝$(NC)"; \
 	else \
 		$(ECHO) "$(GREEN)╔═══════════════════════════════════════╗$(NC)"; \
-		$(ECHO) "$(GREEN)║  Building raksha-http...             ║$(NC)"; \
+		$(ECHO) "$(GREEN)║  Building gateway-http...             ║$(NC)"; \
 		$(ECHO) "$(GREEN)╚═══════════════════════════════════════╝$(NC)"; \
 	fi
 	@if [ -n "$(DYNAMIC)" ]; then \
@@ -377,41 +377,41 @@ build: build-ui ## Build raksha-http binary
 	if [ "$$TARGET_OS" = "linux" ] && [ "$$HOST_OS" = "linux" ]; then \
 		if [ -n "$(DYNAMIC)" ]; then \
 			$(ECHO) "$(CYAN)Building for $$TARGET_OS/$$TARGET_ARCH with dynamic linking...$(NC)"; \
-			cd transports/raksha-http && CGO_ENABLED=1 GOOS=$$TARGET_OS GOARCH=$$TARGET_ARCH $(if $(LOCAL),,GOWORK=off) go build \
+			cd transports/gateway-http && CGO_ENABLED=1 GOOS=$$TARGET_OS GOARCH=$$TARGET_ARCH $(if $(LOCAL),,GOWORK=off) go build \
 				-ldflags="-w -s -X main.Version=v$(VERSION)" \
 				-a -trimpath \
-				-o ../../tmp/raksha-http \
+				-o ../../tmp/gateway-http \
 				.; \
 		else \
 			$(ECHO) "$(CYAN)Building for $$TARGET_OS/$$TARGET_ARCH with static linking...$(NC)"; \
-			cd transports/raksha-http && CGO_ENABLED=1 GOOS=$$TARGET_OS GOARCH=$$TARGET_ARCH $(if $(LOCAL),,GOWORK=off) go build \
+			cd transports/gateway-http && CGO_ENABLED=1 GOOS=$$TARGET_OS GOARCH=$$TARGET_ARCH $(if $(LOCAL),,GOWORK=off) go build \
 				-ldflags="-w -s -extldflags "-static" -X main.Version=v$(VERSION)" \
 				-a -trimpath \
 				-tags "sqlite_static" \
-				-o ../../tmp/raksha-http \
+				-o ../../tmp/gateway-http \
 				.; \
 		fi; \
-		$(ECHO) "$(GREEN)Built: tmp/raksha-http (version: v$(VERSION))$(NC)"; \
+		$(ECHO) "$(GREEN)Built: tmp/gateway-http (version: v$(VERSION))$(NC)"; \
 	elif [ "$$TARGET_OS" = "$$HOST_OS" ] && [ "$$TARGET_ARCH" = "$$HOST_ARCH" ]; then \
 		$(ECHO) "$(CYAN)Building for $$TARGET_OS/$$TARGET_ARCH (native build with CGO)...$(NC)"; \
-		cd transports/raksha-http && CGO_ENABLED=1 GOOS=$$TARGET_OS GOARCH=$$TARGET_ARCH $(if $(LOCAL),,GOWORK=off) go build \
+		cd transports/gateway-http && CGO_ENABLED=1 GOOS=$$TARGET_OS GOARCH=$$TARGET_ARCH $(if $(LOCAL),,GOWORK=off) go build \
 			-ldflags="-w -s -X main.Version=v$(VERSION)" \
 			-a -trimpath \
 			-tags "sqlite_static" \
-			-o ../../tmp/raksha-http \
+			-o ../../tmp/gateway-http \
 			.; \
-		$(ECHO) "$(GREEN)Built: tmp/raksha-http (version: v$(VERSION))$(NC)"; \
+		$(ECHO) "$(GREEN)Built: tmp/gateway-http (version: v$(VERSION))$(NC)"; \
 	else \
 		$(ECHO) "$(YELLOW)Cross-compilation detected: $$HOST_OS/$$HOST_ARCH -> $$TARGET_OS/$$TARGET_ARCH$(NC)"; \
 		$(ECHO) "$(CYAN)Using Docker for cross-compilation...$(NC)"; \
 		$(MAKE) _build-with-docker TARGET_OS=$$TARGET_OS TARGET_ARCH=$$TARGET_ARCH $(if $(DYNAMIC),DYNAMIC=$(DYNAMIC)); \
 	fi
 
-build-cli: ## Build raksha CLI binary
-	@$(ECHO) "$(GREEN)Building raksha CLI...$(NC)"
+build-cli: ## Build gateway CLI binary
+	@$(ECHO) "$(GREEN)Building gateway CLI...$(NC)"
 	@mkdir -p ./tmp
-	@cd cli && $(if $(LOCAL),,GOWORK=off) go build -ldflags "-X main.version=v0.1.1-dev" -o ../tmp/raksha .
-	@$(ECHO) "$(GREEN)Built: tmp/raksha$(NC)"
+	@cd cli && $(if $(LOCAL),,GOWORK=off) go build -ldflags "-X main.version=v0.1.1-dev" -o ../tmp/gateway .
+	@$(ECHO) "$(GREEN)Built: tmp/gateway$(NC)"
 
 _build-with-docker: # Internal target for Docker-based cross-compilation
 	@$(ECHO) "$(CYAN)Using Docker for cross-compilation...$(NC)"; \
@@ -421,7 +421,7 @@ _build-with-docker: # Internal target for Docker-based cross-compilation
 			docker run --rm \
 				--platform linux/$(TARGET_ARCH) \
 				-v "$(shell pwd):/workspace" \
-				-w /workspace/transports/raksha-http \
+				-w /workspace/transports/gateway-http \
 				-e CGO_ENABLED=1 \
 				-e GOOS=$(TARGET_OS) \
 				-e GOARCH=$(TARGET_ARCH) \
@@ -431,14 +431,14 @@ _build-with-docker: # Internal target for Docker-based cross-compilation
 				go build \
 					-ldflags='-w -s -X main.Version=v$(VERSION)' \
 					-a -trimpath \
-					-o ../../tmp/raksha-http \
+					-o ../../tmp/gateway-http \
 					."; \
 		else \
 			$(ECHO) "$(CYAN)Building for $(TARGET_OS)/$(TARGET_ARCH) in Docker container...$(NC)"; \
 			docker run --rm \
 				--platform linux/$(TARGET_ARCH) \
 				-v "$(shell pwd):/workspace" \
-				-w /workspace/transports/raksha-http \
+				-w /workspace/transports/gateway-http \
 				-e CGO_ENABLED=1 \
 				-e GOOS=$(TARGET_OS) \
 				-e GOARCH=$(TARGET_ARCH) \
@@ -449,10 +449,10 @@ _build-with-docker: # Internal target for Docker-based cross-compilation
 					-ldflags='-w -s -extldflags "-static" -X main.Version=v$(VERSION)' \
 					-a -trimpath \
 					-tags sqlite_static \
-					-o ../../tmp/raksha-http \
+					-o ../../tmp/gateway-http \
 					."; \
 		fi; \
-		$(ECHO) "$(GREEN)Built: tmp/raksha-http ($(TARGET_OS)/$(TARGET_ARCH), version: v$(VERSION))$(NC)"; \
+		$(ECHO) "$(GREEN)Built: tmp/gateway-http ($(TARGET_OS)/$(TARGET_ARCH), version: v$(VERSION))$(NC)"; \
 	else \
 		$(ECHO) "$(RED)Error: Docker cross-compilation only supports Linux targets$(NC)"; \
 		$(ECHO) "$(YELLOW)For $(TARGET_OS), please build on a native $(TARGET_OS) machine$(NC)"; \
@@ -463,8 +463,8 @@ docker-image: build-ui ## Build Docker image (LOCAL=1 to use Dockerfile.local)
 	@$(ECHO) "$(GREEN)Building Docker image...$(NC)"
 	$(eval GIT_SHA=$(shell git rev-parse --short HEAD))
 	$(eval DOCKERFILE=$(if $(LOCAL),deploy/docker/Dockerfile.local,deploy/docker/Dockerfile))
-	@docker build -f $(DOCKERFILE) -t raksha -t raksha:$(GIT_SHA) -t raksha:latest .
-	@$(ECHO) "$(GREEN)Docker image built: raksha, raksha:$(GIT_SHA), raksha:latest (using $(DOCKERFILE))$(NC)"
+	@docker build -f $(DOCKERFILE) -t gateway -t gateway:$(GIT_SHA) -t gateway:latest .
+	@$(ECHO) "$(GREEN)Docker image built: gateway, gateway:$(GIT_SHA), gateway:latest (using $(DOCKERFILE))$(NC)"
 
 docker-run: ## Run Docker container (Usage: make docker-run [CONFIG=path/to/config.json or path/to/dir/])
 	@$(ECHO) "$(GREEN)Running Docker container...$(NC)"
@@ -477,7 +477,7 @@ docker-run: ## Run Docker container (Usage: make docker-run [CONFIG=path/to/conf
 	else \
 		CONFIG_MOUNT=""; \
 	fi; \
-	docker run -e APP_PORT=$(PORT) -e APP_HOST=0.0.0.0 -p $(PORT):$(PORT) -e LOG_LEVEL=$(LOG_LEVEL) -e LOG_STYLE=$(LOG_STYLE) -v $(shell pwd):/app/data $$CONFIG_MOUNT raksha
+	docker run -e APP_PORT=$(PORT) -e APP_HOST=0.0.0.0 -p $(PORT):$(PORT) -e LOG_LEVEL=$(LOG_LEVEL) -e LOG_STYLE=$(LOG_STYLE) -v $(shell pwd):/app/data $$CONFIG_MOUNT gateway
 
 docs: ## Prepare local docs (bundles OpenAPI spec then starts Mintlify dev server)
 	@$(ECHO) "$(GREEN)Bundling OpenAPI spec...$(NC)"
@@ -485,9 +485,9 @@ docs: ## Prepare local docs (bundles OpenAPI spec then starts Mintlify dev serve
 	@$(ECHO) "$(GREEN)Preparing local docs...$(NC)"
 	@cd docs && npx --yes mintlify@latest dev
 
-run: build ## Build and run raksha-http (no hot reload)
-	@$(ECHO) "$(GREEN)Running raksha-http...$(NC)"
-	@./tmp/raksha-http \
+run: build ## Build and run gateway-http (no hot reload)
+	@$(ECHO) "$(GREEN)Running gateway-http...$(NC)"
+	@./tmp/gateway-http \
 		-host "$(HOST)" \
 		-port "$(PORT)" \
 		-log-style "$(LOG_STYLE)" \
@@ -495,15 +495,15 @@ run: build ## Build and run raksha-http (no hot reload)
 		$(if $(PROMETHEUS_LABELS),-prometheus-labels "$(PROMETHEUS_LABELS)") \
 		$(if $(APP_DIR),-app-dir "$(abspath $(APP_DIR))")
 
-run-cli: build-cli ## Run raksha CLI (Usage: make run-cli [ARGS="--config ~/.raksha/config.json"])
-	@$(ECHO) "$(GREEN)Running raksha CLI...$(NC)"
-	@./tmp/raksha $(ARGS)
+run-cli: build-cli ## Run gateway CLI (Usage: make run-cli [ARGS="--config ~/.gateway/config.json"])
+	@$(ECHO) "$(GREEN)Running gateway CLI...$(NC)"
+	@./tmp/gateway $(ARGS)
 
 clean: ## Clean build artifacts and temporary files
 	@$(ECHO) "$(YELLOW)Cleaning build artifacts...$(NC)"
 	@rm -rf tmp/
-	@rm -f transports/raksha-http/build-errors.log
-	@rm -rf transports/raksha-http/tmp/
+	@rm -f transports/gateway-http/build-errors.log
+	@rm -rf transports/gateway-http/tmp/
 	@rm -rf $(TEST_REPORTS_DIR)/
 	@$(ECHO) "$(GREEN)Clean complete$(NC)"
 
@@ -517,18 +517,18 @@ helm-index: ## Repackage helm chart, regenerate index.yaml digest, then remove t
 		$(ECHO) "$(RED)Error: helm not installed$(NC)"; \
 		exit 1; \
 	fi
-	@CHART_VERSION=$$(grep '^version:' helm-charts/raksha/Chart.yaml | awk '{print $$2}'); \
+	@CHART_VERSION=$$(grep '^version:' helm-charts/gateway/Chart.yaml | awk '{print $$2}'); \
 	$(ECHO) "$(YELLOW)Packaging helm chart v$$CHART_VERSION...$(NC)"; \
 	cd helm-charts && \
-	helm package raksha && \
+	helm package gateway && \
 	$(ECHO) "$(YELLOW)Regenerating index.yaml digest...$(NC)" && \
 	if [ -f index.yaml ]; then \
-		helm repo index . --url https://github.com/raksha/raksha/releases/download/helm-chart-v$$CHART_VERSION --merge index.yaml; \
+		helm repo index . --url https://github.com/gateway/gateway/releases/download/helm-chart-v$$CHART_VERSION --merge index.yaml; \
 	else \
-		helm repo index . --url https://github.com/raksha/raksha/releases/download/helm-chart-v$$CHART_VERSION; \
+		helm repo index . --url https://github.com/gateway/gateway/releases/download/helm-chart-v$$CHART_VERSION; \
 	fi && \
-	$(ECHO) "$(YELLOW)Removing raksha-$$CHART_VERSION.tgz...$(NC)" && \
-	rm -f raksha-$$CHART_VERSION.tgz && \
+	$(ECHO) "$(YELLOW)Removing gateway-$$CHART_VERSION.tgz...$(NC)" && \
+	rm -f gateway-$$CHART_VERSION.tgz && \
 	$(ECHO) "$(GREEN)Helm index updated$(NC)"
 
 generate-html-reports: ## Convert existing XML reports to HTML
@@ -553,32 +553,32 @@ generate-html-reports: ## Convert existing XML reports to HTML
 	@$(ECHO) "$(CYAN)View reports:$(NC)"
 	@ls -1 $(TEST_REPORTS_DIR)/*.html 2>/dev/null | sed 's|$(TEST_REPORTS_DIR)/|  open $(TEST_REPORTS_DIR)/|' || true
 
-test: install-gotestsum ## Run tests for raksha-http
-	@$(ECHO) "$(GREEN)Running raksha-http tests...$(NC)"
+test: install-gotestsum ## Run tests for gateway-http
+	@$(ECHO) "$(GREEN)Running gateway-http tests...$(NC)"
 	@mkdir -p $(TEST_REPORTS_DIR)
-	@cd transports/raksha-http && GOWORK=off gotestsum \
+	@cd transports/gateway-http && GOWORK=off gotestsum \
 		--format=$(GOTESTSUM_FORMAT) \
-		--junitfile=../../$(TEST_REPORTS_DIR)/raksha-http.xml \
+		--junitfile=../../$(TEST_REPORTS_DIR)/gateway-http.xml \
 		-- -v ./...
 	@if [ -z "$$CI" ] && [ -z "$$GITHUB_ACTIONS" ] && [ -z "$$GITLAB_CI" ] && [ -z "$$CIRCLECI" ] && [ -z "$$JENKINS_HOME" ]; then \
 		if which junit-viewer > /dev/null 2>&1; then \
 			$(ECHO) "$(YELLOW)Generating HTML report...$(NC)"; \
-			if junit-viewer --results=$(TEST_REPORTS_DIR)/raksha-http.xml --save=$(TEST_REPORTS_DIR)/raksha-http.html 2>/dev/null; then \
+			if junit-viewer --results=$(TEST_REPORTS_DIR)/gateway-http.xml --save=$(TEST_REPORTS_DIR)/gateway-http.html 2>/dev/null; then \
 				$(ECHO) ""; \
-				$(ECHO) "$(CYAN)HTML report: $(TEST_REPORTS_DIR)/raksha-http.html$(NC)"; \
-				$(ECHO) "$(CYAN)Open with: open $(TEST_REPORTS_DIR)/raksha-http.html$(NC)"; \
+				$(ECHO) "$(CYAN)HTML report: $(TEST_REPORTS_DIR)/gateway-http.html$(NC)"; \
+				$(ECHO) "$(CYAN)Open with: open $(TEST_REPORTS_DIR)/gateway-http.html$(NC)"; \
 			else \
 				$(ECHO) "$(YELLOW)HTML generation failed. JUnit XML report available.$(NC)"; \
-				$(ECHO) "$(CYAN)JUnit XML report: $(TEST_REPORTS_DIR)/raksha-http.xml$(NC)"; \
+				$(ECHO) "$(CYAN)JUnit XML report: $(TEST_REPORTS_DIR)/gateway-http.xml$(NC)"; \
 			fi; \
 		else \
 			$(ECHO) ""; \
 			$(ECHO) "$(YELLOW)junit-viewer not installed. Install with: make install-junit-viewer$(NC)"; \
-			$(ECHO) "$(CYAN)JUnit XML report: $(TEST_REPORTS_DIR)/raksha-http.xml$(NC)"; \
+			$(ECHO) "$(CYAN)JUnit XML report: $(TEST_REPORTS_DIR)/gateway-http.xml$(NC)"; \
 		fi; \
 	else \
 		$(ECHO) ""; \
-		$(ECHO) "$(CYAN)JUnit XML report: $(TEST_REPORTS_DIR)/raksha-http.xml$(NC)"; \
+		$(ECHO) "$(CYAN)JUnit XML report: $(TEST_REPORTS_DIR)/gateway-http.xml$(NC)"; \
 	fi
 
 test-core: install-gotestsum $(if $(DEBUG),install-delve) ## Run core tests (Usage: make test-core PROVIDER=openai TESTCASE=TestName or PATTERN=substring, DEBUG=1 for debugger)
@@ -919,7 +919,7 @@ test-http-transport: install-gotestsum ## Run HTTP transport tests
 	@$(EXPOSE_ENV); \
 	$(ECHO) "$(GREEN)Running HTTP transport tests...$(NC)"; \
 	mkdir -p $(TEST_REPORTS_DIR); \
-	cd transports/raksha-http && find . -name "*.go" -path "*/tests/*" -o -name "*_test.go" | head -1 > /dev/null && \
+	cd transports/gateway-http && find . -name "*.go" -path "*/tests/*" -o -name "*_test.go" | head -1 > /dev/null && \
 		for dir in $$(find . -name "*_test.go" -exec dirname {} \; | sort -u); do \
 			pkg_name=$$(echo $$dir | sed 's|^\./||' | sed 's|/|-|g'); \
 			$(ECHO) "Testing $$dir..."; \
@@ -1356,33 +1356,33 @@ test-integrations-py: ## Run Python integration tests (Usage: make test-integrat
 		$(ECHO) "$(YELLOW)Usage: make test-integrations-py INTEGRATION=anthropic TESTCASE=test_05_end2end_tool_calling$(NC)"; \
 		exit 1; \
 	fi; \
-	RAKSHA_STARTED=0; \
-	RAKSHA_PID=""; \
+	GATEWAY_STARTED=0; \
+	GATEWAY_PID=""; \
 	TAIL_PID=""; \
 	TEST_PORT=${PORT:-8080}; \
 	TEST_HOST=$${HOST:-localhost}; \
-	$(ECHO) "$(CYAN)Checking if Raksha is running on $$TEST_HOST:$$TEST_PORT...$(NC)"; \
+	$(ECHO) "$(CYAN)Checking if Gateway is running on $$TEST_HOST:$$TEST_PORT...$(NC)"; \
 	if curl -s -o /dev/null -w "%{http_code}" http://$$TEST_HOST:$$TEST_PORT/health 2>/dev/null | grep -q "200\|404"; then \
-		$(ECHO) "$(GREEN)✓ Raksha is already running$(NC)"; \
+		$(ECHO) "$(GREEN)✓ Gateway is already running$(NC)"; \
 	else \
-		$(ECHO) "$(YELLOW)Raksha not running, starting it...$(NC)"; \
-		./tmp/raksha-http -host "$$TEST_HOST" -port "$$TEST_PORT" -log-style "$(LOG_STYLE)" -log-level "$(LOG_LEVEL)" -app-dir tests/integrations/python > /tmp/raksha-test.log 2>&1 & \
-		RAKSHA_PID=$$!; \
-		RAKSHA_STARTED=1; \
-		$(ECHO) "$(YELLOW)Waiting for Raksha to be ready...$(NC)"; \
-		$(ECHO) "$(CYAN)Raksha logs: /tmp/raksha-test.log$(NC)"; \
-		(tail -f /tmp/raksha-test.log 2>/dev/null | grep -E "error|panic|Error|ERRO|fatal|Fatal|FATAL" --line-buffered &) & \
+		$(ECHO) "$(YELLOW)Gateway not running, starting it...$(NC)"; \
+		./tmp/gateway-http -host "$$TEST_HOST" -port "$$TEST_PORT" -log-style "$(LOG_STYLE)" -log-level "$(LOG_LEVEL)" -app-dir tests/integrations/python > /tmp/gateway-test.log 2>&1 & \
+		GATEWAY_PID=$$!; \
+		GATEWAY_STARTED=1; \
+		$(ECHO) "$(YELLOW)Waiting for Gateway to be ready...$(NC)"; \
+		$(ECHO) "$(CYAN)Gateway logs: /tmp/gateway-test.log$(NC)"; \
+		(tail -f /tmp/gateway-test.log 2>/dev/null | grep -E "error|panic|Error|ERRO|fatal|Fatal|FATAL" --line-buffered &) & \
 		TAIL_PID=$$!; \
 		for i in 1 2 3 4 5 6 7 8 9 10; do \
 			if curl -s -o /dev/null http://$$TEST_HOST:$$TEST_PORT/health 2>/dev/null; then \
-				$(ECHO) "$(GREEN)✓ Raksha is ready (PID: $$RAKSHA_PID)$(NC)"; \
+				$(ECHO) "$(GREEN)✓ Gateway is ready (PID: $$GATEWAY_PID)$(NC)"; \
 				break; \
 			fi; \
 			if [ $$i -eq 10 ]; then \
-				$(ECHO) "$(RED)Failed to start Raksha$(NC)"; \
-				$(ECHO) "$(YELLOW)Raksha logs:$(NC)"; \
-				cat /tmp/raksha-test.log 2>/dev/null || $(ECHO) "No log file found"; \
-				[ -n "$$RAKSHA_PID" ] && kill $$RAKSHA_PID 2>/dev/null; \
+				$(ECHO) "$(RED)Failed to start Gateway$(NC)"; \
+				$(ECHO) "$(YELLOW)Gateway logs:$(NC)"; \
+				cat /tmp/gateway-test.log 2>/dev/null || $(ECHO) "No log file found"; \
+				[ -n "$$GATEWAY_PID" ] && kill $$GATEWAY_PID 2>/dev/null; \
 				[ -n "$$TAIL_PID" ] && kill $$TAIL_PID 2>/dev/null; \
 				exit 1; \
 			fi; \
@@ -1396,7 +1396,7 @@ test-integrations-py: ## Run Python integration tests (Usage: make test-integrat
 			$(ECHO) "$(RED)Error: Neither uv nor pytest found$(NC)"; \
 			$(ECHO) "$(YELLOW)Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh$(NC)"; \
 			$(ECHO) "$(YELLOW)Or install pytest: pip install pytest$(NC)"; \
-			[ $$RAKSHA_STARTED -eq 1 ] && [ -n "$$RAKSHA_PID" ] && kill $$RAKSHA_PID 2>/dev/null; \
+			[ $$GATEWAY_STARTED -eq 1 ] && [ -n "$$GATEWAY_PID" ] && kill $$GATEWAY_PID 2>/dev/null; \
 			[ -n "$$TAIL_PID" ] && kill $$TAIL_PID 2>/dev/null; \
 			exit 1; \
 		fi; \
@@ -1445,22 +1445,22 @@ test-integrations-py: ## Run Python integration tests (Usage: make test-integrat
 			fi; \
 		fi; \
 	fi; \
-	if [ $$RAKSHA_STARTED -eq 1 ] && [ -n "$$RAKSHA_PID" ]; then \
-		$(ECHO) "$(YELLOW)Stopping Raksha (PID: $$RAKSHA_PID)...$(NC)"; \
-		kill $$RAKSHA_PID 2>/dev/null || true; \
+	if [ $$GATEWAY_STARTED -eq 1 ] && [ -n "$$GATEWAY_PID" ]; then \
+		$(ECHO) "$(YELLOW)Stopping Gateway (PID: $$GATEWAY_PID)...$(NC)"; \
+		kill $$GATEWAY_PID 2>/dev/null || true; \
 		[ -n "$$TAIL_PID" ] && kill $$TAIL_PID 2>/dev/null || true; \
-		wait $$RAKSHA_PID 2>/dev/null || true; \
-		$(ECHO) "$(GREEN)✓ Raksha stopped$(NC)"; \
+		wait $$GATEWAY_PID 2>/dev/null || true; \
+		$(ECHO) "$(GREEN)✓ Gateway stopped$(NC)"; \
 		if [ $$TEST_FAILED -eq 1 ]; then \
 			$(ECHO) ""; \
-			$(ECHO) "$(YELLOW)Last 50 lines of Raksha logs:$(NC)"; \
-			tail -50 /tmp/raksha-test.log 2>/dev/null || $(ECHO) "No log file found"; \
+			$(ECHO) "$(YELLOW)Last 50 lines of Gateway logs:$(NC)"; \
+			tail -50 /tmp/gateway-test.log 2>/dev/null || $(ECHO) "No log file found"; \
 		fi; \
 	fi; \
 	$(ECHO) ""; \
 	if [ $$TEST_FAILED -eq 1 ]; then \
 		$(ECHO) "$(RED)✗ Integration tests failed$(NC)"; \
-		$(ECHO) "$(CYAN)Full Raksha logs: /tmp/raksha-test.log$(NC)"; \
+		$(ECHO) "$(CYAN)Full Gateway logs: /tmp/gateway-test.log$(NC)"; \
 		exit 1; \
 	else \
 		$(ECHO) "$(GREEN)✓ Integration tests complete$(NC)"; \
@@ -1483,33 +1483,33 @@ test-integrations-ts: ## Run TypeScript integration tests (Usage: make test-inte
 		$(ECHO) "$(YELLOW)Usage: make test-integrations-ts INTEGRATION=openai TESTCASE=test_simple_chat$(NC)"; \
 		exit 1; \
 	fi; \
-	RAKSHA_STARTED=0; \
-	RAKSHA_PID=""; \
+	GATEWAY_STARTED=0; \
+	GATEWAY_PID=""; \
 	TAIL_PID=""; \
 	TEST_PORT=${PORT:-8080}; \
 	TEST_HOST=$${HOST:-localhost}; \
-	$(ECHO) "$(CYAN)Checking if Raksha is running on $$TEST_HOST:$$TEST_PORT...$(NC)"; \
+	$(ECHO) "$(CYAN)Checking if Gateway is running on $$TEST_HOST:$$TEST_PORT...$(NC)"; \
 	if curl -s -o /dev/null -w "%{http_code}" http://$$TEST_HOST:$$TEST_PORT/health 2>/dev/null | grep -q "200\|404"; then \
-		$(ECHO) "$(GREEN)✓ Raksha is already running$(NC)"; \
+		$(ECHO) "$(GREEN)✓ Gateway is already running$(NC)"; \
 	else \
-		$(ECHO) "$(YELLOW)Raksha not running, starting it...$(NC)"; \
-		./tmp/raksha-http -host "$$TEST_HOST" -port "$$TEST_PORT" -log-style "$(LOG_STYLE)" -log-level "$(LOG_LEVEL)" -app-dir tests/integrations/typescript > /tmp/raksha-test.log 2>&1 & \
-		RAKSHA_PID=$$!; \
-		RAKSHA_STARTED=1; \
-		$(ECHO) "$(YELLOW)Waiting for Raksha to be ready...$(NC)"; \
-		$(ECHO) "$(CYAN)Raksha logs: /tmp/raksha-test.log$(NC)"; \
-		(tail -f /tmp/raksha-test.log 2>/dev/null | grep -E "error|panic|Error|ERRO|fatal|Fatal|FATAL" --line-buffered &) & \
+		$(ECHO) "$(YELLOW)Gateway not running, starting it...$(NC)"; \
+		./tmp/gateway-http -host "$$TEST_HOST" -port "$$TEST_PORT" -log-style "$(LOG_STYLE)" -log-level "$(LOG_LEVEL)" -app-dir tests/integrations/typescript > /tmp/gateway-test.log 2>&1 & \
+		GATEWAY_PID=$$!; \
+		GATEWAY_STARTED=1; \
+		$(ECHO) "$(YELLOW)Waiting for Gateway to be ready...$(NC)"; \
+		$(ECHO) "$(CYAN)Gateway logs: /tmp/gateway-test.log$(NC)"; \
+		(tail -f /tmp/gateway-test.log 2>/dev/null | grep -E "error|panic|Error|ERRO|fatal|Fatal|FATAL" --line-buffered &) & \
 		TAIL_PID=$$!; \
 		for i in 1 2 3 4 5 6 7 8 9 10; do \
 			if curl -s -o /dev/null http://$$TEST_HOST:$$TEST_PORT/health 2>/dev/null; then \
-				$(ECHO) "$(GREEN)✓ Raksha is ready (PID: $$RAKSHA_PID)$(NC)"; \
+				$(ECHO) "$(GREEN)✓ Gateway is ready (PID: $$GATEWAY_PID)$(NC)"; \
 				break; \
 			fi; \
 			if [ $$i -eq 10 ]; then \
-				$(ECHO) "$(RED)Failed to start Raksha$(NC)"; \
-				$(ECHO) "$(YELLOW)Raksha logs:$(NC)"; \
-				cat /tmp/raksha-test.log 2>/dev/null || $(ECHO) "No log file found"; \
-				[ -n "$$RAKSHA_PID" ] && kill $$RAKSHA_PID 2>/dev/null; \
+				$(ECHO) "$(RED)Failed to start Gateway$(NC)"; \
+				$(ECHO) "$(YELLOW)Gateway logs:$(NC)"; \
+				cat /tmp/gateway-test.log 2>/dev/null || $(ECHO) "No log file found"; \
+				[ -n "$$GATEWAY_PID" ] && kill $$GATEWAY_PID 2>/dev/null; \
 				[ -n "$$TAIL_PID" ] && kill $$TAIL_PID 2>/dev/null; \
 				exit 1; \
 			fi; \
@@ -1521,7 +1521,7 @@ test-integrations-ts: ## Run TypeScript integration tests (Usage: make test-inte
 	if ! which npm > /dev/null 2>&1; then \
 		$(ECHO) "$(RED)Error: npm not found$(NC)"; \
 		$(ECHO) "$(YELLOW)Install Node.js: https://nodejs.org/$(NC)"; \
-		[ $$RAKSHA_STARTED -eq 1 ] && [ -n "$$RAKSHA_PID" ] && kill $$RAKSHA_PID 2>/dev/null; \
+		[ $$GATEWAY_STARTED -eq 1 ] && [ -n "$$GATEWAY_PID" ] && kill $$GATEWAY_PID 2>/dev/null; \
 		[ -n "$$TAIL_PID" ] && kill $$TAIL_PID 2>/dev/null; \
 		exit 1; \
 	fi; \
@@ -1551,22 +1551,22 @@ test-integrations-ts: ## Run TypeScript integration tests (Usage: make test-inte
 			npm test $(if $(VERBOSE),-- --reporter=verbose,) || TEST_FAILED=1; \
 		fi; \
 	fi; \
-	if [ $$RAKSHA_STARTED -eq 1 ] && [ -n "$$RAKSHA_PID" ]; then \
-		$(ECHO) "$(YELLOW)Stopping Raksha (PID: $$RAKSHA_PID)...$(NC)"; \
-		kill $$RAKSHA_PID 2>/dev/null || true; \
+	if [ $$GATEWAY_STARTED -eq 1 ] && [ -n "$$GATEWAY_PID" ]; then \
+		$(ECHO) "$(YELLOW)Stopping Gateway (PID: $$GATEWAY_PID)...$(NC)"; \
+		kill $$GATEWAY_PID 2>/dev/null || true; \
 		[ -n "$$TAIL_PID" ] && kill $$TAIL_PID 2>/dev/null || true; \
-		wait $$RAKSHA_PID 2>/dev/null || true; \
-		$(ECHO) "$(GREEN)✓ Raksha stopped$(NC)"; \
+		wait $$GATEWAY_PID 2>/dev/null || true; \
+		$(ECHO) "$(GREEN)✓ Gateway stopped$(NC)"; \
 		if [ $$TEST_FAILED -eq 1 ]; then \
 			$(ECHO) ""; \
-			$(ECHO) "$(YELLOW)Last 50 lines of Raksha logs:$(NC)"; \
-			tail -50 /tmp/raksha-test.log 2>/dev/null || $(ECHO) "No log file found"; \
+			$(ECHO) "$(YELLOW)Last 50 lines of Gateway logs:$(NC)"; \
+			tail -50 /tmp/gateway-test.log 2>/dev/null || $(ECHO) "No log file found"; \
 		fi; \
 	fi; \
 	$(ECHO) ""; \
 	if [ $$TEST_FAILED -eq 1 ]; then \
 		$(ECHO) "$(RED)✗ TypeScript integration tests failed$(NC)"; \
-		$(ECHO) "$(CYAN)Full Raksha logs: /tmp/raksha-test.log$(NC)"; \
+		$(ECHO) "$(CYAN)Full Gateway logs: /tmp/gateway-test.log$(NC)"; \
 		exit 1; \
 	else \
 		$(ECHO) "$(GREEN)✓ TypeScript integration tests complete$(NC)"; \
@@ -1585,12 +1585,12 @@ install-playwright: ## Install Playwright test dependencies
 	fi
 	@$(ECHO) "$(GREEN)Playwright is ready$(NC)"
 
-build-test-plugin: ## Build test plugin for E2E tests (copies to tmp/raksha-test-plugin.so)
+build-test-plugin: ## Build test plugin for E2E tests (copies to tmp/gateway-test-plugin.so)
 	@$(ECHO) "$(GREEN)Building test plugin for E2E tests...$(NC)"
 	@cd examples/plugins/hello-world && make dev
 	@mkdir -p tmp
-	@cp examples/plugins/hello-world/build/hello-world.so tmp/raksha-test-plugin.so
-	@$(ECHO) "$(GREEN)✓ Test plugin ready at tmp/raksha-test-plugin.so$(NC)"
+	@cp examples/plugins/hello-world/build/hello-world.so tmp/gateway-test-plugin.so
+	@$(ECHO) "$(GREEN)✓ Test plugin ready at tmp/gateway-test-plugin.so$(NC)"
 
 run-e2e: install-playwright ## Run E2E tests (Usage: make run-e2e [FLOW=providers|virtual-keys|config])
 	@$(ECHO) "$(GREEN)Running Playwright E2E tests...$(NC)"
@@ -1630,7 +1630,7 @@ run-e2e-headed: install-playwright ## Run E2E tests in headed browser mode
 
 run-e2e-api: install-newman ## Run E2E API management tests (/api/* and /health)
 	@$(ECHO) "$(GREEN)Running E2E API management tests...$(NC)"
-	@BASH4="$${RAKSHA_BASH:-}"; \
+	@BASH4="$${GATEWAY_BASH:-}"; \
 	if [ -z "$$BASH4" ]; then \
 		for candidate in \
 			"$$(brew --prefix bash 2>/dev/null)/bin/bash" \
@@ -1645,14 +1645,14 @@ run-e2e-api: install-newman ## Run E2E API management tests (/api/* and /health)
 	fi; \
 	if [ -z "$$BASH4" ]; then \
 		$(ECHO) "$(RED)Error: run-e2e-api requires Bash 4.0+ for the API runner.$(NC)"; \
-		$(ECHO) "$(YELLOW)Install a newer Bash with 'brew install bash', or pass RAKSHA_BASH=/path/to/bash.$(NC)"; \
+		$(ECHO) "$(YELLOW)Install a newer Bash with 'brew install bash', or pass GATEWAY_BASH=/path/to/bash.$(NC)"; \
 		exit 1; \
 	fi; \
 	cd tests/e2e/api && "$$BASH4" ./runners/run-newman-api-tests.sh --all-reports
 
 # Quick start with example config
 quick-start: ## Quick start with example config and maxim plugin
-	@$(ECHO) "$(GREEN)Quick starting Raksha with example configuration...$(NC)"
+	@$(ECHO) "$(GREEN)Quick starting Gateway with example configuration...$(NC)"
 	@$(MAKE) dev
 
 # Linting and formatting
@@ -1702,10 +1702,10 @@ setup-workspace: ## Set up Go workspace with all local modules for development
 	@$(ECHO) "$(GREEN)✓ Go workspace ready with all local modules$(NC)"
 	@$(ECHO) ""
 	@$(ECHO) "$(CYAN)Local modules in workspace:$(NC)"
-	@go list -m all | grep "github.com/raksha/raksha" | grep -v " v" | sed 's/^/  ✓ /'
+	@go list -m all | grep "github.com/gateway/gateway" | grep -v " v" | sed 's/^/  ✓ /'
 	@$(ECHO) ""
 	@$(ECHO) "$(CYAN)Remote modules (no local version):$(NC)"
-	@go list -m all | grep "github.com/raksha/raksha" | grep " v" | sed 's/^/  → /'
+	@go list -m all | grep "github.com/gateway/gateway" | grep " v" | sed 's/^/  → /'
 	@$(ECHO) ""
 	@$(ECHO) "$(YELLOW)Note: go.work files are not committed to version control$(NC)"
 
@@ -1772,7 +1772,7 @@ run-cli-harness-test: ## Run the Claude Code + Codex + OpenCode E2E harness (non
 	$(ECHO) "$(GREEN)Running CLI harness E2E tests...$(NC)"; \
 	BASE_URL_VAL="$${BASE_URL:-$(BASE_URL)}"; BASE_URL_VAL="$${BASE_URL_VAL:-http://localhost:8080}"; \
 	PARALLEL_VAL="$${PARALLEL:-$(PARALLEL)}"; PARALLEL_VAL="$${PARALLEL_VAL:-4}"; \
-	$(ECHO) "$(CYAN)  Raksha:  $$BASE_URL_VAL$(NC)"; \
+	$(ECHO) "$(CYAN)  Gateway:  $$BASE_URL_VAL$(NC)"; \
 	$(ECHO) "$(CYAN)  Parallel: $$PARALLEL_VAL$(NC)"; \
 	if [ -n "$(PROVIDER)" ]; then \
 		case "$(PROVIDER)" in openai|anthropic|azure|gemini|bedrock|vertex) ;; \
@@ -1781,8 +1781,8 @@ run-cli-harness-test: ## Run the Claude Code + Codex + OpenCode E2E harness (non
 		$(ECHO) "$(CYAN)  Provider: $(PROVIDER)$(NC)"; \
 	fi; \
 	if ! curl -s -o /dev/null -w "%{http_code}" "$$BASE_URL_VAL/api/providers" | grep -qE '^[2-4]'; then \
-		$(ECHO) "$(RED)Error: Raksha not reachable at $$BASE_URL_VAL$(NC)"; \
-		$(ECHO) "$(YELLOW)Start Raksha first (e.g. make dev) or pass BASE_URL=...$(NC)"; \
+		$(ECHO) "$(RED)Error: Gateway not reachable at $$BASE_URL_VAL$(NC)"; \
+		$(ECHO) "$(YELLOW)Start Gateway first (e.g. make dev) or pass BASE_URL=...$(NC)"; \
 		exit 1; \
 	fi; \
 	for bin in claude codex opencode; do \
@@ -1805,9 +1805,9 @@ run-cli-harness-test: ## Run the Claude Code + Codex + OpenCode E2E harness (non
 	$(ECHO) "$(CYAN)  Filter:   $$RUN_PARTS$(NC)"; \
 	if [ -n "$(MODEL)" ]; then $(ECHO) "$(CYAN)  Model:    $(MODEL) (substring filter)$(NC)"; fi; \
 	cd tests/e2e/clis && \
-		RAKSHA_BASE_URL="$$BASE_URL_VAL" \
-		RAKSHA_API_KEY="$${API_KEY:-$(API_KEY)}" \
-		RAKSHA_E2E_CLIS_QUIET="$(QUIET)" \
+		GATEWAY_BASE_URL="$$BASE_URL_VAL" \
+		GATEWAY_API_KEY="$${API_KEY:-$(API_KEY)}" \
+		GATEWAY_E2E_CLIS_QUIET="$(QUIET)" \
 		MODEL="$(MODEL)" \
 		GOWORK=off go test \
 			-count=1 \
@@ -1822,13 +1822,13 @@ install-newman: ## Install newman + htmlextra reporter if not already installed
 	@$(USE_NODE); npm list -g newman-reporter-htmlextra > /dev/null 2>&1 || ($(ECHO) "$(YELLOW)Installing newman-reporter-htmlextra...$(NC)" && npm install -g newman-reporter-htmlextra)
 	@$(ECHO) "$(GREEN)Newman + htmlextra are ready$(NC)"
 
-run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provider-harness Postman collection. HELP=1 prints full parameter docs. Filter via PROVIDER=openai|anthropic|bedrock|gemini|vertex|azure|passthrough|openrouter, FEATURE="<kw>" or FEATURE="<kw1>,<kw2>" (AND across substrings; matches request name/URL/body), RERUN_FAILED=1 (re-run only items that failed last run). INCLUDE_PREVIEW=1 to run [PREVIEW]-tagged account/region-scoped cases. SKIP_STREAM_CANCEL=1 skips stream cancellation probes. USE_INFISICAL=1 to source from Infisical (Usage: make run-provider-harness-test [HELP=1] [PROVIDER=anthropic] [FEATURE="web search"] [FEATURE="cross-cut,structured output"] [RERUN_FAILED=1] [INCLUDE_PREVIEW=1] [BASE_URL=...] [FOLDER="..."] [ENV_FILE=...] [VIEWER_PORT=8090] [CI=1])
+run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Gateway provider-harness Postman collection. HELP=1 prints full parameter docs. Filter via PROVIDER=openai|anthropic|bedrock|gemini|vertex|azure|passthrough|openrouter, FEATURE="<kw>" or FEATURE="<kw1>,<kw2>" (AND across substrings; matches request name/URL/body), RERUN_FAILED=1 (re-run only items that failed last run). INCLUDE_PREVIEW=1 to run [PREVIEW]-tagged account/region-scoped cases. SKIP_STREAM_CANCEL=1 skips stream cancellation probes. USE_INFISICAL=1 to source from Infisical (Usage: make run-provider-harness-test [HELP=1] [PROVIDER=anthropic] [FEATURE="web search"] [FEATURE="cross-cut,structured output"] [RERUN_FAILED=1] [INCLUDE_PREVIEW=1] [BASE_URL=...] [FOLDER="..."] [ENV_FILE=...] [VIEWER_PORT=8090] [CI=1])
 	@if [ -n "$(HELP)" ]; then \
-		printf '\n%s\n' "$(CYAN)run-provider-harness-test - Raksha provider harness runner$(NC)"; \
-		printf '%s\n\n' "Runs the Raksha provider-harness Postman collection through newman, with optional filtering."; \
+		printf '\n%s\n' "$(CYAN)run-provider-harness-test - Gateway provider harness runner$(NC)"; \
+		printf '%s\n\n' "Runs the Gateway provider-harness Postman collection through newman, with optional filtering."; \
 		printf '%s\n\n' "Includes §8 Criss-Cross: endpoint-shape × model-provider × modality matrix (chat, streaming, embeddings, audio, image gen, tools, vision, JSON, reasoning)."; \
 		printf '%s\n' "$(YELLOW)PARAMETERS$(NC)"; \
-		printf '  %-18s %s\n' "HELP=1"          "Print this help and exit (no Raksha or network activity)."; \
+		printf '  %-18s %s\n' "HELP=1"          "Print this help and exit (no Gateway or network activity)."; \
 		printf '  %-18s %s\n' "PROVIDER=<name>" "Filter requests by provider. One of: openai, anthropic, bedrock, gemini, vertex, azure, passthrough, openrouter."; \
 		printf '  %-18s %s\n' ""                "  Matches via PROVIDER_KEYWORDS in tests/e2e/api/runners/filter-collection.mjs (loose name/body substring)."; \
 		printf '  %-18s %s\n' "FEATURE=\"<kw>\""  "Filter by case-insensitive keyword(s) against the full request JSON (name + URL + body + ancestor folder names)."; \
@@ -1836,8 +1836,8 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provi
 		printf '  %-18s %s\n' ""                "  \"cross-cut\" is a structural keyword - matches any row routed through unified /v1/chat/completions with a provider/model body, regardless of name."; \
 		printf '  %-18s %s\n' "RERUN_FAILED=1"  "Re-run only requests that failed in the prior run (reads tmp/newman-report.json)."; \
 		printf '  %-18s %s\n' ""                "  Composes with PROVIDER and FEATURE (predicates AND together)."; \
-		printf '  %-18s %s\n' "BASE_URL=<url>"  "Raksha gateway URL (default: http://localhost:8080). Skips auto-start if /health responds."; \
-		printf '  %-18s %s\n' "APP_DIR=<dir>"   "Config dir passed to 'make dev' if Raksha isn't already running (default: tests/integrations/python)."; \
+		printf '  %-18s %s\n' "BASE_URL=<url>"  "Gateway gateway URL (default: http://localhost:8080). Skips auto-start if /health responds."; \
+		printf '  %-18s %s\n' "APP_DIR=<dir>"   "Config dir passed to 'make dev' if Gateway isn't already running (default: tests/integrations/python)."; \
 		printf '  %-18s %s\n' "FOLDER=\"<name>\"" "Newman --folder: scope to a single Postman folder (e.g. \"8. Cross-Model\"). Applied AFTER filtering."; \
 		printf '  %-18s %s\n' "ENV_FILE=<path>" "Postman environment JSON with real keys (kept out of git)."; \
 		printf '  %-18s %s\n' "VIEWER_PORT=N"   "Port for the interactive HTML viewer (default: 8090). Ignored if CI=1."; \
@@ -1846,7 +1846,7 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provi
 		printf '  %-18s %s\n' "INCLUDE_SKIP=1"   "Run [SKIP]-tagged criss-cross cells (provider+modality pairs that return NewUnsupportedOperationError by design, e.g., anthropic embeddings, bedrock audio). Off by default."; \
 		printf '  %-18s %s\n' "PARALLEL=0"       "Disable per-provider parallelism (default: ON). When ON, forks one newman per provider (openai, anthropic, bedrock, gemini, vertex, azure) concurrently; reports merged into tmp/newman-report.json. The htmlextra report is only emitted in sequential mode (PARALLEL=0)."; \
 		printf '  %-18s %s\n' "SKIP_STREAM_CANCEL=1" "Skip the post-Newman stream-abort probes that verify server-side cancellation on client disconnect."; \
-		printf '  %-18s %s\n' "DB_VERIFY=0"      "Disable the dbverify reporter (ON by default). When on, [Costing]/[Accounting] requests assert the logs DB cost matches the getraksha.ai/datasheet-computed cost (resolves DB from APP_DIR/config.json or RAKSHA_LOGS_DB_URL); skips gracefully if no logs DB is reachable."; \
+		printf '  %-18s %s\n' "DB_VERIFY=0"      "Disable the dbverify reporter (ON by default). When on, [Costing]/[Accounting] requests assert the logs DB cost matches the getgateway.ai/datasheet-computed cost (resolves DB from APP_DIR/config.json or GATEWAY_LOGS_DB_URL); skips gracefully if no logs DB is reachable."; \
 		printf '  %-18s %s\n' "USE_INFISICAL=1" "Source secrets from Infisical CLI ('infisical export --path /local --format dotenv') instead of .env."; \
 		printf '  %-18s %s\n' "VERTEX_GCS_BUCKET" "Env-sourced (.env/Infisical): GCS bucket for Vertex file ops (forwarded to Newman as vertexGcsBucket)."; \
 		printf '  %-18s %s\n' "VERTEX_GCS_PREFIX" "Env-sourced: GCS object prefix for Vertex file ops (forwarded as vertexGcsPrefix)."; \
@@ -1864,7 +1864,7 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provi
 		printf '  %-30s %s\n' "tmp/newman-report.json"      "Machine-readable run report (used by RERUN_FAILED and the analyzer)."; \
 		printf '  %-30s %s\n' "tmp/newman-cli.log"          "Captured newman CLI output (stdout+stderr)."; \
 		printf '  %-30s %s\n' "tmp/harness-failures.md"     "Categorized failure analyzer output + coverage matrices."; \
-		printf '  %-30s %s\n' "tmp/raksha-dev.log"         "Raksha runtime log (only if we auto-started it)."; \
+		printf '  %-30s %s\n' "tmp/gateway-dev.log"         "Gateway runtime log (only if we auto-started it)."; \
 		printf '  %-30s %s\n' "tmp/harness-augmented.json"  "Provider harness plus generated streaming/thinking rows."; \
 		printf '  %-30s %s\n' "tmp/harness-filtered.json"   "Filtered collection (only if PROVIDER/FEATURE/RERUN_FAILED set)."; \
 		printf '  %-30s %s\n' "tmp/newman-report-<p>.json" "Per-provider newman report (parallel mode only)."; \
@@ -1911,8 +1911,8 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provi
 		if [ "$$DBVERIFY_READY" = "1" ]; then \
 			export NODE_PATH="$(CURDIR)/tests/e2e/api/node_modules$${NODE_PATH:+:$$NODE_PATH}"; \
 			DBVERIFY_REPORTER=",dbverify"; \
-			LOGS_DB_VAL="$${RAKSHA_LOGS_DB_URL:-sqlite://$(CURDIR)/$$APP_DIR_VAL/logs.db}"; \
-			export RAKSHA_LOGS_DB_URL="$$LOGS_DB_VAL"; \
+			LOGS_DB_VAL="$${GATEWAY_LOGS_DB_URL:-sqlite://$(CURDIR)/$$APP_DIR_VAL/logs.db}"; \
+			export GATEWAY_LOGS_DB_URL="$$LOGS_DB_VAL"; \
 			DBVERIFY_ARGS="--reporter-dbverify-config $$APP_DIR_VAL/config.json"; \
 			$(ECHO) "$(CYAN)dbverify reporter enabled (logs DB: $$LOGS_DB_VAL). Set DB_VERIFY=0 to disable.$(NC)"; \
 		fi; \
@@ -1929,12 +1929,12 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provi
 			kill $$VPID 2>/dev/null; \
 			rm -f tmp/harness-viewer.pid; \
 		fi; \
-		if [ "$$STARTED_BY_US" = "1" ] && [ -f tmp/raksha-dev.pid ]; then \
-			BPID=$$(cat tmp/raksha-dev.pid); \
-			$(ECHO) "$(YELLOW)Stopping Raksha (pid $$BPID) - we started it...$(NC)"; \
+		if [ "$$STARTED_BY_US" = "1" ] && [ -f tmp/gateway-dev.pid ]; then \
+			BPID=$$(cat tmp/gateway-dev.pid); \
+			$(ECHO) "$(YELLOW)Stopping Gateway (PID $$BPID) - we started it...$(NC)"; \
 			kill $$BPID 2>/dev/null; \
 			pkill -P $$BPID 2>/dev/null; \
-			rm -f tmp/raksha-dev.pid; \
+			rm -f tmp/gateway-dev.pid; \
 		fi; \
 	}; \
 	preempt_viewer_port() { \
@@ -1974,21 +1974,21 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provi
 		fi; \
 	fi; \
 	if curl -fsS --max-time 2 "$$BASE_URL_VAL/health" > /dev/null 2>&1; then \
-		$(ECHO) "$(GREEN)Raksha already running at $$BASE_URL_VAL$(NC)"; \
+		$(ECHO) "$(GREEN)Gateway already running at $$BASE_URL_VAL$(NC)"; \
 	else \
-		$(ECHO) "$(YELLOW)Raksha not running - launching 'make dev' (APP_DIR=$$APP_DIR_VAL) in background...$(NC)"; \
-		$(MAKE) dev APP_DIR="$$APP_DIR_VAL" > tmp/raksha-dev.log 2>&1 & \
-		echo $$! > tmp/raksha-dev.pid; \
+		$(ECHO) "$(YELLOW)Gateway not running - launching 'make dev' (APP_DIR=$$APP_DIR_VAL) in background...$(NC)"; \
+		$(MAKE) dev APP_DIR="$$APP_DIR_VAL" > tmp/gateway-dev.log 2>&1 & \
+		echo $$! > tmp/gateway-dev.pid; \
 		STARTED_BY_US=1; \
-		$(ECHO) "$(CYAN)Waiting for Raksha /health to respond (up to 60s)...$(NC)"; \
+		$(ECHO) "$(CYAN)Waiting for Gateway /health to respond (up to 60s)...$(NC)"; \
 		for i in $$(seq 1 30); do \
 			if curl -fsS --max-time 2 "$$BASE_URL_VAL/health" > /dev/null 2>&1; then \
-				$(ECHO) "$(GREEN)Raksha is up$(NC)"; break; \
+				$(ECHO) "$(GREEN)Gateway is up$(NC)"; break; \
 			fi; \
 			sleep 2; \
 		done; \
 		if ! curl -fsS --max-time 2 "$$BASE_URL_VAL/health" > /dev/null 2>&1; then \
-			$(ECHO) "$(RED)Raksha did not become healthy. See tmp/raksha-dev.log$(NC)"; \
+			$(ECHO) "$(RED)Gateway did not become healthy. See tmp/gateway-dev.log$(NC)"; \
 			exit 1; \
 		fi; \
 	fi; \
@@ -2129,7 +2129,7 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provi
 				--reporters cli,json,htmlextra$$DBVERIFY_REPORTER $$DBVERIFY_ARGS \
 				--reporter-json-export tmp/newman-report.json \
 				--reporter-htmlextra-export tmp/newman-report.html \
-				--reporter-htmlextra-title "Raksha Provider Harness" \
+				--reporter-htmlextra-title "Gateway Provider Harness" \
 				--reporter-htmlextra-darkTheme > tmp/newman-cli.log 2>&1; \
 			NEWMAN_EXIT=$$?; \
 			if [ -f tmp/harness-monitor.pid ]; then \
@@ -2153,7 +2153,7 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provi
 				--reporters cli,json,htmlextra$$DBVERIFY_REPORTER $$DBVERIFY_ARGS \
 				--reporter-json-export tmp/newman-report.json \
 				--reporter-htmlextra-export tmp/newman-report.html \
-				--reporter-htmlextra-title "Raksha Provider Harness" \
+				--reporter-htmlextra-title "Gateway Provider Harness" \
 				--reporter-htmlextra-darkTheme 2>&1 | tee tmp/newman-cli.log; \
 			NEWMAN_EXIT=$$?; \
 		fi; \
@@ -2173,14 +2173,14 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Raksha provi
 	$(ECHO) "$(CYAN)Analyzing failures...$(NC)"; \
 	$(USE_NODE); node tests/e2e/api/runners/analyze-failures.mjs \
 		--report tmp/newman-report.json \
-		--raksha-log tmp/raksha-dev.log \
+		--gateway-log tmp/gateway-dev.log \
 		--out tmp/harness-failures.md || true; \
 	$(ECHO) "$(GREEN)Failure breakdown: tmp/harness-failures.md$(NC)"; \
 	if [ -n "$(CI)" ] || [ -n "$$CI" ]; then \
-		$(ECHO) "$(CYAN)CI mode - skipping interactive viewer. Upload tmp/newman-report.html, tmp/harness-failures.md, and tmp/raksha-dev.log as workflow artifacts.$(NC)"; \
+		$(ECHO) "$(CYAN)CI mode - skipping interactive viewer. Upload tmp/newman-report.html, tmp/harness-failures.md, and tmp/gateway-dev.log as workflow artifacts.$(NC)"; \
 	else \
 		preempt_viewer_port; \
-		$(ECHO) "$(CYAN)Launching interactive viewer on http://localhost:$$VIEWER_PORT_VAL (Raksha stays up for resend)...$(NC)"; \
+		$(ECHO) "$(CYAN)Launching interactive viewer on http://localhost:$$VIEWER_PORT_VAL (Gateway stays up for resend)...$(NC)"; \
 		$(USE_NODE); node tests/e2e/api/runners/harness-viewer.mjs --report tmp/newman-report.json --port $$VIEWER_PORT_VAL & \
 		VIEWER_PID=$$!; \
 		echo $$VIEWER_PID > tmp/harness-viewer.pid; \

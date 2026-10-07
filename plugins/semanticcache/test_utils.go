@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/vectorstore"
-	mocker "github.com/raksha/raksha/plugins/mocker"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/vectorstore"
+	mocker "github.com/gateway/gateway/plugins/mocker"
 )
 
 // embeddingThrottle bounds the number of concurrent live embedding calls
@@ -39,23 +39,23 @@ func embeddingConcurrency() int {
 // package-level concurrency cap above so embedding bursts stay under the
 // provider's rate limit regardless of the test runner or -parallel setting.
 func throttledEmbeddingExecutor(inner EmbeddingRequestExecutor) EmbeddingRequestExecutor {
-	return func(ctx *schemas.RakshaContext, req *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+	return func(ctx *schemas.GatewayContext, req *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 		select {
 		case embeddingThrottle <- struct{}{}:
 		case <-ctx.Done():
-			return nil, &schemas.RakshaError{Error: &schemas.ErrorField{Message: "embedding throttle wait cancelled: " + ctx.Err().Error()}}
+			return nil, &schemas.GatewayError{Error: &schemas.ErrorField{Message: "embedding throttle wait cancelled: " + ctx.Err().Error()}}
 		}
 		defer func() { <-embeddingThrottle }()
 		return inner(ctx, req)
 	}
 }
 
-// isTransientUpstreamError reports whether a RakshaError reflects a
+// isTransientUpstreamError reports whether a GatewayError reflects a
 // transient upstream condition (timeout, rate-limit, 5xx) where skipping
 // the test is reasonable. All other errors — including missing API keys,
 // client-side issues, or non-HTTP failures — should fail the test rather
 // than mask regressions behind a green skip.
-func isTransientUpstreamError(err *schemas.RakshaError) bool {
+func isTransientUpstreamError(err *schemas.GatewayError) bool {
 	if err == nil || err.StatusCode == nil {
 		return false
 	}
@@ -63,12 +63,12 @@ func isTransientUpstreamError(err *schemas.RakshaError) bool {
 	return code == 408 || code == 425 || code == 429 || code >= 500
 }
 
-// withTestRequestID stamps a fresh RakshaContextKeyRequestID on the context.
+// withTestRequestID stamps a fresh GatewayContextKeyRequestID on the context.
 // Unit tests that call PreLLMHook/PostLLMHook directly need this so the plugin
 // can anchor per-request state. In integration tests the framework overwrites
 // it, so setting it here is safe in either path.
-func withTestRequestID(ctx *schemas.RakshaContext) *schemas.RakshaContext {
-	ctx.SetValue(schemas.RakshaContextKeyRequestID, uuid.NewString())
+func withTestRequestID(ctx *schemas.GatewayContext) *schemas.GatewayContext {
+	ctx.SetValue(schemas.GatewayContextKeyRequestID, uuid.NewString())
 	return ctx
 }
 
@@ -89,12 +89,12 @@ func keyForTest(t testing.TB, suffix string) string {
 	return t.Name() + "/" + suffix
 }
 
-// newBaseTestContext returns a RakshaContext with a fresh request ID stamped.
-// Replaces bare schemas.NewRakshaContext(context.Background(), schemas.NoDeadline)
+// newBaseTestContext returns a GatewayContext with a fresh request ID stamped.
+// Replaces bare schemas.NewGatewayContext(context.Background(), schemas.NoDeadline)
 // in tests that call plugin.PreLLMHook / PostLLMHook directly — the plugin
 // requires a request ID to anchor per-request state.
-func newBaseTestContext() *schemas.RakshaContext {
-	return withTestRequestID(schemas.NewRakshaContext(context.Background(), schemas.NoDeadline))
+func newBaseTestContext() *schemas.GatewayContext {
+	return withTestRequestID(schemas.NewGatewayContext(context.Background(), schemas.NoDeadline))
 }
 
 // getWeaviateConfigFromEnv retrieves Weaviate configuration from environment variables
@@ -251,18 +251,18 @@ func getMockRules() []mocker.MockRule {
 	return []mocker.MockRule{
 		// Core test prompts
 		{
-			Name:        "raksha-definition",
+			Name:        "gateway-definition",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)What is Raksha.*")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)What is Gateway.*")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
-				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Raksha is a unified API for interacting with multiple AI providers."}},
+				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Gateway is a unified API for interacting with multiple AI providers."}},
 			},
 		},
 		{
 			Name:        "machine-learning-explanation",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)what is machine learning\\?|explain machine learning|machine learning concepts|can you explain machine learning|explain the basics of machine learning")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)what is machine learning\\?|explain machine learning|machine learning concepts|can you explain machine learning|explain the basics of machine learning")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Machine learning is a field of AI that uses statistical techniques to give computer systems the ability to learn from data."}},
@@ -271,7 +271,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "ai-explanation",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)what is artificial intelligence\\?|can you explain what ai is\\?|define artificial intelligence")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)what is artificial intelligence\\?|can you explain what ai is\\?|define artificial intelligence")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Artificial intelligence is the simulation of human intelligence in machines."}},
@@ -280,7 +280,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "capital-of-france",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("What is the capital of France\\?")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("What is the capital of France\\?")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "The capital of France is Paris."}},
@@ -289,7 +289,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "newton-laws",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)describe.*newton.*three laws|describe.*three laws.*newton")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)describe.*newton.*three laws|describe.*three laws.*newton")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Newton's three laws of motion are: 1. An object at rest stays at rest and an object in motion stays in motion with the same speed and in the same direction unless acted upon by an unbalanced force. 2. The acceleration of an object as produced by a net force is directly proportional to the magnitude of the net force, in the same direction as the net force, and inversely proportional to the mass of the object. 3. For every action, there is an equal and opposite reaction."}},
@@ -299,7 +299,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "weather-question",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)what.*weather|weather.*like")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)what.*weather|weather.*like")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "It's sunny today with a temperature of 72°F."}},
@@ -309,7 +309,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "blockchain-definition",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)define blockchain|blockchain technology")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)define blockchain|blockchain technology")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Blockchain is a distributed ledger technology that maintains a continuously growing list of records."}},
@@ -318,7 +318,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "deep-learning",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)what is deep learning")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)what is deep learning")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Deep learning is a subset of machine learning that uses neural networks with multiple layers."}},
@@ -328,7 +328,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "quantum-computing",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)quantum computing|explain quantum")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)quantum computing|explain quantum")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Quantum computing uses quantum mechanical phenomena to process information in ways that classical computers cannot."}},
@@ -338,7 +338,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "hello-greeting",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)^hello$|^hi$|hello.*world")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)^hello$|^hi$|hello.*world")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Hello! How can I help you today?"}},
@@ -347,7 +347,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "how-are-you",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)how are you")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)how are you")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "I'm doing well, thank you for asking!"}},
@@ -356,7 +356,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "meaning-of-life",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)meaning of life")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)meaning of life")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "The meaning of life is a philosophical question that has been pondered for centuries. Some say it's 42!"}},
@@ -365,7 +365,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "short-story",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)tell me.*short story")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)tell me.*short story")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Once upon a time, there was a brave knight who saved the day."}},
@@ -375,7 +375,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "test-configuration",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)test configuration")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)test configuration")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "This is a test configuration response."}},
@@ -384,7 +384,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "test-messages",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)test.*message|test.*no-store|test.*cache|test.*error|ttl test|threshold test|provider.*test|edge case test")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)test.*message|test.*no-store|test.*cache|test.*error|ttl test|threshold test|provider.*test|edge case test")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "This is a test response for various test scenarios."}},
@@ -393,7 +393,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "long-prompt",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)very long prompt")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)very long prompt")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "This is a response to a very long prompt."}},
@@ -402,7 +402,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "parameter-tests",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)test.*parameters|performance test")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)test.*parameters|performance test")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Parameter test response with various settings."}},
@@ -412,7 +412,7 @@ func getMockRules() []mocker.MockRule {
 		{
 			Name:        "message-pattern",
 			Enabled:     true,
-			Conditions:  mocker.Conditions{MessageRegex: raksha.Ptr("(?i)message \\d+")},
+			Conditions:  mocker.Conditions{MessageRegex: gateway.Ptr("(?i)message \\d+")},
 			Probability: 1.0,
 			Responses: []mocker.Response{
 				{Type: mocker.ResponseTypeSuccess, Content: &mocker.SuccessResponse{Message: "Response to numbered message."}},
@@ -432,8 +432,8 @@ func getMockRules() []mocker.MockRule {
 	}
 }
 
-// getMockedRakshaClient creates a Raksha client with a mocker plugin for testing
-func getMockedRakshaClient(t *testing.T, ctx *schemas.RakshaContext, logger schemas.Logger, semanticCachePlugin schemas.LLMPlugin) *raksha.Raksha {
+// getMockedGatewayClient creates a Gateway client with a mocker plugin for testing
+func getMockedGatewayClient(t *testing.T, ctx *schemas.GatewayContext, logger schemas.Logger, semanticCachePlugin schemas.LLMPlugin) *gateway.Gateway {
 	mockerCfg := mocker.MockerConfig{
 		Enabled: true,
 		Rules:   getMockRules(),
@@ -445,13 +445,13 @@ func getMockedRakshaClient(t *testing.T, ctx *schemas.RakshaContext, logger sche
 	}
 
 	account := &BaseAccount{}
-	client, err := raksha.Init(ctx, schemas.RakshaConfig{
+	client, err := gateway.Init(ctx, schemas.GatewayConfig{
 		Account:    account,
 		LLMPlugins: []schemas.LLMPlugin{semanticCachePlugin, mockerPlugin},
 		Logger:     logger,
 	})
 	if err != nil {
-		t.Fatalf("Error initializing Raksha with mocker: %v", err)
+		t.Fatalf("Error initializing Gateway with mocker: %v", err)
 	}
 
 	return client
@@ -462,7 +462,7 @@ type TestSetup struct {
 	Logger schemas.Logger
 	Store  vectorstore.VectorStore
 	Plugin schemas.LLMPlugin
-	Client *raksha.Raksha
+	Client *gateway.Gateway
 	Config *Config
 }
 
@@ -485,7 +485,7 @@ func NewTestSetupWithConfig(t *testing.T, config *Config) *TestSetup {
 // Mirrors production: many concurrent requests hit one namespace, isolated
 // by per-test cache_keys (see keyForTest). Distinct from the plugin's
 // production default so test runs can't collide with a real cache.
-const SharedTestNamespace = "RakshaSemanticCachePluginTest"
+const SharedTestNamespace = "GatewaySemanticCachePluginTest"
 
 var (
 	sharedTestNamespaceOnce sync.Once
@@ -508,8 +508,8 @@ func ensureSharedTestNamespace(ctx context.Context, store vectorstore.VectorStor
 
 // NewTestSetupWithVectorStore creates a new test setup with custom configuration and vector store type
 func NewTestSetupWithVectorStore(t *testing.T, config *Config, storeType vectorstore.VectorStoreType) *TestSetup {
-	ctx := schemas.NewRakshaContext(context.Background(), schemas.NoDeadline)
-	logger := raksha.NewDefaultLogger(schemas.LogLevelDebug)
+	ctx := schemas.NewGatewayContext(context.Background(), schemas.NoDeadline)
+	logger := gateway.NewDefaultLogger(schemas.LogLevelDebug)
 
 	// All tests share one namespace; isolation comes from per-test cache_keys.
 	if config.VectorStoreNamespace == "" {
@@ -540,7 +540,7 @@ func NewTestSetupWithVectorStore(t *testing.T, config *Config, storeType vectors
 		t.Fatalf("Failed to create shared test namespace: %v", err)
 	}
 
-	plugin, err := Init(schemas.NewRakshaContext(context.Background(), schemas.NoDeadline), config, logger, store)
+	plugin, err := Init(schemas.NewGatewayContext(context.Background(), schemas.NoDeadline), config, logger, store)
 	if err != nil {
 		t.Fatalf("Failed to initialize plugin: %v", err)
 	}
@@ -549,8 +549,8 @@ func NewTestSetupWithVectorStore(t *testing.T, config *Config, storeType vectors
 	pluginImpl := plugin.(*Plugin)
 	clearTestKeysWithStore(t, pluginImpl.store)
 
-	// Get a mocked Raksha client
-	client := getMockedRakshaClient(t, ctx, logger, plugin)
+	// Get a mocked Gateway client
+	client := getMockedGatewayClient(t, ctx, logger, plugin)
 
 	// Wire the global client as the embedding executor so semantic search works.
 	pluginImpl.SetEmbeddingRequestExecutor(throttledEmbeddingExecutor(client.EmbeddingRequest))
@@ -579,8 +579,8 @@ func clearTestKeysWithStore(t *testing.T, store vectorstore.VectorStore) {
 }
 
 // CreateBasicChatRequest creates a basic chat completion request for testing
-func CreateBasicChatRequest(content string, temperature float64, maxTokens int) *schemas.RakshaChatRequest {
-	return &schemas.RakshaChatRequest{
+func CreateBasicChatRequest(content string, temperature float64, maxTokens int) *schemas.GatewayChatRequest {
+	return &schemas.GatewayChatRequest{
 		Provider: schemas.OpenAI,
 		Model:    "gpt-4o-mini",
 		Input: []schemas.ChatMessage{
@@ -599,13 +599,13 @@ func CreateBasicChatRequest(content string, temperature float64, maxTokens int) 
 }
 
 // CreateStreamingChatRequest creates a streaming chat completion request for testing
-func CreateStreamingChatRequest(content string, temperature float64, maxTokens int) *schemas.RakshaChatRequest {
+func CreateStreamingChatRequest(content string, temperature float64, maxTokens int) *schemas.GatewayChatRequest {
 	return CreateBasicChatRequest(content, temperature, maxTokens)
 }
 
 // CreateSpeechRequest creates a speech synthesis request for testing
-func CreateSpeechRequest(input string, voice string) *schemas.RakshaSpeechRequest {
-	return &schemas.RakshaSpeechRequest{
+func CreateSpeechRequest(input string, voice string) *schemas.GatewaySpeechRequest {
+	return &schemas.GatewaySpeechRequest{
 		Provider: schemas.OpenAI,
 		Model:    "tts-1",
 		Input: &schemas.SpeechInput{
@@ -621,7 +621,7 @@ func CreateSpeechRequest(input string, voice string) *schemas.RakshaSpeechReques
 }
 
 // AssertCacheHit verifies that a response was served from cache
-func AssertCacheHit(t *testing.T, response *schemas.RakshaResponse, expectedCacheType string) {
+func AssertCacheHit(t *testing.T, response *schemas.GatewayResponse, expectedCacheType string) {
 	extraFields := response.GetExtraFields()
 
 	if extraFields.CacheDebug == nil {
@@ -649,7 +649,7 @@ func AssertCacheHit(t *testing.T, response *schemas.RakshaResponse, expectedCach
 }
 
 // AssertNoCacheHit verifies that a response was NOT served from cache
-func AssertNoCacheHit(t *testing.T, response *schemas.RakshaResponse) {
+func AssertNoCacheHit(t *testing.T, response *schemas.GatewayResponse) {
 	extraFields := response.GetExtraFields()
 
 	if extraFields.CacheDebug == nil {
@@ -692,8 +692,8 @@ func WaitForCache(plugin schemas.LLMPlugin) {
 }
 
 // CreateEmbeddingRequest creates an embedding request for testing
-func CreateEmbeddingRequest(texts []string) *schemas.RakshaEmbeddingRequest {
-	return &schemas.RakshaEmbeddingRequest{
+func CreateEmbeddingRequest(texts []string) *schemas.GatewayEmbeddingRequest {
+	return &schemas.GatewayEmbeddingRequest{
 		Provider: schemas.OpenAI,
 		Model:    "text-embedding-3-small",
 		Input: &schemas.EmbeddingInput{
@@ -703,9 +703,9 @@ func CreateEmbeddingRequest(texts []string) *schemas.RakshaEmbeddingRequest {
 }
 
 // CreateBasicResponsesRequest creates a basic Responses API request for testing
-func CreateBasicResponsesRequest(content string, temperature float64, maxTokens int) *schemas.RakshaResponsesRequest {
+func CreateBasicResponsesRequest(content string, temperature float64, maxTokens int) *schemas.GatewayResponsesRequest {
 	userRole := schemas.ResponsesInputMessageRoleUser
-	return &schemas.RakshaResponsesRequest{
+	return &schemas.GatewayResponsesRequest{
 		Provider: schemas.OpenAI,
 		Model:    "gpt-4o",
 		Input: []schemas.ResponsesMessage{
@@ -724,36 +724,36 @@ func CreateBasicResponsesRequest(content string, temperature float64, maxTokens 
 }
 
 // CreateResponsesRequestWithTools creates a Responses API request with tools for testing
-func CreateResponsesRequestWithTools(content string, temperature float64, maxTokens int, tools []schemas.ResponsesTool) *schemas.RakshaResponsesRequest {
+func CreateResponsesRequestWithTools(content string, temperature float64, maxTokens int, tools []schemas.ResponsesTool) *schemas.GatewayResponsesRequest {
 	req := CreateBasicResponsesRequest(content, temperature, maxTokens)
 	req.Params.Tools = tools
 	return req
 }
 
 // CreateResponsesRequestWithInstructions creates a Responses API request with system instructions
-func CreateResponsesRequestWithInstructions(content string, instructions string, temperature float64, maxTokens int) *schemas.RakshaResponsesRequest {
+func CreateResponsesRequestWithInstructions(content string, instructions string, temperature float64, maxTokens int) *schemas.GatewayResponsesRequest {
 	req := CreateBasicResponsesRequest(content, temperature, maxTokens)
 	req.Params.Instructions = &instructions
 	return req
 }
 
 // CreateStreamingResponsesRequest creates a streaming Responses API request for testing
-func CreateStreamingResponsesRequest(content string, temperature float64, maxTokens int) *schemas.RakshaResponsesRequest {
+func CreateStreamingResponsesRequest(content string, temperature float64, maxTokens int) *schemas.GatewayResponsesRequest {
 	return CreateBasicResponsesRequest(content, temperature, maxTokens)
 }
 
 // CreateImageGenerationRequest creates an image generation request for testing
-func CreateImageGenerationRequest(prompt string, size string, quality string) *schemas.RakshaImageGenerationRequest {
-	return &schemas.RakshaImageGenerationRequest{
+func CreateImageGenerationRequest(prompt string, size string, quality string) *schemas.GatewayImageGenerationRequest {
+	return &schemas.GatewayImageGenerationRequest{
 		Provider: schemas.OpenAI,
 		Model:    "gpt-image-1",
 		Input: &schemas.ImageGenerationInput{
 			Prompt: prompt,
 		},
 		Params: &schemas.ImageGenerationParameters{
-			Size:    raksha.Ptr(size),
-			Quality: raksha.Ptr(quality),
-			N:       raksha.Ptr(1),
+			Size:    gateway.Ptr(size),
+			Quality: gateway.Ptr(quality),
+			N:       gateway.Ptr(1),
 		},
 	}
 }
@@ -761,28 +761,28 @@ func CreateImageGenerationRequest(prompt string, size string, quality string) *s
 // CreateContextWithCacheKey creates a context with the test cache key
 // CreateContextWithCacheKey creates a context with a per-test cache key.
 // suffix may be "" for tests using only one cache key.
-func CreateContextWithCacheKey(t testing.TB, suffix string) *schemas.RakshaContext {
-	return withTestRequestID(schemas.NewRakshaContextWithValue(context.Background(), schemas.NoDeadline, CacheKey, keyForTest(t, suffix)))
+func CreateContextWithCacheKey(t testing.TB, suffix string) *schemas.GatewayContext {
+	return withTestRequestID(schemas.NewGatewayContextWithValue(context.Background(), schemas.NoDeadline, CacheKey, keyForTest(t, suffix)))
 }
 
 // CreateContextWithCacheKeyAndType creates a context with cache key and cache type
-func CreateContextWithCacheKeyAndType(t testing.TB, suffix string, cacheType CacheType) *schemas.RakshaContext {
-	return withTestRequestID(schemas.NewRakshaContextWithValue(context.Background(), schemas.NoDeadline, CacheKey, keyForTest(t, suffix)).WithValue(CacheTypeKey, cacheType))
+func CreateContextWithCacheKeyAndType(t testing.TB, suffix string, cacheType CacheType) *schemas.GatewayContext {
+	return withTestRequestID(schemas.NewGatewayContextWithValue(context.Background(), schemas.NoDeadline, CacheKey, keyForTest(t, suffix)).WithValue(CacheTypeKey, cacheType))
 }
 
 // CreateContextWithCacheKeyAndTTL creates a context with cache key and custom TTL
-func CreateContextWithCacheKeyAndTTL(t testing.TB, suffix string, ttl time.Duration) *schemas.RakshaContext {
-	return withTestRequestID(schemas.NewRakshaContextWithValue(context.Background(), schemas.NoDeadline, CacheKey, keyForTest(t, suffix)).WithValue(CacheTTLKey, ttl))
+func CreateContextWithCacheKeyAndTTL(t testing.TB, suffix string, ttl time.Duration) *schemas.GatewayContext {
+	return withTestRequestID(schemas.NewGatewayContextWithValue(context.Background(), schemas.NoDeadline, CacheKey, keyForTest(t, suffix)).WithValue(CacheTTLKey, ttl))
 }
 
 // CreateContextWithCacheKeyAndThreshold creates a context with cache key and custom threshold
-func CreateContextWithCacheKeyAndThreshold(t testing.TB, suffix string, threshold float64) *schemas.RakshaContext {
-	return withTestRequestID(schemas.NewRakshaContext(context.Background(), schemas.NoDeadline).WithValue(CacheKey, keyForTest(t, suffix)).WithValue(CacheThresholdKey, threshold))
+func CreateContextWithCacheKeyAndThreshold(t testing.TB, suffix string, threshold float64) *schemas.GatewayContext {
+	return withTestRequestID(schemas.NewGatewayContext(context.Background(), schemas.NoDeadline).WithValue(CacheKey, keyForTest(t, suffix)).WithValue(CacheThresholdKey, threshold))
 }
 
 // CreateContextWithCacheKeyAndNoStore creates a context with cache key and no-store flag
-func CreateContextWithCacheKeyAndNoStore(t testing.TB, suffix string, noStore bool) *schemas.RakshaContext {
-	return withTestRequestID(schemas.NewRakshaContext(context.Background(), schemas.NoDeadline).WithValue(CacheKey, keyForTest(t, suffix)).WithValue(CacheNoStoreKey, noStore))
+func CreateContextWithCacheKeyAndNoStore(t testing.TB, suffix string, noStore bool) *schemas.GatewayContext {
+	return withTestRequestID(schemas.NewGatewayContext(context.Background(), schemas.NoDeadline).WithValue(CacheKey, keyForTest(t, suffix)).WithValue(CacheNoStoreKey, noStore))
 }
 
 // CreateTestSetupWithConversationThreshold creates a test setup with custom conversation history threshold
@@ -826,8 +826,8 @@ func CreateTestSetupWithThresholdAndExcludeSystem(t *testing.T, threshold int, e
 }
 
 // CreateConversationRequest creates a chat request with conversation history
-func CreateConversationRequest(messages []schemas.ChatMessage, temperature float64, maxTokens int) *schemas.RakshaChatRequest {
-	return &schemas.RakshaChatRequest{
+func CreateConversationRequest(messages []schemas.ChatMessage, temperature float64, maxTokens int) *schemas.GatewayChatRequest {
+	return &schemas.GatewayChatRequest{
 		Provider: schemas.OpenAI,
 		Model:    "gpt-4o-mini",
 		Input:    messages,

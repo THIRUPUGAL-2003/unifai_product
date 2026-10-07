@@ -1,8 +1,9 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Button } from "@/components/ui/button";
 import type { ErrorComponentProps } from "@tanstack/react-router";
 import { useEffect } from "react";
 
-const CHUNK_RELOAD_KEY = "raksha:chunk-reload-at";
+const CHUNK_RELOAD_KEY = "gateway:chunk-reload-at";
 
 // A redeploy replaces hashed chunks; tabs still running the old bundle fail to
 // lazy-load routes until the page is reloaded.
@@ -17,7 +18,7 @@ export function ErrorComponent({ error }: Partial<ErrorComponentProps>) {
 	const chunkError = isChunkLoadError(error);
 
 	useEffect(() => {
-		console.error("[Raksha] route error:", error);
+		console.error(`[${PRODUCT_NAME}] route error:`, error);
 		if (!chunkError) return;
 		const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
 		if (Date.now() - last > 30_000) {

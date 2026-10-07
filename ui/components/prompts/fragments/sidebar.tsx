@@ -1,6 +1,7 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { useGetSessionsQuery, useCreateSessionMutation } from "@/lib/store/apis/promptsApi";
-import { useIsAuthEnabledQuery, useGetTeamsQuery, useGetSessionUsersQuery } from "@/lib/store";
+import { getErrorMessage, useIsAuthEnabledQuery, useGetTeamsQuery, useGetSessionUsersQuery } from "@/lib/store";
 import { parseAsInteger, useQueryStates } from "nuqs";
 import { toast } from "sonner";
 import { Message } from "@/lib/message";
@@ -91,10 +92,16 @@ export function PromptSidebar() {
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isUserRole = isPromptMemberRole(authStatus?.role);
 
-	const { data: teamsData } = useGetTeamsQuery(undefined, { skip: isUserRole });
-	const { data: sessionUsersData } = useGetSessionUsersQuery(undefined, { skip: isUserRole });
+	const { data: teamsData, isError: teamsFailed, error: teamsError } = useGetTeamsQuery(undefined, { skip: isUserRole });
+	const { data: sessionUsersData, isError: sessionUsersFailed, error: sessionUsersError } = useGetSessionUsersQuery(undefined, {
+		skip: isUserRole,
+	});
 
-	const { data: sessionsData } = useGetSessionsQuery(selectedPrompt?.id ?? "", { skip: !selectedPrompt?.id });
+	const {
+		data: sessionsData,
+		isError: sessionsFailed,
+		error: sessionsError,
+	} = useGetSessionsQuery(selectedPrompt?.id ?? "", { skip: !selectedPrompt?.id });
 	const sessions = sessionsData?.sessions ?? [];
 	const [createSession] = useCreateSessionMutation();
 
@@ -463,9 +470,16 @@ export function PromptSidebar() {
 				</div>
 				<ScrollArea className="grow overflow-y-auto" viewportClassName="no-table viewport-table-height-full">
 					<div className="flex flex-col gap-1 p-2 px-3">
+						{sessionsFailed ? (
+							<QueryErrorBanner
+								className="mb-2"
+								testId="prompt-sidebar-sessions-query-error"
+								message={getErrorMessage(sessionsError) || "Failed to load chat sessions."}
+							/>
+						) : null}
 						{!selectedPrompt ? (
 							<div className="text-muted-foreground py-8 text-center text-sm">Select a prompt above first</div>
-						) : sessions.length === 0 ? (
+						) : sessions.length === 0 && !sessionsFailed ? (
 							<div className="text-muted-foreground py-8 text-center text-sm">No chat history yet</div>
 						) : (
 							[...sessions].reverse().map((session) => (
@@ -573,6 +587,16 @@ export function PromptSidebar() {
 
 				<ScrollArea className="grow overflow-y-auto" viewportClassName="no-table viewport-table-height-full">
 					<div className="flex flex-col p-2 px-3">
+						{hasActiveFilters && !isUserRole && (teamsFailed || sessionUsersFailed) ? (
+							<QueryErrorBanner
+								className="mb-2"
+								testId="prompt-sidebar-filter-query-error"
+								message={
+									getErrorMessage(teamsError || sessionUsersError) ||
+									"Failed to load team or user data for filters. Results may be incomplete."
+								}
+							/>
+						) : null}
 						{filteredData.folders.length === 0 && filteredData.rootPrompts.length === 0 ? (
 							<div className="text-muted-foreground py-8 text-center text-sm">{searchQuery ? "No results found" : "No prompts yet"}</div>
 						) : (

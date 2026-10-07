@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
 
@@ -22,24 +22,24 @@ import (
 func ParseVirtualKeyFromFastHTTPRequest(req *fasthttp.RequestCtx) *string {
 	vkHeader := string(req.Request.Header.Peek("x-uf-vk"))
 	if vkHeader != "" && strings.HasPrefix(strings.ToLower(vkHeader), VirtualKeyPrefix) {
-		return raksha.Ptr(vkHeader)
+		return gateway.Ptr(vkHeader)
 	}
 	authHeader := string(req.Request.Header.Peek("Authorization"))
 	if authHeader != "" {
 		if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
 			authHeaderValue := strings.TrimSpace(authHeader[7:]) // Remove "Bearer " prefix
 			if authHeaderValue != "" && strings.HasPrefix(strings.ToLower(authHeaderValue), VirtualKeyPrefix) {
-				return raksha.Ptr(authHeaderValue)
+				return gateway.Ptr(authHeaderValue)
 			}
 		}
 	}
 	xAPIKey := string(req.Request.Header.Peek("x-api-key"))
 	if xAPIKey != "" && strings.HasPrefix(strings.ToLower(xAPIKey), VirtualKeyPrefix) {
-		return raksha.Ptr(xAPIKey)
+		return gateway.Ptr(xAPIKey)
 	}
 	xGoogleAPIKey := string(req.Request.Header.Peek("x-goog-api-key"))
 	if xGoogleAPIKey != "" && strings.HasPrefix(strings.ToLower(xGoogleAPIKey), VirtualKeyPrefix) {
-		return raksha.Ptr(xGoogleAPIKey)
+		return gateway.Ptr(xGoogleAPIKey)
 	}
 	return nil
 }
@@ -68,27 +68,27 @@ func getWeight(w *float64) float64 {
 
 // stampGovernanceCtxFromVK copies team/customer identifiers from the VK onto ctx so
 // downstream plugins (logging, observability) see the governance scope.
-func stampGovernanceCtxFromVK(ctx *schemas.RakshaContext, vk *configstoreTables.TableVirtualKey) {
+func stampGovernanceCtxFromVK(ctx *schemas.GatewayContext, vk *configstoreTables.TableVirtualKey) {
 	if vk == nil {
 		return
 	}
 	if vk.TeamID != nil {
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamID, *vk.TeamID)
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamID, *vk.TeamID)
 	}
 	if vk.Team != nil {
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamName, vk.Team.Name)
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamName, vk.Team.Name)
 		if vk.Team.CustomerID != nil {
-			ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerID, *vk.Team.CustomerID)
+			ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerID, *vk.Team.CustomerID)
 			if vk.Team.Customer != nil {
-				ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerName, vk.Team.Customer.Name)
+				ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerName, vk.Team.Customer.Name)
 			}
 		}
 	} else {
 		if vk.CustomerID != nil {
-			ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerID, *vk.CustomerID)
+			ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerID, *vk.CustomerID)
 		}
 		if vk.Customer != nil {
-			ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerName, vk.Customer.Name)
+			ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerName, vk.Customer.Name)
 		}
 	}
 }
@@ -108,7 +108,7 @@ func teamIDFromVK(vk *configstoreTables.TableVirtualKey) string {
 
 // stampGovernanceCtx stamps team/customer/BU identity from a VK onto the request context,
 // then resolves the assigned user (if missing) and merges team membership for rankings.
-func (p *GovernancePlugin) stampGovernanceCtx(ctx *schemas.RakshaContext, vk *configstoreTables.TableVirtualKey) {
+func (p *GovernancePlugin) stampGovernanceCtx(ctx *schemas.GatewayContext, vk *configstoreTables.TableVirtualKey) {
 	stampGovernanceCtxFromVK(ctx, vk)
 	if local, ok := p.store.(*LocalGovernanceStore); ok {
 		local.stampBusinessUnitsForTeam(ctx, teamIDFromVK(vk))
@@ -123,7 +123,7 @@ func (p *GovernancePlugin) stampGovernanceCtx(ctx *schemas.RakshaContext, vk *co
 // stampBilledTeam re-points the request's team/customer context at the team the request is
 // billed to (see billedTeamID) when that differs from the VK's primary team, so logs, rankings
 // and the pre-request team/customer checks match what is charged afterwards.
-func (gs *LocalGovernanceStore) stampBilledTeam(ctx *schemas.RakshaContext, vk *configstoreTables.TableVirtualKey) {
+func (gs *LocalGovernanceStore) stampBilledTeam(ctx *schemas.GatewayContext, vk *configstoreTables.TableVirtualKey) {
 	if ctx == nil || vk == nil {
 		return
 	}
@@ -131,14 +131,14 @@ func (gs *LocalGovernanceStore) stampBilledTeam(ctx *schemas.RakshaContext, vk *
 	if teamID == "" || teamID == teamIDFromVK(vk) {
 		return
 	}
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamID, teamID)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamID, teamID)
 	teamName := ""
 	if v, ok := gs.teams.Load(teamID); ok && v != nil {
 		if team, ok := v.(*configstoreTables.TableTeam); ok && team != nil {
 			teamName = team.Name
 		}
 	}
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamName, teamName)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamName, teamName)
 
 	// The primary team's customer was stamped earlier; replace it with the billed one
 	// so customer policies, logs and charging all agree.
@@ -151,20 +151,20 @@ func (gs *LocalGovernanceStore) stampBilledTeam(ctx *schemas.RakshaContext, vk *
 			}
 		}
 	}
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerID, customerID)
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerName, customerName)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerID, customerID)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerName, customerName)
 	gs.stampBusinessUnitsForTeam(ctx, teamID)
 }
 
 // stampUserFromVKAssignment sets user_id/user_name from governance_virtual_key_users when
 // the request has a VK but no session/header user and the VK is assigned to exactly one user.
-func (p *GovernancePlugin) stampUserFromVKAssignment(ctx *schemas.RakshaContext, vk *configstoreTables.TableVirtualKey) {
+func (p *GovernancePlugin) stampUserFromVKAssignment(ctx *schemas.GatewayContext, vk *configstoreTables.TableVirtualKey) {
 	if ctx == nil || vk == nil || p.configStore == nil {
 		return
 	}
 	// A named requester without a user row (env bootstrap admin) must not be charged as the VK's user.
-	if raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID) != "" ||
-		raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserName) != "" {
+	if gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID) != "" ||
+		gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserName) != "" {
 		return
 	}
 	ws, ok := configstore.AsWorkspaceStore(p.configStore)
@@ -181,32 +181,32 @@ func (p *GovernancePlugin) stampUserFromVKAssignment(ctx *schemas.RakshaContext,
 	if uid == "" {
 		return
 	}
-	ctx.SetValue(schemas.RakshaContextKeyUserID, uid)
+	ctx.SetValue(schemas.GatewayContextKeyUserID, uid)
 	if user, gerr := p.configStore.GetUserByID(ctx, uid); gerr == nil && user != nil {
 		name := user.Username
 		if name == "" {
 			name = user.Email
 		}
 		if name != "" {
-			ctx.SetValue(schemas.RakshaContextKeyUserName, name)
+			ctx.SetValue(schemas.GatewayContextKeyUserName, name)
 		}
 	}
 }
 
 // stampUserOrgMembership loads governance_team_members for the request user and stamps
 // multi-team / multi-BU context keys used by LLM rankings and observability filters.
-func (p *GovernancePlugin) stampUserOrgMembership(ctx *schemas.RakshaContext) {
+func (p *GovernancePlugin) stampUserOrgMembership(ctx *schemas.GatewayContext) {
 	if ctx == nil || p.configStore == nil {
 		return
 	}
-	userID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
+	userID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
 	if userID == "" {
-		if uid, ok := ctx.Value(schemas.RakshaContextKeyUserID).(string); ok {
+		if uid, ok := ctx.Value(schemas.GatewayContextKeyUserID).(string); ok {
 			userID = uid
 		}
 	}
 	if userID == "" {
-		if uid, ok := ctx.Value(string(schemas.RakshaContextKeyUserID)).(string); ok {
+		if uid, ok := ctx.Value(string(schemas.GatewayContextKeyUserID)).(string); ok {
 			userID = uid
 		}
 	}
@@ -240,10 +240,10 @@ func (p *GovernancePlugin) stampUserOrgMembership(ctx *schemas.RakshaContext) {
 	seen := map[string]bool{}
 
 	// Keep VK primary team first when already stamped.
-	if primary := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamID); primary != "" {
+	if primary := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamID); primary != "" {
 		teamIDs = append(teamIDs, primary)
 		seen[primary] = true
-		if name := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamName); name != "" {
+		if name := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamName); name != "" {
 			teamNames = append(teamNames, name)
 		} else {
 			teamNames = append(teamNames, primary)
@@ -276,13 +276,13 @@ func (p *GovernancePlugin) stampUserOrgMembership(ctx *schemas.RakshaContext) {
 		return
 	}
 
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamIDs, teamIDs)
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamNames, teamNames)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamIDs, teamIDs)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamNames, teamNames)
 
 	// If no VK team was stamped, use the user's first membership team as primary.
-	if raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamID) == "" {
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamID, teamIDs[0])
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamName, teamNames[0])
+	if gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamID) == "" {
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamID, teamIDs[0])
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamName, teamNames[0])
 	}
 
 	if local != nil {
@@ -359,12 +359,12 @@ func (p *GovernancePlugin) filterModelsForVirtualKey(
 
 // validateRequiredHeaders checks that all configured required headers are present in the request.
 // Headers are compared case-insensitively (both sides lowercased).
-// Returns a RakshaError with status 400 if any required headers are missing, or nil if all present.
-func (p *GovernancePlugin) validateRequiredHeaders(ctx *schemas.RakshaContext) *schemas.RakshaError {
+// Returns a GatewayError with status 400 if any required headers are missing, or nil if all present.
+func (p *GovernancePlugin) validateRequiredHeaders(ctx *schemas.GatewayContext) *schemas.GatewayError {
 	if p.requiredHeaders == nil || len(*p.requiredHeaders) == 0 {
 		return nil
 	}
-	headers, _ := ctx.Value(schemas.RakshaContextKeyRequestHeaders).(map[string]string)
+	headers, _ := ctx.Value(schemas.GatewayContextKeyRequestHeaders).(map[string]string)
 	if headers == nil {
 		headers = map[string]string{}
 	}
@@ -375,9 +375,9 @@ func (p *GovernancePlugin) validateRequiredHeaders(ctx *schemas.RakshaContext) *
 		}
 	}
 	if len(missing) > 0 {
-		return &schemas.RakshaError{
-			Type:       raksha.Ptr("missing_required_headers"),
-			StatusCode: raksha.Ptr(400),
+		return &schemas.GatewayError{
+			Type:       gateway.Ptr("missing_required_headers"),
+			StatusCode: gateway.Ptr(400),
 			Error: &schemas.ErrorField{
 				Message: fmt.Sprintf("missing required headers: %s", strings.Join(missing, ", ")),
 			},

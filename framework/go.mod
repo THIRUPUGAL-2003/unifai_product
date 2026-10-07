@@ -1,4 +1,4 @@
-module github.com/raksha/raksha/framework
+module github.com/gateway/gateway/framework
 
 go 1.26.4
 
@@ -12,7 +12,7 @@ require (
 	github.com/redis/go-redis/v9 v9.17.2
 	github.com/segmentio/kafka-go v0.4.49
 	github.com/tidwall/gjson v1.18.0
-	github.com/raksha/raksha/core v1.6.2
+	github.com/gateway/gateway/core v1.6.2
 	github.com/weaviate/weaviate v1.36.5
 	github.com/weaviate/weaviate-go-client/v5 v5.7.1
 	golang.org/x/crypto v0.52.0

@@ -3,7 +3,7 @@ package handlers
 import (
 	"io"
 
-	"github.com/raksha/raksha/framework/cluster"
+	"github.com/gateway/gateway/framework/cluster"
 	"github.com/valyala/fasthttp"
 )
 

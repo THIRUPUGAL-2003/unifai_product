@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-// ToRunwareVideoGenerationRequest converts a Raksha video generation request to a Runware
+// ToRunwareVideoGenerationRequest converts a Gateway video generation request to a Runware
 // videoInference task. An input reference image turns it into image-to-video generation.
-func ToRunwareVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequest) (*RunwareInferenceRequest, error) {
-	if rakshaReq.Input == nil {
+func ToRunwareVideoGenerationRequest(gatewayReq *schemas.GatewayVideoGenerationRequest) (*RunwareInferenceRequest, error) {
+	if gatewayReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
@@ -22,26 +22,26 @@ func ToRunwareVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationReq
 		TaskType:       taskTypeVideoInference,
 		TaskUUID:       uuid.New().String(),
 		DeliveryMethod: new(deliveryMethodAsync),
-		Model:          rakshaReq.Model,
+		Model:          gatewayReq.Model,
 		Width:          new(defaultRunwareVideoWidth),
 		Height:         new(defaultRunwareVideoHeight),
 	}
 
-	if rakshaReq.Input.Prompt != "" {
-		request.PositivePrompt = &rakshaReq.Input.Prompt
+	if gatewayReq.Input.Prompt != "" {
+		request.PositivePrompt = &gatewayReq.Input.Prompt
 	}
 
 	// Input reference image (image-to-video): anchored to the first frame.
-	if rakshaReq.Input.InputReference != nil && *rakshaReq.Input.InputReference != "" {
-		sanitizedURL, err := schemas.SanitizeImageURL(*rakshaReq.Input.InputReference)
+	if gatewayReq.Input.InputReference != nil && *gatewayReq.Input.InputReference != "" {
+		sanitizedURL, err := schemas.SanitizeImageURL(*gatewayReq.Input.InputReference)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input reference: %w", err)
 		}
 		request.FrameImages = []RunwareFrameImage{{InputImage: sanitizedURL, Frame: new("first")}}
 	}
 
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		request.NegativePrompt = params.NegativePrompt
 		request.Seed = params.Seed
@@ -64,9 +64,9 @@ func ToRunwareVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationReq
 	return request, nil
 }
 
-// ToRakshaVideoGenerationResponse converts a Runware video task result to a Raksha video response.
-func ToRakshaVideoGenerationResponse(result *RunwareResult) *schemas.RakshaVideoGenerationResponse {
-	response := &schemas.RakshaVideoGenerationResponse{
+// ToGatewayVideoGenerationResponse converts a Runware video task result to a Gateway video response.
+func ToGatewayVideoGenerationResponse(result *RunwareResult) *schemas.GatewayVideoGenerationResponse {
+	response := &schemas.GatewayVideoGenerationResponse{
 		ID:        result.TaskUUID,
 		Object:    "video",
 		CreatedAt: time.Now().Unix(),

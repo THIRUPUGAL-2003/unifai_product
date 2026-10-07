@@ -73,7 +73,7 @@ import {
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { IS_ENTERPRISE, COMPANY_NAME, COMPANY_LOGO, COMPANY_SHORT_NAME } from "@/lib/constants/config";
 import { useBranding } from "@/lib/hooks/useBranding";
-import { useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery, useLogoutMutation, useIsAuthEnabledQuery } from "@/lib/store";
+import { getErrorMessage, useGetCoreConfigQuery, useGetLatestReleaseQuery, useGetVersionQuery, useLogoutMutation, useIsAuthEnabledQuery } from "@/lib/store";
 import { beginLogout, clearAuthStorage } from "@/lib/store/apis";
 import {
 	getScopedWorkspaceSections,
@@ -98,6 +98,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useCookies } from "react-cookie";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "./themeToggle";
@@ -105,7 +106,7 @@ import { Badge } from "./ui/badge";
 import { PromoCardStack } from "./ui/promoCardStack";
 
 // Cookie name for dismissing production setup card
-const PRODUCTION_SETUP_DISMISSED_COOKIE = "raksha_production_setup_dismissed";
+const PRODUCTION_SETUP_DISMISSED_COOKIE = "gateway_production_setup_dismissed";
 
 const newBadgeClassName =
 	"relative overflow-hidden after:pointer-events-none after:absolute after:inset-y-0 after:-left-full after:w-full after:skew-x-[-18deg] after:bg-gradient-to-r after:from-transparent after:via-primary/25 after:to-transparent after:opacity-0 after:content-[''] after:animate-[sidebar-new-badge-shine_1200ms_cubic-bezier(0.22,1,0.36,1)_260ms_both]";
@@ -616,7 +617,17 @@ export default function AppSidebar() {
 		hasAccessProfilesAccess ||
 		hasGovernanceLegacyAccess ||
 		hasAuditLogsAccess;
-	const { data: coreConfig } = useGetCoreConfigQuery({});
+	const { data: coreConfig, isError: coreConfigFailed, error: coreConfigError } = useGetCoreConfigQuery({});
+	const coreConfigErrorShownRef = useRef(false);
+	useEffect(() => {
+		if (!coreConfigFailed) {
+			coreConfigErrorShownRef.current = false;
+			return;
+		}
+		if (coreConfigErrorShownRef.current) return;
+		coreConfigErrorShownRef.current = true;
+		toast.error(getErrorMessage(coreConfigError) || "Could not load workspace configuration.");
+	}, [coreConfigFailed, coreConfigError]);
 	const isDbConnected = coreConfig?.is_db_connected ?? false;
 	const envLabel = coreConfig?.env_label ?? null;
 
@@ -1410,9 +1421,9 @@ export default function AppSidebar() {
 				title: `${latestRelease.name} is now available.`,
 				description: (
 					<div className="flex h-full flex-col gap-2">
-						<img src={newReleaseImage} alt="Raksha" className="h-[95px] rounded-md object-cover" />
+						<img src={newReleaseImage} alt={branding.productName} className="h-[95px] rounded-md object-cover" />
 						<a
-							href={`https://docs.raksha.ai/changelogs/${latestRelease.name}`}
+							href={`https://docs.gateway.ai/changelogs/${latestRelease.name}`}
 							target="_blank"
 							rel="noopener noreferrer"
 							className="text-primary mt-auto pb-1 font-medium underline"
@@ -1546,7 +1557,7 @@ export default function AppSidebar() {
 					<input
 						ref={searchInputRef}
 						type="search"
-						name="raksha-sidebar-nav-search"
+						name="gateway-sidebar-nav-search"
 						autoComplete="off"
 						autoCorrect="off"
 						autoCapitalize="off"

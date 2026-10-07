@@ -1,5 +1,5 @@
 // Package telemetry provides Prometheus metrics collection and monitoring functionality
-// for the Raksha HTTP service. It includes middleware for HTTP request tracking
+// for the Gateway HTTP service. It includes middleware for HTTP request tracking
 // and a plugin for tracking upstream provider metrics.
 package telemetry
 
@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	schemas "github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/modelcatalog"
+	gateway "github.com/gateway/gateway/core"
+	schemas "github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/modelcatalog"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -29,8 +29,8 @@ const (
 )
 
 const (
-	startTimeKey         schemas.RakshaContextKey = "raksha-prom-start-time"
-	activeRequestTypeKey schemas.RakshaContextKey = "raksha-prom-active-req-type"
+	startTimeKey         schemas.GatewayContextKey = "gateway-prom-start-time"
+	activeRequestTypeKey schemas.GatewayContextKey = "gateway-prom-active-req-type"
 )
 
 // PushGatewayConfig holds the configuration for pushing metrics to a Prometheus Push Gateway.
@@ -41,7 +41,7 @@ type PushGatewayConfig struct {
 	Enabled bool `json:"enabled"`
 	// PushGatewayURL is the URL of the Prometheus Push Gateway (e.g., http://pushgateway:9091). Supports env.VAR_NAME.
 	PushGatewayURL *schemas.SecretVar `json:"push_gateway_url"`
-	// JobName is the job label for pushed metrics (default: "raksha")
+	// JobName is the job label for pushed metrics (default: "gateway")
 	JobName string `json:"job_name"`
 	// InstanceID is the instance label for grouping metrics. If empty, hostname is used.
 	InstanceID string `json:"instance_id"`
@@ -141,7 +141,7 @@ func hideResolvedEnvValue(v *schemas.SecretVar) *schemas.SecretVar {
 //   - Error counts
 type PrometheusPlugin struct {
 	pricingManager *modelcatalog.ModelCatalog
-	registry       *prometheus.Registry // Raksha metrics only — used for push gateway
+	registry       *prometheus.Registry // Gateway metrics only — used for push gateway
 	systemRegistry *prometheus.Registry // Go/process collectors — /metrics scraping only
 
 	logger schemas.Logger
@@ -176,7 +176,7 @@ type PrometheusPlugin struct {
 	customLabels                   []string
 
 	defaultHTTPLabels    []string
-	defaultRakshaLabels []string
+	defaultGatewayLabels []string
 
 	// Push gateway fields
 	pushConfig *PushGatewayConfig
@@ -257,7 +257,7 @@ func Init(config *Config, pricingManager *modelcatalog.ModelCatalog, logger sche
 	}
 
 	defaultHTTPLabels := []string{"path", "method", "status"}
-	defaultRakshaLabels := []string{
+	defaultGatewayLabels := []string{
 		"provider",
 		"model",
 		"alias",
@@ -279,7 +279,7 @@ func Init(config *Config, pricingManager *modelcatalog.ModelCatalog, logger sche
 	var filteredCustomLabels []string
 	if len(config.CustomLabels) > 0 {
 		for _, label := range config.CustomLabels {
-			if !containsLabel(defaultRakshaLabels, label) && !containsLabel(defaultHTTPLabels, label) {
+			if !containsLabel(defaultGatewayLabels, label) && !containsLabel(defaultHTTPLabels, label) {
 				filteredCustomLabels = append(filteredCustomLabels, label)
 			} else {
 				logger.Info("custom label %s is already a default label, it will be ignored", label)
@@ -327,157 +327,157 @@ func Init(config *Config, pricingManager *modelcatalog.ModelCatalog, logger sche
 		append(defaultHTTPLabels, filteredCustomLabels...),
 	)
 
-	// Raksha Upstream Metrics
-	rakshaUpstreamRequestsTotal := factory.NewCounterVec(
+	// Gateway upstream metrics
+	gatewayUpstreamRequestsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_upstream_requests_total",
-			Help: "Total number of requests forwarded to upstream providers by Raksha.",
+			Name: "gateway_upstream_requests_total",
+			Help: "Total number of requests forwarded to upstream providers by Gateway.",
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaUpstreamLatencySeconds := factory.NewHistogramVec(
+	gatewayUpstreamLatencySeconds := factory.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "raksha_upstream_latency_seconds",
-			Help:    "Latency of requests forwarded to upstream providers by Raksha.",
+			Name:    "gateway_upstream_latency_seconds",
+			Help:    "Latency of requests forwarded to upstream providers by Gateway.",
 			Buckets: upstreamLatencyBuckets, // Extended range for AI model inference times
 		},
-		append(append(defaultRakshaLabels, "is_success"), filteredCustomLabels...),
+		append(append(defaultGatewayLabels, "is_success"), filteredCustomLabels...),
 	)
 
-	rakshaSuccessRequestsTotal := factory.NewCounterVec(
+	gatewaySuccessRequestsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_success_requests_total",
-			Help: "Total number of successful requests forwarded to upstream providers by Raksha.",
+			Name: "gateway_success_requests_total",
+			Help: "Total number of successful requests forwarded to upstream providers by Gateway.",
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaErrorRequestsTotal := factory.NewCounterVec(
+	gatewayErrorRequestsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_error_requests_total",
-			Help: "Total number of error requests forwarded to upstream providers by Raksha.",
+			Name: "gateway_error_requests_total",
+			Help: "Total number of error requests forwarded to upstream providers by Gateway.",
 		},
-		append(append(defaultRakshaLabels, "status_code"), filteredCustomLabels...),
+		append(append(defaultGatewayLabels, "status_code"), filteredCustomLabels...),
 	)
 
-	rakshaInputTokensTotal := factory.NewCounterVec(
+	gatewayInputTokensTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_input_tokens_total",
-			Help: "Total number of input tokens forwarded to upstream providers by Raksha.",
+			Name: "gateway_input_tokens_total",
+			Help: "Total number of input tokens forwarded to upstream providers by Gateway.",
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaOutputTokensTotal := factory.NewCounterVec(
+	gatewayOutputTokensTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_output_tokens_total",
-			Help: "Total number of output tokens forwarded to upstream providers by Raksha.",
+			Name: "gateway_output_tokens_total",
+			Help: "Total number of output tokens forwarded to upstream providers by Gateway.",
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaCacheHitsTotal := factory.NewCounterVec(
+	gatewayCacheHitsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_cache_hits_total",
-			Help: "Total number of cache hits forwarded to upstream providers by Raksha, separated by cache type (direct/semantic).",
+			Name: "gateway_cache_hits_total",
+			Help: "Total number of cache hits forwarded to upstream providers by Gateway, separated by cache type (direct/semantic).",
 		},
-		append(append(defaultRakshaLabels, "cache_type"), filteredCustomLabels...),
+		append(append(defaultGatewayLabels, "cache_type"), filteredCustomLabels...),
 	)
 
 	// Provider-side prompt cache tokens (Anthropic/OpenAI/Gemini prompt caching). Distinct
-	// from raksha_cache_hits_total, which counts Raksha's own semantic-cache hits.
-	rakshaCacheReadInputTokensTotal := factory.NewCounterVec(
+	// from gateway_cache_hits_total, which counts Gateway's own semantic-cache hits.
+	gatewayCacheReadInputTokensTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_cache_read_input_tokens_total",
+			Name: "gateway_cache_read_input_tokens_total",
 			Help: "Total provider-side prompt-cache read (cached) input tokens. Billed at a reduced rate by the provider.",
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaCacheWriteInputTokensTotal := factory.NewCounterVec(
+	gatewayCacheWriteInputTokensTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_cache_write_input_tokens_total",
+			Name: "gateway_cache_write_input_tokens_total",
 			Help: "Total provider-side prompt-cache creation (write) input tokens.",
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaCacheWriteInputTokens5mTotal := factory.NewCounterVec(
+	gatewayCacheWriteInputTokens5mTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_cache_write_input_tokens_5m_total",
-			Help: "Provider-side prompt-cache write input tokens with a 5-minute TTL (Anthropic only). Subset of raksha_cache_write_input_tokens_total — do not sum with it.",
+			Name: "gateway_cache_write_input_tokens_5m_total",
+			Help: "Provider-side prompt-cache write input tokens with a 5-minute TTL (Anthropic only). Subset of gateway_cache_write_input_tokens_total — do not sum with it.",
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaCacheWriteInputTokens1hTotal := factory.NewCounterVec(
+	gatewayCacheWriteInputTokens1hTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_cache_write_input_tokens_1h_total",
-			Help: "Provider-side prompt-cache write input tokens with a 1-hour TTL (Anthropic only). Subset of raksha_cache_write_input_tokens_total — do not sum with it.",
+			Name: "gateway_cache_write_input_tokens_1h_total",
+			Help: "Provider-side prompt-cache write input tokens with a 1-hour TTL (Anthropic only). Subset of gateway_cache_write_input_tokens_total — do not sum with it.",
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaCostTotal := factory.NewCounterVec(
+	gatewayCostTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_cost_total",
+			Name: "gateway_cost_total",
 			Help: "Total cost in USD for requests to upstream providers.",
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaStreamInterTokenLatencySeconds := factory.NewHistogramVec(
+	gatewayStreamInterTokenLatencySeconds := factory.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "raksha_stream_inter_token_latency_seconds",
+			Name:    "gateway_stream_inter_token_latency_seconds",
 			Help:    "Latency of the intermediate tokens of a stream response.",
 			Buckets: interTokenLatencyBuckets,
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaStreamFirstTokenLatencySeconds := factory.NewHistogramVec(
+	gatewayStreamFirstTokenLatencySeconds := factory.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "raksha_stream_first_token_latency_seconds",
+			Name:    "gateway_stream_first_token_latency_seconds",
 			Help:    "Latency of the first token of a stream response.",
 			Buckets: firstTokenLatencyBuckets,
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	rakshaRequestRetries := factory.NewHistogramVec(
+	gatewayRequestRetries := factory.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "raksha_request_retries",
+			Name:    "gateway_request_retries",
 			Help:    "Number of retries used per request (observed once per request).",
 			Buckets: []float64{0, 1, 2, 3, 5, 10},
 		},
-		append(defaultRakshaLabels, filteredCustomLabels...),
+		append(defaultGatewayLabels, filteredCustomLabels...),
 	)
 
-	// rakshaKeyRotationEventsTotal counts key-swap events from the attempt trail.
+	// gatewayKeyRotationEventsTotal counts key-swap events from the attempt trail.
 	// One observation is emitted only when a failed attempt triggered rotation to a different key
 	// on the next retry (TriggeredRotation == true, fail_reason non-nil). Use this to track actual
 	// key-rotation pressure per provider/key/failure reason.
 
-	rakshaKeyRotationEventsTotal := factory.NewCounterVec(
+	gatewayKeyRotationEventsTotal := factory.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "raksha_key_rotation_events_total",
+			Name: "gateway_key_rotation_events_total",
 			Help: "Number of key rotations, broken down by provider, key, and failure reason. One increment per per-key failure (rate-limit/auth/billing/permission) that triggered a switch to a different key on the next retry.",
 		},
 		[]string{"provider", "requested_model", "key_id", "key_name", "fail_reason"},
 	)
 
-	rakshaActiveRequests := factory.NewGaugeVec(
+	gatewayActiveRequests := factory.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "raksha_active_requests",
+			Name: "gateway_active_requests",
 			Help: "Number of LLM requests currently in-flight.",
 		},
 		[]string{"method"},
 	)
 
-	rakshaProviderKeyUp := factory.NewGaugeVec(
+	gatewayProviderKeyUp := factory.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "raksha_provider_key_up",
+			Name: "gateway_provider_key_up",
 			Help: "Health of a provider key. 1 = last attempt succeeded, 0 = last attempt failed.",
 		},
 		[]string{"provider", "key_id", "key_name"},
@@ -494,27 +494,27 @@ func Init(config *Config, pricingManager *modelcatalog.ModelCatalog, logger sche
 		HTTPRequestDuration:            httpRequestDuration,
 		HTTPRequestSizeBytes:           httpRequestSizeBytes,
 		HTTPResponseSizeBytes:          httpResponseSizeBytes,
-		UpstreamRequestsTotal:          rakshaUpstreamRequestsTotal,
-		UpstreamLatencySeconds:         rakshaUpstreamLatencySeconds,
-		SuccessRequestsTotal:           rakshaSuccessRequestsTotal,
-		ErrorRequestsTotal:             rakshaErrorRequestsTotal,
-		InputTokensTotal:               rakshaInputTokensTotal,
-		OutputTokensTotal:              rakshaOutputTokensTotal,
-		CacheHitsTotal:                 rakshaCacheHitsTotal,
-		CacheReadInputTokensTotal:      rakshaCacheReadInputTokensTotal,
-		CacheWriteInputTokensTotal:     rakshaCacheWriteInputTokensTotal,
-		CacheWriteInputTokens5mTotal:   rakshaCacheWriteInputTokens5mTotal,
-		CacheWriteInputTokens1hTotal:   rakshaCacheWriteInputTokens1hTotal,
-		CostTotal:                      rakshaCostTotal,
-		StreamInterTokenLatencySeconds: rakshaStreamInterTokenLatencySeconds,
-		StreamFirstTokenLatencySeconds: rakshaStreamFirstTokenLatencySeconds,
-		RequestRetries:                 rakshaRequestRetries,
-		KeyRotationEventsTotal:         rakshaKeyRotationEventsTotal,
-		ActiveRequests:                 rakshaActiveRequests,
-		ProviderKeyUp:                  rakshaProviderKeyUp,
+		UpstreamRequestsTotal:          gatewayUpstreamRequestsTotal,
+		UpstreamLatencySeconds:         gatewayUpstreamLatencySeconds,
+		SuccessRequestsTotal:           gatewaySuccessRequestsTotal,
+		ErrorRequestsTotal:             gatewayErrorRequestsTotal,
+		InputTokensTotal:               gatewayInputTokensTotal,
+		OutputTokensTotal:              gatewayOutputTokensTotal,
+		CacheHitsTotal:                 gatewayCacheHitsTotal,
+		CacheReadInputTokensTotal:      gatewayCacheReadInputTokensTotal,
+		CacheWriteInputTokensTotal:     gatewayCacheWriteInputTokensTotal,
+		CacheWriteInputTokens5mTotal:   gatewayCacheWriteInputTokens5mTotal,
+		CacheWriteInputTokens1hTotal:   gatewayCacheWriteInputTokens1hTotal,
+		CostTotal:                      gatewayCostTotal,
+		StreamInterTokenLatencySeconds: gatewayStreamInterTokenLatencySeconds,
+		StreamFirstTokenLatencySeconds: gatewayStreamFirstTokenLatencySeconds,
+		RequestRetries:                 gatewayRequestRetries,
+		KeyRotationEventsTotal:         gatewayKeyRotationEventsTotal,
+		ActiveRequests:                 gatewayActiveRequests,
+		ProviderKeyUp:                  gatewayProviderKeyUp,
 		customLabels:                   filteredCustomLabels,
 		defaultHTTPLabels:              defaultHTTPLabels,
-		defaultRakshaLabels:           defaultRakshaLabels,
+		defaultGatewayLabels:           defaultGatewayLabels,
 	}
 
 	// Default /metrics scraping to on when the config omits the field — preserves
@@ -546,7 +546,7 @@ func (p *PrometheusPlugin) GetRegistry() *prometheus.Registry {
 }
 
 // GetMetricsGatherer returns a combined gatherer for the /metrics endpoint,
-// including both Raksha metrics and Go/process runtime collectors.
+// including both Gateway metrics and Go/process runtime collectors.
 func (p *PrometheusPlugin) GetMetricsGatherer() prometheus.Gatherer {
 	return prometheus.Gatherers{p.registry, p.systemRegistry}
 }
@@ -599,28 +599,28 @@ func (p *PrometheusPlugin) RedactConfig(raw map[string]any) (map[string]any, err
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (p *PrometheusPlugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *PrometheusPlugin) HTTPTransportPreHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (p *PrometheusPlugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *PrometheusPlugin) HTTPTransportPostHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (p *PrometheusPlugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
+func (p *PrometheusPlugin) HTTPTransportStreamChunkHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, chunk *schemas.GatewayStreamChunk) (*schemas.GatewayStreamChunk, error) {
 	return chunk, nil
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (p *PrometheusPlugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
+func (p *PrometheusPlugin) PreRequestHook(_ *schemas.GatewayContext, _ *schemas.GatewayRequest) error {
 	return nil
 }
 
 // PreLLMHook records the start time of the request in the context.
 // This time is used later in PostLLMHook to calculate request duration.
-func (p *PrometheusPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *PrometheusPlugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	ctx.SetValue(startTimeKey, time.Now())
 	ctx.SetValue(activeRequestTypeKey, req.RequestType)
 	p.ActiveRequests.WithLabelValues(string(req.RequestType)).Inc()
@@ -632,7 +632,7 @@ func (p *PrometheusPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.R
 // and the Anthropic-only 5m/1h TTL breakdown of the write total. Chat/text-completion carry
 // these on Usage.PromptTokensDetails; the Responses API carries them on
 // Usage.InputTokensDetails. Mirrors the response-type switch used for input/output tokens.
-func extractProviderCacheTokens(result *schemas.RakshaResponse) (read, write, write5m, write1h int) {
+func extractProviderCacheTokens(result *schemas.GatewayResponse) (read, write, write5m, write1h int) {
 	var promptDetails *schemas.ChatPromptTokensDetails
 	var inputDetails *schemas.ResponsesResponseInputTokens
 
@@ -666,8 +666,8 @@ func extractProviderCacheTokens(result *schemas.RakshaResponse) (read, write, wr
 // It records:
 //   - Request latency
 //   - Total request count
-func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
-	requestType, provider, originalModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
+func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error) {
+	requestType, provider, originalModel, resolvedModel := gateway.GetResponseFields(result, gatewayErr)
 
 	// Determine effective model label and alias label (mirrors applyModelAlias logic in logging)
 	model := originalModel
@@ -682,31 +682,31 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 	startTime, ok := ctx.Value(startTimeKey).(time.Time)
 	if !ok {
 		p.logger.Warn("Warning: startTime not found in context for Prometheus PostLLMHook")
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 
-	virtualKeyID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyID)
-	virtualKeyName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyName)
-	routingRuleID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceRoutingRuleID)
-	routingRuleName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceRoutingRuleName)
+	virtualKeyID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyID)
+	virtualKeyName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyName)
+	routingRuleID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceRoutingRuleID)
+	routingRuleName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceRoutingRuleName)
 
-	selectedKeyID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedKeyID)
-	selectedKeyName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedKeyName)
+	selectedKeyID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeySelectedKeyID)
+	selectedKeyName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeySelectedKeyName)
 
-	numberOfRetries := raksha.GetIntFromContext(ctx, schemas.RakshaContextKeyNumberOfRetries)
-	fallbackIndex := raksha.GetIntFromContext(ctx, schemas.RakshaContextKeyFallbackIndex)
-	attemptTrail, _ := ctx.Value(schemas.RakshaContextKeyAttemptTrail).([]schemas.KeyAttemptRecord)
+	numberOfRetries := gateway.GetIntFromContext(ctx, schemas.GatewayContextKeyNumberOfRetries)
+	fallbackIndex := gateway.GetIntFromContext(ctx, schemas.GatewayContextKeyFallbackIndex)
+	attemptTrail, _ := ctx.Value(schemas.GatewayContextKeyAttemptTrail).([]schemas.KeyAttemptRecord)
 	// Get routing engines array and join into comma-separated string
 	routingEngines := []string{}
-	if engines, ok := ctx.Value(schemas.RakshaContextKeyRoutingEnginesUsed).([]string); ok {
+	if engines, ok := ctx.Value(schemas.GatewayContextKeyRoutingEnginesUsed).([]string); ok {
 		routingEngines = engines
 	}
 	routingEngineUsed := strings.Join(routingEngines, ",")
 
-	teamID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamID)
-	teamName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamName)
-	customerID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerID)
-	customerName := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerName)
+	teamID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamID)
+	teamName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamName)
+	customerID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceCustomerID)
+	customerName := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceCustomerName)
 
 	// Extract ALL context values BEFORE spawning the goroutine.
 	labelValues := map[string]string{
@@ -730,11 +730,11 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 
 	// Get all custom prometheus labels from context BEFORE the goroutine.
 	// Resolution order (first match wins):
-	//   1. x-uf-dim-* headers (canonical; set by HTTP transport as RakshaContextKeyDimensions)
+	//   1. x-uf-dim-* headers (canonical; set by HTTP transport as GatewayContextKeyDimensions)
 	//   2. x-uf-prom-* headers (deprecated; kept for backward compatibility)
-	//   3. Direct RakshaContextKey lookup (Go SDK usage — documented API)
-	dims, _ := ctx.Value(schemas.RakshaContextKeyDimensions).(map[string]string)
-	requestHeaders, _ := ctx.Value(schemas.RakshaContextKeyRequestHeaders).(map[string]string)
+	//   3. Direct GatewayContextKey lookup (Go SDK usage — documented API)
+	dims, _ := ctx.Value(schemas.GatewayContextKeyDimensions).(map[string]string)
+	requestHeaders, _ := ctx.Value(schemas.GatewayContextKeyRequestHeaders).(map[string]string)
 	for _, key := range p.customLabels {
 		if dims != nil {
 			if v, ok := dims[key]; ok {
@@ -750,7 +750,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 			}
 		}
 		// fallback: direct context key (Go SDK usage, documented API)
-		if value := ctx.Value(schemas.RakshaContextKey(key)); value != nil {
+		if value := ctx.Value(schemas.GatewayContextKey(key)); value != nil {
 			if strValue, ok := value.(string); ok {
 				labelValues[key] = strValue
 			}
@@ -758,14 +758,14 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 	}
 
 	// Get label values in the correct order (cache_type will be handled separately for cache hits)
-	promLabelValues := getPrometheusLabelValues(append(p.defaultRakshaLabels, p.customLabels...), labelValues)
+	promLabelValues := getPrometheusLabelValues(append(p.defaultGatewayLabels, p.customLabels...), labelValues)
 
 	// Extract stream end indicator BEFORE the goroutine
-	streamEndIndicatorValue := ctx.Value(schemas.RakshaContextKeyStreamEndIndicator)
+	streamEndIndicatorValue := ctx.Value(schemas.GatewayContextKeyStreamEndIndicator)
 	isFinalChunk, hasFinalChunkIndicator := streamEndIndicatorValue.(bool)
 
 	// Decrement active requests on the final (or only) call for this request
-	isStreamFinal := !raksha.IsStreamRequestType(requestType) || (hasFinalChunkIndicator && isFinalChunk)
+	isStreamFinal := !gateway.IsStreamRequestType(requestType) || (hasFinalChunkIndicator && isFinalChunk)
 	if isStreamFinal {
 		if method, ok := ctx.Value(activeRequestTypeKey).(schemas.RequestType); ok {
 			p.ActiveRequests.WithLabelValues(string(method)).Dec()
@@ -777,7 +777,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 	// Calculate cost and record metrics in a separate goroutine to avoid blocking the main thread
 	go func() {
 		// For streaming requests, handle per-token metrics for intermediate chunks
-		if raksha.IsStreamRequestType(requestType) {
+		if gateway.IsStreamRequestType(requestType) {
 			// For intermediate chunks, record per-token metrics and exit.
 			// The final chunk will fall through to record full request metrics.
 			if !hasFinalChunkIndicator || !isFinalChunk {
@@ -813,7 +813,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 			}
 		}
 		// Mark the selected key healthy if the request ultimately succeeded
-		if rakshaErr == nil && selectedKeyID != "" {
+		if gatewayErr == nil && selectedKeyID != "" {
 			p.ProviderKeyUp.WithLabelValues(string(provider), selectedKeyID, selectedKeyName).Set(1)
 		}
 
@@ -827,9 +827,9 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 		// Record latency
 		duration := time.Since(startTime).Seconds()
 		latencyLabelValues := make([]string, 0, len(promLabelValues)+1)
-		latencyLabelValues = append(latencyLabelValues, promLabelValues[:len(p.defaultRakshaLabels)]...) // all default labels
-		latencyLabelValues = append(latencyLabelValues, strconv.FormatBool(rakshaErr == nil))            // is_success
-		latencyLabelValues = append(latencyLabelValues, promLabelValues[len(p.defaultRakshaLabels):]...) // then custom labels
+		latencyLabelValues = append(latencyLabelValues, promLabelValues[:len(p.defaultGatewayLabels)]...) // all default labels
+		latencyLabelValues = append(latencyLabelValues, strconv.FormatBool(gatewayErr == nil))            // is_success
+		latencyLabelValues = append(latencyLabelValues, promLabelValues[len(p.defaultGatewayLabels):]...) // then custom labels
 		p.UpstreamLatencySeconds.WithLabelValues(latencyLabelValues...).Observe(duration)
 
 		// Record cost using the dedicated cost counter
@@ -838,16 +838,16 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 		}
 
 		// Record error and success counts
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			// Add status_code to label values (create new slice to avoid modifying original)
 			statusCode := "unknown"
-			if rakshaErr.StatusCode != nil {
-				statusCode = strconv.Itoa(*rakshaErr.StatusCode)
+			if gatewayErr.StatusCode != nil {
+				statusCode = strconv.Itoa(*gatewayErr.StatusCode)
 			}
 			errorPromLabelValues := make([]string, 0, len(promLabelValues)+1)
-			errorPromLabelValues = append(errorPromLabelValues, promLabelValues[:len(p.defaultRakshaLabels)]...) // all default labels
+			errorPromLabelValues = append(errorPromLabelValues, promLabelValues[:len(p.defaultGatewayLabels)]...) // all default labels
 			errorPromLabelValues = append(errorPromLabelValues, statusCode)                                       // status_code
-			errorPromLabelValues = append(errorPromLabelValues, promLabelValues[len(p.defaultRakshaLabels):]...) // then custom labels
+			errorPromLabelValues = append(errorPromLabelValues, promLabelValues[len(p.defaultGatewayLabels):]...) // then custom labels
 
 			p.ErrorRequestsTotal.WithLabelValues(errorPromLabelValues...).Inc()
 		} else {
@@ -897,7 +897,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 			p.OutputTokensTotal.WithLabelValues(promLabelValues...).Add(float64(outputTokens))
 
 			// Record provider-side prompt cache tokens (Anthropic/OpenAI/Gemini prompt
-			// caching). Distinct from the cache-hit counter below, which tracks Raksha's
+			// caching). Distinct from the cache-hit counter below, which tracks Gateway's
 			// own semantic cache. 5m/1h are an Anthropic-only TTL breakdown of the write total.
 			cacheRead, cacheWrite, cacheWrite5m, cacheWrite1h := extractProviderCacheTokens(result)
 			if cacheRead > 0 {
@@ -923,16 +923,16 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 
 				// Add cache_type to label values (create new slice to avoid modifying original)
 				cacheHitLabelValues := make([]string, 0, len(promLabelValues)+1)
-				cacheHitLabelValues = append(cacheHitLabelValues, promLabelValues[:len(p.defaultRakshaLabels)]...) // all default labels
+				cacheHitLabelValues = append(cacheHitLabelValues, promLabelValues[:len(p.defaultGatewayLabels)]...) // all default labels
 				cacheHitLabelValues = append(cacheHitLabelValues, cacheType)                                        // cache_type
-				cacheHitLabelValues = append(cacheHitLabelValues, promLabelValues[len(p.defaultRakshaLabels):]...) // then custom labels
+				cacheHitLabelValues = append(cacheHitLabelValues, promLabelValues[len(p.defaultGatewayLabels):]...) // then custom labels
 
 				p.CacheHitsTotal.WithLabelValues(cacheHitLabelValues...).Inc()
 			}
 		}
 	}()
 
-	return result, rakshaErr, nil
+	return result, gatewayErr, nil
 }
 
 // HTTPMiddleware wraps a FastHTTP handler to collect Prometheus metrics.
@@ -941,7 +941,7 @@ func (p *PrometheusPlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 //   - Request duration
 //   - Request and response sizes
 //   - HTTP status codes
-//   - Raksha upstream requests and errors
+//   - Gateway upstream requests and errors
 func (p *PrometheusPlugin) HTTPMiddleware(handler fasthttp.RequestHandler) fasthttp.RequestHandler {
 	return func(ctx *fasthttp.RequestCtx) {
 		start := time.Now()
@@ -988,7 +988,7 @@ func (p *PrometheusPlugin) EnablePushGateway(config *PushGatewayConfig) error {
 
 	// Apply defaults
 	if config.JobName == "" {
-		config.JobName = "raksha"
+		config.JobName = "gateway"
 	}
 	if config.PushInterval <= 0 {
 		config.PushInterval = 15

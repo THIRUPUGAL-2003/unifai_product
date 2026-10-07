@@ -5,19 +5,19 @@ package mcp
 import (
 	"context"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // MCPManagerInterface defines the interface for MCP management functionality.
 // This interface allows different implementations to be used interchangeably
-// in the Raksha core.
+// in the Gateway core.
 type MCPManagerInterface interface {
 	// Tool Operations
 	// AddToolsToRequest parses available MCP tools and adds them to the request
-	AddToolsToRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) *schemas.RakshaRequest
+	AddToolsToRequest(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) *schemas.GatewayRequest
 
 	// GetAvailableTools returns all available MCP tools for the given context
-	GetAvailableTools(ctx *schemas.RakshaContext) []schemas.ChatTool
+	GetAvailableTools(ctx *schemas.GatewayContext) []schemas.ChatTool
 
 	// UpdateToolManagerConfig updates the configuration for the tool manager.
 	// DisableAutoToolInject in the config controls auto injection — pass the
@@ -29,26 +29,26 @@ type MCPManagerInterface interface {
 	// Tool executions inside the agent loop go through the plugin gate internally —
 	// callers no longer inject an executeTool function.
 	CheckAndExecuteAgentForChatRequest(
-		ctx *schemas.RakshaContext,
-		req *schemas.RakshaChatRequest,
-		response *schemas.RakshaChatResponse,
-		makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError),
-	) (*schemas.RakshaChatResponse, *schemas.RakshaError)
+		ctx *schemas.GatewayContext,
+		req *schemas.GatewayChatRequest,
+		response *schemas.GatewayChatResponse,
+		makeReq func(ctx *schemas.GatewayContext, req *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError),
+	) (*schemas.GatewayChatResponse, *schemas.GatewayError)
 
 	// CheckAndExecuteAgentForResponsesRequest handles agent mode for Responses API.
 	// Tool executions inside the agent loop go through the plugin gate internally.
 	CheckAndExecuteAgentForResponsesRequest(
-		ctx *schemas.RakshaContext,
-		req *schemas.RakshaResponsesRequest,
-		response *schemas.RakshaResponsesResponse,
-		makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError),
-	) (*schemas.RakshaResponsesResponse, *schemas.RakshaError)
+		ctx *schemas.GatewayContext,
+		req *schemas.GatewayResponsesRequest,
+		response *schemas.GatewayResponsesResponse,
+		makeReq func(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError),
+	) (*schemas.GatewayResponsesResponse, *schemas.GatewayError)
 
 	// ExecuteChatTool / ExecuteResponsesTool run a single MCP tool call through the
-	// plugin gate and return the result in the appropriate API format. Raksha's
+	// plugin gate and return the result in the appropriate API format. Gateway's
 	// ExecuteChatMCPTool / ExecuteResponsesMCPTool delegate here.
-	ExecuteChatTool(ctx *schemas.RakshaContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.RakshaError)
-	ExecuteResponsesTool(ctx *schemas.RakshaContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.RakshaError)
+	ExecuteChatTool(ctx *schemas.GatewayContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.GatewayError)
+	ExecuteResponsesTool(ctx *schemas.GatewayContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.GatewayError)
 
 	// Client Management
 	// GetClients returns all MCP clients

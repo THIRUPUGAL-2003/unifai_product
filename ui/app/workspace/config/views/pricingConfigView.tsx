@@ -15,8 +15,8 @@ interface PricingFormData {
 
 export default function PricingConfigView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const config = rakshaConfig?.framework_config;
+	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const config = gatewayConfig?.framework_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [forcePricingSync, { isLoading: isForceSyncing }] = useForcePricingSyncMutation();
 
@@ -37,14 +37,14 @@ export default function PricingConfigView() {
 	const formValues = watch();
 
 	useEffect(() => {
-		if (rakshaConfig && config) {
+		if (gatewayConfig && config) {
 			reset({
 				pricing_datasheet_url: config.pricing_url || "",
 				pricing_sync_interval_hours: Math.round(config.pricing_sync_interval / 3600) || 24,
 				model_parameters_url: config.model_parameters_url || "",
 			});
 		}
-	}, [config, rakshaConfig, reset]);
+	}, [config, gatewayConfig, reset]);
 
 	const hasChanges = useMemo(() => {
 		if (!config || !isDirty) return false;
@@ -61,10 +61,10 @@ export default function PricingConfigView() {
 	const onSubmit = async (data: PricingFormData) => {
 		try {
 			await updateCoreConfig({
-				...rakshaConfig!,
+				...gatewayConfig!,
 				framework_config: {
 					...config,
-					id: rakshaConfig?.framework_config.id || 0,
+					id: gatewayConfig?.framework_config?.id || 0,
 					pricing_url: data.pricing_datasheet_url,
 					pricing_sync_interval: data.pricing_sync_interval_hours * 3600,
 					model_parameters_url: data.model_parameters_url,

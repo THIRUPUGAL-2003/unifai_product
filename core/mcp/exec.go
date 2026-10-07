@@ -7,40 +7,40 @@ import (
 	"sync"
 
 	"github.com/mark3labs/mcp-go/client"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // ============================================================================
 // MCP REQUEST POOL
 // ============================================================================
 //
-// Pool for RakshaMCPRequest objects. Owned by the mcp package because these
-// requests are only used inside this package — the Raksha public API just
+// Pool for GatewayMCPRequest objects. Owned by the mcp package because these
+// requests are only used inside this package — the Gateway public API just
 // delegates to MCPManager's Execute* methods.
 
 var mcpRequestPool = sync.Pool{
 	New: func() any {
-		return &schemas.RakshaMCPRequest{}
+		return &schemas.GatewayMCPRequest{}
 	},
 }
 
-// resetMCPRequest zeroes a RakshaMCPRequest for reuse. Must be kept in sync with
+// resetMCPRequest zeroes a GatewayMCPRequest for reuse. Must be kept in sync with
 // the fields defined on the request struct.
-func resetMCPRequest(req *schemas.RakshaMCPRequest) {
+func resetMCPRequest(req *schemas.GatewayMCPRequest) {
 	req.RequestType = ""
 	req.ClientName = ""
-	req.RakshaMCPPingRequest = nil
-	req.RakshaMCPListToolsRequest = nil
-	req.RakshaMCPExecuteToolRequest = nil
+	req.GatewayMCPPingRequest = nil
+	req.GatewayMCPListToolsRequest = nil
+	req.GatewayMCPExecuteToolRequest = nil
 	req.ChatAssistantMessageToolCall = nil
 	req.ResponsesToolMessage = nil
 }
 
-func getMCPRequest() *schemas.RakshaMCPRequest {
-	return mcpRequestPool.Get().(*schemas.RakshaMCPRequest)
+func getMCPRequest() *schemas.GatewayMCPRequest {
+	return mcpRequestPool.Get().(*schemas.GatewayMCPRequest)
 }
 
-func releaseMCPRequest(req *schemas.RakshaMCPRequest) {
+func releaseMCPRequest(req *schemas.GatewayMCPRequest) {
 	resetMCPRequest(req)
 	mcpRequestPool.Put(req)
 }
@@ -52,23 +52,23 @@ func releaseMCPRequest(req *schemas.RakshaMCPRequest) {
 // executeToolWithHooks runs an MCP tool call through the plugin gate. It is the
 // execute-tool counterpart to the connect/ping/list_tools gates. Mirrors the
 // short-circuit + PostHook semantics of all other gates by delegating to
-// runWithPluginPipeline, then adds two execute-specific touches on the returned RakshaError:
+// runWithPluginPipeline, then adds two execute-specific touches on the returned GatewayError:
 //
 //   - stamps ExtraFields.RequestType from the caller-provided RequestType
 //   - preserves MCPUserOAuthRequiredError so agent-mode detection still works
 //
-// requestType is the raksha-side RequestType (ChatCompletionRequest / ResponsesRequest)
+// requestType is the gateway-side RequestType (ChatCompletionRequest / ResponsesRequest)
 // that error metadata should carry — it isn't the same as request.RequestType.
 func (m *MCPManager) executeToolWithHooks(
-	ctx *schemas.RakshaContext,
-	request *schemas.RakshaMCPRequest,
+	ctx *schemas.GatewayContext,
+	request *schemas.GatewayMCPRequest,
 	requestType schemas.RequestType,
-) (*schemas.RakshaMCPResponse, *schemas.RakshaError) {
+) (*schemas.GatewayMCPResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: "request cannot be nil"},
-			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: requestType},
+			ExtraFields:    schemas.GatewayErrorExtraFields{RequestType: requestType},
 		}
 	}
 
@@ -90,16 +90,16 @@ func (m *MCPManager) executeToolWithHooks(
 	// never invoked.
 	state, conn, release, prepErr := m.prepareToolExecution(ctx, request)
 	if prepErr != nil {
-		rakshaErr := &schemas.RakshaError{
-			IsRakshaError: false,
+		gatewayErr := &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: prepErr.Error()},
-			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: requestType, MCPRequestType: request.RequestType},
+			ExtraFields:    schemas.GatewayErrorExtraFields{RequestType: requestType, MCPRequestType: request.RequestType},
 		}
 		var authRequiredErr *schemas.MCPAuthRequiredError
 		if errors.As(prepErr, &authRequiredErr) {
-			rakshaErr.ExtraFields.MCPAuthRequired = authRequiredErr
+			gatewayErr.ExtraFields.MCPAuthRequired = authRequiredErr
 		}
-		return nil, rakshaErr
+		return nil, gatewayErr
 	}
 	defer release()
 
@@ -112,7 +112,7 @@ func (m *MCPManager) executeToolWithHooks(
 		toolNameMapping = state.ToolNameMapping
 	}
 
-	resp, rakshaErr := m.RunWithPluginPipeline(ctx, request, func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error) {
+	resp, gatewayErr := m.RunWithPluginPipeline(ctx, request, func(preReq *schemas.GatewayMCPRequest) (*schemas.GatewayMCPResponse, error) {
 		result, opErr := m.toolsManager.ExecuteTool(ctx, preReq, conn, executionConfig, toolNameMapping)
 		if opErr != nil {
 			return nil, opErr
@@ -123,9 +123,9 @@ func (m *MCPManager) executeToolWithHooks(
 		return result, nil
 	})
 
-	if rakshaErr != nil {
-		rakshaErr.ExtraFields.RequestType = requestType
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		gatewayErr.ExtraFields.RequestType = requestType
+		return nil, gatewayErr
 	}
 	return resp, nil
 }
@@ -140,8 +140,8 @@ func (m *MCPManager) executeToolWithHooks(
 //
 // Errors here mean the call should NOT run — neither the envelope plugin
 // gate nor the wire op. Typed errors (e.g. *MCPUserOAuthRequiredError)
-// propagate so the caller can stamp RakshaError.ExtraFields.
-func (m *MCPManager) prepareToolExecution(ctx *schemas.RakshaContext, request *schemas.RakshaMCPRequest) (*schemas.MCPClientState, *client.Client, func(), error) {
+// propagate so the caller can stamp GatewayError.ExtraFields.
+func (m *MCPManager) prepareToolExecution(ctx *schemas.GatewayContext, request *schemas.GatewayMCPRequest) (*schemas.MCPClientState, *client.Client, func(), error) {
 	toolName := request.GetToolName()
 	if toolName == "" {
 		return nil, nil, nil, fmt.Errorf("tool call missing function name")
@@ -190,10 +190,10 @@ func (m *MCPManager) prepareToolExecution(ctx *schemas.RakshaContext, request *s
 }
 
 // executeToolForAgent is the agent-mode-facing helper. The agent loop expects a
-// plain (response, error) signature and doesn't need rich RakshaError fields,
+// plain (response, error) signature and doesn't need rich GatewayError fields,
 // so we collapse them. MCPUserOAuthRequiredError is returned directly when present
 // so agent mode can detect it via errors.As.
-func (m *MCPManager) executeToolForAgent(ctx *schemas.RakshaContext, request *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error) {
+func (m *MCPManager) executeToolForAgent(ctx *schemas.GatewayContext, request *schemas.GatewayMCPRequest) (*schemas.GatewayMCPResponse, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("context cannot be nil")
 	}
@@ -201,7 +201,7 @@ func (m *MCPManager) executeToolForAgent(ctx *schemas.RakshaContext, request *sc
 		return nil, fmt.Errorf("request cannot be nil")
 	}
 
-	// Derive raksha RequestType from the MCP request type (only execute-tool variants
+	// Derive gateway RequestType from the MCP request type (only execute-tool variants
 	// are valid in the agent loop).
 	var requestType schemas.RequestType
 	switch request.RequestType {
@@ -213,13 +213,13 @@ func (m *MCPManager) executeToolForAgent(ctx *schemas.RakshaContext, request *sc
 		return nil, fmt.Errorf("unsupported MCP request type for agent: %s", request.RequestType)
 	}
 
-	resp, rakshaErr := m.executeToolWithHooks(ctx, request, requestType)
-	if rakshaErr != nil {
+	resp, gatewayErr := m.executeToolWithHooks(ctx, request, requestType)
+	if gatewayErr != nil {
 		// Surface the typed OAuth error so agent mode can react to it.
-		if rakshaErr.ExtraFields.MCPAuthRequired != nil {
-			return nil, rakshaErr.ExtraFields.MCPAuthRequired
+		if gatewayErr.ExtraFields.MCPAuthRequired != nil {
+			return nil, gatewayErr.ExtraFields.MCPAuthRequired
 		}
-		return nil, fmt.Errorf("tool execution failed: %s", rakshaErr.GetErrorString())
+		return nil, fmt.Errorf("tool execution failed: %s", gatewayErr.GetErrorString())
 	}
 	return resp, nil
 }
@@ -230,13 +230,13 @@ func (m *MCPManager) executeToolForAgent(ctx *schemas.RakshaContext, request *sc
 
 // ExecuteChatTool executes an MCP tool call and returns the result as a chat message.
 // This is the canonical entry point for manual MCP tool execution in Chat format.
-// Raksha.ExecuteChatMCPTool delegates here.
-func (m *MCPManager) ExecuteChatTool(ctx *schemas.RakshaContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.RakshaError) {
+// Gateway.ExecuteChatMCPTool delegates here.
+func (m *MCPManager) ExecuteChatTool(ctx *schemas.GatewayContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.GatewayError) {
 	if toolCall == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: "toolCall cannot be nil"},
-			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
+			ExtraFields:    schemas.GatewayErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
 		}
 	}
 
@@ -245,28 +245,28 @@ func (m *MCPManager) ExecuteChatTool(ctx *schemas.RakshaContext, toolCall *schem
 	mcpRequest.ChatAssistantMessageToolCall = toolCall
 	defer releaseMCPRequest(mcpRequest)
 
-	result, rakshaErr := m.executeToolWithHooks(ctx, mcpRequest, schemas.ChatCompletionRequest)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	result, gatewayErr := m.executeToolWithHooks(ctx, mcpRequest, schemas.ChatCompletionRequest)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if result == nil || result.ChatMessage == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: "MCP tool execution returned nil chat message"},
-			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
+			ExtraFields:    schemas.GatewayErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
 		}
 	}
 	return result.ChatMessage, nil
 }
 
 // ExecuteResponsesTool executes an MCP tool call and returns the result as a responses
-// message. Raksha.ExecuteResponsesMCPTool delegates here.
-func (m *MCPManager) ExecuteResponsesTool(ctx *schemas.RakshaContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.RakshaError) {
+// message. Gateway.ExecuteResponsesMCPTool delegates here.
+func (m *MCPManager) ExecuteResponsesTool(ctx *schemas.GatewayContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.GatewayError) {
 	if toolCall == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: "toolCall cannot be nil"},
-			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: schemas.ResponsesRequest},
+			ExtraFields:    schemas.GatewayErrorExtraFields{RequestType: schemas.ResponsesRequest},
 		}
 	}
 
@@ -275,15 +275,15 @@ func (m *MCPManager) ExecuteResponsesTool(ctx *schemas.RakshaContext, toolCall *
 	mcpRequest.ResponsesToolMessage = toolCall
 	defer releaseMCPRequest(mcpRequest)
 
-	result, rakshaErr := m.executeToolWithHooks(ctx, mcpRequest, schemas.ResponsesRequest)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	result, gatewayErr := m.executeToolWithHooks(ctx, mcpRequest, schemas.ResponsesRequest)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if result == nil || result.ResponsesMessage == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: "MCP tool execution returned nil responses message"},
-			ExtraFields:    schemas.RakshaErrorExtraFields{RequestType: schemas.ResponsesRequest},
+			ExtraFields:    schemas.GatewayErrorExtraFields{RequestType: schemas.ResponsesRequest},
 		}
 	}
 	return result.ResponsesMessage, nil

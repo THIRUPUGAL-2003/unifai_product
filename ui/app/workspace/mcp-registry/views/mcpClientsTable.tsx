@@ -325,7 +325,7 @@ export default function MCPClientsTable({
 					<AlertDialogHeader>
 						<AlertDialogTitle>Remove MCP Server</AlertDialogTitle>
 						<AlertDialogDescription>
-							Are you sure you want to remove MCP server {clientToDelete?.config.name}? You will need to reconnect the server to continue
+							Are you sure you want to remove MCP server {clientToDelete?.config?.name}? You will need to reconnect the server to continue
 							using it.
 						</AlertDialogDescription>
 					</AlertDialogHeader>

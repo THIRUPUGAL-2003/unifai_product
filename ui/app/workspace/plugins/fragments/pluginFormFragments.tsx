@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/codeEditor";
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -29,7 +30,7 @@ export function PluginFormFragment({ form, isEditMode = false }: PluginFormFragm
 				<p className="text-muted-foreground text-sm">
 					{isEditMode
 						? "Update your plugin configuration. Plugin name and path are read-only."
-						: "Install a custom plugin by providing an absolute file path or HTTP URL accessible to Raksha deployment (.so)."}{" "}
+						: "Install a custom plugin by providing an absolute file path or HTTP URL accessible to {PRODUCT_NAME} deployment (.so)."}{" "}
 					<a
 						href={DOCS.plugins}
 						target="_blank"

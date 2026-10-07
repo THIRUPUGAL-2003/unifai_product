@@ -3,17 +3,17 @@ package openai
 import (
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaListModelsResponse converts an OpenAI list models response to a Raksha list models response
-func (response *OpenAIListModelsResponse) ToRakshaListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
+// ToGatewayListModelsResponse converts an OpenAI list models response to a Gateway list models response
+func (response *OpenAIListModelsResponse) ToGatewayListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.GatewayListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaListModelsResponse{
+	gatewayResponse := &schemas.GatewayListModelsResponse{
 		Data: make([]schemas.Model, 0, len(response.Data)),
 	}
 
@@ -26,7 +26,7 @@ func (response *OpenAIListModelsResponse) ToRakshaListModelsResponse(providerKey
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return rakshaResponse
+		return gatewayResponse
 	}
 
 	included := make(map[string]bool)
@@ -50,19 +50,19 @@ func (response *OpenAIListModelsResponse) ToRakshaListModelsResponse(providerKey
 			if result.AliasValue != "" {
 				entry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			rakshaResponse.Data = append(rakshaResponse.Data, entry)
+			gatewayResponse.Data = append(gatewayResponse.Data, entry)
 			included[strings.ToLower(result.ResolvedID)] = true
 		}
 	}
 
-	rakshaResponse.Data = append(rakshaResponse.Data,
+	gatewayResponse.Data = append(gatewayResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
-// ToOpenAIListModelsResponse converts a Raksha list models response to an OpenAI list models response
-func ToOpenAIListModelsResponse(response *schemas.RakshaListModelsResponse) *OpenAIListModelsResponse {
+// ToOpenAIListModelsResponse converts a Gateway list models response to an OpenAI list models response
+func ToOpenAIListModelsResponse(response *schemas.GatewayListModelsResponse) *OpenAIListModelsResponse {
 	if response == nil {
 		return nil
 	}

@@ -32,8 +32,8 @@ type OCRParameters struct {
 	ExtraParams                 map[string]interface{} `json:"-"`
 }
 
-// RakshaOCRRequest represents a request to perform OCR on a document.
-type RakshaOCRRequest struct {
+// GatewayOCRRequest represents a request to perform OCR on a document.
+type GatewayOCRRequest struct {
 	Provider       ModelProvider  `json:"provider"`
 	Model          string         `json:"model"`
 	ID             *string        `json:"id,omitempty"`
@@ -44,7 +44,7 @@ type RakshaOCRRequest struct {
 }
 
 // GetRawRequestBody returns the raw request body for the OCR request.
-func (r *RakshaOCRRequest) GetRawRequestBody() []byte {
+func (r *GatewayOCRRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
@@ -79,11 +79,11 @@ type OCRUsageInfo struct {
 	DocSizeBytes   int `json:"doc_size_bytes"`
 }
 
-// RakshaOCRResponse represents the response from an OCR request.
-type RakshaOCRResponse struct {
+// GatewayOCRResponse represents the response from an OCR request.
+type GatewayOCRResponse struct {
 	Model               string                     `json:"model"`
 	Pages               []OCRPage                  `json:"pages"`
 	UsageInfo           *OCRUsageInfo              `json:"usage_info,omitempty"`
 	DocumentAnnotation  *string                    `json:"document_annotation,omitempty"`
-	ExtraFields         RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields         GatewayResponseExtraFields `json:"extra_fields"`
 }

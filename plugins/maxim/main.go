@@ -1,4 +1,4 @@
-// Package maxim provides integration for Maxim's SDK as a Raksha plugin.
+// Package maxim provides integration for Maxim's SDK as a Gateway plugin.
 // This file contains the main plugin implementation.
 package maxim
 
@@ -10,9 +10,9 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/streaming"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/streaming"
 
 	"github.com/maximhq/maxim-go"
 	"github.com/maximhq/maxim-go/logging"
@@ -96,13 +96,13 @@ func Init(config *Config, logger schemas.Logger) (schemas.LLMPlugin, error) {
 // This constant provides a consistent key for tracking request traces
 // throughout the request/response lifecycle.
 const (
-	SessionIDKey      schemas.RakshaContextKey = "session-id"
-	TraceIDKey        schemas.RakshaContextKey = "trace-id"
-	TraceNameKey      schemas.RakshaContextKey = "trace-name"
-	GenerationIDKey   schemas.RakshaContextKey = "generation-id"
-	GenerationNameKey schemas.RakshaContextKey = "generation-name"
-	TagsKey           schemas.RakshaContextKey = "maxim-tags"
-	LogRepoIDKey      schemas.RakshaContextKey = "log-repo-id"
+	SessionIDKey      schemas.GatewayContextKey = "session-id"
+	TraceIDKey        schemas.GatewayContextKey = "trace-id"
+	TraceNameKey      schemas.GatewayContextKey = "trace-name"
+	GenerationIDKey   schemas.GatewayContextKey = "generation-id"
+	GenerationNameKey schemas.GatewayContextKey = "generation-name"
+	TagsKey           schemas.GatewayContextKey = "maxim-tags"
+	LogRepoIDKey      schemas.GatewayContextKey = "log-repo-id"
 )
 
 // convertAccResultToProcessedStreamResponse converts StreamAccumulatorResult to ProcessedStreamResponse
@@ -165,17 +165,17 @@ func (plugin *Plugin) GetName() string {
 }
 
 // HTTPTransportPreHook is not used for this plugin
-func (plugin *Plugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (plugin *Plugin) HTTPTransportPreHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
 // HTTPTransportPostHook is not used for this plugin
-func (plugin *Plugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (plugin *Plugin) HTTPTransportPostHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (plugin *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
+func (plugin *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, chunk *schemas.GatewayStreamChunk) (*schemas.GatewayStreamChunk, error) {
 	return chunk, nil
 }
 
@@ -183,7 +183,7 @@ func (plugin *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, r
 // 1. Header log repo ID (if provided)
 // 2. Default log repo ID from config (if configured)
 // 3. Empty string (skip logging)
-func (plugin *Plugin) getEffectiveLogRepoID(ctx *schemas.RakshaContext) string {
+func (plugin *Plugin) getEffectiveLogRepoID(ctx *schemas.GatewayContext) string {
 	// Check for header log repo ID first (highest priority)
 	if ctx != nil {
 		if headerRepoID, ok := ctx.Value(LogRepoIDKey).(string); ok && headerRepoID != "" {
@@ -230,11 +230,11 @@ func (plugin *Plugin) getOrCreateLogger(logRepoID string) (*logging.Logger, erro
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (plugin *Plugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
+func (plugin *Plugin) PreRequestHook(_ *schemas.GatewayContext, _ *schemas.GatewayRequest) error {
 	return nil
 }
 
-// PreLLMHook is called before a request is processed by Raksha.
+// PreLLMHook is called before a request is processed by Gateway.
 // It manages trace and generation tracking for incoming requests by either:
 // - Creating a new trace if none exists
 // - Reusing an existing trace ID from the context
@@ -249,13 +249,13 @@ func (plugin *Plugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.Raksha
 // - Model parameters
 //
 // Parameters:
-//   - ctx: Pointer to the schemas.RakshaContext that may contain existing trace/generation IDs
-//   - req: The incoming Raksha request to be traced
+//   - ctx: Pointer to the schemas.GatewayContext that may contain existing trace/generation IDs
+//   - req: The incoming Gateway request to be traced
 //
 // Returns:
-//   - *schemas.RakshaRequest: The original request, unmodified
+//   - *schemas.GatewayRequest: The original request, unmodified
 //   - error: Any error that occurred during trace/generation creation
-func (plugin *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (plugin *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	if req != nil && req.RequestType == schemas.RealtimeRequest {
 		return req, nil, nil
 	}
@@ -443,7 +443,7 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksha
 		traceID = uuid.New().String()
 	}
 
-	name := fmt.Sprintf("raksha_%s", string(req.RequestType))
+	name := fmt.Sprintf("gateway_%s", string(req.RequestType))
 	if traceName != "" {
 		name = traceName
 	}
@@ -496,18 +496,18 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksha
 		ctx.SetValue(GenerationIDKey, generationID)
 
 		// Extract request ID from context, if not present, create a new one
-		requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
+		requestID, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string)
 		if !ok || requestID == "" {
-			// This should never happen since core/raksha.go guarantees it's set before PreHooks
+			// This should never happen since core/gateway.go guarantees it's set before PreHooks
 			requestID = uuid.New().String()
 			plugin.logger.Warn("%s request ID missing in PreLLMHook, using fallback: %s", PluginLoggerPrefix, requestID)
 		}
 
 		// If streaming, create accumulator via central tracer using traceID
-		if raksha.IsStreamRequestType(req.RequestType) {
-			tracer, rakshaTraceID, err := raksha.GetTracerFromContext(ctx)
-			if err == nil && tracer != nil && rakshaTraceID != "" {
-				tracer.CreateStreamAccumulator(rakshaTraceID, time.Now())
+		if gateway.IsStreamRequestType(req.RequestType) {
+			tracer, gatewayTraceID, err := gateway.GetTracerFromContext(ctx)
+			if err == nil && tracer != nil && gatewayTraceID != "" {
+				tracer.CreateStreamAccumulator(gatewayTraceID, time.Now())
 			}
 		}
 	}
@@ -515,10 +515,10 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksha
 	return req, nil, nil
 }
 
-// PostLLMHook is called after a request has been processed by Raksha.
+// PostLLMHook is called after a request has been processed by Gateway.
 // It completes the request trace by:
 // - Adding response data to the generation if a generation ID exists
-// - Logging error details if rakshaErr is provided
+// - Logging error details if gatewayErr is provided
 // - Ending the generation if it exists
 // - Ending the trace if a trace ID exists
 // - Flushing all pending log data
@@ -527,32 +527,32 @@ func (plugin *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.Raksha
 // ensuring that partial logging is still performed when possible.
 //
 // Parameters:
-//   - ctx: Pointer to the schemas.RakshaContext containing trace/generation IDs
-//   - result: The Raksha response to be traced
-//   - rakshaErr: The RakshaError returned by the request, if any
+//   - ctx: Pointer to the schemas.GatewayContext containing trace/generation IDs
+//   - result: The Gateway response to be traced
+//   - gatewayErr: The GatewayError returned by the request, if any
 //
 // Returns:
-//   - *schemas.RakshaResponse: The original response, unmodified
-//   - *schemas.RakshaError: The original error, unmodified
+//   - *schemas.GatewayResponse: The original response, unmodified
+//   - *schemas.GatewayError: The original error, unmodified
 //   - error: Never returns an error as it handles missing IDs gracefully
-func (plugin *Plugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
-	requestType, _, _, _ := raksha.GetResponseFields(result, rakshaErr)
+func (plugin *Plugin) PostLLMHook(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error) {
+	requestType, _, _, _ := gateway.GetResponseFields(result, gatewayErr)
 	if requestType == schemas.RealtimeRequest {
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 
 	// Get effective log repo ID for this request
 	effectiveLogRepoID := plugin.getEffectiveLogRepoID(ctx)
 	if effectiveLogRepoID == "" {
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 	if ctx == nil {
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 
-	requestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
+	requestID, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string)
 	if !ok || requestID == "" {
-		return result, rakshaErr, nil
+		return result, gatewayErr, nil
 	}
 
 	// Capture context values BEFORE goroutine to avoid race conditions
@@ -561,37 +561,37 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.Ra
 	traceID, hasTraceID := ctx.Value(TraceIDKey).(string)
 	tags, hasTags := ctx.Value(TagsKey).(map[string]string)
 	// Also capture x-uf-dim-* dimensions to forward as tags
-	dims, hasDims := ctx.Value(schemas.RakshaContextKeyDimensions).(map[string]string)
+	dims, hasDims := ctx.Value(schemas.GatewayContextKeyDimensions).(map[string]string)
 	// Capture configured request headers (exact or wildcard patterns) to forward as tags.
 	var reqHeaders map[string]string
 	if len(plugin.requestHeaders) > 0 {
-		allHeaders, _ := ctx.Value(schemas.RakshaContextKeyRequestHeaders).(map[string]string)
+		allHeaders, _ := ctx.Value(schemas.GatewayContextKeyRequestHeaders).(map[string]string)
 		reqHeaders = schemas.FilterHeaders(allHeaders, plugin.requestHeaders)
 	}
 	hasReqHeaders := len(reqHeaders) > 0
 
-	isFinalChunk := raksha.IsFinalChunk(ctx)
+	isFinalChunk := gateway.IsFinalChunk(ctx)
 
 	go func() {
-		requestType, _, originalModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
+		requestType, _, originalModel, resolvedModel := gateway.GetResponseFields(result, gatewayErr)
 		modelTag := resolvedModel
 		if modelTag == "" {
 			modelTag = originalModel
 		}
 
 		var streamResponse *streaming.ProcessedStreamResponse
-		if raksha.IsStreamRequestType(requestType) {
+		if gateway.IsStreamRequestType(requestType) {
 			// Use central tracer's accumulator
-			tracer, rakshaTraceID, err := raksha.GetTracerFromContext(ctx)
-			if err == nil && tracer != nil && rakshaTraceID != "" {
-				accResult := tracer.ProcessStreamingChunk(ctx, rakshaTraceID, isFinalChunk, result, rakshaErr)
+			tracer, gatewayTraceID, err := gateway.GetTracerFromContext(ctx)
+			if err == nil && tracer != nil && gatewayTraceID != "" {
+				accResult := tracer.ProcessStreamingChunk(ctx, gatewayTraceID, isFinalChunk, result, gatewayErr)
 				if accResult != nil {
 					streamResponse = convertAccResultToProcessedStreamResponse(accResult)
 				}
 			}
 
 			// For streaming: only process on final chunk. Skip intermediate chunks.
-			// When there's an error, streamResponse may be nil but we must still log rakshaErr.
+			// When there's an error, streamResponse may be nil but we must still log gatewayErr.
 			if !isFinalChunk {
 				return
 			}
@@ -602,18 +602,18 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.Ra
 			return
 		}
 		if hasGenerationID {
-			if rakshaErr != nil {
+			if gatewayErr != nil {
 				// Safely extract message from nested error
 				message := ""
 				code := ""
 				errorType := ""
-				if rakshaErr.Error != nil {
-					message = rakshaErr.Error.Message
-					if rakshaErr.Error.Code != nil {
-						code = *rakshaErr.Error.Code
+				if gatewayErr.Error != nil {
+					message = gatewayErr.Error.Message
+					if gatewayErr.Error.Code != nil {
+						code = *gatewayErr.Error.Code
 					}
-					if rakshaErr.Error.Type != nil {
-						errorType = *rakshaErr.Error.Type
+					if gatewayErr.Error.Type != nil {
+						errorType = *gatewayErr.Error.Type
 					}
 				}
 				genErr := maximSchemas.GenerationError{
@@ -623,46 +623,46 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.Ra
 				}
 				logger.SetGenerationError(generationID, &genErr)
 
-				if raksha.IsStreamRequestType(requestType) {
+				if gateway.IsStreamRequestType(requestType) {
 					// Cleanup via central tracer
-					tracer, rakshaTraceID, err := raksha.GetTracerFromContext(ctx)
-					if err == nil && tracer != nil && rakshaTraceID != "" {
-						tracer.CleanupStreamAccumulator(rakshaTraceID)
+					tracer, gatewayTraceID, err := gateway.GetTracerFromContext(ctx)
+					if err == nil && tracer != nil && gatewayTraceID != "" {
+						tracer.CleanupStreamAccumulator(gatewayTraceID)
 					}
 				}
 			} else if result != nil {
 				switch requestType {
 				case schemas.TextCompletionRequest, schemas.TextCompletionStreamRequest:
 					if streamResponse != nil {
-						logger.AddResultToGeneration(generationID, streamResponse.ToRakshaResponse().TextCompletionResponse)
+						logger.AddResultToGeneration(generationID, streamResponse.ToGatewayResponse().TextCompletionResponse)
 					} else {
 						logger.AddResultToGeneration(generationID, result.TextCompletionResponse)
 					}
 				case schemas.ChatCompletionRequest, schemas.ChatCompletionStreamRequest:
 					if streamResponse != nil {
-						logger.AddResultToGeneration(generationID, streamResponse.ToRakshaResponse().ChatResponse)
+						logger.AddResultToGeneration(generationID, streamResponse.ToGatewayResponse().ChatResponse)
 					} else {
 						logger.AddResultToGeneration(generationID, result.ChatResponse)
 					}
 				case schemas.ResponsesRequest, schemas.ResponsesStreamRequest, schemas.WebSocketResponsesRequest:
 					if streamResponse != nil {
-						logger.AddResultToGeneration(generationID, streamResponse.ToRakshaResponse().ResponsesResponse)
+						logger.AddResultToGeneration(generationID, streamResponse.ToGatewayResponse().ResponsesResponse)
 					} else {
 						logger.AddResultToGeneration(generationID, result.ResponsesResponse)
 					}
 				case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest,
 					schemas.ImageEditRequest, schemas.ImageEditStreamRequest:
 					if streamResponse != nil {
-						logger.AddResultToGeneration(generationID, streamResponse.ToRakshaResponse().ImageGenerationResponse)
+						logger.AddResultToGeneration(generationID, streamResponse.ToGatewayResponse().ImageGenerationResponse)
 					} else if result != nil {
 						logger.AddResultToGeneration(generationID, result.ImageGenerationResponse)
 					}
 				}
 				if streamResponse != nil && isFinalChunk {
 					// Cleanup via central tracer
-					tracer, rakshaTraceID, err := raksha.GetTracerFromContext(ctx)
-					if err == nil && tracer != nil && rakshaTraceID != "" {
-						tracer.CleanupStreamAccumulator(rakshaTraceID)
+					tracer, gatewayTraceID, err := gateway.GetTracerFromContext(ctx)
+					if err == nil && tracer != nil && gatewayTraceID != "" {
+						tracer.CleanupStreamAccumulator(gatewayTraceID)
 					}
 				}
 			}
@@ -717,7 +717,7 @@ func (plugin *Plugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.Ra
 		// Flush only the effective logger that was used for this request
 		logger.Flush()
 	}()
-	return result, rakshaErr, nil
+	return result, gatewayErr, nil
 }
 
 func (plugin *Plugin) Cleanup() error {

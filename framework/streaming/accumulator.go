@@ -6,14 +6,14 @@ import (
 	"sync"
 	"time"
 
-	schemas "github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/modelcatalog"
+	schemas "github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/modelcatalog"
 )
 
 // getAccumulatorID extracts the ID for accumulator lookup from context.
-// Returns the value of RakshaContextKeyAccumulatorID.
-func getAccumulatorID(ctx *schemas.RakshaContext) (string, bool) {
-	if id, ok := ctx.Value(schemas.RakshaContextKeyAccumulatorID).(string); ok && id != "" {
+// Returns the value of GatewayContextKeyAccumulatorID.
+func getAccumulatorID(ctx *schemas.GatewayContext) (string, bool) {
+	if id, ok := ctx.Value(schemas.GatewayContextKeyAccumulatorID).(string); ok && id != "" {
 		return id, true
 	}
 	return "", false
@@ -434,17 +434,17 @@ func (a *Accumulator) cleanupStreamAccumulator(requestID string, forceEndGate bo
 
 // ProcessStreamingResponse processes a streaming response
 // It handles chat, audio, and responses streaming responses
-func (a *Accumulator) ProcessStreamingResponse(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*ProcessedStreamResponse, error) {
+func (a *Accumulator) ProcessStreamingResponse(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*ProcessedStreamResponse, error) {
 	// Check if at least one of result or error is provided
-	if result == nil && rakshaErr == nil {
+	if result == nil && gatewayErr == nil {
 		return nil, fmt.Errorf("result and error are nil")
 	}
 
 	var requestType schemas.RequestType
 	if result != nil {
 		requestType = result.GetExtraFields().RequestType
-	} else if rakshaErr != nil {
-		requestType = rakshaErr.ExtraFields.RequestType
+	} else if gatewayErr != nil {
+		requestType = gatewayErr.ExtraFields.RequestType
 	}
 
 	isAudioStreaming := requestType == schemas.SpeechStreamRequest || requestType == schemas.TranscriptionStreamRequest
@@ -456,24 +456,24 @@ func (a *Accumulator) ProcessStreamingResponse(ctx *schemas.RakshaContext, resul
 
 	if isChatStreaming {
 		// Handle text-based streaming with ordered accumulation
-		return a.processChatStreamingResponse(ctx, result, rakshaErr)
+		return a.processChatStreamingResponse(ctx, result, gatewayErr)
 	} else if isAudioStreaming {
 		// Handle speech/transcription streaming with original flow
 		if requestType == schemas.TranscriptionStreamRequest {
-			return a.processTranscriptionStreamingResponse(ctx, result, rakshaErr)
+			return a.processTranscriptionStreamingResponse(ctx, result, gatewayErr)
 		}
 		if requestType == schemas.SpeechStreamRequest {
-			return a.processAudioStreamingResponse(ctx, result, rakshaErr)
+			return a.processAudioStreamingResponse(ctx, result, gatewayErr)
 		}
 	} else if isResponsesStreaming {
 		// Handle responses streaming with responses accumulation
-		return a.processResponsesStreamingResponse(ctx, result, rakshaErr)
+		return a.processResponsesStreamingResponse(ctx, result, gatewayErr)
 	} else if isImageStreaming {
 		// Handle image streaming
-		return a.processImageStreamingResponse(ctx, result, rakshaErr)
+		return a.processImageStreamingResponse(ctx, result, gatewayErr)
 	} else if isPassthroughStreaming {
 		// Handle passthrough streaming with raw body accumulation
-		return a.processPassthroughStreamingResponse(ctx, result, rakshaErr)
+		return a.processPassthroughStreamingResponse(ctx, result, gatewayErr)
 	}
 	return nil, fmt.Errorf("request type missing/invalid for accumulator: %s", requestType)
 }

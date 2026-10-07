@@ -4,10 +4,10 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-func cloneRakshaReq(req *schemas.RakshaRequest) *schemas.RakshaRequest {
+func cloneGatewayReq(req *schemas.GatewayRequest) *schemas.GatewayRequest {
 	if req == nil {
 		return nil
 	}

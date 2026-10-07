@@ -3,34 +3,34 @@ package runware
 import (
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-// parseRunwareError parses a Runware error HTTP response into a RakshaError.
+// parseRunwareError parses a Runware error HTTP response into a GatewayError.
 // Runware reports failures in a top-level "errors" array.
-func parseRunwareError(resp *fasthttp.Response) *schemas.RakshaError {
+func parseRunwareError(resp *fasthttp.Response) *schemas.GatewayError {
 	var errorResp RunwareResponse
-	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	gatewayErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
 
 	if msg := firstRunwareErrorMessage(errorResp.Errors); msg != "" {
-		if rakshaErr.Error == nil {
-			rakshaErr.Error = &schemas.ErrorField{}
+		if gatewayErr.Error == nil {
+			gatewayErr.Error = &schemas.ErrorField{}
 		}
-		rakshaErr.Error.Message = msg
-	} else if rakshaErr.Error == nil || rakshaErr.Error.Message == "" {
-		if rakshaErr.Error == nil {
-			rakshaErr.Error = &schemas.ErrorField{}
+		gatewayErr.Error.Message = msg
+	} else if gatewayErr.Error == nil || gatewayErr.Error.Message == "" {
+		if gatewayErr.Error == nil {
+			gatewayErr.Error = &schemas.ErrorField{}
 		}
-		rakshaErr.Error.Message = "Runware API request failed"
+		gatewayErr.Error.Message = "Runware API request failed"
 	}
 
-	if rakshaErr.Error != nil {
-		rakshaErr.Error.Message = strings.TrimRight(rakshaErr.Error.Message, "\n")
+	if gatewayErr.Error != nil {
+		gatewayErr.Error.Message = strings.TrimRight(gatewayErr.Error.Message, "\n")
 	}
 
-	return rakshaErr
+	return gatewayErr
 }
 
 // firstRunwareErrorMessage returns a human-readable message from the first error, if any.

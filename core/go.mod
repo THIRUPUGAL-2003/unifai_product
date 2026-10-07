@@ -1,4 +1,4 @@
-module github.com/raksha/raksha/core
+module github.com/gateway/gateway/core
 
 go 1.26.4
 

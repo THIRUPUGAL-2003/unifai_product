@@ -11,8 +11,8 @@ const (
 	ImageEditEventTypeError           ImageEventType = "error"
 )
 
-// RakshaImageGenerationRequest represents an image generation request in raksha format
-type RakshaImageGenerationRequest struct {
+// GatewayImageGenerationRequest represents an image generation request in gateway format
+type GatewayImageGenerationRequest struct {
 	Provider       ModelProvider              `json:"provider"`
 	Model          string                     `json:"model"`
 	Input          *ImageGenerationInput      `json:"input"`
@@ -22,7 +22,7 @@ type RakshaImageGenerationRequest struct {
 }
 
 // GetRawRequestBody implements utils.RequestBodyGetter.
-func (b *RakshaImageGenerationRequest) GetRawRequestBody() []byte {
+func (b *GatewayImageGenerationRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
@@ -50,8 +50,8 @@ type ImageGenerationParameters struct {
 	ExtraParams       map[string]interface{} `json:"-"`
 }
 
-// RakshaImageGenerationResponse represents the image generation response in raksha format
-type RakshaImageGenerationResponse struct {
+// GatewayImageGenerationResponse represents the image generation response in gateway format
+type GatewayImageGenerationResponse struct {
 	ID      string      `json:"id,omitempty"`
 	Created int64       `json:"created,omitempty"`
 	Model   string      `json:"model,omitempty"`
@@ -60,7 +60,7 @@ type RakshaImageGenerationResponse struct {
 	*ImageGenerationResponseParameters
 
 	Usage       *ImageUsage                `json:"usage,omitempty"`
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
 // BackfillParams populates response fields from the original request that are needed
@@ -69,7 +69,7 @@ type RakshaImageGenerationResponse struct {
 // - Size on ImageGenerationResponseParameters (from request params if not in response)
 // - Quality (low, medium, high, auto) only
 // - AspectRatio on ImageGenerationResponseParameters (from request params if not in response)
-func (r *RakshaImageGenerationResponse) BackfillParams(req *RakshaRequest) {
+func (r *GatewayImageGenerationResponse) BackfillParams(req *GatewayRequest) {
 	if r == nil || req == nil {
 		return
 	}
@@ -124,7 +124,7 @@ func (r *RakshaImageGenerationResponse) BackfillParams(req *RakshaRequest) {
 // getNumInputImagesSizeQualityAndAspectRatioFromRequest extracts request params for cost
 // calculation and logging. Quality is only returned when it is one of low, medium, high, auto.
 // AspectRatio is only carried by image generation requests.
-func getNumInputImagesSizeQualityAndAspectRatioFromRequest(req *RakshaRequest) (numInputImages int, size string, quality string, aspectRatio string) {
+func getNumInputImagesSizeQualityAndAspectRatioFromRequest(req *GatewayRequest) (numInputImages int, size string, quality string, aspectRatio string) {
 	if req == nil {
 		return 0, "", "", ""
 	}
@@ -202,11 +202,11 @@ type ImageUsage struct {
 	TotalTokens         int                `json:"total_tokens,omitempty"`
 	OutputTokens        int                `json:"output_tokens,omitempty"` // Always image tokens unless OutputTokensDetails is not nil
 	OutputTokensDetails *ImageTokenDetails `json:"output_tokens_details,omitempty"`
-	NumInputImages      int                `json:"-"` // Number of input images from the request (populated by Raksha)
+	NumInputImages      int                `json:"-"` // Number of input images from the request (populated by Gateway)
 }
 
 type ImageTokenDetails struct {
-	NImages     int `json:"-"` // Number of images generated (used internally for raksha)
+	NImages     int `json:"-"` // Number of images generated (used internally for gateway)
 	ImageTokens int `json:"image_tokens,omitempty"`
 	TextTokens  int `json:"text_tokens,omitempty"`
 }
@@ -231,7 +231,7 @@ func (u *ImageUsage) DeepCopy() *ImageUsage {
 }
 
 // Streaming Response
-type RakshaImageGenerationStreamResponse struct {
+type GatewayImageGenerationStreamResponse struct {
 	ID                string                     `json:"id,omitempty"`
 	Type              ImageEventType             `json:"type,omitempty"`
 	Index             int                        `json:"-"` // Which image (0-N)
@@ -248,10 +248,10 @@ type RakshaImageGenerationStreamResponse struct {
 	OutputFormat      string                     `json:"output_format,omitempty"`
 	RevisedPrompt     string                     `json:"revised_prompt,omitempty"`
 	Usage             *ImageUsage                `json:"usage,omitempty"`
-	Error             *RakshaError              `json:"error,omitempty"`
+	Error             *GatewayError              `json:"error,omitempty"`
 	RawRequest        string                     `json:"-"`
 	RawResponse       string                     `json:"-"`
-	ExtraFields       RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields       GatewayResponseExtraFields `json:"extra_fields"`
 }
 
 // BackfillParams populates response fields from the original request that are needed
@@ -260,7 +260,7 @@ type RakshaImageGenerationStreamResponse struct {
 // - Size on ImageGenerationResponseParameters (from request params if not in response)
 // - Quality (low, medium, high, auto) only
 // - AspectRatio on ImageGenerationResponseParameters (from request params if not in response)
-func (r *RakshaImageGenerationStreamResponse) BackfillParams(req *RakshaRequest) {
+func (r *GatewayImageGenerationStreamResponse) BackfillParams(req *GatewayRequest) {
 	numInputImages, size, quality, aspectRatio := getNumInputImagesSizeQualityAndAspectRatioFromRequest(req)
 
 	// Backfill NumInputImages
@@ -287,8 +287,8 @@ func (r *RakshaImageGenerationStreamResponse) BackfillParams(req *RakshaRequest)
 	}
 }
 
-// RakshaImageEditRequest represents an image edit request in raksha format
-type RakshaImageEditRequest struct {
+// GatewayImageEditRequest represents an image edit request in gateway format
+type GatewayImageEditRequest struct {
 	Provider       ModelProvider        `json:"provider"`
 	Model          string               `json:"model"`
 	Input          *ImageEditInput      `json:"input"`
@@ -298,7 +298,7 @@ type RakshaImageEditRequest struct {
 }
 
 // GetRawRequestBody implements [utils.RequestBodyGetter].
-func (b *RakshaImageEditRequest) GetRawRequestBody() []byte {
+func (b *GatewayImageEditRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
@@ -330,8 +330,8 @@ type ImageEditParameters struct {
 	ExtraParams       map[string]interface{} `json:"-"`
 }
 
-// RakshaImageVariationRequest represents an image variation request in raksha format
-type RakshaImageVariationRequest struct {
+// GatewayImageVariationRequest represents an image variation request in gateway format
+type GatewayImageVariationRequest struct {
 	Provider       ModelProvider             `json:"provider"`
 	Model          string                    `json:"model"`
 	Input          *ImageVariationInput      `json:"input"`
@@ -341,7 +341,7 @@ type RakshaImageVariationRequest struct {
 }
 
 // GetRawRequestBody implements [utils.RequestBodyGetter].
-func (b *RakshaImageVariationRequest) GetRawRequestBody() []byte {
+func (b *GatewayImageVariationRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
@@ -357,6 +357,6 @@ type ImageVariationParameters struct {
 	ExtraParams    map[string]interface{} `json:"-"`
 }
 
-// RakshaImageVariationResponse represents the image variation response in raksha format
+// GatewayImageVariationResponse represents the image variation response in gateway format
 // It uses the same structure as image generation response
-type RakshaImageVariationResponse = RakshaImageGenerationResponse
+type GatewayImageVariationResponse = GatewayImageGenerationResponse

@@ -3,46 +3,46 @@ package openai
 import (
 	"strings"
 
-	"github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaChatRequest converts an OpenAI chat request to Raksha format
-func (req *OpenAIChatRequest) ToRakshaChatRequest(ctx *schemas.RakshaContext) *schemas.RakshaChatRequest {
+// ToGatewayChatRequest converts an OpenAI chat request to Gateway format
+func (req *OpenAIChatRequest) ToGatewayChatRequest(ctx *schemas.GatewayContext) *schemas.GatewayChatRequest {
 	provider, model := schemas.ParseModelString(req.Model, "")
 
-	return &schemas.RakshaChatRequest{
+	return &schemas.GatewayChatRequest{
 		Provider:  provider,
 		Model:     model,
-		Input:     ConvertOpenAIMessagesToRakshaMessages(req.Messages),
+		Input:     ConvertOpenAIMessagesToGatewayMessages(req.Messages),
 		Params:    &req.ChatParameters,
 		Fallbacks: schemas.ParseFallbacks(req.Fallbacks),
 	}
 }
 
-// ToOpenAIChatRequest converts a Raksha chat completion request to OpenAI format
-func ToOpenAIChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest) *OpenAIChatRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil {
+// ToOpenAIChatRequest converts a Gateway chat completion request to OpenAI format
+func ToOpenAIChatRequest(ctx *schemas.GatewayContext, gatewayReq *schemas.GatewayChatRequest) *OpenAIChatRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil {
 		return nil
 	}
 
 	openaiReq := &OpenAIChatRequest{
-		Model:    rakshaReq.Model,
-		Messages: ConvertRakshaMessagesToOpenAIMessages(rakshaReq.Input),
-		Provider: rakshaReq.Provider,
+		Model:    gatewayReq.Model,
+		Messages: ConvertGatewayMessagesToOpenAIMessages(gatewayReq.Input),
+		Provider: gatewayReq.Provider,
 	}
 
 	// Canonical model for capability gating only; wire model (openaiReq.Model) is untouched.
-	capModel := schemas.ResolveCanonicalModel(ctx, rakshaReq.Model)
+	capModel := schemas.ResolveCanonicalModel(ctx, gatewayReq.Model)
 
-	if rakshaReq.Params != nil {
-		openaiReq.ChatParameters = *rakshaReq.Params
+	if gatewayReq.Params != nil {
+		openaiReq.ChatParameters = *gatewayReq.Params
 		if openaiReq.ChatParameters.MaxCompletionTokens != nil && *openaiReq.ChatParameters.MaxCompletionTokens < MinMaxCompletionTokens {
 			openaiReq.ChatParameters.MaxCompletionTokens = schemas.Ptr(MinMaxCompletionTokens)
 		}
 		// Drop user field if it exceeds OpenAI's 64 character limit
 		openaiReq.ChatParameters.User = SanitizeUserField(openaiReq.ChatParameters.User)
-		openaiReq.ExtraParams = rakshaReq.Params.ExtraParams
+		openaiReq.ExtraParams = gatewayReq.Params.ExtraParams
 
 		// Normalize tool parameters for deterministic JSON serialization (improves prompt caching)
 		if len(openaiReq.ChatParameters.Tools) > 0 {
@@ -59,7 +59,7 @@ func ToOpenAIChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaCh
 		}
 	}
 
-	switch rakshaReq.Provider {
+	switch gatewayReq.Provider {
 	case schemas.OpenAI, schemas.Azure:
 		openaiReq.normalizeReasoningEffort(capModel)
 		return openaiReq
@@ -84,7 +84,7 @@ func ToOpenAIChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaCh
 		openaiReq.filterOpenAISpecificParameters(capModel)
 
 		// Apply Mistral-specific transformations for Vertex Mistral models
-		if schemas.IsMistralModel(rakshaReq.Model) {
+		if schemas.IsMistralModel(gatewayReq.Model) {
 			openaiReq.applyMistralCompatibility()
 		} else if openaiReq.Reasoning != nil && openaiReq.Reasoning.Effort != nil &&
 			*openaiReq.Reasoning.Effort == "none" {
@@ -109,7 +109,7 @@ func ToOpenAIChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaCh
 		return openaiReq
 	default:
 		// Check if provider is a custom provider
-		if isCustomProvider, ok := ctx.Value(schemas.RakshaContextKeyIsCustomProvider).(bool); ok && isCustomProvider {
+		if isCustomProvider, ok := ctx.Value(schemas.GatewayContextKeyIsCustomProvider).(bool); ok && isCustomProvider {
 			return openaiReq
 		}
 		openaiReq.filterOpenAISpecificParameters(capModel)

@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	nebiusProvider "github.com/raksha/raksha/core/providers/nebius"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	nebiusProvider "github.com/gateway/gateway/core/providers/nebius"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // Models that support multiple images (image_urls)
@@ -25,13 +25,13 @@ var falAISingleImageEditModels = map[string]bool{
 	"fal-ai/flux/dev/image-to-image": true,
 }
 
-// ToHuggingFaceImageGenerationRequest converts a Raksha image generation request to provider-specific format
-func ToHuggingFaceImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) (providerUtils.RequestBodyWithExtraParams, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil {
-		return nil, fmt.Errorf("raksha request is nil or input is nil")
+// ToHuggingFaceImageGenerationRequest converts a Gateway image generation request to provider-specific format
+func ToHuggingFaceImageGenerationRequest(gatewayReq *schemas.GatewayImageGenerationRequest) (providerUtils.RequestBodyWithExtraParams, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil {
+		return nil, fmt.Errorf("gateway request is nil or input is nil")
 	}
 
-	inferenceProvider, model, nameErr := splitIntoModelProvider(rakshaReq.Model)
+	inferenceProvider, model, nameErr := splitIntoModelProvider(gatewayReq.Model)
 	if nameErr != nil {
 		return nil, nameErr
 	}
@@ -40,35 +40,35 @@ func ToHuggingFaceImageGenerationRequest(rakshaReq *schemas.RakshaImageGeneratio
 	case nebius:
 		req := &nebiusProvider.NebiusImageGenerationRequest{
 			Model:  &model,
-			Prompt: &rakshaReq.Input.Prompt,
+			Prompt: &gatewayReq.Input.Prompt,
 		}
 
-		if rakshaReq.Params != nil {
-			if rakshaReq.Params.ResponseFormat != nil {
-				req.ResponseFormat = rakshaReq.Params.ResponseFormat
+		if gatewayReq.Params != nil {
+			if gatewayReq.Params.ResponseFormat != nil {
+				req.ResponseFormat = gatewayReq.Params.ResponseFormat
 			}
 
-			if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
-				size := strings.Split(strings.ToLower(*rakshaReq.Params.Size), "x")
+			if gatewayReq.Params.Size != nil && strings.ToLower(*gatewayReq.Params.Size) != "auto" {
+				size := strings.Split(strings.ToLower(*gatewayReq.Params.Size), "x")
 				if len(size) != 2 {
-					return nil, fmt.Errorf("invalid size format: expected 'WIDTHxHEIGHT', got %q", *rakshaReq.Params.Size)
+					return nil, fmt.Errorf("invalid size format: expected 'WIDTHxHEIGHT', got %q", *gatewayReq.Params.Size)
 				}
 
 				width, err := strconv.Atoi(size[0])
 				if err != nil {
-					return nil, fmt.Errorf("invalid width in size %q: %w", *rakshaReq.Params.Size, err)
+					return nil, fmt.Errorf("invalid width in size %q: %w", *gatewayReq.Params.Size, err)
 				}
 
 				height, err := strconv.Atoi(size[1])
 				if err != nil {
-					return nil, fmt.Errorf("invalid height in size %q: %w", *rakshaReq.Params.Size, err)
+					return nil, fmt.Errorf("invalid height in size %q: %w", *gatewayReq.Params.Size, err)
 				}
 
 				req.Width = &width
 				req.Height = &height
 			}
-			if rakshaReq.Params.OutputFormat != nil {
-				req.ResponseExtension = rakshaReq.Params.OutputFormat
+			if gatewayReq.Params.OutputFormat != nil {
+				req.ResponseExtension = gatewayReq.Params.OutputFormat
 			}
 
 			// Handle nebius inconsistency - normalize ResponseExtension case-insensitively
@@ -77,32 +77,32 @@ func ToHuggingFaceImageGenerationRequest(rakshaReq *schemas.RakshaImageGeneratio
 			}
 
 			// Map seed from direct field
-			if rakshaReq.Params.Seed != nil {
-				req.Seed = rakshaReq.Params.Seed
+			if gatewayReq.Params.Seed != nil {
+				req.Seed = gatewayReq.Params.Seed
 			}
 
 			// Map negative_prompt from direct field
-			if rakshaReq.Params.NegativePrompt != nil {
-				req.NegativePrompt = rakshaReq.Params.NegativePrompt
+			if gatewayReq.Params.NegativePrompt != nil {
+				req.NegativePrompt = gatewayReq.Params.NegativePrompt
 			}
 
 			// Handle extra params for nebius
-			if rakshaReq.Params.ExtraParams != nil {
-				req.ExtraParams = rakshaReq.Params.ExtraParams
+			if gatewayReq.Params.ExtraParams != nil {
+				req.ExtraParams = gatewayReq.Params.ExtraParams
 				// Map num_inference_steps
-				if v, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["num_inference_steps"]); ok {
+				if v, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["num_inference_steps"]); ok {
 					delete(req.ExtraParams, "num_inference_steps")
 					req.NumInferenceSteps = v
 				}
 
 				// Map guidance_scale
-				if v, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["guidance_scale"]); ok {
+				if v, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["guidance_scale"]); ok {
 					delete(req.ExtraParams, "guidance_scale")
 					req.GuidanceScale = v
 				}
 
 				// Map loras
-				if lorasValue, exists := rakshaReq.Params.ExtraParams["loras"]; exists && lorasValue != nil {
+				if lorasValue, exists := gatewayReq.Params.ExtraParams["loras"]; exists && lorasValue != nil {
 					delete(req.ExtraParams, "loras")
 					if lorasArray, ok := lorasValue.([]interface{}); ok {
 						for _, item := range lorasArray {
@@ -122,41 +122,41 @@ func ToHuggingFaceImageGenerationRequest(rakshaReq *schemas.RakshaImageGeneratio
 
 	case hfInference:
 		req := &HuggingFaceHFInferenceImageGenerationRequest{
-			Inputs: rakshaReq.Input.Prompt,
+			Inputs: gatewayReq.Input.Prompt,
 		}
-		if rakshaReq.Params != nil {
-			req.ExtraParams = rakshaReq.Params.ExtraParams
+		if gatewayReq.Params != nil {
+			req.ExtraParams = gatewayReq.Params.ExtraParams
 		}
 		return req, nil
 
 	case falAI:
 		req := &HuggingFaceFalAIImageGenerationRequest{
-			Prompt: rakshaReq.Input.Prompt,
+			Prompt: gatewayReq.Input.Prompt,
 		}
 
-		if rakshaReq.Params != nil {
+		if gatewayReq.Params != nil {
 			// Map n to num_images for fal-ai
-			if rakshaReq.Params.N != nil {
-				req.NumImages = rakshaReq.Params.N
+			if gatewayReq.Params.N != nil {
+				req.NumImages = gatewayReq.Params.N
 			}
 
 			// Pass through response_format
-			if rakshaReq.Params.ResponseFormat != nil {
-				req.ResponseFormat = rakshaReq.Params.ResponseFormat
+			if gatewayReq.Params.ResponseFormat != nil {
+				req.ResponseFormat = gatewayReq.Params.ResponseFormat
 			}
 
 			// Pass through output_format
-			if rakshaReq.Params.OutputFormat != nil {
-				if strings.ToLower(*rakshaReq.Params.OutputFormat) == "jpg" {
+			if gatewayReq.Params.OutputFormat != nil {
+				if strings.ToLower(*gatewayReq.Params.OutputFormat) == "jpg" {
 					req.OutputFormat = schemas.Ptr("jpeg")
 				} else {
-					req.OutputFormat = rakshaReq.Params.OutputFormat
+					req.OutputFormat = gatewayReq.Params.OutputFormat
 				}
 			}
 
 			// Convert size from "WxH" format to fal-ai's image_size object
-			if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
-				size := strings.Split(*rakshaReq.Params.Size, "x")
+			if gatewayReq.Params.Size != nil && strings.ToLower(*gatewayReq.Params.Size) != "auto" {
+				size := strings.Split(*gatewayReq.Params.Size, "x")
 				if len(size) == 2 {
 					width, err := strconv.Atoi(size[0])
 					if err == nil {
@@ -171,52 +171,52 @@ func ToHuggingFaceImageGenerationRequest(rakshaReq *schemas.RakshaImageGeneratio
 				}
 			}
 
-			if rakshaReq.Params.ResponseFormat != nil && *rakshaReq.Params.ResponseFormat == "b64_json" {
+			if gatewayReq.Params.ResponseFormat != nil && *gatewayReq.Params.ResponseFormat == "b64_json" {
 				req.SyncMode = schemas.Ptr(true)
 			}
 
-			if rakshaReq.Params.Moderation != nil && *rakshaReq.Params.Moderation == "low" {
+			if gatewayReq.Params.Moderation != nil && *gatewayReq.Params.Moderation == "low" {
 				req.EnableSafetyChecker = schemas.Ptr(false)
 			}
 
 			// Map seed from direct field
-			if rakshaReq.Params.Seed != nil {
-				req.Seed = rakshaReq.Params.Seed
+			if gatewayReq.Params.Seed != nil {
+				req.Seed = gatewayReq.Params.Seed
 			}
 
 			// Map negative_prompt from direct field
-			if rakshaReq.Params.NegativePrompt != nil {
-				req.NegativePrompt = rakshaReq.Params.NegativePrompt
+			if gatewayReq.Params.NegativePrompt != nil {
+				req.NegativePrompt = gatewayReq.Params.NegativePrompt
 			}
 
 			// Map num_inference_steps from direct field
-			if rakshaReq.Params.NumInferenceSteps != nil {
-				req.NumInferenceSteps = rakshaReq.Params.NumInferenceSteps
+			if gatewayReq.Params.NumInferenceSteps != nil {
+				req.NumInferenceSteps = gatewayReq.Params.NumInferenceSteps
 			}
 
 			// Parse fal-ai specific params from ExtraParams
-			if rakshaReq.Params.ExtraParams != nil {
-				req.ExtraParams = rakshaReq.Params.ExtraParams
+			if gatewayReq.Params.ExtraParams != nil {
+				req.ExtraParams = gatewayReq.Params.ExtraParams
 				// Map guidance_scale
-				if v, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["guidance_scale"]); ok {
+				if v, ok := schemas.SafeExtractFloat64Pointer(gatewayReq.Params.ExtraParams["guidance_scale"]); ok {
 					delete(req.ExtraParams, "guidance_scale")
 					req.GuidanceScale = v
 				}
 
 				// Map acceleration
-				if v, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["acceleration"]); ok {
+				if v, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["acceleration"]); ok {
 					delete(req.ExtraParams, "acceleration")
 					req.Acceleration = v
 				}
 
 				// Map enable_prompt_expansion
-				if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_prompt_expansion"]); ok {
+				if v, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["enable_prompt_expansion"]); ok {
 					delete(req.ExtraParams, "enable_prompt_expansion")
 					req.EnablePromptExpansion = v
 				}
 
 				// Map enable_safety_checker
-				if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_safety_checker"]); ok {
+				if v, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["enable_safety_checker"]); ok {
 					delete(req.ExtraParams, "enable_safety_checker")
 					req.EnableSafetyChecker = v
 				}
@@ -226,28 +226,28 @@ func ToHuggingFaceImageGenerationRequest(rakshaReq *schemas.RakshaImageGeneratio
 
 	case together:
 		req := &HuggingFaceTogetherImageGenerationRequest{
-			Prompt: rakshaReq.Input.Prompt,
+			Prompt: gatewayReq.Input.Prompt,
 			Model:  model,
 		}
 
-		if rakshaReq.Params != nil {
-			req.ExtraParams = rakshaReq.Params.ExtraParams
-			if rakshaReq.Params.ResponseFormat != nil {
-				req.ResponseFormat = rakshaReq.Params.ResponseFormat
+		if gatewayReq.Params != nil {
+			req.ExtraParams = gatewayReq.Params.ExtraParams
+			if gatewayReq.Params.ResponseFormat != nil {
+				req.ResponseFormat = gatewayReq.Params.ResponseFormat
 			}
 
-			if rakshaReq.Params.Size != nil {
-				req.Size = rakshaReq.Params.Size
+			if gatewayReq.Params.Size != nil {
+				req.Size = gatewayReq.Params.Size
 			}
 
-			if rakshaReq.Params.N != nil {
-				req.N = rakshaReq.Params.N
+			if gatewayReq.Params.N != nil {
+				req.N = gatewayReq.Params.N
 			}
-			if rakshaReq.Params.ResponseFormat != nil && *rakshaReq.Params.ResponseFormat == "b64_json" {
+			if gatewayReq.Params.ResponseFormat != nil && *gatewayReq.Params.ResponseFormat == "b64_json" {
 				req.ResponseFormat = schemas.Ptr("base64")
 			}
-			if rakshaReq.Params.NumInferenceSteps != nil {
-				req.Steps = rakshaReq.Params.NumInferenceSteps
+			if gatewayReq.Params.NumInferenceSteps != nil {
+				req.Steps = gatewayReq.Params.NumInferenceSteps
 			}
 		}
 		return req, nil
@@ -257,41 +257,41 @@ func ToHuggingFaceImageGenerationRequest(rakshaReq *schemas.RakshaImageGeneratio
 	}
 }
 
-// ToHuggingFaceImageStreamRequest converts a Raksha image generation request to fal-ai streaming format
-func ToHuggingFaceImageStreamRequest(rakshaReq *schemas.RakshaImageGenerationRequest) (*HuggingFaceFalAIImageStreamRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil {
-		return nil, fmt.Errorf("raksha request is nil or input is nil")
+// ToHuggingFaceImageStreamRequest converts a Gateway image generation request to fal-ai streaming format
+func ToHuggingFaceImageStreamRequest(gatewayReq *schemas.GatewayImageGenerationRequest) (*HuggingFaceFalAIImageStreamRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil {
+		return nil, fmt.Errorf("gateway request is nil or input is nil")
 	}
 
 	req := &HuggingFaceFalAIImageStreamRequest{
-		Prompt: rakshaReq.Input.Prompt,
+		Prompt: gatewayReq.Input.Prompt,
 	}
 
-	if rakshaReq.Params != nil {
-		req.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		req.ExtraParams = gatewayReq.Params.ExtraParams
 		// Map n to num_images for fal-ai
-		if rakshaReq.Params.N != nil {
-			req.NumImages = rakshaReq.Params.N
+		if gatewayReq.Params.N != nil {
+			req.NumImages = gatewayReq.Params.N
 		}
 
 		// Pass through response_format
-		if rakshaReq.Params.ResponseFormat != nil {
-			req.ResponseFormat = rakshaReq.Params.ResponseFormat
+		if gatewayReq.Params.ResponseFormat != nil {
+			req.ResponseFormat = gatewayReq.Params.ResponseFormat
 		}
 
 		// Pass through output_format
 		// Convert "jpg" to "jpeg" for fal-ai (fal-ai only accepts "jpeg", "png", "webp")
-		if rakshaReq.Params.OutputFormat != nil {
-			if strings.ToLower(*rakshaReq.Params.OutputFormat) == "jpg" {
+		if gatewayReq.Params.OutputFormat != nil {
+			if strings.ToLower(*gatewayReq.Params.OutputFormat) == "jpg" {
 				req.OutputFormat = schemas.Ptr("jpeg")
 			} else {
-				req.OutputFormat = rakshaReq.Params.OutputFormat
+				req.OutputFormat = gatewayReq.Params.OutputFormat
 			}
 		}
 
 		// Convert size from "WxH" format to fal-ai's image_size object
-		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
-			size := strings.Split(*rakshaReq.Params.Size, "x")
+		if gatewayReq.Params.Size != nil && strings.ToLower(*gatewayReq.Params.Size) != "auto" {
+			size := strings.Split(*gatewayReq.Params.Size, "x")
 			if len(size) == 2 {
 				width, err := strconv.Atoi(size[0])
 				if err == nil {
@@ -305,34 +305,34 @@ func ToHuggingFaceImageStreamRequest(rakshaReq *schemas.RakshaImageGenerationReq
 				}
 			}
 		}
-		if rakshaReq.Params.Seed != nil {
-			req.Seed = rakshaReq.Params.Seed
+		if gatewayReq.Params.Seed != nil {
+			req.Seed = gatewayReq.Params.Seed
 		}
-		if rakshaReq.Params.NumInferenceSteps != nil {
-			req.NumInferenceSteps = rakshaReq.Params.NumInferenceSteps
+		if gatewayReq.Params.NumInferenceSteps != nil {
+			req.NumInferenceSteps = gatewayReq.Params.NumInferenceSteps
 		}
-		if rakshaReq.Params.ResponseFormat != nil && *rakshaReq.Params.ResponseFormat == "b64_json" {
+		if gatewayReq.Params.ResponseFormat != nil && *gatewayReq.Params.ResponseFormat == "b64_json" {
 			req.SyncMode = schemas.Ptr(true)
 		}
-		if rakshaReq.Params.Moderation != nil && *rakshaReq.Params.Moderation == "low" {
+		if gatewayReq.Params.Moderation != nil && *gatewayReq.Params.Moderation == "low" {
 			req.EnableSafetyChecker = schemas.Ptr(false)
 		}
 
 		// Parse fal-ai specific params from ExtraParams
-		if rakshaReq.Params.ExtraParams != nil {
-			if v, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["guidance_scale"]); ok {
+		if gatewayReq.Params.ExtraParams != nil {
+			if v, ok := schemas.SafeExtractFloat64Pointer(gatewayReq.Params.ExtraParams["guidance_scale"]); ok {
 				delete(req.ExtraParams, "guidance_scale")
 				req.GuidanceScale = v
 			}
-			if v, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["acceleration"]); ok {
+			if v, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["acceleration"]); ok {
 				delete(req.ExtraParams, "acceleration")
 				req.Acceleration = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_prompt_expansion"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["enable_prompt_expansion"]); ok {
 				delete(req.ExtraParams, "enable_prompt_expansion")
 				req.EnablePromptExpansion = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_safety_checker"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["enable_safety_checker"]); ok {
 				delete(req.ExtraParams, "enable_safety_checker")
 				req.EnableSafetyChecker = v
 			}
@@ -342,8 +342,8 @@ func ToHuggingFaceImageStreamRequest(rakshaReq *schemas.RakshaImageGenerationReq
 	return req, nil
 }
 
-// UnmarshalHuggingFaceImageGenerationResponse unmarshals HuggingFace image generation response to Raksha format
-func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*schemas.RakshaImageGenerationResponse, error) {
+// UnmarshalHuggingFaceImageGenerationResponse unmarshals HuggingFace image generation response to Gateway format
+func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*schemas.GatewayImageGenerationResponse, error) {
 	if data == nil {
 		return nil, fmt.Errorf("response data is nil")
 	}
@@ -360,23 +360,23 @@ func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*sc
 			return nil, fmt.Errorf("failed to unmarshal Nebius response: %w", err)
 		}
 
-		// Convert to Raksha format using Nebius converter
-		rakshaResponse := nebiusProvider.ToRakshaImageResponse(&nebiusResponse)
-		if rakshaResponse == nil {
-			return nil, fmt.Errorf("failed to convert Nebius response to Raksha format")
+		// Convert to Gateway format using Nebius converter
+		gatewayResponse := nebiusProvider.ToGatewayImageResponse(&nebiusResponse)
+		if gatewayResponse == nil {
+			return nil, fmt.Errorf("failed to convert Nebius response to Gateway format")
 		}
 
 		// Set model field (Nebius converter doesn't set it, similar to embeddings pattern)
-		if rakshaResponse.Model == "" {
-			rakshaResponse.Model = model
+		if gatewayResponse.Model == "" {
+			gatewayResponse.Model = model
 		}
 
-		return rakshaResponse, nil
+		return gatewayResponse, nil
 
 	case hfInference:
 		// Handle raw byte data - encode to base64
 		b64Data := base64.StdEncoding.EncodeToString(data)
-		return &schemas.RakshaImageGenerationResponse{
+		return &schemas.GatewayImageGenerationResponse{
 			Model: model,
 			Data: []schemas.ImageData{
 				{
@@ -403,7 +403,7 @@ func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*sc
 			}
 		}
 
-		return &schemas.RakshaImageGenerationResponse{
+		return &schemas.GatewayImageGenerationResponse{
 			Model: model,
 			Data:  imageData,
 		}, nil
@@ -424,7 +424,7 @@ func UnmarshalHuggingFaceImageGenerationResponse(data []byte, model string) (*sc
 			}
 		}
 
-		return &schemas.RakshaImageGenerationResponse{
+		return &schemas.GatewayImageGenerationResponse{
 			Model: model,
 			Data:  imageData,
 		}, nil
@@ -441,33 +441,33 @@ func imageBytesToBase64DataURL(imageBytes []byte) string {
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, b64Data)
 }
 
-// mapFalAIImageEditParams maps common parameters from Raksha request to fal-ai request
-func mapFalAIImageEditParams(rakshaReq *schemas.RakshaImageEditRequest, req *HuggingFaceFalAIImageEditRequest) {
-	if rakshaReq.Params == nil {
+// mapFalAIImageEditParams maps common parameters from Gateway request to fal-ai request
+func mapFalAIImageEditParams(gatewayReq *schemas.GatewayImageEditRequest, req *HuggingFaceFalAIImageEditRequest) {
+	if gatewayReq.Params == nil {
 		return
 	}
 
 	// Map n to num_images for fal-ai
-	if rakshaReq.Params.N != nil {
-		req.NumImages = rakshaReq.Params.N
+	if gatewayReq.Params.N != nil {
+		req.NumImages = gatewayReq.Params.N
 	}
 
 	// Pass through output_format
-	if rakshaReq.Params.OutputFormat != nil {
-		if strings.ToLower(*rakshaReq.Params.OutputFormat) == "jpg" {
+	if gatewayReq.Params.OutputFormat != nil {
+		if strings.ToLower(*gatewayReq.Params.OutputFormat) == "jpg" {
 			req.OutputFormat = schemas.Ptr("jpeg")
 		} else {
-			req.OutputFormat = rakshaReq.Params.OutputFormat
+			req.OutputFormat = gatewayReq.Params.OutputFormat
 		}
 	}
 
-	if rakshaReq.Params.ResponseFormat != nil && *rakshaReq.Params.ResponseFormat == "b64_json" {
+	if gatewayReq.Params.ResponseFormat != nil && *gatewayReq.Params.ResponseFormat == "b64_json" {
 		req.SyncMode = schemas.Ptr(true)
 	}
 
 	// Convert size from "WxH" format to fal-ai's image_size object
-	if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
-		size := strings.Split(*rakshaReq.Params.Size, "x")
+	if gatewayReq.Params.Size != nil && strings.ToLower(*gatewayReq.Params.Size) != "auto" {
+		size := strings.Split(*gatewayReq.Params.Size, "x")
 		if len(size) == 2 {
 			width, err := strconv.Atoi(size[0])
 			if err == nil {
@@ -483,50 +483,50 @@ func mapFalAIImageEditParams(rakshaReq *schemas.RakshaImageEditRequest, req *Hug
 	}
 
 	// Pass-through num_inference_steps
-	if rakshaReq.Params.NumInferenceSteps != nil {
-		req.NumInferenceSteps = rakshaReq.Params.NumInferenceSteps
+	if gatewayReq.Params.NumInferenceSteps != nil {
+		req.NumInferenceSteps = gatewayReq.Params.NumInferenceSteps
 	}
 
 	// Pass-through seed
-	if rakshaReq.Params.Seed != nil {
-		req.Seed = rakshaReq.Params.Seed
+	if gatewayReq.Params.Seed != nil {
+		req.Seed = gatewayReq.Params.Seed
 	}
 
 	// Parse fal-ai specific params from ExtraParams
-	if rakshaReq.Params.ExtraParams != nil {
+	if gatewayReq.Params.ExtraParams != nil {
 		// Map guidance_scale
-		if v, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["guidance_scale"]); ok {
+		if v, ok := schemas.SafeExtractFloat64Pointer(gatewayReq.Params.ExtraParams["guidance_scale"]); ok {
 			delete(req.ExtraParams, "guidance_scale")
 			req.GuidanceScale = v
 		}
 
 		// Map acceleration
-		if v, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["acceleration"]); ok {
+		if v, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["acceleration"]); ok {
 			delete(req.ExtraParams, "acceleration")
 			req.Acceleration = v
 		}
 
 		// Map enable_safety_checker
-		if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_safety_checker"]); ok {
+		if v, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["enable_safety_checker"]); ok {
 			delete(req.ExtraParams, "enable_safety_checker")
 			req.EnableSafetyChecker = v
 		}
 	}
 }
 
-// ToHuggingFaceImageEditRequest converts a Raksha image edit request to fal-ai format
-func ToHuggingFaceImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*HuggingFaceFalAIImageEditRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil {
-		return nil, fmt.Errorf("raksha request is nil or input is nil")
+// ToHuggingFaceImageEditRequest converts a Gateway image edit request to fal-ai format
+func ToHuggingFaceImageEditRequest(gatewayReq *schemas.GatewayImageEditRequest) (*HuggingFaceFalAIImageEditRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil {
+		return nil, fmt.Errorf("gateway request is nil or input is nil")
 	}
 
-	if len(rakshaReq.Input.Images) == 0 {
+	if len(gatewayReq.Input.Images) == 0 {
 		return nil, fmt.Errorf("at least one image is required")
 	}
 
 	// Convert images to base64 data URLs
-	imageURLs := make([]string, 0, len(rakshaReq.Input.Images))
-	for _, img := range rakshaReq.Input.Images {
+	imageURLs := make([]string, 0, len(gatewayReq.Input.Images))
+	for _, img := range gatewayReq.Input.Images {
 		if len(img.Image) == 0 {
 			continue
 		}
@@ -538,20 +538,20 @@ func ToHuggingFaceImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*
 	}
 
 	// Extract model name to determine image field strategy
-	_, modelName, err := splitIntoModelProvider(rakshaReq.Model)
+	_, modelName, err := splitIntoModelProvider(gatewayReq.Model)
 	if err != nil {
 		return nil, fmt.Errorf("failed to split model name: %w", err)
 	}
 
 	req := &HuggingFaceFalAIImageEditRequest{
-		Prompt: rakshaReq.Input.Prompt,
+		Prompt: gatewayReq.Input.Prompt,
 	}
 
 	// Check for explicit override in ExtraParams
 	var useMultiImage *bool
-	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
-		req.ExtraParams = rakshaReq.Params.ExtraParams
-		if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["use_image_urls"]); ok {
+	if gatewayReq.Params != nil && gatewayReq.Params.ExtraParams != nil {
+		req.ExtraParams = gatewayReq.Params.ExtraParams
+		if v, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["use_image_urls"]); ok {
 			delete(req.ExtraParams, "use_image_urls")
 			useMultiImage = v
 		}
@@ -587,7 +587,7 @@ func ToHuggingFaceImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*
 	}
 
 	// Map common parameters
-	mapFalAIImageEditParams(rakshaReq, req)
+	mapFalAIImageEditParams(gatewayReq, req)
 	return req, nil
 }
 

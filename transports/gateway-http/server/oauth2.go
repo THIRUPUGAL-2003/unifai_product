@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raksha/raksha/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore"
 )
 
 // oauth2SweepWorker periodically removes expired authorize requests and old

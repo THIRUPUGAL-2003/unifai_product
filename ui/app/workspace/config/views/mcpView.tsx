@@ -10,7 +10,7 @@ import { CoreConfig, DefaultCoreConfig } from "@/lib/types/config";
 import { SecretVar } from "@/lib/types/schemas";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useGetSCIMProvidersQuery } from "@enterprise/lib/store/apis/scimApi";
-import { IS_ENTERPRISE } from "@/lib/constants/config";
+import { IS_ENTERPRISE, PRODUCT_NAME } from "@/lib/constants/config";
 import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -22,8 +22,8 @@ export default function MCPView() {
 	// MCP Settings lives under MCP Gateway — gate save on MCPGateway Update
 	// (layout already requires the same), not Settings.
 	const hasSettingsUpdateAccess = useRbac(RbacResource.MCPGateway, RbacOperation.Update);
-	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const config = rakshaConfig?.client_config;
+	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const config = gatewayConfig?.client_config;
 
 	// The "require identity-provider login" toggle is enterprise-only and only
 	// meaningful when an identity provider is configured — the backend ignores
@@ -51,7 +51,7 @@ export default function MCPView() {
 	});
 
 	useEffect(() => {
-		if (rakshaConfig && config) {
+		if (gatewayConfig && config) {
 			setLocalConfig(config);
 			setLocalValues({
 				mcp_agent_depth: config?.mcp_agent_depth?.toString() || "10",
@@ -68,7 +68,7 @@ export default function MCPView() {
         ).toString(),
 			});
 		}
-	}, [config, rakshaConfig]);
+	}, [config, gatewayConfig]);
 
 	const hasChanges = useMemo(() => {
 		if (!config) return false;
@@ -247,7 +247,7 @@ export default function MCPView() {
         return;
       }
 
-			if (!rakshaConfig) {
+			if (!gatewayConfig) {
 				toast.error("Configuration not loaded. Please refresh and try again.");
 				return;
 			}
@@ -270,14 +270,14 @@ export default function MCPView() {
         : localConfig;
 
 			await updateCoreConfig({
-				...rakshaConfig,
+				...gatewayConfig,
 				client_config: clientConfigToSave,
 			}).unwrap();
 			toast.success("MCP settings updated successfully.");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
-	}, [rakshaConfig, localConfig, localValues, updateCoreConfig]);
+	}, [gatewayConfig, localConfig, localValues, updateCoreConfig]);
 
 	return (
 		<div className="mx-auto w-full max-w-7xl space-y-4" data-testid="mcp-settings-view">
@@ -371,7 +371,7 @@ export default function MCPView() {
 							Allow Temp Token Auth Links
 						</label>
 						<p className="text-muted-foreground text-sm">
-							When enabled, per-user MCP OAuth links can include a short-lived scoped token so someone without an active Raksha dashboard
+							When enabled, per-user MCP OAuth links can include a short-lived scoped token so someone without an active {PRODUCT_NAME} dashboard
 							session can complete the flow. Keep disabled to require normal dashboard authentication.
 						</p>
 					</div>
@@ -448,16 +448,16 @@ export default function MCPView() {
 								External Client URL
 							</label>
 							<p className="text-muted-foreground text-sm">
-								Override Raksha's public base URL when it runs behind a reverse proxy. <b>Leave blank to derive the URL</b> from the
-								incoming <code className="text-xs">Host</code> header. Used as the <code className="text-xs">redirect_uri</code> Raksha
+								Override {PRODUCT_NAME}&apos;s public base URL when it runs behind a reverse proxy. <b>Leave blank to derive the URL</b> from the
+								incoming <code className="text-xs">Host</code> header. Used as the <code className="text-xs">redirect_uri</code> {PRODUCT_NAME}
 								registers with upstream OAuth providers when it acts as a client to an MCP server (e.g. Notion or Jira redirect the browser
 								to <code className="text-xs">{"<URL>/api/oauth/callback"}</code> after login). Supports env var syntax (e.g.{" "}
-								<code className="text-xs">env.RAKSHA_EXTERNAL_URL</code>).
+								<code className="text-xs">env.GATEWAY_EXTERNAL_URL</code>; legacy <code className="text-xs">env.GATEWAY_EXTERNAL_URL</code>).
 							</p>
 							<SecretVarInput
 								id="external-client-url"
 								data-testid="mcp-external-client-url-input"
-								placeholder="https://raksha.example.com or env.RAKSHA_OAUTH_REDIRECT_URL"
+								placeholder="https://gateway.example.com or env.GATEWAY_OAUTH_REDIRECT_URL"
 								value={localConfig.mcp_external_client_url}
 								onChange={handleClientURLChange}
 								disabled={!hasSettingsUpdateAccess}
@@ -469,7 +469,7 @@ export default function MCPView() {
 									<p>
 										Upstream OAuth providers lock the <code className="text-xs">redirect_uri</code> to whatever was registered initially, so
 										MCP clients that already completed OAuth will fail with <em>&quot;Invalid redirect URI&quot;</em>. To recover, clear the
-										stored OAuth client credentials for the affected MCP servers and re-authorize so Raksha re-runs Dynamic Client
+										stored OAuth client credentials for the affected MCP servers and re-authorize so {PRODUCT_NAME} re-runs Dynamic Client
 										Registration with the new URL.
 									</p>
 								</AlertDescription>
@@ -488,7 +488,7 @@ export default function MCPView() {
                   endpoint.{" "}
                   <b>headers</b> (default) - VK / api-key / session headers
                   only, OAuth discovery disabled.{" "}
-                  <b>both</b> - accepts header credentials and Raksha-issued
+                  <b>both</b> - accepts header credentials and {PRODUCT_NAME}-issued
                   JWTs; existing integrations are unaffected.{" "}
                   <b>oauth</b> - JWTs only; VK and header access is disabled.
                 </p>
@@ -574,12 +574,12 @@ export default function MCPView() {
                       <code className="text-xs">Host</code> header (sufficient
                       for most deployments). Multi-host or reverse-proxy
                       deployments might need this. Supports env var syntax (e.g.{" "}
-                      <code className="text-xs">env.RAKSHA_ISSUER_URL</code>).
+                      <code className="text-xs">env.GATEWAY_ISSUER_URL</code>; legacy <code className="text-xs">env.GATEWAY_ISSUER_URL</code>).
                     </p>
                     <SecretVarInput
                       id="oauth2-issuer-url"
                       data-testid="oauth2-issuer-url-input"
-                      placeholder="https://raksha.example.com or env.RAKSHA_ISSUER_URL"
+                      placeholder="https://gateway.example.com or env.GATEWAY_ISSUER_URL"
                       value={localConfig.oauth2_server_config?.issuer_url}
                       onChange={handleIssuerURLChange}
                       disabled={!hasSettingsUpdateAccess}

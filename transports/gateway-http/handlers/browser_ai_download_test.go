@@ -20,19 +20,19 @@ func TestBuildNowWindowsPackageUsesFreshConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"Raksha_Guard_Setup.exe":   "MZ setup",
-		"Raksha_Guard.exe":         "MZ portable",
+		"Gateway_Guard_Setup.exe":   "MZ setup",
+		"Gateway_Guard.exe":         "MZ portable",
 		"VERSION.txt":              "1.1.16\n",
-		"raksha_guard_config.json": `{"backend_url":"https://old.example","proxy_addr":"127.0.0.1:1","listen_host":"127.0.0.1"}`,
+		"gateway_guard_config.json": `{"backend_url":"https://old.example","proxy_addr":"127.0.0.1:1","listen_host":"127.0.0.1"}`,
 	} {
 		if err := os.WriteFile(filepath.Join(rel, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 	t.Setenv("SERVER_DOMAIN", "https://new.example/")
-	t.Setenv("RAKSHA_PROXY_ADDR", "127.0.0.1:18103")
+	t.Setenv("GATEWAY_PROXY_ADDR", "127.0.0.1:18103")
 	t.Setenv("PAC_HTTP_PORT", "18195")
-	t.Setenv("RAKSHA_GUARD_SECRET", "s3cret")
+	t.Setenv("GATEWAY_GUARD_SECRET", "s3cret")
 
 	cfg, err := freshGuardConfig()
 	if err != nil {
@@ -54,7 +54,7 @@ func TestBuildNowWindowsPackageUsesFreshConfig(t *testing.T) {
 		rc.Close()
 		files[f.Name] = string(b)
 	}
-	for _, name := range []string{"Raksha_Guard_Setup.exe", "Raksha_Guard.exe", "VERSION.txt", guardConfigFileName} {
+	for _, name := range []string{"Gateway_Guard_Setup.exe", "Gateway_Guard.exe", "VERSION.txt", guardConfigFileName} {
 		if _, ok := files[name]; !ok {
 			t.Fatalf("missing %s in %v", name, files)
 		}
@@ -84,8 +84,8 @@ func TestBuildNowWindowsPackageUsesFreshConfig(t *testing.T) {
 
 func TestFindFirstExistingSkipsGitLFSPointer(t *testing.T) {
 	dir := t.TempDir()
-	pointer := filepath.Join(dir, "Raksha_Guard_Setup.exe")
-	real := filepath.Join(dir, "release", "Raksha_Guard_Setup.exe")
+	pointer := filepath.Join(dir, "Gateway_Guard_Setup.exe")
+	real := filepath.Join(dir, "release", "Gateway_Guard_Setup.exe")
 	_ = os.WriteFile(pointer, []byte("version https://git-lfs.github.com/spec/v1\noid sha256:abc\nsize 48176415\n"), 0o644)
 	if _, ok := findFirstExisting([]string{pointer}); ok {
 		t.Fatal("LFS pointer must not be served as the installer")
@@ -107,12 +107,12 @@ func TestGuardKeyAcceptsOlderBrandHeader(t *testing.T) {
 	if got := string(ctx.Response.Header.Peek("X-Acme-Guard-Version")); got != "1.1.16" {
 		t.Fatalf("older-brand version header = %q", got)
 	}
-	if got := string(ctx.Response.Header.Peek("X-Raksha-Guard-Version")); got != "1.1.16" {
+	if got := string(ctx.Response.Header.Peek("X-Gateway-Guard-Version")); got != "1.1.16" {
 		t.Fatalf("current version header = %q", got)
 	}
 
 	var cur fasthttp.RequestCtx
-	cur.Request.Header.Set("X-Raksha-Guard-Key", "k")
+	cur.Request.Header.Set("X-Gateway-Guard-Key", "k")
 	cur.Request.Header.Set("X-Other-Guard-Key", "ignored")
 	if got := extractGuardKey(&cur); got != "k" {
 		t.Fatalf("current header must win, got %q", got)
@@ -131,16 +131,16 @@ func TestWriteMacZipWithHelpersAddsUpdaterAndExecBits(t *testing.T) {
 	if err := os.MkdirAll("release", 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join("release", "Update_Raksha_Guard_macOS.command"), []byte("#!/bin/bash\r\necho update\r\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join("release", "Update_Gateway_Guard_macOS.command"), []byte("#!/bin/bash\r\necho update\r\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	src := filepath.Join(dir, "Raksha_Guard_macOS.zip")
+	src := filepath.Join(dir, "Gateway_Guard_macOS.zip")
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for name, body := range map[string]string{
-		"Install_Raksha_Guard.command":                 "#!/bin/bash\necho install\n",
-		"Raksha_Guard.app/Contents/MacOS/Raksha_Guard": "binary",
+		"Install_Gateway_Guard.command":                 "#!/bin/bash\necho install\n",
+		"Gateway_Guard.app/Contents/MacOS/Gateway_Guard": "binary",
 		"INSTALL_MACOS.txt":                            "docs",
 	} {
 		fh := &zip.FileHeader{Name: name, Method: zip.Deflate}
@@ -174,10 +174,10 @@ func TestWriteMacZipWithHelpersAddsUpdaterAndExecBits(t *testing.T) {
 		got[f.Name] = f
 	}
 	wantMode := map[string]os.FileMode{
-		"Install_Raksha_Guard.command":                 0o755,
-		"Raksha_Guard.app/Contents/MacOS/Raksha_Guard": 0o755,
+		"Install_Gateway_Guard.command":                 0o755,
+		"Gateway_Guard.app/Contents/MacOS/Gateway_Guard": 0o755,
 		"INSTALL_MACOS.txt":                            0o644,
-		"Update_Raksha_Guard_macOS.command":            0o755,
+		"Update_Gateway_Guard_macOS.command":            0o755,
 	}
 	for name, mode := range wantMode {
 		f := got[name]
@@ -188,7 +188,7 @@ func TestWriteMacZipWithHelpersAddsUpdaterAndExecBits(t *testing.T) {
 			t.Fatalf("%s mode = %v, want %v", name, f.Mode().Perm(), mode)
 		}
 	}
-	rc, err := got["Update_Raksha_Guard_macOS.command"].Open()
+	rc, err := got["Update_Gateway_Guard_macOS.command"].Open()
 	if err != nil {
 		t.Fatal(err)
 	}

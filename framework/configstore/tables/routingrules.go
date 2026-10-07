@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
+	gateway "github.com/gateway/gateway/core"
 	"gorm.io/gorm"
 )
 
@@ -63,7 +63,7 @@ func (r *TableRoutingRule) BeforeSave(tx *gorm.DB) error {
 		if err != nil {
 			return err
 		}
-		r.Fallbacks = raksha.Ptr(string(data))
+		r.Fallbacks = gateway.Ptr(string(data))
 	} else {
 		r.Fallbacks = nil
 	}
@@ -72,7 +72,7 @@ func (r *TableRoutingRule) BeforeSave(tx *gorm.DB) error {
 		if err != nil {
 			return err
 		}
-		r.Query = raksha.Ptr(string(data))
+		r.Query = gateway.Ptr(string(data))
 	} else {
 		r.Query = nil
 	}

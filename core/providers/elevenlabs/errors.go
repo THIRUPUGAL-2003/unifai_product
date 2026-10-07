@@ -5,13 +5,13 @@ import (
 
 	"github.com/valyala/fasthttp"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-func parseElevenlabsError(resp *fasthttp.Response) *schemas.RakshaError {
+func parseElevenlabsError(resp *fasthttp.Response) *schemas.GatewayError {
 	var errorResp ElevenlabsError
-	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	gatewayErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
 	if errorResp.Detail != nil {
 		var message string
 		// Handle validation errors (array format)
@@ -56,8 +56,8 @@ func parseElevenlabsError(resp *fasthttp.Response) *schemas.RakshaError {
 			}
 
 			if message != "" {
-				result := &schemas.RakshaError{
-					IsRakshaError: false,
+				result := &schemas.GatewayError{
+					IsGatewayError: false,
 					StatusCode:     schemas.Ptr(resp.StatusCode()),
 					Error: &schemas.ErrorField{
 						Type:    schemas.Ptr(errorType),
@@ -79,12 +79,12 @@ func parseElevenlabsError(resp *fasthttp.Response) *schemas.RakshaError {
 		}
 
 		if message != "" {
-			if rakshaErr.Error == nil {
-				rakshaErr.Error = &schemas.ErrorField{}
+			if gatewayErr.Error == nil {
+				gatewayErr.Error = &schemas.ErrorField{}
 			}
-			rakshaErr.Error.Type = schemas.Ptr(errorType)
-			rakshaErr.Error.Message = message
+			gatewayErr.Error.Type = schemas.Ptr(errorType)
+			gatewayErr.Error.Message = message
 		}
 	}
-	return rakshaErr
+	return gatewayErr
 }

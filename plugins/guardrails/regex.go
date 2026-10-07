@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 type RegexProvider struct {
@@ -71,7 +71,7 @@ func NewRegexProvider(config GuardrailProvider) (*RegexProvider, error) {
 	return provider, nil
 }
 
-func (p *RegexProvider) ValidateInput(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) error {
+func (p *RegexProvider) ValidateInput(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) error {
 	if req == nil {
 		return nil
 	}
@@ -104,7 +104,7 @@ func (p *RegexProvider) ValidateInput(ctx *schemas.RakshaContext, req *schemas.R
 	return nil
 }
 
-func (p *RegexProvider) ValidateOutput(ctx *schemas.RakshaContext, req *schemas.RakshaRequest, resp *schemas.RakshaResponse) error {
+func (p *RegexProvider) ValidateOutput(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, resp *schemas.GatewayResponse) error {
 	for _, content := range extractChatOutputTexts(resp) {
 		if err := p.matchBlocked(content, "output"); err != nil {
 			return err
@@ -235,7 +235,7 @@ func truncateForScan(s string) string {
 	return s
 }
 
-func extractChatOutputTexts(resp *schemas.RakshaResponse) []string {
+func extractChatOutputTexts(resp *schemas.GatewayResponse) []string {
 	if resp == nil {
 		return nil
 	}

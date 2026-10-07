@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,10 +9,15 @@ import { getErrorMessage } from "@/lib/store";
 import { useGetLoadBalancerRoutesQuery, useUpdateLoadBalancerConfigMutation } from "@enterprise/lib/store/apis/loadBalancerApi";
 import { LoadBalancerConfig } from "@enterprise/lib/types/workspace";
 import { Activity, Gauge, Route, Settings2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function AdaptiveRoutingView() {
-	const { data, isLoading: loading } = useGetLoadBalancerRoutesQuery(undefined, { pollingInterval: 8000 });
+	const [pollMs, setPollMs] = useState(8000);
+	const { data, isLoading: loading, isError, error, refetch } = useGetLoadBalancerRoutesQuery(undefined, { pollingInterval: pollMs });
+	useEffect(() => {
+		setPollMs(isError ? 0 : 8000);
+	}, [isError]);
 	const [updateConfig, { isLoading: saving }] = useUpdateLoadBalancerConfigMutation();
 
 	const saveConfig = async (patch: Partial<LoadBalancerConfig>) => {
@@ -24,8 +30,26 @@ export default function AdaptiveRoutingView() {
 		}
 	};
 
-	if (loading || !data) {
+	if (loading && !data) {
 		return <div className="text-muted-foreground p-6 text-sm">Loading adaptive routing…</div>;
+	}
+
+	if (isError && !data) {
+		return (
+			<div className="flex flex-col gap-3 p-6">
+				<QueryErrorBanner
+					testId="adaptive-routing-query-error"
+					message={getErrorMessage(error) || "Failed to load adaptive routing."}
+				/>
+				<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetch()}>
+					Retry
+				</Button>
+			</div>
+		);
+	}
+
+	if (!data) {
+		return null;
 	}
 
 	return (

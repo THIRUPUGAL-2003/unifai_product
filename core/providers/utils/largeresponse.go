@@ -6,18 +6,18 @@ import (
 	"math"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
 // LargeResponseReader wraps an io.Reader and releases the fasthttp response on Close.
 // Used by providers to keep the response alive while the transport streams it to the client.
-// ctx is held to check RakshaContextKeyConnectionClosed in Close, so a mid-stream
+// ctx is held to check GatewayContextKeyConnectionClosed in Close, so a mid-stream
 // cancellation that already tore down the underlying fasthttp conn does not double-release.
 type LargeResponseReader struct {
 	io.Reader
 	Resp     *fasthttp.Response
-	ctx      *schemas.RakshaContext
+	ctx      *schemas.GatewayContext
 	cleanup  func()
 	consumed bool // true after Read returns io.EOF, body fully consumed through Reader chain
 }
@@ -46,7 +46,7 @@ func (r *LargeResponseReader) Close() error {
 		return nil
 	}
 	// Run cleanup first so SetupStreamCancellation's goroutine settles (close(done); <-closed)
-	// before we read RakshaContextKeyConnectionClosed. The goroutine's done-branch can set the
+	// before we read GatewayContextKeyConnectionClosed. The goroutine's done-branch can set the
 	// flag when ctx.Err() != nil, so checking it before cleanup would miss that interleaving and
 	// fall through to fasthttp.ReleaseResponse on an already-torn-down conn (nil-deref in connsCleaner).
 	if r.cleanup != nil {
@@ -54,7 +54,7 @@ func (r *LargeResponseReader) Close() error {
 		r.cleanup = nil
 	}
 	if r.ctx != nil {
-		if closed, ok := r.ctx.Value(schemas.RakshaContextKeyConnectionClosed).(bool); ok && closed {
+		if closed, ok := r.ctx.Value(schemas.GatewayContextKeyConnectionClosed).(bool); ok && closed {
 			r.Resp = nil
 			return nil
 		}
@@ -94,8 +94,8 @@ func BuildLargeResponseClient(base *fasthttp.Client, responseThreshold int64) *f
 // threshold is set in context. Returns the client to use for MakeRequestWithContext.
 // When threshold > 0: sets resp.StreamBody = true and returns a streaming-enabled client.
 // When threshold <= 0: returns the original client unchanged (no-op for feature-off path).
-func PrepareResponseStreaming(ctx *schemas.RakshaContext, client *fasthttp.Client, resp *fasthttp.Response) *fasthttp.Client {
-	responseThreshold, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseThreshold).(int64)
+func PrepareResponseStreaming(ctx *schemas.GatewayContext, client *fasthttp.Client, resp *fasthttp.Response) *fasthttp.Client {
+	responseThreshold, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseThreshold).(int64)
 	if responseThreshold <= 0 {
 		return client
 	}
@@ -105,8 +105,8 @@ func PrepareResponseStreaming(ctx *schemas.RakshaContext, client *fasthttp.Clien
 
 // MaterializeStreamErrorBody reads a streamed error body into resp so that resp.Body()
 // returns the error payload for parsing. No-op when response streaming is not active.
-func MaterializeStreamErrorBody(ctx *schemas.RakshaContext, resp *fasthttp.Response) {
-	responseThreshold, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseThreshold).(int64)
+func MaterializeStreamErrorBody(ctx *schemas.GatewayContext, resp *fasthttp.Response) {
+	responseThreshold, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseThreshold).(int64)
 	if responseThreshold <= 0 {
 		return
 	}
@@ -134,17 +134,17 @@ func MaterializeStreamErrorBody(ctx *schemas.RakshaContext, resp *fasthttp.Respo
 //     caller must set respOwned = false.
 //   - (nil, false, err) — error; resp NOT released.
 func FinalizeResponseWithLargeDetection(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	resp *fasthttp.Response,
 	logger schemas.Logger,
-) ([]byte, bool, *schemas.RakshaError) {
-	responseThreshold, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseThreshold).(int64)
+) ([]byte, bool, *schemas.GatewayError) {
+	responseThreshold, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseThreshold).(int64)
 
 	// No threshold — normal buffered read (feature-off path)
 	if responseThreshold <= 0 {
 		body, err := CheckAndDecodeBody(resp)
 		if err != nil {
-			return nil, false, NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			return nil, false, NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 		}
 		// Copy body before caller releases resp
 		return append([]byte(nil), body...), false, nil
@@ -161,14 +161,14 @@ func FinalizeResponseWithLargeDetection(
 			}
 			bodyBytes, readErr := io.ReadAll(reader)
 			if readErr != nil {
-				return nil, false, NewRakshaOperationError(schemas.ErrProviderResponseDecode, readErr)
+				return nil, false, NewGatewayOperationError(schemas.ErrProviderResponseDecode, readErr)
 			}
 			return bodyBytes, false, nil
 		}
 		// No stream — buffered fallback
 		body, err := CheckAndDecodeBody(resp)
 		if err != nil {
-			return nil, false, NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			return nil, false, NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 		}
 		return append([]byte(nil), body...), false, nil
 	}
@@ -188,7 +188,7 @@ func FinalizeResponseWithLargeDetection(
 			bodyBytes, readErr := io.ReadAll(io.LimitReader(reader, responseThreshold+1))
 			if readErr != nil {
 				releaseGzip()
-				return nil, false, NewRakshaOperationError(schemas.ErrProviderResponseDecode, readErr)
+				return nil, false, NewGatewayOperationError(schemas.ErrProviderResponseDecode, readErr)
 			}
 			if int64(len(bodyBytes)) <= responseThreshold {
 				releaseGzip()
@@ -202,20 +202,20 @@ func FinalizeResponseWithLargeDetection(
 				ctx:     ctx,
 				cleanup: releaseGzip,
 			}
-			ctx.SetValue(schemas.RakshaContextKeyLargeResponseMode, true)
-			ctx.SetValue(schemas.RakshaContextKeyLargeResponseReader, closableReader)
-			ctx.SetValue(schemas.RakshaContextKeyLargeResponseContentLength, contentLength)
+			ctx.SetValue(schemas.GatewayContextKeyLargeResponseMode, true)
+			ctx.SetValue(schemas.GatewayContextKeyLargeResponseReader, closableReader)
+			ctx.SetValue(schemas.GatewayContextKeyLargeResponseContentLength, contentLength)
 			if ct := string(resp.Header.ContentType()); ct != "" {
-				ctx.SetValue(schemas.RakshaContextKeyLargeResponseContentType, ct)
+				ctx.SetValue(schemas.GatewayContextKeyLargeResponseContentType, ct)
 			}
 			previewLen := min(len(bodyBytes), 1048576)
-			ctx.SetValue(schemas.RakshaContextKeyLargePayloadResponsePreview, string(bodyBytes[:previewLen]))
+			ctx.SetValue(schemas.GatewayContextKeyLargePayloadResponsePreview, string(bodyBytes[:previewLen]))
 			return nil, true, nil
 		}
 		// No stream — buffered fallback
 		body, err := CheckAndDecodeBody(resp)
 		if err != nil {
-			return nil, false, NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			return nil, false, NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 		}
 		return append([]byte(nil), body...), false, nil
 	}
@@ -230,7 +230,7 @@ func FinalizeResponseWithLargeDetection(
 		}
 		body, err := CheckAndDecodeBody(resp)
 		if err != nil {
-			return nil, false, NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			return nil, false, NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 		}
 		return append([]byte(nil), body...), false, nil
 	}
@@ -243,7 +243,7 @@ func FinalizeResponseWithLargeDetection(
 	}
 
 	prefetchSize := 64 * 1024 // default
-	if ps, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadPrefetchSize).(int); ok && ps > 0 {
+	if ps, ok := ctx.Value(schemas.GatewayContextKeyLargePayloadPrefetchSize).(int); ok && ps > 0 {
 		prefetchSize = ps
 	}
 	prefetchBuf := make([]byte, prefetchSize)
@@ -252,7 +252,7 @@ func FinalizeResponseWithLargeDetection(
 		if wasGzip {
 			ReleaseGzipReader(gz)
 		}
-		return nil, false, NewRakshaOperationError(schemas.ErrProviderResponseDecode, readErr)
+		return nil, false, NewGatewayOperationError(schemas.ErrProviderResponseDecode, readErr)
 	}
 	prefetchBuf = prefetchBuf[:n]
 
@@ -268,23 +268,23 @@ func FinalizeResponseWithLargeDetection(
 		},
 	}
 
-	ctx.SetValue(schemas.RakshaContextKeyLargeResponseMode, true)
-	ctx.SetValue(schemas.RakshaContextKeyLargeResponseReader, closableReader)
-	ctx.SetValue(schemas.RakshaContextKeyLargeResponseContentLength, contentLength)
+	ctx.SetValue(schemas.GatewayContextKeyLargeResponseMode, true)
+	ctx.SetValue(schemas.GatewayContextKeyLargeResponseReader, closableReader)
+	ctx.SetValue(schemas.GatewayContextKeyLargeResponseContentLength, contentLength)
 	if ct := string(resp.Header.ContentType()); ct != "" {
-		ctx.SetValue(schemas.RakshaContextKeyLargeResponseContentType, ct)
+		ctx.SetValue(schemas.GatewayContextKeyLargeResponseContentType, ct)
 	}
 	previewLen := min(n, 1048576)
-	ctx.SetValue(schemas.RakshaContextKeyLargePayloadResponsePreview, string(prefetchBuf[:previewLen]))
+	ctx.SetValue(schemas.GatewayContextKeyLargePayloadResponsePreview, string(prefetchBuf[:previewLen]))
 
 	return nil, true, nil
 }
 
-// ParseOpenAIUsageFromBytes parses OpenAI-format usage from raw JSON bytes into RakshaLLMUsage.
+// ParseOpenAIUsageFromBytes parses OpenAI-format usage from raw JSON bytes into GatewayLLMUsage.
 // Handles both Chat Completions (prompt_tokens/completion_tokens) and Responses API
 // (input_tokens/output_tokens) field names. Expects the "usage" object bytes directly,
 // not the full response body.
-func ParseOpenAIUsageFromBytes(data []byte) *schemas.RakshaLLMUsage {
+func ParseOpenAIUsageFromBytes(data []byte) *schemas.GatewayLLMUsage {
 	var usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
@@ -297,7 +297,7 @@ func ParseOpenAIUsageFromBytes(data []byte) *schemas.RakshaLLMUsage {
 		return nil
 	}
 
-	result := &schemas.RakshaLLMUsage{}
+	result := &schemas.GatewayLLMUsage{}
 	if usage.PromptTokens > 0 {
 		result.PromptTokens = usage.PromptTokens
 	} else if usage.InputTokens > 0 {
@@ -325,8 +325,8 @@ func ParseOpenAIUsageFromBytes(data []byte) *schemas.RakshaLLMUsage {
 // in a LargeResponseReader and sets context keys for the transport layer.
 // Returns true if passthrough was set up. When true, the caller should return
 // a closed channel and must NOT release resp — it's owned by the reader in context.
-func SetupStreamingPassthrough(ctx *schemas.RakshaContext, resp *fasthttp.Response) bool {
-	isLargePayload, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool)
+func SetupStreamingPassthrough(ctx *schemas.GatewayContext, resp *fasthttp.Response) bool {
+	isLargePayload, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool)
 	if !isLargePayload {
 		return false
 	}
@@ -338,7 +338,7 @@ func SetupStreamingPassthrough(ctx *schemas.RakshaContext, resp *fasthttp.Respon
 
 	// Wire cancellation to the raw fasthttp body. On a mid-stream client disconnect this fires
 	// wce.CloseWithError(ctx.Err()) to unblock the transport's Read and sets
-	// RakshaContextKeyConnectionClosed so LargeResponseReader.Close skips the double release.
+	// GatewayContextKeyConnectionClosed so LargeResponseReader.Close skips the double release.
 	// logger arg is unused inside SetupStreamCancellation (uses package getLogger), nil is safe.
 	stopCancellation := SetupStreamCancellation(ctx, resp.BodyStream(), nil)
 
@@ -353,10 +353,10 @@ func SetupStreamingPassthrough(ctx *schemas.RakshaContext, resp *fasthttp.Respon
 		},
 	}
 
-	ctx.SetValue(schemas.RakshaContextKeyLargeResponseMode, true)
-	ctx.SetValue(schemas.RakshaContextKeyLargeResponseReader, closableReader)
+	ctx.SetValue(schemas.GatewayContextKeyLargeResponseMode, true)
+	ctx.SetValue(schemas.GatewayContextKeyLargeResponseReader, closableReader)
 	if ct := string(resp.Header.ContentType()); ct != "" {
-		ctx.SetValue(schemas.RakshaContextKeyLargeResponseContentType, ct)
+		ctx.SetValue(schemas.GatewayContextKeyLargeResponseContentType, ct)
 	}
 	return true
 }

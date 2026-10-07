@@ -6,19 +6,19 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunStreamErrorStatusCodeTest validates that pre-stream errors from providers carry
-// the correct HTTP status code in RakshaError.StatusCode. This is critical because
+// the correct HTTP status code in GatewayError.StatusCode. This is critical because
 // the HTTP transport layer (sendStreamError) relies on this field to propagate the
 // provider's actual status code to clients, rather than always returning 200 OK.
 //
 // The test sends a streaming request with a deliberately invalid model name.
 // All providers (OpenAI, Anthropic, Bedrock) return 4xx status codes for such errors,
-// and Raksha must preserve those codes through the error chain.
-func RunStreamErrorStatusCodeTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+// and Gateway must preserve those codes through the error chain.
+func RunStreamErrorStatusCodeTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.CompletionStream {
 		t.Logf("Completion stream not supported for provider %s, skipping stream error status code test", testConfig.Provider)
 		return
@@ -49,7 +49,7 @@ func RunStreamErrorStatusCodeTest(t *testing.T, client *raksha.Raksha, ctx conte
 
 		// Use a model name that is guaranteed to not exist across all providers.
 		// This triggers a pre-stream validation error (400/404) rather than an in-stream error.
-		invalidModel := "raksha-nonexistent-model-for-testing-12345"
+		invalidModel := "gateway-nonexistent-model-for-testing-12345"
 
 		// Test with Chat Completion stream (most universally supported stream type)
 		t.Run("ChatCompletionStream", func(t *testing.T) {
@@ -57,20 +57,20 @@ func RunStreamErrorStatusCodeTest(t *testing.T, client *raksha.Raksha, ctx conte
 				CreateBasicChatMessage("Hello"),
 			}
 
-			request := &schemas.RakshaChatRequest{
+			request := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    invalidModel,
 				Input:    messages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(10),
+					MaxCompletionTokens: gateway.Ptr(10),
 				},
 			}
 
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			stream, rakshaErr := client.ChatCompletionStreamRequest(bfCtx, request)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			stream, gatewayErr := client.ChatCompletionStreamRequest(bfCtx, request)
 
 			// We expect an error — the model doesn't exist
-			if rakshaErr == nil {
+			if gatewayErr == nil {
 				// If somehow no error, drain the stream and fail
 				if stream != nil {
 					for range stream {
@@ -80,28 +80,28 @@ func RunStreamErrorStatusCodeTest(t *testing.T, client *raksha.Raksha, ctx conte
 			}
 
 			// Core assertion: the error must carry a provider HTTP status code
-			if rakshaErr.StatusCode == nil {
-				t.Fatalf("❌ RakshaError.StatusCode is nil for provider %s — provider status code was not propagated. Error: %s",
-					testConfig.Provider, GetErrorMessage(rakshaErr))
+			if gatewayErr.StatusCode == nil {
+				t.Fatalf("❌ GatewayError.StatusCode is nil for provider %s — provider status code was not propagated. Error: %s",
+					testConfig.Provider, GetErrorMessage(gatewayErr))
 			}
 
-			statusCode := *rakshaErr.StatusCode
+			statusCode := *gatewayErr.StatusCode
 
 			// The status code should be a 4xx client error (invalid model → 400, 404, or similar)
 			if statusCode < 400 || statusCode >= 600 {
 				t.Fatalf("❌ Expected 4xx/5xx status code for invalid model, got %d. Error: %s",
-					statusCode, GetErrorMessage(rakshaErr))
+					statusCode, GetErrorMessage(gatewayErr))
 			}
 
-			// Should not be a Raksha-generated error — it should come from the provider
-			if rakshaErr.IsRakshaError {
-				// Some providers may have raksha-level validation that catches invalid models
+			// Should not be a Gateway-generated error — it should come from the provider
+			if gatewayErr.IsGatewayError {
+				// Some providers may have gateway-level validation that catches invalid models
 				// before reaching the provider. Log but don't fail.
-				t.Logf("⚠️  Error is a Raksha error (not provider error) with status %d — this may indicate model validation happened before the provider call", statusCode)
+				t.Logf("⚠️  Error is a Gateway error (not provider error) with status %d — this may indicate model validation happened before the provider call", statusCode)
 			}
 
 			t.Logf("✅ Stream error for invalid model returned status code %d (provider: %s)", statusCode, testConfig.Provider)
-			t.Logf("   Error message: %s", GetErrorMessage(rakshaErr))
+			t.Logf("   Error message: %s", GetErrorMessage(gatewayErr))
 		})
 
 		// Also test Responses stream if supported (Anthropic uses a different path)
@@ -110,40 +110,40 @@ func RunStreamErrorStatusCodeTest(t *testing.T, client *raksha.Raksha, ctx conte
 				CreateBasicResponsesMessage("Hello"),
 			}
 
-			request := &schemas.RakshaResponsesRequest{
+			request := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    invalidModel,
 				Input:    messages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: raksha.Ptr(10),
+					MaxOutputTokens: gateway.Ptr(10),
 				},
 			}
 
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			stream, rakshaErr := client.ResponsesStreamRequest(bfCtx, request)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			stream, gatewayErr := client.ResponsesStreamRequest(bfCtx, request)
 
-			if rakshaErr == nil {
+			if gatewayErr == nil {
 				streamName := "responses stream"
 				var timedOut bool
-				rakshaErr, timedOut = waitForStreamError(t, stream, streamName)
+				gatewayErr, timedOut = waitForStreamError(t, stream, streamName)
 				if timedOut {
 					t.Fatalf("❌ Timed out waiting for invalid-model error on %s", streamName)
 				}
-				if rakshaErr == nil {
+				if gatewayErr == nil {
 					t.Fatal("❌ Expected error for invalid model in responses stream request, but got nil")
 				}
 			}
 
-			if rakshaErr.StatusCode == nil {
-				t.Fatalf("❌ RakshaError.StatusCode is nil for provider %s responses stream — provider status code was not propagated. Error: %s",
-					testConfig.Provider, GetErrorMessage(rakshaErr))
+			if gatewayErr.StatusCode == nil {
+				t.Fatalf("❌ GatewayError.StatusCode is nil for provider %s responses stream — provider status code was not propagated. Error: %s",
+					testConfig.Provider, GetErrorMessage(gatewayErr))
 			}
 
-			statusCode := *rakshaErr.StatusCode
+			statusCode := *gatewayErr.StatusCode
 
 			if statusCode < 400 || statusCode >= 600 {
 				t.Fatalf("❌ Expected 4xx/5xx status code for invalid model in responses stream, got %d. Error: %s",
-					statusCode, GetErrorMessage(rakshaErr))
+					statusCode, GetErrorMessage(gatewayErr))
 			}
 
 			t.Logf("✅ Responses stream error for invalid model returned status code %d (provider: %s)", statusCode, testConfig.Provider)
@@ -151,7 +151,7 @@ func RunStreamErrorStatusCodeTest(t *testing.T, client *raksha.Raksha, ctx conte
 	})
 }
 
-func waitForStreamError(t *testing.T, stream chan *schemas.RakshaStreamChunk, streamName string) (*schemas.RakshaError, bool) {
+func waitForStreamError(t *testing.T, stream chan *schemas.GatewayStreamChunk, streamName string) (*schemas.GatewayError, bool) {
 	t.Helper()
 
 	if stream == nil {
@@ -170,8 +170,8 @@ func waitForStreamError(t *testing.T, stream chan *schemas.RakshaStreamChunk, st
 			if chunk == nil {
 				continue
 			}
-			if chunk.RakshaError != nil {
-				return chunk.RakshaError, false
+			if chunk.GatewayError != nil {
+				return chunk.GatewayError, false
 			}
 		case <-timeout.C:
 			t.Logf("⚠️ Timed out waiting for streamed error on %s", streamName)

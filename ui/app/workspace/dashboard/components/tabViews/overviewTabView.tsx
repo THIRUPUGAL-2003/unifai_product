@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import {
 	useGetLogsCostHistogramQuery,
 	useGetLogsHistogramQuery,
@@ -13,7 +14,7 @@ import {
 	useLazyGetLogsTokenHistogramQuery,
 } from "@/lib/store";
 import type { LogFilters } from "@/lib/types/logs";
-import { forwardRef, useCallback, useImperativeHandle, useMemo } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import type { DashboardData } from "../../utils/exportUtils";
 import type { ChartType } from "../charts/chartTypeToggle";
 import { OverviewTab } from "../overviewTab";
@@ -76,17 +77,23 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 	ref,
 ) {
 	const fetchArg = useMemo(() => ({ filters }), [filters]);
+	const [pollMs, setPollMs] = useState(pollingInterval ?? 0);
 	const skipOpts = useMemo(
-		() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
-		[active, pollingInterval],
+		() => ({ skip: !active, pollingInterval: pollMs, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
+		[active, pollMs],
 	);
 
-	const { data: histogramData, isLoading: loadingHistogram } = useGetLogsHistogramQuery(fetchArg, skipOpts);
-	const { data: tokenData, isLoading: loadingTokens } = useGetLogsTokenHistogramQuery(fetchArg, skipOpts);
-	const { data: costData, isLoading: loadingCost } = useGetLogsCostHistogramQuery(fetchArg, skipOpts);
-	const { data: modelData, isLoading: loadingModels } = useGetLogsModelHistogramQuery(fetchArg, skipOpts);
-	const { data: latencyData, isLoading: loadingLatency } = useGetLogsLatencyHistogramQuery(fetchArg, skipOpts);
-	const { data: logsStats, isLoading: loadingStats } = useGetLogsStatsQuery(fetchArg, skipOpts);
+	const { data: histogramData, isLoading: loadingHistogram, isError: errHistogram } = useGetLogsHistogramQuery(fetchArg, skipOpts);
+	const { data: tokenData, isLoading: loadingTokens, isError: errTokens } = useGetLogsTokenHistogramQuery(fetchArg, skipOpts);
+	const { data: costData, isLoading: loadingCost, isError: errCost } = useGetLogsCostHistogramQuery(fetchArg, skipOpts);
+	const { data: modelData, isLoading: loadingModels, isError: errModels } = useGetLogsModelHistogramQuery(fetchArg, skipOpts);
+	const { data: latencyData, isLoading: loadingLatency, isError: errLatency } = useGetLogsLatencyHistogramQuery(fetchArg, skipOpts);
+	const { data: logsStats, isLoading: loadingStats, isError: errStats } = useGetLogsStatsQuery(fetchArg, skipOpts);
+	const dashboardQueryFailed = errHistogram || errTokens || errCost || errModels || errLatency || errStats;
+
+	useEffect(() => {
+		setPollMs(dashboardQueryFailed ? 0 : (pollingInterval ?? 0));
+	}, [dashboardQueryFailed, pollingInterval]);
 
 	const [triggerHistogram] = useLazyGetLogsHistogramQuery();
 	const [triggerTokens] = useLazyGetLogsTokenHistogramQuery();
@@ -136,38 +143,41 @@ export const OverviewTabView = forwardRef<OverviewTabViewHandle, OverviewTabView
 	);
 
 	return (
-		<OverviewTab
-			histogramData={histogramData ?? null}
-			tokenData={tokenData ?? null}
-			costData={costData ?? null}
-			modelData={modelData ?? null}
-			latencyData={latencyData ?? null}
-			logsStats={logsStats ?? null}
-			loadingHistogram={loadingHistogram}
-			loadingTokens={loadingTokens}
-			loadingCost={loadingCost}
-			loadingModels={loadingModels}
-			loadingLatency={loadingLatency}
-			loadingStats={loadingStats}
-			startTime={startTime}
-			endTime={endTime}
-			volumeChartType={volumeChartType}
-			tokenChartType={tokenChartType}
-			costChartType={costChartType}
-			modelChartType={modelChartType}
-			latencyChartType={latencyChartType}
-			costModel={costModel}
-			usageModel={usageModel}
-			costModels={costModels}
-			usageModels={usageModels}
-			availableModels={availableModels}
-			onVolumeChartToggle={onVolumeChartToggle}
-			onTokenChartToggle={onTokenChartToggle}
-			onCostChartToggle={onCostChartToggle}
-			onModelChartToggle={onModelChartToggle}
-			onLatencyChartToggle={onLatencyChartToggle}
-			onCostModelChange={onCostModelChange}
-			onUsageModelChange={onUsageModelChange}
-		/>
+		<div className="flex h-full flex-col gap-3">
+			{dashboardQueryFailed ? <QueryErrorBanner testId="dashboard-overview-query-error" /> : null}
+			<OverviewTab
+				histogramData={histogramData ?? null}
+				tokenData={tokenData ?? null}
+				costData={costData ?? null}
+				modelData={modelData ?? null}
+				latencyData={latencyData ?? null}
+				logsStats={logsStats ?? null}
+				loadingHistogram={loadingHistogram}
+				loadingTokens={loadingTokens}
+				loadingCost={loadingCost}
+				loadingModels={loadingModels}
+				loadingLatency={loadingLatency}
+				loadingStats={loadingStats}
+				startTime={startTime}
+				endTime={endTime}
+				volumeChartType={volumeChartType}
+				tokenChartType={tokenChartType}
+				costChartType={costChartType}
+				modelChartType={modelChartType}
+				latencyChartType={latencyChartType}
+				costModel={costModel}
+				usageModel={usageModel}
+				costModels={costModels}
+				usageModels={usageModels}
+				availableModels={availableModels}
+				onVolumeChartToggle={onVolumeChartToggle}
+				onTokenChartToggle={onTokenChartToggle}
+				onCostChartToggle={onCostChartToggle}
+				onModelChartToggle={onModelChartToggle}
+				onLatencyChartToggle={onLatencyChartToggle}
+				onCostModelChange={onCostModelChange}
+				onUsageModelChange={onUsageModelChange}
+			/>
+		</div>
 	);
 });

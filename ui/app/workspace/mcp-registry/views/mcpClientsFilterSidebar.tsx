@@ -242,12 +242,16 @@ function FilterSection({
 	title,
 	children,
 	defaultOpen = false,
+	loading = false,
+	error = false,
 	onOpenChange,
 	testId,
 }: {
 	title: string;
 	children: React.ReactNode;
 	defaultOpen?: boolean;
+	loading?: boolean;
+	error?: boolean;
 	onOpenChange?: (open: boolean) => void;
 	testId?: string;
 }) {
@@ -272,7 +276,13 @@ function FilterSection({
 				<span>{title}</span>
 			</CollapsibleTrigger>
 			<CollapsibleContent className="pt-1">
-				<div className="divide-border divide-y overflow-hidden rounded-sm border">{children}</div>
+				{error && !loading ? (
+					<div className="text-destructive border-destructive/30 bg-destructive/5 rounded-sm border px-2 py-1.5 text-[11px]">
+						Failed to load options
+					</div>
+				) : (
+					<div className="divide-border divide-y overflow-hidden rounded-sm border">{children}</div>
+				)}
 			</CollapsibleContent>
 		</Collapsible>
 	);
@@ -430,7 +440,7 @@ function VKAccessFilterSection({ filters, onFiltersChange }: SidebarProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 	const searchInputRef = useAutoFocusOnOpen(opened);
 
-	const { data, isFetching } = useGetVirtualKeysQuery(
+	const { data, isFetching, isError: vkFailed } = useGetVirtualKeysQuery(
 		{ limit: VK_PAGE_SIZE, offset: 0, search: searchQuery || undefined },
 		{ skip: !opened && !hasActive },
 	);
@@ -449,7 +459,14 @@ function VKAccessFilterSection({ filters, onFiltersChange }: SidebarProps) {
 	};
 
 	return (
-		<FilterSection title="VK Access" defaultOpen={hasActive} onOpenChange={setOpened} testId="mcp-clients-filter-vk-access-toggle">
+		<FilterSection
+			title="VK Access"
+			defaultOpen={hasActive}
+			onOpenChange={setOpened}
+			loading={isFetching}
+			error={vkFailed}
+			testId="mcp-clients-filter-vk-access-toggle"
+		>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
 				placeholder="Search virtual keys"

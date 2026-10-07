@@ -9,7 +9,7 @@ import (
 // struct serialization round-trips. Embed it in any struct with `json:"-"` tag.
 //
 // LLMs are autoregressive sequence models that are sensitive to JSON key ordering
-// in tool schemas. This helper ensures that when Raksha deserializes and
+// in tool schemas. This helper ensures that when Gateway deserializes and
 // re-serializes JSON, the original key order from the client is preserved.
 //
 // Usage:

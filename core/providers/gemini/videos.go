@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 const defaultVideoContentType = "video/mp4"
@@ -241,24 +241,24 @@ func parseVideoDataURL(data string) (mimeType string, base64Payload string, ok b
 	return header, payload, true
 }
 
-// ToGeminiVideoGenerationRequest converts a Raksha video generation request to Gemini REST API format
+// ToGeminiVideoGenerationRequest converts a Gateway video generation request to Gemini REST API format
 // This creates the request body for POST /models/{model}:predictLongRunning
-func ToGeminiVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequest) (*GeminiVideoGenerationRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil {
-		return nil, fmt.Errorf("raksha request or input is nil")
+func ToGeminiVideoGenerationRequest(gatewayReq *schemas.GatewayVideoGenerationRequest) (*GeminiVideoGenerationRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil {
+		return nil, fmt.Errorf("gateway request or input is nil")
 	}
 
-	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
+	gatewayReq.Model = NormalizeModelName(gatewayReq.Model)
 
 	// Create the instance with prompt
 	instance := &GeminiVideoGenerationInstance{
-		Prompt: rakshaReq.Input.Prompt,
+		Prompt: gatewayReq.Input.Prompt,
 	}
 
 	// Handle input reference (image for image-to-video)
-	if rakshaReq.Input.InputReference != nil && *rakshaReq.Input.InputReference != "" {
+	if gatewayReq.Input.InputReference != nil && *gatewayReq.Input.InputReference != "" {
 		// extract mime type and base64 string from input reference
-		sanitizedURL, err := schemas.SanitizeImageURLWithAllowedSchemes(*rakshaReq.Input.InputReference, defaultGeminiImageURLSchemes...)
+		sanitizedURL, err := schemas.SanitizeImageURLWithAllowedSchemes(*gatewayReq.Input.InputReference, defaultGeminiImageURLSchemes...)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input reference: %w", err)
 		}
@@ -277,9 +277,9 @@ func ToGeminiVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 		instance.Image = image
 	}
 
-	if rakshaReq.Params != nil && rakshaReq.Params.VideoURI != nil {
+	if gatewayReq.Params != nil && gatewayReq.Params.VideoURI != nil {
 		instance.Video = &VideoGenerationVideoInput{
-			URI: rakshaReq.Params.VideoURI,
+			URI: gatewayReq.Params.VideoURI,
 		}
 	}
 
@@ -288,68 +288,68 @@ func ToGeminiVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 	}
 
 	// Map parameters if provided
-	if rakshaReq.Params != nil {
+	if gatewayReq.Params != nil {
 		params := &VideoGenerationParameters{}
 
 		// Extract all video generation parameters from ExtraParams
-		if rakshaReq.Params.NegativePrompt != nil {
-			params.NegativePrompt = rakshaReq.Params.NegativePrompt
+		if gatewayReq.Params.NegativePrompt != nil {
+			params.NegativePrompt = gatewayReq.Params.NegativePrompt
 		}
 
-		if rakshaReq.Params.Seconds != nil {
-			seconds, err := strconv.Atoi(*rakshaReq.Params.Seconds)
+		if gatewayReq.Params.Seconds != nil {
+			seconds, err := strconv.Atoi(*gatewayReq.Params.Seconds)
 			if err != nil {
 				return nil, fmt.Errorf("invalid seconds value: %w", err)
 			}
 			params.DurationSeconds = &seconds
 		}
 
-		if rakshaReq.Params.Seed != nil {
-			params.Seed = rakshaReq.Params.Seed
+		if gatewayReq.Params.Seed != nil {
+			params.Seed = gatewayReq.Params.Seed
 		}
 
-		if rakshaReq.Params.Audio != nil {
-			params.GenerateAudio = rakshaReq.Params.Audio
+		if gatewayReq.Params.Audio != nil {
+			params.GenerateAudio = gatewayReq.Params.Audio
 		}
 
-		if rakshaReq.Params.ExtraParams != nil {
-			req.ExtraParams = rakshaReq.Params.ExtraParams
-			if aspectRatio, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["aspectRatio"]); ok {
+		if gatewayReq.Params.ExtraParams != nil {
+			req.ExtraParams = gatewayReq.Params.ExtraParams
+			if aspectRatio, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["aspectRatio"]); ok {
 				params.AspectRatio = aspectRatio
 			}
-			if resolution, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["resolution"]); ok {
+			if resolution, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["resolution"]); ok {
 				params.Resolution = resolution
 			}
 
-			if sampleCount, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["sampleCount"]); ok {
+			if sampleCount, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["sampleCount"]); ok {
 				params.SampleCount = sampleCount
 			}
 
-			if personGeneration, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["personGeneration"]); ok {
+			if personGeneration, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["personGeneration"]); ok {
 				params.PersonGeneration = personGeneration
 			}
 
-			if numberOfVideos, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["numberOfVideos"]); ok {
+			if numberOfVideos, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["numberOfVideos"]); ok {
 				params.NumberOfVideos = numberOfVideos
 			}
-			if storageURI, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["storageURI"]); ok {
+			if storageURI, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["storageURI"]); ok {
 				params.StorageURI = storageURI
 			}
-			if compressionQuality, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["compressionQuality"]); ok {
+			if compressionQuality, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["compressionQuality"]); ok {
 				params.CompressionQuality = compressionQuality
 			}
-			if enhancePrompt, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enhancePrompt"]); ok {
+			if enhancePrompt, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["enhancePrompt"]); ok {
 				params.EnhancePrompt = enhancePrompt
 			}
-			if resizeMode, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["resizeMode"]); ok {
+			if resizeMode, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["resizeMode"]); ok {
 				params.ResizeMode = resizeMode
 			}
-			if referenceImages, ok := rakshaReq.Params.ExtraParams["referenceImages"]; ok {
+			if referenceImages, ok := gatewayReq.Params.ExtraParams["referenceImages"]; ok {
 				if referenceImages, ok := videoReferenceImagesFromExtraParam(referenceImages); ok {
 					req.Instances[0].ReferenceImages = referenceImages
 				}
 			}
-			if lastFrame, ok := rakshaReq.Params.ExtraParams["lastFrame"]; ok {
+			if lastFrame, ok := gatewayReq.Params.ExtraParams["lastFrame"]; ok {
 				if lastFrame, ok := videoImageDataFromExtraParam(lastFrame); ok {
 					req.Instances[0].LastFrame = lastFrame
 				}
@@ -357,8 +357,8 @@ func ToGeminiVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 		}
 
 		// Convert size to aspect ratio if size is provided and aspect ratio is not already set
-		if params.AspectRatio == nil && rakshaReq.Params.Size != "" {
-			aspectRatio := sizeToAspectRatio(rakshaReq.Params.Size)
+		if params.AspectRatio == nil && gatewayReq.Params.Size != "" {
+			aspectRatio := sizeToAspectRatio(gatewayReq.Params.Size)
 			if aspectRatio != "" {
 				params.AspectRatio = &aspectRatio
 			}
@@ -370,15 +370,15 @@ func ToGeminiVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 	return req, nil
 }
 
-// ToRakshaVideoGenerationResponse converts Gemini operation response to Raksha format
-func ToRakshaVideoGenerationResponse(operation *GenerateVideosOperation, model string) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+// ToGatewayVideoGenerationResponse converts Gemini operation response to Gateway format
+func ToGatewayVideoGenerationResponse(operation *GenerateVideosOperation, model string) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	model = NormalizeModelName(model)
 
 	if operation == nil {
-		return nil, providerUtils.NewRakshaOperationError("operation is nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("operation is nil", nil)
 	}
 
-	response := &schemas.RakshaVideoGenerationResponse{
+	response := &schemas.GatewayVideoGenerationResponse{
 		ID:        operation.Name,
 		Object:    "video",
 		CreatedAt: time.Now().Unix(),
@@ -541,7 +541,7 @@ func ToRakshaVideoGenerationResponse(operation *GenerateVideosOperation, model s
 	return response, nil
 }
 
-func (request *GeminiVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx *schemas.RakshaContext) (*schemas.RakshaVideoGenerationRequest, error) {
+func (request *GeminiVideoGenerationRequest) ToGatewayVideoGenerationRequest(ctx *schemas.GatewayContext) (*schemas.GatewayVideoGenerationRequest, error) {
 	if request == nil || len(request.Instances) == 0 {
 		return nil, fmt.Errorf("request is nil or has no instances")
 	}
@@ -551,7 +551,7 @@ func (request *GeminiVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx 
 
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	rakshaReq := &schemas.RakshaVideoGenerationRequest{
+	gatewayReq := &schemas.GatewayVideoGenerationRequest{
 		Provider: provider,
 		Model:    model,
 		Input: &schemas.VideoGenerationInput{
@@ -566,13 +566,13 @@ func (request *GeminiVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx 
 		if instance.Image.MimeType != nil && *instance.Image.MimeType != "" {
 			mimeType = *instance.Image.MimeType
 		}
-		rakshaReq.Input.InputReference = schemas.Ptr(fmt.Sprintf("data:%s;base64,%s", mimeType, *instance.Image.BytesBase64Encoded))
+		gatewayReq.Input.InputReference = schemas.Ptr(fmt.Sprintf("data:%s;base64,%s", mimeType, *instance.Image.BytesBase64Encoded))
 	}
 
 	// Helper to ensure params are initialized
 	ensureParams := func() {
-		if rakshaReq.Params == nil {
-			rakshaReq.Params = &schemas.VideoGenerationParameters{
+		if gatewayReq.Params == nil {
+			gatewayReq.Params = &schemas.VideoGenerationParameters{
 				ExtraParams: make(map[string]any),
 			}
 		}
@@ -581,25 +581,25 @@ func (request *GeminiVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx 
 	// Handle reference images
 	if len(instance.ReferenceImages) > 0 {
 		ensureParams()
-		rakshaReq.Params.ExtraParams["referenceImages"] = instance.ReferenceImages
+		gatewayReq.Params.ExtraParams["referenceImages"] = instance.ReferenceImages
 	}
 
 	// Handle video URI
 	if instance.Video != nil && instance.Video.URI != nil {
 		ensureParams()
-		rakshaReq.Params.VideoURI = instance.Video.URI
+		gatewayReq.Params.VideoURI = instance.Video.URI
 	}
 
 	// Handle last frame
 	if instance.LastFrame != nil {
 		ensureParams()
-		rakshaReq.Params.ExtraParams["lastFrame"] = instance.LastFrame
+		gatewayReq.Params.ExtraParams["lastFrame"] = instance.LastFrame
 	}
 
 	// Map parameters if provided
 	if request.Parameters != nil {
 		ensureParams()
-		params := rakshaReq.Params
+		params := gatewayReq.Params
 
 		if request.Parameters.NegativePrompt != nil {
 			params.NegativePrompt = request.Parameters.NegativePrompt
@@ -643,10 +643,10 @@ func (request *GeminiVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx 
 		}
 	}
 
-	return rakshaReq, nil
+	return gatewayReq, nil
 }
 
-func ToGeminiVideoGenerationResponse(response *schemas.RakshaVideoGenerationResponse) *GenerateVideosOperation {
+func ToGeminiVideoGenerationResponse(response *schemas.GatewayVideoGenerationResponse) *GenerateVideosOperation {
 	if response == nil {
 		return nil
 	}

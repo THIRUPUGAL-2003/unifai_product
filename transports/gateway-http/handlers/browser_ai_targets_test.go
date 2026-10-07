@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/framework/logstore"
+	"github.com/gateway/gateway/framework/logstore"
 	"github.com/valyala/fasthttp"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"

@@ -1,10 +1,10 @@
 package vertex
 
 import (
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-func (resp *VertexCountTokensResponse) ToRakshaCountTokensResponse(model string) *schemas.RakshaCountTokensResponse {
+func (resp *VertexCountTokensResponse) ToGatewayCountTokensResponse(model string) *schemas.GatewayCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
@@ -17,7 +17,7 @@ func (resp *VertexCountTokensResponse) ToRakshaCountTokensResponse(model string)
 		inputDetails.CachedReadTokens = int(resp.CachedContentTokenCount)
 	}
 
-	return &schemas.RakshaCountTokensResponse{
+	return &schemas.GatewayCountTokensResponse{
 		Model:              model,
 		Object:             "response.input_tokens",
 		InputTokens:        inputTokens,

@@ -1,6 +1,6 @@
 root = "../.."
 testdata_dir = "testdata"
-tmp_dir = "transports/raksha-http/tmp"
+tmp_dir = "transports/gateway-http/tmp"
 
 [build]
 args_bin = []
@@ -14,7 +14,7 @@ exclude_dir = [
     "testdata",
     "ui",
     "node_modules",
-    "transports/raksha-http/ui",
+    "transports/gateway-http/ui",
     "core/tests",
     "tests",
     "docs",

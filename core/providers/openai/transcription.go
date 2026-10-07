@@ -5,15 +5,15 @@ import (
 	"mime/multipart"
 	"sort"
 
-	"github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaTranscriptionRequest converts an OpenAI transcription request to Raksha format
-func (request *OpenAITranscriptionRequest) ToRakshaTranscriptionRequest(ctx *schemas.RakshaContext) *schemas.RakshaTranscriptionRequest {
+// ToGatewayTranscriptionRequest converts an OpenAI transcription request to Gateway format
+func (request *OpenAITranscriptionRequest) ToGatewayTranscriptionRequest(ctx *schemas.GatewayContext) *schemas.GatewayTranscriptionRequest {
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	return &schemas.RakshaTranscriptionRequest{
+	return &schemas.GatewayTranscriptionRequest{
 		Provider: provider,
 		Model:    model,
 		Input: &schemas.TranscriptionInput{
@@ -24,17 +24,17 @@ func (request *OpenAITranscriptionRequest) ToRakshaTranscriptionRequest(ctx *sch
 	}
 }
 
-// ToOpenAITranscriptionRequest converts a Raksha transcription request to OpenAI format
-func ToOpenAITranscriptionRequest(rakshaReq *schemas.RakshaTranscriptionRequest) *OpenAITranscriptionRequest {
-	if rakshaReq == nil || rakshaReq.Input.File == nil {
+// ToOpenAITranscriptionRequest converts a Gateway transcription request to OpenAI format
+func ToOpenAITranscriptionRequest(gatewayReq *schemas.GatewayTranscriptionRequest) *OpenAITranscriptionRequest {
+	if gatewayReq == nil || gatewayReq.Input.File == nil {
 		return nil
 	}
 
-	transcriptionInput := rakshaReq.Input
-	params := rakshaReq.Params
+	transcriptionInput := gatewayReq.Input
+	params := gatewayReq.Params
 
 	openaiReq := &OpenAITranscriptionRequest{
-		Model:    rakshaReq.Model,
+		Model:    gatewayReq.Model,
 		File:     transcriptionInput.File,
 		Filename: transcriptionInput.Filename,
 	}
@@ -48,52 +48,52 @@ func ToOpenAITranscriptionRequest(rakshaReq *schemas.RakshaTranscriptionRequest)
 }
 
 // ParseTranscriptionFormDataBodyFromRequest parses the transcription request and writes it to the multipart form.
-func ParseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAITranscriptionRequest, providerName schemas.ModelProvider) *schemas.RakshaError {
+func ParseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAITranscriptionRequest, providerName schemas.ModelProvider) *schemas.GatewayError {
 	// Add model field before the file so upstreams can route without buffering the audio payload.
 	if err := writer.WriteField("model", openaiReq.Model); err != nil {
-		return utils.NewRakshaOperationError("failed to write model field", err)
+		return utils.NewGatewayOperationError("failed to write model field", err)
 	}
 
 	// Add optional fields
 	if openaiReq.Language != nil {
 		if err := writer.WriteField("language", *openaiReq.Language); err != nil {
-			return utils.NewRakshaOperationError("failed to write language field", err)
+			return utils.NewGatewayOperationError("failed to write language field", err)
 		}
 	}
 
 	if openaiReq.Prompt != nil {
 		if err := writer.WriteField("prompt", *openaiReq.Prompt); err != nil {
-			return utils.NewRakshaOperationError("failed to write prompt field", err)
+			return utils.NewGatewayOperationError("failed to write prompt field", err)
 		}
 	}
 
 	if openaiReq.ResponseFormat != nil {
 		if err := writer.WriteField("response_format", *openaiReq.ResponseFormat); err != nil {
-			return utils.NewRakshaOperationError("failed to write response_format field", err)
+			return utils.NewGatewayOperationError("failed to write response_format field", err)
 		}
 	}
 
 	if openaiReq.Temperature != nil {
 		if err := writer.WriteField("temperature", fmt.Sprintf("%g", *openaiReq.Temperature)); err != nil {
-			return utils.NewRakshaOperationError("failed to write temperature field", err)
+			return utils.NewGatewayOperationError("failed to write temperature field", err)
 		}
 	}
 
 	for _, granularity := range openaiReq.TimestampGranularities {
 		if err := writer.WriteField("timestamp_granularities[]", granularity); err != nil {
-			return utils.NewRakshaOperationError("failed to write timestamp_granularities field", err)
+			return utils.NewGatewayOperationError("failed to write timestamp_granularities field", err)
 		}
 	}
 
 	for _, include := range openaiReq.Include {
 		if err := writer.WriteField("include[]", include); err != nil {
-			return utils.NewRakshaOperationError("failed to write include field", err)
+			return utils.NewGatewayOperationError("failed to write include field", err)
 		}
 	}
 
 	if openaiReq.Stream != nil && *openaiReq.Stream {
 		if err := writer.WriteField("stream", "true"); err != nil {
-			return utils.NewRakshaOperationError("failed to write stream field", err)
+			return utils.NewGatewayOperationError("failed to write stream field", err)
 		}
 	}
 
@@ -116,12 +116,12 @@ func ParseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, openaiR
 			default:
 				encoded, err := schemas.MarshalSorted(v)
 				if err != nil {
-					return utils.NewRakshaOperationError(fmt.Sprintf("failed to encode %s field", key), err)
+					return utils.NewGatewayOperationError(fmt.Sprintf("failed to encode %s field", key), err)
 				}
 				fieldValue = string(encoded)
 			}
 			if err := writer.WriteField(key, fieldValue); err != nil {
-				return utils.NewRakshaOperationError(fmt.Sprintf("failed to write %s field", key), err)
+				return utils.NewGatewayOperationError(fmt.Sprintf("failed to write %s field", key), err)
 			}
 		}
 	}
@@ -133,15 +133,15 @@ func ParseTranscriptionFormDataBodyFromRequest(writer *multipart.Writer, openaiR
 	}
 	fileWriter, err := writer.CreateFormFile("file", filename)
 	if err != nil {
-		return utils.NewRakshaOperationError("failed to create form file", err)
+		return utils.NewGatewayOperationError("failed to create form file", err)
 	}
 	if _, err := fileWriter.Write(openaiReq.File); err != nil {
-		return utils.NewRakshaOperationError("failed to write file data", err)
+		return utils.NewGatewayOperationError("failed to write file data", err)
 	}
 
 	// Close the multipart writer
 	if err := writer.Close(); err != nil {
-		return utils.NewRakshaOperationError("failed to close multipart writer", err)
+		return utils.NewGatewayOperationError("failed to close multipart writer", err)
 	}
 
 	return nil

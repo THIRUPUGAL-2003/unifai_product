@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Label } from "@/components/ui/label";
 import {
 	Select,
@@ -23,7 +24,7 @@ export default function PromptHistoryControls({ className }: PromptHistoryContro
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isUserRole = isPromptMemberRole(authStatus?.role);
 
-	const { data: settings, isLoading } = useGetPromptHistorySettingsQuery(undefined, {
+	const { data: settings, isLoading, isError: settingsFailed, error: settingsError } = useGetPromptHistorySettingsQuery(undefined, {
 		skip: isUserRole,
 	});
 	const [updateSettings, { isLoading: isUpdating }] = useUpdatePromptHistorySettingsMutation();
@@ -56,6 +57,16 @@ export default function PromptHistoryControls({ className }: PromptHistoryContro
 			toast.error("Failed to update retention period", { description: getErrorMessage(err) });
 		}
 	};
+
+	if (settingsFailed) {
+		return (
+			<QueryErrorBanner
+				className={className}
+				testId="prompt-history-settings-query-error"
+				message={getErrorMessage(settingsError) || "Failed to load prompt history settings."}
+			/>
+		);
+	}
 
 	return (
 		<div className={`flex items-center gap-2 ${className || ""}`}>

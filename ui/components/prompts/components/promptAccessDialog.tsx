@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,21 +48,26 @@ export function PromptAccessDialog() {
 	const {
 		data: accessData,
 		isLoading: isAccessLoading,
+		isError: accessFailed,
+		error: accessError,
 		refetch: refetchAccess,
 	} = useGetPromptAccessQuery(promptId, {
 		skip: !isOpen || !promptId,
 	});
 
 	// Fetch governance entities
-	const { data: customersData, isLoading: isCustomersLoading } = useGetCustomersQuery(undefined, {
+	const { data: customersData, isLoading: isCustomersLoading, isError: customersFailed, error: customersError } = useGetCustomersQuery(
+		undefined,
+		{ skip: !isOpen },
+	);
+	const { data: teamsData, isLoading: isTeamsLoading, isError: teamsFailed, error: teamsError } = useGetTeamsQuery(undefined, {
 		skip: !isOpen,
 	});
-	const { data: teamsData, isLoading: isTeamsLoading } = useGetTeamsQuery(undefined, {
-		skip: !isOpen,
-	});
-	const { data: sessionUsersData, isLoading: isUsersLoading } = useGetSessionUsersQuery(undefined, {
-		skip: !isOpen,
-	});
+	const { data: sessionUsersData, isLoading: isUsersLoading, isError: usersFailed, error: usersError } = useGetSessionUsersQuery(
+		undefined,
+		{ skip: !isOpen },
+	);
+	const accessQueryFailed = accessFailed || customersFailed || teamsFailed || usersFailed;
 
 	const [updatePromptAccess, { isLoading: isUpdating }] = useUpdatePromptAccessMutation();
 
@@ -283,6 +289,18 @@ export function PromptAccessDialog() {
 						</div>
 					</div>
 				</DialogHeader>
+
+				{accessQueryFailed ? (
+					<div className="py-4">
+						<QueryErrorBanner
+							testId="prompt-access-query-error"
+							message={
+								getErrorMessage(accessError || customersError || teamsError || usersError) ||
+								"Failed to load access settings."
+							}
+						/>
+					</div>
+				) : null}
 
 				{isLoadingInitial ? (
 					<div className="py-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">

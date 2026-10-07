@@ -5,18 +5,18 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToBedrockRerankRequest converts a Raksha rerank request into Bedrock Agent Runtime format.
-func ToBedrockRerankRequest(rakshaReq *schemas.RakshaRerankRequest, modelARN string) (*BedrockRerankRequest, error) {
-	if rakshaReq == nil {
-		return nil, fmt.Errorf("raksha rerank request is nil")
+// ToBedrockRerankRequest converts a Gateway rerank request into Bedrock Agent Runtime format.
+func ToBedrockRerankRequest(gatewayReq *schemas.GatewayRerankRequest, modelARN string) (*BedrockRerankRequest, error) {
+	if gatewayReq == nil {
+		return nil, fmt.Errorf("gateway rerank request is nil")
 	}
 	if strings.TrimSpace(modelARN) == "" {
 		return nil, fmt.Errorf("bedrock rerank model ARN is empty")
 	}
-	if len(rakshaReq.Documents) == 0 {
+	if len(gatewayReq.Documents) == 0 {
 		return nil, fmt.Errorf("documents are required for rerank request")
 	}
 
@@ -25,11 +25,11 @@ func ToBedrockRerankRequest(rakshaReq *schemas.RakshaRerankRequest, modelARN str
 			{
 				Type: bedrockRerankQueryTypeText,
 				TextQuery: BedrockRerankTextRef{
-					Text: rakshaReq.Query,
+					Text: gatewayReq.Query,
 				},
 			},
 		},
-		Sources: make([]BedrockRerankSource, len(rakshaReq.Documents)),
+		Sources: make([]BedrockRerankSource, len(gatewayReq.Documents)),
 		RerankingConfiguration: BedrockRerankingConfiguration{
 			Type: bedrockRerankConfigurationTypeBedrock,
 			BedrockRerankingConfiguration: BedrockRerankingModelConfiguration{
@@ -40,7 +40,7 @@ func ToBedrockRerankRequest(rakshaReq *schemas.RakshaRerankRequest, modelARN str
 		},
 	}
 
-	for i, doc := range rakshaReq.Documents {
+	for i, doc := range gatewayReq.Documents {
 		bedrockReq.Sources[i] = BedrockRerankSource{
 			Type: bedrockRerankSourceTypeInline,
 			InlineDocumentSource: BedrockRerankInlineSource{
@@ -52,29 +52,29 @@ func ToBedrockRerankRequest(rakshaReq *schemas.RakshaRerankRequest, modelARN str
 		}
 	}
 
-	if rakshaReq.Params == nil {
+	if gatewayReq.Params == nil {
 		return bedrockReq, nil
 	}
 
-	if rakshaReq.Params.TopN != nil {
-		topN := *rakshaReq.Params.TopN
+	if gatewayReq.Params.TopN != nil {
+		topN := *gatewayReq.Params.TopN
 		if topN < 1 {
 			return nil, fmt.Errorf("top_n must be at least 1")
 		}
-		if topN > len(rakshaReq.Documents) {
-			topN = len(rakshaReq.Documents)
+		if topN > len(gatewayReq.Documents) {
+			topN = len(gatewayReq.Documents)
 		}
 		bedrockReq.RerankingConfiguration.BedrockRerankingConfiguration.NumberOfResults = schemas.Ptr(topN)
 	}
 
 	additionalFields := make(map[string]interface{})
-	if rakshaReq.Params.MaxTokensPerDoc != nil {
-		additionalFields["max_tokens_per_doc"] = *rakshaReq.Params.MaxTokensPerDoc
+	if gatewayReq.Params.MaxTokensPerDoc != nil {
+		additionalFields["max_tokens_per_doc"] = *gatewayReq.Params.MaxTokensPerDoc
 	}
-	if rakshaReq.Params.Priority != nil {
-		additionalFields["priority"] = *rakshaReq.Params.Priority
+	if gatewayReq.Params.Priority != nil {
+		additionalFields["priority"] = *gatewayReq.Params.Priority
 	}
-	for k, v := range rakshaReq.Params.ExtraParams {
+	for k, v := range gatewayReq.Params.ExtraParams {
 		additionalFields[k] = v
 	}
 	if len(additionalFields) > 0 {
@@ -84,13 +84,13 @@ func ToBedrockRerankRequest(rakshaReq *schemas.RakshaRerankRequest, modelARN str
 	return bedrockReq, nil
 }
 
-// ToRakshaRerankResponse converts a Bedrock rerank response into Raksha format.
-func (response *BedrockRerankResponse) ToRakshaRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) *schemas.RakshaRerankResponse {
+// ToGatewayRerankResponse converts a Bedrock rerank response into Gateway format.
+func (response *BedrockRerankResponse) ToGatewayRerankResponse(documents []schemas.RerankDocument, returnDocuments bool) *schemas.GatewayRerankResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaRerankResponse{
+	gatewayResponse := &schemas.GatewayRerankResponse{
 		Results: make([]schemas.RerankResult, 0, len(response.Results)),
 	}
 
@@ -104,30 +104,30 @@ func (response *BedrockRerankResponse) ToRakshaRerankResponse(documents []schema
 				Text: result.Document.TextDocument.Text,
 			}
 		}
-		rakshaResponse.Results = append(rakshaResponse.Results, rerankResult)
+		gatewayResponse.Results = append(gatewayResponse.Results, rerankResult)
 	}
 
-	sort.SliceStable(rakshaResponse.Results, func(i, j int) bool {
-		if rakshaResponse.Results[i].RelevanceScore == rakshaResponse.Results[j].RelevanceScore {
-			return rakshaResponse.Results[i].Index < rakshaResponse.Results[j].Index
+	sort.SliceStable(gatewayResponse.Results, func(i, j int) bool {
+		if gatewayResponse.Results[i].RelevanceScore == gatewayResponse.Results[j].RelevanceScore {
+			return gatewayResponse.Results[i].Index < gatewayResponse.Results[j].Index
 		}
-		return rakshaResponse.Results[i].RelevanceScore > rakshaResponse.Results[j].RelevanceScore
+		return gatewayResponse.Results[i].RelevanceScore > gatewayResponse.Results[j].RelevanceScore
 	})
 
 	if returnDocuments {
-		for i := range rakshaResponse.Results {
-			resultIndex := rakshaResponse.Results[i].Index
+		for i := range gatewayResponse.Results {
+			resultIndex := gatewayResponse.Results[i].Index
 			if resultIndex >= 0 && resultIndex < len(documents) {
-				rakshaResponse.Results[i].Document = schemas.Ptr(documents[resultIndex])
+				gatewayResponse.Results[i].Document = schemas.Ptr(documents[resultIndex])
 			}
 		}
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
-// ToRakshaRerankRequest converts a Bedrock Agent Runtime rerank request to Raksha format.
-func (req *BedrockRerankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContext) *schemas.RakshaRerankRequest {
+// ToGatewayRerankRequest converts a Bedrock Agent Runtime rerank request to Gateway format.
+func (req *BedrockRerankRequest) ToGatewayRerankRequest(ctx *schemas.GatewayContext) *schemas.GatewayRerankRequest {
 	if req == nil {
 		return nil
 	}
@@ -135,7 +135,7 @@ func (req *BedrockRerankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContex
 	modelARN := req.RerankingConfiguration.BedrockRerankingConfiguration.ModelConfiguration.ModelARN
 	provider, model := schemas.ParseModelString(modelARN, "")
 
-	rakshaReq := &schemas.RakshaRerankRequest{
+	gatewayReq := &schemas.GatewayRerankRequest{
 		Provider: provider,
 		Model:    model,
 		Params:   &schemas.RerankParameters{},
@@ -143,25 +143,25 @@ func (req *BedrockRerankRequest) ToRakshaRerankRequest(ctx *schemas.RakshaContex
 
 	// Extract query from the first query entry
 	if len(req.Queries) > 0 {
-		rakshaReq.Query = req.Queries[0].TextQuery.Text
+		gatewayReq.Query = req.Queries[0].TextQuery.Text
 	}
 
 	// Convert sources to documents
 	for _, source := range req.Sources {
-		rakshaReq.Documents = append(rakshaReq.Documents, schemas.RerankDocument{
+		gatewayReq.Documents = append(gatewayReq.Documents, schemas.RerankDocument{
 			Text: source.InlineDocumentSource.TextDocument.Text,
 		})
 	}
 
 	// Extract TopN from NumberOfResults
 	if req.RerankingConfiguration.BedrockRerankingConfiguration.NumberOfResults != nil {
-		rakshaReq.Params.TopN = req.RerankingConfiguration.BedrockRerankingConfiguration.NumberOfResults
+		gatewayReq.Params.TopN = req.RerankingConfiguration.BedrockRerankingConfiguration.NumberOfResults
 	}
 
 	// Pass AdditionalModelRequestFields as ExtraParams
 	if fields := req.RerankingConfiguration.BedrockRerankingConfiguration.ModelConfiguration.AdditionalModelRequestFields; len(fields) > 0 {
-		rakshaReq.Params.ExtraParams = fields
+		gatewayReq.Params.ExtraParams = fields
 	}
 
-	return rakshaReq
+	return gatewayReq
 }

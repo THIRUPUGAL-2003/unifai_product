@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the Raksha system.
+// Package schemas defines the core schemas and types used by the Gateway system.
 package schemas
 
 import (
@@ -162,10 +162,10 @@ func ReleaseHTTPResponse(resp *HTTPResponse) {
 	httpResponsePool.Put(resp)
 }
 
-// Plugin defines the interface for Raksha plugins.
+// Plugin defines the interface for Gateway plugins.
 // Plugins can intercept and modify requests and responses at different stages
 // of the processing pipeline.
-// User can provide multiple plugins in the RakshaConfig.
+// User can provide multiple plugins in the GatewayConfig.
 // PreHooks are executed in the order they are registered.
 // PostHooks are executed in the reverse order of PreHooks.
 //
@@ -190,16 +190,16 @@ func ReleaseHTTPResponse(resp *HTTPResponse) {
 // Common use cases: rate limiting, caching, logging, monitoring, request transformation, governance.
 //
 // Plugin error handling:
-// - No Plugin errors are returned to the caller; they are logged as warnings by the Raksha instance.
+// - No Plugin errors are returned to the caller; they are logged as warnings by the Gateway instance.
 // - PreLLMHook and PostLLMHook can both modify the request/response and the error. Plugins can recover from errors (set error to nil and provide a response), or invalidate a response (set response to nil and provide an error).
 // - PostLLMHook is always called with both the current response and error, and should handle either being nil.
 // - Only truly empty errors (no message, no error, no status code, no type) are treated as recoveries by the pipeline.
 // - If a PreLLMHook returns a LLMPluginShortCircuit, the provider call may be skipped and only the PostLLMHook methods of plugins that had their PreLLMHook executed are called in reverse order.
 // - The plugin pipeline ensures symmetry: for every PreLLMHook executed, the corresponding PostLLMHook will be called in reverse order.
 //
-// IMPORTANT: When returning RakshaError from PreLLMHook or PostLLMHook:
+// IMPORTANT: When returning GatewayError from PreLLMHook or PostLLMHook:
 // - You can set the AllowFallbacks field to control fallback behavior
-// - AllowFallbacks = &true: Allow Raksha to try fallback providers
+// - AllowFallbacks = &true: Allow Gateway to try fallback providers
 // - AllowFallbacks = &false: Do not try fallbacks, return error immediately
 // - AllowFallbacks = nil: Treated as true by default (allow fallbacks for resilience)
 //
@@ -209,18 +209,18 @@ type BasePlugin interface {
 	// GetName returns the name of the plugin.
 	GetName() string
 
-	// Cleanup is called on raksha shutdown.
+	// Cleanup is called on gateway shutdown.
 	// It allows plugins to clean up any resources they have allocated.
-	// Returns any error that occurred during cleanup, which will be logged as a warning by the Raksha instance.
+	// Returns any error that occurred during cleanup, which will be logged as a warning by the Gateway instance.
 	Cleanup() error
 }
 
 type HTTPTransportPlugin interface {
 	BasePlugin
 
-	// HTTPTransportPreHook is called at the HTTP transport layer before requests enter Raksha core.
+	// HTTPTransportPreHook is called at the HTTP transport layer before requests enter Gateway core.
 	// It receives a serializable HTTPRequest and allows plugins to modify it in-place.
-	// Only invoked when using HTTP transport (raksha-http), not when using Raksha as a Go SDK directly.
+	// Only invoked when using HTTP transport (gateway-http), not when using Gateway as a Go SDK directly.
 	// Works with both native .so plugins and WASM plugins due to serializable types.
 	//
 	// Return values:
@@ -229,11 +229,11 @@ type HTTPTransportPlugin interface {
 	// - (nil, error): Short-circuit with error response
 	//
 	// Return nil for both values if the plugin doesn't need HTTP transport interception.
-	HTTPTransportPreHook(ctx *RakshaContext, req *HTTPRequest) (*HTTPResponse, error)
+	HTTPTransportPreHook(ctx *GatewayContext, req *HTTPRequest) (*HTTPResponse, error)
 
-	// HTTPTransportPostHook is called at the HTTP transport layer after requests exit Raksha core.
+	// HTTPTransportPostHook is called at the HTTP transport layer after requests exit Gateway core.
 	// It receives a serializable HTTPRequest and HTTPResponse and allows plugins to modify it in-place.
-	// Only invoked when using HTTP transport (raksha-http), not when using Raksha as a Go SDK directly.
+	// Only invoked when using HTTP transport (gateway-http), not when using Gateway as a Go SDK directly.
 	// Works with both native .so plugins and WASM plugins due to serializable types.
 	// NOTE: This hook is NOT called for streaming responses. Use HTTPTransportStreamChunkHook instead.
 	// NOTE: For large streamed responses (non-streaming APIs that switch to body streaming for memory safety),
@@ -244,35 +244,35 @@ type HTTPTransportPlugin interface {
 	// - error: Short-circuit with error response and skip remaining plugins
 	//
 	// Return nil if the plugin doesn't need HTTP transport interception.
-	HTTPTransportPostHook(ctx *RakshaContext, req *HTTPRequest, resp *HTTPResponse) error
+	HTTPTransportPostHook(ctx *GatewayContext, req *HTTPRequest, resp *HTTPResponse) error
 
 	// HTTPTransportStreamChunkHook is called for each chunk during streaming responses.
-	// It receives the RakshaStreamChunk BEFORE they are written to the client.
-	// Only invoked for streaming responses when using HTTP transport (raksha-http).
+	// It receives the GatewayStreamChunk BEFORE they are written to the client.
+	// Only invoked for streaming responses when using HTTP transport (gateway-http).
 	// Works with both native .so plugins and WASM plugins due to serializable types.
 	//
-	// Plugins can modify the chunk by returning a different RakshaStreamChunk.
+	// Plugins can modify the chunk by returning a different GatewayStreamChunk.
 	// Return the original chunk unchanged if no modification is needed.
 	//
 	// Return values:
-	// - (*RakshaStreamChunk, nil): Continue with the (potentially modified) RakshaStreamChunk
-	// - (nil, nil): Skip this RakshaStreamChunk entirely (don't send to client)
-	// - (*RakshaStreamChunk, error): Log warning and continue with the RakshaStreamChunk
+	// - (*GatewayStreamChunk, nil): Continue with the (potentially modified) GatewayStreamChunk
+	// - (nil, nil): Skip this GatewayStreamChunk entirely (don't send to client)
+	// - (*GatewayStreamChunk, error): Log warning and continue with the GatewayStreamChunk
 	// - (nil, error): Send back error to the client and stop the streaming
 	//
-	// Return (*RakshaStreamChunk, nil) unchanged if the plugin doesn't need streaming chunk interception.
-	HTTPTransportStreamChunkHook(ctx *RakshaContext, req *HTTPRequest, chunk *RakshaStreamChunk) (*RakshaStreamChunk, error)
+	// Return (*GatewayStreamChunk, nil) unchanged if the plugin doesn't need streaming chunk interception.
+	HTTPTransportStreamChunkHook(ctx *GatewayContext, req *HTTPRequest, chunk *GatewayStreamChunk) (*GatewayStreamChunk, error)
 }
 
 // StreamInterceptionError carries a structured client error when an HTTP stream plugin terminates a stream.
 type StreamInterceptionError struct {
-	RakshaError *RakshaError
+	GatewayError *GatewayError
 }
 
 // Error returns the best available client message for callers that only understand Go errors.
 func (e *StreamInterceptionError) Error() string {
-	if e != nil && e.RakshaError != nil && e.RakshaError.Error != nil && e.RakshaError.Error.Message != "" {
-		return e.RakshaError.Error.Message
+	if e != nil && e.GatewayError != nil && e.GatewayError.Error != nil && e.GatewayError.Error.Message != "" {
+		return e.GatewayError.Error.Message
 	}
 	return "stream interception failed"
 }
@@ -294,17 +294,17 @@ type LLMPlugin interface {
 	// short-circuit response in PreLLMHook — not by returning an error here.
 	//
 	// Plugins that don't participate in routing should return nil.
-	PreRequestHook(ctx *RakshaContext, req *RakshaRequest) error
+	PreRequestHook(ctx *GatewayContext, req *GatewayRequest) error
 
-	PreLLMHook(ctx *RakshaContext, req *RakshaRequest) (*RakshaRequest, *LLMPluginShortCircuit, error)
-	PostLLMHook(ctx *RakshaContext, resp *RakshaResponse, rakshaErr *RakshaError) (*RakshaResponse, *RakshaError, error)
+	PreLLMHook(ctx *GatewayContext, req *GatewayRequest) (*GatewayRequest, *LLMPluginShortCircuit, error)
+	PostLLMHook(ctx *GatewayContext, resp *GatewayResponse, gatewayErr *GatewayError) (*GatewayResponse, *GatewayError, error)
 }
 
 type MCPPlugin interface {
 	BasePlugin
 
-	PreMCPHook(ctx *RakshaContext, req *RakshaMCPRequest) (*RakshaMCPRequest, *MCPPluginShortCircuit, error)
-	PostMCPHook(ctx *RakshaContext, resp *RakshaMCPResponse, rakshaErr *RakshaError) (*RakshaMCPResponse, *RakshaError, error)
+	PreMCPHook(ctx *GatewayContext, req *GatewayMCPRequest) (*GatewayMCPRequest, *MCPPluginShortCircuit, error)
+	PostMCPHook(ctx *GatewayContext, resp *GatewayMCPResponse, gatewayErr *GatewayError) (*GatewayMCPResponse, *GatewayError, error)
 }
 
 // MCPConnectionPlugin is an optional, typed extension interface for handling MCP
@@ -327,8 +327,8 @@ type MCPPlugin interface {
 type MCPConnectionPlugin interface {
 	MCPPlugin
 
-	PreMCPConnectionHook(ctx *RakshaContext, req *RakshaMCPConnectRequest) (*RakshaMCPConnectRequest, *MCPConnectionShortCircuit, error)
-	PostMCPConnectionHook(ctx *RakshaContext, resp *RakshaMCPConnectResponse, rakshaErr *RakshaError) (*RakshaMCPConnectResponse, *RakshaError, error)
+	PreMCPConnectionHook(ctx *GatewayContext, req *GatewayMCPConnectRequest) (*GatewayMCPConnectRequest, *MCPConnectionShortCircuit, error)
+	PostMCPConnectionHook(ctx *GatewayContext, resp *GatewayMCPConnectResponse, gatewayErr *GatewayError) (*GatewayMCPConnectResponse, *GatewayError, error)
 }
 
 // MCPPluginNoOpHooks provides no-op implementations of PreMCPHook and PostMCPHook.
@@ -339,13 +339,13 @@ type MCPConnectionPlugin interface {
 type MCPPluginNoOpHooks struct{}
 
 // PreMCPHook returns the request unchanged with no short-circuit.
-func (MCPPluginNoOpHooks) PreMCPHook(_ *RakshaContext, req *RakshaMCPRequest) (*RakshaMCPRequest, *MCPPluginShortCircuit, error) {
+func (MCPPluginNoOpHooks) PreMCPHook(_ *GatewayContext, req *GatewayMCPRequest) (*GatewayMCPRequest, *MCPPluginShortCircuit, error) {
 	return req, nil, nil
 }
 
 // PostMCPHook returns the response and error unchanged.
-func (MCPPluginNoOpHooks) PostMCPHook(_ *RakshaContext, resp *RakshaMCPResponse, rakshaErr *RakshaError) (*RakshaMCPResponse, *RakshaError, error) {
-	return resp, rakshaErr, nil
+func (MCPPluginNoOpHooks) PostMCPHook(_ *GatewayContext, resp *GatewayMCPResponse, gatewayErr *GatewayError) (*GatewayMCPResponse, *GatewayError, error) {
+	return resp, gatewayErr, nil
 }
 
 // Plugin placement constants control where custom plugins execute relative to built-in plugins.

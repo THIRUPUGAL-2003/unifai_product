@@ -14,13 +14,13 @@ import (
 	"github.com/fasthttp/router"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/providers/openai"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/plugins/modelcatalogresolver"
-	"github.com/raksha/raksha/transports/raksha-http/integrations"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
-	ufws "github.com/raksha/raksha/transports/raksha-http/websocket"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/providers/openai"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/plugins/modelcatalogresolver"
+	"github.com/gateway/gateway/transports/gateway-http/integrations"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
+	ufws "github.com/gateway/gateway/transports/gateway-http/websocket"
 	"github.com/valyala/fasthttp"
 )
 
@@ -40,7 +40,7 @@ var defaultAudioCodec = webrtc.RTPCodecCapability{
 var realtimeSDPMaxMessageSizePattern = regexp.MustCompile(`(?m)^a=max-message-size:(\d+)\s*$`)
 
 type WebRTCRealtimeHandler struct {
-	client       *raksha.Raksha
+	client       *gateway.Gateway
 	config       *lib.Config
 	handlerStore lib.HandlerStore
 	mu           sync.Mutex
@@ -48,7 +48,7 @@ type WebRTCRealtimeHandler struct {
 	legacyRoutes map[string]schemas.ModelProvider // path → default provider (legacy raw-SDP routes)
 }
 
-func NewWebRTCRealtimeHandler(client *raksha.Raksha, config *lib.Config) *WebRTCRealtimeHandler {
+func NewWebRTCRealtimeHandler(client *gateway.Gateway, config *lib.Config) *WebRTCRealtimeHandler {
 	return &WebRTCRealtimeHandler{
 		client:       client,
 		config:       config,
@@ -58,13 +58,13 @@ func NewWebRTCRealtimeHandler(client *raksha.Raksha, config *lib.Config) *WebRTC
 	}
 }
 
-func (h *WebRTCRealtimeHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *WebRTCRealtimeHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	handler := lib.ChainMiddlewares(h.handleRequest, middlewares...)
 
-	// Base raksha route — GA /calls format (multipart sdp + session)
+	// Base gateway route — GA /calls format (multipart sdp + session)
 	r.POST("/v1/realtime/calls", handler)
 
-	// Base raksha route — legacy format (raw SDP or multipart on /v1/realtime)
+	// Base gateway route — legacy format (raw SDP or multipart on /v1/realtime)
 	h.legacyRoutes["/v1/realtime"] = ""
 	r.POST("/v1/realtime", handler)
 
@@ -111,26 +111,26 @@ func (h *WebRTCRealtimeHandler) handleRequest(ctx *fasthttp.RequestCtx) {
 // Raw SDP bodies (application/sdp) fall back to ?model= for the legacy
 // raw-SDP path only; the multipart contract has no ?model= fallback.
 func (h *WebRTCRealtimeHandler) handleCallsRequest(ctx *fasthttp.RequestCtx) {
-	sdpOffer, providerKey, model, normalizedSession, rakshaErr := parseCallsWebRTCRequest(ctx, h.config)
-	if rakshaErr != nil {
-		SendRakshaError(ctx, rakshaErr)
+	sdpOffer, providerKey, model, normalizedSession, gatewayErr := parseCallsWebRTCRequest(ctx, h.config)
+	if gatewayErr != nil {
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
-	rtProvider, rakshaErr := h.resolveWebRTCProvider(providerKey)
-	if rakshaErr != nil {
-		SendRakshaError(ctx, rakshaErr)
+	rtProvider, gatewayErr := h.resolveWebRTCProvider(providerKey)
+	if gatewayErr != nil {
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
-	exchangeSDP := func(rCtx *schemas.RakshaContext, key schemas.Key, upstreamOffer string) (string, *schemas.RakshaError) {
+	exchangeSDP := func(rCtx *schemas.GatewayContext, key schemas.Key, upstreamOffer string) (string, *schemas.GatewayError) {
 		return rtProvider.ExchangeRealtimeWebRTCSDP(rCtx, key, model, upstreamOffer, normalizedSession)
 	}
 
 	h.runWebRTCRelay(ctx, rtProvider, providerKey, model, sdpOffer, exchangeSDP)
 }
 
-func parseCallsWebRTCRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (string, schemas.ModelProvider, string, []byte, *schemas.RakshaError) {
+func parseCallsWebRTCRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (string, schemas.ModelProvider, string, []byte, *schemas.GatewayError) {
 	contentType := strings.ToLower(string(ctx.Request.Header.ContentType()))
 	path := string(ctx.Path())
 	if strings.HasPrefix(contentType, "multipart/form-data") {
@@ -148,9 +148,9 @@ func parseCallsWebRTCRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (stri
 		if strings.TrimSpace(sessionField) == "" {
 			return "", "", "", nil, newRealtimeWebRTCError(fasthttp.StatusBadRequest, "invalid_request_error", "session form field is required", nil)
 		}
-		providerKey, model, normalizedSession, rakshaErr := resolveRealtimeSDPTarget(ctx, config, path, []byte(sessionField))
-		if rakshaErr != nil {
-			return "", "", "", nil, rakshaErr
+		providerKey, model, normalizedSession, gatewayErr := resolveRealtimeSDPTarget(ctx, config, path, []byte(sessionField))
+		if gatewayErr != nil {
+			return "", "", "", nil, gatewayErr
 		}
 		return sdpOffer, providerKey, model, normalizedSession, nil
 	}
@@ -191,9 +191,9 @@ func parseCallsWebRTCRequest(ctx *fasthttp.RequestCtx, config *lib.Config) (stri
 // handleLegacyRequest handles the beta /realtime endpoint.
 // Accepts both multipart (sdp + session) and raw SDP (application/sdp) from clients.
 func (h *WebRTCRealtimeHandler) handleLegacyRequest(ctx *fasthttp.RequestCtx, defaultProvider schemas.ModelProvider) {
-	sdpOffer, rawModel, sessionJSON, rakshaErr := parseLegacyWebRTCRequest(ctx, defaultProvider)
-	if rakshaErr != nil {
-		SendRakshaError(ctx, rakshaErr)
+	sdpOffer, rawModel, sessionJSON, gatewayErr := parseLegacyWebRTCRequest(ctx, defaultProvider)
+	if gatewayErr != nil {
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
@@ -211,19 +211,19 @@ func (h *WebRTCRealtimeHandler) handleLegacyRequest(ctx *fasthttp.RequestCtx, de
 		}
 	}
 	if providerKey == "" || model == "" {
-		SendRakshaError(ctx, newRealtimeWebRTCError(fasthttp.StatusBadRequest, "invalid_request_error", "invalid model: "+rawModel, nil))
+		SendGatewayError(ctx, newRealtimeWebRTCError(fasthttp.StatusBadRequest, "invalid_request_error", "invalid model: "+rawModel, nil))
 		return
 	}
 
-	rtProvider, rakshaErr := h.resolveWebRTCProvider(providerKey)
-	if rakshaErr != nil {
-		SendRakshaError(ctx, rakshaErr)
+	rtProvider, gatewayErr := h.resolveWebRTCProvider(providerKey)
+	if gatewayErr != nil {
+		SendGatewayError(ctx, gatewayErr)
 		return
 	}
 
 	legacyProvider, ok := rtProvider.(schemas.RealtimeLegacyWebRTCProvider)
 	if !ok {
-		SendRakshaError(ctx, newRealtimeWebRTCError(fasthttp.StatusBadRequest, "invalid_request_error", "provider does not support legacy realtime WebRTC: "+string(providerKey), nil))
+		SendGatewayError(ctx, newRealtimeWebRTCError(fasthttp.StatusBadRequest, "invalid_request_error", "provider does not support legacy realtime WebRTC: "+string(providerKey), nil))
 		return
 	}
 
@@ -237,7 +237,7 @@ func (h *WebRTCRealtimeHandler) handleLegacyRequest(ctx *fasthttp.RequestCtx, de
 		}
 	}
 
-	exchangeSDP := func(rCtx *schemas.RakshaContext, key schemas.Key, upstreamOffer string) (string, *schemas.RakshaError) {
+	exchangeSDP := func(rCtx *schemas.GatewayContext, key schemas.Key, upstreamOffer string) (string, *schemas.GatewayError) {
 		return legacyProvider.ExchangeLegacyRealtimeWebRTCSDP(rCtx, key, upstreamOffer, sessionJSON, model)
 	}
 
@@ -246,7 +246,7 @@ func (h *WebRTCRealtimeHandler) handleLegacyRequest(ctx *fasthttp.RequestCtx, de
 
 // parseLegacyWebRTCRequest extracts SDP, model, and optional session from a legacy request.
 // Handles both multipart (sdp + session fields) and raw SDP (body + ?model= query param).
-func parseLegacyWebRTCRequest(ctx *fasthttp.RequestCtx, defaultProvider schemas.ModelProvider) (sdpOffer, rawModel string, sessionJSON json.RawMessage, err *schemas.RakshaError) {
+func parseLegacyWebRTCRequest(ctx *fasthttp.RequestCtx, defaultProvider schemas.ModelProvider) (sdpOffer, rawModel string, sessionJSON json.RawMessage, err *schemas.GatewayError) {
 	if strings.HasPrefix(strings.ToLower(string(ctx.Request.Header.ContentType())), "multipart/form-data") {
 		form, formErr := ctx.MultipartForm()
 		if formErr != nil {
@@ -283,29 +283,29 @@ func parseLegacyWebRTCRequest(ctx *fasthttp.RequestCtx, defaultProvider schemas.
 	return sdpOffer, rawModel, sessionJSON, nil
 }
 
-// runWebRTCRelay is the shared relay setup: creates raksha context, selects key, establishes relay.
+// runWebRTCRelay is the shared relay setup: creates gateway context, selects key, establishes relay.
 func (h *WebRTCRealtimeHandler) runWebRTCRelay(
 	ctx *fasthttp.RequestCtx,
 	rtProvider schemas.RealtimeProvider,
 	providerKey schemas.ModelProvider,
 	model string,
 	sdpOffer string,
-	exchangeSDP func(ctx *schemas.RakshaContext, key schemas.Key, upstreamOffer string) (string, *schemas.RakshaError),
+	exchangeSDP func(ctx *schemas.GatewayContext, key schemas.Key, upstreamOffer string) (string, *schemas.GatewayError),
 ) {
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
 	defer cancel()
 	// Apply governance/routing values from the transport middleware.
-	// ConvertToRakshaContext creates a fresh context that doesn't carry the user
+	// ConvertToGatewayContext creates a fresh context that doesn't carry the user
 	// values the middleware stored on the fasthttp RequestCtx via SetUserValue.
-	applyRealtimeMiddlewareValues(rakshaCtx, snapshotRealtimeMiddlewareValues(ctx))
-	rakshaCtx.SetValue(schemas.RakshaContextKeyHTTPRequestType, schemas.RealtimeRequest)
+	applyRealtimeMiddlewareValues(gatewayCtx, snapshotRealtimeMiddlewareValues(ctx))
+	gatewayCtx.SetValue(schemas.GatewayContextKeyHTTPRequestType, schemas.RealtimeRequest)
 	if strings.HasPrefix(string(ctx.Path()), "/openai") {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyIntegrationType, "openai")
+		gatewayCtx.SetValue(schemas.GatewayContextKeyIntegrationType, "openai")
 	}
 
-	authKey, selectedKey, err := h.resolveRealtimeWebRTCKeys(ctx, rakshaCtx, providerKey, model)
+	authKey, selectedKey, err := h.resolveRealtimeWebRTCKeys(ctx, gatewayCtx, providerKey, model)
 	if err != nil {
-		SendRakshaError(ctx, newRealtimeWebRTCError(fasthttp.StatusBadRequest, "invalid_request_error", err.Error(), nil))
+		SendGatewayError(ctx, newRealtimeWebRTCError(fasthttp.StatusBadRequest, "invalid_request_error", err.Error(), nil))
 		return
 	}
 
@@ -317,20 +317,20 @@ func (h *WebRTCRealtimeHandler) runWebRTCRelay(
 	}
 
 	// Compute raw storage flag from provider config + per-request header overrides.
-	// Normal inference computes this inside raksha.executeRequest, which is bypassed
+	// Normal inference computes this inside gateway.executeRequest, which is bypassed
 	// for realtime WebRTC connections.
-	applyRealtimeRawStorageContext(rakshaCtx, h.client.ComputeRawStorageForProvider(rakshaCtx, providerKey))
+	applyRealtimeRawStorageContext(gatewayCtx, h.client.ComputeRawStorageForProvider(gatewayCtx, providerKey))
 
-	boundExchange := func(rCtx *schemas.RakshaContext, upstreamOffer string) (string, *schemas.RakshaError) {
+	boundExchange := func(rCtx *schemas.GatewayContext, upstreamOffer string) (string, *schemas.GatewayError) {
 		return exchangeSDP(rCtx, authKey, upstreamOffer)
 	}
 
-	relayCtx, relayCancel := newRealtimeRelayContext(rakshaCtx)
+	relayCtx, relayCancel := newRealtimeRelayContext(gatewayCtx)
 	session := ufws.NewSession(nil)
 	browserAnswer, relayErr := h.establishRelay(relayCtx, relayCancel, session, rtProvider, providerKey, model, selectedKey, sdpOffer, boundExchange)
 	if relayErr != nil {
 		relayCancel()
-		SendRakshaError(ctx, relayErr)
+		SendGatewayError(ctx, relayErr)
 		return
 	}
 
@@ -341,28 +341,28 @@ func (h *WebRTCRealtimeHandler) runWebRTCRelay(
 
 func (h *WebRTCRealtimeHandler) resolveRealtimeWebRTCKeys(
 	ctx *fasthttp.RequestCtx,
-	rakshaCtx *schemas.RakshaContext,
+	gatewayCtx *schemas.GatewayContext,
 	providerKey schemas.ModelProvider,
 	model string,
 ) (schemas.Key, *schemas.Key, error) {
 	inboundToken := extractRealtimeBearerToken(ctx)
 	mapping, mapped := lookupRealtimeEphemeralKeyMapping(h.handlerStore.GetKVStore(), inboundToken)
 	if mapped {
-		applyRealtimeEphemeralKeyMapping(rakshaCtx, mapping)
+		applyRealtimeEphemeralKeyMapping(gatewayCtx, mapping)
 	}
 	if isRealtimeEphemeralToken(inboundToken) && !mapped {
-		rakshaCtx.ClearValue(schemas.RakshaContextKeyAPIKeyID)
-		rakshaCtx.ClearValue(schemas.RakshaContextKeyAPIKeyName)
-		rakshaCtx.ClearValue(schemas.RakshaContextKeySelectedKeyID)
-		rakshaCtx.ClearValue(schemas.RakshaContextKeySelectedKeyName)
+		gatewayCtx.ClearValue(schemas.GatewayContextKeyAPIKeyID)
+		gatewayCtx.ClearValue(schemas.GatewayContextKeyAPIKeyName)
+		gatewayCtx.ClearValue(schemas.GatewayContextKeySelectedKeyID)
+		gatewayCtx.ClearValue(schemas.GatewayContextKeySelectedKeyName)
 		authKey := schemas.Key{Value: *schemas.NewSecretVar(inboundToken)}
 		return authKey, nil, nil
 	}
 
-	selectedKey, err := h.client.SelectKeyForProviderRequestType(rakshaCtx, schemas.RealtimeRequest, providerKey, model)
+	selectedKey, err := h.client.SelectKeyForProviderRequestType(gatewayCtx, schemas.RealtimeRequest, providerKey, model)
 	if err != nil && mapped && mapping.KeyID != "" {
-		rakshaCtx.ClearValue(schemas.RakshaContextKeyAPIKeyID)
-		selectedKey, err = h.client.SelectKeyForProviderRequestType(rakshaCtx, schemas.RealtimeRequest, providerKey, model)
+		gatewayCtx.ClearValue(schemas.GatewayContextKeyAPIKeyID)
+		selectedKey, err = h.client.SelectKeyForProviderRequestType(gatewayCtx, schemas.RealtimeRequest, providerKey, model)
 	}
 	if err != nil {
 		return schemas.Key{}, nil, err
@@ -425,15 +425,15 @@ func parseRealtimeEphemeralKeyMappingValue(raw []byte) (realtimeEphemeralKeyMapp
 	return realtimeEphemeralKeyMapping{KeyID: keyID}, true
 }
 
-func applyRealtimeEphemeralKeyMapping(rakshaCtx *schemas.RakshaContext, mapping realtimeEphemeralKeyMapping) {
-	if rakshaCtx == nil {
+func applyRealtimeEphemeralKeyMapping(gatewayCtx *schemas.GatewayContext, mapping realtimeEphemeralKeyMapping) {
+	if gatewayCtx == nil {
 		return
 	}
 	if mapping.VirtualKey != "" {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyVirtualKey, mapping.VirtualKey)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyVirtualKey, mapping.VirtualKey)
 	}
 	if mapping.KeyID != "" {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyAPIKeyID, mapping.KeyID)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyAPIKeyID, mapping.KeyID)
 	}
 }
 
@@ -457,7 +457,7 @@ func isRealtimeEphemeralToken(token string) bool {
 }
 
 // resolveWebRTCProvider validates and returns a RealtimeProvider that supports WebRTC.
-func (h *WebRTCRealtimeHandler) resolveWebRTCProvider(providerKey schemas.ModelProvider) (schemas.RealtimeProvider, *schemas.RakshaError) {
+func (h *WebRTCRealtimeHandler) resolveWebRTCProvider(providerKey schemas.ModelProvider) (schemas.RealtimeProvider, *schemas.GatewayError) {
 	provider := h.client.GetProviderByKey(providerKey)
 	if provider == nil {
 		return nil, newRealtimeWebRTCError(fasthttp.StatusBadRequest, "invalid_request_error", "provider not found: "+string(providerKey), nil)
@@ -479,7 +479,7 @@ func (h *WebRTCRealtimeHandler) resolveWebRTCProvider(providerKey schemas.ModelP
 // exchangeSDP is called with the upstream peer connection's SDP offer and must return the provider's
 // SDP answer. This allows the handler to plug in different exchange strategies (GA calls vs legacy).
 func (h *WebRTCRealtimeHandler) establishRelay(
-	relayCtx *schemas.RakshaContext,
+	relayCtx *schemas.GatewayContext,
 	relayCancel context.CancelFunc,
 	session *ufws.Session,
 	provider schemas.RealtimeProvider,
@@ -487,8 +487,8 @@ func (h *WebRTCRealtimeHandler) establishRelay(
 	model string,
 	key *schemas.Key,
 	browserOffer string,
-	exchangeSDP func(ctx *schemas.RakshaContext, upstreamOffer string) (string, *schemas.RakshaError),
-) (string, *schemas.RakshaError) {
+	exchangeSDP func(ctx *schemas.GatewayContext, upstreamOffer string) (string, *schemas.GatewayError),
+) (string, *schemas.GatewayError) {
 	downstreamPC, err := newRealtimePeerConnection()
 	if err != nil {
 		return "", newRealtimeWebRTCError(fasthttp.StatusInternalServerError, "server_error", "failed to create browser peer connection", err)
@@ -504,7 +504,7 @@ func (h *WebRTCRealtimeHandler) establishRelay(
 		downstreamPC: downstreamPC,
 		upstreamPC:   upstreamPC,
 		session:      session,
-		rakshaCtx:    relayCtx,
+		gatewayCtx:    relayCtx,
 		cancel:       relayCancel,
 		provider:     provider,
 		providerKey:  providerKey,
@@ -518,7 +518,7 @@ func (h *WebRTCRealtimeHandler) establishRelay(
 	h.registerRelay(session.ID(), relay)
 
 	// Downstream local audio track carries provider audio back to the browser.
-	providerToBrowserTrack, err := webrtc.NewTrackLocalStaticRTP(defaultAudioCodec, "audio", "raksha-provider-audio")
+	providerToBrowserTrack, err := webrtc.NewTrackLocalStaticRTP(defaultAudioCodec, "audio", "gateway-provider-audio")
 	if err != nil {
 		relay.close()
 		return "", newRealtimeWebRTCError(fasthttp.StatusInternalServerError, "server_error", "failed to create browser audio track", err)
@@ -532,7 +532,7 @@ func (h *WebRTCRealtimeHandler) establishRelay(
 	go relay.forwardRTCP(providerToBrowserSender, upstreamPC)
 
 	// Upstream local audio track carries browser audio to the provider.
-	browserToProviderTrack, err := webrtc.NewTrackLocalStaticRTP(defaultAudioCodec, "audio", "raksha-browser-audio")
+	browserToProviderTrack, err := webrtc.NewTrackLocalStaticRTP(defaultAudioCodec, "audio", "gateway-browser-audio")
 	if err != nil {
 		relay.close()
 		return "", newRealtimeWebRTCError(fasthttp.StatusInternalServerError, "server_error", "failed to create provider audio track", err)
@@ -598,7 +598,7 @@ func (h *WebRTCRealtimeHandler) establishRelay(
 }
 
 type webrtcRealtimeRelay struct {
-	client       *raksha.Raksha
+	client       *gateway.Gateway
 	downstreamPC *webrtc.PeerConnection
 	upstreamPC   *webrtc.PeerConnection
 
@@ -609,7 +609,7 @@ type webrtcRealtimeRelay struct {
 	browserToProviderTrack *webrtc.TrackLocalStaticRTP
 
 	session     *ufws.Session
-	rakshaCtx   *schemas.RakshaContext
+	gatewayCtx   *schemas.GatewayContext
 	cancel      context.CancelFunc
 	provider    schemas.RealtimeProvider
 	providerKey schemas.ModelProvider
@@ -832,11 +832,11 @@ func (r *webrtcRealtimeRelay) handleDownstreamMessage(msg webrtc.DataChannelMess
 	startsTurn := r.provider.ShouldStartRealtimeTurn(event)
 	if startsTurn {
 		if r.session.PeekRealtimeTurnHooks() != nil {
-			r.sendDownstream(newRealtimeTurnErrorEventPayload(newRealtimeWireRakshaError(400, "invalid_request_error", "Conversation already has an active response in progress.")), true)
+			r.sendDownstream(newRealtimeTurnErrorEventPayload(newRealtimeWireGatewayError(400, "invalid_request_error", "Conversation already has an active response in progress.")), true)
 			return
 		}
-		if rakshaErr := startRealtimeTurnHooks(r.client, r.rakshaCtx, r.session, r.provider, r.providerKey, r.model, r.key, event.Type); rakshaErr != nil {
-			r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(rakshaErr))
+		if gatewayErr := startRealtimeTurnHooks(r.client, r.gatewayCtx, r.session, r.provider, r.providerKey, r.model, r.key, event.Type); gatewayErr != nil {
+			r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(gatewayErr))
 			return
 		}
 	}
@@ -847,7 +847,7 @@ func (r *webrtcRealtimeRelay) handleDownstreamMessage(msg webrtc.DataChannelMess
 		if startsTurn {
 			if finalizeErr := finalizeRealtimeTurnHooksOnTransportError(
 				r.client,
-				r.rakshaCtx,
+				r.gatewayCtx,
 				r.session,
 				r.providerKey,
 				r.model,
@@ -859,7 +859,7 @@ func (r *webrtcRealtimeRelay) handleDownstreamMessage(msg webrtc.DataChannelMess
 				r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(finalizeErr))
 				return
 			}
-			r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(newRealtimeWireRakshaError(400, "invalid_request_error", err.Error())))
+			r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(newRealtimeWireGatewayError(400, "invalid_request_error", err.Error())))
 			return
 		}
 		logger.Warn("failed to translate browser realtime event: %v", err)
@@ -873,11 +873,11 @@ func (r *webrtcRealtimeRelay) handleDownstreamMessage(msg webrtc.DataChannelMess
 }
 
 func (r *webrtcRealtimeRelay) handleUpstreamMessage(msg webrtc.DataChannelMessage) {
-	event, err := r.provider.ToRakshaRealtimeEvent(msg.Data)
+	event, err := r.provider.ToGatewayRealtimeEvent(msg.Data)
 	if err != nil {
 		if finalizeErr := finalizeRealtimeTurnHooksOnTransportError(
 			r.client,
-			r.rakshaCtx,
+			r.gatewayCtx,
 			r.session,
 			r.providerKey,
 			r.model,
@@ -890,7 +890,7 @@ func (r *webrtcRealtimeRelay) handleUpstreamMessage(msg webrtc.DataChannelMessag
 			return
 		}
 		logger.Warn("failed to translate upstream realtime event: %v", err)
-		r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(newRealtimeWireRakshaError(502, "server_error", "failed to translate upstream realtime event")))
+		r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(newRealtimeWireGatewayError(502, "server_error", "failed to translate upstream realtime event")))
 		return
 	}
 	if event != nil {
@@ -908,8 +908,8 @@ func (r *webrtcRealtimeRelay) handleUpstreamMessage(msg webrtc.DataChannelMessag
 			r.session.AppendRealtimeOutputText(event.Delta.Transcript)
 		}
 		if r.provider.ShouldStartRealtimeTurn(event) && r.session.PeekRealtimeTurnHooks() == nil {
-			if rakshaErr := startRealtimeTurnHooks(r.client, r.rakshaCtx, r.session, r.provider, r.providerKey, r.model, r.key, event.Type); rakshaErr != nil {
-				r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(rakshaErr))
+			if gatewayErr := startRealtimeTurnHooks(r.client, r.gatewayCtx, r.session, r.provider, r.providerKey, r.model, r.key, event.Type); gatewayErr != nil {
+				r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(gatewayErr))
 				return
 			}
 		}
@@ -920,21 +920,21 @@ func (r *webrtcRealtimeRelay) handleUpstreamMessage(msg webrtc.DataChannelMessag
 		}
 		if event.Type == r.provider.RealtimeTurnFinalEvent() {
 			contentOverride := r.session.ConsumeRealtimeOutputText()
-			if rakshaErr := finalizeRealtimeTurnHooks(r.client, r.rakshaCtx, r.session, r.provider, r.providerKey, r.model, r.key, msg.Data, contentOverride); rakshaErr != nil {
-				r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(rakshaErr))
+			if gatewayErr := finalizeRealtimeTurnHooks(r.client, r.gatewayCtx, r.session, r.provider, r.providerKey, r.model, r.key, msg.Data, contentOverride); gatewayErr != nil {
+				r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(gatewayErr))
 				return
 			}
 		} else if event.Error != nil {
 			if finalizeErr := finalizeRealtimeTurnHooksWithError(
 				r.client,
-				r.rakshaCtx,
+				r.gatewayCtx,
 				r.session,
 				r.providerKey,
 				r.model,
 				r.key,
 				event.Type,
 				msg.Data,
-				newRakshaErrorFromRealtimeError(r.providerKey, r.model, msg.Data, event.Error),
+				newGatewayErrorFromRealtimeError(r.providerKey, r.model, msg.Data, event.Error),
 			); finalizeErr != nil {
 				r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(finalizeErr))
 				return
@@ -947,7 +947,7 @@ func (r *webrtcRealtimeRelay) handleUpstreamMessage(msg webrtc.DataChannelMessag
 			// can transition turn state — if encoding fails after the turn was
 			// finalized server-side, swallowing this would leave the client hung.
 			r.closeWithErrorEvent(newRealtimeTurnErrorEventPayload(
-				newRealtimeWireRakshaError(502, "server_error", "failed to encode translated realtime event: "+err.Error()),
+				newRealtimeWireGatewayError(502, "server_error", "failed to encode translated realtime event: "+err.Error()),
 			))
 			return
 		}
@@ -1009,7 +1009,7 @@ func (r *webrtcRealtimeRelay) close() {
 		if r.session != nil {
 			_ = finalizeRealtimeTurnHooksOnTransportError(
 				r.client,
-				r.rakshaCtx,
+				r.gatewayCtx,
 				r.session,
 				r.providerKey,
 				r.model,
@@ -1085,49 +1085,49 @@ func (h *WebRTCRealtimeHandler) unregisterRelay(sessionID string) {
 	delete(h.relays, sessionID)
 }
 
-func newRealtimeRelayContext(requestCtx *schemas.RakshaContext) (*schemas.RakshaContext, context.CancelFunc) {
-	relayCtx, cancel := schemas.NewRakshaContextWithCancel(context.Background())
+func newRealtimeRelayContext(requestCtx *schemas.GatewayContext) (*schemas.GatewayContext, context.CancelFunc) {
+	relayCtx, cancel := schemas.NewGatewayContextWithCancel(context.Background())
 	if requestCtx == nil {
 		return relayCtx, cancel
 	}
 
 	for _, key := range []any{
-		schemas.RakshaContextKeyRequestID,
-		schemas.RakshaContextKeyHTTPRequestType,
-		schemas.RakshaContextKeyIntegrationType,
-		schemas.RakshaContextKeyParentRequestID,
-		schemas.RakshaContextKeyVirtualKey,
-		schemas.RakshaContextKeyAPIKeyName,
-		schemas.RakshaContextKeyAPIKeyID,
-		schemas.RakshaContextKeyExtraHeaders,
-		schemas.RakshaContextKeyRequestHeaders,
-		schemas.RakshaContextKeyUserAgent,
-		schemas.RakshaContextKeyGovernanceVirtualKeyID,
-		schemas.RakshaContextKeyGovernanceVirtualKeyName,
-		schemas.RakshaContextKeyGovernanceRoutingRuleID,
-		schemas.RakshaContextKeyGovernanceRoutingRuleName,
-		schemas.RakshaContextKeyGovernanceCustomerID,
-		schemas.RakshaContextKeyGovernanceCustomerName,
-		schemas.RakshaContextKeyGovernanceTeamID,
-		schemas.RakshaContextKeyGovernanceTeamName,
-		schemas.RakshaContextKeyUserID,
-		schemas.RakshaContextKeyUserName,
-		schemas.RakshaContextKeyGovernanceIncludeOnlyKeys,
-		schemas.RakshaContextKeyGovernancePluginName,
-		schemas.RakshaContextKeySelectedKeyID,
-		schemas.RakshaContextKeySelectedKeyName,
-		schemas.RakshaContextKeyIsEnterprise,
-		schemas.RakshaContextKeyRoutingEnginesUsed,
-		schemas.RakshaContextKeyRoutingEngineLogs,
-		schemas.RakshaContextKeyShouldStoreRawInLogs,
-		schemas.RakshaContextKeyAllowPerRequestStorageOverride,
-		schemas.RakshaContextKeyAllowPerRequestRawOverride,
-		schemas.RakshaContextKeyStoreRawRequestResponse,
-		schemas.RakshaContextKeyDisableContentLogging,
-		schemas.RakshaContextKeyCaptureRawRequest,
-		schemas.RakshaContextKeyCaptureRawResponse,
-		schemas.RakshaContextKeyDropRawRequestFromClient,
-		schemas.RakshaContextKeyDropRawResponseFromClient,
+		schemas.GatewayContextKeyRequestID,
+		schemas.GatewayContextKeyHTTPRequestType,
+		schemas.GatewayContextKeyIntegrationType,
+		schemas.GatewayContextKeyParentRequestID,
+		schemas.GatewayContextKeyVirtualKey,
+		schemas.GatewayContextKeyAPIKeyName,
+		schemas.GatewayContextKeyAPIKeyID,
+		schemas.GatewayContextKeyExtraHeaders,
+		schemas.GatewayContextKeyRequestHeaders,
+		schemas.GatewayContextKeyUserAgent,
+		schemas.GatewayContextKeyGovernanceVirtualKeyID,
+		schemas.GatewayContextKeyGovernanceVirtualKeyName,
+		schemas.GatewayContextKeyGovernanceRoutingRuleID,
+		schemas.GatewayContextKeyGovernanceRoutingRuleName,
+		schemas.GatewayContextKeyGovernanceCustomerID,
+		schemas.GatewayContextKeyGovernanceCustomerName,
+		schemas.GatewayContextKeyGovernanceTeamID,
+		schemas.GatewayContextKeyGovernanceTeamName,
+		schemas.GatewayContextKeyUserID,
+		schemas.GatewayContextKeyUserName,
+		schemas.GatewayContextKeyGovernanceIncludeOnlyKeys,
+		schemas.GatewayContextKeyGovernancePluginName,
+		schemas.GatewayContextKeySelectedKeyID,
+		schemas.GatewayContextKeySelectedKeyName,
+		schemas.GatewayContextKeyIsEnterprise,
+		schemas.GatewayContextKeyRoutingEnginesUsed,
+		schemas.GatewayContextKeyRoutingEngineLogs,
+		schemas.GatewayContextKeyShouldStoreRawInLogs,
+		schemas.GatewayContextKeyAllowPerRequestStorageOverride,
+		schemas.GatewayContextKeyAllowPerRequestRawOverride,
+		schemas.GatewayContextKeyStoreRawRequestResponse,
+		schemas.GatewayContextKeyDisableContentLogging,
+		schemas.GatewayContextKeyCaptureRawRequest,
+		schemas.GatewayContextKeyCaptureRawResponse,
+		schemas.GatewayContextKeyDropRawRequestFromClient,
+		schemas.GatewayContextKeyDropRawResponseFromClient,
 	} {
 		if value := requestCtx.Value(key); value != nil {
 			relayCtx.SetValue(key, value)
@@ -1135,7 +1135,7 @@ func newRealtimeRelayContext(requestCtx *schemas.RakshaContext) (*schemas.Raksha
 	}
 
 	// Tag the relay context with transport type for downstream logging/metadata.
-	relayCtx.SetValue(schemas.RakshaContextKeyRealtimeTransport, "webrtc")
+	relayCtx.SetValue(schemas.GatewayContextKeyRealtimeTransport, "webrtc")
 
 	return relayCtx, cancel
 }
@@ -1218,7 +1218,7 @@ func sendDataChannelMessage(dc *webrtc.DataChannel, payload []byte, isString boo
 	}
 }
 
-func resolveRealtimeSDPTarget(ctx *fasthttp.RequestCtx, config *lib.Config, path string, sessionJSON []byte) (schemas.ModelProvider, string, []byte, *schemas.RakshaError) {
+func resolveRealtimeSDPTarget(ctx *fasthttp.RequestCtx, config *lib.Config, path string, sessionJSON []byte) (schemas.ModelProvider, string, []byte, *schemas.GatewayError) {
 	root, err := schemas.ParseRealtimeClientSecretBody(sessionJSON)
 	if err != nil {
 		return "", "", nil, err
@@ -1275,16 +1275,16 @@ func firstMultipartValue(values map[string][]string, key string) string {
 	return values[key][0]
 }
 
-func newRealtimeWebRTCError(status int, errorType, message string, err error) *schemas.RakshaError {
-	return &schemas.RakshaError{
-		IsRakshaError: false,
+func newRealtimeWebRTCError(status int, errorType, message string, err error) *schemas.GatewayError {
+	return &schemas.GatewayError{
+		IsGatewayError: false,
 		StatusCode:    schemas.Ptr(status),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr(errorType),
 			Message: message,
 			Error:   err,
 		},
-		ExtraFields: schemas.RakshaErrorExtraFields{
+		ExtraFields: schemas.GatewayErrorExtraFields{
 			RequestType: schemas.RealtimeRequest,
 		},
 	}

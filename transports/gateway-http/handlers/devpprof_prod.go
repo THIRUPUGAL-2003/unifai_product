@@ -4,7 +4,7 @@ package handlers
 
 import (
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // DevPprofHandler is a no-op stub for production builds (built without the "dev" tag).
@@ -17,7 +17,7 @@ func IsDevMode() bool { return false }
 func NewDevPprofHandler() *DevPprofHandler { return nil }
 
 // RegisterRoutes is a no-op in production builds.
-func (h *DevPprofHandler) RegisterRoutes(_ *router.Router, _ ...schemas.RakshaHTTPMiddleware) {}
+func (h *DevPprofHandler) RegisterRoutes(_ *router.Router, _ ...schemas.GatewayHTTPMiddleware) {}
 
 // Cleanup is a no-op in production builds.
 func (h *DevPprofHandler) Cleanup() {}

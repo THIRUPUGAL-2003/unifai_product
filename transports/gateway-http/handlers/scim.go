@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/connectors"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/connectors"
 	"github.com/valyala/fasthttp"
 )
 

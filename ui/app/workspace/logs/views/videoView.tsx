@@ -1,7 +1,7 @@
 import { ExternalLink, Video } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { RakshaVideoDownloadOutput, RakshaVideoGenerationOutput, RakshaVideoListOutput } from "@/lib/types/logs";
+import { GatewayVideoDownloadOutput, GatewayVideoGenerationOutput, GatewayVideoListOutput } from "@/lib/types/logs";
 
 import CollapsibleBox from "./collapsibleBox";
 import { CodeEditor } from "@/components/ui/codeEditor";
@@ -10,12 +10,12 @@ interface VideoGenerationInput {
 	prompt: string;
 }
 
-type VideoOutput = RakshaVideoGenerationOutput | RakshaVideoDownloadOutput;
+type VideoOutput = GatewayVideoGenerationOutput | GatewayVideoDownloadOutput;
 
 interface VideoViewProps {
 	videoInput?: VideoGenerationInput;
 	videoOutput?: VideoOutput;
-	videoListOutput?: RakshaVideoListOutput;
+	videoListOutput?: GatewayVideoListOutput;
 	requestType?: string;
 }
 
@@ -32,8 +32,8 @@ function getMethodTypeLabel(requestType?: string): string {
 export default function VideoView({ videoInput, videoOutput, videoListOutput, requestType }: VideoViewProps) {
 	const methodTypeLabel = getMethodTypeLabel(requestType);
 	const isDownload = requestType?.toLowerCase().includes("video_download");
-	const downloadOutput = isDownload && videoOutput ? (videoOutput as RakshaVideoDownloadOutput) : null;
-	const generationOutput = !isDownload && videoOutput ? (videoOutput as RakshaVideoGenerationOutput) : null;
+	const downloadOutput = isDownload && videoOutput ? (videoOutput as GatewayVideoDownloadOutput) : null;
+	const generationOutput = !isDownload && videoOutput ? (videoOutput as GatewayVideoGenerationOutput) : null;
 	const outputURL = generationOutput?.videos?.[0]?.url;
 
 	return (

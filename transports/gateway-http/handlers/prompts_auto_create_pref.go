@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/raksha/raksha/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore"
 )
 
 // Serializes read-modify-write of the single opt-out row.

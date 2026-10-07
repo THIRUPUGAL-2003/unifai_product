@@ -405,7 +405,7 @@ func (cm *ChatMessage) ToResponsesMessages() []ResponsesMessage {
 			var encryptedContent *string
 			for _, d := range am.ReasoningDetails {
 				switch d.Type {
-				case RakshaReasoningDetailsTypeText:
+				case GatewayReasoningDetailsTypeText:
 					if d.Text != nil && *d.Text != "" {
 						contentBlocks = append(contentBlocks, ResponsesMessageContentBlock{
 							Type:      ResponsesOutputMessageContentTypeReasoning,
@@ -413,14 +413,14 @@ func (cm *ChatMessage) ToResponsesMessages() []ResponsesMessage {
 							Signature: d.Signature,
 						})
 					}
-				case RakshaReasoningDetailsTypeSummary:
+				case GatewayReasoningDetailsTypeSummary:
 					if d.Summary != nil {
 						summaries = append(summaries, ResponsesReasoningSummary{
 							Type: ResponsesReasoningContentBlockTypeSummaryText,
 							Text: *d.Summary,
 						})
 					}
-				case RakshaReasoningDetailsTypeEncrypted:
+				case GatewayReasoningDetailsTypeEncrypted:
 					if d.Data != nil {
 						encryptedContent = d.Data
 					}
@@ -743,7 +743,7 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 						pendingReasoning.WriteString(*block.Text)
 						pendingReasoningDetails = append(pendingReasoningDetails, ChatReasoningDetails{
 							Index:     len(pendingReasoningDetails),
-							Type:      RakshaReasoningDetailsTypeText,
+							Type:      GatewayReasoningDetailsTypeText,
 							Text:      block.Text,
 							Signature: block.Signature,
 						})
@@ -755,14 +755,14 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 					summaryText := summary.Text
 					pendingReasoningDetails = append(pendingReasoningDetails, ChatReasoningDetails{
 						Index:   len(pendingReasoningDetails),
-						Type:    RakshaReasoningDetailsTypeSummary,
+						Type:    GatewayReasoningDetailsTypeSummary,
 						Summary: &summaryText,
 					})
 				}
 				if rm.ResponsesReasoning.EncryptedContent != nil {
 					pendingReasoningDetails = append(pendingReasoningDetails, ChatReasoningDetails{
 						Index: len(pendingReasoningDetails),
-						Type:  RakshaReasoningDetailsTypeEncrypted,
+						Type:  GatewayReasoningDetailsTypeEncrypted,
 						Data:  rm.ResponsesReasoning.EncryptedContent,
 					})
 				}
@@ -972,7 +972,7 @@ func ToChatMessages(rms []ResponsesMessage) []ChatMessage {
 	return chatMessages
 }
 
-func (cu *RakshaLLMUsage) ToResponsesResponseUsage() *ResponsesResponseUsage {
+func (cu *GatewayLLMUsage) ToResponsesResponseUsage() *ResponsesResponseUsage {
 	if cu == nil {
 		return nil
 	}
@@ -1009,12 +1009,12 @@ func (cu *RakshaLLMUsage) ToResponsesResponseUsage() *ResponsesResponseUsage {
 	return usage
 }
 
-func (ru *ResponsesResponseUsage) ToRakshaLLMUsage() *RakshaLLMUsage {
+func (ru *ResponsesResponseUsage) ToGatewayLLMUsage() *GatewayLLMUsage {
 	if ru == nil {
 		return nil
 	}
 
-	usage := &RakshaLLMUsage{
+	usage := &GatewayLLMUsage{
 		PromptTokens:     ru.InputTokens,
 		CompletionTokens: ru.OutputTokens,
 		TotalTokens:      ru.TotalTokens,
@@ -1051,13 +1051,13 @@ func (ru *ResponsesResponseUsage) ToRakshaLLMUsage() *RakshaLLMUsage {
 // REQUEST CONVERSION METHODS
 // =============================================================================
 
-// ToResponsesRequest converts a RakshaChatRequest to RakshaResponsesRequest format
-func (cr *RakshaChatRequest) ToResponsesRequest() *RakshaResponsesRequest {
+// ToResponsesRequest converts a GatewayChatRequest to GatewayResponsesRequest format
+func (cr *GatewayChatRequest) ToResponsesRequest() *GatewayResponsesRequest {
 	if cr == nil {
-		return &RakshaResponsesRequest{}
+		return &GatewayResponsesRequest{}
 	}
 
-	brr := &RakshaResponsesRequest{
+	brr := &GatewayResponsesRequest{
 		Provider:  cr.Provider,
 		Model:     cr.Model,
 		Fallbacks: cr.Fallbacks, // Copy fallbacks as-is
@@ -1170,13 +1170,13 @@ func (cr *RakshaChatRequest) ToResponsesRequest() *RakshaResponsesRequest {
 	return brr
 }
 
-// ToChatRequest converts a RakshaResponsesRequest to RakshaChatRequest format
-func (brr *RakshaResponsesRequest) ToChatRequest() *RakshaChatRequest {
+// ToChatRequest converts a GatewayResponsesRequest to GatewayChatRequest format
+func (brr *GatewayResponsesRequest) ToChatRequest() *GatewayChatRequest {
 	if brr == nil {
-		return &RakshaChatRequest{}
+		return &GatewayChatRequest{}
 	}
 
-	bcr := &RakshaChatRequest{
+	bcr := &GatewayChatRequest{
 		Provider:  brr.Provider,
 		Model:     brr.Model,
 		Fallbacks: brr.Fallbacks, // Copy fallbacks as-is
@@ -1342,9 +1342,9 @@ func sanitizeChatToolChoiceForFallback(toolChoice *ChatToolChoice, tools []ChatT
 
 func responsesStatusFromChatFinishReason(finishReason string) (status string, incompleteDetails *ResponsesResponseIncompleteDetails, mapped bool) {
 	switch finishReason {
-	case string(RakshaFinishReasonLength):
+	case string(GatewayFinishReasonLength):
 		return "incomplete", &ResponsesResponseIncompleteDetails{Reason: "max_output_tokens"}, true
-	case string(RakshaFinishReasonStop), string(RakshaFinishReasonToolCalls):
+	case string(GatewayFinishReasonStop), string(GatewayFinishReasonToolCalls):
 		return "completed", nil, true
 	default:
 		return "", nil, false
@@ -1382,15 +1382,15 @@ func responsesTerminalFromChatFinishReason(finishReason *string) (eventType Resp
 	return eventType, mappedStatus, mappedIncompleteDetails
 }
 
-// ToRakshaResponsesResponse converts the RakshaChatResponse to RakshaResponsesResponse format
+// ToGatewayResponsesResponse converts the GatewayChatResponse to GatewayResponsesResponse format
 // This converts Chat-style fields (Choices) to Responses API format
-func (cr *RakshaChatResponse) ToRakshaResponsesResponse() *RakshaResponsesResponse {
+func (cr *GatewayChatResponse) ToGatewayResponsesResponse() *GatewayResponsesResponse {
 	if cr == nil {
 		return nil
 	}
 
-	// Create new RakshaResponsesResponse from Chat fields
-	responsesResp := &RakshaResponsesResponse{
+	// Create new GatewayResponsesResponse from Chat fields
+	responsesResp := &GatewayResponsesResponse{
 		ID:            Ptr(cr.ID),
 		Object:        "response",
 		CreatedAt:     cr.Created,
@@ -1452,15 +1452,15 @@ func (cr *RakshaChatResponse) ToRakshaResponsesResponse() *RakshaResponsesRespon
 	return responsesResp
 }
 
-// ToRakshaChatResponse converts a RakshaResponsesResponse to RakshaChatResponse format
+// ToGatewayChatResponse converts a GatewayResponsesResponse to GatewayChatResponse format
 // This converts Responses API format to Chat-style fields (Choices)
-func (responsesResp *RakshaResponsesResponse) ToRakshaChatResponse() *RakshaChatResponse {
+func (responsesResp *GatewayResponsesResponse) ToGatewayChatResponse() *GatewayChatResponse {
 	if responsesResp == nil {
 		return nil
 	}
 
-	// Create new RakshaChatResponse from Responses fields
-	chatResp := &RakshaChatResponse{
+	// Create new GatewayChatResponse from Responses fields
+	chatResp := &GatewayChatResponse{
 		Created:       responsesResp.CreatedAt,
 		Object:        "chat.completion",
 		Model:         responsesResp.Model,
@@ -1479,9 +1479,9 @@ func (responsesResp *RakshaResponsesResponse) ToRakshaChatResponse() *RakshaChat
 		chatMessages := ToChatMessages(responsesResp.Output)
 
 		// Create choices from chat messages
-		choices := make([]RakshaResponseChoice, 0, len(chatMessages))
+		choices := make([]GatewayResponseChoice, 0, len(chatMessages))
 		for i, chatMsg := range chatMessages {
-			choice := RakshaResponseChoice{
+			choice := GatewayResponseChoice{
 				Index: i,
 				ChatNonStreamResponseChoice: &ChatNonStreamResponseChoice{
 					Message: &chatMsg,
@@ -1496,7 +1496,7 @@ func (responsesResp *RakshaResponsesResponse) ToRakshaChatResponse() *RakshaChat
 	// Convert Usage if needed
 	if responsesResp.Usage != nil {
 		// Map Responses usage to Chat usage
-		chatResp.Usage = responsesResp.Usage.ToRakshaLLMUsage()
+		chatResp.Usage = responsesResp.Usage.ToGatewayLLMUsage()
 	}
 
 	// Copy other relevant fields
@@ -1629,10 +1629,10 @@ func ReleaseChatToResponsesStreamState(state *ChatToResponsesStreamState) {
 	}
 }
 
-// ToRakshaResponsesStreamResponse converts the RakshaChatResponse from Chat streaming format to Responses streaming format
-// This converts Chat stream chunks (Choices with Deltas) to RakshaResponsesStreamResponse format
+// ToGatewayResponsesStreamResponse converts the GatewayChatResponse from Chat streaming format to Responses streaming format
+// This converts Chat stream chunks (Choices with Deltas) to GatewayResponsesStreamResponse format
 // Returns a slice of responses to support cases where a single event produces multiple responses
-func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToResponsesStreamState) []*RakshaResponsesStreamResponse {
+func (cr *GatewayChatResponse) ToGatewayResponsesStreamResponse(state *ChatToResponsesStreamState) []*GatewayResponsesStreamResponse {
 	if cr == nil || state == nil {
 		return nil
 	}
@@ -1642,7 +1642,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 		return nil
 	}
 
-	// Convert first streaming choice to RakshaResponsesStreamResponse
+	// Convert first streaming choice to GatewayResponsesStreamResponse
 	// Note: Chat API typically has one choice per chunk in streaming
 	choice := cr.Choices[0]
 	if choice.ChatStreamResponseChoice == nil || choice.ChatStreamResponseChoice.Delta == nil {
@@ -1650,7 +1650,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 	}
 
 	delta := choice.ChatStreamResponseChoice.Delta
-	var responses []*RakshaResponsesStreamResponse
+	var responses []*GatewayResponsesStreamResponse
 
 	// Store message ID and model from first chunk
 	if state.MessageID == nil && cr.ID != "" {
@@ -1663,11 +1663,11 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 	// Emit lifecycle events on first chunk with role
 	if delta.Role != nil && !state.HasEmittedCreated {
 		// Emit response.created
-		response := &RakshaResponsesResponse{
+		response := &GatewayResponsesResponse{
 			ID:        state.MessageID,
 			CreatedAt: state.CreatedAt,
 		}
-		responses = append(responses, &RakshaResponsesStreamResponse{
+		responses = append(responses, &GatewayResponsesStreamResponse{
 			Type:           ResponsesStreamResponseTypeCreated,
 			SequenceNumber: state.SequenceNumber,
 			Response:       response,
@@ -1677,11 +1677,11 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 		state.HasEmittedCreated = true
 
 		// Emit response.in_progress
-		response = &RakshaResponsesResponse{
+		response = &GatewayResponsesResponse{
 			ID:        state.MessageID,
 			CreatedAt: state.CreatedAt,
 		}
-		responses = append(responses, &RakshaResponsesStreamResponse{
+		responses = append(responses, &GatewayResponsesStreamResponse{
 			Type:           ResponsesStreamResponseTypeInProgress,
 			SequenceNumber: state.SequenceNumber,
 			Response:       response,
@@ -1722,7 +1722,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 				},
 			}
 
-			responses = append(responses, &RakshaResponsesStreamResponse{
+			responses = append(responses, &GatewayResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeOutputItemAdded,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -1743,7 +1743,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 					Annotations: []ResponsesOutputMessageContentTextAnnotation{},
 				},
 			}
-			responses = append(responses, &RakshaResponsesStreamResponse{
+			responses = append(responses, &GatewayResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeContentPartAdded,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -1769,7 +1769,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 				contentDelta = ""
 			}
 
-			response := &RakshaResponsesStreamResponse{
+			response := &GatewayResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeOutputTextDelta,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(0),
@@ -1816,7 +1816,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 					itemID := state.ItemIDs["text"]
 
 					finalText := state.TextBuffer.String()
-					responses = append(responses, &RakshaResponsesStreamResponse{
+					responses = append(responses, &GatewayResponsesStreamResponse{
 						Type:           ResponsesStreamResponseTypeOutputTextDone,
 						SequenceNumber: state.SequenceNumber,
 						OutputIndex:    Ptr(outputIndex),
@@ -1837,7 +1837,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 							Annotations: []ResponsesOutputMessageContentTextAnnotation{},
 						},
 					}
-					responses = append(responses, &RakshaResponsesStreamResponse{
+					responses = append(responses, &GatewayResponsesStreamResponse{
 						Type:           ResponsesStreamResponseTypeContentPartDone,
 						SequenceNumber: state.SequenceNumber,
 						OutputIndex:    Ptr(outputIndex),
@@ -1873,7 +1873,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 					if itemID != "" {
 						doneItem.ID = &itemID
 					}
-					responses = append(responses, &RakshaResponsesStreamResponse{
+					responses = append(responses, &GatewayResponsesStreamResponse{
 						Type:           ResponsesStreamResponseTypeOutputItemDone,
 						SequenceNumber: state.SequenceNumber,
 						OutputIndex:    Ptr(outputIndex),
@@ -1916,7 +1916,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 					},
 				}
 
-				responses = append(responses, &RakshaResponsesStreamResponse{
+				responses = append(responses, &GatewayResponsesStreamResponse{
 					Type:           ResponsesStreamResponseTypeOutputItemAdded,
 					SequenceNumber: state.SequenceNumber,
 					OutputIndex:    Ptr(outputIndex),
@@ -1935,7 +1935,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 			state.ToolArgumentBuffers[toolCallID] += toolCall.Function.Arguments
 
 			itemID := state.ItemIDs[toolCallID]
-			response := &RakshaResponsesStreamResponse{
+			response := &GatewayResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeFunctionCallArgumentsDelta,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -1953,7 +1953,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 
 	if delta.Reasoning != nil && *delta.Reasoning != "" {
 		// Reasoning/thought content delta (for models that support reasoning)
-		response := &RakshaResponsesStreamResponse{
+		response := &GatewayResponsesStreamResponse{
 			Type:           ResponsesStreamResponseTypeReasoningSummaryTextDelta,
 			SequenceNumber: state.SequenceNumber,
 			OutputIndex:    Ptr(0),
@@ -1966,7 +1966,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 
 	if delta.Refusal != nil && *delta.Refusal != "" {
 		// Refusal delta
-		response := &RakshaResponsesStreamResponse{
+		response := &GatewayResponsesStreamResponse{
 			Type:           ResponsesStreamResponseTypeRefusalDelta,
 			SequenceNumber: state.SequenceNumber,
 			OutputIndex:    Ptr(0),
@@ -1987,7 +1987,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 			itemID := state.ItemIDs["text"]
 
 			finalText := state.TextBuffer.String()
-			responses = append(responses, &RakshaResponsesStreamResponse{
+			responses = append(responses, &GatewayResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeOutputTextDone,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -2008,7 +2008,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 					Annotations: []ResponsesOutputMessageContentTextAnnotation{},
 				},
 			}
-			responses = append(responses, &RakshaResponsesStreamResponse{
+			responses = append(responses, &GatewayResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeContentPartDone,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -2044,7 +2044,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 			if itemID != "" {
 				doneItem.ID = &itemID
 			}
-			responses = append(responses, &RakshaResponsesStreamResponse{
+			responses = append(responses, &GatewayResponsesStreamResponse{
 				Type:           ResponsesStreamResponseTypeOutputItemDone,
 				SequenceNumber: state.SequenceNumber,
 				OutputIndex:    Ptr(outputIndex),
@@ -2064,7 +2064,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 				contentIndex := 1 // Tool calls use content_index:1
 				argsCopy := args
 				// Emit function_call_arguments.done with full arguments (no item field, just item_id and arguments)
-				response := &RakshaResponsesStreamResponse{
+				response := &GatewayResponsesStreamResponse{
 					Type:           ResponsesStreamResponseTypeFunctionCallArgumentsDone,
 					SequenceNumber: state.SequenceNumber,
 					OutputIndex:    Ptr(outputIndex),
@@ -2099,7 +2099,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 				if itemID != "" {
 					outputItemDone.ID = &itemID
 				}
-				responses = append(responses, &RakshaResponsesStreamResponse{
+				responses = append(responses, &GatewayResponsesStreamResponse{
 					Type:           ResponsesStreamResponseTypeOutputItemDone,
 					SequenceNumber: state.SequenceNumber,
 					OutputIndex:    Ptr(outputIndex),
@@ -2119,7 +2119,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 
 		responseStatus := terminalStatus
 
-		response := &RakshaResponsesResponse{
+		response := &GatewayResponsesResponse{
 			ID:                state.MessageID,
 			CreatedAt:         state.CreatedAt,
 			Usage:             usage,
@@ -2207,7 +2207,7 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 			response.Output = allOutput
 		}
 
-		responses = append(responses, &RakshaResponsesStreamResponse{
+		responses = append(responses, &GatewayResponsesStreamResponse{
 			Type:           terminalEventType,
 			SequenceNumber: state.SequenceNumber,
 			Response:       response,
@@ -2230,8 +2230,8 @@ func (cr *RakshaChatResponse) ToRakshaResponsesStreamResponse(state *ChatToRespo
 	return responses
 }
 
-// ToRakshaChatResponse converts a RakshaResponsesStreamResponse chunk to a RakshaChatResponse (chat.completion.chunk).
-func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResponse {
+// ToGatewayChatResponse converts a GatewayResponsesStreamResponse chunk to a GatewayChatResponse (chat.completion.chunk).
+func (rsr *GatewayResponsesStreamResponse) ToGatewayChatResponse() *GatewayChatResponse {
 	if rsr == nil {
 		return nil
 	}
@@ -2239,7 +2239,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 	extraFields := rsr.ExtraFields
 	extraFields.RequestType = ChatCompletionStreamRequest
 
-	resp := &RakshaChatResponse{
+	resp := &GatewayChatResponse{
 		Object:        "chat.completion.chunk",
 		ExtraFields:   extraFields,
 		SearchResults: rsr.SearchResults,
@@ -2257,7 +2257,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 
 	switch rsr.Type {
 	case ResponsesStreamResponseTypeOutputTextDelta:
-		resp.Choices = []RakshaResponseChoice{
+		resp.Choices = []GatewayResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2270,7 +2270,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 		return resp
 
 	case ResponsesStreamResponseTypeReasoningSummaryTextDelta:
-		resp.Choices = []RakshaResponseChoice{
+		resp.Choices = []GatewayResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2283,7 +2283,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 		return resp
 
 	case ResponsesStreamResponseTypeRefusalDelta:
-		resp.Choices = []RakshaResponseChoice{
+		resp.Choices = []GatewayResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2297,7 +2297,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 
 	case ResponsesStreamResponseTypeOutputItemAdded:
 		if rsr.Item == nil || rsr.Item.Type == nil {
-			resp.Choices = []RakshaResponseChoice{
+			resp.Choices = []GatewayResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2311,7 +2311,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 		switch *rsr.Item.Type {
 		case ResponsesMessageTypeFunctionCall:
 			if rsr.Item.ResponsesToolMessage == nil {
-				resp.Choices = []RakshaResponseChoice{
+				resp.Choices = []GatewayResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2326,7 +2326,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 			if rsr.OutputIndex != nil && *rsr.OutputIndex > 0 {
 				idx = uint16(*rsr.OutputIndex - 1)
 			}
-			resp.Choices = []RakshaResponseChoice{
+			resp.Choices = []GatewayResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2349,7 +2349,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 
 		case ResponsesMessageTypeMessage:
 			role := "assistant"
-			resp.Choices = []RakshaResponseChoice{
+			resp.Choices = []GatewayResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2364,7 +2364,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 		default:
 			// reasoning, file_search_call, web_search_call, etc. — no chat equivalent,
 			// actual content arrives via separate delta events.
-			resp.Choices = []RakshaResponseChoice{
+			resp.Choices = []GatewayResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2377,7 +2377,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 
 	case ResponsesStreamResponseTypeFunctionCallArgumentsDelta:
 		if rsr.Delta == nil {
-			resp.Choices = []RakshaResponseChoice{
+			resp.Choices = []GatewayResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2392,7 +2392,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 			idx = uint16(*rsr.OutputIndex - 1)
 		}
 
-		resp.Choices = []RakshaResponseChoice{
+		resp.Choices = []GatewayResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2412,11 +2412,11 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 		return resp
 
 	case ResponsesStreamResponseTypeCompleted, ResponsesStreamResponseTypeIncomplete:
-		finishReason := string(RakshaFinishReasonStop)
+		finishReason := string(GatewayFinishReasonStop)
 		if rsr.Type == ResponsesStreamResponseTypeIncomplete {
-			finishReason = string(RakshaFinishReasonLength)
+			finishReason = string(GatewayFinishReasonLength)
 		}
-		resp.Choices = []RakshaResponseChoice{
+		resp.Choices = []GatewayResponseChoice{
 			{
 				Index:        0,
 				FinishReason: &finishReason,
@@ -2427,13 +2427,13 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 		}
 		if rsr.Response != nil {
 			if rsr.Response.Usage != nil {
-				resp.Usage = rsr.Response.Usage.ToRakshaLLMUsage()
+				resp.Usage = rsr.Response.Usage.ToGatewayLLMUsage()
 			}
 			// Check for tool_calls finish reason
 			if rsr.Type == ResponsesStreamResponseTypeCompleted {
 				for _, output := range rsr.Response.Output {
 					if output.Type != nil && *output.Type == ResponsesMessageTypeFunctionCall {
-						finishReason = string(RakshaFinishReasonToolCalls)
+						finishReason = string(GatewayFinishReasonToolCalls)
 						resp.Choices[0].FinishReason = &finishReason
 						break
 					}
@@ -2445,7 +2445,7 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 	default:
 		// Lifecycle events (created, in_progress, content_part.added/done, output_text.done,
 		// output_item.done, function_call_arguments.done, etc.) → empty chat chunk with no content.
-		resp.Choices = []RakshaResponseChoice{
+		resp.Choices = []GatewayResponseChoice{
 			{
 				Index: 0,
 				ChatStreamResponseChoice: &ChatStreamResponseChoice{
@@ -2461,20 +2461,20 @@ func (rsr *RakshaResponsesStreamResponse) ToRakshaChatResponse() *RakshaChatResp
 // RESPONSE CONVERSION METHODS
 // =============================================================================
 
-// ToRakshaTextCompletionResponse converts a RakshaChatResponse to a RakshaTextCompletionResponse
-func (cr *RakshaChatResponse) ToRakshaTextCompletionResponse() *RakshaTextCompletionResponse {
+// ToGatewayTextCompletionResponse converts a GatewayChatResponse to a GatewayTextCompletionResponse
+func (cr *GatewayChatResponse) ToGatewayTextCompletionResponse() *GatewayTextCompletionResponse {
 	if cr == nil {
 		return nil
 	}
 
 	if len(cr.Choices) == 0 {
-		return &RakshaTextCompletionResponse{
+		return &GatewayTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
 			Usage:             cr.Usage,
-			ExtraFields: RakshaResponseExtraFields{
+			ExtraFields: GatewayResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -2491,12 +2491,12 @@ func (cr *RakshaChatResponse) ToRakshaTextCompletionResponse() *RakshaTextComple
 
 	// Handle streaming response choice
 	if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
-		return &RakshaTextCompletionResponse{
+		return &GatewayTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
-			Choices: []RakshaResponseChoice{
+			Choices: []GatewayResponseChoice{
 				{
 					Index: 0,
 					TextCompletionResponseChoice: &TextCompletionResponseChoice{
@@ -2507,7 +2507,7 @@ func (cr *RakshaChatResponse) ToRakshaTextCompletionResponse() *RakshaTextComple
 				},
 			},
 			Usage: cr.Usage,
-			ExtraFields: RakshaResponseExtraFields{
+			ExtraFields: GatewayResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -2540,12 +2540,12 @@ func (cr *RakshaChatResponse) ToRakshaTextCompletionResponse() *RakshaTextComple
 				}
 			}
 		}
-		return &RakshaTextCompletionResponse{
+		return &GatewayTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
-			Choices: []RakshaResponseChoice{
+			Choices: []GatewayResponseChoice{
 				{
 					Index: 0,
 					TextCompletionResponseChoice: &TextCompletionResponseChoice{
@@ -2556,7 +2556,7 @@ func (cr *RakshaChatResponse) ToRakshaTextCompletionResponse() *RakshaTextComple
 				},
 			},
 			Usage: cr.Usage,
-			ExtraFields: RakshaResponseExtraFields{
+			ExtraFields: GatewayResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -2570,13 +2570,13 @@ func (cr *RakshaChatResponse) ToRakshaTextCompletionResponse() *RakshaTextComple
 	}
 
 	// Fallback case - return basic response structure
-	return &RakshaTextCompletionResponse{
+	return &GatewayTextCompletionResponse{
 		ID:                cr.ID,
 		Model:             cr.Model,
 		Object:            "text_completion",
 		SystemFingerprint: cr.SystemFingerprint,
 		Usage:             cr.Usage,
-		ExtraFields: RakshaResponseExtraFields{
+		ExtraFields: GatewayResponseExtraFields{
 			RequestType:             TextCompletionRequest,
 			ChunkIndex:              cr.ExtraFields.ChunkIndex,
 			Provider:                cr.ExtraFields.Provider,

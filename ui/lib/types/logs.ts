@@ -1,4 +1,4 @@
-// Types for the logs interface based on RakshaResponse schema
+// Types for the logs interface based on GatewayResponse schema
 
 import { DBKey, VirtualKey } from "./governance";
 import { RoutingRule } from "./routingRules";
@@ -63,12 +63,12 @@ export interface TranscriptionUsage {
 	seconds?: number; // For duration-based usage
 }
 
-export interface RakshaSpeech {
+export interface GatewaySpeech {
 	usage?: AudioLLMUsage;
 	audio: string; // base64 encoded audio data
 }
 
-export interface RakshaTranscribe {
+export interface GatewayTranscribe {
 	text: string;
 	logprobs?: TranscriptionLogProb[];
 	usage?: TranscriptionUsage;
@@ -201,7 +201,7 @@ export interface ReasoningDetails {
 	data?: string;
 }
 
-export interface RakshaEmbedding {
+export interface GatewayEmbedding {
 	index: number;
 	object: string;
 	embedding: string | number[] | number[][];
@@ -219,7 +219,7 @@ export interface RerankResult {
 	document?: RerankDocument;
 }
 
-export interface RakshaImageGenerationData {
+export interface GatewayImageGenerationData {
 	url?: string;
 	b64_json?: string;
 	revised_prompt?: string;
@@ -268,18 +268,18 @@ export interface OCRUsageInfo {
 	doc_size_bytes: number;
 }
 
-export interface RakshaOCRResponse {
+export interface GatewayOCRResponse {
 	model: string;
 	pages: OCRPage[];
 	usage_info?: OCRUsageInfo;
 	document_annotation?: string;
 }
 
-export interface RakshaImageGenerationOutput {
+export interface GatewayImageGenerationOutput {
 	id?: string;
 	created?: number;
 	model?: string;
-	data: RakshaImageGenerationData[];
+	data: GatewayImageGenerationData[];
 	background?: string;
 	output_format?: string;
 	quality?: string;
@@ -319,7 +319,7 @@ export interface VideoOutput {
 	base64?: string;
 	content_type?: string;
 }
-export interface RakshaVideoGenerationOutput {
+export interface GatewayVideoGenerationOutput {
 	videos: VideoOutput[];
 	id?: string;
 	completed_at?: number;
@@ -336,18 +336,18 @@ export interface RakshaVideoGenerationOutput {
 	status?: string;
 }
 
-export interface RakshaVideoDownloadOutput {
+export interface GatewayVideoDownloadOutput {
 	video_id: string;
 	content_type?: string;
 }
 
-export interface RakshaVideoDeleteOutput {
+export interface GatewayVideoDeleteOutput {
 	id: string;
 	deleted: boolean;
 	object?: string;
 }
 
-export interface RakshaVideoListOutput {
+export interface GatewayVideoListOutput {
 	object: string;
 	data: VideoObject[];
 	first_id?: string;
@@ -450,10 +450,10 @@ export interface ErrorField {
 	event_id?: string;
 }
 
-export interface RakshaError {
+export interface GatewayError {
 	event_id?: string;
 	type?: string;
-	is_raksha_error: boolean;
+	is_gateway_error: boolean;
 	status_code?: number;
 	error: ErrorField;
 }
@@ -543,16 +543,16 @@ export interface LogEntry {
 	content_summary?: string;
 	output_message?: ChatMessage;
 	responses_output?: ResponsesMessage[];
-	embedding_output?: RakshaEmbedding[];
+	embedding_output?: GatewayEmbedding[];
 	rerank_output?: RerankResult[];
 	ocr_input?: OCRDocument;
-	ocr_output?: RakshaOCRResponse;
-	image_generation_output?: RakshaImageGenerationOutput;
-	video_generation_output?: RakshaVideoGenerationOutput;
-	video_retrieve_output?: RakshaVideoGenerationOutput;
-	video_download_output?: RakshaVideoDownloadOutput;
-	video_list_output?: RakshaVideoListOutput;
-	video_delete_output?: RakshaVideoDeleteOutput;
+	ocr_output?: GatewayOCRResponse;
+	image_generation_output?: GatewayImageGenerationOutput;
+	video_generation_output?: GatewayVideoGenerationOutput;
+	video_retrieve_output?: GatewayVideoGenerationOutput;
+	video_download_output?: GatewayVideoDownloadOutput;
+	video_list_output?: GatewayVideoListOutput;
+	video_delete_output?: GatewayVideoDeleteOutput;
 	params?: ModelParameters;
 	speech_input?: SpeechInput;
 	transcription_input?: TranscriptionInput;
@@ -560,8 +560,8 @@ export interface LogEntry {
 	image_edit_input?: ImageEditInput;
 	image_variation_input?: ImageVariationInput;
 	video_generation_input?: { prompt: string };
-	speech_output?: RakshaSpeech;
-	transcription_output?: RakshaTranscribe;
+	speech_output?: GatewaySpeech;
+	transcription_output?: GatewayTranscribe;
 	list_models_output?: Model[];
 	tools?: Tool[];
 	tool_calls?: ToolCall[];
@@ -571,7 +571,7 @@ export interface LogEntry {
 	cost?: number; // Cost in dollars (total cost of the request - includes cache lookup cost)
 	status: string; // "success" or "error"
 	stop_reason?: string; // Why the model stopped: "stop", "length", "content_filter", "tool_calls", etc.
-	error_details?: RakshaError;
+	error_details?: GatewayError;
 	stream: boolean; // true if this was a streaming response
 	created_at: string; // ISO string format from Go time.Time - when the log was first created
 	raw_request?: string; // Raw provider request
@@ -1073,7 +1073,7 @@ export interface MCPToolLogEntry {
 	business_unit_id?: string;
 	arguments?: Record<string, unknown> | string; // JSON parsed tool arguments
 	result?: Record<string, unknown> | string; // JSON parsed tool result
-	error_details?: RakshaError;
+	error_details?: GatewayError;
 	latency?: number; // Execution time in milliseconds
 	cost?: number; // Cost in dollars (per execution cost)
 	status: string; // "processing", "success", or "error"

@@ -7,7 +7,7 @@ import os
 import re
 
 import agent_config
-from agent_config import PAC_URL, PROXY_ADDR, RAKSHA_BACKEND_URL
+from agent_config import PAC_URL, PROXY_ADDR, GATEWAY_BACKEND_URL
 from agent_http import _http_get_text
 from guard_platform import data_dir
 
@@ -19,24 +19,24 @@ def local_pac_path() -> str:
 def check_backend() -> bool:
     """Return True only when Browser AI API is reachable (not just /health)."""
     targets = _http_get_text(
-        f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets?for=agent",
+        f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent",
         "application/json",
         timeout=45,
     )
     if not (targets and ("targets" in targets or targets.strip().startswith("{"))):
         targets = _http_get_text(
-            f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets",
+            f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets",
             "application/json",
             timeout=45,
         )
     if targets and ("targets" in targets or targets.strip().startswith("{")):
-        print(f"[Raksha Guard] Backend Browser AI API OK: {RAKSHA_BACKEND_URL}")
+        print(f"[Gateway Guard] Backend Browser AI API OK: {GATEWAY_BACKEND_URL}")
         return True
-    health = _http_get_text(f"{RAKSHA_BACKEND_URL}/health", "application/json", timeout=8)
+    health = _http_get_text(f"{GATEWAY_BACKEND_URL}/health", "application/json", timeout=8)
     if health and '"status"' in health:
-        print("[Raksha Guard WARNING] /health OK but /api/browser-ai/targets failed — Browser AI may be missing on this deploy.")
-    print(f"[Raksha Guard ERROR] Cannot reach Browser AI API at {RAKSHA_BACKEND_URL}")
-    print("[Raksha Guard ERROR] Deploy latest Raksha with /api/browser-ai/* routes, then restart Guard.")
+        print("[Gateway Guard WARNING] /health OK but /api/browser-ai/targets failed — Browser AI may be missing on this deploy.")
+    print(f"[Gateway Guard ERROR] Cannot reach Browser AI API at {GATEWAY_BACKEND_URL}")
+    print("[Gateway Guard ERROR] Deploy latest Gateway with /api/browser-ai/* routes, then restart Guard.")
     return False
 
 
@@ -71,13 +71,13 @@ SEARCH_ENGINE_PAC_RULE = [
 
 def build_pac_from_targets(proxy_addr: str) -> str | None:
     body = _http_get_text(
-        f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets?for=agent",
+        f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent",
         "application/json",
         timeout=45,
     )
     if not body:
         body = _http_get_text(
-            f"{RAKSHA_BACKEND_URL}/api/browser-ai/targets",
+            f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets",
             "application/json",
             timeout=45,
         )
@@ -86,7 +86,7 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
     try:
         data = json.loads(body)
     except Exception as e:
-        print(f"[Raksha Guard WARNING] targets JSON parse failed: {e}")
+        print(f"[Gateway Guard WARNING] targets JSON parse failed: {e}")
         return None
 
     targets = data.get("targets") if isinstance(data, dict) else None
@@ -125,7 +125,7 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
     hosts = minimized
 
     lines = [
-        "// Raksha Browser AI Guard — admin Target Websites from dashboard only.",
+        "// Gateway Browser AI Guard — admin Target Websites from dashboard only.",
         "// Parent domains preferred when children are covered by subdomain match.",
         "function FindProxyForURL(url, host) {",
         "    host = host.toLowerCase();",
@@ -187,8 +187,8 @@ def fetch_proxy_pac() -> str | None:
     advertise = (agent_config.PAC_ADVERTISE_ADDR or PROXY_ADDR or "").strip()
     urls = [
         f"{PAC_URL}?proxy={advertise}",
-        f"{RAKSHA_BACKEND_URL}/api/browser-ai/pac?proxy={advertise}",
-        f"{RAKSHA_BACKEND_URL}/api/browser-ai/proxy.pac?proxy={advertise}",
+        f"{GATEWAY_BACKEND_URL}/api/browser-ai/pac?proxy={advertise}",
+        f"{GATEWAY_BACKEND_URL}/api/browser-ai/proxy.pac?proxy={advertise}",
     ]
     seen = set()
     for url in urls:
@@ -198,7 +198,7 @@ def fetch_proxy_pac() -> str | None:
         body = _http_get_text(url, "application/x-ns-proxy-autoconfig,*/*")
         if body and "FindProxyForURL" in body:
             return ensure_pac_strict_proxy(body)
-    print("[Raksha Guard] Server PAC unavailable — building PAC from /api/browser-ai/targets")
+    print("[Gateway Guard] Server PAC unavailable — building PAC from /api/browser-ai/targets")
     return build_pac_from_targets(advertise or PROXY_ADDR)
 
 
@@ -210,6 +210,6 @@ def write_local_pac(content: str) -> None:
             content = ensure_pac_strict_proxy(content)
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(content)
-        print(f"[Raksha Guard] Wrote local proxy.pac ({path})")
+        print(f"[Gateway Guard] Wrote local proxy.pac ({path})")
     except Exception as e:
-        print(f"[Raksha Guard WARNING] Could not write local proxy.pac: {e}")
+        print(f"[Gateway Guard WARNING] Could not write local proxy.pac: {e}")

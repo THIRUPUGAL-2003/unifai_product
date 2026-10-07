@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import React, { useEffect, useMemo, useState } from "react";
 import { Plus, Trash, Edit, ShieldAlert, Key } from "lucide-react";
 import { toast } from "sonner";
@@ -53,8 +54,10 @@ function validateRuleForm(
 
 export default function GuardrailsConfigurationView() {
 	const { data: config, isLoading, isError, error, refetch } = useGetGuardrailsConfigQuery();
-	const { data: promptsData } = useGetPromptsQuery();
-	const { data: virtualKeysData } = useGetVirtualKeysQuery();
+	const { data: promptsData, isError: promptsFailed, error: promptsError } = useGetPromptsQuery();
+	const { data: virtualKeysData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery();
+	const helperQueryFailed = promptsFailed || vkFailed;
+	const helperQueryError = promptsError || vkError;
 	const [updateRules] = useUpdateGuardrailRulesMutation();
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
@@ -243,6 +246,13 @@ export default function GuardrailsConfigurationView() {
 					</Button>
 				</div>
 			</div>
+
+			{helperQueryFailed ? (
+				<QueryErrorBanner
+					testId="guardrails-helper-query-error"
+					message={getErrorMessage(helperQueryError) || "Failed to load prompts or virtual keys for rule forms."}
+				/>
+			) : null}
 
 			<div className="bg-card rounded-md border">
 				<Table>

@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-  Upload Raksha Guard installers to the server (they are not stored in git).
+  Upload Gateway Guard installers to the server (they are not stored in git).
 
 .EXAMPLE
-  .\tools\upload_guard_release.ps1 -Server root@203.0.113.10 -RemoteDir /opt/raksha/apps/browser-guard/release
+  .\tools\upload_guard_release.ps1 -Server root@203.0.113.10 -RemoteDir /opt/gateway/apps/browser-guard/release
 
   RemoteDir = the server folder mounted into the container as /app/release
   (docker-compose.yml: ./apps/browser-guard/release:/app/release). No restart needed -
@@ -42,7 +42,7 @@ if (-not $Server) {
 }
 $releaseDir = Join-Path $PSScriptRoot "..\apps\browser-guard\release"
 # Only untracked binaries: uploading git-tracked files would make `git pull` on the server fail.
-$names = @("Raksha_Guard_Setup.exe", "Raksha_Guard.exe", "Raksha_Guard_Windows.zip", "Raksha_Guard_macOS.zip", "Raksha_Guard_Setup.pkg")
+$names = @("Gateway_Guard_Setup.exe", "Gateway_Guard.exe", "Gateway_Guard_Windows.zip", "Gateway_Guard_macOS.zip", "Gateway_Guard_Setup.pkg")
 
 foreach ($tool in "ssh", "scp") {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {

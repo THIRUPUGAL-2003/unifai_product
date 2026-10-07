@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { TokenHistogramResponse } from "@/lib/types/logs";
 import { formatCompactNumber } from "@/lib/utils/numbers";
@@ -89,7 +90,7 @@ function ExternalCacheTokenMeterChartImpl({ data }: ExternalCacheTokenMeterChart
 											<Info className="h-3 w-3" />
 										</button>
 									</TooltipTrigger>
-									<TooltipContent side="top">This reflects provider-level caching, not Raksha semantic cache hits.</TooltipContent>
+									<TooltipContent side="top">This reflects provider-level caching, not {PRODUCT_NAME} semantic cache hits.</TooltipContent>
 								</Tooltip>
 							</div>
 						</div>

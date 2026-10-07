@@ -8,22 +8,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	openaiProvider "github.com/raksha/raksha/core/providers/openai"
-	"github.com/raksha/raksha/core/schemas"
-	ufws "github.com/raksha/raksha/transports/raksha-http/websocket"
+	gateway "github.com/gateway/gateway/core"
+	openaiProvider "github.com/gateway/gateway/core/providers/openai"
+	"github.com/gateway/gateway/core/schemas"
+	ufws "github.com/gateway/gateway/transports/gateway-http/websocket"
 )
 
 func newRealtimeTurnContext(
-	baseCtx *schemas.RakshaContext,
+	baseCtx *schemas.GatewayContext,
 	requestID string,
 	sessionID string,
 	providerSessionID string,
 	source realtimeTurnSource,
 	eventType schemas.RealtimeEventType,
 	key *schemas.Key,
-) *schemas.RakshaContext {
-	ctx := schemas.NewRakshaContext(context.Background(), schemas.NoDeadline)
+) *schemas.GatewayContext {
+	ctx := schemas.NewGatewayContext(context.Background(), schemas.NoDeadline)
 	if baseCtx != nil {
 		// Realtime post-hook contexts must preserve plugin-private values written in
 		// pre-hooks (for example telemetry start timestamps), not just public keys.
@@ -35,52 +35,52 @@ func newRealtimeTurnContext(
 			// must mint its own trace in RunRealtimeTurnPreHooks so its log entry is
 			// delivered when the turn's trace is completed and flushed. Inheriting a
 			// trace whose lifecycle is owned elsewhere strands the entry forever.
-			if ctxKey == schemas.RakshaContextKeyTraceID {
+			if ctxKey == schemas.GatewayContextKeyTraceID {
 				continue
 			}
 			ctx.SetValue(ctxKey, value)
 		}
 	}
 
-	ctx.SetValue(schemas.RakshaContextKeyHTTPRequestType, schemas.RealtimeRequest)
+	ctx.SetValue(schemas.GatewayContextKeyHTTPRequestType, schemas.RealtimeRequest)
 	if requestID == "" {
 		requestID = uuid.NewString()
 	}
-	ctx.SetValue(schemas.RakshaContextKeyRequestID, requestID)
+	ctx.SetValue(schemas.GatewayContextKeyRequestID, requestID)
 	resolvedSessionID := strings.TrimSpace(providerSessionID)
 	if resolvedSessionID == "" {
 		resolvedSessionID = strings.TrimSpace(sessionID)
 	}
 	if baseCtx != nil {
-		if externalSessionID, ok := baseCtx.Value(schemas.RakshaContextKeyParentRequestID).(string); ok && strings.TrimSpace(externalSessionID) != "" {
+		if externalSessionID, ok := baseCtx.Value(schemas.GatewayContextKeyParentRequestID).(string); ok && strings.TrimSpace(externalSessionID) != "" {
 			resolvedSessionID = strings.TrimSpace(externalSessionID)
 		}
 	}
 	if resolvedSessionID != "" {
-		ctx.SetValue(schemas.RakshaContextKeyParentRequestID, resolvedSessionID)
+		ctx.SetValue(schemas.GatewayContextKeyParentRequestID, resolvedSessionID)
 	}
 	if strings.TrimSpace(providerSessionID) != "" {
-		ctx.SetValue(schemas.RakshaContextKeyRealtimeSessionID, providerSessionID)
-		ctx.SetValue(schemas.RakshaContextKeyRealtimeProviderSessionID, providerSessionID)
+		ctx.SetValue(schemas.GatewayContextKeyRealtimeSessionID, providerSessionID)
+		ctx.SetValue(schemas.GatewayContextKeyRealtimeProviderSessionID, providerSessionID)
 	}
 	if source != "" {
-		ctx.SetValue(schemas.RakshaContextKeyRealtimeSource, string(source))
+		ctx.SetValue(schemas.GatewayContextKeyRealtimeSource, string(source))
 	}
 	if eventType != "" {
-		ctx.SetValue(schemas.RakshaContextKeyRealtimeEventType, string(eventType))
+		ctx.SetValue(schemas.GatewayContextKeyRealtimeEventType, string(eventType))
 	}
 	if key != nil {
 		if strings.TrimSpace(key.ID) != "" {
-			ctx.SetValue(schemas.RakshaContextKeySelectedKeyID, key.ID)
+			ctx.SetValue(schemas.GatewayContextKeySelectedKeyID, key.ID)
 		}
 		if strings.TrimSpace(key.Name) != "" {
-			ctx.SetValue(schemas.RakshaContextKeySelectedKeyName, key.Name)
+			ctx.SetValue(schemas.GatewayContextKeySelectedKeyName, key.Name)
 		}
 	}
 	return ctx
 }
 
-func applyRealtimeRawStorageContext(ctx *schemas.RakshaContext, storeRaw bool) {
+func applyRealtimeRawStorageContext(ctx *schemas.GatewayContext, storeRaw bool) {
 	if ctx == nil {
 		return
 	}
@@ -88,35 +88,35 @@ func applyRealtimeRawStorageContext(ctx *schemas.RakshaContext, storeRaw bool) {
 	// no client-facing raw send-back path for synthetic realtime turn responses.
 	sendBackRawRequest := false
 	sendBackRawResponse := false
-	ctx.SetValue(schemas.RakshaContextKeyShouldStoreRawInLogs, storeRaw)
-	ctx.SetValue(schemas.RakshaContextKeyCaptureRawRequest, storeRaw || sendBackRawRequest)
-	ctx.SetValue(schemas.RakshaContextKeyCaptureRawResponse, storeRaw || sendBackRawResponse)
-	ctx.SetValue(schemas.RakshaContextKeyDropRawRequestFromClient, storeRaw && !sendBackRawRequest)
-	ctx.SetValue(schemas.RakshaContextKeyDropRawResponseFromClient, storeRaw && !sendBackRawResponse)
+	ctx.SetValue(schemas.GatewayContextKeyShouldStoreRawInLogs, storeRaw)
+	ctx.SetValue(schemas.GatewayContextKeyCaptureRawRequest, storeRaw || sendBackRawRequest)
+	ctx.SetValue(schemas.GatewayContextKeyCaptureRawResponse, storeRaw || sendBackRawResponse)
+	ctx.SetValue(schemas.GatewayContextKeyDropRawRequestFromClient, storeRaw && !sendBackRawRequest)
+	ctx.SetValue(schemas.GatewayContextKeyDropRawResponseFromClient, storeRaw && !sendBackRawResponse)
 }
 
-func shouldStoreRealtimeRawPayloads(ctx *schemas.RakshaContext) bool {
+func shouldStoreRealtimeRawPayloads(ctx *schemas.GatewayContext) bool {
 	if ctx == nil {
 		return false
 	}
-	storeRaw, _ := ctx.Value(schemas.RakshaContextKeyShouldStoreRawInLogs).(bool)
+	storeRaw, _ := ctx.Value(schemas.GatewayContextKeyShouldStoreRawInLogs).(bool)
 	return storeRaw
 }
 
-func applyRealtimeTurnContextValues(ctx *schemas.RakshaContext, values map[any]any) {
+func applyRealtimeTurnContextValues(ctx *schemas.GatewayContext, values map[any]any) {
 	if ctx == nil || len(values) == 0 {
 		return
 	}
 	for ctxKey, value := range values {
 		switch ctxKey {
-		case schemas.RakshaContextKeyRequestID,
-			schemas.RakshaContextKeyParentRequestID,
-			schemas.RakshaContextKeyRealtimeSessionID,
-			schemas.RakshaContextKeyRealtimeProviderSessionID,
-			schemas.RakshaContextKeyRealtimeSource,
-			schemas.RakshaContextKeyRealtimeEventType,
-			schemas.RakshaContextKeyStreamStartTime,
-			schemas.RakshaContextKeyStreamEndIndicator:
+		case schemas.GatewayContextKeyRequestID,
+			schemas.GatewayContextKeyParentRequestID,
+			schemas.GatewayContextKeyRealtimeSessionID,
+			schemas.GatewayContextKeyRealtimeProviderSessionID,
+			schemas.GatewayContextKeyRealtimeSource,
+			schemas.GatewayContextKeyRealtimeEventType,
+			schemas.GatewayContextKeyStreamStartTime,
+			schemas.GatewayContextKeyStreamEndIndicator:
 			continue
 		}
 		if value != nil {
@@ -125,35 +125,35 @@ func applyRealtimeTurnContextValues(ctx *schemas.RakshaContext, values map[any]a
 	}
 }
 
-func restoreRealtimeTurnTraceContext(ctx *schemas.RakshaContext, traceID string, values map[any]any) {
+func restoreRealtimeTurnTraceContext(ctx *schemas.GatewayContext, traceID string, values map[any]any) {
 	if ctx == nil {
 		return
 	}
 	if strings.TrimSpace(traceID) != "" {
-		ctx.SetValue(schemas.RakshaContextKeyTraceID, strings.TrimSpace(traceID))
+		ctx.SetValue(schemas.GatewayContextKeyTraceID, strings.TrimSpace(traceID))
 	}
-	if tracer, ok := values[schemas.RakshaContextKeyTracer].(schemas.Tracer); ok && tracer != nil {
-		ctx.SetValue(schemas.RakshaContextKeyTracer, tracer)
+	if tracer, ok := values[schemas.GatewayContextKeyTracer].(schemas.Tracer); ok && tracer != nil {
+		ctx.SetValue(schemas.GatewayContextKeyTracer, tracer)
 	}
 }
 
-func setRealtimeTurnStreamContext(ctx *schemas.RakshaContext, startedAt time.Time, isFinal bool) {
+func setRealtimeTurnStreamContext(ctx *schemas.GatewayContext, startedAt time.Time, isFinal bool) {
 	if ctx == nil {
 		return
 	}
 	if startedAt.IsZero() {
 		startedAt = time.Now()
 	}
-	ctx.SetValue(schemas.RakshaContextKeyStreamStartTime, startedAt)
+	ctx.SetValue(schemas.GatewayContextKeyStreamStartTime, startedAt)
 	if isFinal {
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 	}
 }
 
 // sanitizeRealtimeSessionEventForProvider mutates outbound session events before provider
 // serialization. It must not persist session state; rejected session.update events should
 // not affect later turn logs.
-func sanitizeRealtimeSessionEventForProvider(event *schemas.RakshaRealtimeEvent) {
+func sanitizeRealtimeSessionEventForProvider(event *schemas.GatewayRealtimeEvent) {
 	if event == nil || event.Session == nil {
 		return
 	}
@@ -170,7 +170,7 @@ func sanitizeRealtimeSessionEventForProvider(event *schemas.RakshaRealtimeEvent)
 // updateRealtimeSessionFromEvent updates the session's tracked tool
 // definitions and voice whenever a session.update, session.created, or
 // session.updated event carries them.
-func updateRealtimeSessionFromEvent(session *ufws.Session, event *schemas.RakshaRealtimeEvent) {
+func updateRealtimeSessionFromEvent(session *ufws.Session, event *schemas.GatewayRealtimeEvent) {
 	if event == nil || event.Session == nil {
 		return
 	}
@@ -195,7 +195,7 @@ func updateRealtimeSessionFromEvent(session *ufws.Session, event *schemas.Raksha
 	}
 }
 
-func buildRealtimeTurnPreRequest(provider schemas.ModelProvider, model string, turnInputs []ufws.RealtimeTurnInput, sessionTools json.RawMessage) *schemas.RakshaRequest {
+func buildRealtimeTurnPreRequest(provider schemas.ModelProvider, model string, turnInputs []ufws.RealtimeTurnInput, sessionTools json.RawMessage) *schemas.GatewayRequest {
 	input := make([]schemas.ResponsesMessage, 0, len(turnInputs))
 	for _, turnInput := range turnInputs {
 		summary := strings.TrimSpace(turnInput.Summary)
@@ -231,9 +231,9 @@ func buildRealtimeTurnPreRequest(provider schemas.ModelProvider, model string, t
 		}
 	}
 
-	return &schemas.RakshaRequest{
+	return &schemas.GatewayRequest{
 		RequestType: schemas.RealtimeRequest,
-		ResponsesRequest: &schemas.RakshaResponsesRequest{
+		ResponsesRequest: &schemas.GatewayResponsesRequest{
 			Provider: provider,
 			Model:    model,
 			Input:    input,
@@ -250,13 +250,13 @@ func buildRealtimeTurnPostResponse(
 	rawResponse []byte,
 	contentOverride string,
 	latency int64,
-) *schemas.RakshaResponse {
+) *schemas.GatewayResponse {
 	output := buildRealtimeTurnOutputMessages(rtProvider, rawResponse, contentOverride)
-	resp := &schemas.RakshaResponsesResponse{
+	resp := &schemas.GatewayResponsesResponse{
 		Object: "response",
 		Model:  model,
 		Output: output,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			RequestType:            schemas.RealtimeRequest,
 			Provider:               provider,
 			OriginalModelRequested: model,
@@ -273,7 +273,7 @@ func buildRealtimeTurnPostResponse(
 		resp.ExtraFields.RawResponse = string(rawResponse)
 	}
 
-	return &schemas.RakshaResponse{ResponsesResponse: resp}
+	return &schemas.GatewayResponse{ResponsesResponse: resp}
 }
 
 func buildRealtimeTurnOutputMessages(rtProvider schemas.RealtimeProvider, rawResponse []byte, contentOverride string) []schemas.ResponsesMessage {
@@ -445,7 +445,7 @@ func extractRealtimeResponseDoneContentText(content []realtimeResponseDoneConten
 	return ""
 }
 
-func buildRealtimeResponsesUsage(usage *schemas.RakshaLLMUsage) *schemas.ResponsesResponseUsage {
+func buildRealtimeResponsesUsage(usage *schemas.GatewayLLMUsage) *schemas.ResponsesResponseUsage {
 	if usage == nil {
 		return nil
 	}
@@ -478,13 +478,13 @@ func buildRealtimeResponsesUsage(usage *schemas.RakshaLLMUsage) *schemas.Respons
 	return result
 }
 
-func newRealtimeTurnErrorEventPayload(rakshaErr *schemas.RakshaError) []byte {
-	if rakshaErr == nil {
+func newRealtimeTurnErrorEventPayload(gatewayErr *schemas.GatewayError) []byte {
+	if gatewayErr == nil {
 		return []byte(`{"type":"error","error":{"type":"server_error","message":"internal server error"}}`)
 	}
 
-	errorType, errorCode, errorMessage, errorParam := mapRealtimeWireErrorFields(rakshaErr)
-	payload := schemas.RakshaRealtimeEvent{
+	errorType, errorCode, errorMessage, errorParam := mapRealtimeWireErrorFields(gatewayErr)
+	payload := schemas.GatewayRealtimeEvent{
 		Type: schemas.RTEventError,
 		Error: &schemas.RealtimeError{
 			Type:    errorType,
@@ -500,7 +500,7 @@ func newRealtimeTurnErrorEventPayload(rakshaErr *schemas.RakshaError) []byte {
 }
 
 // isBudgetOrBillingError returns true if the lowercased value indicates a budget or billing exhaustion error.
-// Quota/rate-limit patterns (quota_exceeded, quota exceeded, etc.) are already covered by raksha.IsRateLimitErrorMessage.
+// Quota/rate-limit patterns (quota_exceeded, quota exceeded, etc.) are already covered by gateway.IsRateLimitErrorMessage.
 func isBudgetOrBillingError(lower string) bool {
 	return strings.Contains(lower, "budget_exceeded") ||
 		strings.Contains(lower, "budget exceeded") ||
@@ -509,33 +509,33 @@ func isBudgetOrBillingError(lower string) bool {
 		strings.Contains(lower, "billing hard limit")
 }
 
-func mapRealtimeWireErrorFields(rakshaErr *schemas.RakshaError) (string, string, string, string) {
+func mapRealtimeWireErrorFields(gatewayErr *schemas.GatewayError) (string, string, string, string) {
 	errorType := "server_error"
 	errorCode := "server_error"
 	errorMessage := "internal server error"
 	errorParam := ""
 
-	if rakshaErr == nil {
+	if gatewayErr == nil {
 		return errorType, errorCode, errorMessage, errorParam
 	}
 
 	var values []string
-	if rakshaErr.Type != nil {
-		values = append(values, strings.TrimSpace(*rakshaErr.Type))
+	if gatewayErr.Type != nil {
+		values = append(values, strings.TrimSpace(*gatewayErr.Type))
 	}
-	if rakshaErr.Error != nil {
-		if rakshaErr.Error.Type != nil {
-			values = append(values, strings.TrimSpace(*rakshaErr.Error.Type))
+	if gatewayErr.Error != nil {
+		if gatewayErr.Error.Type != nil {
+			values = append(values, strings.TrimSpace(*gatewayErr.Error.Type))
 		}
-		if rakshaErr.Error.Code != nil {
-			values = append(values, strings.TrimSpace(*rakshaErr.Error.Code))
+		if gatewayErr.Error.Code != nil {
+			values = append(values, strings.TrimSpace(*gatewayErr.Error.Code))
 		}
-		if strings.TrimSpace(rakshaErr.Error.Message) != "" {
-			errorMessage = strings.TrimSpace(rakshaErr.Error.Message)
+		if strings.TrimSpace(gatewayErr.Error.Message) != "" {
+			errorMessage = strings.TrimSpace(gatewayErr.Error.Message)
 			values = append(values, errorMessage)
 		}
-		if rakshaErr.Error.Param != nil {
-			errorParam = strings.TrimSpace(fmt.Sprint(rakshaErr.Error.Param))
+		if gatewayErr.Error.Param != nil {
+			errorParam = strings.TrimSpace(fmt.Sprint(gatewayErr.Error.Param))
 		}
 	}
 
@@ -548,7 +548,7 @@ func mapRealtimeWireErrorFields(rakshaErr *schemas.RakshaError) (string, string,
 			return "invalid_request_error", "invalid_request_error", errorMessage, errorParam
 		case isBudgetOrBillingError(lower):
 			return "insufficient_quota", "insufficient_quota", errorMessage, errorParam
-		case raksha.IsRateLimitErrorMessage(lower):
+		case gateway.IsRateLimitErrorMessage(lower):
 			return "rate_limit_exceeded", "rate_limit_exceeded", errorMessage, errorParam
 		}
 	}
@@ -556,23 +556,23 @@ func mapRealtimeWireErrorFields(rakshaErr *schemas.RakshaError) (string, string,
 	return errorType, errorCode, errorMessage, errorParam
 }
 
-func shouldGracefullyDisconnectRealtime(rakshaErr *schemas.RakshaError) bool {
-	if rakshaErr == nil {
+func shouldGracefullyDisconnectRealtime(gatewayErr *schemas.GatewayError) bool {
+	if gatewayErr == nil {
 		return false
 	}
 
 	var values []string
-	if rakshaErr.Type != nil {
-		values = append(values, strings.TrimSpace(*rakshaErr.Type))
+	if gatewayErr.Type != nil {
+		values = append(values, strings.TrimSpace(*gatewayErr.Type))
 	}
-	if rakshaErr.Error != nil {
-		if rakshaErr.Error.Type != nil {
-			values = append(values, strings.TrimSpace(*rakshaErr.Error.Type))
+	if gatewayErr.Error != nil {
+		if gatewayErr.Error.Type != nil {
+			values = append(values, strings.TrimSpace(*gatewayErr.Error.Type))
 		}
-		if rakshaErr.Error.Code != nil {
-			values = append(values, strings.TrimSpace(*rakshaErr.Error.Code))
+		if gatewayErr.Error.Code != nil {
+			values = append(values, strings.TrimSpace(*gatewayErr.Error.Code))
 		}
-		values = append(values, strings.TrimSpace(rakshaErr.Error.Message))
+		values = append(values, strings.TrimSpace(gatewayErr.Error.Message))
 	}
 
 	for _, value := range values {
@@ -580,7 +580,7 @@ func shouldGracefullyDisconnectRealtime(rakshaErr *schemas.RakshaError) bool {
 		if lower == "" {
 			continue
 		}
-		if isBudgetOrBillingError(lower) || raksha.IsRateLimitErrorMessage(lower) {
+		if isBudgetOrBillingError(lower) || gateway.IsRateLimitErrorMessage(lower) {
 			return true
 		}
 	}
@@ -589,17 +589,17 @@ func shouldGracefullyDisconnectRealtime(rakshaErr *schemas.RakshaError) bool {
 }
 
 func startRealtimeTurnHooks(
-	client *raksha.Raksha,
-	baseCtx *schemas.RakshaContext,
+	client *gateway.Gateway,
+	baseCtx *schemas.GatewayContext,
 	session *ufws.Session,
 	rtProvider schemas.RealtimeProvider,
 	provider schemas.ModelProvider,
 	model string,
 	key *schemas.Key,
 	startEventType schemas.RealtimeEventType,
-) *schemas.RakshaError {
+) *schemas.GatewayError {
 	if client == nil || session == nil {
-		return &schemas.RakshaError{
+		return &schemas.GatewayError{
 			Type:       schemas.Ptr("server_error"),
 			StatusCode: schemas.Ptr(500),
 			Error: &schemas.ErrorField{
@@ -609,7 +609,7 @@ func startRealtimeTurnHooks(
 		}
 	}
 	if !session.TryBeginRealtimeTurnHooks() {
-		return &schemas.RakshaError{
+		return &schemas.GatewayError{
 			Type:       schemas.Ptr("invalid_request_error"),
 			StatusCode: schemas.Ptr(400),
 			Error: &schemas.ErrorField{
@@ -630,22 +630,22 @@ func startRealtimeTurnHooks(
 	turnCtx := newRealtimeTurnContext(baseCtx, "", session.ID(), session.ProviderSessionID(), realtimeTurnSourceEI, startEventType, key)
 	applyRealtimeRawStorageContext(turnCtx, storeRaw)
 	if voice := session.RealtimeVoice(); voice != "" {
-		turnCtx.SetValue(schemas.RakshaContextKeyRealtimeVoice, voice)
+		turnCtx.SetValue(schemas.GatewayContextKeyRealtimeVoice, voice)
 	}
 	setRealtimeTurnStreamContext(turnCtx, startedAt, false)
 	req := buildRealtimeTurnPreRequest(provider, model, session.PeekRealtimeTurnInputs(), session.RealtimeSessionTools())
-	hooks, rakshaErr := client.RunRealtimeTurnPreHooks(turnCtx, req)
-	if rakshaErr != nil {
+	hooks, gatewayErr := client.RunRealtimeTurnPreHooks(turnCtx, req)
+	if gatewayErr != nil {
 		// RunRealtimeTurnPreHooks already executed post-hooks and flushed the trace
 		// for this turn-start failure. Clear buffered turn state so transport-close
 		// fallback finalization does not emit the same error a second time.
 		session.ConsumeRealtimeTurnInputs()
 		session.ConsumeRealtimeOutputText()
-		return rakshaErr
+		return gatewayErr
 	}
 
-	requestID, _ := turnCtx.Value(schemas.RakshaContextKeyRequestID).(string)
-	traceID, _ := turnCtx.Value(schemas.RakshaContextKeyTraceID).(string)
+	requestID, _ := turnCtx.Value(schemas.GatewayContextKeyRequestID).(string)
+	traceID, _ := turnCtx.Value(schemas.GatewayContextKeyTraceID).(string)
 	session.SetRealtimeTurnHooks(&ufws.RealtimeTurnPluginState{
 		PostHookRunner: hooks.PostHookRunner,
 		Cleanup:        hooks.Cleanup,
@@ -660,8 +660,8 @@ func startRealtimeTurnHooks(
 }
 
 func finalizeRealtimeTurnHooks(
-	client *raksha.Raksha,
-	baseCtx *schemas.RakshaContext,
+	client *gateway.Gateway,
+	baseCtx *schemas.GatewayContext,
 	session *ufws.Session,
 	rtProvider schemas.RealtimeProvider,
 	provider schemas.ModelProvider,
@@ -669,7 +669,7 @@ func finalizeRealtimeTurnHooks(
 	key *schemas.Key,
 	rawResponse []byte,
 	contentOverride string,
-) *schemas.RakshaError {
+) *schemas.GatewayError {
 	if client == nil || session == nil {
 		return nil
 	}
@@ -697,9 +697,9 @@ func finalizeRealtimeTurnHooks(
 		restoreRealtimeTurnTraceContext(postCtx, activeHooks.TraceID, activeHooks.PreHookValues)
 		applyRealtimeRawStorageContext(postCtx, activeHooks.RawStore)
 		setRealtimeTurnStreamContext(postCtx, activeHooks.StartedAt, true)
-		_, rakshaErr := activeHooks.PostHookRunner(postCtx, postResponse, nil)
+		_, gatewayErr := activeHooks.PostHookRunner(postCtx, postResponse, nil)
 		completeRealtimeTurnTrace(postCtx)
-		return rakshaErr
+		return gatewayErr
 	}
 
 	startedAt := time.Now()
@@ -708,17 +708,17 @@ func finalizeRealtimeTurnHooks(
 	applyRealtimeRawStorageContext(preCtx, storeRaw)
 	setRealtimeTurnStreamContext(preCtx, startedAt, false)
 	preReq := buildRealtimeTurnPreRequest(provider, model, turnInputs, session.RealtimeSessionTools())
-	hooks, rakshaErr := client.RunRealtimeTurnPreHooks(preCtx, preReq)
-	if rakshaErr != nil {
-		return rakshaErr
+	hooks, gatewayErr := client.RunRealtimeTurnPreHooks(preCtx, preReq)
+	if gatewayErr != nil {
+		return gatewayErr
 	}
 	preHookValues := preCtx.GetUserValues()
 	if hooks.Cleanup != nil {
 		defer hooks.Cleanup()
 	}
 
-	requestID, _ := preCtx.Value(schemas.RakshaContextKeyRequestID).(string)
-	traceID, _ := preCtx.Value(schemas.RakshaContextKeyTraceID).(string)
+	requestID, _ := preCtx.Value(schemas.GatewayContextKeyRequestID).(string)
+	traceID, _ := preCtx.Value(schemas.GatewayContextKeyTraceID).(string)
 	postResponse := buildRealtimeTurnPostResponse(
 		rtProvider,
 		provider,
@@ -733,23 +733,23 @@ func finalizeRealtimeTurnHooks(
 	restoreRealtimeTurnTraceContext(postCtx, traceID, preHookValues)
 	applyRealtimeRawStorageContext(postCtx, storeRaw)
 	setRealtimeTurnStreamContext(postCtx, startedAt, true)
-	_, rakshaErr = hooks.PostHookRunner(postCtx, postResponse, nil)
+	_, gatewayErr = hooks.PostHookRunner(postCtx, postResponse, nil)
 	completeRealtimeTurnTrace(postCtx)
-	return rakshaErr
+	return gatewayErr
 }
 
 func finalizeRealtimeTurnHooksWithError(
-	client *raksha.Raksha,
-	baseCtx *schemas.RakshaContext,
+	client *gateway.Gateway,
+	baseCtx *schemas.GatewayContext,
 	session *ufws.Session,
 	provider schemas.ModelProvider,
 	model string,
 	key *schemas.Key,
 	eventType schemas.RealtimeEventType,
 	rawResponse []byte,
-	rakshaErr *schemas.RakshaError,
-) *schemas.RakshaError {
-	if session == nil || rakshaErr == nil {
+	gatewayErr *schemas.GatewayError,
+) *schemas.GatewayError {
+	if session == nil || gatewayErr == nil {
 		return nil
 	}
 
@@ -768,7 +768,7 @@ func finalizeRealtimeTurnHooksWithError(
 			model,
 			rawRequest,
 			rawResponse,
-			rakshaErr,
+			gatewayErr,
 		)
 		postCtx := newRealtimeTurnContext(baseCtx, activeHooks.RequestID, session.ID(), session.ProviderSessionID(), realtimeTurnSourceLM, eventType, key)
 		applyRealtimeTurnContextValues(postCtx, activeHooks.PreHookValues)
@@ -803,14 +803,14 @@ func finalizeRealtimeTurnHooksWithError(
 		defer hooks.Cleanup()
 	}
 
-	requestID, _ := preCtx.Value(schemas.RakshaContextKeyRequestID).(string)
-	traceID, _ := preCtx.Value(schemas.RakshaContextKeyTraceID).(string)
+	requestID, _ := preCtx.Value(schemas.GatewayContextKeyRequestID).(string)
+	traceID, _ := preCtx.Value(schemas.GatewayContextKeyTraceID).(string)
 	postErr := buildRealtimeTurnPostError(
 		provider,
 		model,
 		rawRequest,
 		rawResponse,
-		rakshaErr,
+		gatewayErr,
 	)
 	postCtx := newRealtimeTurnContext(baseCtx, requestID, session.ID(), session.ProviderSessionID(), realtimeTurnSourceLM, eventType, key)
 	applyRealtimeTurnContextValues(postCtx, preHookValues)
@@ -827,16 +827,16 @@ func buildRealtimeTurnPostError(
 	model string,
 	rawRequest string,
 	rawResponse []byte,
-	rakshaErr *schemas.RakshaError,
-) *schemas.RakshaError {
-	if rakshaErr == nil {
+	gatewayErr *schemas.GatewayError,
+) *schemas.GatewayError {
+	if gatewayErr == nil {
 		return nil
 	}
 
-	copied := *rakshaErr
-	copied.ExtraFields = rakshaErr.ExtraFields
-	if rakshaErr.Error != nil {
-		errorCopy := *rakshaErr.Error
+	copied := *gatewayErr
+	copied.ExtraFields = gatewayErr.ExtraFields
+	if gatewayErr.Error != nil {
+		errorCopy := *gatewayErr.Error
 		copied.Error = &errorCopy
 	}
 	copied.ExtraFields.RequestType = schemas.RealtimeRequest
@@ -855,12 +855,12 @@ func buildRealtimeTurnPostError(
 	return &copied
 }
 
-func newRakshaErrorFromRealtimeError(
+func newGatewayErrorFromRealtimeError(
 	provider schemas.ModelProvider,
 	model string,
 	rawResponse []byte,
 	realtimeErr *schemas.RealtimeError,
-) *schemas.RakshaError {
+) *schemas.GatewayError {
 	if realtimeErr == nil {
 		return nil
 	}
@@ -878,7 +878,7 @@ func newRakshaErrorFromRealtimeError(
 			continue
 		case strings.Contains(lower, "invalid_request_error"):
 			statusCode = 400
-		case isBudgetOrBillingError(lower), raksha.IsRateLimitErrorMessage(lower):
+		case isBudgetOrBillingError(lower), gateway.IsRateLimitErrorMessage(lower):
 			statusCode = 429
 		}
 	}
@@ -896,8 +896,8 @@ func newRakshaErrorFromRealtimeError(
 		message = "realtime turn failed"
 	}
 
-	rakshaErr := &schemas.RakshaError{
-		IsRakshaError: true,
+	gatewayErr := &schemas.GatewayError{
+		IsGatewayError: true,
 		StatusCode:    schemas.Ptr(statusCode),
 		Type:          schemas.Ptr(errType),
 		Error: &schemas.ErrorField{
@@ -905,30 +905,30 @@ func newRakshaErrorFromRealtimeError(
 			Code:    schemas.Ptr(errCode),
 			Message: message,
 		},
-		ExtraFields: schemas.RakshaErrorExtraFields{
+		ExtraFields: schemas.GatewayErrorExtraFields{
 			Provider:               provider,
 			OriginalModelRequested: model,
 			RequestType:            schemas.RealtimeRequest,
 		},
 	}
 	if strings.TrimSpace(realtimeErr.Param) != "" {
-		rakshaErr.Error.Param = realtimeErr.Param
+		gatewayErr.Error.Param = realtimeErr.Param
 	}
 	if len(rawResponse) > 0 {
-		rakshaErr.ExtraFields.RawResponse = json.RawMessage(append([]byte(nil), rawResponse...))
+		gatewayErr.ExtraFields.RawResponse = json.RawMessage(append([]byte(nil), rawResponse...))
 	}
-	return rakshaErr
+	return gatewayErr
 }
 
-func completeRealtimeTurnTrace(ctx *schemas.RakshaContext) {
+func completeRealtimeTurnTrace(ctx *schemas.GatewayContext) {
 	if ctx == nil {
 		return
 	}
-	traceID, _ := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
+	traceID, _ := ctx.Value(schemas.GatewayContextKeyTraceID).(string)
 	if strings.TrimSpace(traceID) == "" {
 		return
 	}
-	tracer, _ := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
+	tracer, _ := ctx.Value(schemas.GatewayContextKeyTracer).(schemas.Tracer)
 	if tracer == nil {
 		return
 	}
@@ -936,8 +936,8 @@ func completeRealtimeTurnTrace(ctx *schemas.RakshaContext) {
 }
 
 func finalizeRealtimeTurnHooksOnTransportError(
-	client *raksha.Raksha,
-	baseCtx *schemas.RakshaContext,
+	client *gateway.Gateway,
+	baseCtx *schemas.GatewayContext,
 	session *ufws.Session,
 	provider schemas.ModelProvider,
 	model string,
@@ -945,7 +945,7 @@ func finalizeRealtimeTurnHooksOnTransportError(
 	status int,
 	code string,
 	message string,
-) *schemas.RakshaError {
+) *schemas.GatewayError {
 	return finalizeRealtimeTurnHooksWithError(
 		client,
 		baseCtx,
@@ -955,6 +955,6 @@ func finalizeRealtimeTurnHooksOnTransportError(
 		key,
 		schemas.RTEventError,
 		nil,
-		newRealtimeWireRakshaError(status, code, message),
+		newRealtimeWireGatewayError(status, code, message),
 	)
 }

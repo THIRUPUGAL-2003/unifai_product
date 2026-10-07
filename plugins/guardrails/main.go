@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/google/cel-go/cel"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/plugins/prompts"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/plugins/prompts"
 )
 
 const PluginName = "guardrails"
@@ -31,8 +31,8 @@ type GuardrailsPlugin struct {
 
 // Provider interface for all guardrail types
 type Provider interface {
-	ValidateInput(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) error
-	ValidateOutput(ctx *schemas.RakshaContext, req *schemas.RakshaRequest, resp *schemas.RakshaResponse) error
+	ValidateInput(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) error
+	ValidateOutput(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, resp *schemas.GatewayResponse) error
 }
 
 func Init(ctx context.Context, config *Config, logger schemas.Logger) (schemas.BasePlugin, error) {
@@ -126,11 +126,11 @@ func (p *GuardrailsPlugin) Cleanup() error {
 	return nil
 }
 
-func (p *GuardrailsPlugin) PreRequestHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) error {
+func (p *GuardrailsPlugin) PreRequestHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) error {
 	return nil
 }
 
-func (p *GuardrailsPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *GuardrailsPlugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	if p.config == nil {
 		return nil, nil, nil
 	}
@@ -199,7 +199,7 @@ func (p *GuardrailsPlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.R
 	return req, nil, nil
 }
 
-func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.RakshaContext, resp *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
+func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.GatewayContext, resp *schemas.GatewayResponse, err *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error) {
 	if p.config == nil || err != nil || resp == nil {
 		return resp, err, nil
 	}
@@ -283,9 +283,9 @@ func (p *GuardrailsPlugin) PostLLMHook(ctx *schemas.RakshaContext, resp *schemas
 }
 
 const (
-	guardrailsStreamTailKey    schemas.RakshaContextKey = "guardrails.stream_output_tail"
-	guardrailsStreamBlockedKey schemas.RakshaContextKey = "guardrails.stream_blocked"
-	guardrailsRequestModelKey  schemas.RakshaContextKey = "guardrails.request_model"
+	guardrailsStreamTailKey    schemas.GatewayContextKey = "guardrails.stream_output_tail"
+	guardrailsStreamBlockedKey schemas.GatewayContextKey = "guardrails.stream_blocked"
+	guardrailsRequestModelKey  schemas.GatewayContextKey = "guardrails.request_model"
 )
 
 // streamScanOverlap is how much already-streamed text is re-scanned with each new chunk,
@@ -294,7 +294,7 @@ const streamScanOverlap = 4096
 
 // streamChunkText reports whether resp is a streaming chunk and returns its output text
 // (chat deltas, or Responses/Anthropic output_text and refusal deltas).
-func streamChunkText(resp *schemas.RakshaResponse) (bool, string) {
+func streamChunkText(resp *schemas.GatewayResponse) (bool, string) {
 	if resp == nil {
 		return false, ""
 	}
@@ -330,7 +330,7 @@ func streamChunkText(resp *schemas.RakshaResponse) (bool, string) {
 
 // appendStreamWindow returns the text to scan for this chunk (recent tail + chunk) and
 // keeps only the last streamScanOverlap bytes for the next chunk.
-func appendStreamWindow(ctx *schemas.RakshaContext, chunk string) string {
+func appendStreamWindow(ctx *schemas.GatewayContext, chunk string) string {
 	if ctx == nil {
 		return chunk
 	}
@@ -344,7 +344,7 @@ func appendStreamWindow(ctx *schemas.RakshaContext, chunk string) string {
 	return window
 }
 
-func streamBlocked(ctx *schemas.RakshaContext) bool {
+func streamBlocked(ctx *schemas.GatewayContext) bool {
 	if ctx == nil {
 		return false
 	}
@@ -352,26 +352,26 @@ func streamBlocked(ctx *schemas.RakshaContext) bool {
 	return blocked
 }
 
-func skipStreamChunkError() *schemas.RakshaError {
+func skipStreamChunkError() *schemas.GatewayError {
 	skip := true
-	return &schemas.RakshaError{
-		IsRakshaError: true,
+	return &schemas.GatewayError{
+		IsGatewayError: true,
 		Error:         &schemas.ErrorField{Message: "stream blocked by guardrail"},
 		StreamControl: &schemas.StreamControl{SkipStream: &skip},
 	}
 }
 
-func promptIDFromContext(ctx *schemas.RakshaContext) string {
+func promptIDFromContext(ctx *schemas.GatewayContext) string {
 	if ctx == nil {
 		return ""
 	}
-	if promptID := raksha.GetStringFromContext(ctx, prompts.PromptIDKey); promptID != "" {
+	if promptID := gateway.GetStringFromContext(ctx, prompts.PromptIDKey); promptID != "" {
 		return promptID
 	}
-	return raksha.GetStringFromContext(ctx, schemas.RakshaContextKeySelectedPromptID)
+	return gateway.GetStringFromContext(ctx, schemas.GatewayContextKeySelectedPromptID)
 }
 
-func modelNameFromResponse(resp *schemas.RakshaResponse) string {
+func modelNameFromResponse(resp *schemas.GatewayResponse) string {
 	if resp == nil {
 		return ""
 	}
@@ -384,11 +384,11 @@ func modelNameFromResponse(resp *schemas.RakshaResponse) string {
 	return ""
 }
 
-func guardrailViolationError(message string) *schemas.RakshaError {
+func guardrailViolationError(message string) *schemas.GatewayError {
 	statusCode := 400
 	code := "guardrail_violation"
-	return &schemas.RakshaError{
-		IsRakshaError: true,
+	return &schemas.GatewayError{
+		IsGatewayError: true,
 		StatusCode:    &statusCode,
 		Error: &schemas.ErrorField{
 			Message: message,
@@ -397,34 +397,34 @@ func guardrailViolationError(message string) *schemas.RakshaError {
 	}
 }
 
-func virtualKeyIDFromContext(ctx *schemas.RakshaContext) string {
+func virtualKeyIDFromContext(ctx *schemas.GatewayContext) string {
 	if ctx == nil {
 		return ""
 	}
-	if vkID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyID); vkID != "" {
+	if vkID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyID); vkID != "" {
 		return vkID
 	}
-	if v, ok := ctx.Value(schemas.RakshaContextKeyVirtualKey).(string); ok && v != "" {
+	if v, ok := ctx.Value(schemas.GatewayContextKeyVirtualKey).(string); ok && v != "" {
 		return v
 	}
 	return ""
 }
 
-func rawVirtualKeyFromContext(ctx *schemas.RakshaContext) string {
+func rawVirtualKeyFromContext(ctx *schemas.GatewayContext) string {
 	if ctx == nil {
 		return ""
 	}
-	if v, ok := ctx.Value(schemas.RakshaContextKeyVirtualKey).(string); ok && v != "" {
+	if v, ok := ctx.Value(schemas.GatewayContextKeyVirtualKey).(string); ok && v != "" {
 		return v
 	}
 	return ""
 }
 
-func virtualKeyNameFromContext(ctx *schemas.RakshaContext) string {
+func virtualKeyNameFromContext(ctx *schemas.GatewayContext) string {
 	if ctx == nil {
 		return ""
 	}
-	return raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceVirtualKeyName)
+	return gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceVirtualKeyName)
 }
 
 func ruleMatchesVirtualKey(rule GuardrailRule, currentVKID string, rawVK string) bool {

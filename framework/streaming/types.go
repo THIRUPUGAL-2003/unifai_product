@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 type StreamType string
@@ -33,28 +33,28 @@ type AccumulatedData struct {
 	OutputMessage         *schemas.ChatMessage
 	OutputMessages        []schemas.ResponsesMessage // For responses API
 	ToolCalls             []schemas.ChatAssistantMessageToolCall
-	ErrorDetails          *schemas.RakshaError
-	TokenUsage            *schemas.RakshaLLMUsage
-	CacheDebug            *schemas.RakshaCacheDebug
+	ErrorDetails          *schemas.GatewayError
+	TokenUsage            *schemas.GatewayLLMUsage
+	CacheDebug            *schemas.GatewayCacheDebug
 	Cost                  *float64
-	AudioOutput           *schemas.RakshaSpeechResponse
-	TranscriptionOutput   *schemas.RakshaTranscriptionResponse
-	ImageGenerationOutput *schemas.RakshaImageGenerationResponse
-	PassthroughOutput     *schemas.RakshaPassthroughResponse // For passthrough streaming
+	AudioOutput           *schemas.GatewaySpeechResponse
+	TranscriptionOutput   *schemas.GatewayTranscriptionResponse
+	ImageGenerationOutput *schemas.GatewayImageGenerationResponse
+	PassthroughOutput     *schemas.GatewayPassthroughResponse // For passthrough streaming
 	FinishReason          *string
-	LogProbs              *schemas.RakshaLogProbs
+	LogProbs              *schemas.GatewayLogProbs
 	RawResponse           *string
 }
 
 // AudioStreamChunk represents a single streaming chunk
 type AudioStreamChunk struct {
 	Timestamp          time.Time                            // When chunk was received
-	Delta              *schemas.RakshaSpeechStreamResponse // The actual delta content
+	Delta              *schemas.GatewaySpeechStreamResponse // The actual delta content
 	FinishReason       *string                              // If this is the final chunk
 	TokenUsage         *schemas.SpeechUsage                 // Token usage if available
-	SemanticCacheDebug *schemas.RakshaCacheDebug           // Semantic cache debug if available
+	SemanticCacheDebug *schemas.GatewayCacheDebug           // Semantic cache debug if available
 	Cost               *float64                             // Cost in dollars from pricing plugin
-	ErrorDetails       *schemas.RakshaError                // Error if any
+	ErrorDetails       *schemas.GatewayError                // Error if any
 	ChunkIndex         int                                  // Index of the chunk in the stream
 	RawResponse        *string
 }
@@ -62,12 +62,12 @@ type AudioStreamChunk struct {
 // TranscriptionStreamChunk represents a single transcription streaming chunk
 type TranscriptionStreamChunk struct {
 	Timestamp          time.Time                                   // When chunk was received
-	Delta              *schemas.RakshaTranscriptionStreamResponse // The actual delta content
+	Delta              *schemas.GatewayTranscriptionStreamResponse // The actual delta content
 	FinishReason       *string                                     // If this is the final chunk
 	TokenUsage         *schemas.TranscriptionUsage                 // Token usage if available
-	SemanticCacheDebug *schemas.RakshaCacheDebug                  // Semantic cache debug if available
+	SemanticCacheDebug *schemas.GatewayCacheDebug                  // Semantic cache debug if available
 	Cost               *float64                                    // Cost in dollars from pricing plugin
-	ErrorDetails       *schemas.RakshaError                       // Error if any
+	ErrorDetails       *schemas.GatewayError                       // Error if any
 	ChunkIndex         int                                         // Index of the chunk in the stream
 	RawResponse        *string
 }
@@ -77,11 +77,11 @@ type ChatStreamChunk struct {
 	Timestamp          time.Time                              // When chunk was received
 	Delta              *schemas.ChatStreamResponseChoiceDelta // The actual delta content
 	FinishReason       *string                                // If this is the final chunk
-	LogProbs           *schemas.RakshaLogProbs               // LogProbs if available
-	TokenUsage         *schemas.RakshaLLMUsage               // Token usage if available
-	SemanticCacheDebug *schemas.RakshaCacheDebug             // Semantic cache debug if available
+	LogProbs           *schemas.GatewayLogProbs               // LogProbs if available
+	TokenUsage         *schemas.GatewayLLMUsage               // Token usage if available
+	SemanticCacheDebug *schemas.GatewayCacheDebug             // Semantic cache debug if available
 	Cost               *float64                               // Cost in dollars from pricing plugin
-	ErrorDetails       *schemas.RakshaError                  // Error if any
+	ErrorDetails       *schemas.GatewayError                  // Error if any
 	ChunkIndex         int                                    // Index of the chunk in the stream
 	RawResponse        *string                                // Raw response if available
 }
@@ -89,12 +89,12 @@ type ChatStreamChunk struct {
 // ResponsesStreamChunk represents a single responses streaming chunk
 type ResponsesStreamChunk struct {
 	Timestamp          time.Time                               // When chunk was received
-	StreamResponse     *schemas.RakshaResponsesStreamResponse // The actual stream response
+	StreamResponse     *schemas.GatewayResponsesStreamResponse // The actual stream response
 	FinishReason       *string                                 // If this is the final chunk
-	TokenUsage         *schemas.RakshaLLMUsage                // Token usage if available
-	SemanticCacheDebug *schemas.RakshaCacheDebug              // Semantic cache debug if available
+	TokenUsage         *schemas.GatewayLLMUsage                // Token usage if available
+	SemanticCacheDebug *schemas.GatewayCacheDebug              // Semantic cache debug if available
 	Cost               *float64                                // Cost in dollars from pricing plugin
-	ErrorDetails       *schemas.RakshaError                   // Error if any
+	ErrorDetails       *schemas.GatewayError                   // Error if any
 	ChunkIndex         int                                     // Index of the chunk in the stream
 	RawResponse        *string
 }
@@ -102,13 +102,13 @@ type ResponsesStreamChunk struct {
 // ImageStreamChunk represents a single image streaming chunk
 type ImageStreamChunk struct {
 	Timestamp          time.Time                                     // When chunk was received
-	Delta              *schemas.RakshaImageGenerationStreamResponse // The actual stream response
+	Delta              *schemas.GatewayImageGenerationStreamResponse // The actual stream response
 	FinishReason       *string                                       // If this is the final chunk
 	ChunkIndex         int                                           // Index of the chunk in the stream
 	ImageIndex         int                                           // Index of the image in the stream
-	ErrorDetails       *schemas.RakshaError                         // Error if any
+	ErrorDetails       *schemas.GatewayError                         // Error if any
 	Cost               *float64                                      // Cost in dollars from pricing plugin
-	SemanticCacheDebug *schemas.RakshaCacheDebug                    // Semantic cache debug if available
+	SemanticCacheDebug *schemas.GatewayCacheDebug                    // Semantic cache debug if available
 	TokenUsage         *schemas.ImageUsage                           // Token usage if available
 	RawResponse        *string                                       // Raw response if available
 }
@@ -164,12 +164,12 @@ type StreamAccumulator struct {
 	// buffer and transitions the gate to Ended.
 	gatePendingTerminal bool
 	gateSeq             int                              // monotonic, bumped on every GateSend
-	gateReplayBuf       []*schemas.RakshaStreamChunk    // wire-format chunks captured while paused
+	gateReplayBuf       []*schemas.GatewayStreamChunk    // wire-format chunks captured while paused
 	gateReplayBufBytes  int64                            // sum of MarshalJSON sizes of chunks in gateReplayBuf; capped by gateReplayBufMaxBytes
 	gateCond            *sync.Cond                       // wakes flusher on Resume / End / append-while-active
-	gateEndError        *schemas.RakshaError            // delivered as terminal chunk if EndStream(err) was called with non-nil
-	gateFlusherCh       chan *schemas.RakshaStreamChunk // captured on first GateSend; reused by flusher
-	gateFlusherCtx      *schemas.RakshaContext          // captured on first GateSend
+	gateEndError        *schemas.GatewayError            // delivered as terminal chunk if EndStream(err) was called with non-nil
+	gateFlusherCh       chan *schemas.GatewayStreamChunk // captured on first GateSend; reused by flusher
+	gateFlusherCtx      *schemas.GatewayContext          // captured on first GateSend
 	gateFlusherOn       bool                             // flusher goroutine running
 	gateFlusherDone     chan struct{}                    // closed when the most recent flusher exits; nil when no flusher has ever started
 	// gatePendingCleanup is set by cleanupStreamAccumulator when the caller
@@ -288,13 +288,13 @@ type ProcessedStreamResponse struct {
 	RawRequest     *interface{}
 }
 
-// ToRakshaResponse converts a ProcessedStreamResponse to a RakshaResponse
-func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
+// ToGatewayResponse converts a ProcessedStreamResponse to a GatewayResponse
+func (p *ProcessedStreamResponse) ToGatewayResponse() *schemas.GatewayResponse {
 	if p.Data == nil {
 		return nil
 	}
 
-	resp := &schemas.RakshaResponse{}
+	resp := &schemas.GatewayResponse{}
 
 	switch p.StreamType {
 	case StreamTypeText:
@@ -302,11 +302,11 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 		if p.Data.OutputMessage != nil && p.Data.OutputMessage.Content != nil && p.Data.OutputMessage.Content.ContentStr != nil {
 			text = *p.Data.OutputMessage.Content.ContentStr
 		}
-		textResp := &schemas.RakshaTextCompletionResponse{
+		textResp := &schemas.GatewayTextCompletionResponse{
 			ID:     p.RequestID,
 			Object: "text_completion",
 			Model:  p.RequestedModel,
-			Choices: []schemas.RakshaResponseChoice{
+			Choices: []schemas.GatewayResponseChoice{
 				{
 					Index:        0,
 					FinishReason: p.Data.FinishReason,
@@ -320,7 +320,7 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 		}
 
 		resp.TextCompletionResponse = textResp
-		resp.TextCompletionResponse.ExtraFields = schemas.RakshaResponseExtraFields{
+		resp.TextCompletionResponse.ExtraFields = schemas.GatewayResponseExtraFields{
 			RequestType:            schemas.TextCompletionRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -349,16 +349,16 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 		}
 		usage := p.Data.TokenUsage
 		if usage == nil && p.Data.Cost != nil && *p.Data.Cost > 0 {
-			usage = &schemas.RakshaLLMUsage{
-				Cost: &schemas.RakshaCost{TotalCost: *p.Data.Cost},
+			usage = &schemas.GatewayLLMUsage{
+				Cost: &schemas.GatewayCost{TotalCost: *p.Data.Cost},
 			}
 		}
-		chatResp := &schemas.RakshaChatResponse{
+		chatResp := &schemas.GatewayChatResponse{
 			ID:      p.RequestID,
 			Object:  "chat.completion",
 			Model:   p.RequestedModel,
 			Created: int(p.Data.StartTimestamp.Unix()),
-			Choices: []schemas.RakshaResponseChoice{
+			Choices: []schemas.GatewayResponseChoice{
 				{
 					Index:        0,
 					FinishReason: p.Data.FinishReason,
@@ -372,7 +372,7 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 		}
 
 		resp.ChatResponse = chatResp
-		resp.ChatResponse.ExtraFields = schemas.RakshaResponseExtraFields{
+		resp.ChatResponse.ExtraFields = schemas.GatewayResponseExtraFields{
 			RequestType:            schemas.ChatCompletionRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -389,7 +389,7 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 			resp.ChatResponse.ExtraFields.CacheDebug = p.Data.CacheDebug
 		}
 	case StreamTypeResponses:
-		responsesResp := &schemas.RakshaResponsesResponse{}
+		responsesResp := &schemas.GatewayResponsesResponse{}
 
 		if p.Data.OutputMessages != nil {
 			responsesResp.Output = p.Data.OutputMessages
@@ -397,7 +397,7 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 		if p.Data.TokenUsage != nil {
 			responsesResp.Usage = p.Data.TokenUsage.ToResponsesResponseUsage()
 		}
-		responsesResp.ExtraFields = schemas.RakshaResponseExtraFields{
+		responsesResp.ExtraFields = schemas.GatewayResponseExtraFields{
 			RequestType:            schemas.ResponsesRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -417,10 +417,10 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 	case StreamTypeAudio:
 		speechResp := p.Data.AudioOutput
 		if speechResp == nil {
-			speechResp = &schemas.RakshaSpeechResponse{}
+			speechResp = &schemas.GatewaySpeechResponse{}
 		}
 		resp.SpeechResponse = speechResp
-		resp.SpeechResponse.ExtraFields = schemas.RakshaResponseExtraFields{
+		resp.SpeechResponse.ExtraFields = schemas.GatewayResponseExtraFields{
 			RequestType:            schemas.SpeechRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -439,10 +439,10 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 	case StreamTypeTranscription:
 		transcriptionResp := p.Data.TranscriptionOutput
 		if transcriptionResp == nil {
-			transcriptionResp = &schemas.RakshaTranscriptionResponse{}
+			transcriptionResp = &schemas.GatewayTranscriptionResponse{}
 		}
 		resp.TranscriptionResponse = transcriptionResp
-		resp.TranscriptionResponse.ExtraFields = schemas.RakshaResponseExtraFields{
+		resp.TranscriptionResponse.ExtraFields = schemas.GatewayResponseExtraFields{
 			RequestType:            schemas.TranscriptionRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,
@@ -461,7 +461,7 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 	case StreamTypeImage:
 		imageResp := p.Data.ImageGenerationOutput
 		if imageResp == nil {
-			imageResp = &schemas.RakshaImageGenerationResponse{
+			imageResp = &schemas.GatewayImageGenerationResponse{
 				Data: make([]schemas.ImageData, 0),
 			}
 			if p.RequestID != "" {
@@ -476,7 +476,7 @@ func (p *ProcessedStreamResponse) ToRakshaResponse() *schemas.RakshaResponse {
 			imageResp.Data = make([]schemas.ImageData, 0)
 		}
 		resp.ImageGenerationResponse = imageResp
-		resp.ImageGenerationResponse.ExtraFields = schemas.RakshaResponseExtraFields{
+		resp.ImageGenerationResponse.ExtraFields = schemas.GatewayResponseExtraFields{
 			RequestType:            schemas.ImageGenerationRequest,
 			Provider:               p.Provider,
 			OriginalModelRequested: p.RequestedModel,

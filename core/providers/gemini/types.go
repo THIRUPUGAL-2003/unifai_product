@@ -13,8 +13,8 @@ import (
 
 	"cloud.google.com/go/civil"
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 const (
@@ -125,7 +125,7 @@ type GeminiGenerationRequest struct {
 	Instances  []ImagenInstance        `json:"instances,omitempty"`
 	Parameters *GeminiImagenParameters `json:"parameters,omitempty"`
 
-	// Raksha specific field (only parsed when converting from Provider -> Raksha request)
+	// Gateway specific field (only parsed when converting from Provider -> Gateway request)
 	Fallbacks   []string               `json:"fallbacks,omitempty"`
 	ExtraParams map[string]interface{} `json:"-"` // Optional: Extra parameters
 }
@@ -2301,7 +2301,7 @@ type GeminiBatchOutput struct {
 }
 
 // GeminiBatchDest is the client-SDK-facing output shape (dest.fileName) emitted when
-// converting a Raksha batch response back to Gemini format. The raw REST API reports
+// converting a Gateway batch response back to Gemini format. The raw REST API reports
 // output under the Operation's response / metadata.output fields, not dest.
 type GeminiBatchDest struct {
 	FileName string `json:"fileName,omitempty"`

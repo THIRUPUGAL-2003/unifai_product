@@ -1,17 +1,17 @@
-# Raksha UI
+# Gateway UI
 
-A modern, production-ready web interface for the [Raksha AI Gateway](https://github.com/raksha/raksha) - providing real-time monitoring, configuration management, and comprehensive observability for your AI infrastructure.
+A modern, production-ready web interface for the [Gateway](https://github.com/gateway/gateway) HTTP transport — providing real-time monitoring, configuration management, and comprehensive observability for your AI infrastructure.
 
 ## Overview
 
-Raksha UI is a React + Vite + TanStack Router web dashboard that serves as the control center for your Raksha AI Gateway. It provides an intuitive interface to monitor AI requests, configure providers, manage MCP clients, and analyze performance metrics.
+Gateway UI is a React + Vite + TanStack Router web dashboard that serves as the control center for your Gateway deployment. It provides an intuitive interface to monitor AI requests, configure providers, manage MCP clients, and analyze performance metrics.
 
 ### Key Features
 
 - **Real-time Log Monitoring** - Live streaming dashboard with WebSocket integration
-- **Provider Management** - Configure [15+ AI providers](https://docs.raksha.ai/quickstart/gateway/provider-configuration)
-- **MCP Integration** - Manage [Model Context Protocol](https://docs.raksha.ai/features/mcp) clients for advanced AI capabilities
-- **Plugin System** - Extend functionality with [custom plugins](https://docs.raksha.ai/plugins/getting-started)
+- **Provider Management** - Configure [15+ AI providers](https://docs.gateway.ai/quickstart/gateway/provider-configuration)
+- **MCP Integration** - Manage [Model Context Protocol](https://docs.gateway.ai/features/mcp) clients for advanced AI capabilities
+- **Plugin System** - Extend functionality with [custom plugins](https://docs.gateway.ai/plugins/getting-started)
 - **Analytics Dashboard** - Request metrics, success rates, latency tracking, and token usage
 - **Modern UI** - Dark/light mode, responsive design, and accessible components
 - **Documentation Hub** - Built-in documentation browser and quick-start guides
@@ -20,9 +20,9 @@ Raksha UI is a React + Vite + TanStack Router web dashboard that serves as the c
 
 ### Prerequisites
 
-The UI is designed to work with the Raksha HTTP transport backend. Get started with the complete setup:
+The UI is designed to work with the Gateway HTTP transport backend. Get started with the complete setup:
 
-**[Gateway Setup Guide →](https://docs.raksha.ai/quickstart/gateway/setting-up)**
+**[Gateway Setup Guide →](https://docs.gateway.ai/quickstart/gateway/setting-up)**
 
 ### Development
 
@@ -34,13 +34,14 @@ npm install
 npm run dev
 ```
 
-The development server runs on `http://localhost:3000` and connects to your Raksha HTTP transport backend (default: `http://localhost:8080`).
+The development server runs on `http://localhost:3000` and connects to your Gateway HTTP transport backend (default: `http://localhost:8080`).
 
 ### Environment Variables
 
 ```bash
-# Development only - customize Raksha backend port
-RAKSHA_PORT=8080
+# Development only — Gateway backend port (legacy GATEWAY_PORT still supported)
+GATEWAY_PORT=8080
+# GATEWAY_PORT=8080
 ```
 
 ## Architecture
@@ -59,7 +60,7 @@ RAKSHA_PORT=8080
 
 ```
 ┌─────────────────┐    HTTP/WebSocket    ┌──────────────────┐
-│   Raksha UI    │ ◄─────────────────► │ Raksha HTTP     │
+│  Gateway UI    │ ◄─────────────────► │ Gateway HTTP    │
 │   (React+Vite)  │                     │ Transport (Go)   │
 └─────────────────┘                     └──────────────────┘
         │                                        │
@@ -77,32 +78,32 @@ RAKSHA_PORT=8080
 
 The main dashboard provides comprehensive request monitoring with live updates via WebSocket, advanced filtering, and detailed request/response inspection.
 
-**[Learn More →](https://docs.raksha.ai/features/observability)**
+**[Learn More →](https://docs.gateway.ai/features/observability)**
 
 ### Provider Configuration
 
 Manage all your AI providers from a unified interface with support for multiple API keys, custom network configuration, and provider-specific settings.
 
-**[View All Providers →](https://docs.raksha.ai/quickstart/gateway/provider-configuration)**
+**[View All Providers →](https://docs.gateway.ai/quickstart/gateway/provider-configuration)**
 
 ### MCP Client Management
 
 Model Context Protocol integration for advanced AI capabilities including tool integration and connection monitoring.
 
-**[MCP Documentation →](https://docs.raksha.ai/features/mcp)**
+**[MCP Documentation →](https://docs.gateway.ai/features/mcp)**
 
 ### Plugin Ecosystem
 
-Extend Raksha with powerful plugins for observability, testing, caching, and custom functionality.
+Extend Gateway with powerful plugins for observability, testing, caching, and custom functionality.
 
 **Available Plugins:**
 
-- [Maxim Logger](https://docs.raksha.ai/features/observability/maxim) - Advanced LLM observability
-- [Response Mocker](https://docs.raksha.ai/features/plugins/mocker) - Mock responses for testing
-- [Semantic Cache](https://docs.raksha.ai/features/semantic-caching) - Intelligent response caching
-- [OpenTelemetry](https://docs.raksha.ai/features/observability/otel) - Distributed tracing
+- [Maxim Logger](https://docs.gateway.ai/features/observability/maxim) - Advanced LLM observability
+- [Response Mocker](https://docs.gateway.ai/features/plugins/mocker) - Mock responses for testing
+- [Semantic Cache](https://docs.gateway.ai/features/semantic-caching) - Intelligent response caching
+- [OpenTelemetry](https://docs.gateway.ai/features/observability/otel) - Distributed tracing
 
-**[Plugin Development Guide →](https://docs.raksha.ai/plugins/getting-started)**
+**[Plugin Development Guide →](https://docs.gateway.ai/plugins/getting-started)**
 
 ## Development
 
@@ -129,7 +130,7 @@ ui/
 
 ### API Integration
 
-The UI uses Redux Toolkit + RTK Query for state management and API communication with the Raksha HTTP transport backend:
+The UI uses Redux Toolkit + RTK Query for state management and API communication with the Gateway HTTP transport backend:
 
 ```typescript
 // Example API usage with RTK Query
@@ -176,29 +177,29 @@ const handleCreate = async () => {
 
 The UI supports comprehensive provider configuration including API keys with model assignments, network settings, and provider-specific options.
 
-**[Complete Provider Configuration Guide →](https://docs.raksha.ai/quickstart/gateway/provider-configuration)**
+**[Complete Provider Configuration Guide →](https://docs.gateway.ai/quickstart/gateway/provider-configuration)**
 
 ### Governance & Access Control
 
 Configure virtual keys, budget limits, rate limiting, and team-based access control through the UI.
 
-**[Governance Documentation →](https://docs.raksha.ai/features/governance)**
+**[Governance Documentation →](https://docs.gateway.ai/features/governance)**
 
 ### Real-time Features
 
 WebSocket connection provides live log streaming, connection status monitoring, automatic reconnection, and filtered real-time updates.
 
-**[Observability Features →](https://docs.raksha.ai/features/observability)**
+**[Observability Features →](https://docs.gateway.ai/features/observability)**
 
 ## Monitoring & Analytics
 
 The dashboard provides comprehensive observability including request metrics, token usage tracking, provider performance analysis, error categorization, and historical trend analysis.
 
-**[Performance Benchmarks →](https://docs.raksha.ai/benchmarking/getting-started)**
+**[Performance Benchmarks →](https://docs.gateway.ai/benchmarking/getting-started)**
 
 ## Contributing
 
-We welcome contributions! See our [Contributing Guide](https://docs.raksha.ai/contributing/setting-up-repo) for:
+We welcome contributions! See our [Contributing Guide](https://docs.gateway.ai/contributing/setting-up-repo) for:
 
 - Code conventions and style guide
 - Development setup and workflow
@@ -207,15 +208,15 @@ We welcome contributions! See our [Contributing Guide](https://docs.raksha.ai/co
 
 ## Documentation
 
-**Complete Documentation:** [https://docs.raksha.ai](https://docs.raksha.ai)
+**Complete Documentation:** [https://docs.gateway.ai](https://docs.gateway.ai)
 
 ### Quick Links
 
-- [Gateway Setup](https://docs.raksha.ai/quickstart/gateway/setting-up) - Get started in 30 seconds
-- [Provider Configuration](https://docs.raksha.ai/quickstart/gateway/provider-configuration) - Multi-provider setup
-- [MCP Integration](https://docs.raksha.ai/features/mcp) - External tool calling
-- [Plugin Development](https://docs.raksha.ai/plugins/getting-started) - Build custom plugins
-- [Architecture](https://docs.raksha.ai/architecture) - System design and internals
+- [Gateway Setup](https://docs.gateway.ai/quickstart/gateway/setting-up) - Get started in 30 seconds
+- [Provider Configuration](https://docs.gateway.ai/quickstart/gateway/provider-configuration) - Multi-provider setup
+- [MCP Integration](https://docs.gateway.ai/features/mcp) - External tool calling
+- [Plugin Development](https://docs.gateway.ai/plugins/getting-started) - Build custom plugins
+- [Architecture](https://docs.gateway.ai/architecture) - System design and internals
 
 ## Need Help?
 
@@ -230,7 +231,7 @@ Get help with:
 
 ## Links
 
-- **Main Repository**: [github.com/raksha/raksha](https://github.com/raksha/raksha)
-- **HTTP Transport**: [../transports/raksha-http](../transports/raksha-http)
-- **Documentation**: [docs.raksha.ai](https://docs.raksha.ai)
-- **Website**: [getraksha.ai](https://www.getraksha.ai)
+- **Main Repository**: [github.com/gateway/gateway](https://github.com/gateway/gateway)
+- **HTTP Transport**: [../transports/gateway-http](../transports/gateway-http)
+- **Documentation**: [docs.gateway.ai](https://docs.gateway.ai)
+- **Website**: [getgateway.ai](https://www.getgateway.ai)

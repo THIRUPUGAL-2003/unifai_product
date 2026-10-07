@@ -1,6 +1,7 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { useGetDimensionRankingsQuery, useLazyGetDimensionRankingsQuery } from "@/lib/store";
 import type { LogFilters, RankingDimension } from "@/lib/types/logs";
-import { forwardRef, useCallback, useImperativeHandle, useMemo } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import type { DashboardData } from "../../utils/exportUtils";
 import { DimensionRankingsTab } from "../dimensionRankingsTab";
 
@@ -22,12 +23,17 @@ interface DimensionRankingsTabViewProps {
 export const DimensionRankingsTabView = forwardRef<DimensionRankingsTabViewHandle, DimensionRankingsTabViewProps>(
 	function DimensionRankingsTabView({ filters, active, dimension, dimensionLabel, testIdPrefix, dataKey, pollingInterval = 0 }, ref) {
 		const fetchArg = useMemo(() => ({ filters, dimension }), [filters, dimension]);
+		const [pollMs, setPollMs] = useState(pollingInterval ?? 0);
 		const skipOpts = useMemo(
-			() => ({ skip: !active, pollingInterval, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
-			[active, pollingInterval],
+			() => ({ skip: !active, pollingInterval: pollMs, skipPollingIfUnfocused: false, refetchOnFocus: true, refetchOnReconnect: true }),
+			[active, pollMs],
 		);
 
-		const { data, isLoading: loading } = useGetDimensionRankingsQuery(fetchArg, skipOpts);
+		const { data, isLoading: loading, isError } = useGetDimensionRankingsQuery(fetchArg, skipOpts);
+
+		useEffect(() => {
+			setPollMs(isError ? 0 : (pollingInterval ?? 0));
+		}, [isError, pollingInterval]);
 
 		const [triggerDimensionRankings] = useLazyGetDimensionRankingsQuery();
 
@@ -46,13 +52,16 @@ export const DimensionRankingsTabView = forwardRef<DimensionRankingsTabViewHandl
 		);
 
 		return (
-			<DimensionRankingsTab
-				data={data ?? null}
-				loading={loading}
-				dimensionLabel={dimensionLabel}
-				testIdPrefix={testIdPrefix}
-				attributed={dimension === "team" || dimension === "business_unit" || dimension === "customer"}
-			/>
+			<div className="flex h-full flex-col gap-3">
+				{isError ? <QueryErrorBanner testId={`${testIdPrefix}-query-error`} /> : null}
+				<DimensionRankingsTab
+					data={data ?? null}
+					loading={loading}
+					dimensionLabel={dimensionLabel}
+					testIdPrefix={testIdPrefix}
+					attributed={dimension === "team" || dimension === "business_unit" || dimension === "customer"}
+				/>
+			</div>
 		);
 	},
 );

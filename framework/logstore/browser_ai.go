@@ -18,7 +18,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/framework/encrypt"
+	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/gateway/gateway/framework/envutil"
 	"golang.org/x/net/idna"
 	"gorm.io/gorm"
 )
@@ -36,13 +37,13 @@ func IsOpaqueOrWirePrompt(s string) bool {
 }
 
 func defaultProxyAddrFromEnv() string {
-	if v := strings.TrimSpace(os.Getenv("RAKSHA_PROXY_ADDR")); v != "" {
+	if v := envutil.Get("PROXY_ADDR"); v != "" {
 		return v
 	}
 	if p := strings.TrimSpace(os.Getenv("PROXY_PORT")); p != "" {
 		return "127.0.0.1:" + p
 	}
-	// No stale hardcoded port — set RAKSHA_PROXY_ADDR in .env / fleet config.
+	// No stale hardcoded port — set GATEWAY_PROXY_ADDR (or legacy GATEWAY_PROXY_ADDR) in .env.
 	return ""
 }
 
@@ -291,7 +292,7 @@ func (m *BrowserAIManager) ListGuardRebuilds(ctx context.Context, limit int) ([]
 	return out, err
 }
 
-// BrowserAIAgent tracks every installed Guard EXE (unlimited scale in raksha_new).
+// BrowserAIAgent tracks every installed Guard EXE (unlimited scale in gateway_new).
 type BrowserAIAgent struct {
 	ID       string `gorm:"primaryKey" json:"id"`
 	Hostname string `gorm:"index" json:"hostname"`
@@ -1238,7 +1239,7 @@ func searchEnginePACRule(proxyAddr string) string {
 }
 
 func emptyPAC(proxyAddr string) string {
-	return `// Raksha Browser AI Guard — no Target Websites yet (search engines only, for Search Logs).
+	return `// Gateway Browser AI Guard — no Target Websites yet (search engines only, for Search Logs).
 function FindProxyForURL(url, host) {
     host = host.toLowerCase();
 
@@ -1283,7 +1284,7 @@ func minimizePACHosts(hosts []string) []string {
 func buildDomainPAC(hosts []string, proxyAddr string) string {
 	hosts = minimizePACHosts(hosts)
 	var b strings.Builder
-	b.WriteString("// Raksha Browser AI Guard — admin Target Websites from dashboard only.\n")
+	b.WriteString("// Gateway Browser AI Guard — admin Target Websites from dashboard only.\n")
 	b.WriteString("// Parent domains only when children are covered by subdomain match. No hardcoded products.\n")
 	b.WriteString("function FindProxyForURL(url, host) {\n")
 	b.WriteString("    host = host.toLowerCase();\n\n")
@@ -2040,18 +2041,18 @@ func NormalizeGuardRuleSeverity(severity string) string {
 func FormatWarnedForwardPrompt(original, warningMessage string) string {
 	w := strings.TrimSpace(warningMessage)
 	if w == "" {
-		w = "This prompt triggered a Raksha Guard redaction policy."
+		w = "This prompt triggered a Gateway Guard redaction policy."
 	}
-	return strings.TrimRight(original, " \t\r\n") + "\n\n[RAKSHA REDACTED] " + w
+	return strings.TrimRight(original, " \t\r\n") + "\n\n[GATEWAY REDACTED] " + w
 }
 
 // FormatWarningForwardPrompt is what ChatGPT/browser receives on WARN: full original prompt + warning.
 func FormatWarningForwardPrompt(original, warningMessage string) string {
 	w := strings.TrimSpace(warningMessage)
 	if w == "" {
-		w = "This prompt triggered a Raksha Guard warning policy."
+		w = "This prompt triggered a Gateway Guard warning policy."
 	}
-	return strings.TrimRight(original, " \t\r\n") + "\n\n[RAKSHA WARNING] " + w
+	return strings.TrimRight(original, " \t\r\n") + "\n\n[GATEWAY WARNING] " + w
 }
 
 // SecurityReplyForRule returns only the admin-authored warning. Empty if none was set.

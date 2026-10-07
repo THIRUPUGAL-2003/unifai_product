@@ -1,7 +1,7 @@
 """Rebuild & Publish → installed Guards run the server's latest Guard code.
 
 The server publishes the Guard's Python code (agent/*.py + browser_ai_proxy.py +
-raksha_proxy_parts/) as a zip + SHA-256 and every heartbeat advertises it. This
+gateway_proxy_parts/) as a zip + SHA-256 and every heartbeat advertises it. This
 module downloads it, verifies the hash, self-tests a full load in a subprocess
 (guard_bootstrap --bundle-selftest), records per-file hashes, then restarts the
 Guard so guard_bootstrap loads the new code. Bundles that fail are remembered as
@@ -24,12 +24,12 @@ import urllib.parse
 import urllib.request
 import zipfile
 
-from agent_config import AGENT_VERSION, RAKSHA_BACKEND_URL
+from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL
 from agent_http import _guard_headers
 from guard_platform import data_dir
 
 ENTRY = "browser_ai_proxy.py"
-PARTS = "raksha_proxy_parts"
+PARTS = "gateway_proxy_parts"
 AGENT = "agent"
 _MAX_BUNDLE_BYTES = 20 * 1024 * 1024
 _RETRY_FAILED_AFTER = 600
@@ -84,19 +84,20 @@ def _sha256(data: bytes) -> str:
 
 def running_bundle_sha() -> str:
     """SHA of the server code this Guard runs now ("" = code built into its installer)."""
-    return os.environ.get("RAKSHA_GUARD_CODE_SHA", "") if os.environ.get("RAKSHA_GUARD_CODE_DIR") else ""
+    code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
+    return (os.environ.get("GATEWAY_GUARD_CODE_SHA") or os.environ.get("GATEWAY_GUARD_CODE_SHA") or "") if code_dir else ""
 
 
 def active_addon(default_addon: str) -> str:
     """Proxy addon for the MitM worker: the bundle guard_bootstrap loaded, else built-in."""
-    code_dir = os.environ.get("RAKSHA_GUARD_CODE_DIR", "")
+    code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
     addon = os.path.join(code_dir, ENTRY) if code_dir else ""
     return addon if addon and os.path.isfile(addon) else default_addon
 
 
 def _backend_allows_code_download() -> bool:
     try:
-        u = urllib.parse.urlparse(RAKSHA_BACKEND_URL or "")
+        u = urllib.parse.urlparse(GATEWAY_BACKEND_URL or "")
     except Exception:
         return False
     if u.scheme == "https":
@@ -129,8 +130,8 @@ def validate_bundle(data: bytes) -> dict[str, bytes]:
         raise ValueError("bundle has no browser_ai_proxy.py")
     if not any(n.endswith(".py") and n.startswith(PARTS + "/") for n in files):
         raise ValueError("bundle has no proxy parts")
-    if any(n.startswith(AGENT + "/") for n in files) and f"{AGENT}/raksha_agent.py" not in files:
-        raise ValueError("bundle agent code has no raksha_agent.py")
+    if any(n.startswith(AGENT + "/") for n in files) and f"{AGENT}/gateway_agent.py" not in files:
+        raise ValueError("bundle agent code has no gateway_agent.py")
     for name, body in files.items():
         if name.endswith(".py"):
             compile(body.decode("utf-8"), name, "exec")
@@ -165,9 +166,9 @@ def _selftest_cmd(code_dir: str) -> list[str]:
 def selftest_bundle(code_dir: str) -> tuple[bool, str]:
     """Import every agent module and load the proxy addon from the bundle, in a throwaway process."""
     env = os.environ.copy()
-    env.pop("RAKSHA_GUARD_CODE_DIR", None)
-    env.pop("RAKSHA_GUARD_CODE_SHA", None)
-    env["RAKSHA_PROXY_SELFTEST"] = "1"
+    env.pop("GATEWAY_GUARD_CODE_DIR", None)
+    env.pop("GATEWAY_GUARD_CODE_SHA", None)
+    env["GATEWAY_PROXY_SELFTEST"] = "1"
     try:
         proc = subprocess.run(
             _selftest_cmd(code_dir),
@@ -191,7 +192,7 @@ def mark_bundle_bad(sha: str, reason: str) -> None:
     bad = _read_json(_bad_path())
     shas = [s for s in (bad.get("shas") or []) if s != sha][-19:] + [sha]
     _write_json(_bad_path(), {"shas": shas, "last_reason": reason, "at": int(time.time())})
-    print(f"[Raksha Guard WARNING] Server code {sha[:8]} disabled ({reason}) — using built-in code")
+    print(f"[Gateway Guard WARNING] Server code {sha[:8]} disabled ({reason}) — using built-in code")
 
 
 def confirm_bundle_healthy() -> None:
@@ -211,7 +212,7 @@ def confirm_bundle_healthy() -> None:
 
 def relaunch_guard(reason: str) -> None:
     """Restart the whole Guard so guard_bootstrap picks the code to run again."""
-    print(f"[Raksha Guard] Restarting Guard: {reason}")
+    print(f"[Gateway Guard] Restarting Guard: {reason}")
     try:
         from agent_pac_orchestration import pac_fail_open_direct
 
@@ -233,8 +234,8 @@ def _relaunch_fresh() -> None:
     """Same as guard_bootstrap.relaunch, kept here because Guard EXEs up to 1.1.14 froze a
     copy that cannot restart on Windows (escaped quotes + inherited PyInstaller _MEI dir)."""
     env = os.environ.copy()
-    env.pop("RAKSHA_GUARD_CODE_DIR", None)
-    env.pop("RAKSHA_GUARD_CODE_SHA", None)
+    env.pop("GATEWAY_GUARD_CODE_DIR", None)
+    env.pop("GATEWAY_GUARD_CODE_SHA", None)
     env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     if getattr(sys, "frozen", False):
         target = [sys.executable]
@@ -276,7 +277,7 @@ def _cleanup(keep_shas: set[str]) -> None:
 
 
 def _download(sha: str) -> bytes:
-    url = f"{RAKSHA_BACKEND_URL}/api/browser-ai/setup/proxy-bundle.zip"
+    url = f"{GATEWAY_BACKEND_URL}/api/browser-ai/setup/proxy-bundle.zip"
     req = urllib.request.Request(url, headers=_guard_headers({"Accept": "application/zip"}))
     with urllib.request.urlopen(req, timeout=60) as resp:
         data = resp.read(_MAX_BUNDLE_BYTES + 1)
@@ -308,7 +309,7 @@ def apply_bundle(info: dict | None, restart) -> bool:
     if not _apply_lock.acquire(blocking=False):
         return False
     try:
-        print(f"[Raksha Guard] New Guard code {sha[:8]} published by admin — downloading...")
+        print(f"[Gateway Guard] New Guard code {sha[:8]} published by admin — downloading...")
         files = validate_bundle(_download(sha))
         _cleanup({sha, running_bundle_sha()})
         _extract(files, _code_dir(sha))
@@ -323,12 +324,12 @@ def apply_bundle(info: dict | None, restart) -> bool:
             "applied_at": int(time.time()),
             "files": {name: _sha256(body) for name, body in files.items()},
         })
-        print(f"[Raksha Guard] Guard code {sha[:8]} verified.")
+        print(f"[Gateway Guard] Guard code {sha[:8]} verified.")
         restart(f"switching to Guard code {sha[:8]}")
         return True
     except Exception as e:
         _failed_at[sha] = time.time()
-        print(f"[Raksha Guard WARNING] Guard code {sha[:8]} not applied: {e}")
+        print(f"[Gateway Guard WARNING] Guard code {sha[:8]} not applied: {e}")
         return False
     finally:
         _apply_lock.release()
@@ -337,4 +338,4 @@ def apply_bundle(info: dict | None, restart) -> bool:
 def maybe_apply_bundle_async(info: dict | None, restart=relaunch_guard) -> None:
     if not isinstance(info, dict) or _apply_lock.locked():
         return
-    threading.Thread(target=apply_bundle, args=(info, restart), name="raksha-code-bundle", daemon=True).start()
+    threading.Thread(target=apply_bundle, args=(info, restart), name="gateway-code-bundle", daemon=True).start()

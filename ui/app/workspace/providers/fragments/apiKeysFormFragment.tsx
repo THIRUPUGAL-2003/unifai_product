@@ -918,11 +918,11 @@ export function ApiKeyFormFragment({ control, providerName, baseProviderType, fo
 								render={({ field }) => (
 									<FormItem>
 										<FormLabel>Session Name (Optional)</FormLabel>
-										<FormDescription>AssumeRole session name (defaults to raksha-session)</FormDescription>
+										<FormDescription>AssumeRole session name (defaults to gateway-session)</FormDescription>
 										<FormControl>
 											<SecretVarInput
 												data-testid="apikey-bedrock-session-name-input"
-												placeholder="raksha-session or env.AWS_SESSION_NAME"
+												placeholder="gateway-session or env.AWS_SESSION_NAME"
 												{...field}
 											/>
 										</FormControl>
@@ -1116,9 +1116,9 @@ export function ApiKeyFormFragment({ control, providerName, baseProviderType, fo
 								render={({ field }) => (
 									<FormItem>
 										<FormLabel>Session Name (Optional)</FormLabel>
-										<FormDescription>AssumeRole session name (defaults to raksha-session).</FormDescription>
+										<FormDescription>AssumeRole session name (defaults to gateway-session).</FormDescription>
 										<FormControl>
-											<SecretVarInput placeholder="raksha-session or env.AWS_SESSION_NAME" {...field} />
+											<SecretVarInput placeholder="gateway-session or env.AWS_SESSION_NAME" {...field} />
 										</FormControl>
 										<FormMessage />
 									</FormItem>

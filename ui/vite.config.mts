@@ -9,20 +9,40 @@ import { defineConfig, loadEnv } from "vite";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isEnterpriseBuild = fs.existsSync(path.join(__dirname, "app", "enterprise"));
 
+/** Prefer GATEWAY_* then legacy GATEWAY_* from .env (loadEnv + process.env). */
+function gatewayEnv(env: Record<string, string>, key: string): string {
+	const k = key.replace(/^(GATEWAY_|GATEWAY_)/, "");
+	return String(
+		env[`GATEWAY_${k}`] ||
+			env[`GATEWAY_${k}`] ||
+			process.env[`GATEWAY_${k}`] ||
+			process.env[`GATEWAY_${k}`] ||
+			"",
+	).trim();
+}
+
 export default defineConfig(({ mode }) => {
 	const rootDir = path.resolve(__dirname, "..");
 	const env = loadEnv(mode, rootDir, "");
 
-	const backendPort = env.APP_PORT || env.RAKSHA_PORT || process.env.APP_PORT || process.env.RAKSHA_PORT || "8001";
-	const backendTarget = env.RAKSHA_BACKEND_URL || process.env.RAKSHA_BACKEND_URL || `http://localhost:${backendPort}`;
+	const backendPort = env.APP_PORT || gatewayEnv(env, "PORT") || "8001";
+	const backendTarget = gatewayEnv(env, "BACKEND_URL") || `http://localhost:${backendPort}`;
 	const uiPort = Number(env.UI_PORT || process.env.UI_PORT || 3000);
-	const companyName = env.RAKSHA_COMPANY_NAME || process.env.RAKSHA_COMPANY_NAME || "YesPanchi Group of Companies";
-	const companyShortName = env.RAKSHA_COMPANY_SHORT_NAME || process.env.RAKSHA_COMPANY_SHORT_NAME || "YesPanchi";
-	const companyLogo = env.RAKSHA_COMPANY_LOGO || process.env.RAKSHA_COMPANY_LOGO || "/yes-panchi-logo.png";
-	const productName = env.RAKSHA_PRODUCT_NAME || env.PRODUCT_NAME || process.env.RAKSHA_PRODUCT_NAME || process.env.PRODUCT_NAME || "Raksha";
-	const productFullName = env.RAKSHA_PRODUCT_FULL_NAME || env.RAKSHA_PRODUCT_SUBTITLE || process.env.RAKSHA_PRODUCT_FULL_NAME || process.env.RAKSHA_PRODUCT_SUBTITLE || "Real-time AI Knowledge Screening & Hazard Audit";
-	const footerCopyright = env.RAKSHA_FOOTER_COPYRIGHT || process.env.RAKSHA_FOOTER_COPYRIGHT || "";
-	const footerSubtitle = env.RAKSHA_FOOTER_SUBTITLE || process.env.RAKSHA_FOOTER_SUBTITLE || "Raksha - Real-time AI Knowledge Screening & Hazard Audit";
+	const companyName = gatewayEnv(env, "COMPANY_NAME") || "YesPanchi Group of Companies";
+	const companyShortName = gatewayEnv(env, "COMPANY_SHORT_NAME") || "YesPanchi";
+	const companyLogo = gatewayEnv(env, "COMPANY_LOGO") || "/yes-panchi-logo.png";
+	const productName = gatewayEnv(env, "PRODUCT_NAME") || env.PRODUCT_NAME || "Gateway";
+	const productFullName =
+		gatewayEnv(env, "PRODUCT_FULL_NAME") ||
+		gatewayEnv(env, "PRODUCT_SUBTITLE") ||
+		"Real-time AI Knowledge Screening & Hazard Audit";
+	const footerCopyright = gatewayEnv(env, "FOOTER_COPYRIGHT") || "";
+	const footerSubtitle =
+		gatewayEnv(env, "FOOTER_SUBTITLE") || `${productName} - Real-time AI Knowledge Screening & Hazard Audit`;
+	const isEnterprise = gatewayEnv(env, "IS_ENTERPRISE");
+	const disableProfiler = gatewayEnv(env, "DISABLE_PROFILER");
+	const trialExpiry =
+		gatewayEnv(env, "ENTERPRISE_TRIAL_EXPIRY") || String(process.env.ENTERPRISE_TRIAL_EXPIRY ?? "").trim();
 
 	return {
 		plugins: [
@@ -60,18 +80,30 @@ export default defineConfig(({ mode }) => {
 	},
 	define: {
 		"process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"),
-		"process.env.RAKSHA_IS_ENTERPRISE": JSON.stringify(isEnterpriseBuild ? "true" : "false"),
-		"process.env.RAKSHA_DISABLE_PROFILER": JSON.stringify(process.env.RAKSHA_DISABLE_PROFILER ?? ""),
-		"process.env.RAKSHA_ENTERPRISE_TRIAL_EXPIRY": JSON.stringify(process.env.ENTERPRISE_TRIAL_EXPIRY ?? ""),
-		"process.env.RAKSHA_PRODUCT_NAME": JSON.stringify(productName),
-		"process.env.RAKSHA_PRODUCT_FULL_NAME": JSON.stringify(productFullName),
-		"process.env.RAKSHA_COMPANY_NAME": JSON.stringify(companyName),
-		"process.env.RAKSHA_COMPANY_SHORT_NAME": JSON.stringify(companyShortName),
-		"process.env.RAKSHA_COMPANY_LOGO": JSON.stringify(companyLogo),
-		"process.env.RAKSHA_FOOTER_COPYRIGHT": JSON.stringify(footerCopyright),
-		"process.env.RAKSHA_FOOTER_SUBTITLE": JSON.stringify(footerSubtitle),
-		"process.env.RAKSHA_PORT": JSON.stringify(backendPort),
-		"process.env.RAKSHA_BACKEND_URL": JSON.stringify(backendTarget),
+		"process.env.GATEWAY_IS_ENTERPRISE": JSON.stringify(isEnterpriseBuild ? "true" : isEnterprise || "false"),
+		"process.env.GATEWAY_IS_ENTERPRISE": JSON.stringify(isEnterpriseBuild ? "true" : isEnterprise || "false"),
+		"process.env.GATEWAY_DISABLE_PROFILER": JSON.stringify(disableProfiler),
+		"process.env.GATEWAY_DISABLE_PROFILER": JSON.stringify(disableProfiler),
+		"process.env.GATEWAY_ENTERPRISE_TRIAL_EXPIRY": JSON.stringify(trialExpiry),
+		"process.env.GATEWAY_ENTERPRISE_TRIAL_EXPIRY": JSON.stringify(trialExpiry),
+		"process.env.GATEWAY_PRODUCT_NAME": JSON.stringify(productName),
+		"process.env.GATEWAY_PRODUCT_NAME": JSON.stringify(productName),
+		"process.env.GATEWAY_PRODUCT_FULL_NAME": JSON.stringify(productFullName),
+		"process.env.GATEWAY_PRODUCT_FULL_NAME": JSON.stringify(productFullName),
+		"process.env.GATEWAY_COMPANY_NAME": JSON.stringify(companyName),
+		"process.env.GATEWAY_COMPANY_NAME": JSON.stringify(companyName),
+		"process.env.GATEWAY_COMPANY_SHORT_NAME": JSON.stringify(companyShortName),
+		"process.env.GATEWAY_COMPANY_SHORT_NAME": JSON.stringify(companyShortName),
+		"process.env.GATEWAY_COMPANY_LOGO": JSON.stringify(companyLogo),
+		"process.env.GATEWAY_COMPANY_LOGO": JSON.stringify(companyLogo),
+		"process.env.GATEWAY_FOOTER_COPYRIGHT": JSON.stringify(footerCopyright),
+		"process.env.GATEWAY_FOOTER_COPYRIGHT": JSON.stringify(footerCopyright),
+		"process.env.GATEWAY_FOOTER_SUBTITLE": JSON.stringify(footerSubtitle),
+		"process.env.GATEWAY_FOOTER_SUBTITLE": JSON.stringify(footerSubtitle),
+		"process.env.GATEWAY_PORT": JSON.stringify(backendPort),
+		"process.env.GATEWAY_PORT": JSON.stringify(backendPort),
+		"process.env.GATEWAY_BACKEND_URL": JSON.stringify(backendTarget),
+		"process.env.GATEWAY_BACKEND_URL": JSON.stringify(backendTarget),
 	},
 	server: {
 		port: uiPort,

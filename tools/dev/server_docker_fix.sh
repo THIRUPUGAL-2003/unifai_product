@@ -17,7 +17,7 @@ NET_PROXY="${NETWORK_PROXY_CONTAINER_NAME:-raksha_browser_ai_proxy}"
 
 echo "Removing old containers..."
 # Primary = CONTAINER_NAME from .env. Network-proxy + legacy names cleaned once.
-docker rm -f "${CONTAINER}" "${NET_PROXY}" raksha_browser_proxy raksha_broswer_proxy 2>/dev/null || true
+docker rm -f "${CONTAINER}" "${NET_PROXY}" gateway_browser_proxy gateway_broswer_proxy 2>/dev/null || true
 
 echo "Starting updated stack..."
 docker compose up -d
@@ -32,5 +32,5 @@ else
 fi
 
 echo "Done."
-echo "  Raksha dashboard: http://localhost:${PORT}"
+echo "  Gateway dashboard: http://localhost:${PORT}"
 echo "  Lab browser proxy: http://localhost:${P_PORT} (profile: network-proxy)"

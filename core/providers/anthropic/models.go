@@ -4,26 +4,26 @@ import (
 	"strings"
 	"time"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-func (response *AnthropicListModelsResponse) ToRakshaListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
+func (response *AnthropicListModelsResponse) ToGatewayListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.GatewayListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaListModelsResponse{
+	gatewayResponse := &schemas.GatewayListModelsResponse{
 		Data:    make([]schemas.Model, 0, len(response.Data)),
 		FirstID: response.FirstID,
 		LastID:  response.LastID,
 		HasMore: schemas.Ptr(response.HasMore),
 	}
 
-	// Map Anthropic's cursor-based pagination to Raksha's token-based pagination.
+	// Map Anthropic's cursor-based pagination to Gateway's token-based pagination.
 	// If there are more results, set next_page_token to last_id for the next request.
 	if response.HasMore && response.LastID != nil {
-		rakshaResponse.NextPageToken = *response.LastID
+		gatewayResponse.NextPageToken = *response.LastID
 	}
 
 	pipeline := &providerUtils.ListModelsPipeline{
@@ -35,7 +35,7 @@ func (response *AnthropicListModelsResponse) ToRakshaListModelsResponse(provider
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return rakshaResponse
+		return gatewayResponse
 	}
 
 	included := make(map[string]bool)
@@ -57,18 +57,18 @@ func (response *AnthropicListModelsResponse) ToRakshaListModelsResponse(provider
 			if result.AliasValue != "" {
 				entry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			rakshaResponse.Data = append(rakshaResponse.Data, entry)
+			gatewayResponse.Data = append(gatewayResponse.Data, entry)
 			included[resolvedKey] = true
 		}
 	}
 
-	rakshaResponse.Data = append(rakshaResponse.Data,
+	gatewayResponse.Data = append(gatewayResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
-func ToAnthropicListModelsResponse(response *schemas.RakshaListModelsResponse) *AnthropicListModelsResponse {
+func ToAnthropicListModelsResponse(response *schemas.GatewayListModelsResponse) *AnthropicListModelsResponse {
 	if response == nil {
 		return nil
 	}

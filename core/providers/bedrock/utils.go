@@ -14,9 +14,9 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/tidwall/sjson"
 
-	"github.com/raksha/raksha/core/providers/anthropic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/anthropic"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // awsRegionRegex matches valid AWS region identifiers (e.g. "us-east-1", "eu-north-1", "us-gov-east-1").
@@ -46,7 +46,7 @@ func parseBedrockRegionAndModel(model string) (region, bareModel string) {
 // BedrockKeyConfig.Region > DefaultBedrockRegion. The model-string prefix
 // stays highest since it's the most explicit signal — when an admin types a
 // region into their model ID they expect that to win.
-func resolveBedrockRegion(ctx *schemas.RakshaContext, key schemas.Key, model string) string {
+func resolveBedrockRegion(ctx *schemas.GatewayContext, key schemas.Key, model string) string {
 	if region, _ := parseBedrockRegionAndModel(model); region != "" {
 		return region
 	}
@@ -66,7 +66,7 @@ func resolveBedrockRegion(ctx *schemas.RakshaContext, key schemas.Key, model str
 // InferenceProfileARN > key-level BedrockKeyConfig.ARN. Returns empty when
 // neither is set, in which case getModelPathAndRegion emits the bare model
 // path.
-func resolveBedrockARN(ctx *schemas.RakshaContext, key schemas.Key) string {
+func resolveBedrockARN(ctx *schemas.GatewayContext, key schemas.Key) string {
 	if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.BedrockAliasCfg != nil && ra.Config.BedrockAliasCfg.InferenceProfileARN != nil {
 		if v := ra.Config.BedrockAliasCfg.InferenceProfileARN.GetValue(); v != "" {
 			return v
@@ -82,9 +82,9 @@ var (
 	invalidCharRegex = regexp.MustCompile(`[^a-zA-Z0-9\s\-\(\)\[\]]`)
 	multiSpaceRegex  = regexp.MustCompile(`\s{2,}`)
 
-	// bedrockFinishReasonToRaksha maps Bedrock Converse API stop reasons to Raksha format.
+	// bedrockFinishReasonToGateway maps Bedrock Converse API stop reasons to Gateway format.
 	// Unmappable reasons (e.g. guardrail_intervened) are passed through as-is.
-	bedrockFinishReasonToRaksha = map[string]string{
+	bedrockFinishReasonToGateway = map[string]string{
 		"end_turn":         "stop",
 		"max_tokens":       "length",
 		"stop_sequence":    "stop",
@@ -92,8 +92,8 @@ var (
 		"content_filtered": "content_filter",
 	}
 
-	// rakshaToBedrockStopReason is the reverse of bedrockFinishReasonToRaksha.
-	rakshaToBedrockStopReason = map[string]string{
+	// gatewayToBedrockStopReason is the reverse of bedrockFinishReasonToGateway.
+	gatewayToBedrockStopReason = map[string]string{
 		"stop":           "end_turn",
 		"length":         "max_tokens",
 		"tool_calls":     "tool_use",
@@ -101,48 +101,48 @@ var (
 	}
 )
 
-// convertBedrockStopReason converts a Bedrock stop reason to Raksha format.
+// convertBedrockStopReason converts a Bedrock stop reason to Gateway format.
 func convertBedrockStopReason(stopReason string) string {
-	if reason, ok := bedrockFinishReasonToRaksha[stopReason]; ok {
+	if reason, ok := bedrockFinishReasonToGateway[stopReason]; ok {
 		return reason
 	}
 	return stopReason
 }
 
-// convertRakshaToBedrockStopReason converts a Raksha stop reason back to Bedrock format.
-func convertRakshaToBedrockStopReason(rakshaReason string) string {
-	if reason, ok := rakshaToBedrockStopReason[rakshaReason]; ok {
+// convertGatewayToBedrockStopReason converts a Gateway stop reason back to Bedrock format.
+func convertGatewayToBedrockStopReason(gatewayReason string) string {
+	if reason, ok := gatewayToBedrockStopReason[gatewayReason]; ok {
 		return reason
 	}
-	return rakshaReason
+	return gatewayReason
 }
 
-// mapRakshaServiceTierToBedrock maps a RakshaServiceTier to a BedrockServiceTierType.
-func mapRakshaServiceTierToBedrock(tier schemas.RakshaServiceTier) BedrockServiceTierType {
+// mapGatewayServiceTierToBedrock maps a GatewayServiceTier to a BedrockServiceTierType.
+func mapGatewayServiceTierToBedrock(tier schemas.GatewayServiceTier) BedrockServiceTierType {
 	switch tier {
-	case schemas.RakshaServiceTierPriority:
+	case schemas.GatewayServiceTierPriority:
 		return BedrockServiceTierTypePriority
-	case schemas.RakshaServiceTierFlex:
+	case schemas.GatewayServiceTierFlex:
 		return BedrockServiceTierTypeFlex
-	case schemas.RakshaServiceTierDefault, schemas.RakshaServiceTierAuto:
+	case schemas.GatewayServiceTierDefault, schemas.GatewayServiceTierAuto:
 		return BedrockServiceTierTypeDefault
 	default:
 		return BedrockServiceTierType(tier)
 	}
 }
 
-// mapBedrockServiceTierToRaksha maps a BedrockServiceTierType to a RakshaServiceTier.
+// mapBedrockServiceTierToGateway maps a BedrockServiceTierType to a GatewayServiceTier.
 // "reserved" maps to priority as it represents pre-purchased priority capacity.
-func mapBedrockServiceTierToRaksha(tier BedrockServiceTierType) schemas.RakshaServiceTier {
+func mapBedrockServiceTierToGateway(tier BedrockServiceTierType) schemas.GatewayServiceTier {
 	switch tier {
 	case BedrockServiceTierTypePriority:
-		return schemas.RakshaServiceTierPriority
+		return schemas.GatewayServiceTierPriority
 	case BedrockServiceTierTypeFlex:
-		return schemas.RakshaServiceTierFlex
+		return schemas.GatewayServiceTierFlex
 	case BedrockServiceTierTypeDefault:
-		return schemas.RakshaServiceTierDefault
+		return schemas.GatewayServiceTierDefault
 	default:
-		return schemas.RakshaServiceTier(tier)
+		return schemas.GatewayServiceTier(tier)
 	}
 }
 
@@ -194,11 +194,11 @@ func bedrockAliasToolName(ctx context.Context, name string) string {
 	}
 	alias := hash + "_" + semanticName
 
-	if rakshaCtx, ok := ctx.(*schemas.RakshaContext); ok && rakshaCtx != nil && alias != name {
-		aliases, _ := rakshaCtx.Value(bedrockToolNameAliasKey{}).(map[string]string)
+	if gatewayCtx, ok := ctx.(*schemas.GatewayContext); ok && gatewayCtx != nil && alias != name {
+		aliases, _ := gatewayCtx.Value(bedrockToolNameAliasKey{}).(map[string]string)
 		if aliases == nil {
 			aliases = make(map[string]string)
-			rakshaCtx.SetValue(bedrockToolNameAliasKey{}, aliases)
+			gatewayCtx.SetValue(bedrockToolNameAliasKey{}, aliases)
 		}
 		aliases[alias] = name
 	}
@@ -207,8 +207,8 @@ func bedrockAliasToolName(ctx context.Context, name string) string {
 
 // bedrockRestoreToolName maps a Bedrock wire-name alias back to the caller's tool name.
 func bedrockRestoreToolName(ctx context.Context, name string) string {
-	if rakshaCtx, ok := ctx.(*schemas.RakshaContext); ok && rakshaCtx != nil {
-		if aliases, _ := rakshaCtx.Value(bedrockToolNameAliasKey{}).(map[string]string); aliases != nil {
+	if gatewayCtx, ok := ctx.(*schemas.GatewayContext); ok && gatewayCtx != nil {
+		if aliases, _ := gatewayCtx.Value(bedrockToolNameAliasKey{}).(map[string]string); aliases != nil {
 			if original, ok := aliases[name]; ok {
 				return original
 			}
@@ -218,16 +218,16 @@ func bedrockRestoreToolName(ctx context.Context, name string) string {
 }
 
 // convertParameters handles parameter conversion
-func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest, bedrockReq *BedrockConverseRequest) error {
+func convertChatParameters(ctx *schemas.GatewayContext, gatewayReq *schemas.GatewayChatRequest, bedrockReq *BedrockConverseRequest) error {
 	// Parameters are optional - if not provided, just skip conversion
-	if rakshaReq.Params == nil {
+	if gatewayReq.Params == nil {
 		return nil
 	}
 
 	// capModel is the canonical model used only for Anthropic capability gating
-	capModel := schemas.ResolveCanonicalModel(ctx, rakshaReq.Model)
+	capModel := schemas.ResolveCanonicalModel(ctx, gatewayReq.Model)
 	// Convert inference config
-	if inferenceConfig := convertInferenceConfig(rakshaReq.Params, capModel); inferenceConfig != nil {
+	if inferenceConfig := convertInferenceConfig(gatewayReq.Params, capModel); inferenceConfig != nil {
 		bedrockReq.InferenceConfig = inferenceConfig
 	}
 
@@ -237,15 +237,15 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 	// variants (e.g. Opus 4.7 returns "output_config.format: Extra inputs are not
 	// permitted"), whereas the synthetic-tool path is a regular Converse tool
 	// call accepted by all variants.
-	responseFormatTool, _ := convertResponseFormatToTool(ctx, rakshaReq.Model, rakshaReq.Params)
+	responseFormatTool, _ := convertResponseFormatToTool(ctx, gatewayReq.Model, gatewayReq.Params)
 
 	// Filter provider-unsupported server tools once; both convertToolConfig and
 	// collectBedrockServerTools consume the same filtered set, and
 	// buildBedrockServerToolChoice resolves pinned names against it.
-	filteredTools, _ := anthropic.ValidateChatToolsForProvider(rakshaReq.Params.Tools, schemas.Bedrock)
+	filteredTools, _ := anthropic.ValidateChatToolsForProvider(gatewayReq.Params.Tools, schemas.Bedrock)
 
 	// Convert tool config (function/custom tools → Converse toolConfig.tools).
-	if toolConfig := convertToolConfigFromFiltered(ctx, rakshaReq.Model, rakshaReq.Params, filteredTools); toolConfig != nil {
+	if toolConfig := convertToolConfigFromFiltered(ctx, gatewayReq.Model, gatewayReq.Params, filteredTools); toolConfig != nil {
 		bedrockReq.ToolConfig = toolConfig
 	}
 
@@ -276,33 +276,33 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 		// conflicting tool-choice directives and the structured-output contract
 		// can silently break.
 		if responseFormatTool == nil {
-			if choice, ok := buildBedrockServerToolChoice(rakshaReq.Params, filteredTools); ok {
+			if choice, ok := buildBedrockServerToolChoice(gatewayReq.Params, filteredTools); ok {
 				bedrockReq.AdditionalModelRequestFields.Set("tool_choice", choice)
 			}
 		}
 	}
 
 	// Convert reasoning config
-	if rakshaReq.Params.Reasoning != nil {
+	if gatewayReq.Params.Reasoning != nil {
 		if bedrockReq.AdditionalModelRequestFields == nil {
 			bedrockReq.AdditionalModelRequestFields = schemas.NewOrderedMap()
 		}
-		if rakshaReq.Params.Reasoning.MaxTokens != nil {
-			tokenBudget := *rakshaReq.Params.Reasoning.MaxTokens
-			if *rakshaReq.Params.Reasoning.MaxTokens == -1 {
+		if gatewayReq.Params.Reasoning.MaxTokens != nil {
+			tokenBudget := *gatewayReq.Params.Reasoning.MaxTokens
+			if *gatewayReq.Params.Reasoning.MaxTokens == -1 {
 				// bedrock does not support dynamic reasoning budget like gemini
 				// setting it to default max tokens
 				tokenBudget = anthropic.MinimumReasoningMaxTokens
 			}
-			if schemas.IsAnthropicModelFamily(ctx, rakshaReq.Model) {
+			if schemas.IsAnthropicModelFamily(ctx, gatewayReq.Model) {
 				if anthropic.IsAdaptiveOnlyThinkingModel(capModel) {
 					bedrockReq.AdditionalModelRequestFields.Set("thinking", map[string]any{
 						"type": "adaptive",
 					})
 					// Preserve a co-present effort — these models support effort,
 					// and the budget is otherwise dropped.
-					if rakshaReq.Params.Reasoning.Effort != nil && *rakshaReq.Params.Reasoning.Effort != "none" {
-						setOutputConfigField(bedrockReq.AdditionalModelRequestFields, "effort", anthropic.MapRakshaEffortToAnthropic(*rakshaReq.Params.Reasoning.Effort))
+					if gatewayReq.Params.Reasoning.Effort != nil && *gatewayReq.Params.Reasoning.Effort != "none" {
+						setOutputConfigField(bedrockReq.AdditionalModelRequestFields, "effort", anthropic.MapGatewayEffortToAnthropic(*gatewayReq.Params.Reasoning.Effort))
 					}
 				} else {
 					if tokenBudget < anthropic.MinimumReasoningMaxTokens {
@@ -313,9 +313,9 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 						"budget_tokens": tokenBudget,
 					})
 				}
-			} else if schemas.IsNovaModelFamily(ctx, rakshaReq.Model) {
+			} else if schemas.IsNovaModelFamily(ctx, gatewayReq.Model) {
 				minBudgetTokens := MinimumReasoningMaxTokens
-				modelDefaultMaxTokens := providerUtils.GetMaxOutputTokensOrDefault(rakshaReq.Model, DefaultCompletionMaxTokens)
+				modelDefaultMaxTokens := providerUtils.GetMaxOutputTokensOrDefault(gatewayReq.Model, DefaultCompletionMaxTokens)
 				defaultMaxTokens := modelDefaultMaxTokens
 				if bedrockReq.InferenceConfig != nil && bedrockReq.InferenceConfig.MaxTokens != nil {
 					defaultMaxTokens = *bedrockReq.InferenceConfig.MaxTokens
@@ -356,8 +356,8 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 					"budget_tokens": tokenBudget,
 				})
 			}
-		} else if rakshaReq.Params.Reasoning.Effort != nil && *rakshaReq.Params.Reasoning.Effort != "none" {
-			modelDefaultMaxTokens := providerUtils.GetMaxOutputTokensOrDefault(rakshaReq.Model, DefaultCompletionMaxTokens)
+		} else if gatewayReq.Params.Reasoning.Effort != nil && *gatewayReq.Params.Reasoning.Effort != "none" {
+			modelDefaultMaxTokens := providerUtils.GetMaxOutputTokensOrDefault(gatewayReq.Model, DefaultCompletionMaxTokens)
 			maxTokens := modelDefaultMaxTokens
 			if bedrockReq.InferenceConfig != nil && bedrockReq.InferenceConfig.MaxTokens != nil {
 				maxTokens = *bedrockReq.InferenceConfig.MaxTokens
@@ -370,8 +370,8 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 					}
 				}
 			}
-			if schemas.IsNovaModelFamily(ctx, rakshaReq.Model) {
-				effort := *rakshaReq.Params.Reasoning.Effort
+			if schemas.IsNovaModelFamily(ctx, gatewayReq.Model) {
+				effort := *gatewayReq.Params.Reasoning.Effort
 				typeStr := "enabled"
 				switch effort {
 				case "high", "xhigh", "max":
@@ -396,15 +396,15 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 				}
 
 				bedrockReq.AdditionalModelRequestFields.Set("reasoningConfig", config)
-			} else if schemas.IsAnthropicModelFamily(ctx, rakshaReq.Model) {
+			} else if schemas.IsAnthropicModelFamily(ctx, gatewayReq.Model) {
 				if anthropic.SupportsAdaptiveThinking(capModel) {
 					// Opus 4.6+: adaptive thinking + output_config.effort
-					effort := anthropic.MapRakshaEffortToAnthropic(*rakshaReq.Params.Reasoning.Effort)
+					effort := anthropic.MapGatewayEffortToAnthropic(*gatewayReq.Params.Reasoning.Effort)
 					thinkingConfig := map[string]any{
 						"type": "adaptive",
 					}
-					if rakshaReq.Params.Reasoning.Display != nil {
-						thinkingConfig["display"] = *rakshaReq.Params.Reasoning.Display
+					if gatewayReq.Params.Reasoning.Display != nil {
+						thinkingConfig["display"] = *gatewayReq.Params.Reasoning.Display
 					} else if anthropic.IsAdaptiveOnlyThinkingModel(capModel) {
 						thinkingConfig["display"] = "summarized"
 					}
@@ -412,7 +412,7 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 					setOutputConfigField(bedrockReq.AdditionalModelRequestFields, "effort", effort)
 				} else {
 					// Opus 4.5 and older models: budget_tokens thinking
-					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*rakshaReq.Params.Reasoning.Effort, anthropic.MinimumReasoningMaxTokens, maxTokens)
+					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*gatewayReq.Params.Reasoning.Effort, anthropic.MinimumReasoningMaxTokens, maxTokens)
 					if err != nil {
 						return err
 					}
@@ -423,13 +423,13 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 				}
 			}
 		} else {
-			if schemas.IsAnthropicModelFamily(ctx, rakshaReq.Model) {
+			if schemas.IsAnthropicModelFamily(ctx, gatewayReq.Model) {
 				if !anthropic.IsFableFamily(capModel) {
 					bedrockReq.AdditionalModelRequestFields.Set("thinking", map[string]any{
 						"type": "disabled",
 					})
 				}
-			} else if schemas.IsNovaModelFamily(ctx, rakshaReq.Model) {
+			} else if schemas.IsNovaModelFamily(ctx, gatewayReq.Model) {
 				bedrockReq.AdditionalModelRequestFields.Set("reasoningConfig", map[string]any{
 					"type": "disabled",
 				})
@@ -459,10 +459,10 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 		// and the langchain-aws ChatBedrockConverse implementation at
 		// https://github.com/langchain-ai/langchain-aws/blob/main/libs/aws/langchain_aws/chat_models/bedrock_converse.py
 		// (supports_tool_choice_values), which ships the same model-family gate.
-		thinkingEnabled := rakshaReq.Params.Reasoning != nil &&
-			(rakshaReq.Params.Reasoning.MaxTokens != nil ||
-				(rakshaReq.Params.Reasoning.Effort != nil && *rakshaReq.Params.Reasoning.Effort != "none"))
-		if !schemas.IsLlamaModelFamily(ctx, rakshaReq.Model) && !thinkingEnabled {
+		thinkingEnabled := gatewayReq.Params.Reasoning != nil &&
+			(gatewayReq.Params.Reasoning.MaxTokens != nil ||
+				(gatewayReq.Params.Reasoning.Effort != nil && *gatewayReq.Params.Reasoning.Effort != "none"))
+		if !schemas.IsLlamaModelFamily(ctx, gatewayReq.Model) && !thinkingEnabled {
 			bedrockReq.ToolConfig.ToolChoice = &BedrockToolChoice{
 				Tool: &BedrockToolChoiceTool{
 					Name: responseFormatTool.ToolSpec.Name,
@@ -470,14 +470,14 @@ func convertChatParameters(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksha
 			}
 		}
 	}
-	if rakshaReq.Params.ServiceTier != nil {
+	if gatewayReq.Params.ServiceTier != nil {
 		bedrockReq.ServiceTier = &BedrockServiceTier{
-			Type: mapRakshaServiceTierToBedrock(*rakshaReq.Params.ServiceTier),
+			Type: mapGatewayServiceTierToBedrock(*gatewayReq.Params.ServiceTier),
 		}
 	}
 	// Add extra parameters
-	if len(rakshaReq.Params.ExtraParams) > 0 {
-		bedrockReq.ExtraParams = rakshaReq.Params.ExtraParams
+	if len(gatewayReq.Params.ExtraParams) > 0 {
+		bedrockReq.ExtraParams = gatewayReq.Params.ExtraParams
 		applyBedrockExtraParams(bedrockReq.ExtraParams, bedrockReq)
 		if len(bedrockReq.ExtraParams) == 0 {
 			bedrockReq.ExtraParams = nil
@@ -715,27 +715,27 @@ func appendAnthropicBetaToFields(fields *schemas.OrderedMap, header string) {
 }
 
 // ensureChatToolConfigForConversation ensures toolConfig is present when tool content exists
-func ensureChatToolConfigForConversation(ctx context.Context, rakshaReq *schemas.RakshaChatRequest, bedrockReq *BedrockConverseRequest) {
+func ensureChatToolConfigForConversation(ctx context.Context, gatewayReq *schemas.GatewayChatRequest, bedrockReq *BedrockConverseRequest) {
 	if bedrockReq.ToolConfig != nil {
 		return // Already has tool config
 	}
 
-	hasToolContent, tools := extractToolsFromConversationHistory(ctx, rakshaReq.Input)
+	hasToolContent, tools := extractToolsFromConversationHistory(ctx, gatewayReq.Input)
 	if hasToolContent && len(tools) > 0 {
 		bedrockReq.ToolConfig = &BedrockToolConfig{Tools: tools}
 	}
 }
 
-// convertMessages converts Raksha messages to Bedrock format
+// convertMessages converts Gateway messages to Bedrock format
 // Returns regular messages and system messages separately.
 // The ctx is propagated to URL fetches inside individual messages.
-func convertMessages(ctx context.Context, rakshaMessages []schemas.ChatMessage) ([]BedrockMessage, []BedrockSystemMessage, error) {
+func convertMessages(ctx context.Context, gatewayMessages []schemas.ChatMessage) ([]BedrockMessage, []BedrockSystemMessage, error) {
 	var messages []BedrockMessage
 	var systemMessages []BedrockSystemMessage
 
 	// if only system / developer message is there, convert it to user message (since openai allows it)
-	if len(rakshaMessages) == 1 && (rakshaMessages[0].Role == schemas.ChatMessageRoleSystem || rakshaMessages[0].Role == schemas.ChatMessageRoleDeveloper) {
-		msg := rakshaMessages[0]
+	if len(gatewayMessages) == 1 && (gatewayMessages[0].Role == schemas.ChatMessageRoleSystem || gatewayMessages[0].Role == schemas.ChatMessageRoleDeveloper) {
+		msg := gatewayMessages[0]
 		msg.Role = schemas.ChatMessageRoleUser
 		bedrockMsg, err := convertMessage(ctx, msg)
 		if err != nil {
@@ -746,8 +746,8 @@ func convertMessages(ctx context.Context, rakshaMessages []schemas.ChatMessage) 
 		}
 	}
 
-	for i := 0; i < len(rakshaMessages); i++ {
-		msg := rakshaMessages[i]
+	for i := 0; i < len(gatewayMessages); i++ {
+		msg := gatewayMessages[i]
 		switch msg.Role {
 		case schemas.ChatMessageRoleSystem, schemas.ChatMessageRoleDeveloper:
 			// Convert system message
@@ -771,8 +771,8 @@ func convertMessages(ctx context.Context, rakshaMessages []schemas.ChatMessage) 
 			toolMessages = append(toolMessages, msg)
 
 			// Look ahead for more consecutive tool messages
-			for j := i + 1; j < len(rakshaMessages) && rakshaMessages[j].Role == schemas.ChatMessageRoleTool; j++ {
-				toolMessages = append(toolMessages, rakshaMessages[j])
+			for j := i + 1; j < len(gatewayMessages) && gatewayMessages[j].Role == schemas.ChatMessageRoleTool; j++ {
+				toolMessages = append(toolMessages, gatewayMessages[j])
 				i = j
 			}
 
@@ -815,7 +815,7 @@ func newBedrockCachePoint(ttl *string) *BedrockCachePoint {
 	return cp
 }
 
-// convertSystemMessages converts a Raksha system message to Bedrock format
+// convertSystemMessages converts a Gateway system message to Bedrock format
 func convertSystemMessages(msg schemas.ChatMessage) ([]BedrockSystemMessage, error) {
 	systemMsgs := []BedrockSystemMessage{}
 
@@ -853,7 +853,7 @@ func convertSystemMessages(msg schemas.ChatMessage) ([]BedrockSystemMessage, err
 	return systemMsgs, nil
 }
 
-// convertMessage converts a Raksha message to Bedrock format.
+// convertMessage converts a Gateway message to Bedrock format.
 // The ctx is propagated to URL fetches inside content blocks.
 func convertMessage(ctx context.Context, msg schemas.ChatMessage) (BedrockMessage, error) {
 	bedrockMsg := BedrockMessage{
@@ -865,7 +865,7 @@ func convertMessage(ctx context.Context, msg schemas.ChatMessage) (BedrockMessag
 	// Add reasoning content first
 	if msg.ChatAssistantMessage != nil && len(msg.ChatAssistantMessage.ReasoningDetails) > 0 {
 		for _, detail := range msg.ChatAssistantMessage.ReasoningDetails {
-			if detail.Type == schemas.RakshaReasoningDetailsTypeText {
+			if detail.Type == schemas.GatewayReasoningDetailsTypeText {
 				contentBlocks = append(contentBlocks, BedrockContentBlock{
 					ReasoningContent: &BedrockReasoningContent{
 						ReasoningText: &BedrockReasoningContentText{
@@ -898,7 +898,7 @@ func convertMessage(ctx context.Context, msg schemas.ChatMessage) (BedrockMessag
 	return bedrockMsg, nil
 }
 
-// convertToolMessages converts multiple consecutive Raksha tool messages to a single Bedrock message.
+// convertToolMessages converts multiple consecutive Gateway tool messages to a single Bedrock message.
 // The ctx is propagated to URL fetches inside tool result image blocks.
 func convertToolMessages(ctx context.Context, msgs []schemas.ChatMessage) (BedrockMessage, error) {
 	if len(msgs) == 0 {
@@ -1009,7 +1009,7 @@ func convertToolMessages(ctx context.Context, msgs []schemas.ChatMessage) (Bedro
 	return bedrockMsg, nil
 }
 
-// convertContent converts Raksha message content to Bedrock content blocks.
+// convertContent converts Gateway message content to Bedrock content blocks.
 // The ctx is propagated to URL fetches inside individual content blocks.
 func convertContent(ctx context.Context, content schemas.ChatMessageContent) ([]BedrockContentBlock, error) {
 	var contentBlocks []BedrockContentBlock
@@ -1032,7 +1032,7 @@ func convertContent(ctx context.Context, content schemas.ChatMessageContent) ([]
 	return contentBlocks, nil
 }
 
-// convertContentBlock converts a Raksha content block to Bedrock format.
+// convertContentBlock converts a Gateway content block to Bedrock format.
 // The ctx is propagated to URL fetches for image and document blocks.
 func convertContentBlock(ctx context.Context, block schemas.ChatContentBlock) ([]BedrockContentBlock, error) {
 	// Handle Bedrock native format where type may be empty but text is set directly
@@ -1047,7 +1047,7 @@ func convertContentBlock(ctx context.Context, block schemas.ChatContentBlock) ([
 		// NOTE: we are doing this because LiteLLM does this for empty text blocks.
 		// Ideally we should not play with the payload - we should let the provider handle it.
 		// But for now, we are doing this to avoid the API error.
-		// Once the world onboards on Raksha - we should remove these shitty patterns.
+		// Once the world onboards on Gateway - we should remove these shitty patterns.
 		if block.Text == nil || *block.Text == "" {
 			// Skip nil or empty text as Bedrock rejects blank text content blocks
 			return []BedrockContentBlock{}, nil
@@ -1227,7 +1227,7 @@ func convertContentBlock(ctx context.Context, block schemas.ChatContentBlock) ([
 	}
 }
 
-// convertImageToBedrockSource converts a Raksha image URL to Bedrock image source.
+// convertImageToBedrockSource converts a Gateway image URL to Bedrock image source.
 // Bedrock Converse requires inline base64 bytes - it does not accept remote URLs.
 // For data: URLs (already base64), use the bytes directly. For http(s) URLs, fetch
 // the image and inline it via fetchImageFromURL. The ctx is propagated to the
@@ -1286,7 +1286,7 @@ func convertImageToBedrockSource(ctx context.Context, imageURL string) (*Bedrock
 // Returns nil if no response_format is present or if it's not a json_schema type
 // Ref: https://aws.amazon.com/blogs/machine-learning/structured-data-response-with-amazon-bedrock-prompt-engineering-and-tool-use/
 func convertResponseFormatToTool(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	model string,
 	params *schemas.ChatParameters,
 ) (*BedrockTool, any) {
@@ -1349,9 +1349,9 @@ func convertResponseFormatToTool(
 		}
 	}
 
-	// set raksha context key structured output tool name
+	// set gateway context key structured output tool name
 	toolName = fmt.Sprintf("uf_so_%s", toolName)
-	ctx.SetValue(schemas.RakshaContextKeyStructuredOutputToolName, toolName)
+	ctx.SetValue(schemas.GatewayContextKeyStructuredOutputToolName, toolName)
 
 	// Create the Bedrock tool
 	schemaObjBytes, err := providerUtils.MarshalSorted(schemaObj)
@@ -1459,7 +1459,7 @@ func extractJSONSchemaObject(s *schemas.ResponsesTextConfigFormatJSONSchema) jso
 
 // convertTextFormatToTool converts a Responses text.format config to either a
 // synthetic Bedrock tool or an Anthropic-native output_config.format value.
-func convertTextFormatToTool(ctx *schemas.RakshaContext, model string, textConfig *schemas.ResponsesTextConfig) (*BedrockTool, any) {
+func convertTextFormatToTool(ctx *schemas.GatewayContext, model string, textConfig *schemas.ResponsesTextConfig) (*BedrockTool, any) {
 	if textConfig == nil || textConfig.Format == nil {
 		return nil, nil
 	}
@@ -1490,7 +1490,7 @@ func convertTextFormatToTool(ctx *schemas.RakshaContext, model string, textConfi
 	// See convertResponseFormatToTool for the rationale.
 
 	toolName = fmt.Sprintf("uf_so_%s", toolName)
-	ctx.SetValue(schemas.RakshaContextKeyStructuredOutputToolName, toolName)
+	ctx.SetValue(schemas.GatewayContextKeyStructuredOutputToolName, toolName)
 
 	schemaObjBytes2, err := providerUtils.MarshalSorted(schemaObj)
 	if err != nil {
@@ -1507,7 +1507,7 @@ func convertTextFormatToTool(ctx *schemas.RakshaContext, model string, textConfi
 	}, nil
 }
 
-// convertInferenceConfig converts Raksha parameters to Bedrock inference config
+// convertInferenceConfig converts Gateway parameters to Bedrock inference config
 func convertInferenceConfig(params *schemas.ChatParameters, model string) *BedrockInferenceConfig {
 	var config BedrockInferenceConfig
 	if params.MaxCompletionTokens != nil {
@@ -1715,7 +1715,7 @@ func deriveBedrockBetaHeadersForToolType(toolType string) []string {
 	return nil
 }
 
-// convertToolConfig converts Raksha tools to Bedrock tool config.
+// convertToolConfig converts Gateway tools to Bedrock tool config.
 //
 // Responsibilities (split from collectBedrockServerTools):
 //   - Filters server tools the target provider doesn't support via
@@ -1743,11 +1743,11 @@ func convertToolConfig(model string, params *schemas.ChatParameters) *BedrockToo
 // twice (once here, once in collectBedrockServerTools). The public
 // convertToolConfig entry point is a thin wrapper preserved for tests.
 //
-// ctx is the RakshaContext (not context.Context) so the family gates inside
+// ctx is the GatewayContext (not context.Context) so the family gates inside
 // this function can consult the resolved alias and honor explicit
 // AliasConfig.ModelFamily overrides. Test paths may pass nil — family
 // detection then falls back to substring matching on model.
-func convertToolConfigFromFiltered(ctx *schemas.RakshaContext, model string, params *schemas.ChatParameters, filtered []schemas.ChatTool) *BedrockToolConfig {
+func convertToolConfigFromFiltered(ctx *schemas.GatewayContext, model string, params *schemas.ChatParameters, filtered []schemas.ChatTool) *BedrockToolConfig {
 	if params == nil {
 		return nil
 	}
@@ -1854,7 +1854,7 @@ func convertToolConfigFromFiltered(ctx *schemas.RakshaContext, model string, par
 	return toolConfig
 }
 
-// convertToolChoice converts Raksha tool choice to Bedrock format
+// convertToolChoice converts Gateway tool choice to Bedrock format
 func convertToolChoice(toolChoice schemas.ChatToolChoice) *BedrockToolChoice {
 	// String variant
 	if toolChoice.ChatToolChoiceStr != nil {
@@ -1961,7 +1961,7 @@ func checkMessageForToolContent(ctx context.Context, msg schemas.ChatMessage, to
 	return hasContent
 }
 
-// convertToolCallToContentBlock converts a Raksha tool call to a Bedrock content block
+// convertToolCallToContentBlock converts a Gateway tool call to a Bedrock content block
 func convertToolCallToContentBlock(ctx context.Context, toolCall schemas.ChatAssistantMessageToolCall) BedrockContentBlock {
 	toolUseID := ""
 	if toolCall.ID != nil {
@@ -1999,10 +1999,10 @@ func convertToolCallToContentBlock(ctx context.Context, toolCall schemas.ChatAss
 	}
 }
 
-// ToBedrockError converts a RakshaError to BedrockError
+// ToBedrockError converts a GatewayError to BedrockError
 // This is a standalone function similar to ToAnthropicChatCompletionError
-func ToBedrockError(rakshaErr *schemas.RakshaError) *BedrockError {
-	if rakshaErr == nil || rakshaErr.Error == nil {
+func ToBedrockError(gatewayErr *schemas.GatewayError) *BedrockError {
+	if gatewayErr == nil || gatewayErr.Error == nil {
 		return &BedrockError{
 			Type:    "InternalServerError",
 			Message: "unknown error",
@@ -2011,8 +2011,8 @@ func ToBedrockError(rakshaErr *schemas.RakshaError) *BedrockError {
 
 	// Safely extract message from nested error
 	message := ""
-	if rakshaErr.Error != nil {
-		message = rakshaErr.Error.Message
+	if gatewayErr.Error != nil {
+		message = gatewayErr.Error.Message
 	}
 
 	bedrockErr := &BedrockError{
@@ -2020,11 +2020,11 @@ func ToBedrockError(rakshaErr *schemas.RakshaError) *BedrockError {
 	}
 
 	// Map error type/code
-	if rakshaErr.Error != nil && rakshaErr.Error.Code != nil {
-		bedrockErr.Type = *rakshaErr.Error.Code
-		bedrockErr.Code = rakshaErr.Error.Code
-	} else if rakshaErr.Type != nil {
-		bedrockErr.Type = *rakshaErr.Type
+	if gatewayErr.Error != nil && gatewayErr.Error.Code != nil {
+		bedrockErr.Type = *gatewayErr.Error.Code
+		bedrockErr.Code = gatewayErr.Error.Code
+	} else if gatewayErr.Type != nil {
+		bedrockErr.Type = *gatewayErr.Type
 	} else {
 		bedrockErr.Type = "InternalServerError"
 	}
@@ -2033,7 +2033,7 @@ func ToBedrockError(rakshaErr *schemas.RakshaError) *BedrockError {
 }
 
 // convertMapToToolFunctionParameters converts a map[string]interface{} to ToolFunctionParameters
-// This handles the conversion from flexible parameter formats to Raksha's structured format
+// This handles the conversion from flexible parameter formats to Gateway's structured format
 func convertMapToToolFunctionParameters(paramsMap map[string]interface{}) *schemas.ToolFunctionParameters {
 	if paramsMap == nil {
 		return nil
@@ -2235,10 +2235,10 @@ func bedrockExtractFloat64(v interface{}) (float64, bool) {
 }
 
 // bedrockToolResultEnvelopeKey marks a sentinel-wrapped JSON string that carries a full
-// BedrockToolResult.Content array through Raksha's intermediate format. Used when the
+// BedrockToolResult.Content array through Gateway's intermediate format. Used when the
 // content includes blocks (e.g. searchResult) that the intermediate cannot model natively,
 // so they round-trip losslessly on the Bedrock-native passthrough endpoint.
-const bedrockToolResultEnvelopeKey = "__raksha_bedrock_tool_result_content__"
+const bedrockToolResultEnvelopeKey = "__gateway_bedrock_tool_result_content__"
 
 // encodeBedrockToolResultEnvelope serializes a BedrockToolResult.Content array into a
 // sentinel-wrapped JSON object that decodeBedrockToolResultEnvelope can recover.

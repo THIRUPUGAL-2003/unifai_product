@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
 	"github.com/valyala/fasthttp"
 	"gorm.io/gorm"
 )
@@ -978,7 +978,7 @@ func TestLogin_FullLifecycle_RegisterApproveLogin(t *testing.T) {
 	// Step 1: User registers
 	regCtx := makeFastHTTPCtx("POST", "/api/session/register", map[string]string{
 		"username": "new_engineer",
-		"email":    "engineer@rakshatech.io",
+		"email":    "engineer@gatewaytech.io",
 		"password": "StrongPassword2026!",
 	}, "192.168.1.115")
 	handler.register(regCtx)

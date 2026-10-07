@@ -67,17 +67,19 @@ export function MCPToolSelector({
 		const options: Option<ToolOptionMeta>[] = [];
 
 		for (const client of mcpClients) {
-			if (!client.tools) continue;
+			if (!client.tools || !client.config?.client_id) continue;
 
 			for (const tool of client.tools) {
-				const key = `${client.config.client_id}:${tool.name}`;
+				const clientId = client.config.client_id;
+				const clientName = client.config.name || clientId;
+				const key = `${clientId}:${tool.name}`;
 
 				options.push({
-					label: `${client.config.name} / ${tool.name}`,
+					label: `${clientName} / ${tool.name}`,
 					value: key,
 					meta: {
-						mcpClientId: client.config.client_id,
-						mcpClientName: client.config.name,
+						mcpClientId: clientId,
+						mcpClientName: clientName,
 						toolName: tool.name,
 						description: tool.description,
 						parameters: tool.parameters,
@@ -92,11 +94,11 @@ export function MCPToolSelector({
 	// Get full tool info for selected tools
 	const selectedToolsWithInfo = useMemo(() => {
 		return value.map((selected) => {
-			const client = mcpClients.find((c) => c.config.client_id === selected.mcpClientId);
+			const client = mcpClients.find((c) => c.config?.client_id === selected.mcpClientId);
 			const tool = client?.tools?.find((t) => t.name === selected.toolName);
 			return {
 				...selected,
-				mcpClientName: client?.config.name || selected.mcpClientId,
+				mcpClientName: client?.config?.name || selected.mcpClientId,
 				description: tool?.description,
 				parameters: tool?.parameters,
 			};

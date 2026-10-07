@@ -13,7 +13,7 @@ export default function PubSubConnectorView({ onDelete, isDeleting }: PubSubConn
 			description="Publish events to a Google Cloud Pub/Sub topic."
 			fields={[
 				{ key: "project_id", label: "Project ID" },
-				{ key: "topic", label: "Topic", placeholder: "raksha-events" },
+				{ key: "topic", label: "Topic", placeholder: "gateway-events" },
 				{ key: "credentials_json", label: "Service account JSON", type: "password" },
 			]}
 			onDelete={onDelete}

@@ -10,11 +10,11 @@ import (
 
 	"github.com/fasthttp/router"
 	"github.com/google/uuid"
-	mcputils "github.com/raksha/raksha/core/mcp/utils"
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/temptoken"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	mcputils "github.com/gateway/gateway/core/mcp/utils"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/temptoken"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -58,7 +58,7 @@ func NewMCPPerUserHeadersHandler(mcpManager MCPManager, store *lib.Config, tempT
 //
 // The DELETE-by-credential-ID route lives under /credential/{id} to
 // disambiguate from the flow-ID-keyed routes.
-func (h *MCPPerUserHeadersHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *MCPPerUserHeadersHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/mcp/per-user-headers/flows/{id}", lib.ChainMiddlewares(h.flowDetail, middlewares...))
 	r.PUT("/api/mcp/per-user-headers/flows/{id}", lib.ChainMiddlewares(h.flowSubmit, middlewares...))
 	r.DELETE("/api/mcp/per-user-headers/credential/{id}", lib.ChainMiddlewares(h.revoke, middlewares...))
@@ -89,7 +89,7 @@ type mcpHeadersFlowDetailResponse struct {
 // the auth landing page can render the form. Authorization is via either a
 // dashboard session (caller is signed in and DAC-scoped) OR the
 // mcp_headers_auth temp token bound to {id} (anonymous browser visitor that
-// followed the auth-page URL from a Raksha API error response).
+// followed the auth-page URL from a Gateway API error response).
 func (h *MCPPerUserHeadersHandler) flowDetail(ctx *fasthttp.RequestCtx) {
 	flowID, ok := ctx.UserValue("id").(string)
 	if !ok || strings.TrimSpace(flowID) == "" {
@@ -182,7 +182,7 @@ func (h *MCPPerUserHeadersHandler) flowSubmit(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusServiceUnavailable, "per-user headers credential provider is not configured")
 		return
 	}
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.store)
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.store)
 	defer cancel()
 
 	flowID, ok := ctx.UserValue("id").(string)
@@ -247,7 +247,7 @@ func (h *MCPPerUserHeadersHandler) flowSubmit(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	if _, _, verifyErr := h.mcpManager.VerifyHeadersConnection(rakshaCtx, config, filtered); verifyErr != nil {
+	if _, _, verifyErr := h.mcpManager.VerifyHeadersConnection(gatewayCtx, config, filtered); verifyErr != nil {
 		SendError(ctx, fasthttp.StatusUnprocessableEntity, fmt.Sprintf("Verification failed: %v", verifyErr))
 		return
 	}

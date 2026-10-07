@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
 )
 
 type allocationStore struct {

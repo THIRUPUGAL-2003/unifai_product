@@ -1,6 +1,7 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getErrorMessage, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
 import { CoreConfig, DefaultCoreConfig } from "@/lib/types/config";
 import { parseArrayFromText } from "@/lib/utils/array";
@@ -11,8 +12,8 @@ import { toast } from "sonner";
 
 export default function ObservabilityView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const config = rakshaConfig?.client_config;
+	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const config = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [localConfig, setLocalConfig] = useState<CoreConfig>(DefaultCoreConfig);
 	const [needsRestart, setNeedsRestart] = useState<boolean>(false);
@@ -24,13 +25,13 @@ export default function ObservabilityView() {
 	});
 
 	useEffect(() => {
-		if (rakshaConfig && config) {
+		if (gatewayConfig && config) {
 			setLocalConfig(config);
 			setLocalValues({
 				prometheus_labels: config?.prometheus_labels?.join(", ") || "",
 			});
 		}
-	}, [config, rakshaConfig]);
+	}, [config, gatewayConfig]);
 
 	const hasChanges = useMemo(() => {
 		if (!config) return false;
@@ -46,17 +47,17 @@ export default function ObservabilityView() {
 	}, []);
 
 	const handleSave = useCallback(async () => {
-		if (!rakshaConfig) {
+		if (!gatewayConfig) {
 			toast.error("Could not save settings: configuration not loaded.");
 			return;
 		}
 		try {
-			await updateCoreConfig({ ...rakshaConfig, client_config: localConfig }).unwrap();
+			await updateCoreConfig({ ...gatewayConfig, client_config: localConfig }).unwrap();
 			toast.success("Observability settings updated successfully.");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
-	}, [rakshaConfig, localConfig, updateCoreConfig]);
+	}, [gatewayConfig, localConfig, updateCoreConfig]);
 
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-4">
@@ -65,7 +66,7 @@ export default function ObservabilityView() {
 			<Alert variant="destructive">
 				<AlertTriangle className="h-4 w-4" />
 				<AlertDescription>
-					These settings require a Raksha service restart to take effect. Current connections will continue with existing settings until
+					These settings require a {PRODUCT_NAME} service restart to take effect. Current connections will continue with existing settings until
 					restart.
 				</AlertDescription>
 			</Alert>
@@ -102,5 +103,7 @@ export default function ObservabilityView() {
 }
 
 const RestartWarning = () => {
-	return <div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart Raksha to apply changes.</div>;
+	return (
+		<div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart {PRODUCT_NAME} to apply changes.</div>
+	);
 };

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 func exportDatadog(ctx context.Context, cfg Settings, trace *schemas.Trace) error {
@@ -24,13 +24,13 @@ func exportDatadog(ctx context.Context, cfg Settings, trace *schemas.Trace) erro
 	}
 	service := configValue(cfg.Config, "service")
 	if service == "" {
-		service = "raksha"
+		service = "gateway"
 	}
 	event := traceEvent(trace)
 	payload, err := sonic.Marshal([]map[string]any{{
-		"ddsource": "raksha",
+		"ddsource": "gateway",
 		"service":  service,
-		"message":  "raksha inference trace",
+		"message":  "gateway inference trace",
 		"status":   "info",
 		"trace_id": trace.TraceID,
 		"attributes": event,
@@ -68,12 +68,12 @@ func testDatadog(ctx context.Context, cfg Settings) error {
 	}
 	service := configValue(cfg.Config, "service")
 	if service == "" {
-		service = "raksha"
+		service = "gateway"
 	}
 	payload, _ := sonic.Marshal([]map[string]any{{
-		"ddsource": "raksha",
+		"ddsource": "gateway",
 		"service":  service,
-		"message":  "raksha connector test",
+		"message":  "gateway connector test",
 		"status":   "info",
 	}})
 	url := fmt.Sprintf("https://http-intake.logs.%s/api/v2/logs", strings.TrimPrefix(site, "https://"))

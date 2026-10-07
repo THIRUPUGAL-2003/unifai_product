@@ -1,11 +1,11 @@
 package compat
 
 import (
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // applyParameterConversion rewrites request fields in place for provider compatibility.
-func applyParameterConversion(req *schemas.RakshaRequest) {
+func applyParameterConversion(req *schemas.GatewayRequest) {
 	if req == nil {
 		return
 	}
@@ -19,7 +19,7 @@ func applyParameterConversion(req *schemas.RakshaRequest) {
 }
 
 // disableThinkingWithToolChoice disables thinking when tool_choice forces a tool call.
-func disableThinkingWithToolChoice(req *schemas.RakshaChatRequest) {
+func disableThinkingWithToolChoice(req *schemas.GatewayChatRequest) {
 	if req.Provider != schemas.DeepSeek || req.Params == nil || req.Params.ToolChoice == nil {
 		return
 	}
@@ -30,7 +30,7 @@ func disableThinkingWithToolChoice(req *schemas.RakshaChatRequest) {
 }
 
 // disableThinkingWithToolChoiceForResponses disables thinking when tool_choice forces a tool call.
-func disableThinkingWithToolChoiceForResponses(req *schemas.RakshaResponsesRequest) {
+func disableThinkingWithToolChoiceForResponses(req *schemas.GatewayResponsesRequest) {
 	if req.Provider != schemas.DeepSeek || req.Params == nil || req.Params.ToolChoice == nil {
 		return
 	}
@@ -53,7 +53,7 @@ func disableThinking(extraParams map[string]any) map[string]any {
 }
 
 // flattenNamespaceTools expands namespace scoped tools into a flat list of tools.
-func flattenNamespaceTools(req *schemas.RakshaResponsesRequest) {
+func flattenNamespaceTools(req *schemas.GatewayResponsesRequest) {
 	if req == nil || req.Params == nil {
 		return
 	}

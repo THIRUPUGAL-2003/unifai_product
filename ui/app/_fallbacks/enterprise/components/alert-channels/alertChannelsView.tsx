@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -31,7 +32,7 @@ export default function AlertChannelsView() {
 	const [form, setForm] = useState(emptyChannel());
 	const [offset, setOffset] = useState(0);
 	const [limit, setLimit] = useState(10);
-	const { data, isLoading: loading } = useGetAlertChannelsQuery();
+	const { data, isLoading: loading, isError, error, refetch } = useGetAlertChannelsQuery();
 	const [createChannel] = useCreateAlertChannelMutation();
 	const [updateChannel] = useUpdateAlertChannelMutation();
 	const [testChannel] = useTestAlertChannelMutation();
@@ -95,7 +96,14 @@ export default function AlertChannelsView() {
 				</Button>
 			</div>
 
-			{loading ? (
+			{isError ? (
+				<div className="flex flex-col gap-2">
+					<QueryErrorBanner testId="alert-channels-query-error" message={getErrorMessage(error) || "Failed to load alert channels."} />
+					<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetch()}>
+						Retry
+					</Button>
+				</div>
+			) : loading ? (
 				<p className="text-muted-foreground text-sm">Loading channels…</p>
 			) : channels.length === 0 ? (
 				<div className="rounded-xl border border-dashed p-10 text-center">

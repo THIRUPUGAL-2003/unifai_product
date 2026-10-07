@@ -9,9 +9,9 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 	"gorm.io/gorm"
 )
@@ -278,14 +278,14 @@ func TestPromptAccess_GetAndUpdateWorkflow(t *testing.T) {
 	{
 		// Alice has direct access
 		reqAlice := newTestCtx()
-		reqAlice.SetUserValue(schemas.RakshaContextKeySessionToken, "token_alice")
+		reqAlice.SetUserValue(schemas.GatewayContextKeySessionToken, "token_alice")
 		if !h.checkPromptAccess(reqAlice, promptID) {
 			t.Errorf("expected Alice to have access")
 		}
 
 		// Charlie (not in team or direct) should NOT have access
 		reqCharlie := newTestCtx()
-		reqCharlie.SetUserValue(schemas.RakshaContextKeySessionToken, "token_charlie")
+		reqCharlie.SetUserValue(schemas.GatewayContextKeySessionToken, "token_charlie")
 		if h.checkPromptAccess(reqCharlie, promptID) {
 			t.Errorf("expected Charlie to be denied access")
 		}

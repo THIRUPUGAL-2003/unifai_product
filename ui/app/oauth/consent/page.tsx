@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import {
 	getErrorMessage,
 	useGetOAuth2ConsentFlowQuery,
@@ -160,7 +161,7 @@ function ConsentView({ flowId }: { flowId: string }) {
 					{clientName} wants to connect
 				</h1>
 				<p className="text-muted-foreground mt-1.5 text-sm">
-					Choose how you'd like to identify yourself to Raksha
+					Choose how you&apos;d like to identify yourself to {PRODUCT_NAME}
 				</p>
 			</div>
 
@@ -219,7 +220,7 @@ function ConsentView({ flowId }: { flowId: string }) {
 							<div>
 								<p className="text-sm font-medium">Sign in with your account</p>
 								<p className="text-muted-foreground text-xs">
-									Requires a Raksha dashboard account
+									Requires a {PRODUCT_NAME} dashboard account
 								</p>
 							</div>
 						</div>
@@ -252,7 +253,7 @@ function ConsentView({ flowId }: { flowId: string }) {
 							<div>
 								<p className="text-sm font-medium">Virtual Key</p>
 								<p className="text-muted-foreground text-xs">
-									Use a Virtual Key from your Raksha workspace
+									Use a Virtual Key from your {PRODUCT_NAME} workspace
 								</p>
 							</div>
 						</div>

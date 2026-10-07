@@ -151,12 +151,14 @@ function FilterSection({
 	children,
 	defaultOpen = false,
 	loading = false,
+	error = false,
 	onOpenChange,
 }: {
 	title: string;
 	children: React.ReactNode;
 	defaultOpen?: boolean;
 	loading?: boolean;
+	error?: boolean;
 	onOpenChange?: (open: boolean) => void;
 }) {
 	const [open, setOpen] = useState(defaultOpen);
@@ -177,7 +179,13 @@ function FilterSection({
 				<span>{title}</span>
 			</CollapsibleTrigger>
 			<CollapsibleContent className="pt-1">
-				<div className="divide-border divide-y overflow-hidden rounded-sm border">{loading ? <FilterSectionSkeleton /> : children}</div>
+				{error && !loading ? (
+					<div className="text-destructive border-destructive/30 bg-destructive/5 rounded-sm border px-2 py-1.5 text-[11px]">
+						Failed to load options
+					</div>
+				) : (
+					<div className="divide-border divide-y overflow-hidden rounded-sm border">{loading ? <FilterSectionSkeleton /> : children}</div>
+				)}
 			</CollapsibleContent>
 		</Collapsible>
 	);
@@ -343,6 +351,7 @@ function ToolNamesFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetMCPLogsFilterDataQuery({ dimensions: ["tool_names"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableToolNames = filterData?.tool_names || [];
 	const items = useMemo(() => {
@@ -351,10 +360,10 @@ function ToolNamesFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 		return [...availableToolNames, ...extras].map((n) => ({ key: n, label: n }));
 	}, [availableToolNames, filters.tool_names]);
 
-	if (!isUninitialized && !isLoading && availableToolNames.length === 0 && !hasActive && !opened) return null;
+	if (!isUninitialized && !isLoading && !isError && availableToolNames.length === 0 && !hasActive && !opened) return null;
 
 	return (
-		<FilterSection title="Tool Names" defaultOpen={defaultOpen || hasActive} loading={isLoading} onOpenChange={setOpened}>
+		<FilterSection title="Tool Names" defaultOpen={defaultOpen || hasActive} loading={isLoading} error={isError} onOpenChange={setOpened}>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
 				placeholder="Search or add a tool"
@@ -387,6 +396,7 @@ function ServersFilter({ filters, onFiltersChange, defaultOpen }: FilterComponen
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetMCPLogsFilterDataQuery({ dimensions: ["server_labels"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableServerLabels = filterData?.server_labels || [];
 	const items = useMemo(() => {
@@ -395,10 +405,10 @@ function ServersFilter({ filters, onFiltersChange, defaultOpen }: FilterComponen
 		return [...availableServerLabels, ...extras].map((l) => ({ key: l, label: l }));
 	}, [availableServerLabels, filters.server_labels]);
 
-	if (!isUninitialized && !isLoading && availableServerLabels.length === 0 && !hasActive && !opened) return null;
+	if (!isUninitialized && !isLoading && !isError && availableServerLabels.length === 0 && !hasActive && !opened) return null;
 
 	return (
-		<FilterSection title="Servers" defaultOpen={defaultOpen || hasActive} loading={isLoading} onOpenChange={setOpened}>
+		<FilterSection title="Servers" defaultOpen={defaultOpen || hasActive} loading={isLoading} error={isError} onOpenChange={setOpened}>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
 				placeholder="Search or add a server"
@@ -431,11 +441,12 @@ function VirtualKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterComp
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetMCPLogsFilterDataQuery({ dimensions: ["virtual_keys"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableVirtualKeys = filterData?.virtual_keys || [];
 	const nameToId = useMemo(() => new Map(availableVirtualKeys.map((key) => [key.name, key.id])), [availableVirtualKeys]);
 
-	if (!isUninitialized && !isLoading && availableVirtualKeys.length === 0 && !hasActive && !opened) return null;
+	if (!isUninitialized && !isLoading && !isError && availableVirtualKeys.length === 0 && !hasActive && !opened) return null;
 
 	const isSelected = (name: string) => {
 		const id = nameToId.get(name) || name;
@@ -450,7 +461,7 @@ function VirtualKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterComp
 	};
 
 	return (
-		<FilterSection title="Virtual Keys" defaultOpen={defaultOpen || hasActive} loading={isLoading} onOpenChange={setOpened}>
+		<FilterSection title="Virtual Keys" defaultOpen={defaultOpen || hasActive} loading={isLoading} error={isError} onOpenChange={setOpened}>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
 				placeholder="Search virtual keys"
@@ -468,14 +479,14 @@ function TeamsFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentP
 	const hasActive = (filters.team_ids || []).length > 0;
 	const [opened, setOpened] = useState(defaultOpen || hasActive);
 	const searchInputRef = useAutoFocusOnOpen(opened);
-	const { data: teamsData, isLoading } = useGetTeamsQuery({ limit: 500, offset: 0 }, { skip: !opened && !hasActive });
+	const { data: teamsData, isLoading, isError } = useGetTeamsQuery({ limit: 500, offset: 0 }, { skip: !opened && !hasActive });
 	const teams = teamsData?.teams || [];
 	const items = useMemo(() => teams.map((t) => ({ key: t.id, label: t.name })), [teams]);
 
-	if (!isLoading && teams.length === 0 && !hasActive && !opened) return null;
+	if (!isLoading && !isError && teams.length === 0 && !hasActive && !opened) return null;
 
 	return (
-		<FilterSection title="Teams" defaultOpen={defaultOpen || hasActive} loading={isLoading} onOpenChange={setOpened}>
+		<FilterSection title="Teams" defaultOpen={defaultOpen || hasActive} loading={isLoading} error={isError} onOpenChange={setOpened}>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
 				placeholder="Search teams"
@@ -495,16 +506,16 @@ function UsersFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentP
 	const hasActive = (filters.user_ids || []).length > 0;
 	const [opened, setOpened] = useState(defaultOpen || hasActive);
 	const searchInputRef = useAutoFocusOnOpen(opened);
-	const { data: users = [], isLoading } = useGetSessionUsersQuery(undefined, { skip: !opened && !hasActive });
+	const { data: users = [], isLoading, isError } = useGetSessionUsersQuery(undefined, { skip: !opened && !hasActive });
 	const items = useMemo(
 		() => users.filter((u) => (u.status || "approved") === "approved").map((u) => ({ key: u.id, label: u.username })),
 		[users],
 	);
 
-	if (!isLoading && items.length === 0 && !hasActive && !opened) return null;
+	if (!isLoading && !isError && items.length === 0 && !hasActive && !opened) return null;
 
 	return (
-		<FilterSection title="Users" defaultOpen={defaultOpen || hasActive} loading={isLoading} onOpenChange={setOpened}>
+		<FilterSection title="Users" defaultOpen={defaultOpen || hasActive} loading={isLoading} error={isError} onOpenChange={setOpened}>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
 				placeholder="Search users"
@@ -524,14 +535,14 @@ function CustomersFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 	const hasActive = (filters.customer_ids || []).length > 0;
 	const [opened, setOpened] = useState(defaultOpen || hasActive);
 	const searchInputRef = useAutoFocusOnOpen(opened);
-	const { data: customersData, isLoading } = useGetCustomersQuery({ limit: 500, offset: 0 }, { skip: !opened && !hasActive });
+	const { data: customersData, isLoading, isError } = useGetCustomersQuery({ limit: 500, offset: 0 }, { skip: !opened && !hasActive });
 	const customers = customersData?.customers || [];
 	const items = useMemo(() => customers.map((c) => ({ key: c.id, label: c.name })), [customers]);
 
-	if (!isLoading && customers.length === 0 && !hasActive && !opened) return null;
+	if (!isLoading && !isError && customers.length === 0 && !hasActive && !opened) return null;
 
 	return (
-		<FilterSection title="Customers" defaultOpen={defaultOpen || hasActive} loading={isLoading} onOpenChange={setOpened}>
+		<FilterSection title="Customers" defaultOpen={defaultOpen || hasActive} loading={isLoading} error={isError} onOpenChange={setOpened}>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
 				placeholder="Search customers"
@@ -551,14 +562,14 @@ function BusinessUnitsFilter({ filters, onFiltersChange, defaultOpen }: FilterCo
 	const hasActive = (filters.business_unit_ids || []).length > 0;
 	const [opened, setOpened] = useState(defaultOpen || hasActive);
 	const searchInputRef = useAutoFocusOnOpen(opened);
-	const { data: unitData, isLoading } = useGetBusinessUnitsQuery(undefined, { skip: !opened && !hasActive });
+	const { data: unitData, isLoading, isError } = useGetBusinessUnitsQuery(undefined, { skip: !opened && !hasActive });
 	const units = unitData?.business_units || [];
 	const items = useMemo(() => units.map((u) => ({ key: u.id, label: u.name })), [units]);
 
-	if (!isLoading && units.length === 0 && !hasActive && !opened) return null;
+	if (!isLoading && !isError && units.length === 0 && !hasActive && !opened) return null;
 
 	return (
-		<FilterSection title="Business Units" defaultOpen={defaultOpen || hasActive} loading={isLoading} onOpenChange={setOpened}>
+		<FilterSection title="Business Units" defaultOpen={defaultOpen || hasActive} loading={isLoading} error={isError} onOpenChange={setOpened}>
 			<SearchableCheckboxList
 				inputRef={searchInputRef}
 				placeholder="Search business units"

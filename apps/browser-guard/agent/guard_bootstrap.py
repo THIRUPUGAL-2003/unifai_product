@@ -1,4 +1,4 @@
-"""Raksha Guard entry point — frozen into the EXE / .app and never hot-updated.
+"""Gateway Guard entry point — frozen into the EXE / .app and never hot-updated.
 
 Rebuild & Publish on the dashboard ships the Guard's Python code (agent/ + proxy)
 as a verified bundle. This launcher loads that bundle's agent modules in place of
@@ -31,7 +31,7 @@ def data_dir() -> str:
         base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
     else:
         base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
-    return os.path.join(base, "Raksha", "Guard")
+    return os.path.join(base, "Gateway", "Guard")
 
 
 def bundle_root() -> str:
@@ -87,7 +87,7 @@ def mark_bad(sha: str, reason: str) -> None:
         _write_json(path, {"shas": shas, "last_reason": reason, "at": int(time.time())})
     except OSError:
         pass
-    print(f"[Raksha Guard WARNING] Server code {sha[:8]} disabled ({reason}) — using built-in code")
+    print(f"[Gateway Guard WARNING] Server code {sha[:8]} disabled ({reason}) — using built-in code")
 
 
 def _file_sha(path: str) -> str:
@@ -144,8 +144,10 @@ class _BundleFinder(importlib.abc.MetaPathFinder):
 
 
 def install_code_dir(code_dir: str, sha: str) -> _BundleFinder | None:
-    os.environ["RAKSHA_GUARD_CODE_DIR"] = code_dir
-    os.environ["RAKSHA_GUARD_CODE_SHA"] = sha
+    os.environ["GATEWAY_GUARD_CODE_DIR"] = code_dir
+    os.environ["GATEWAY_GUARD_CODE_DIR"] = code_dir
+    os.environ["GATEWAY_GUARD_CODE_SHA"] = sha
+    os.environ["GATEWAY_GUARD_CODE_SHA"] = sha
     agent_dir = os.path.join(code_dir, "agent")
     if not os.path.isdir(agent_dir):
         return None
@@ -155,8 +157,10 @@ def install_code_dir(code_dir: str, sha: str) -> _BundleFinder | None:
 
 
 def uninstall_code_dir(finder: _BundleFinder | None) -> None:
-    os.environ.pop("RAKSHA_GUARD_CODE_DIR", None)
-    os.environ.pop("RAKSHA_GUARD_CODE_SHA", None)
+    os.environ.pop("GATEWAY_GUARD_CODE_DIR", None)
+    os.environ.pop("GATEWAY_GUARD_CODE_DIR", None)
+    os.environ.pop("GATEWAY_GUARD_CODE_SHA", None)
+    os.environ.pop("GATEWAY_GUARD_CODE_SHA", None)
     if finder is None:
         return
     if finder in sys.meta_path:
@@ -169,8 +173,8 @@ def uninstall_code_dir(finder: _BundleFinder | None) -> None:
 def relaunch(extra_env: dict | None = None) -> None:
     """Start a fresh Guard a few seconds after this process exits (single-instance lock is released)."""
     env = os.environ.copy()
-    env.pop("RAKSHA_GUARD_CODE_DIR", None)
-    env.pop("RAKSHA_GUARD_CODE_SHA", None)
+    env.pop("GATEWAY_GUARD_CODE_DIR", None)
+    env.pop("GATEWAY_GUARD_CODE_SHA", None)
     # Without this the new onefile EXE reuses this process's _MEI dir, which is
     # deleted when we exit ("failed to obtain executable path for parent process").
     env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
@@ -208,16 +212,16 @@ def selftest(code_dir: str) -> int:
                 mod = importlib.import_module(name)
                 if not os.path.abspath(getattr(mod, "__file__", "")).startswith(os.path.abspath(code_dir)):
                     raise RuntimeError(f"{name} did not load from the bundle")
-            if not callable(getattr(sys.modules.get("raksha_agent"), "main", None)):
-                raise RuntimeError("raksha_agent.main missing")
-        ns = runpy.run_path(os.path.join(code_dir, "browser_ai_proxy.py"), run_name="raksha_proxy_selftest")
+            if not callable(getattr(sys.modules.get("gateway_agent"), "main", None)):
+                raise RuntimeError("gateway_agent.main missing")
+        ns = runpy.run_path(os.path.join(code_dir, "browser_ai_proxy.py"), run_name="gateway_proxy_selftest")
         addons = ns.get("addons") or []
         if not (addons and type(addons[0]).__name__ == "BrowserAIInterceptor" and callable(getattr(addons[0], "request", None))):
             raise RuntimeError("BrowserAIInterceptor addon missing")
-        print("[Raksha Guard] Server code self-test OK")
+        print("[Gateway Guard] Server code self-test OK")
         code = 0
     except BaseException as e:  # noqa: BLE001 - any failure means "do not activate"
-        print(f"[Raksha Guard ERROR] Server code self-test failed: {type(e).__name__}: {e}")
+        print(f"[Gateway Guard ERROR] Server code self-test failed: {type(e).__name__}: {e}")
     sys.stdout.flush()
     os._exit(code)
 
@@ -235,31 +239,32 @@ def _utf8_stdio() -> None:
 
 def show_antivirus_block_warning(reason: str = "") -> None:
     msg = (
-        "SECURITY NOTICE: Raksha Guard was blocked by Antivirus or Windows Security.\n\n"
+        "SECURITY NOTICE: Gateway Guard was blocked by Antivirus or Windows Security.\n\n"
         f"Reason: {reason or 'Access is denied or executable blocked by endpoint security.'}\n\n"
         "Your Antivirus (e.g. Windows Defender, CrowdStrike, McAfee, Kaspersky, Norton, Bitdefender) "
-        "may be blocking Raksha Guard from running background protection.\n\n"
+        "may be blocking Gateway Guard from running background protection.\n\n"
         "Steps to resolve:\n"
         "1. Open Windows Security or your company Antivirus app.\n"
-        "2. Under 'Protection history' or 'Quarantine', find Raksha_Guard.exe and choose 'Allow on device' or 'Restore'.\n"
+        "2. Under 'Protection history' or 'Quarantine', find Gateway_Guard.exe and choose 'Allow on device' or 'Restore'.\n"
         f"3. Add an Exclusion / Whitelist for the application folder:\n"
         f"   {data_dir()}\n"
-        "4. If on a corporate laptop, contact your IT Administrator to whitelist Raksha Guard in your central security console.\n"
-        "5. Restart Raksha Guard."
+        "4. If on a corporate laptop, contact your IT Administrator to whitelist Gateway Guard in your central security console.\n"
+        "5. Restart Gateway Guard."
     )
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.user32.MessageBoxW(0, msg, "Raksha Guard - Antivirus Notice", 0x10 | 0x0)
+            ctypes.windll.user32.MessageBoxW(0, msg, "Gateway Guard - Antivirus Notice", 0x10 | 0x0)
         except Exception:
             pass
-    print(f"\n[Raksha Guard CRITICAL]\n{msg}\n", file=sys.stderr)
+    print(f"\n[Gateway Guard CRITICAL]\n{msg}\n", file=sys.stderr)
 
 
 def main() -> None:
     _utf8_stdio()
     version = runtime_version()
-    os.environ["RAKSHA_GUARD_RUNTIME_VERSION"] = version
+    os.environ["GATEWAY_GUARD_RUNTIME_VERSION"] = version
+    os.environ["GATEWAY_GUARD_RUNTIME_VERSION"] = version
     args = sys.argv[1:]
     if len(args) >= 2 and args[0] == "--bundle-selftest":
         selftest(args[1])
@@ -267,7 +272,7 @@ def main() -> None:
     main_mode = not args or args[0] not in _SERVICE_MODES
     finder = None
     sha = ""
-    if os.environ.pop("RAKSHA_GUARD_FORCE_BUILTIN", "") != "1":
+    if os.environ.pop("GATEWAY_GUARD_FORCE_BUILTIN", "") != "1":
         code_dir, sha = verified_code_dir(version)
         if code_dir and (not main_mode or _count_boot(sha)):
             finder = install_code_dir(code_dir, sha)
@@ -275,7 +280,7 @@ def main() -> None:
             sha = ""
 
     try:
-        import raksha_agent
+        import gateway_agent
     except (PermissionError, OSError) as e:
         if getattr(e, "winerror", None) in (5, 225) or "denied" in str(e).lower() or "virus" in str(e).lower():
             show_antivirus_block_warning(str(e))
@@ -284,17 +289,17 @@ def main() -> None:
         mark_bad(sha, f"import failed: {type(e).__name__}: {e}")
         uninstall_code_dir(finder)
         sha = ""
-        import raksha_agent
+        import gateway_agent
     except Exception as e:
         if not sha:
             raise
         mark_bad(sha, f"import failed: {type(e).__name__}: {e}")
         uninstall_code_dir(finder)
         sha = ""
-        import raksha_agent
+        import gateway_agent
 
     try:
-        raksha_agent.main()
+        gateway_agent.main()
     except (SystemExit, KeyboardInterrupt):
         raise
     except (PermissionError, OSError) as e:
@@ -303,13 +308,13 @@ def main() -> None:
         if not sha or not main_mode:
             raise
         mark_bad(sha, f"crashed: {type(e).__name__}: {e}")
-        relaunch({"RAKSHA_GUARD_FORCE_BUILTIN": "1"})
+        relaunch({"GATEWAY_GUARD_FORCE_BUILTIN": "1"})
         os._exit(1)
     except Exception as e:
         if not sha or not main_mode:
             raise
         mark_bad(sha, f"crashed: {type(e).__name__}: {e}")
-        relaunch({"RAKSHA_GUARD_FORCE_BUILTIN": "1"})
+        relaunch({"GATEWAY_GUARD_FORCE_BUILTIN": "1"})
         os._exit(1)
 
 

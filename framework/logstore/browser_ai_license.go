@@ -14,7 +14,7 @@ import (
 )
 
 // MasterPublicKeyBytes is the built-in 32-byte Ed25519 public key.
-// It can only verify signatures created by the Raksha vendor Master Private Key.
+// It can only verify signatures created by the Gateway vendor Master Private Key.
 var MasterPublicKeyBytes = []byte{
 	0x4b, 0x51, 0xda, 0xdd, 0xe1, 0x49, 0x09, 0xac,
 	0x5c, 0xd5, 0xf2, 0xd5, 0x2b, 0x03, 0xc5, 0xe8,
@@ -176,10 +176,10 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 	// If no record in DB, attempt reading from fallback file locations
 	if !hasRecord {
 		fallbackPaths := []string{
-			"/app/data/raksha_license.lic",
-			filepath.Join(os.Getenv("APP_DIR"), "raksha_license.lic"),
-			"data/raksha_license.lic",
-			"raksha_license.lic",
+			"/app/data/gateway_license.lic",
+			filepath.Join(os.Getenv("APP_DIR"), "gateway_license.lic"),
+			"data/gateway_license.lic",
+			"gateway_license.lic",
 		}
 		for _, fp := range fallbackPaths {
 			if fp == "" {
@@ -198,7 +198,7 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 						IsExpired:      false,
 						LicenseID:      payload.LicenseID,
 						Issuer:         firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
-						Product:        firstNonEmpty(payload.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
+						Product:        firstNonEmpty(payload.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
 						ClientName:     firstNonEmpty(payload.ClientName, "Enterprise Organization"),
 						Tier:           firstNonEmpty(payload.Tier, "Enterprise On-Premise"),
 						MaxSeats:       payload.MaxSeats,
@@ -232,7 +232,7 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 			IsExpired:      strings.Contains(err.Error(), "EXPIRED"),
 			LicenseID:      record.LicenseID,
 			Issuer:         firstNonEmpty(record.Issuer, "YesPanchi Group of Companies"),
-			Product:        firstNonEmpty(record.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
+			Product:        firstNonEmpty(record.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
 			ClientName:     record.ClientName,
 			Tier:           record.Tier,
 			MaxSeats:       record.MaxSeats,
@@ -260,7 +260,7 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 		IsExpired:      false,
 		LicenseID:      payload.LicenseID,
 		Issuer:         firstNonEmpty(payload.Issuer, record.Issuer, "YesPanchi Group of Companies"),
-		Product:        firstNonEmpty(payload.Product, record.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
+		Product:        firstNonEmpty(payload.Product, record.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
 		ClientName:     payload.ClientName,
 		Tier:           payload.Tier,
 		MaxSeats:       payload.MaxSeats,
@@ -306,7 +306,7 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 			ID:          BrowserAILicenseID,
 			LicenseID:   payload.LicenseID,
 			Issuer:      firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
-			Product:     firstNonEmpty(payload.Product, "Raksha - Real-time AI Knowledge Screening & Hazard Audit"),
+			Product:     firstNonEmpty(payload.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
 			ClientName:  payload.ClientName,
 			Tier:        payload.Tier,
 			MaxSeats:    payload.MaxSeats,
@@ -329,10 +329,10 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 	if appDir == "" {
 		appDir = "/app/data"
 	}
-	licPath := filepath.Join(appDir, "raksha_license.lic")
+	licPath := filepath.Join(appDir, "gateway_license.lic")
 	_ = os.MkdirAll(appDir, 0755)
 	_ = os.WriteFile(licPath, rawEnvBytes, 0644)
-	_ = os.WriteFile("raksha_license.lic", rawEnvBytes, 0644)
+	_ = os.WriteFile("gateway_license.lic", rawEnvBytes, 0644)
 
 	licenseCacheMu.Lock()
 	cachedLicenseInfo = nil

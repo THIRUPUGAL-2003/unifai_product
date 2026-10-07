@@ -5,12 +5,12 @@ import (
 	"os"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunResponsesReasoningTest executes the reasoning test scenario to test thinking capabilities via Responses API only
-func RunResponsesReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunResponsesReasoningTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Reasoning {
 		t.Logf("⏭️ Reasoning not supported for provider %s", testConfig.Provider)
 		return
@@ -35,7 +35,7 @@ func RunResponsesReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.
 		}
 
 		// Execute Responses API test with retries
-		responsesReq := &schemas.RakshaResponsesRequest{
+		responsesReq := &schemas.GatewayResponsesRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ReasoningModel,
 			Input:    responsesMessages,
@@ -44,11 +44,11 @@ func RunResponsesReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.
 				// Note: Older o1 models may not return message output via Responses API - use o3/o4-mini.
 				// OpenAI recommends reserving at least 25,000 tokens for reasoning and outputs.
 				// See: https://platform.openai.com/docs/guides/reasoning#allocating-space-for-reasoning
-				MaxOutputTokens: raksha.Ptr(25000),
+				MaxOutputTokens: gateway.Ptr(25000),
 				// Configure reasoning-specific parameters
 				Reasoning: &schemas.ResponsesParametersReasoning{
-					Effort: raksha.Ptr("high"), // High effort for complex reasoning
-					// Summary: raksha.Ptr("detailed"), // Detailed summary of reasoning process
+					Effort: gateway.Ptr("high"), // High effort for complex reasoning
+					// Summary: gateway.Ptr("detailed"), // Detailed summary of reasoning process
 				},
 				// Include reasoning content in response
 				Include: []string{"reasoning.encrypted_content"},
@@ -88,8 +88,8 @@ func RunResponsesReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.
 		})
 		expectations = ModifyExpectationsForProvider(expectations, testConfig.Provider)
 
-		response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "Reasoning", func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		response, responsesError := WithResponsesTestRetry(t, responsesRetryConfig, retryContext, expectations, "Reasoning", func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.ResponsesRequest(bfCtx, responsesReq)
 		})
 
@@ -123,7 +123,7 @@ func RunResponsesReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.
 
 // validateResponsesAPIReasoning performs additional validation specific to Responses API reasoning features
 // Returns true if reasoning indicators are found
-func validateResponsesAPIReasoning(t *testing.T, response *schemas.RakshaResponsesResponse) bool {
+func validateResponsesAPIReasoning(t *testing.T, response *schemas.GatewayResponsesResponse) bool {
 	if response == nil || response.Output == nil {
 		return false
 	}
@@ -204,7 +204,7 @@ func validateResponsesAPIReasoning(t *testing.T, response *schemas.RakshaRespons
 }
 
 // RunChatCompletionReasoningTest executes the reasoning test scenario to test thinking capabilities via Chat Completions API
-func RunChatCompletionReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunChatCompletionReasoningTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Reasoning {
 		t.Logf("⏭️ Reasoning not supported for provider %s", testConfig.Provider)
 		return
@@ -235,16 +235,16 @@ func RunChatCompletionReasoningTest(t *testing.T, client *raksha.Raksha, ctx con
 		}
 
 		// Execute Chat Completions API test with retries
-		chatReq := &schemas.RakshaChatRequest{
+		chatReq := &schemas.GatewayChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ReasoningModel,
 			Input:    chatMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: raksha.Ptr(1800),
+				MaxCompletionTokens: gateway.Ptr(1800),
 				// Configure reasoning-specific parameters
 				Reasoning: &schemas.ChatReasoning{
-					Effort:    raksha.Ptr("high"), // High effort for complex reasoning
-					MaxTokens: raksha.Ptr(1500),   // Maximum tokens for reasoning output
+					Effort:    gateway.Ptr("high"), // High effort for complex reasoning
+					MaxTokens: gateway.Ptr(1500),   // Maximum tokens for reasoning output
 				},
 			},
 			Fallbacks: testConfig.Fallbacks,
@@ -282,8 +282,8 @@ func RunChatCompletionReasoningTest(t *testing.T, client *raksha.Raksha, ctx con
 		})
 		expectations = ModifyExpectationsForProvider(expectations, testConfig.Provider)
 
-		response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "Reasoning", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		response, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "Reasoning", func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		})
 
@@ -317,7 +317,7 @@ func RunChatCompletionReasoningTest(t *testing.T, client *raksha.Raksha, ctx con
 
 // validateChatCompletionReasoning performs additional validation specific to Chat Completions API reasoning features
 // Returns true if reasoning indicators are found
-func validateChatCompletionReasoning(t *testing.T, response *schemas.RakshaChatResponse) bool {
+func validateChatCompletionReasoning(t *testing.T, response *schemas.GatewayChatResponse) bool {
 	if response == nil || len(response.Choices) == 0 {
 		return false
 	}
@@ -360,11 +360,11 @@ func validateChatCompletionReasoning(t *testing.T, response *schemas.RakshaChatR
 					t.Logf("  - Entry %d: Type=%s, Index=%d", i, detail.Type, detail.Index)
 
 					switch detail.Type {
-					case schemas.RakshaReasoningDetailsTypeSummary:
+					case schemas.GatewayReasoningDetailsTypeSummary:
 						if detail.Summary != nil {
 							t.Logf("    Summary length: %d", len(*detail.Summary))
 						}
-					case schemas.RakshaReasoningDetailsTypeText:
+					case schemas.GatewayReasoningDetailsTypeText:
 						if detail.Text != nil {
 							textLen := len(*detail.Text)
 							t.Logf("    Text length: %d", textLen)
@@ -376,7 +376,7 @@ func validateChatCompletionReasoning(t *testing.T, response *schemas.RakshaChatR
 								t.Logf("    Text preview: %s", (*detail.Text)[:maxLen])
 							}
 						}
-					case schemas.RakshaReasoningDetailsTypeEncrypted:
+					case schemas.GatewayReasoningDetailsTypeEncrypted:
 						if detail.Data != nil {
 							t.Logf("    Encrypted data length: %d", len(*detail.Data))
 						}
@@ -419,7 +419,7 @@ func validateChatCompletionReasoning(t *testing.T, response *schemas.RakshaChatR
 // RunMultiTurnReasoningTest tests multi-turn conversations with reasoning content passthrough.
 // It verifies that reasoning details (text + signature) from assistant messages are correctly
 // passed back to the model in follow-up turns via the Chat Completions API.
-func RunMultiTurnReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunMultiTurnReasoningTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Reasoning {
 		t.Logf("⏭️ Reasoning not supported for provider %s", testConfig.Provider)
 		return
@@ -446,14 +446,14 @@ func RunMultiTurnReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.
 			CreateBasicChatMessage(initialPrompt),
 		}
 
-		chatReq := &schemas.RakshaChatRequest{
+		chatReq := &schemas.GatewayChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ReasoningModel,
 			Input:    chatMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: raksha.Ptr(4000),
+				MaxCompletionTokens: gateway.Ptr(4000),
 				Reasoning: &schemas.ChatReasoning{
-					Effort: raksha.Ptr("low"),
+					Effort: gateway.Ptr("low"),
 				},
 			},
 			Fallbacks: testConfig.Fallbacks,
@@ -485,8 +485,8 @@ func RunMultiTurnReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.
 		})
 		expectations = ModifyExpectationsForProvider(expectations, testConfig.Provider)
 
-		firstResponse, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "MultiTurnReasoning_Step1", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		firstResponse, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "MultiTurnReasoning_Step1", func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		})
 
@@ -528,14 +528,14 @@ func RunMultiTurnReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.
 			CreateBasicChatMessage("Now multiply that result by 2."),
 		}
 
-		multiTurnReq := &schemas.RakshaChatRequest{
+		multiTurnReq := &schemas.GatewayChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ReasoningModel,
 			Input:    multiTurnMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: raksha.Ptr(4000),
+				MaxCompletionTokens: gateway.Ptr(4000),
 				Reasoning: &schemas.ChatReasoning{
-					Effort: raksha.Ptr("low"),
+					Effort: gateway.Ptr("low"),
 				},
 			},
 			Fallbacks: testConfig.Fallbacks,
@@ -554,8 +554,8 @@ func RunMultiTurnReasoningTest(t *testing.T, client *raksha.Raksha, ctx context.
 			},
 		}
 
-		secondResponse, chatError2 := WithChatTestRetry(t, chatRetryConfig, retryContext2, expectations, "MultiTurnReasoning_Step2", func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		secondResponse, chatError2 := WithChatTestRetry(t, chatRetryConfig, retryContext2, expectations, "MultiTurnReasoning_Step2", func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.ChatCompletionRequest(bfCtx, multiTurnReq)
 		})
 

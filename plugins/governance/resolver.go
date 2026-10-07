@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/modelcatalog"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/modelcatalog"
 )
 
 // Decision represents the result of governance evaluation
@@ -82,7 +82,7 @@ func NewBudgetResolver(store GovernanceStore, modelCatalog *modelcatalog.ModelCa
 
 // EvaluateModelAndProviderRequest evaluates provider-level and model-level rate limits and budgets
 // This applies even when virtual keys are disabled or not present
-func (r *BudgetResolver) EvaluateModelAndProviderRequest(ctx *schemas.RakshaContext, provider schemas.ModelProvider, model string) *EvaluationResult {
+func (r *BudgetResolver) EvaluateModelAndProviderRequest(ctx *schemas.GatewayContext, provider schemas.ModelProvider, model string) *EvaluationResult {
 	// Create evaluation request for the checks
 	request := &EvaluationRequest{
 		Provider: provider,
@@ -128,7 +128,7 @@ func (r *BudgetResolver) EvaluateModelAndProviderRequest(ctx *schemas.RakshaCont
 	}
 }
 
-func (r *BudgetResolver) EvaluateCustomerRequest(ctx *schemas.RakshaContext, customerID string, request *EvaluationRequest) *EvaluationResult {
+func (r *BudgetResolver) EvaluateCustomerRequest(ctx *schemas.GatewayContext, customerID string, request *EvaluationRequest) *EvaluationResult {
 	// Skip if no customerID
 	if customerID == "" {
 		return &EvaluationResult{
@@ -158,7 +158,7 @@ func (r *BudgetResolver) EvaluateCustomerRequest(ctx *schemas.RakshaContext, cus
 	}
 }
 
-func (r *BudgetResolver) EvaluateTeamRequest(ctx *schemas.RakshaContext, teamID string, request *EvaluationRequest) *EvaluationResult {
+func (r *BudgetResolver) EvaluateTeamRequest(ctx *schemas.GatewayContext, teamID string, request *EvaluationRequest) *EvaluationResult {
 	// Skip if no teamID
 	if teamID == "" {
 		return &EvaluationResult{
@@ -192,7 +192,7 @@ func (r *BudgetResolver) EvaluateTeamRequest(ctx *schemas.RakshaContext, teamID 
 // EvaluateUserRequest evaluates user-level rate limits and budgets (enterprise-only)
 // This runs after provider/model checks but before VK checks
 // Returns DecisionAllow if userID is empty or user has no governance configured
-func (r *BudgetResolver) EvaluateUserRequest(ctx *schemas.RakshaContext, userID string, request *EvaluationRequest) *EvaluationResult {
+func (r *BudgetResolver) EvaluateUserRequest(ctx *schemas.GatewayContext, userID string, request *EvaluationRequest) *EvaluationResult {
 	// Skip if no userID (non-enterprise or anonymous request)
 	if userID == "" {
 		return &EvaluationResult{
@@ -244,7 +244,7 @@ func (r *BudgetResolver) EvaluateUserRequest(ctx *schemas.RakshaContext, userID 
 // EvaluateVirtualKeyRequest evaluates virtual key-specific checks including validation, filtering, rate limits, and budgets.
 // skipRateLimitsAndBudgets is for read-only metadata calls (e.g. list models). Dashboard Prompt Repo
 // stamps UserID for rankings — callers must NOT skip VK budgets merely because UserID is set.
-func (r *BudgetResolver) EvaluateVirtualKeyRequest(ctx *schemas.RakshaContext, virtualKeyValue string, provider schemas.ModelProvider, model string, requestType schemas.RequestType, skipRateLimitsAndBudgets bool) *EvaluationResult {
+func (r *BudgetResolver) EvaluateVirtualKeyRequest(ctx *schemas.GatewayContext, virtualKeyValue string, provider schemas.ModelProvider, model string, requestType schemas.RequestType, skipRateLimitsAndBudgets bool) *EvaluationResult {
 	// 1. Validate virtual key exists and is active
 	vk, exists := r.store.GetVirtualKey(ctx, virtualKeyValue)
 	if !exists {
@@ -254,40 +254,40 @@ func (r *BudgetResolver) EvaluateVirtualKeyRequest(ctx *schemas.RakshaContext, v
 		}
 	}
 	// Set virtual key id and name in context
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyID, vk.ID)
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyName, vk.Name)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceVirtualKeyID, vk.ID)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceVirtualKeyName, vk.Name)
 	if vk.Team != nil {
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamID, vk.Team.ID)
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamName, vk.Team.Name)
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamID, vk.Team.ID)
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamName, vk.Team.Name)
 		if vk.Team.Customer != nil {
-			ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerID, vk.Team.Customer.ID)
-			ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerName, vk.Team.Customer.Name)
+			ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerID, vk.Team.Customer.ID)
+			ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerName, vk.Team.Customer.Name)
 		} else if vk.Team.CustomerID != nil && *vk.Team.CustomerID != "" {
-			ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerID, *vk.Team.CustomerID)
+			ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerID, *vk.Team.CustomerID)
 		}
 	} else if tid := teamIDFromVK(vk); tid != "" {
 		// Team FK present but relation not preloaded — still stamp for MCP/logs.
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamID, tid)
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamID, tid)
 		if local, ok := r.store.(*LocalGovernanceStore); ok {
 			if v, ok := local.teams.Load(tid); ok {
 				if team, ok := v.(*configstoreTables.TableTeam); ok && team != nil {
-					ctx.SetValue(schemas.RakshaContextKeyGovernanceTeamName, team.Name)
+					ctx.SetValue(schemas.GatewayContextKeyGovernanceTeamName, team.Name)
 					if team.CustomerID != nil && *team.CustomerID != "" {
-						ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerID, *team.CustomerID)
+						ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerID, *team.CustomerID)
 					}
 					if team.Customer != nil {
-						ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerName, team.Customer.Name)
+						ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerName, team.Customer.Name)
 					}
 				}
 			}
 		}
 	}
 	if vk.Customer != nil {
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerID, vk.Customer.ID)
-		ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerName, vk.Customer.Name)
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerID, vk.Customer.ID)
+		ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerName, vk.Customer.Name)
 	} else if vk.CustomerID != nil && *vk.CustomerID != "" {
-		if existing, _ := ctx.Value(schemas.RakshaContextKeyGovernanceCustomerID).(string); existing == "" {
-			ctx.SetValue(schemas.RakshaContextKeyGovernanceCustomerID, *vk.CustomerID)
+		if existing, _ := ctx.Value(schemas.GatewayContextKeyGovernanceCustomerID).(string); existing == "" {
+			ctx.SetValue(schemas.GatewayContextKeyGovernanceCustomerID, *vk.CustomerID)
 		}
 	}
 	if local, ok := r.store.(*LocalGovernanceStore); ok {
@@ -375,7 +375,7 @@ func (r *BudgetResolver) EvaluateVirtualKeyRequest(ctx *schemas.RakshaContext, v
 				for _, dbKey := range pc.Keys {
 					includeOnlyKeys = append(includeOnlyKeys, dbKey.KeyID)
 				}
-				ctx.SetValue(schemas.RakshaContextKeyGovernanceIncludeOnlyKeys, includeOnlyKeys)
+				ctx.SetValue(schemas.GatewayContextKeyGovernanceIncludeOnlyKeys, includeOnlyKeys)
 			}
 			break
 		}

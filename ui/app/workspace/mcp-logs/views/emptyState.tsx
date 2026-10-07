@@ -2,6 +2,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getExampleBaseUrl } from "@/lib/utils/port";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
 import { AlertTriangle, Check, Copy } from "lucide-react";
@@ -98,10 +99,10 @@ export function MCPEmptyState({ error, statusIndicator }: MCPEmptyStateProps) {
 				python: `import openai
 import requests
 
-# Step 1: Initialize OpenAI client with Raksha
+# Step 1: Initialize OpenAI client with ${PRODUCT_NAME}
 client = openai.OpenAI(
     base_url="${baseUrl}/openai",
-    api_key="dummy-api-key"  # Handled by Raksha
+    api_key="dummy-api-key"  # Handled by ${PRODUCT_NAME}
 )
 
 # Step 2: Send chat request
@@ -114,7 +115,7 @@ response = client.chat.completions.create(
 message = response.choices[0].message
 if message.tool_calls:
     for tool_call in message.tool_calls:
-        # Step 4: Execute tool via Raksha
+        # Step 4: Execute tool via ${PRODUCT_NAME}
         tool_result = requests.post(
             "${baseUrl}/v1/mcp/tool/execute",
             json={
@@ -139,10 +140,10 @@ if message.tool_calls:
         print(final_response.choices[0].message.content)`,
 				typescript: `import OpenAI from "openai";
 
-// Step 1: Initialize OpenAI client with Raksha
+// Step 1: Initialize OpenAI client with ${PRODUCT_NAME}
 const openai = new OpenAI({
   baseURL: "${baseUrl}/openai",
-  apiKey: "dummy-api-key", // Handled by Raksha
+  apiKey: "dummy-api-key", // Handled by ${PRODUCT_NAME}
 });
 
 // Step 2: Send chat request
@@ -156,7 +157,7 @@ const message = response.choices[0].message;
 // Step 3: Check for tool calls
 if (message.tool_calls) {
   for (const toolCall of message.tool_calls) {
-    // Step 4: Execute tool via Raksha
+    // Step 4: Execute tool via ${PRODUCT_NAME}
     const toolResult = await fetch("${baseUrl}/v1/mcp/tool/execute", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -194,7 +195,7 @@ client = openai.OpenAI(
     api_key="dummy-api-key"
 )
 
-# With agent mode enabled, Raksha automatically:
+# With agent mode enabled, ${PRODUCT_NAME} automatically:
 # 1. Receives tool calls from LLM
 # 2. Executes auto-approved tools (e.g., read_file, list_directory)
 # 3. Feeds results back to LLM
@@ -226,7 +227,7 @@ const openai = new OpenAI({
   apiKey: "dummy-api-key",
 });
 
-// With agent mode enabled, Raksha automatically:
+// With agent mode enabled, ${PRODUCT_NAME} automatically:
 // 1. Receives tool calls from LLM
 // 2. Executes auto-approved tools (e.g., read_file, list_directory)
 // 3. Feeds results back to LLM

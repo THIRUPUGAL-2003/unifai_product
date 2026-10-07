@@ -1766,7 +1766,7 @@ export function LogDetailView({
 
 					{!isPassthrough &&
 						((log.input_history && log.input_history.length > 0) ||
-							(log.output_message && !log.error_details?.error.message) ||
+							(log.output_message && !log.error_details?.error?.message) ||
 							log.stop_reason === "refusal" ||
 							log.stop_reason === "content_filter" ||
 							log.stop_reason === "safety") && (
@@ -1788,7 +1788,7 @@ export function LogDetailView({
 									const showReasoning = !!reasoningText && (showAll || visibleRoles.has("reasoning"));
 									const hasToolCalls = Array.isArray(message.tool_calls) && message.tool_calls.length > 0;
 									const isOverallLast =
-										index === (log.input_history?.length ?? 0) - 1 && !log.output_message && !log.error_details?.error.message;
+										index === (log.input_history?.length ?? 0) - 1 && !log.output_message && !log.error_details?.error?.message;
 									const lineCount = text ? text.split("\n").length : 0;
 									const approxTokens = text ? Math.max(1, Math.round(text.length / 4)) : 0;
 									const reasoningTokens = reasoningText ? Math.max(1, Math.round(reasoningText.length / 4)) : 0;
@@ -1878,7 +1878,7 @@ export function LogDetailView({
 									return rows;
 								})}
 								{log.output_message &&
-									!log.error_details?.error.message &&
+									!log.error_details?.error?.message &&
 									(() => {
 										const reasoningText = extractChatReasoning(log.output_message);
 										const showReasoning = !!reasoningText && (visibleRoles.size === allRoles.length || visibleRoles.has("reasoning"));
@@ -1954,7 +1954,7 @@ export function LogDetailView({
 										);
 									})()}
 								{!log.output_message &&
-									!log.error_details?.error.message &&
+									!log.error_details?.error?.message &&
 									(log.stop_reason === "refusal" || log.stop_reason === "content_filter" || log.stop_reason === "safety") && (
 										<MessageRow role="assistant" meta="refusal" last>
 											<div className="rounded-sm border border-red-200 bg-red-50/70 p-3 dark:border-red-900 dark:bg-red-950/30">
@@ -1972,7 +1972,7 @@ export function LogDetailView({
 						const rawInput = log.responses_input_history ?? [];
 						const inputMsgs =
 							visibleRoles.size < allRoles.length ? rawInput.filter((m) => visibleRoles.has(getResponsesRole(m))) : rawInput;
-						const rawOutput = log.status !== "processing" && !log.error_details?.error.message ? (log.responses_output ?? []) : [];
+						const rawOutput = log.status !== "processing" && !log.error_details?.error?.message ? (log.responses_output ?? []) : [];
 						const outputMsgs =
 							visibleRoles.size < allRoles.length ? rawOutput.filter((m) => visibleRoles.has(getResponsesRole(m))) : rawOutput;
 						const all: ResponsesMessage[] = coalesceResponsesMessages([...inputMsgs, ...outputMsgs]);
@@ -2101,7 +2101,7 @@ export function LogDetailView({
 						</div>
 					)}
 
-					{log.status !== "processing" && log.embedding_output && log.embedding_output.length > 0 && !log.error_details?.error.message && (
+					{log.status !== "processing" && log.embedding_output && log.embedding_output.length > 0 && !log.error_details?.error?.message && (
 						<div className="bg-card space-y-3 rounded-sm border p-5">
 							<div className="text-sm font-medium">Embedding</div>
 							<LogChatMessageView
@@ -2116,7 +2116,7 @@ export function LogDetailView({
 							/>
 						</div>
 					)}
-					{log.status !== "processing" && log.rerank_output && !log.error_details?.error.message && (
+					{log.status !== "processing" && log.rerank_output && !log.error_details?.error?.message && (
 						<CollapsibleBox title={`Rerank Output (${log.rerank_output.length})`} onCopy={() => JSON.stringify(log.rerank_output, null, 2)}>
 							<CodeEditor
 								className="z-0 w-full"
@@ -2161,19 +2161,19 @@ export function LogDetailView({
 						</CollapsibleBox>
 					)}
 
-					{(log.error_details?.error.message || log.error_details?.error.error != null) && (
+					{(log.error_details?.error?.message || log.error_details?.error?.error != null) && (
 						<div className="rounded-sm border border-red-200 bg-red-50/70 p-5 dark:border-red-900 dark:bg-red-950/30">
 							<div className="flex items-center gap-2 text-red-700 dark:text-red-400">
 								<AlertCircle className="h-4 w-4 shrink-0" />
 								<span className="text-[12.5px] font-semibold">Error</span>
-								{log.error_details?.error.message ? <CopyInlineButton text={log.error_details.error.message} /> : null}
+								{log.error_details?.error?.message ? <CopyInlineButton text={log.error_details.error.message} /> : null}
 							</div>
-							{log.error_details?.error.message ? (
+							{log.error_details?.error?.message ? (
 								<div className="mt-2 text-[13px] leading-relaxed break-words whitespace-pre-wrap text-red-700 dark:text-red-400">
 									{log.error_details.error.message}
 								</div>
 							) : null}
-							{log.error_details?.error.error != null ? (
+							{log.error_details?.error?.error != null ? (
 								<details className="group mt-3 rounded-sm border border-red-200/70 bg-white/40 dark:border-red-900/70 dark:bg-red-950/40">
 									<summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-[12px] text-red-700 hover:bg-red-50/80 dark:text-red-400 dark:hover:bg-red-950/60">
 										<span className="font-medium">Details</span>

@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"time"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // OpenAI File API Types
@@ -36,8 +36,8 @@ type OpenAIFileDeleteResponse struct {
 	Deleted bool   `json:"deleted"`
 }
 
-// ToRakshaFileStatus converts OpenAI status to Raksha status.
-func ToRakshaFileStatus(status string) schemas.FileStatus {
+// ToGatewayFileStatus converts OpenAI status to Gateway status.
+func ToGatewayFileStatus(status string) schemas.FileStatus {
 	switch status {
 	case "uploaded":
 		return schemas.FileStatusUploaded
@@ -54,19 +54,19 @@ func ToRakshaFileStatus(status string) schemas.FileStatus {
 	}
 }
 
-// ToRakshaFileUploadResponse converts OpenAI file response to Raksha file upload response.
-func (r *OpenAIFileResponse) ToRakshaFileUploadResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileUploadResponse {
-	resp := &schemas.RakshaFileUploadResponse{
+// ToGatewayFileUploadResponse converts OpenAI file response to Gateway file upload response.
+func (r *OpenAIFileResponse) ToGatewayFileUploadResponse(latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayFileUploadResponse {
+	resp := &schemas.GatewayFileUploadResponse{
 		ID:             r.ID,
 		Object:         r.Object,
 		Bytes:          r.Bytes,
 		CreatedAt:      r.CreatedAt,
 		Filename:       r.Filename,
 		Purpose:        r.Purpose,
-		Status:         ToRakshaFileStatus(r.Status),
+		Status:         ToGatewayFileStatus(r.Status),
 		StatusDetails:  r.StatusDetails,
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -82,19 +82,19 @@ func (r *OpenAIFileResponse) ToRakshaFileUploadResponse(latency time.Duration, s
 	return resp
 }
 
-// ToRakshaFileRetrieveResponse converts OpenAI file response to Raksha file retrieve response.
-func (r *OpenAIFileResponse) ToRakshaFileRetrieveResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileRetrieveResponse {
-	resp := &schemas.RakshaFileRetrieveResponse{
+// ToGatewayFileRetrieveResponse converts OpenAI file response to Gateway file retrieve response.
+func (r *OpenAIFileResponse) ToGatewayFileRetrieveResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayFileRetrieveResponse {
+	resp := &schemas.GatewayFileRetrieveResponse{
 		ID:             r.ID,
 		Object:         r.Object,
 		Bytes:          r.Bytes,
 		CreatedAt:      r.CreatedAt,
 		Filename:       r.Filename,
 		Purpose:        r.Purpose,
-		Status:         ToRakshaFileStatus(r.Status),
+		Status:         ToGatewayFileStatus(r.Status),
 		StatusDetails:  r.StatusDetails,
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}

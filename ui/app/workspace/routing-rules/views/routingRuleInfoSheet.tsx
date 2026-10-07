@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { SheetNavigationButtons } from "@/components/sheetNavigationButtons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import { baseRoutingFields } from "@/lib/config/celFieldsRouting";
 import { getOperatorLabel } from "@/lib/config/celOperatorsRouting";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
+import { getErrorMessage } from "@/lib/store";
 import { useGetCustomersQuery, useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store/apis/governanceApi";
 import { RoutingRule } from "@/lib/types/routingRules";
 import { getScopeLabel } from "@/lib/utils/labels";
@@ -40,24 +42,34 @@ function formatRuleValue(value: any): string {
 	return String(value ?? "");
 }
 
-function useScopeName(scope: string, scopeId?: string): string | undefined {
-	const { data: teamsData } = useGetTeamsQuery(undefined, {
+function useScopeLookup(scope: string, scopeId?: string): { scopeName?: string; lookupError?: unknown } {
+	const { data: teamsData, isError: teamsFailed, error: teamsError } = useGetTeamsQuery(undefined, {
 		skip: scope !== "team" || !scopeId,
 	});
-	const { data: customersData } = useGetCustomersQuery(undefined, {
+	const { data: customersData, isError: customersFailed, error: customersError } = useGetCustomersQuery(undefined, {
 		skip: scope !== "customer" || !scopeId,
 	});
-	const { data: vksData } = useGetVirtualKeysQuery(undefined, {
+	const { data: vksData, isError: vksFailed, error: vksError } = useGetVirtualKeysQuery(undefined, {
 		skip: scope !== "virtual_key" || !scopeId,
 	});
 
-	return useMemo(() => {
+	const scopeName = useMemo(() => {
 		if (!scopeId) return undefined;
 		if (scope === "team") return (teamsData?.teams ?? []).find((t) => t.id === scopeId)?.name;
 		if (scope === "customer") return (customersData?.customers ?? []).find((c) => c.id === scopeId)?.name;
 		if (scope === "virtual_key") return (vksData?.virtual_keys ?? []).find((v) => v.id === scopeId)?.name;
 		return undefined;
 	}, [scope, scopeId, teamsData, customersData, vksData]);
+
+	const lookupError = useMemo(() => {
+		if (!scopeId) return undefined;
+		if (scope === "team" && teamsFailed) return teamsError;
+		if (scope === "customer" && customersFailed) return customersError;
+		if (scope === "virtual_key" && vksFailed) return vksError;
+		return undefined;
+	}, [scope, scopeId, teamsFailed, teamsError, customersFailed, customersError, vksFailed, vksError]);
+
+	return { scopeName, lookupError };
 }
 
 // ─── copy button ─────────────────────────────────────────────────────────────
@@ -252,7 +264,7 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 	const targets = rule?.targets ?? [];
 	const fallbacks = rule?.fallbacks ?? [];
 	const hasQuery = rule?.query && (rule.query.rules?.length ?? 0) > 0;
-	const scopeName = useScopeName(rule?.scope ?? "global", rule?.scope_id);
+	const { scopeName, lookupError } = useScopeLookup(rule?.scope ?? "global", rule?.scope_id);
 
 	const { prev: prevKeys, next: nextKeys } = useSheetNavigation({
 		enabled: open,
@@ -298,6 +310,12 @@ export function RoutingRuleInfoSheet({ rule, open, onOpenChange, onNavigate, has
 						</SheetHeader>
 
 						<div className="-mx-8 space-y-6 overflow-y-auto px-8 pb-8">
+							{lookupError ? (
+								<QueryErrorBanner
+									testId="routing-rule-info-scope-query-error"
+									message={getErrorMessage(lookupError) || "Failed to resolve scope name for this rule."}
+								/>
+							) : null}
 							{/* Overview */}
 							<div className="space-y-3">
 								<h3 className="text-sm font-semibold">Overview</h3>

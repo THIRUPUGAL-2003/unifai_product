@@ -18,11 +18,11 @@ import (
 
 	"github.com/fasthttp/router"
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 	"gorm.io/gorm"
 )
@@ -79,9 +79,9 @@ func getResetTokenSecretKey() ([]byte, error) {
 	resetTokenOnce.Do(func() {
 		secret := strings.TrimSpace(os.Getenv("PASSWORD_RESET_SECRET"))
 		if len(secret) < 32 {
-			if guardSecret := strings.TrimSpace(os.Getenv("RAKSHA_GUARD_SECRET")); len(guardSecret) >= 16 {
+			if guardSecret := strings.TrimSpace(gatewayEnv("GUARD_SECRET")); len(guardSecret) >= 16 {
 				secret = guardSecret + "-password-reset-token-fallback-key-32b"
-			} else if encKey := strings.TrimSpace(os.Getenv("RAKSHA_ENCRYPTION_KEY")); len(encKey) >= 16 {
+			} else if encKey := strings.TrimSpace(gatewayEnv("ENCRYPTION_KEY")); len(encKey) >= 16 {
 				secret = encKey + "-password-reset-token-fallback-key-32b"
 			}
 		}
@@ -182,7 +182,7 @@ func (h *SessionHandler) normalizeUserRole(ctx *fasthttp.RequestCtx, role string
 }
 
 // RegisterRoutes registers the session-related routes
-func (h *SessionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *SessionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.POST("/api/session/login", lib.ChainMiddlewares(h.login, middlewares...))
 	r.POST("/api/session/logout", lib.ChainMiddlewares(h.logout, middlewares...))
 	r.GET("/api/session/is-auth-enabled", lib.ChainMiddlewares(h.isAuthEnabled, middlewares...))
@@ -642,7 +642,7 @@ func (h *SessionHandler) issueWSTicket(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusServiceUnavailable, "WebSocket tickets are not available")
 		return
 	}
-	sessionToken, ok := ctx.UserValue(schemas.RakshaContextKeySessionToken).(string)
+	sessionToken, ok := ctx.UserValue(schemas.GatewayContextKeySessionToken).(string)
 	if !ok {
 		SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
 		return
@@ -1241,10 +1241,10 @@ func (h *SessionHandler) forgotPassword(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	body := fmt.Sprintf(
-		"Hello %s,\n\nYour Raksha password reset code is: %s\n\nIt expires in %d minutes. If you did not request this, ignore this email.\n",
+		"Hello %s,\n\nYour Gateway password reset code is: %s\n\nIt expires in %d minutes. If you did not request this, ignore this email.\n",
 		targetUsername, otp, int(passwordResetOTPTTL.Minutes()),
 	)
-	if err := sendAuthEmail(h.configStore, ctx, targetEmail, "Raksha password reset code", body); err != nil {
+	if err := sendAuthEmail(h.configStore, ctx, targetEmail, "Gateway password reset code", body); err != nil {
 		logger.Warn("password reset OTP email failed username=%s: %v", targetUsername, err)
 		// Always return generic success — do not leak account existence via SMTP errors.
 		SendJSON(ctx, generic)
@@ -1397,10 +1397,10 @@ func (h *SessionHandler) forgotUsername(ctx *fasthttp.RequestCtx) {
 		adminName, adminEmail := h.getAdminCredentials(ctx)
 		if adminEmail != "" && (strings.EqualFold(payload.Email, adminEmail) || isMatchingAdminIdentity(payload.Email, adminName, adminEmail)) {
 			body := fmt.Sprintf(
-				"Hello,\n\nYour Raksha administrator username is: %s\n(You can also sign in with username 'admin' or your email: %s)\n\nIf you did not request this, please ignore this email.\n",
+				"Hello,\n\nYour Gateway administrator username is: %s\n(You can also sign in with username 'admin' or your email: %s)\n\nIf you did not request this, please ignore this email.\n",
 				adminName, adminEmail,
 			)
-			if err := sendAuthEmail(h.configStore, ctx, adminEmail, "Your Raksha Username", body); err != nil {
+			if err := sendAuthEmail(h.configStore, ctx, adminEmail, "Your Gateway Username", body); err != nil {
 				logger.Warn("forgot username email failed for admin email=%s: %v", adminEmail, err)
 			}
 		}
@@ -1409,10 +1409,10 @@ func (h *SessionHandler) forgotUsername(ctx *fasthttp.RequestCtx) {
 	}
 
 	body := fmt.Sprintf(
-		"Hello,\n\nYour Raksha username associated with this email address is: %s\n\nIf you did not request this, please ignore this email.\n",
+		"Hello,\n\nYour Gateway username associated with this email address is: %s\n\nIf you did not request this, please ignore this email.\n",
 		user.Username,
 	)
-	if err := sendAuthEmail(h.configStore, ctx, user.Email, "Your Raksha Username", body); err != nil {
+	if err := sendAuthEmail(h.configStore, ctx, user.Email, "Your Gateway Username", body); err != nil {
 		logger.Warn("forgot username email failed for email=%s: %v", user.Email, err)
 		// Always generic — do not leak account existence via SMTP errors.
 		SendJSON(ctx, generic)

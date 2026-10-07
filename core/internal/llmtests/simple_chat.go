@@ -5,12 +5,12 @@ import (
 	"os"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunSimpleChatTest executes the simple chat test scenario using dual API testing framework
-func RunSimpleChatTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunSimpleChatTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.SimpleChat {
 		t.Logf("Simple chat not supported for provider %s", testConfig.Provider)
 		return
@@ -69,14 +69,14 @@ func RunSimpleChatTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 		}
 
 		// Test Chat Completions API
-		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(150),
+					MaxCompletionTokens: gateway.Ptr(150),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -87,8 +87,8 @@ func RunSimpleChatTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 			if response != nil {
 				return response, nil
 			}
-			return nil, &schemas.RakshaError{
-				IsRakshaError: true,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: true,
 				Error: &schemas.ErrorField{
 					Message: "No chat response returned",
 				},
@@ -98,9 +98,9 @@ func RunSimpleChatTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 		chatResponse, chatError := WithChatTestRetry(t, chatRetryConfig, retryContext, expectations, "SimpleChat_Chat", chatOperation)
 
 		// Test Responses API
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider:  testConfig.Provider,
 				Model:     testConfig.ChatModel,
 				Input:     responsesMessages,
@@ -113,8 +113,8 @@ func RunSimpleChatTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 			if response != nil {
 				return response, nil
 			}
-			return nil, &schemas.RakshaError{
-				IsRakshaError: true,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: true,
 				Error: &schemas.ErrorField{
 					Message: "No responses response returned",
 				},

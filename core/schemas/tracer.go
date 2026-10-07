@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the Raksha system.
+// Package schemas defines the core schemas and types used by the Gateway system.
 package schemas
 
 import (
@@ -22,21 +22,21 @@ type StreamAccumulatorResult struct {
 	TimeToFirstToken      int64                           // Time to first token in milliseconds
 	OutputMessage         *ChatMessage                    // Accumulated output message
 	OutputMessages        []ResponsesMessage              // For responses API
-	TokenUsage            *RakshaLLMUsage                // Token usage
+	TokenUsage            *GatewayLLMUsage                // Token usage
 	Cost                  *float64                        // Cost in dollars
-	CacheDebug            *RakshaCacheDebug              // Semantic cache debug info if available
-	ErrorDetails          *RakshaError                   // Error details if any
-	AudioOutput           *RakshaSpeechResponse          // For speech streaming
-	TranscriptionOutput   *RakshaTranscriptionResponse   // For transcription streaming
-	ImageGenerationOutput *RakshaImageGenerationResponse // For image generation streaming
-	PassthroughOutput     *RakshaPassthroughResponse     // For passthrough streaming
+	CacheDebug            *GatewayCacheDebug              // Semantic cache debug info if available
+	ErrorDetails          *GatewayError                   // Error details if any
+	AudioOutput           *GatewaySpeechResponse          // For speech streaming
+	TranscriptionOutput   *GatewayTranscriptionResponse   // For transcription streaming
+	ImageGenerationOutput *GatewayImageGenerationResponse // For image generation streaming
+	PassthroughOutput     *GatewayPassthroughResponse     // For passthrough streaming
 	FinishReason          *string                         // Finish reason
 	RawResponse           *string                         // Raw response
 	RawRequest            interface{}                     // Raw request
 }
 
-// Tracer defines the interface for distributed tracing in Raksha.
-// Implementations can be injected via RakshaConfig to enable automatic instrumentation.
+// Tracer defines the interface for distributed tracing in Gateway.
+// Implementations can be injected via GatewayConfig to enable automatic instrumentation.
 // The interface is designed to be minimal and implementation-agnostic.
 type Tracer interface {
 	// CreateTrace creates a new trace with optional parent ID and returns the trace ID.
@@ -72,11 +72,11 @@ type Tracer interface {
 
 	// PopulateLLMRequestAttributes populates all LLM-specific request attributes on the span.
 	// This includes model parameters, input messages, temperature, max tokens, etc.
-	PopulateLLMRequestAttributes(handle SpanHandle, req *RakshaRequest)
+	PopulateLLMRequestAttributes(handle SpanHandle, req *GatewayRequest)
 
 	// PopulateLLMResponseAttributes populates all LLM-specific response attributes on the span.
 	// This includes output messages, tokens, usage stats, and error information if present.
-	PopulateLLMResponseAttributes(ctx *RakshaContext, handle SpanHandle, resp *RakshaResponse, err *RakshaError)
+	PopulateLLMResponseAttributes(ctx *GatewayContext, handle SpanHandle, resp *GatewayResponse, err *GatewayError)
 
 	// StoreDeferredSpan stores a span handle for later completion (used for streaming requests).
 	// The span handle is stored keyed by trace ID so it can be retrieved when the stream completes.
@@ -95,15 +95,15 @@ type Tracer interface {
 	GetDeferredSpanID(traceID string) string
 
 	// AddStreamingChunk accumulates a streaming chunk for the deferred span.
-	// Pass the full RakshaResponse to capture content, tool calls, reasoning, etc.
+	// Pass the full GatewayResponse to capture content, tool calls, reasoning, etc.
 	// This is called for each streaming chunk to build up the complete response.
-	AddStreamingChunk(traceID string, response *RakshaResponse)
+	AddStreamingChunk(traceID string, response *GatewayResponse)
 
 	// GetAccumulatedChunks returns the accumulated response, TTFT, and chunk count for a deferred span.
 	// The response is built from the streaming accumulator during the final ProcessStreamingChunk call.
 	// Returns nil response if no plugin has called ProcessStreamingChunk (callers should nil-check).
 	// Returns nil, 0, 0 if no accumulated data exists.
-	GetAccumulatedChunks(traceID string) (response *RakshaResponse, ttftNs int64, chunkCount int)
+	GetAccumulatedChunks(traceID string) (response *GatewayResponse, ttftNs int64, chunkCount int)
 
 	// CreateStreamAccumulator creates a new stream accumulator for the given trace ID.
 	// This should be called at the start of a streaming request.
@@ -117,7 +117,7 @@ type Tracer interface {
 	// Returns the accumulated result. IsFinal will be true when the stream is complete.
 	// This method is used by plugins to access accumulated streaming data.
 	// The ctx parameter must contain the stream end indicator for proper final chunk detection.
-	ProcessStreamingChunk(ctx *RakshaContext, traceID string, isFinalChunk bool, result *RakshaResponse, err *RakshaError) *StreamAccumulatorResult
+	ProcessStreamingChunk(ctx *GatewayContext, traceID string, isFinalChunk bool, result *GatewayResponse, err *GatewayError) *StreamAccumulatorResult
 
 	// PauseStream marks the streaming response identified by traceID as paused.
 	// While paused, post-processed chunks are buffered (not delivered) but plugin
@@ -132,7 +132,7 @@ type Tracer interface {
 	// client as a final error chunk after any buffered chunks are flushed. After
 	// EndStream, all further chunks for this stream are dropped (post-hooks still
 	// run but no client delivery happens). Idempotent.
-	EndStream(traceID string, err *RakshaError)
+	EndStream(traceID string, err *GatewayError)
 
 	// WaitForFlusher blocks until the gate flusher goroutine for traceID has
 	// fully drained and exited. Provider stream goroutines call this from
@@ -156,7 +156,7 @@ type Tracer interface {
 	// to inspect the assembled output mid-stream (e.g. while paused). Returns
 	// nil if no accumulator exists, no chunks have been accumulated yet, or
 	// the stream type cannot be determined.
-	GetAccumulatedResponse(traceID string) *RakshaResponse
+	GetAccumulatedResponse(traceID string) *GatewayResponse
 
 	// GateSend is called by stream producers (provider helpers) instead of writing
 	// directly to the response channel. It implements the pause/resume/end gate:
@@ -167,7 +167,7 @@ type Tracer interface {
 	// and force-flush + transition to Ended.
 	// Returns true if the chunk was handled (delivered or buffered), false if the
 	// caller should stop sending (ctx done or stream ended).
-	GateSend(traceID string, chunk *RakshaStreamChunk, isFinal, isHardErr bool, ch chan *RakshaStreamChunk, ctx *RakshaContext) bool
+	GateSend(traceID string, chunk *GatewayStreamChunk, isFinal, isHardErr bool, ch chan *GatewayStreamChunk, ctx *GatewayContext) bool
 
 	// AttachPluginLogs appends plugin log entries to the trace identified by traceID.
 	// Thread-safe. Should be called after plugin hooks complete, before trace completion.
@@ -210,10 +210,10 @@ func (n *NoOpTracer) GetSpanHandleByID(_ string, _ *string) SpanHandle { return 
 func (n *NoOpTracer) AddEvent(_ SpanHandle, _ string, _ map[string]any) {}
 
 // PopulateLLMRequestAttributes does nothing.
-func (n *NoOpTracer) PopulateLLMRequestAttributes(_ SpanHandle, _ *RakshaRequest) {}
+func (n *NoOpTracer) PopulateLLMRequestAttributes(_ SpanHandle, _ *GatewayRequest) {}
 
 // PopulateLLMResponseAttributes does nothing.
-func (n *NoOpTracer) PopulateLLMResponseAttributes(_ *RakshaContext, _ SpanHandle, _ *RakshaResponse, _ *RakshaError) {
+func (n *NoOpTracer) PopulateLLMResponseAttributes(_ *GatewayContext, _ SpanHandle, _ *GatewayResponse, _ *GatewayError) {
 }
 
 // StoreDeferredSpan does nothing.
@@ -229,10 +229,10 @@ func (n *NoOpTracer) ClearDeferredSpan(_ string) {}
 func (n *NoOpTracer) GetDeferredSpanID(_ string) string { return "" }
 
 // AddStreamingChunk does nothing.
-func (n *NoOpTracer) AddStreamingChunk(_ string, _ *RakshaResponse) {}
+func (n *NoOpTracer) AddStreamingChunk(_ string, _ *GatewayResponse) {}
 
 // GetAccumulatedChunks returns nil, 0, 0.
-func (n *NoOpTracer) GetAccumulatedChunks(_ string) (*RakshaResponse, int64, int) { return nil, 0, 0 }
+func (n *NoOpTracer) GetAccumulatedChunks(_ string) (*GatewayResponse, int64, int) { return nil, 0, 0 }
 
 // CreateStreamAccumulator does nothing.
 func (n *NoOpTracer) CreateStreamAccumulator(_ string, _ time.Time) {}
@@ -241,7 +241,7 @@ func (n *NoOpTracer) CreateStreamAccumulator(_ string, _ time.Time) {}
 func (n *NoOpTracer) CleanupStreamAccumulator(_ string) {}
 
 // ProcessStreamingChunk returns nil.
-func (n *NoOpTracer) ProcessStreamingChunk(_ *RakshaContext, _ string, _ bool, _ *RakshaResponse, _ *RakshaError) *StreamAccumulatorResult {
+func (n *NoOpTracer) ProcessStreamingChunk(_ *GatewayContext, _ string, _ bool, _ *GatewayResponse, _ *GatewayError) *StreamAccumulatorResult {
 	return nil
 }
 
@@ -252,7 +252,7 @@ func (n *NoOpTracer) PauseStream(_ string) {}
 func (n *NoOpTracer) ResumeStream(_ string) {}
 
 // EndStream does nothing.
-func (n *NoOpTracer) EndStream(_ string, _ *RakshaError) {}
+func (n *NoOpTracer) EndStream(_ string, _ *GatewayError) {}
 
 // WaitForFlusher does nothing — NoOpTracer has no gate or flusher.
 func (n *NoOpTracer) WaitForFlusher(_ string) {}
@@ -264,12 +264,12 @@ func (n *NoOpTracer) IsStreamEnded(_ string) bool { return false }
 func (n *NoOpTracer) IsStreamPaused(_ string) bool { return false }
 
 // GetAccumulatedResponse returns nil — NoOpTracer has no accumulator.
-func (n *NoOpTracer) GetAccumulatedResponse(_ string) *RakshaResponse { return nil }
+func (n *NoOpTracer) GetAccumulatedResponse(_ string) *GatewayResponse { return nil }
 
 // GateSend forwards the chunk directly to the channel with ctx.Done() guard.
 // NoOpTracer has no gate state, so this is a pure passthrough. Recovers from
 // "send on closed channel" so a closed consumer cannot crash the producer.
-func (n *NoOpTracer) GateSend(_ string, chunk *RakshaStreamChunk, _ bool, _ bool, ch chan *RakshaStreamChunk, ctx *RakshaContext) (ok bool) {
+func (n *NoOpTracer) GateSend(_ string, chunk *GatewayStreamChunk, _ bool, _ bool, ch chan *GatewayStreamChunk, ctx *GatewayContext) (ok bool) {
 	defer func() {
 		if recover() != nil {
 			ok = false
@@ -302,7 +302,7 @@ func (n *NoOpTracer) Stop() {}
 // creation, accumulator, deferred spans, AND the streaming pause/resume/end
 // gate. Callers who need real gate behavior (chunk buffering on pause,
 // in-order replay on resume, terminal-error delivery on end) MUST inject a
-// real Tracer via the Raksha config — typically `framework/streaming/Accumulator`,
+// real Tracer via the Gateway config — typically `framework/streaming/Accumulator`,
 // which is what production deployments wire in. `core/schemas` cannot
 // import `framework/streaming` (would be a circular dep), so the gate impl
 // cannot live here. This is the same fall-back contract every other Tracer

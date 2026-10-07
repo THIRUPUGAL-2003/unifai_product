@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the Raksha system.
+// Package schemas defines the core schemas and types used by the Gateway system.
 package schemas
 
 import (
@@ -12,16 +12,16 @@ const (
 	DefaultInitialPoolSize = 5000
 )
 
-type KeySelector func(ctx *RakshaContext, keys []Key, providerKey ModelProvider, model string) (Key, error)
+type KeySelector func(ctx *GatewayContext, keys []Key, providerKey ModelProvider, model string) (Key, error)
 
 // KeyPoolFilter is an optional hook called before key selection to veto keys
 // from the available pool.
-type KeyPoolFilter func(ctx *RakshaContext, provider ModelProvider, model string, keys []Key) ([]Key, error)
+type KeyPoolFilter func(ctx *GatewayContext, provider ModelProvider, model string, keys []Key) ([]Key, error)
 
-// RakshaConfig represents the configuration for initializing a Raksha instance.
+// GatewayConfig represents the configuration for initializing a Gateway instance.
 // It contains the necessary components for setting up the system including account details,
 // plugins, logging, and initial pool size.
-type RakshaConfig struct {
+type GatewayConfig struct {
 	Account            Account
 	LLMPlugins         []LLMPlugin
 	MCPPlugins         []MCPPlugin
@@ -29,7 +29,7 @@ type RakshaConfig struct {
 	MCPHeadersProvider MCPHeadersProvider // Backend for MCPAuthTypePerUserHeaders credential storage; nil disables per-user-headers auth (resolver errors at use)
 	Logger             Logger
 	Tracer             Tracer        // Tracer for distributed tracing (nil = NoOpTracer)
-	InitialPoolSize    int           // Initial pool size for sync pools in Raksha. Higher values will reduce memory allocations but will increase memory usage.
+	InitialPoolSize    int           // Initial pool size for sync pools in Gateway. Higher values will reduce memory allocations but will increase memory usage.
 	DropExcessRequests bool          // If true, in cases where the queue is full, requests will not wait for the queue to be empty and will be dropped instead.
 	MCPConfig          *MCPConfig    // MCP (Model Context Protocol) configuration for tool integration
 	KeySelector        KeySelector   // Custom key selector function
@@ -37,7 +37,7 @@ type RakshaConfig struct {
 	KVStore            KVStore       // shared KV store for clustering/session stickiness; nil = disabled
 }
 
-// ModelProvider represents the different AI model providers supported by Raksha.
+// ModelProvider represents the different AI model providers supported by Gateway.
 type ModelProvider string
 
 const (
@@ -301,12 +301,12 @@ const (
 	RealtimeRequest              RequestType = "realtime"
 )
 
-// RakshaContextKey is a type for context keys used in Raksha.
-type RakshaContextKey string
+// GatewayContextKey is a type for context keys used in Gateway.
+type GatewayContextKey string
 
 // MCPAuthMode describes which identity dimension a per-user OAuth row is keyed by.
 // It is a derived view of context state at the point of token lookup, never
-// stored as a context key. Derived via RakshaContext.MCPAuthMode().
+// stored as a context key. Derived via GatewayContext.MCPAuthMode().
 type MCPAuthMode string
 
 const (
@@ -326,167 +326,167 @@ const (
 	MCPAuthModeNone MCPAuthMode = "none"
 )
 
-// RakshaContextKeyRequestType is a context key for the request type.
+// GatewayContextKeyRequestType is a context key for the request type.
 const (
-	RakshaContextKeySessionToken      RakshaContextKey = "raksha-session-token" // string (session token for authentication - set by auth middleware)
-	RakshaContextKeyVirtualKey        RakshaContextKey = "x-uf-vk"              // string
-	RakshaContextKeyAPIKeyName        RakshaContextKey = "x-uf-api-key"         // string (explicit key name selection)
-	RakshaContextKeyAPIKeyID          RakshaContextKey = "x-uf-api-key-id"      // string (explicit key ID selection, takes priority over name)
-	RakshaContextKeyDirectKey         RakshaContextKey = "x-uf-direct-key"      // schemas.Key (raw key supplied via x-uf-direct-key: true header; bypasses registered key pool)
-	RakshaContextKeyRequestID         RakshaContextKey = "request-id"           // string
-	RakshaContextKeyFallbackRequestID RakshaContextKey = "fallback-request-id"  // string
+	GatewayContextKeySessionToken      GatewayContextKey = "gateway-session-token" // string (session token for authentication - set by auth middleware)
+	GatewayContextKeyVirtualKey        GatewayContextKey = "x-uf-vk"              // string
+	GatewayContextKeyAPIKeyName        GatewayContextKey = "x-uf-api-key"         // string (explicit key name selection)
+	GatewayContextKeyAPIKeyID          GatewayContextKey = "x-uf-api-key-id"      // string (explicit key ID selection, takes priority over name)
+	GatewayContextKeyDirectKey         GatewayContextKey = "x-uf-direct-key"      // schemas.Key (raw key supplied via x-uf-direct-key: true header; bypasses registered key pool)
+	GatewayContextKeyRequestID         GatewayContextKey = "request-id"           // string
+	GatewayContextKeyFallbackRequestID GatewayContextKey = "fallback-request-id"  // string
 
 	// NOTE: []string is used for both keys, and by default all clients/tools are included (when nil).
 	// If "*" is present, all clients/tools are included, and [] means no clients/tools are included.
 	// Request context filtering takes priority over client config - context can override client exclusions.
-	MCPContextKeyIncludeClients RakshaContextKey = "mcp-include-clients" // Context key for whitelist client filtering
-	MCPContextKeyIncludeTools   RakshaContextKey = "mcp-include-tools"   // Context key for whitelist tool filtering (Note: toolName should be in "clientName-toolName" format for individual tools, or "clientName-*" for wildcard)
+	MCPContextKeyIncludeClients GatewayContextKey = "mcp-include-clients" // Context key for whitelist client filtering
+	MCPContextKeyIncludeTools   GatewayContextKey = "mcp-include-tools"   // Context key for whitelist tool filtering (Note: toolName should be in "clientName-toolName" format for individual tools, or "clientName-*" for wildcard)
 
-	RakshaContextKeySelectedKeyID                       RakshaContextKey = "raksha-selected-key-id"                // string (to store the selected key ID (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeySelectedKeyName                     RakshaContextKey = "raksha-selected-key-name"              // string (to store the selected key name (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceVirtualKeyID              RakshaContextKey = "raksha-governance-virtual-key-id"      // string (to store the virtual key ID (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceVirtualKeyName            RakshaContextKey = "raksha-governance-virtual-key-name"    // string (to store the virtual key name (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceTeamID                    RakshaContextKey = "raksha-governance-team-id"             // string (to store the team ID (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceTeamName                  RakshaContextKey = "raksha-governance-team-name"           // string (to store the team name (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceCustomerID                RakshaContextKey = "raksha-governance-customer-id"         // string (to store the customer ID (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceCustomerName              RakshaContextKey = "raksha-governance-customer-name"       // string (to store the customer name (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceBusinessUnitID            RakshaContextKey = "raksha-governance-business-unit-id"    // string (to store the business unit ID (set by enterprise governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceBusinessUnitName          RakshaContextKey = "raksha-governance-business-unit-name"  // string (to store the business unit name (set by enterprise governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceTeamIDs                   RakshaContextKey = "raksha-governance-team-ids"            // []string (all teams a user/AP request belongs to; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
-	RakshaContextKeyGovernanceTeamNames                 RakshaContextKey = "raksha-governance-team-names"          // []string (display names, aligned with team-ids; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
-	RakshaContextKeyGovernanceBusinessUnitIDs           RakshaContextKey = "raksha-governance-business-unit-ids"   // []string (distinct BUs across the user's teams; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
-	RakshaContextKeyGovernanceBusinessUnitNames         RakshaContextKey = "raksha-governance-business-unit-names" // []string (display names, aligned with business-unit-ids; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
-	RakshaContextKeyGovernanceCustomerIDs               RakshaContextKey = "raksha-governance-customer-ids"        // []string (distinct customers a user/team request belongs to; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
-	RakshaContextKeyGovernanceCustomerNames             RakshaContextKey = "raksha-governance-customer-names"      // []string (display names, aligned with customer-ids; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
-	RakshaContextKeyGovernanceScopedCustomerID          RakshaContextKey = "raksha-governance-scoped-customer-id"  // string (resolved customer the request is scoped to via the x-uf-customer-id / x-uf-customer-name header on a team-VK path; set by the enterprise governance plugin - DO NOT SET THIS MANUALLY)
-	RakshaContextKeyGovernanceRoutingRuleID             RakshaContextKey = "raksha-governance-routing-rule-id"     // string (to store the routing rule ID (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceRoutingRuleName           RakshaContextKey = "raksha-governance-routing-rule-name"   // string (to store the routing rule name (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyCircuitBreakerFailover              RakshaContextKey = "raksha-circuit-breaker-failover"       // string ("<policy>; <from> -> <to>" when an open circuit rerouted the request (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyRoutingPinnedAPIKeyID               RakshaContextKey = "raksha-routing-pinned-api-key-id"      // string (provider key ID pinned by a matched routing rule target; resolved against the configured key pool during key selection and takes precedence over a caller-supplied pin (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeySelectedPromptName                  RakshaContextKey = "raksha-selected-prompt-name"           // string (display name of the selected prompt (set by prompts plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeySelectedPromptVersion               RakshaContextKey = "raksha-selected-prompt-version"        // string (numeric version as string, e.g. "3" (set by prompts plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeySelectedPromptID                    RakshaContextKey = "raksha-selected-prompt-id"             // string (id of the selected prompt (set by prompts plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernanceIncludeOnlyKeys           RakshaContextKey = "raksha-governance-include-only-keys"   // []string (to store the include-only key IDs for provider config routing (set by raksha governance plugin - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyNumberOfRetries                     RakshaContextKey = "raksha-number-of-retries"              // int (to store the number of retries (set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyFallbackIndex                       RakshaContextKey = "raksha-fallback-index"                 // int (to store the fallback index (set by raksha - DO NOT SET THIS MANUALLY)) 0 for primary, 1 for first fallback, etc.
-	RakshaContextKeyResolvedAlias                       RakshaContextKey = "raksha-resolved-alias"                 // *ResolvedAlias (set by raksha after key-level alias resolution — providers read this for model_family routing and provider-specific overrides; nil/absent when no alias matched)
-	RakshaContextKeyStreamEndIndicator                  RakshaContextKey = "raksha-stream-end-indicator"           // bool (set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyStreamGated                         RakshaContextKey = "raksha-stream-gated"                   // bool (set by ctx.PauseStream/ResumeStream/EndStream when a plugin first engages the pause/resume gate; provider helpers use this as a fast-path check to skip Tracer.GateSend on streams that never engage the gate)
-	RakshaContextKeyStreamIdleTimeout                   RakshaContextKey = "raksha-stream-idle-timeout"            // time.Duration (per-chunk idle timeout for streaming)
-	RakshaContextKeySkipKeySelection                    RakshaContextKey = "raksha-skip-key-selection"             // bool (will pass an empty key to the provider)
-	RakshaContextKeyExtraHeaders                        RakshaContextKey = "raksha-extra-headers"                  // map[string][]string
-	RakshaContextKeyURLPath                             RakshaContextKey = "raksha-extra-url-path"                 // string
-	RakshaContextKeyUseRawRequestBody                   RakshaContextKey = "raksha-use-raw-request-body"
-	RakshaContextKeyChangeRequestType                   RakshaContextKey = "raksha-change-request-type"                      // RequestType (set by plugins to trigger request type conversion in core, e.g. text->chat or chat->responses)
-	RakshaContextKeySendBackRawRequest                  RakshaContextKey = "raksha-send-back-raw-request"                    // bool (per-request override — read by raksha.go, never overwritten)
-	RakshaContextKeySendBackRawResponse                 RakshaContextKey = "raksha-send-back-raw-response"                   // bool (per-request override — read by raksha.go, never overwritten)
-	RakshaContextKeyIntegrationType                     RakshaContextKey = "raksha-integration-type"                         // integration used in gateway (e.g. openai, anthropic, bedrock, etc.)
-	RakshaContextKeyIsResponsesToChatCompletionFallback RakshaContextKey = "raksha-is-responses-to-chat-completion-fallback" // bool (set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaMCPAgentOriginalRequestID                     RakshaContextKey = "raksha-mcp-agent-original-request-id"            // string (to store the original request ID for MCP agent mode)
-	RakshaContextKeyParentMCPRequestID                  RakshaContextKey = "raksha-parent-mcp-request-id"                    // string (parent request ID for nested tool calls from executeCode)
-	RakshaContextKeyStructuredOutputToolName            RakshaContextKey = "raksha-structured-output-tool-name"              // string (to store the name of the structured output tool (set by raksha))
-	RakshaContextKeyUserAgent                           RakshaContextKey = "raksha-user-agent"                               // string (set by raksha)
-	RakshaContextKeySkipBudgetAndRateLimits             RakshaContextKey = "raksha-skip-budget-and-rate-limits"              // bool (set by raksha for read-only requests like list models that don't consume quota)
-	RakshaContextKeySkipVirtualKeyUsageTracking         RakshaContextKey = "raksha-skip-virtual-key-usage-tracking"          // bool (set by governance callers to skip VK usage while preserving VK auth/attribution)
-	RakshaContextKeyTraceID                             RakshaContextKey = "raksha-trace-id"                                 // string (trace ID for distributed tracing - set by tracing middleware)
-	RakshaContextKeySpanID                              RakshaContextKey = "raksha-span-id"                                  // string (current span ID for child span creation - set by tracer)
-	RakshaContextKeyParentSpanID                        RakshaContextKey = "raksha-parent-span-id"                           // string (parent span ID from W3C traceparent header - set by tracing middleware)
-	RakshaContextKeyStreamStartTime                     RakshaContextKey = "raksha-stream-start-time"                        // time.Time (start time for streaming TTFT calculation - set by raksha)
-	RakshaContextKeyTracer                              RakshaContextKey = "raksha-tracer"                                   // Tracer (tracer instance for completing deferred spans - set by raksha)
-	RakshaContextKeyDeferTraceCompletion                RakshaContextKey = "raksha-defer-trace-completion"                   // bool (signals trace completion should be deferred for streaming - set by streaming handlers)
-	RakshaContextKeyTraceCompleter                      RakshaContextKey = "raksha-trace-completer"                          // func([]PluginLogEntry) (callback to complete trace after streaming, receives transport plugin logs - set by tracing middleware)
-	RakshaContextKeyAccumulatorID                       RakshaContextKey = "raksha-accumulator-id"                           // string (ID for streaming accumulator lookup - set by tracer for accumulator operations)
-	RakshaContextKeyMCPSessionID                        RakshaContextKey = "raksha-mcp-session-id"                           // string (session-mode identity: any opaque value asserted by the caller via x-uf-mcp-session-id; binds the OAuth token row to subsequent /mcp calls when no VK or user is present)
-	RakshaContextKeyMCPCallbackBaseURL                  RakshaContextKey = "raksha-mcp-callback-base-url"                    // string (base URL like "https://host" — set by HTTP middleware. OAuth resolver appends /api/oauth/callback; headers resolver appends the workspace submit path. Used for both per-user OAuth and per-user headers auth flows)
-	RakshaContextKeyIsMCPGateway                        RakshaContextKey = "raksha-is-mcp-gateway"                           // bool (true when request is being handled via the MCP gateway path)
-	RakshaContextKeyHasEmittedMessageDelta              RakshaContextKey = "raksha-has-emitted-message-delta"                // bool (tracks whether message_delta was already emitted during streaming - avoids duplicates)
-	RakshaContextKeySkipDBUpdate                        RakshaContextKey = "raksha-skip-db-update"                           // bool (set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyGovernancePluginName                RakshaContextKey = "governance-plugin-name"                          // string (name of the governance plugin that processed the request - set by raksha)
-	RakshaContextKeyClusterNodeID                       RakshaContextKey = "raksha-cluster-node-id"                          // string (cluster node ID for log attribution - set by enterprise server)
-	RakshaContextKeyGovernanceBudgetIDs                 RakshaContextKey = "raksha-governance-budget-ids"                    // []string (budget IDs applicable to this request - set by governance plugin)
-	RakshaContextKeyGovernanceRateLimitIDs              RakshaContextKey = "raksha-governance-rate-limit-ids"                // []string (rate limit IDs applicable to this request - set by governance plugin)
-	RakshaContextKeyPromptsPluginName                   RakshaContextKey = "prompts-plugin-name"                             // string (name of the prompts plugin to use - set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyIsEnterprise                        RakshaContextKey = "is-enterprise"                                   // bool (set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyAvailableProviders                  RakshaContextKey = "available-providers"                             // []ModelProvider (set by internal raksha components - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyStoreRawRequestResponse             RakshaContextKey = "raksha-store-raw-request-response"               // bool (per-request override — read by raksha.go, never overwritten)
-	RakshaContextKeyCaptureRawRequest                   RakshaContextKey = "raksha-capture-raw-request"                      // bool (set by raksha - DO NOT SET THIS MANUALLY) — true when providers should capture raw request bytes
-	RakshaContextKeyCaptureRawResponse                  RakshaContextKey = "raksha-capture-raw-response"                     // bool (set by raksha - DO NOT SET THIS MANUALLY) — true when providers should capture raw response bytes
-	RakshaContextKeyDropRawRequestFromClient            RakshaContextKey = "raksha-drop-raw-request-from-client"             // bool (set by raksha - DO NOT SET THIS MANUALLY) — true when raw request should be stripped from the client-facing response
-	RakshaContextKeyDropRawResponseFromClient           RakshaContextKey = "raksha-drop-raw-response-from-client"            // bool (set by raksha - DO NOT SET THIS MANUALLY) — true when raw response should be stripped from the client-facing response
-	RakshaContextKeyShouldStoreRawInLogs                RakshaContextKey = "raksha-should-store-raw-in-logs"                 // bool (set by raksha - DO NOT SET THIS MANUALLY) — true when raw request/response should be persisted in log records
-	RakshaContextKeyRetryDBFetch                        RakshaContextKey = "raksha-retry-db-fetch"                           // bool (set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyIsCustomProvider                    RakshaContextKey = "raksha-is-custom-provider"                       // bool (set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyHTTPRequestType                     RakshaContextKey = "raksha-http-request-type"                        // RequestType (set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyPassthroughExtraParams              RakshaContextKey = "raksha-passthrough-extra-params"                 // bool
-	RakshaContextKeyRoutingEnginesUsed                  RakshaContextKey = "raksha-routing-engines-used"                     // []string (set by raksha - DO NOT SET THIS MANUALLY) - list of routing engines used ("routing-rule", "governance", "loadbalancing", etc.)
-	RakshaContextKeyRoutingEngineLogs                   RakshaContextKey = "raksha-routing-engine-logs"                      // []RoutingEngineLogEntry (set by raksha - DO NOT SET THIS MANUALLY) - list of routing engine log entries
-	RakshaContextKeyTransportPluginLogs                 RakshaContextKey = "raksha-transport-plugin-logs"                    // []PluginLogEntry (transport-layer plugin logs accumulated during HTTP transport hooks)
-	RakshaContextKeyTransportPostHookCompleter          RakshaContextKey = "raksha-transport-posthook-completer"             // func() (callback to run HTTPTransportPostHook after streaming - set by transport interceptor middleware)
-	RakshaContextKeySkipPluginPipeline                  RakshaContextKey = "raksha-skip-plugin-pipeline"                     // bool - skip plugin pipeline for the request
-	RakshaContextKeyParentRequestID                     RakshaContextKey = "raksha-parent-request-id"                        // string (parent linkage for grouped request logs like realtime turns)
-	RakshaContextKeyRealtimeSessionID                   RakshaContextKey = "raksha-realtime-session-id"                      // string
-	RakshaContextKeyRealtimeProviderSessionID           RakshaContextKey = "raksha-realtime-provider-session-id"             // string
-	RakshaContextKeyRealtimeSource                      RakshaContextKey = "raksha-realtime-source"                          // string ("ei" or "lm")
-	RakshaContextKeyRealtimeEventType                   RakshaContextKey = "raksha-realtime-event-type"                      // string
-	RakshaContextKeyRealtimeTransport                   RakshaContextKey = "raksha-realtime-transport"                       // string ("websocket" or "webrtc")
-	RakshaContextKeyRealtimeVoice                       RakshaContextKey = "raksha-realtime-voice"                           // string
-	RakshaIsAsyncRequest                                RakshaContextKey = "raksha-is-async-request"                         // bool (set by raksha - DO NOT SET THIS MANUALLY)) - whether the request is an async request (only used in gateway)
-	RakshaContextKeyRequestHeaders                      RakshaContextKey = "raksha-request-headers"                          // map[string]string (all request headers with lowercased keys)
-	RakshaContextKeyRequestQuery                        RakshaContextKey = "raksha-request-query"                            // map[string]string (request query params with lowercased keys; consumed by governance routing CEL rules)
-	RakshaContextKeyRoutingAllowedProviders             RakshaContextKey = "raksha-routing-allowed-providers"                // []ModelProvider; when set, downstream routing layers (enterprise LB, model-catalog-resolver) must intersect their candidate providers with this set. Plugins set this when they have an opinion about which providers are valid for the request — even if they couldn't pick one themselves. Empty slice means "no provider is permitted" (fail-closed).
-	RakshaContextKeyAllowPerRequestStorageOverride      RakshaContextKey = "raksha-allow-per-request-storage-override"       // bool (set by transport from config — gates whether x-uf-disable-content-logging and x-uf-store-raw-request-response per-request overrides are honored)
-	RakshaContextKeyAllowPerRequestRawOverride          RakshaContextKey = "raksha-allow-per-request-raw-override"           // bool (set by transport from config — gates whether x-uf-send-back-raw-request and x-uf-send-back-raw-response per-request overrides are honored)
-	RakshaContextKeyDisableContentLogging               RakshaContextKey = "x-uf-disable-content-logging"                    // bool (per-request override for content logging; only honored when RakshaContextKeyAllowPerRequestStorageOverride is true)
-	RakshaContextKeySkipListModelsGovernanceFiltering   RakshaContextKey = "raksha-skip-list-models-governance-filtering"    // bool (set by raksha - DO NOT SET THIS MANUALLY))
-	RakshaContextKeySCIMClaims                          RakshaContextKey = "scim_claims"
-	RakshaContextKeyUserID                              RakshaContextKey = "raksha-user-id"                    // string (to store the user ID (set by enterprise auth middleware - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyUserName                            RakshaContextKey = "raksha-user-name"                  // string (to store the user name (set by enterprise auth middleware - DO NOT SET THIS MANUALLY))
-	RakshaContextKeyQueryScope                          RakshaContextKey = "raksha-query-scope"                // configstore.QueryScope (func that mutates a query; set by upstream wrapper - DO NOT SET THIS MANUALLY)
-	RakshaContextKeyVisibilityFilterProvider            RakshaContextKey = "raksha-visibility-filter-provider" // DEPRECATED: replaced by RakshaContextKeyQueryScope. Will be removed once all callers migrate.
-	RakshaContextKeyTargetUserID                        RakshaContextKey = "target_user_id"
-	RakshaContextKeyIsAzureUserAgent                    RakshaContextKey = "raksha-is-azure-user-agent" // bool (set by raksha - DO NOT SET THIS MANUALLY)) - whether the request is an Azure user agent (only used in gateway)
-	RakshaContextKeyUserRoleID                          RakshaContextKey = "raksha-user-role-id"
-	RakshaContextKeyVideoOutputRequested                RakshaContextKey = "raksha-video-output-requested"
-	RakshaContextKeyValidateKeys                        RakshaContextKey = "raksha-validate-keys"                      // bool (triggers additional key validation during provider add/update)
-	RakshaContextKeyProviderResponseHeaders             RakshaContextKey = "raksha-provider-response-headers"          // map[string]string (set by provider handlers for response header forwarding)
-	RakshaContextKeyMCPAddedTools                       RakshaContextKey = "raksha-mcp-added-tools"                    // []string (set by raksha - DO NOT SET THIS MANUALLY)) - list of tools added to the request by MCP, all the tool are in the format "clientName-toolName"
-	RakshaContextKeyLargePayloadMode                    RakshaContextKey = "raksha-large-payload-mode"                 // bool (set by raksha - DO NOT SET THIS MANUALLY)) indicates large payload streaming mode is active
-	RakshaContextKeyLargePayloadReader                  RakshaContextKey = "raksha-large-payload-reader"               // io.Reader (set by raksha - DO NOT SET THIS MANUALLY)) upstream reader for large payloads
-	RakshaContextKeyLargePayloadContentLength           RakshaContextKey = "raksha-large-payload-content-length"       // int (set by raksha - DO NOT SET THIS MANUALLY)) content length for large payloads
-	RakshaContextKeyLargePayloadContentType             RakshaContextKey = "raksha-large-payload-content-type"         // string (set by enterprise - DO NOT SET THIS MANUALLY)) original content type for large payload passthrough
-	RakshaContextKeyLargePayloadMetadata                RakshaContextKey = "raksha-large-payload-metadata"             // *LargePayloadMetadata (set by raksha - DO NOT SET THIS MANUALLY)) routing metadata for large payloads
-	RakshaContextKeyLargePayloadRequestThreshold        RakshaContextKey = "raksha-large-payload-request-threshold"    // int64 (set by enterprise - DO NOT SET THIS MANUALLY)) request threshold used by transport heuristics
-	RakshaContextKeyLargeResponseMode                   RakshaContextKey = "raksha-large-response-mode"                // bool (set by raksha - DO NOT SET THIS MANUALLY)) indicates large response streaming mode is active
-	RakshaContextKeyLargePayloadRequestPreview          RakshaContextKey = "raksha-large-payload-request-preview"      // string (set by raksha - DO NOT SET THIS MANUALLY)) truncated request body preview for logging
-	RakshaContextKeyLargePayloadResponsePreview         RakshaContextKey = "raksha-large-payload-response-preview"     // string (set by raksha - DO NOT SET THIS MANUALLY)) truncated response body preview for logging
-	RakshaContextKeyLargeResponseReader                 RakshaContextKey = "raksha-large-response-reader"              // io.ReadCloser (set by raksha - DO NOT SET THIS MANUALLY)) upstream reader for large responses
-	RakshaContextKeyLargeResponseContentLength          RakshaContextKey = "raksha-large-response-content-length"      // int (set by raksha - DO NOT SET THIS MANUALLY)) content length for large responses
-	RakshaContextKeyLargeResponseContentType            RakshaContextKey = "raksha-large-response-content-type"        // string (set by raksha - DO NOT SET THIS MANUALLY)) upstream content type for large responses
-	RakshaContextKeyLargeResponseContentDisposition     RakshaContextKey = "raksha-large-response-content-disposition" // string (set by raksha - DO NOT SET THIS MANUALLY)) downstream content disposition for large responses
-	RakshaContextKeyLargeResponseThreshold              RakshaContextKey = "raksha-large-response-threshold"           // int64 (set by enterprise - DO NOT SET THIS MANUALLY)) threshold for response streaming
-	RakshaContextKeyLargePayloadPrefetchSize            RakshaContextKey = "raksha-large-payload-prefetch-size"        // int (set by enterprise - DO NOT SET THIS MANUALLY)) prefetch buffer size for metadata extraction from large responses
-	RakshaContextKeyDeferredUsage                       RakshaContextKey = "raksha-deferred-usage"                     // chan *RakshaLLMUsage (set by provider Phase B — delivers usage after response streaming completes)
-	RakshaContextKeyStreamAccumulatedUsage              RakshaContextKey = "raksha-stream-accumulated-usage"           // *RakshaLLMUsage handle, set ONCE by a streaming provider and mutated in place as usage arrives; read on cancel/timeout to bill partial usage that the provider already consumed
-	RakshaContextKeyDeferredLargePayloadMetadata        RakshaContextKey = "raksha-deferred-large-payload-metadata"    // <-chan *LargePayloadMetadata (set by enterprise Phase B request — delivers metadata after body streaming)
-	RakshaContextKeySSEReaderFactory                    RakshaContextKey = "raksha-sse-reader-factory"                 // *providerUtils.SSEReaderFactory (set by enterprise — replaces default bufio.Scanner SSE readers with streaming readers)
-	RakshaContextKeySessionID                           RakshaContextKey = "raksha-session-id"                         // string session ID for the request (session stickiness)
-	RakshaContextKeySessionTTL                          RakshaContextKey = "raksha-session-ttl"                        // time.Duration session TTL for the request (session stickiness)
-	RakshaContextKeyMCPExtraHeaders                     RakshaContextKey = "raksha-mcp-extra-headers"                  // map[string][]string (these headers are forwarded only to the MCP while tool execution if they are in the allowlist of the MCP client)
-	RakshaContextKeyMCPLogID                            RakshaContextKey = "raksha-mcp-log-id"                         // string (unique UUID for each MCP tool log entry - set per goroutine by agent executor - DO NOT SET THIS MANUALLY)
-	RakshaContextKeyMCPHealthCheckRequest               RakshaContextKey = "raksha-mcp-health-check-request"           // bool (set by raksha - DO NOT SET THIS MANUALLY) - true when the MCP ping/list-tools request was generated by raksha itself for health checks rather than originating from a caller
-	RakshaContextKeyCompatConvertTextToChat             RakshaContextKey = "raksha-compat-convert-text-to-chat"        // bool (per-request override from x-uf-compat header)
-	RakshaContextKeyCompatConvertChatToResponses        RakshaContextKey = "raksha-compat-convert-chat-to-responses"   // bool (per-request override from x-uf-compat header)
-	RakshaContextKeyCompatShouldDropParams              RakshaContextKey = "raksha-compat-should-drop-params"          // bool (per-request override from x-uf-compat header)
-	RakshaContextKeyCompatShouldConvertParams           RakshaContextKey = "raksha-compat-should-convert-params"       // bool (per-request override from x-uf-compat header)
-	RakshaContextKeySupportsAssistantPrefill            RakshaContextKey = "raksha-supports-assistant-prefill"         // bool (set by compat plugin) - if model supports assistant prefill
-	RakshaContextKeyAttemptTrail                        RakshaContextKey = "raksha-attempt-trail"                      // []KeyAttemptRecord (set by raksha - DO NOT SET THIS MANUALLY) - per-attempt key selection history
-	RakshaContextKeyDimensions                          RakshaContextKey = "raksha-dimensions"                         // map[string]string (set by HTTP transport from x-uf-dim-* headers) RakshaContextKeyDimensions holds per-request key/value dimensions supplied via x-uf-dim-<key> request headers. These dimensions are forwarded to internal logs (as metadata)
-	IsAPIKeyAuthContextKey                              RakshaContextKey = "is_api_key_auth"
-	IsLocalAdminContextKey                              RakshaContextKey = "is_local_admin"                // bool (set by auth middleware when password-based auth succeeds - local admin user bypasses RBAC)
-	RakshaContextKeyPassthroughOverridesPresent         RakshaContextKey = "passthrough_overrides_present" // bool (set by HTTP transport) - passthrough raw request requested
-	RakshaContextKeyConnectionClosed                    RakshaContextKey = "connection_closed"
-	RakshaContextKeyTempTokenScope                      RakshaContextKey = "raksha-temp-token-scope"       // string (set by auth middleware when a temp token authorized the request - names the scope from the temptoken registry)
-	RakshaContextKeyTempTokenResourceID                 RakshaContextKey = "raksha-temp-token-resource-id" // string (set by auth middleware alongside the scope - the resource_id the token is bound to, e.g. an OAuth flow ID for mcp_auth)
+	GatewayContextKeySelectedKeyID                       GatewayContextKey = "gateway-selected-key-id"                // string (to store the selected key ID (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeySelectedKeyName                     GatewayContextKey = "gateway-selected-key-name"              // string (to store the selected key name (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceVirtualKeyID              GatewayContextKey = "gateway-governance-virtual-key-id"      // string (to store the virtual key ID (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceVirtualKeyName            GatewayContextKey = "gateway-governance-virtual-key-name"    // string (to store the virtual key name (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceTeamID                    GatewayContextKey = "gateway-governance-team-id"             // string (to store the team ID (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceTeamName                  GatewayContextKey = "gateway-governance-team-name"           // string (to store the team name (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceCustomerID                GatewayContextKey = "gateway-governance-customer-id"         // string (to store the customer ID (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceCustomerName              GatewayContextKey = "gateway-governance-customer-name"       // string (to store the customer name (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceBusinessUnitID            GatewayContextKey = "gateway-governance-business-unit-id"    // string (to store the business unit ID (set by enterprise governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceBusinessUnitName          GatewayContextKey = "gateway-governance-business-unit-name"  // string (to store the business unit name (set by enterprise governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceTeamIDs                   GatewayContextKey = "gateway-governance-team-ids"            // []string (all teams a user/AP request belongs to; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
+	GatewayContextKeyGovernanceTeamNames                 GatewayContextKey = "gateway-governance-team-names"          // []string (display names, aligned with team-ids; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
+	GatewayContextKeyGovernanceBusinessUnitIDs           GatewayContextKey = "gateway-governance-business-unit-ids"   // []string (distinct BUs across the user's teams; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
+	GatewayContextKeyGovernanceBusinessUnitNames         GatewayContextKey = "gateway-governance-business-unit-names" // []string (display names, aligned with business-unit-ids; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
+	GatewayContextKeyGovernanceCustomerIDs               GatewayContextKey = "gateway-governance-customer-ids"        // []string (distinct customers a user/team request belongs to; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
+	GatewayContextKeyGovernanceCustomerNames             GatewayContextKey = "gateway-governance-customer-names"      // []string (display names, aligned with customer-ids; set by enterprise governance plugin - DO NOT SET THIS MANUALLY)
+	GatewayContextKeyGovernanceScopedCustomerID          GatewayContextKey = "gateway-governance-scoped-customer-id"  // string (resolved customer the request is scoped to via the x-uf-customer-id / x-uf-customer-name header on a team-VK path; set by the enterprise governance plugin - DO NOT SET THIS MANUALLY)
+	GatewayContextKeyGovernanceRoutingRuleID             GatewayContextKey = "gateway-governance-routing-rule-id"     // string (to store the routing rule ID (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceRoutingRuleName           GatewayContextKey = "gateway-governance-routing-rule-name"   // string (to store the routing rule name (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyCircuitBreakerFailover              GatewayContextKey = "gateway-circuit-breaker-failover"       // string ("<policy>; <from> -> <to>" when an open circuit rerouted the request (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyRoutingPinnedAPIKeyID               GatewayContextKey = "gateway-routing-pinned-api-key-id"      // string (provider key ID pinned by a matched routing rule target; resolved against the configured key pool during key selection and takes precedence over a caller-supplied pin (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeySelectedPromptName                  GatewayContextKey = "gateway-selected-prompt-name"           // string (display name of the selected prompt (set by prompts plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeySelectedPromptVersion               GatewayContextKey = "gateway-selected-prompt-version"        // string (numeric version as string, e.g. "3" (set by prompts plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeySelectedPromptID                    GatewayContextKey = "gateway-selected-prompt-id"             // string (id of the selected prompt (set by prompts plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernanceIncludeOnlyKeys           GatewayContextKey = "gateway-governance-include-only-keys"   // []string (to store the include-only key IDs for provider config routing (set by gateway governance plugin - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyNumberOfRetries                     GatewayContextKey = "gateway-number-of-retries"              // int (to store the number of retries (set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyFallbackIndex                       GatewayContextKey = "gateway-fallback-index"                 // int (to store the fallback index (set by gateway - DO NOT SET THIS MANUALLY)) 0 for primary, 1 for first fallback, etc.
+	GatewayContextKeyResolvedAlias                       GatewayContextKey = "gateway-resolved-alias"                 // *ResolvedAlias (set by gateway after key-level alias resolution — providers read this for model_family routing and provider-specific overrides; nil/absent when no alias matched)
+	GatewayContextKeyStreamEndIndicator                  GatewayContextKey = "gateway-stream-end-indicator"           // bool (set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyStreamGated                         GatewayContextKey = "gateway-stream-gated"                   // bool (set by ctx.PauseStream/ResumeStream/EndStream when a plugin first engages the pause/resume gate; provider helpers use this as a fast-path check to skip Tracer.GateSend on streams that never engage the gate)
+	GatewayContextKeyStreamIdleTimeout                   GatewayContextKey = "gateway-stream-idle-timeout"            // time.Duration (per-chunk idle timeout for streaming)
+	GatewayContextKeySkipKeySelection                    GatewayContextKey = "gateway-skip-key-selection"             // bool (will pass an empty key to the provider)
+	GatewayContextKeyExtraHeaders                        GatewayContextKey = "gateway-extra-headers"                  // map[string][]string
+	GatewayContextKeyURLPath                             GatewayContextKey = "gateway-extra-url-path"                 // string
+	GatewayContextKeyUseRawRequestBody                   GatewayContextKey = "gateway-use-raw-request-body"
+	GatewayContextKeyChangeRequestType                   GatewayContextKey = "gateway-change-request-type"                      // RequestType (set by plugins to trigger request type conversion in core, e.g. text->chat or chat->responses)
+	GatewayContextKeySendBackRawRequest                  GatewayContextKey = "gateway-send-back-raw-request"                    // bool (per-request override — read by gateway.go, never overwritten)
+	GatewayContextKeySendBackRawResponse                 GatewayContextKey = "gateway-send-back-raw-response"                   // bool (per-request override — read by gateway.go, never overwritten)
+	GatewayContextKeyIntegrationType                     GatewayContextKey = "gateway-integration-type"                         // integration used in gateway (e.g. openai, anthropic, bedrock, etc.)
+	GatewayContextKeyIsResponsesToChatCompletionFallback GatewayContextKey = "gateway-is-responses-to-chat-completion-fallback" // bool (set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayMCPAgentOriginalRequestID                     GatewayContextKey = "gateway-mcp-agent-original-request-id"            // string (to store the original request ID for MCP agent mode)
+	GatewayContextKeyParentMCPRequestID                  GatewayContextKey = "gateway-parent-mcp-request-id"                    // string (parent request ID for nested tool calls from executeCode)
+	GatewayContextKeyStructuredOutputToolName            GatewayContextKey = "gateway-structured-output-tool-name"              // string (to store the name of the structured output tool (set by gateway))
+	GatewayContextKeyUserAgent                           GatewayContextKey = "gateway-user-agent"                               // string (set by gateway)
+	GatewayContextKeySkipBudgetAndRateLimits             GatewayContextKey = "gateway-skip-budget-and-rate-limits"              // bool (set by gateway for read-only requests like list models that don't consume quota)
+	GatewayContextKeySkipVirtualKeyUsageTracking         GatewayContextKey = "gateway-skip-virtual-key-usage-tracking"          // bool (set by governance callers to skip VK usage while preserving VK auth/attribution)
+	GatewayContextKeyTraceID                             GatewayContextKey = "gateway-trace-id"                                 // string (trace ID for distributed tracing - set by tracing middleware)
+	GatewayContextKeySpanID                              GatewayContextKey = "gateway-span-id"                                  // string (current span ID for child span creation - set by tracer)
+	GatewayContextKeyParentSpanID                        GatewayContextKey = "gateway-parent-span-id"                           // string (parent span ID from W3C traceparent header - set by tracing middleware)
+	GatewayContextKeyStreamStartTime                     GatewayContextKey = "gateway-stream-start-time"                        // time.Time (start time for streaming TTFT calculation - set by gateway)
+	GatewayContextKeyTracer                              GatewayContextKey = "gateway-tracer"                                   // Tracer (tracer instance for completing deferred spans - set by gateway)
+	GatewayContextKeyDeferTraceCompletion                GatewayContextKey = "gateway-defer-trace-completion"                   // bool (signals trace completion should be deferred for streaming - set by streaming handlers)
+	GatewayContextKeyTraceCompleter                      GatewayContextKey = "gateway-trace-completer"                          // func([]PluginLogEntry) (callback to complete trace after streaming, receives transport plugin logs - set by tracing middleware)
+	GatewayContextKeyAccumulatorID                       GatewayContextKey = "gateway-accumulator-id"                           // string (ID for streaming accumulator lookup - set by tracer for accumulator operations)
+	GatewayContextKeyMCPSessionID                        GatewayContextKey = "gateway-mcp-session-id"                           // string (session-mode identity: any opaque value asserted by the caller via x-uf-mcp-session-id; binds the OAuth token row to subsequent /mcp calls when no VK or user is present)
+	GatewayContextKeyMCPCallbackBaseURL                  GatewayContextKey = "gateway-mcp-callback-base-url"                    // string (base URL like "https://host" — set by HTTP middleware. OAuth resolver appends /api/oauth/callback; headers resolver appends the workspace submit path. Used for both per-user OAuth and per-user headers auth flows)
+	GatewayContextKeyIsMCPGateway                        GatewayContextKey = "gateway-is-mcp-gateway"                           // bool (true when request is being handled via the MCP gateway path)
+	GatewayContextKeyHasEmittedMessageDelta              GatewayContextKey = "gateway-has-emitted-message-delta"                // bool (tracks whether message_delta was already emitted during streaming - avoids duplicates)
+	GatewayContextKeySkipDBUpdate                        GatewayContextKey = "gateway-skip-db-update"                           // bool (set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyGovernancePluginName                GatewayContextKey = "governance-plugin-name"                          // string (name of the governance plugin that processed the request - set by gateway)
+	GatewayContextKeyClusterNodeID                       GatewayContextKey = "gateway-cluster-node-id"                          // string (cluster node ID for log attribution - set by enterprise server)
+	GatewayContextKeyGovernanceBudgetIDs                 GatewayContextKey = "gateway-governance-budget-ids"                    // []string (budget IDs applicable to this request - set by governance plugin)
+	GatewayContextKeyGovernanceRateLimitIDs              GatewayContextKey = "gateway-governance-rate-limit-ids"                // []string (rate limit IDs applicable to this request - set by governance plugin)
+	GatewayContextKeyPromptsPluginName                   GatewayContextKey = "prompts-plugin-name"                             // string (name of the prompts plugin to use - set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyIsEnterprise                        GatewayContextKey = "is-enterprise"                                   // bool (set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyAvailableProviders                  GatewayContextKey = "available-providers"                             // []ModelProvider (set by internal gateway components - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyStoreRawRequestResponse             GatewayContextKey = "gateway-store-raw-request-response"               // bool (per-request override — read by gateway.go, never overwritten)
+	GatewayContextKeyCaptureRawRequest                   GatewayContextKey = "gateway-capture-raw-request"                      // bool (set by gateway - DO NOT SET THIS MANUALLY) — true when providers should capture raw request bytes
+	GatewayContextKeyCaptureRawResponse                  GatewayContextKey = "gateway-capture-raw-response"                     // bool (set by gateway - DO NOT SET THIS MANUALLY) — true when providers should capture raw response bytes
+	GatewayContextKeyDropRawRequestFromClient            GatewayContextKey = "gateway-drop-raw-request-from-client"             // bool (set by gateway - DO NOT SET THIS MANUALLY) — true when raw request should be stripped from the client-facing response
+	GatewayContextKeyDropRawResponseFromClient           GatewayContextKey = "gateway-drop-raw-response-from-client"            // bool (set by gateway - DO NOT SET THIS MANUALLY) — true when raw response should be stripped from the client-facing response
+	GatewayContextKeyShouldStoreRawInLogs                GatewayContextKey = "gateway-should-store-raw-in-logs"                 // bool (set by gateway - DO NOT SET THIS MANUALLY) — true when raw request/response should be persisted in log records
+	GatewayContextKeyRetryDBFetch                        GatewayContextKey = "gateway-retry-db-fetch"                           // bool (set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyIsCustomProvider                    GatewayContextKey = "gateway-is-custom-provider"                       // bool (set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyHTTPRequestType                     GatewayContextKey = "gateway-http-request-type"                        // RequestType (set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyPassthroughExtraParams              GatewayContextKey = "gateway-passthrough-extra-params"                 // bool
+	GatewayContextKeyRoutingEnginesUsed                  GatewayContextKey = "gateway-routing-engines-used"                     // []string (set by gateway - DO NOT SET THIS MANUALLY) - list of routing engines used ("routing-rule", "governance", "loadbalancing", etc.)
+	GatewayContextKeyRoutingEngineLogs                   GatewayContextKey = "gateway-routing-engine-logs"                      // []RoutingEngineLogEntry (set by gateway - DO NOT SET THIS MANUALLY) - list of routing engine log entries
+	GatewayContextKeyTransportPluginLogs                 GatewayContextKey = "gateway-transport-plugin-logs"                    // []PluginLogEntry (transport-layer plugin logs accumulated during HTTP transport hooks)
+	GatewayContextKeyTransportPostHookCompleter          GatewayContextKey = "gateway-transport-posthook-completer"             // func() (callback to run HTTPTransportPostHook after streaming - set by transport interceptor middleware)
+	GatewayContextKeySkipPluginPipeline                  GatewayContextKey = "gateway-skip-plugin-pipeline"                     // bool - skip plugin pipeline for the request
+	GatewayContextKeyParentRequestID                     GatewayContextKey = "gateway-parent-request-id"                        // string (parent linkage for grouped request logs like realtime turns)
+	GatewayContextKeyRealtimeSessionID                   GatewayContextKey = "gateway-realtime-session-id"                      // string
+	GatewayContextKeyRealtimeProviderSessionID           GatewayContextKey = "gateway-realtime-provider-session-id"             // string
+	GatewayContextKeyRealtimeSource                      GatewayContextKey = "gateway-realtime-source"                          // string ("ei" or "lm")
+	GatewayContextKeyRealtimeEventType                   GatewayContextKey = "gateway-realtime-event-type"                      // string
+	GatewayContextKeyRealtimeTransport                   GatewayContextKey = "gateway-realtime-transport"                       // string ("websocket" or "webrtc")
+	GatewayContextKeyRealtimeVoice                       GatewayContextKey = "gateway-realtime-voice"                           // string
+	GatewayIsAsyncRequest                                GatewayContextKey = "gateway-is-async-request"                         // bool (set by gateway - DO NOT SET THIS MANUALLY)) - whether the request is an async request (only used in gateway)
+	GatewayContextKeyRequestHeaders                      GatewayContextKey = "gateway-request-headers"                          // map[string]string (all request headers with lowercased keys)
+	GatewayContextKeyRequestQuery                        GatewayContextKey = "gateway-request-query"                            // map[string]string (request query params with lowercased keys; consumed by governance routing CEL rules)
+	GatewayContextKeyRoutingAllowedProviders             GatewayContextKey = "gateway-routing-allowed-providers"                // []ModelProvider; when set, downstream routing layers (enterprise LB, model-catalog-resolver) must intersect their candidate providers with this set. Plugins set this when they have an opinion about which providers are valid for the request — even if they couldn't pick one themselves. Empty slice means "no provider is permitted" (fail-closed).
+	GatewayContextKeyAllowPerRequestStorageOverride      GatewayContextKey = "gateway-allow-per-request-storage-override"       // bool (set by transport from config — gates whether x-uf-disable-content-logging and x-uf-store-raw-request-response per-request overrides are honored)
+	GatewayContextKeyAllowPerRequestRawOverride          GatewayContextKey = "gateway-allow-per-request-raw-override"           // bool (set by transport from config — gates whether x-uf-send-back-raw-request and x-uf-send-back-raw-response per-request overrides are honored)
+	GatewayContextKeyDisableContentLogging               GatewayContextKey = "x-uf-disable-content-logging"                    // bool (per-request override for content logging; only honored when GatewayContextKeyAllowPerRequestStorageOverride is true)
+	GatewayContextKeySkipListModelsGovernanceFiltering   GatewayContextKey = "gateway-skip-list-models-governance-filtering"    // bool (set by gateway - DO NOT SET THIS MANUALLY))
+	GatewayContextKeySCIMClaims                          GatewayContextKey = "scim_claims"
+	GatewayContextKeyUserID                              GatewayContextKey = "gateway-user-id"                    // string (to store the user ID (set by enterprise auth middleware - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyUserName                            GatewayContextKey = "gateway-user-name"                  // string (to store the user name (set by enterprise auth middleware - DO NOT SET THIS MANUALLY))
+	GatewayContextKeyQueryScope                          GatewayContextKey = "gateway-query-scope"                // configstore.QueryScope (func that mutates a query; set by upstream wrapper - DO NOT SET THIS MANUALLY)
+	GatewayContextKeyVisibilityFilterProvider            GatewayContextKey = "gateway-visibility-filter-provider" // DEPRECATED: replaced by GatewayContextKeyQueryScope. Will be removed once all callers migrate.
+	GatewayContextKeyTargetUserID                        GatewayContextKey = "target_user_id"
+	GatewayContextKeyIsAzureUserAgent                    GatewayContextKey = "gateway-is-azure-user-agent" // bool (set by gateway - DO NOT SET THIS MANUALLY)) - whether the request is an Azure user agent (only used in gateway)
+	GatewayContextKeyUserRoleID                          GatewayContextKey = "gateway-user-role-id"
+	GatewayContextKeyVideoOutputRequested                GatewayContextKey = "gateway-video-output-requested"
+	GatewayContextKeyValidateKeys                        GatewayContextKey = "gateway-validate-keys"                      // bool (triggers additional key validation during provider add/update)
+	GatewayContextKeyProviderResponseHeaders             GatewayContextKey = "gateway-provider-response-headers"          // map[string]string (set by provider handlers for response header forwarding)
+	GatewayContextKeyMCPAddedTools                       GatewayContextKey = "gateway-mcp-added-tools"                    // []string (set by gateway - DO NOT SET THIS MANUALLY)) - list of tools added to the request by MCP, all the tool are in the format "clientName-toolName"
+	GatewayContextKeyLargePayloadMode                    GatewayContextKey = "gateway-large-payload-mode"                 // bool (set by gateway - DO NOT SET THIS MANUALLY)) indicates large payload streaming mode is active
+	GatewayContextKeyLargePayloadReader                  GatewayContextKey = "gateway-large-payload-reader"               // io.Reader (set by gateway - DO NOT SET THIS MANUALLY)) upstream reader for large payloads
+	GatewayContextKeyLargePayloadContentLength           GatewayContextKey = "gateway-large-payload-content-length"       // int (set by gateway - DO NOT SET THIS MANUALLY)) content length for large payloads
+	GatewayContextKeyLargePayloadContentType             GatewayContextKey = "gateway-large-payload-content-type"         // string (set by enterprise - DO NOT SET THIS MANUALLY)) original content type for large payload passthrough
+	GatewayContextKeyLargePayloadMetadata                GatewayContextKey = "gateway-large-payload-metadata"             // *LargePayloadMetadata (set by gateway - DO NOT SET THIS MANUALLY)) routing metadata for large payloads
+	GatewayContextKeyLargePayloadRequestThreshold        GatewayContextKey = "gateway-large-payload-request-threshold"    // int64 (set by enterprise - DO NOT SET THIS MANUALLY)) request threshold used by transport heuristics
+	GatewayContextKeyLargeResponseMode                   GatewayContextKey = "gateway-large-response-mode"                // bool (set by gateway - DO NOT SET THIS MANUALLY)) indicates large response streaming mode is active
+	GatewayContextKeyLargePayloadRequestPreview          GatewayContextKey = "gateway-large-payload-request-preview"      // string (set by gateway - DO NOT SET THIS MANUALLY)) truncated request body preview for logging
+	GatewayContextKeyLargePayloadResponsePreview         GatewayContextKey = "gateway-large-payload-response-preview"     // string (set by gateway - DO NOT SET THIS MANUALLY)) truncated response body preview for logging
+	GatewayContextKeyLargeResponseReader                 GatewayContextKey = "gateway-large-response-reader"              // io.ReadCloser (set by gateway - DO NOT SET THIS MANUALLY)) upstream reader for large responses
+	GatewayContextKeyLargeResponseContentLength          GatewayContextKey = "gateway-large-response-content-length"      // int (set by gateway - DO NOT SET THIS MANUALLY)) content length for large responses
+	GatewayContextKeyLargeResponseContentType            GatewayContextKey = "gateway-large-response-content-type"        // string (set by gateway - DO NOT SET THIS MANUALLY)) upstream content type for large responses
+	GatewayContextKeyLargeResponseContentDisposition     GatewayContextKey = "gateway-large-response-content-disposition" // string (set by gateway - DO NOT SET THIS MANUALLY)) downstream content disposition for large responses
+	GatewayContextKeyLargeResponseThreshold              GatewayContextKey = "gateway-large-response-threshold"           // int64 (set by enterprise - DO NOT SET THIS MANUALLY)) threshold for response streaming
+	GatewayContextKeyLargePayloadPrefetchSize            GatewayContextKey = "gateway-large-payload-prefetch-size"        // int (set by enterprise - DO NOT SET THIS MANUALLY)) prefetch buffer size for metadata extraction from large responses
+	GatewayContextKeyDeferredUsage                       GatewayContextKey = "gateway-deferred-usage"                     // chan *GatewayLLMUsage (set by provider Phase B — delivers usage after response streaming completes)
+	GatewayContextKeyStreamAccumulatedUsage              GatewayContextKey = "gateway-stream-accumulated-usage"           // *GatewayLLMUsage handle, set ONCE by a streaming provider and mutated in place as usage arrives; read on cancel/timeout to bill partial usage that the provider already consumed
+	GatewayContextKeyDeferredLargePayloadMetadata        GatewayContextKey = "gateway-deferred-large-payload-metadata"    // <-chan *LargePayloadMetadata (set by enterprise Phase B request — delivers metadata after body streaming)
+	GatewayContextKeySSEReaderFactory                    GatewayContextKey = "gateway-sse-reader-factory"                 // *providerUtils.SSEReaderFactory (set by enterprise — replaces default bufio.Scanner SSE readers with streaming readers)
+	GatewayContextKeySessionID                           GatewayContextKey = "gateway-session-id"                         // string session ID for the request (session stickiness)
+	GatewayContextKeySessionTTL                          GatewayContextKey = "gateway-session-ttl"                        // time.Duration session TTL for the request (session stickiness)
+	GatewayContextKeyMCPExtraHeaders                     GatewayContextKey = "gateway-mcp-extra-headers"                  // map[string][]string (these headers are forwarded only to the MCP while tool execution if they are in the allowlist of the MCP client)
+	GatewayContextKeyMCPLogID                            GatewayContextKey = "gateway-mcp-log-id"                         // string (unique UUID for each MCP tool log entry - set per goroutine by agent executor - DO NOT SET THIS MANUALLY)
+	GatewayContextKeyMCPHealthCheckRequest               GatewayContextKey = "gateway-mcp-health-check-request"           // bool (set by gateway - DO NOT SET THIS MANUALLY) - true when the MCP ping/list-tools request was generated by gateway itself for health checks rather than originating from a caller
+	GatewayContextKeyCompatConvertTextToChat             GatewayContextKey = "gateway-compat-convert-text-to-chat"        // bool (per-request override from x-uf-compat header)
+	GatewayContextKeyCompatConvertChatToResponses        GatewayContextKey = "gateway-compat-convert-chat-to-responses"   // bool (per-request override from x-uf-compat header)
+	GatewayContextKeyCompatShouldDropParams              GatewayContextKey = "gateway-compat-should-drop-params"          // bool (per-request override from x-uf-compat header)
+	GatewayContextKeyCompatShouldConvertParams           GatewayContextKey = "gateway-compat-should-convert-params"       // bool (per-request override from x-uf-compat header)
+	GatewayContextKeySupportsAssistantPrefill            GatewayContextKey = "gateway-supports-assistant-prefill"         // bool (set by compat plugin) - if model supports assistant prefill
+	GatewayContextKeyAttemptTrail                        GatewayContextKey = "gateway-attempt-trail"                      // []KeyAttemptRecord (set by gateway - DO NOT SET THIS MANUALLY) - per-attempt key selection history
+	GatewayContextKeyDimensions                          GatewayContextKey = "gateway-dimensions"                         // map[string]string (set by HTTP transport from x-uf-dim-* headers) GatewayContextKeyDimensions holds per-request key/value dimensions supplied via x-uf-dim-<key> request headers. These dimensions are forwarded to internal logs (as metadata)
+	IsAPIKeyAuthContextKey                              GatewayContextKey = "is_api_key_auth"
+	IsLocalAdminContextKey                              GatewayContextKey = "is_local_admin"                // bool (set by auth middleware when password-based auth succeeds - local admin user bypasses RBAC)
+	GatewayContextKeyPassthroughOverridesPresent         GatewayContextKey = "passthrough_overrides_present" // bool (set by HTTP transport) - passthrough raw request requested
+	GatewayContextKeyConnectionClosed                    GatewayContextKey = "connection_closed"
+	GatewayContextKeyTempTokenScope                      GatewayContextKey = "gateway-temp-token-scope"       // string (set by auth middleware when a temp token authorized the request - names the scope from the temptoken registry)
+	GatewayContextKeyTempTokenResourceID                 GatewayContextKey = "gateway-temp-token-resource-id" // string (set by auth middleware alongside the scope - the resource_id the token is bound to, e.g. an OAuth flow ID for mcp_auth)
 )
 
 const (
@@ -502,7 +502,7 @@ const (
 	RoutingEngineLoadbalancing  = "loadbalancing"
 	RoutingEngineModelCatalog   = "model-catalog"
 	RoutingEngineCircuitBreaker = "circuit-breaker"
-	// RoutingEngineCore represents the Raksha core orchestrator's own
+	// RoutingEngineCore represents the Gateway core orchestrator's own
 	// routing decisions — primarily fallback transitions. Emitted when the
 	// primary attempt fails and core advances through the fallback chain so
 	// the per-request audit trail closes the loop on what plugin-level
@@ -566,7 +566,7 @@ func GroupPluginLogsByName(logs []PluginLogEntry) map[string][]PluginLogEntry {
 }
 
 // NOTE: for custom plugin implementation dealing with streaming short circuit,
-// make sure to mark RakshaContextKeyStreamEndIndicator as true at the end of the stream.
+// make sure to mark GatewayContextKeyStreamEndIndicator as true at the end of the stream.
 
 // LargePayloadMetadata holds routing-relevant metadata selectively extracted from large payloads.
 // This is used when the full request body is too large to parse (e.g., 400MB video upload).
@@ -586,7 +586,7 @@ type Fallback struct {
 	Model    string        `json:"model"`
 }
 
-// RakshaRequest is the request struct for all raksha requests.
+// GatewayRequest is the request struct for all gateway requests.
 // only ONE of the following fields should be set:
 // - ListModelsRequest
 // - TextCompletionRequest
@@ -598,64 +598,64 @@ type Fallback struct {
 // - SpeechRequest
 // - TranscriptionRequest
 // - ImageGenerationRequest
-// NOTE: Raksha Request is submitted back to pool after every use so DO NOT keep references to this struct after use, especially in go routines.
-type RakshaRequest struct {
+// NOTE: Gateway Request is submitted back to pool after every use so DO NOT keep references to this struct after use, especially in go routines.
+type GatewayRequest struct {
 	RequestType RequestType
 
-	ListModelsRequest            *RakshaListModelsRequest
-	TextCompletionRequest        *RakshaTextCompletionRequest
-	ChatRequest                  *RakshaChatRequest
-	ResponsesRequest             *RakshaResponsesRequest
-	ResponsesRetrieveRequest     *RakshaResponsesRetrieveRequest
-	ResponsesDeleteRequest       *RakshaResponsesDeleteRequest
-	ResponsesCancelRequest       *RakshaResponsesCancelRequest
-	ResponsesInputItemsRequest   *RakshaResponsesInputItemsRequest
-	CountTokensRequest           *RakshaResponsesRequest
-	CompactionRequest            *RakshaCompactionRequest
-	EmbeddingRequest             *RakshaEmbeddingRequest
-	RerankRequest                *RakshaRerankRequest
-	OCRRequest                   *RakshaOCRRequest
-	SpeechRequest                *RakshaSpeechRequest
-	TranscriptionRequest         *RakshaTranscriptionRequest
-	ImageGenerationRequest       *RakshaImageGenerationRequest
-	ImageEditRequest             *RakshaImageEditRequest
-	ImageVariationRequest        *RakshaImageVariationRequest
-	VideoGenerationRequest       *RakshaVideoGenerationRequest
-	VideoRetrieveRequest         *RakshaVideoRetrieveRequest
-	VideoDownloadRequest         *RakshaVideoDownloadRequest
-	VideoListRequest             *RakshaVideoListRequest
-	VideoRemixRequest            *RakshaVideoRemixRequest
-	VideoDeleteRequest           *RakshaVideoDeleteRequest
-	FileUploadRequest            *RakshaFileUploadRequest
-	FileListRequest              *RakshaFileListRequest
-	FileRetrieveRequest          *RakshaFileRetrieveRequest
-	FileDeleteRequest            *RakshaFileDeleteRequest
-	FileContentRequest           *RakshaFileContentRequest
-	CachedContentCreateRequest   *RakshaCachedContentCreateRequest
-	CachedContentListRequest     *RakshaCachedContentListRequest
-	CachedContentRetrieveRequest *RakshaCachedContentRetrieveRequest
-	CachedContentUpdateRequest   *RakshaCachedContentUpdateRequest
-	CachedContentDeleteRequest   *RakshaCachedContentDeleteRequest
-	BatchCreateRequest           *RakshaBatchCreateRequest
-	BatchListRequest             *RakshaBatchListRequest
-	BatchRetrieveRequest         *RakshaBatchRetrieveRequest
-	BatchCancelRequest           *RakshaBatchCancelRequest
-	BatchResultsRequest          *RakshaBatchResultsRequest
-	BatchDeleteRequest           *RakshaBatchDeleteRequest
-	ContainerCreateRequest       *RakshaContainerCreateRequest
-	ContainerListRequest         *RakshaContainerListRequest
-	ContainerRetrieveRequest     *RakshaContainerRetrieveRequest
-	ContainerDeleteRequest       *RakshaContainerDeleteRequest
-	ContainerFileCreateRequest   *RakshaContainerFileCreateRequest
-	ContainerFileListRequest     *RakshaContainerFileListRequest
-	ContainerFileRetrieveRequest *RakshaContainerFileRetrieveRequest
-	ContainerFileContentRequest  *RakshaContainerFileContentRequest
-	ContainerFileDeleteRequest   *RakshaContainerFileDeleteRequest
-	PassthroughRequest           *RakshaPassthroughRequest
+	ListModelsRequest            *GatewayListModelsRequest
+	TextCompletionRequest        *GatewayTextCompletionRequest
+	ChatRequest                  *GatewayChatRequest
+	ResponsesRequest             *GatewayResponsesRequest
+	ResponsesRetrieveRequest     *GatewayResponsesRetrieveRequest
+	ResponsesDeleteRequest       *GatewayResponsesDeleteRequest
+	ResponsesCancelRequest       *GatewayResponsesCancelRequest
+	ResponsesInputItemsRequest   *GatewayResponsesInputItemsRequest
+	CountTokensRequest           *GatewayResponsesRequest
+	CompactionRequest            *GatewayCompactionRequest
+	EmbeddingRequest             *GatewayEmbeddingRequest
+	RerankRequest                *GatewayRerankRequest
+	OCRRequest                   *GatewayOCRRequest
+	SpeechRequest                *GatewaySpeechRequest
+	TranscriptionRequest         *GatewayTranscriptionRequest
+	ImageGenerationRequest       *GatewayImageGenerationRequest
+	ImageEditRequest             *GatewayImageEditRequest
+	ImageVariationRequest        *GatewayImageVariationRequest
+	VideoGenerationRequest       *GatewayVideoGenerationRequest
+	VideoRetrieveRequest         *GatewayVideoRetrieveRequest
+	VideoDownloadRequest         *GatewayVideoDownloadRequest
+	VideoListRequest             *GatewayVideoListRequest
+	VideoRemixRequest            *GatewayVideoRemixRequest
+	VideoDeleteRequest           *GatewayVideoDeleteRequest
+	FileUploadRequest            *GatewayFileUploadRequest
+	FileListRequest              *GatewayFileListRequest
+	FileRetrieveRequest          *GatewayFileRetrieveRequest
+	FileDeleteRequest            *GatewayFileDeleteRequest
+	FileContentRequest           *GatewayFileContentRequest
+	CachedContentCreateRequest   *GatewayCachedContentCreateRequest
+	CachedContentListRequest     *GatewayCachedContentListRequest
+	CachedContentRetrieveRequest *GatewayCachedContentRetrieveRequest
+	CachedContentUpdateRequest   *GatewayCachedContentUpdateRequest
+	CachedContentDeleteRequest   *GatewayCachedContentDeleteRequest
+	BatchCreateRequest           *GatewayBatchCreateRequest
+	BatchListRequest             *GatewayBatchListRequest
+	BatchRetrieveRequest         *GatewayBatchRetrieveRequest
+	BatchCancelRequest           *GatewayBatchCancelRequest
+	BatchResultsRequest          *GatewayBatchResultsRequest
+	BatchDeleteRequest           *GatewayBatchDeleteRequest
+	ContainerCreateRequest       *GatewayContainerCreateRequest
+	ContainerListRequest         *GatewayContainerListRequest
+	ContainerRetrieveRequest     *GatewayContainerRetrieveRequest
+	ContainerDeleteRequest       *GatewayContainerDeleteRequest
+	ContainerFileCreateRequest   *GatewayContainerFileCreateRequest
+	ContainerFileListRequest     *GatewayContainerFileListRequest
+	ContainerFileRetrieveRequest *GatewayContainerFileRetrieveRequest
+	ContainerFileContentRequest  *GatewayContainerFileContentRequest
+	ContainerFileDeleteRequest   *GatewayContainerFileDeleteRequest
+	PassthroughRequest           *GatewayPassthroughRequest
 }
 
 // GetRequestFields returns the provider, model, and fallbacks from the request.
-func (br *RakshaRequest) GetRequestFields() (provider ModelProvider, model string, fallbacks []Fallback) {
+func (br *GatewayRequest) GetRequestFields() (provider ModelProvider, model string, fallbacks []Fallback) {
 	switch {
 	case br.ListModelsRequest != nil:
 		return br.ListModelsRequest.Provider, "", nil
@@ -806,7 +806,7 @@ func (br *RakshaRequest) GetRequestFields() (provider ModelProvider, model strin
 	return "", "", nil
 }
 
-func (br *RakshaRequest) SetProvider(provider ModelProvider) {
+func (br *GatewayRequest) SetProvider(provider ModelProvider) {
 	switch {
 	case br.ListModelsRequest != nil:
 		br.ListModelsRequest.Provider = provider
@@ -869,7 +869,7 @@ func (br *RakshaRequest) SetProvider(provider ModelProvider) {
 	}
 }
 
-func (br *RakshaRequest) SetModel(model string) {
+func (br *GatewayRequest) SetModel(model string) {
 	switch {
 	case br.TextCompletionRequest != nil:
 		br.TextCompletionRequest.Model = model
@@ -924,7 +924,7 @@ func (br *RakshaRequest) SetModel(model string) {
 	}
 }
 
-func (br *RakshaRequest) SetFallbacks(fallbacks []Fallback) {
+func (br *GatewayRequest) SetFallbacks(fallbacks []Fallback) {
 	switch {
 	case br.TextCompletionRequest != nil:
 		br.TextCompletionRequest.Fallbacks = fallbacks
@@ -957,7 +957,7 @@ func (br *RakshaRequest) SetFallbacks(fallbacks []Fallback) {
 	}
 }
 
-func (br *RakshaRequest) SetRawRequestBody(rawRequestBody []byte) {
+func (br *GatewayRequest) SetRawRequestBody(rawRequestBody []byte) {
 	switch {
 	case br.TextCompletionRequest != nil:
 		br.TextCompletionRequest.RawRequestBody = rawRequestBody
@@ -1043,36 +1043,36 @@ func (t MCPRequestType) IsExecuteTool() bool {
 	return false
 }
 
-// RakshaMCPRequest is the envelope for MCP requests that flow through the generic
+// GatewayMCPRequest is the envelope for MCP requests that flow through the generic
 // PreMCPHook/PostMCPHook pipeline (Ping, ListTools, ExecuteTool variants). Connect
 // requests do NOT use this envelope — they are dispatched via the typed
-// MCPConnectionPlugin interface using *RakshaMCPConnectRequest directly.
+// MCPConnectionPlugin interface using *GatewayMCPConnectRequest directly.
 //
 // Exactly one of the embedded sub-request pointers is populated, matched by RequestType:
-//   - RequestType == MCPRequestTypePing       → RakshaMCPPingRequest
-//   - RequestType == MCPRequestTypeListTools  → RakshaMCPListToolsRequest
-//   - RequestType == MCPRequestTypeExecuteTool / MCPRequestTypeChatToolCall / MCPRequestTypeResponsesToolCall → RakshaMCPExecuteToolRequest
-type RakshaMCPRequest struct {
+//   - RequestType == MCPRequestTypePing       → GatewayMCPPingRequest
+//   - RequestType == MCPRequestTypeListTools  → GatewayMCPListToolsRequest
+//   - RequestType == MCPRequestTypeExecuteTool / MCPRequestTypeChatToolCall / MCPRequestTypeResponsesToolCall → GatewayMCPExecuteToolRequest
+type GatewayMCPRequest struct {
 	RequestType MCPRequestType
 	ClientName  string // MCP client this request targets (always set, regardless of request type)
 
-	*RakshaMCPPingRequest
-	*RakshaMCPListToolsRequest
+	*GatewayMCPPingRequest
+	*GatewayMCPListToolsRequest
 
-	// [DEPRECATED] these will be replaced by RakshaMCPExecuteToolRequest in the next major bump, but are kept for backward compatibility for now since some tools still rely on the old fields
+	// [DEPRECATED] these will be replaced by GatewayMCPExecuteToolRequest in the next major bump, but are kept for backward compatibility for now since some tools still rely on the old fields
 	*ChatAssistantMessageToolCall
 	*ResponsesToolMessage
 
 	// Will be used in from the next major bump
-	*RakshaMCPExecuteToolRequest
+	*GatewayMCPExecuteToolRequest
 }
 
-// RakshaMCPConnectRequest carries the prepared inputs for an MCP connect operation.
+// GatewayMCPConnectRequest carries the prepared inputs for an MCP connect operation.
 // Fields marked "mutable" may be modified by a plugin's PreMCPHook and the mutated values
 // will be used for the actual transport creation; "observe-only" fields are passed to plugins
 // for context but mutations are ignored (changing the transport type mid-flight would break
 // the rest of the connect codepath).
-type RakshaMCPConnectRequest struct {
+type GatewayMCPConnectRequest struct {
 	ClientName       string            // observe-only — name of the client being connected
 	ConnectionType   MCPConnectionType // observe-only — transport type being established (http/stdio/sse/inprocess)
 	AuthType         MCPAuthType       // observe-only — authentication mode configured on the client
@@ -1082,25 +1082,25 @@ type RakshaMCPConnectRequest struct {
 	StdioArgs        []string          // mutable — argv for stdio connections (nil otherwise)
 }
 
-// RakshaMCPPingRequest is intentionally empty: the wire ping rides over the existing
+// GatewayMCPPingRequest is intentionally empty: the wire ping rides over the existing
 // transport and has no per-call headers or parameters. Plugins observe via ClientName on
-// the parent RakshaMCPRequest and may short-circuit (synthetic healthy/unhealthy).
-type RakshaMCPPingRequest struct {
+// the parent GatewayMCPRequest and may short-circuit (synthetic healthy/unhealthy).
+type GatewayMCPPingRequest struct {
 }
 
-// RakshaMCPListToolsRequest is intentionally empty for the same reason as ping: list_tools
+// GatewayMCPListToolsRequest is intentionally empty for the same reason as ping: list_tools
 // reuses the existing transport's headers. Plugins observe via ClientName and may short-circuit
 // (e.g. cached tool list).
-type RakshaMCPListToolsRequest struct {
+type GatewayMCPListToolsRequest struct {
 }
 
 // Keeping the stub for now, will be used from the next major bump when we remove the old ChatToolCall and ResponsesToolMessage fields.
 // Note that the tool name and arguments are not standardized in this struct yet since they are still being pulled from the old fields for backward compatibility,
 // but they will be standardized in the future when we remove the old fields.
-type RakshaMCPExecuteToolRequest struct {
+type GatewayMCPExecuteToolRequest struct {
 }
 
-func (r *RakshaMCPRequest) GetToolName() string {
+func (r *GatewayMCPRequest) GetToolName() string {
 	if r.ChatAssistantMessageToolCall != nil {
 		if r.ChatAssistantMessageToolCall.Function.Name != nil {
 			return *r.ChatAssistantMessageToolCall.Function.Name
@@ -1114,7 +1114,7 @@ func (r *RakshaMCPRequest) GetToolName() string {
 	return ""
 }
 
-func (r *RakshaMCPRequest) GetToolArguments() interface{} {
+func (r *GatewayMCPRequest) GetToolArguments() interface{} {
 	if r.ChatAssistantMessageToolCall != nil {
 		return r.ChatAssistantMessageToolCall.Function.Arguments
 	}
@@ -1126,59 +1126,59 @@ func (r *RakshaMCPRequest) GetToolArguments() interface{} {
 
 //* Response Structs
 
-// RakshaResponse represents the complete result from any raksha request.
-type RakshaResponse struct {
-	ListModelsResponse            *RakshaListModelsResponse
-	TextCompletionResponse        *RakshaTextCompletionResponse
-	ChatResponse                  *RakshaChatResponse
-	ResponsesResponse             *RakshaResponsesResponse
-	ResponsesStreamResponse       *RakshaResponsesStreamResponse
-	ResponsesDeleteResponse       *RakshaResponsesDeleteResponse
-	ResponsesInputItemsResponse   *RakshaResponsesInputItemsResponse
-	CountTokensResponse           *RakshaCountTokensResponse
-	CompactionResponse            *RakshaCompactionResponse
-	EmbeddingResponse             *RakshaEmbeddingResponse
-	RerankResponse                *RakshaRerankResponse
-	OCRResponse                   *RakshaOCRResponse
-	SpeechResponse                *RakshaSpeechResponse
-	SpeechStreamResponse          *RakshaSpeechStreamResponse
-	TranscriptionResponse         *RakshaTranscriptionResponse
-	TranscriptionStreamResponse   *RakshaTranscriptionStreamResponse
-	ImageGenerationResponse       *RakshaImageGenerationResponse
-	ImageGenerationStreamResponse *RakshaImageGenerationStreamResponse
-	VideoGenerationResponse       *RakshaVideoGenerationResponse
-	VideoDownloadResponse         *RakshaVideoDownloadResponse
-	VideoListResponse             *RakshaVideoListResponse
-	VideoDeleteResponse           *RakshaVideoDeleteResponse
-	FileUploadResponse            *RakshaFileUploadResponse
-	FileListResponse              *RakshaFileListResponse
-	FileRetrieveResponse          *RakshaFileRetrieveResponse
-	FileDeleteResponse            *RakshaFileDeleteResponse
-	FileContentResponse           *RakshaFileContentResponse
-	CachedContentCreateResponse   *RakshaCachedContentCreateResponse
-	CachedContentListResponse     *RakshaCachedContentListResponse
-	CachedContentRetrieveResponse *RakshaCachedContentRetrieveResponse
-	CachedContentUpdateResponse   *RakshaCachedContentUpdateResponse
-	CachedContentDeleteResponse   *RakshaCachedContentDeleteResponse
-	BatchCreateResponse           *RakshaBatchCreateResponse
-	BatchListResponse             *RakshaBatchListResponse
-	BatchRetrieveResponse         *RakshaBatchRetrieveResponse
-	BatchCancelResponse           *RakshaBatchCancelResponse
-	BatchResultsResponse          *RakshaBatchResultsResponse
-	BatchDeleteResponse           *RakshaBatchDeleteResponse
-	ContainerCreateResponse       *RakshaContainerCreateResponse
-	ContainerListResponse         *RakshaContainerListResponse
-	ContainerRetrieveResponse     *RakshaContainerRetrieveResponse
-	ContainerDeleteResponse       *RakshaContainerDeleteResponse
-	ContainerFileCreateResponse   *RakshaContainerFileCreateResponse
-	ContainerFileListResponse     *RakshaContainerFileListResponse
-	ContainerFileRetrieveResponse *RakshaContainerFileRetrieveResponse
-	ContainerFileContentResponse  *RakshaContainerFileContentResponse
-	ContainerFileDeleteResponse   *RakshaContainerFileDeleteResponse
-	PassthroughResponse           *RakshaPassthroughResponse
+// GatewayResponse represents the complete result from any gateway request.
+type GatewayResponse struct {
+	ListModelsResponse            *GatewayListModelsResponse
+	TextCompletionResponse        *GatewayTextCompletionResponse
+	ChatResponse                  *GatewayChatResponse
+	ResponsesResponse             *GatewayResponsesResponse
+	ResponsesStreamResponse       *GatewayResponsesStreamResponse
+	ResponsesDeleteResponse       *GatewayResponsesDeleteResponse
+	ResponsesInputItemsResponse   *GatewayResponsesInputItemsResponse
+	CountTokensResponse           *GatewayCountTokensResponse
+	CompactionResponse            *GatewayCompactionResponse
+	EmbeddingResponse             *GatewayEmbeddingResponse
+	RerankResponse                *GatewayRerankResponse
+	OCRResponse                   *GatewayOCRResponse
+	SpeechResponse                *GatewaySpeechResponse
+	SpeechStreamResponse          *GatewaySpeechStreamResponse
+	TranscriptionResponse         *GatewayTranscriptionResponse
+	TranscriptionStreamResponse   *GatewayTranscriptionStreamResponse
+	ImageGenerationResponse       *GatewayImageGenerationResponse
+	ImageGenerationStreamResponse *GatewayImageGenerationStreamResponse
+	VideoGenerationResponse       *GatewayVideoGenerationResponse
+	VideoDownloadResponse         *GatewayVideoDownloadResponse
+	VideoListResponse             *GatewayVideoListResponse
+	VideoDeleteResponse           *GatewayVideoDeleteResponse
+	FileUploadResponse            *GatewayFileUploadResponse
+	FileListResponse              *GatewayFileListResponse
+	FileRetrieveResponse          *GatewayFileRetrieveResponse
+	FileDeleteResponse            *GatewayFileDeleteResponse
+	FileContentResponse           *GatewayFileContentResponse
+	CachedContentCreateResponse   *GatewayCachedContentCreateResponse
+	CachedContentListResponse     *GatewayCachedContentListResponse
+	CachedContentRetrieveResponse *GatewayCachedContentRetrieveResponse
+	CachedContentUpdateResponse   *GatewayCachedContentUpdateResponse
+	CachedContentDeleteResponse   *GatewayCachedContentDeleteResponse
+	BatchCreateResponse           *GatewayBatchCreateResponse
+	BatchListResponse             *GatewayBatchListResponse
+	BatchRetrieveResponse         *GatewayBatchRetrieveResponse
+	BatchCancelResponse           *GatewayBatchCancelResponse
+	BatchResultsResponse          *GatewayBatchResultsResponse
+	BatchDeleteResponse           *GatewayBatchDeleteResponse
+	ContainerCreateResponse       *GatewayContainerCreateResponse
+	ContainerListResponse         *GatewayContainerListResponse
+	ContainerRetrieveResponse     *GatewayContainerRetrieveResponse
+	ContainerDeleteResponse       *GatewayContainerDeleteResponse
+	ContainerFileCreateResponse   *GatewayContainerFileCreateResponse
+	ContainerFileListResponse     *GatewayContainerFileListResponse
+	ContainerFileRetrieveResponse *GatewayContainerFileRetrieveResponse
+	ContainerFileContentResponse  *GatewayContainerFileContentResponse
+	ContainerFileDeleteResponse   *GatewayContainerFileDeleteResponse
+	PassthroughResponse           *GatewayPassthroughResponse
 }
 
-func (r *RakshaResponse) GetExtraFields() *RakshaResponseExtraFields {
+func (r *GatewayResponse) GetExtraFields() *GatewayResponseExtraFields {
 	switch {
 	case r.ListModelsResponse != nil:
 		return &r.ListModelsResponse.ExtraFields
@@ -1278,7 +1278,7 @@ func (r *RakshaResponse) GetExtraFields() *RakshaResponseExtraFields {
 		return &r.CachedContentDeleteResponse.ExtraFields
 	}
 
-	return &RakshaResponseExtraFields{}
+	return &GatewayResponseExtraFields{}
 }
 
 // syncDeprecatedFromRoutingInfo backfills the deprecated Provider /
@@ -1317,7 +1317,7 @@ func syncDeprecatedFromRoutingInfo(info RoutingInfo, provider *ModelProvider, or
 // Core always calls this both before and after RunPostLLMHooks so any plugin
 // modifications are no-ops — tampering with RoutingInfo inside plugins is
 // discouraged.
-func (r *RakshaResponse) PopulateRoutingInfo(info RoutingInfo) {
+func (r *GatewayResponse) PopulateRoutingInfo(info RoutingInfo) {
 	if r == nil {
 		return
 	}
@@ -1330,7 +1330,7 @@ func (r *RakshaResponse) PopulateRoutingInfo(info RoutingInfo) {
 // PopulateRoutingInfo sets ExtraFields.RoutingInfo on the error and syncs the
 // deprecated triplet. Core calls this both before and after RunPostLLMHooks
 // alongside PopulateExtraFields.
-func (e *RakshaError) PopulateRoutingInfo(info RoutingInfo) {
+func (e *GatewayError) PopulateRoutingInfo(info RoutingInfo) {
 	if e == nil {
 		return
 	}
@@ -1344,7 +1344,7 @@ func (e *RakshaError) PopulateRoutingInfo(info RoutingInfo) {
 // its documented derivation rule.
 // Called by the orchestrator (handleRequest) on each fallback attempt's
 // result/error — the per-attempt code never sets these fields itself.
-func (r *RakshaResponse) SetFallbackRoutingInfo(primaryProvider ModelProvider, primaryModel string) {
+func (r *GatewayResponse) SetFallbackRoutingInfo(primaryProvider ModelProvider, primaryModel string) {
 	if r == nil {
 		return
 	}
@@ -1364,9 +1364,9 @@ func (r *RakshaResponse) SetFallbackRoutingInfo(primaryProvider ModelProvider, p
 	syncDeprecatedFromRoutingInfo(ef.RoutingInfo, &ef.Provider, &ef.OriginalModelRequested, &ef.ResolvedModelUsed)
 }
 
-// SetFallbackRoutingInfo is the RakshaError counterpart — see the
-// RakshaResponse method for semantics.
-func (e *RakshaError) SetFallbackRoutingInfo(primaryProvider ModelProvider, primaryModel string) {
+// SetFallbackRoutingInfo is the GatewayError counterpart — see the
+// GatewayResponse method for semantics.
+func (e *GatewayError) SetFallbackRoutingInfo(primaryProvider ModelProvider, primaryModel string) {
 	if e == nil {
 		return
 	}
@@ -1385,7 +1385,7 @@ func (e *RakshaError) SetFallbackRoutingInfo(primaryProvider ModelProvider, prim
 // PopulateExtraFields sets RequestType, Provider, OriginalModelRequested, and ResolvedModelUsed on the
 // active sub-response. Core always calls this both before and after RunPostLLMHooks, so any plugin
 // modifications to these 4 fields are no-ops — tampering with them inside plugins is discouraged.
-func (r *RakshaResponse) PopulateExtraFields(requestType RequestType, provider ModelProvider, originalModelRequested string, resolvedModelUsed string) {
+func (r *GatewayResponse) PopulateExtraFields(requestType RequestType, provider ModelProvider, originalModelRequested string, resolvedModelUsed string) {
 	if r == nil {
 		return
 	}
@@ -1637,47 +1637,47 @@ func (r *RakshaResponse) PopulateExtraFields(requestType RequestType, provider M
 	}
 }
 
-// RakshaMCPResponse is the envelope for MCP responses that flow through the generic
+// GatewayMCPResponse is the envelope for MCP responses that flow through the generic
 // PostMCPHook pipeline (Ping, ListTools, ExecuteTool variants). Connect responses do
 // NOT use this envelope — they are dispatched via the typed MCPConnectionPlugin
-// interface using *RakshaMCPConnectResponse directly.
+// interface using *GatewayMCPConnectResponse directly.
 //
 // Exactly one of the embedded sub-response pointers is populated, matched by the
 // originating request's RequestType. ExtraFields (ClientName / ToolName / Latency)
 // applies to all envelope variants. For execute-tool requests in the back-compat
 // window, the direct ChatMessage / ResponsesMessage fields are populated instead of
 // any embedded sub-response.
-type RakshaMCPResponse struct {
-	*RakshaMCPPingResponse
-	*RakshaMCPListToolsResponse
+type GatewayMCPResponse struct {
+	*GatewayMCPPingResponse
+	*GatewayMCPListToolsResponse
 
 	// [DEPRECATED] back-compat fields for execute-tool requests; will move into
-	// RakshaMCPExecuteToolResponse in the next major bump.
+	// GatewayMCPExecuteToolResponse in the next major bump.
 	ChatMessage      *ChatMessage
 	ResponsesMessage *ResponsesMessage
 
 	// Empty stub today; will hold ChatMessage/ResponsesMessage in the next major bump.
-	*RakshaMCPExecuteToolResponse
+	*GatewayMCPExecuteToolResponse
 
-	ExtraFields RakshaMCPResponseExtraFields
+	ExtraFields GatewayMCPResponseExtraFields
 }
 
 // Latency for envelope MCP responses (ping, list_tools, execute_tool) is reported via
-// RakshaMCPResponse.ExtraFields.Latency (milliseconds). Connect carries its own
-// ExtraFields on RakshaMCPConnectResponse below — see typed Connect path.
+// GatewayMCPResponse.ExtraFields.Latency (milliseconds). Connect carries its own
+// ExtraFields on GatewayMCPConnectResponse below — see typed Connect path.
 
-type RakshaMCPConnectResponse struct {
+type GatewayMCPConnectResponse struct {
 	ConnectionInfo     *MCPClientConnectionInfo // Connection metadata after the handshake completes
 	ServerInfo         *MCPServerInfo           // Name + version from the initialize handshake
 	ProtocolVersion    string                   // Negotiated MCP protocol version
 	ServerCapabilities *MCPServerCapabilities   // Which MCP feature groups the server claims to support
-	ExtraFields        RakshaMCPResponseExtraFields
+	ExtraFields        GatewayMCPResponseExtraFields
 }
 
 // PopulateExtraFields backfills ClientName on the Connect response when it's not
-// already set. Mirrors RakshaMCPResponse.PopulateExtraFields. Connect has no tool
+// already set. Mirrors GatewayMCPResponse.PopulateExtraFields. Connect has no tool
 // name, so only ClientName is populated.
-func (r *RakshaMCPConnectResponse) PopulateExtraFields(clientName string) {
+func (r *GatewayMCPConnectResponse) PopulateExtraFields(clientName string) {
 	if r == nil {
 		return
 	}
@@ -1693,7 +1693,7 @@ type MCPServerInfo struct {
 }
 
 // MCPServerCapabilities mirrors the high-level capability flags from the MCP initialize handshake.
-// Only the booleans Raksha cares about today; can grow as needed.
+// Only the booleans Gateway cares about today; can grow as needed.
 type MCPServerCapabilities struct {
 	Tools     bool `json:"tools"`     // server supports tools/list + tools/call
 	Resources bool `json:"resources"` // server supports resources
@@ -1701,17 +1701,17 @@ type MCPServerCapabilities struct {
 	Logging   bool `json:"logging"`   // server supports logging
 }
 
-type RakshaMCPPingResponse struct {
+type GatewayMCPPingResponse struct {
 }
 
-type RakshaMCPListToolsResponse struct {
+type GatewayMCPListToolsResponse struct {
 	Tools           map[string]ChatTool // Discovered tools keyed by client-prefixed name
 	ToolNameMapping map[string]string   // sanitized_name -> original_mcp_name
-	RawToolCount    int                 // Count returned by the MCP server before Raksha-side filtering
-	SkippedTools    []SkippedMCPTool    // Tools Raksha dropped during conversion + reason
+	RawToolCount    int                 // Count returned by the MCP server before Gateway-side filtering
+	SkippedTools    []SkippedMCPTool    // Tools Gateway dropped during conversion + reason
 }
 
-// SkippedMCPTool describes a tool that the MCP server returned but Raksha did not include
+// SkippedMCPTool describes a tool that the MCP server returned but Gateway did not include
 // in the final tool map (e.g. invalid normalized name).
 type SkippedMCPTool struct {
 	OriginalName string `json:"original_name"`
@@ -1720,14 +1720,14 @@ type SkippedMCPTool struct {
 
 // Keeping the stub for now, will be used from the next major bump when we move ChatMessage
 // and ResponsesMessage into this struct.
-type RakshaMCPExecuteToolResponse struct {
+type GatewayMCPExecuteToolResponse struct {
 }
 
 // PopulateExtraFields backfills ExtraFields.{MCPRequestType, ClientName, ToolName}
-// when they aren't already set on the response. Mirrors RakshaResponse.PopulateExtraFields
+// when they aren't already set on the response. Mirrors GatewayResponse.PopulateExtraFields
 // and is used by every MCP gate to ensure short-circuit responses carry the same
 // attribution as real wire-call responses.
-func (r *RakshaMCPResponse) PopulateExtraFields(mcpRequestType MCPRequestType, clientName, toolName string) {
+func (r *GatewayMCPResponse) PopulateExtraFields(mcpRequestType MCPRequestType, clientName, toolName string) {
 	if r == nil {
 		return
 	}
@@ -1742,8 +1742,8 @@ func (r *RakshaMCPResponse) PopulateExtraFields(mcpRequestType MCPRequestType, c
 	}
 }
 
-// RakshaResponseExtraFields contains additional fields in a response.
-type RakshaResponseExtraFields struct {
+// GatewayResponseExtraFields contains additional fields in a response.
+type GatewayResponseExtraFields struct {
 	RequestType RequestType `json:"request_type"`
 	RoutingInfo RoutingInfo `json:"routing_info"`
 	// Deprecated: use RoutingInfo.Provider. Still populated for backward
@@ -1763,7 +1763,7 @@ type RakshaResponseExtraFields struct {
 	ChunkIndex                int               `json:"chunk_index"` // used for streaming responses to identify the chunk index, will be 0 for non-streaming responses
 	RawRequest                interface{}       `json:"raw_request,omitempty"`
 	RawResponse               interface{}       `json:"raw_response,omitempty"`
-	CacheDebug                *RakshaCacheDebug `json:"cache_debug,omitempty"`
+	CacheDebug                *GatewayCacheDebug `json:"cache_debug,omitempty"`
 	ParseErrors               []BatchError      `json:"parse_errors,omitempty"` // errors encountered while parsing JSONL batch results
 	ConvertedRequestType      RequestType       `json:"converted_request_type,omitempty"`
 	DroppedCompatPluginParams []string          `json:"dropped_compat_plugin_params,omitempty"` // params dropped by the compat plugin based on model catalog
@@ -1793,15 +1793,15 @@ type ResolvedKeyAlias struct {
 	ModelFamily *ModelFamily `json:"model_family,omitempty"` // resolved family for routing
 }
 
-type RakshaMCPResponseExtraFields struct {
+type GatewayMCPResponseExtraFields struct {
 	MCPRequestType MCPRequestType `json:"mcp_request_type"` // request type this response corresponds to — lets PostMCPHook discriminate ping/list_tools from tool execute on success too
 	ClientName     string         `json:"client_name"`
 	ToolName       string         `json:"tool_name"` // empty for all but MCPRequestTypeExecuteTool requests for backwards compat, will be a pointer from next major bump.
 	Latency        int64          `json:"latency"`   // in milliseconds
 }
 
-// RakshaCacheDebug represents debug information about the cache.
-type RakshaCacheDebug struct {
+// GatewayCacheDebug represents debug information about the cache.
+type GatewayCacheDebug struct {
 	CacheHit bool `json:"cache_hit"`
 
 	CacheID *string `json:"cache_id,omitempty"`
@@ -1830,64 +1830,64 @@ const (
 	ProviderConnectionFailed = "provider_connection_failed"
 )
 
-// RakshaStreamChunk represents a stream of responses from the Raksha system.
-// Either RakshaResponse or RakshaError will be non-nil.
-type RakshaStreamChunk struct {
-	*RakshaTextCompletionResponse
-	*RakshaChatResponse
-	*RakshaResponsesStreamResponse
-	*RakshaSpeechStreamResponse
-	*RakshaTranscriptionStreamResponse
-	*RakshaImageGenerationStreamResponse
-	*RakshaPassthroughResponse
-	*RakshaError
+// GatewayStreamChunk represents a stream of responses from the Gateway system.
+// Either GatewayResponse or GatewayError will be non-nil.
+type GatewayStreamChunk struct {
+	*GatewayTextCompletionResponse
+	*GatewayChatResponse
+	*GatewayResponsesStreamResponse
+	*GatewaySpeechStreamResponse
+	*GatewayTranscriptionStreamResponse
+	*GatewayImageGenerationStreamResponse
+	*GatewayPassthroughResponse
+	*GatewayError
 }
 
-// MarshalJSON implements custom JSON marshaling for RakshaStreamChunk.
+// MarshalJSON implements custom JSON marshaling for GatewayStreamChunk.
 // This ensures that only the non-nil embedded struct is marshaled,
-func (bs RakshaStreamChunk) MarshalJSON() ([]byte, error) {
-	if bs.RakshaTextCompletionResponse != nil {
-		return MarshalSorted(bs.RakshaTextCompletionResponse)
-	} else if bs.RakshaChatResponse != nil {
-		return MarshalSorted(bs.RakshaChatResponse)
-	} else if bs.RakshaResponsesStreamResponse != nil {
-		return MarshalSorted(bs.RakshaResponsesStreamResponse)
-	} else if bs.RakshaSpeechStreamResponse != nil {
-		return MarshalSorted(bs.RakshaSpeechStreamResponse)
-	} else if bs.RakshaTranscriptionStreamResponse != nil {
-		return MarshalSorted(bs.RakshaTranscriptionStreamResponse)
-	} else if bs.RakshaImageGenerationStreamResponse != nil {
-		return MarshalSorted(bs.RakshaImageGenerationStreamResponse)
-	} else if bs.RakshaPassthroughResponse != nil {
-		return MarshalSorted(bs.RakshaPassthroughResponse)
-	} else if bs.RakshaError != nil {
-		return MarshalSorted(bs.RakshaError)
+func (bs GatewayStreamChunk) MarshalJSON() ([]byte, error) {
+	if bs.GatewayTextCompletionResponse != nil {
+		return MarshalSorted(bs.GatewayTextCompletionResponse)
+	} else if bs.GatewayChatResponse != nil {
+		return MarshalSorted(bs.GatewayChatResponse)
+	} else if bs.GatewayResponsesStreamResponse != nil {
+		return MarshalSorted(bs.GatewayResponsesStreamResponse)
+	} else if bs.GatewaySpeechStreamResponse != nil {
+		return MarshalSorted(bs.GatewaySpeechStreamResponse)
+	} else if bs.GatewayTranscriptionStreamResponse != nil {
+		return MarshalSorted(bs.GatewayTranscriptionStreamResponse)
+	} else if bs.GatewayImageGenerationStreamResponse != nil {
+		return MarshalSorted(bs.GatewayImageGenerationStreamResponse)
+	} else if bs.GatewayPassthroughResponse != nil {
+		return MarshalSorted(bs.GatewayPassthroughResponse)
+	} else if bs.GatewayError != nil {
+		return MarshalSorted(bs.GatewayError)
 	}
 	// Return empty object if both are nil (shouldn't happen in practice)
 	return []byte("{}"), nil
 }
 
-// RakshaError represents an error from the Raksha system.
+// GatewayError represents an error from the Gateway system.
 //
-// PLUGIN DEVELOPERS: When creating RakshaError in PreLLMHook or PostLLMHook, you can set AllowFallbacks:
-// - AllowFallbacks = &true: Raksha will try fallback providers if available
-// - AllowFallbacks = &false: Raksha will return this error immediately, no fallbacks
+// PLUGIN DEVELOPERS: When creating GatewayError in PreLLMHook or PostLLMHook, you can set AllowFallbacks:
+// - AllowFallbacks = &true: Gateway will try fallback providers if available
+// - AllowFallbacks = &false: Gateway will return this error immediately, no fallbacks
 // - AllowFallbacks = nil: Treated as true by default (fallbacks allowed for resilience)
-type RakshaError struct {
+type GatewayError struct {
 	EventID        *string                `json:"event_id,omitempty"`
 	Type           *string                `json:"type,omitempty"`
-	IsRakshaError  bool                   `json:"is_raksha_error"`
+	IsGatewayError  bool                   `json:"is_gateway_error"`
 	StatusCode     *int                   `json:"status_code,omitempty"`
 	Error          *ErrorField            `json:"error"`
 	AllowFallbacks *bool                  `json:"-"` // Optional: Controls fallback behavior (nil = true by default)
 	StreamControl  *StreamControl         `json:"-"` // Optional: Controls stream behavior
-	ExtraFields    RakshaErrorExtraFields `json:"extra_fields"`
+	ExtraFields    GatewayErrorExtraFields `json:"extra_fields"`
 }
 
 // PopulateExtraFields sets RequestType, Provider, OriginalModelRequested, and ResolvedModelUsed on the
 // error's ExtraFields. Core always calls this both before and after RunPostLLMHooks, so any plugin
 // modifications to these 4 fields are no-ops — tampering with them inside plugins is discouraged.
-func (e *RakshaError) PopulateExtraFields(requestType RequestType, provider ModelProvider, originalModelRequested string, resolvedModelUsed string) {
+func (e *GatewayError) PopulateExtraFields(requestType RequestType, provider ModelProvider, originalModelRequested string, resolvedModelUsed string) {
 	if e == nil {
 		return
 	}
@@ -1905,18 +1905,18 @@ func (e *RakshaError) PopulateExtraFields(requestType RequestType, provider Mode
 // Without this, fmt's reflection printer walks ExtraFields.RawRequest /
 // RawResponse (which typically hold json.RawMessage = []byte) and dumps
 // every byte as a decimal, producing unreadable output.
-func (e *RakshaError) String() string {
+func (e *GatewayError) String() string {
 	if e == nil {
 		return "<nil>"
 	}
 	b, err := MarshalSorted(e)
 	if err != nil {
-		return fmt.Sprintf("RakshaError{marshal_err=%v}", err)
+		return fmt.Sprintf("GatewayError{marshal_err=%v}", err)
 	}
 	return string(b)
 }
 
-func (e *RakshaError) GetErrorString() string {
+func (e *GatewayError) GetErrorString() string {
 	if e == nil {
 		return ""
 	}
@@ -2026,8 +2026,8 @@ func (e *ErrorField) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// RakshaErrorExtraFields contains additional fields in an error response.
-type RakshaErrorExtraFields struct {
+// GatewayErrorExtraFields contains additional fields in an error response.
+type GatewayErrorExtraFields struct {
 	RoutingInfo RoutingInfo `json:"routing_info"`
 	// Deprecated: use RoutingInfo.Provider. Still populated for backward
 	// compatibility; new consumers should read from RoutingInfo.
@@ -2058,5 +2058,5 @@ type RakshaErrorExtraFields struct {
 	// post-LLM hooks (governance billing, logging cost) can charge for tokens
 	// the provider actually billed us for. Nil when the failure consumed no
 	// tokens (e.g. 401/403/429 before the model ran).
-	BilledUsage *RakshaLLMUsage `json:"billed_usage,omitempty"`
+	BilledUsage *GatewayLLMUsage `json:"billed_usage,omitempty"`
 }

@@ -5,9 +5,9 @@ import (
 	"sync"
 
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/plugins/guardrails"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/plugins/guardrails"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -27,7 +27,7 @@ func NewGuardrailsHandler(configManager ConfigManager, store *lib.Config) *Guard
 }
 
 // RegisterRoutes registers the configuration-related routes.
-func (h *GuardrailsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *GuardrailsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/guardrails/config", lib.ChainMiddlewares(h.getConfig, middlewares...))
 	r.PUT("/api/guardrails/config", lib.ChainMiddlewares(h.updateConfig, middlewares...))
 	r.PUT("/api/guardrails/rules", lib.ChainMiddlewares(h.updateRules, middlewares...))
@@ -130,7 +130,7 @@ func (h *GuardrailsHandler) saveConfig(ctx *fasthttp.RequestCtx, payload lib.Gua
 	h.store.GuardrailsConfig = &payload
 	h.store.Mu.Unlock()
 
-	// InstantiatePlugin(guardrails) reads rakshaConfig.GuardrailsConfig — reload so CEL/providers apply now.
+	// InstantiatePlugin(guardrails) reads gatewayConfig.GuardrailsConfig — reload so CEL/providers apply now.
 	if h.configManager != nil {
 		if err := h.configManager.ReloadPlugin(ctx, guardrails.PluginName, nil, nil, nil, nil); err != nil {
 			SendError(ctx, fasthttp.StatusInternalServerError, "Guardrails config saved but plugin reload failed: "+err.Error())

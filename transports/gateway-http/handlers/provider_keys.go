@@ -7,9 +7,9 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -98,7 +98,7 @@ func (h *ProviderHandler) createProviderKey(ctx *fasthttp.RequestCtx) {
 		baseProvider = providerConfig.CustomProviderConfig.BaseProviderType
 	}
 
-	if !raksha.CanProviderKeyValueBeEmpty(baseProvider) && key.Value.GetValue() == "" {
+	if !gateway.CanProviderKeyValueBeEmpty(baseProvider) && key.Value.GetValue() == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "Key value must not be empty")
 		return
 	}
@@ -122,7 +122,7 @@ func (h *ProviderHandler) createProviderKey(ctx *fasthttp.RequestCtx) {
 		key.ID = uuid.NewString()
 	}
 	if key.Enabled == nil {
-		key.Enabled = raksha.Ptr(true)
+		key.Enabled = gateway.Ptr(true)
 	}
 
 	if err := h.inMemoryStore.AddProviderKey(ctx, provider, key); err != nil {
@@ -217,7 +217,7 @@ func (h *ProviderHandler) updateProviderKey(ctx *fasthttp.RequestCtx) {
 		baseProvider = providerConfig.CustomProviderConfig.BaseProviderType
 	}
 
-	if !raksha.CanProviderKeyValueBeEmpty(baseProvider) && mergedKey.Value.GetValue() == "" {
+	if !gateway.CanProviderKeyValueBeEmpty(baseProvider) && mergedKey.Value.GetValue() == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "Key value must not be empty")
 		return
 	}

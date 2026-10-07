@@ -13,11 +13,11 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
-	"github.com/raksha/raksha/framework/migrator"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/gateway/gateway/framework/migrator"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -112,7 +112,7 @@ func acquireMigrationLock(ctx context.Context, db *gorm.DB, logger schemas.Logge
 			conn.Close()
 			return nil, fmt.Errorf(
 				"failed to acquire configstore migration lock (key=%d) after %d attempts over %s\n\n"+
-					"This usually means another Raksha pod (or a previous crashed pod's lingering\n"+
+					"This usually means another Gateway pod (or a previous crashed pod's lingering\n"+
 					"database session) is still holding the lock. To diagnose and resolve:\n\n"+
 					"1. Find who holds the lock:\n"+
 					"   SELECT pid, usename, application_name, client_addr, backend_start, state, query\n"+
@@ -155,7 +155,7 @@ func (l *migrationLock) release(ctx context.Context) {
 
 // RunSingleMigration applies a single gormigrate migration on the given
 // *gorm.DB. Mirrors (*RDBConfigStore).RunMigration but takes the *gorm.DB
-// directly, so downstream consumers (raksha-enterprise, plugins) can run
+// directly, so downstream consumers (gateway-enterprise, plugins) can run
 // their migrations inside a MigrateOnFreshConnection callback without having
 // to reach the throwaway pool through the ConfigStore abstraction.
 func RunSingleMigration(ctx context.Context, options *migrator.Options, db *gorm.DB, logger schemas.Logger, migration *migrator.Migration) error {
@@ -2516,7 +2516,7 @@ func migrationMoveKeysToProviderConfig(ctx context.Context, db *gorm.DB, logger 
 								providerConfig = tables.TableVirtualKeyProviderConfig{
 									VirtualKeyID:  assoc.VirtualKeyID,
 									Provider:      keyData.Provider,
-									Weight:        raksha.Ptr(1.0),
+									Weight:        gateway.Ptr(1.0),
 									AllowedModels: []string{},
 								}
 								if err := tx.Create(&providerConfig).Error; err != nil {
@@ -5132,7 +5132,7 @@ func migrationBackfillEmptyVirtualKeyConfigs(ctx context.Context, db *gorm.DB, l
 						providerConfig := tables.TableVirtualKeyProviderConfig{
 							VirtualKeyID:  vk.ID,
 							Provider:      provider.Name,
-							Weight:        raksha.Ptr(1.0),
+							Weight:        gateway.Ptr(1.0),
 							AllowedModels: []string{},
 							AllowAllKeys:  true,
 						}
@@ -8708,7 +8708,7 @@ func migrationAddOAuthAuthModeColumns(ctx context.Context, db *gorm.DB, logger s
 //
 // Why the change: session-mode identity is now caller-asserted via the
 // x-uf-mcp-session-id header (same trust model as a VK value). It's no longer
-// a Raksha-issued bearer token, so hashing buys nothing and the unique index
+// a Gateway-issued bearer token, so hashing buys nothing and the unique index
 // on session_token_hash was conflating "uniqueness of token value" with
 // "uniqueness of binding" — the latter is now enforced at the application
 // layer by the (mode, identity, mcp_client_id) lookup in
@@ -8821,15 +8821,15 @@ func migrationReplaceOauthSessionTokenWithSessionID(ctx context.Context, db *gor
 }
 
 // migrationDropLegacyOAuthServerTables drops the four tables that backed the
-// MCP-gateway-OAuth-server flow (Raksha acting as an OAuth Authorization
+// MCP-gateway-OAuth-server flow (Gateway acting as an OAuth Authorization
 // Server to upstream MCP clients), plus the gateway_session_id column on
-// oauth_user_sessions that linked them. Raksha is now strictly an OAuth
+// oauth_user_sessions that linked them. Gateway is now strictly an OAuth
 // *client* to upstream providers; the server-side flow was replaced by the
 // x-uf-mcp-session-id header model (see migrationReplaceOauthSessionTokenWithSessionID).
 //
 // Tables removed:
 //   - oauth_per_user_clients       (dynamic client registration)
-//   - oauth_per_user_sessions      (Raksha-issued bearer tokens for MCP clients)
+//   - oauth_per_user_sessions      (Gateway-issued bearer tokens for MCP clients)
 //   - oauth_per_user_codes         (authorization codes)
 //   - oauth_per_user_pending_flows (in-flight consent state)
 //
@@ -8871,7 +8871,7 @@ func migrationDropLegacyOAuthServerTables(ctx context.Context, db *gorm.DB, logg
 		},
 		Rollback: func(tx *gorm.DB) error {
 			// Irreversible. The four oauth_per_user_* tables backed the
-			// Raksha-as-OAuth-server flow; their original schemas (dynamic
+			// Gateway-as-OAuth-server flow; their original schemas (dynamic
 			// client metadata, hashed bearer tokens, authorization codes,
 			// PKCE state) cannot be reconstructed from the live oauth_user_*
 			// tables. A "best-effort" stub Rollback that re-creates empty
@@ -8888,7 +8888,7 @@ func migrationDropLegacyOAuthServerTables(ctx context.Context, db *gorm.DB, logg
 // migrationDropNonVKOauthUserRows hard-deletes user-mode and session-mode rows
 // from oauth_user_tokens and oauth_user_sessions. Only vk-mode rows survive the
 // refactor: their (virtual_key, mcp_client) binding is stable across the change.
-// User-mode and session-mode semantics changed when Raksha stopped acting as
+// User-mode and session-mode semantics changed when Gateway stopped acting as
 // an OAuth server (see migrationDropLegacyOAuthServerTables); the prior rows
 // are stale credentials that wouldn't satisfy a lookup under the new flow.
 // Affected users / clients re-authenticate fresh — the alternative is carrying
@@ -8929,9 +8929,9 @@ func migrationDropNonVKOauthUserRows(ctx context.Context, db *gorm.DB, logger sc
 }
 
 // migrationDropMCPExternalServerURL drops the mcp_external_server_url column
-// from config_client. This URL was used to advertise Raksha as an OAuth
+// from config_client. This URL was used to advertise Gateway as an OAuth
 // authorization server (.well-known endpoints, WWW-Authenticate header on
-// /mcp). Raksha no longer acts as an OAuth server (see
+// /mcp). Gateway no longer acts as an OAuth server (see
 // migrationDropLegacyOAuthServerTables), so the column is dead.
 //
 // Hash recompute is handled separately by
@@ -8939,7 +8939,7 @@ func migrationDropNonVKOauthUserRows(ctx context.Context, db *gorm.DB, logger sc
 // holds the AccessExclusiveLock only for the brief catalog update.
 //
 // The companion mcp_external_client_url column is retained — it's still used
-// as the redirect_uri base when Raksha acts as an OAuth *client* to upstream
+// as the redirect_uri base when Gateway acts as an OAuth *client* to upstream
 // MCP servers.
 func migrationDropMCPExternalServerURL(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
 	migrationName := "drop_mcp_external_server_url_column"

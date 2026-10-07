@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/configstore/tables"
 )
 
 func syncTestID(prefix string) string { return prefix + "_" + uuid.New().String()[:8] }

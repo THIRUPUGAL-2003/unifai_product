@@ -1,8 +1,9 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { resetDurationLabels } from "@/lib/constants/governance";
-import { useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store";
+import { getErrorMessage, useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { Customer } from "@/lib/types/governance";
 import { cn } from "@/lib/utils";
 import { virtualKeysForCustomer } from "@/lib/utils/governance";
@@ -97,9 +98,11 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 	const rateLimit = customer?.rate_limit;
 	const hasRateLimit = rateLimit?.token_max_limit != null || rateLimit?.request_max_limit != null;
 
-	const { data: teamsData } = useGetTeamsQuery(undefined, { skip: !open || !customer });
-	const { data: vksData } = useGetVirtualKeysQuery(undefined, { skip: !open || !customer });
-	const { data: buData } = useGetBusinessUnitsQuery(undefined, { skip: !open || !customer });
+	const { data: teamsData, isError: teamsFailed, error: teamsError } = useGetTeamsQuery(undefined, { skip: !open || !customer });
+	const { data: vksData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery(undefined, { skip: !open || !customer });
+	const { data: buData, isError: buFailed, error: buError } = useGetBusinessUnitsQuery(undefined, { skip: !open || !customer });
+	const helperQueryFailed = teamsFailed || vkFailed || buFailed;
+	const helperQueryError = teamsError || vkError || buError;
 
 	const customerTeams = (teamsData?.teams || []).filter((t) => t.customer_id === customer?.id);
 	const teamIds = new Set(customerTeams.map((t) => t.id));
@@ -119,6 +122,12 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 
 				{customer && (
 					<div className="space-y-6 px-8 py-4">
+						{helperQueryFailed ? (
+							<QueryErrorBanner
+								testId="customer-detail-query-error"
+								message={getErrorMessage(helperQueryError) || "Failed to load teams, virtual keys, or business units."}
+							/>
+						) : null}
 						<DetailCard title="Info">
 							<div className="grid grid-cols-2 gap-x-8 gap-y-4">
 								<div>

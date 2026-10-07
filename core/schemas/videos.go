@@ -61,7 +61,7 @@ type VideoObject struct {
 
 // --- Video Generation ---
 
-type RakshaVideoGenerationRequest struct {
+type GatewayVideoGenerationRequest struct {
 	Provider       ModelProvider              `json:"provider"`
 	Model          string                     `json:"model"`
 	Input          *VideoGenerationInput      `json:"input"`
@@ -70,11 +70,11 @@ type RakshaVideoGenerationRequest struct {
 	RawRequestBody []byte                     `json:"-"`
 }
 
-func (b *RakshaVideoGenerationRequest) GetRawRequestBody() []byte {
+func (b *GatewayVideoGenerationRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
-func (b *RakshaVideoGenerationRequest) GetExtraParams() map[string]interface{} {
+func (b *GatewayVideoGenerationRequest) GetExtraParams() map[string]interface{} {
 	if b == nil || b.Params == nil {
 		return nil
 	}
@@ -100,8 +100,8 @@ type VideoGenerationParameters struct {
 // DefaultVideoDuration is the default video duration in seconds for Gemini/Vertex when not specified.
 const DefaultVideoDuration = "8"
 
-// RakshaVideoGenerationResponse represents the video generation job response in raksha format.
-type RakshaVideoGenerationResponse struct {
+// GatewayVideoGenerationResponse represents the video generation job response in gateway format.
+type GatewayVideoGenerationResponse struct {
 	ID                 string             `json:"id,omitempty"`
 	CompletedAt        *int64             `json:"completed_at,omitempty"`          // Unix timestamp (seconds) when the job completed
 	CreatedAt          int64              `json:"created_at,omitempty"`            // Unix timestamp (seconds) when the job was created
@@ -118,11 +118,11 @@ type RakshaVideoGenerationResponse struct {
 	Videos             []VideoOutput      `json:"videos,omitempty"`                // Generated videos (supports multiple videos)
 	ContentFilter      *ContentFilterInfo `json:"content_filter,omitempty"`        // Information about content filtering (if applicable)
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields,omitempty"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields,omitempty"`
 }
 
 // getSecondsFromVideoRequest extracts Seconds from video-related requests.
-func getSecondsFromVideoRequest(req *RakshaRequest) *string {
+func getSecondsFromVideoRequest(req *GatewayRequest) *string {
 	if req == nil {
 		return nil
 	}
@@ -148,7 +148,7 @@ func getSecondsFromVideoRequest(req *RakshaRequest) *string {
 // BackfillParams populates response fields from the original request that are needed
 // for cost calculation but may not be returned by the provider.
 // - Seconds (duration from request params or default)
-func (r *RakshaVideoGenerationResponse) BackfillParams(req *RakshaRequest) {
+func (r *GatewayVideoGenerationResponse) BackfillParams(req *GatewayRequest) {
 	if r == nil || req == nil {
 		return
 	}
@@ -163,7 +163,7 @@ func (r *RakshaVideoGenerationResponse) BackfillParams(req *RakshaRequest) {
 
 // --- Video Remix ---
 
-type RakshaVideoRemixRequest struct {
+type GatewayVideoRemixRequest struct {
 	ID             string                `json:"id"`
 	Provider       ModelProvider         `json:"provider"`
 	Input          *VideoGenerationInput `json:"input"`
@@ -171,11 +171,11 @@ type RakshaVideoRemixRequest struct {
 	RawRequestBody []byte                `json:"-"`
 }
 
-func (b *RakshaVideoRemixRequest) GetRawRequestBody() []byte {
+func (b *GatewayVideoRemixRequest) GetRawRequestBody() []byte {
 	return b.RawRequestBody
 }
 
-func (b *RakshaVideoRemixRequest) GetExtraParams() map[string]interface{} {
+func (b *GatewayVideoRemixRequest) GetExtraParams() map[string]interface{} {
 	if b == nil {
 		return nil
 	}
@@ -184,42 +184,42 @@ func (b *RakshaVideoRemixRequest) GetExtraParams() map[string]interface{} {
 
 // --- Video List ---
 
-type RakshaVideoListRequest struct {
+type GatewayVideoListRequest struct {
 	Provider ModelProvider `json:"provider"`
 	After    *string       `json:"after,omitempty"`
 	Limit    *int          `json:"limit,omitempty"`
 	Order    *string       `json:"order,omitempty"`
 }
 
-type RakshaVideoListResponse struct {
+type GatewayVideoListResponse struct {
 	Object      string                     `json:"object"` // "list"
 	Data        []VideoObject              `json:"data"`
 	FirstID     *string                    `json:"first_id,omitempty"`
 	HasMore     *bool                      `json:"has_more,omitempty"`
 	LastID      *string                    `json:"last_id,omitempty"`
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
 // --- Video Retrieve / Delete ---
 
-type RakshaVideoReferenceRequest struct {
+type GatewayVideoReferenceRequest struct {
 	Provider ModelProvider `json:"provider"`
 	ID       string        `json:"id"`
 }
 
-type RakshaVideoDeleteRequest = RakshaVideoReferenceRequest
-type RakshaVideoRetrieveRequest = RakshaVideoReferenceRequest
+type GatewayVideoDeleteRequest = GatewayVideoReferenceRequest
+type GatewayVideoRetrieveRequest = GatewayVideoReferenceRequest
 
-type RakshaVideoDeleteResponse struct {
+type GatewayVideoDeleteResponse struct {
 	ID          string                     `json:"id"`
 	Deleted     bool                       `json:"deleted"`
 	Object      string                     `json:"object,omitempty"` // "video.deleted"
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
 // --- Video Download ---
 
-type RakshaVideoDownloadRequest struct {
+type GatewayVideoDownloadRequest struct {
 	Provider    ModelProvider         `json:"provider"`
 	ID          string                `json:"id"`
 	Variant     *VideoDownloadVariant `json:"variant,omitempty"`
@@ -234,12 +234,12 @@ const (
 	VideoDownloadVariantSpriteSheet VideoDownloadVariant = "sprite_sheet"
 )
 
-type RakshaVideoDownloadResponse struct {
+type GatewayVideoDownloadResponse struct {
 	VideoID     string `json:"video_id"`
 	Content     []byte `json:"-"`                      // Raw video content (not serialized)
 	ContentType string `json:"content_type,omitempty"` // MIME type (e.g., "video/mp4", "image/png" for thumbnails)
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
 type VideoLogParams struct {

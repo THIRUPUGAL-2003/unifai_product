@@ -1,4 +1,4 @@
-"""Runtime configuration and module-level config globals for Raksha Guard."""
+"""Runtime configuration and module-level config globals for Gateway Guard."""
 
 from __future__ import annotations
 
@@ -44,8 +44,9 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 DEFAULT_BACKEND = (
-    os.environ.get("SERVER_DOMAIN")
-    or os.environ.get("RAKSHA_BACKEND_URL")
+    os.environ.get("GATEWAY_BACKEND_URL")
+    or os.environ.get("GATEWAY_BACKEND_URL")
+    or os.environ.get("SERVER_DOMAIN")
     or ""
 ).strip().rstrip("/")
 AGENT_VERSION_BAKED = "1.1.16"
@@ -71,8 +72,8 @@ def exe_dir() -> str:
     """Directory for config next to the Guard binary / .app.
 
     Frozen layouts:
-    - Windows: folder containing Raksha_Guard.exe
-    - macOS .app: Contents/Resources (preferred) or folder containing Raksha_Guard.app
+    - Windows: folder containing Gateway_Guard.exe
+    - macOS .app: Contents/Resources (preferred) or folder containing Gateway_Guard.app
     """
     if getattr(sys, "frozen", False):
         d = os.path.dirname(os.path.abspath(sys.executable))
@@ -81,7 +82,7 @@ def exe_dir() -> str:
             resources = os.path.abspath(os.path.join(d, "..", "Resources"))
             if os.path.isdir(resources):
                 return resources
-            # Parent of Raksha_Guard.app (portable zip next to .app)
+            # Parent of Gateway_Guard.app (portable zip next to .app)
             return os.path.abspath(os.path.join(d, "..", "..", ".."))
         return d
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -108,7 +109,11 @@ def resolve_agent_version(baked: str = AGENT_VERSION_BAKED) -> str:
 
 # Installed EXE/.app version from guard_bootstrap: this module may be server hot-updated code
 # whose baked number differs, and auto-update must compare the real installer version.
-AGENT_VERSION = (os.environ.get("RAKSHA_GUARD_RUNTIME_VERSION") or "").strip() or resolve_agent_version(AGENT_VERSION_BAKED)
+AGENT_VERSION = (
+    os.environ.get("GATEWAY_GUARD_RUNTIME_VERSION")
+    or os.environ.get("GATEWAY_GUARD_RUNTIME_VERSION")
+    or ""
+).strip() or resolve_agent_version(AGENT_VERSION_BAKED)
 
 def _read_json(path: str) -> dict:
     try:
@@ -116,7 +121,7 @@ def _read_json(path: str) -> dict:
             data = json.load(f) or {}
             return data if isinstance(data, dict) else {}
     except Exception as e:
-        print(f"[Raksha Guard WARNING] Could not read {path}: {e}")
+        print(f"[Gateway Guard WARNING] Could not read {path}: {e}")
         return {}
 
 
@@ -126,11 +131,11 @@ def load_runtime_config() -> dict:
     """
     meipass = getattr(sys, "_MEIPASS", None)
     candidates = [
-        os.path.join(exe_dir(), "raksha_guard_config.json"),
-        os.path.join(meipass, "raksha_guard_config.json") if meipass else "",
-        os.path.join(exe_dir(), "config", "raksha_guard_config.json"),
-        os.path.join(exe_dir(), "release", "raksha_guard_config.json"),
-        os.path.join(data_dir(), "raksha_guard_config.json"),
+        os.path.join(exe_dir(), "gateway_guard_config.json"),
+        os.path.join(meipass, "gateway_guard_config.json") if meipass else "",
+        os.path.join(exe_dir(), "config", "gateway_guard_config.json"),
+        os.path.join(exe_dir(), "release", "gateway_guard_config.json"),
+        os.path.join(data_dir(), "gateway_guard_config.json"),
     ]
     candidates = [c for c in candidates if c]
     file_cfg: dict = {}
@@ -149,43 +154,50 @@ def load_runtime_config() -> dict:
                 loaded_from = cfg_path
                 break
     if loaded_from:
-        print(f"[Raksha Guard] Loaded config: {loaded_from}")
+        print(f"[Gateway Guard] Loaded config: {loaded_from}")
 
     def pick(env_key: str, file_key: str, default: str) -> str:
-        if os.environ.get(env_key):
-            return os.environ[env_key].strip()
+        # Prefer GATEWAY_* (common), fall back to legacy GATEWAY_*.
+        suffix = env_key
+        for prefix in ("GATEWAY_", "GATEWAY_"):
+            if suffix.startswith(prefix):
+                suffix = suffix[len(prefix) :]
+                break
+        for key in (f"GATEWAY_{suffix}", f"GATEWAY_{suffix}", env_key):
+            if os.environ.get(key):
+                return os.environ[key].strip()
         val = file_cfg.get(file_key)
         if val is not None and str(val).strip():
             return str(val).strip()
         return default
 
-    backend = pick("RAKSHA_BACKEND_URL", "backend_url", "").rstrip("/")
+    backend = pick("GATEWAY_BACKEND_URL", "backend_url", "").rstrip("/")
     if not backend:
         backend = (os.environ.get("SERVER_DOMAIN") or DEFAULT_BACKEND or "").strip().rstrip("/")
     if not backend:
         print(
-            "[Raksha Guard ERROR] backend_url missing — set RAKSHA_BACKEND_URL / SERVER_DOMAIN "
-            "or backend_url in raksha_guard_config.json"
+            "[Gateway Guard ERROR] backend_url missing — set GATEWAY_BACKEND_URL / SERVER_DOMAIN "
+            "or backend_url in gateway_guard_config.json"
         )
     default_proxy_port = (os.environ.get("PROXY_PORT") or "").strip()
-    # Laptop Guard bind comes from RAKSHA_PROXY_ADDR / config — NOT docker PROXY_PORT.
+    # Laptop Guard bind comes from GATEWAY_PROXY_ADDR / config — NOT docker PROXY_PORT.
     # PROXY_PORT is only a last-resort default when neither env nor config has proxy_addr.
     if default_proxy_port.isdigit():
         default_proxy_addr = f"127.0.0.1:{default_proxy_port}"
     else:
         default_proxy_addr = ""
-    env_proxy = (os.environ.get("RAKSHA_PROXY_ADDR") or "").strip()
+    env_proxy = (os.environ.get("GATEWAY_PROXY_ADDR") or os.environ.get("GATEWAY_PROXY_ADDR") or "").strip()
     if env_proxy:
         default_proxy_addr = env_proxy
-    proxy_addr = pick("RAKSHA_PROXY_ADDR", "proxy_addr", default_proxy_addr)
+    proxy_addr = pick("GATEWAY_PROXY_ADDR", "proxy_addr", default_proxy_addr)
     if not proxy_addr:
         print(
-            "[Raksha Guard ERROR] proxy_addr missing — set RAKSHA_PROXY_ADDR in .env "
-            "or proxy_addr in raksha_guard_config.json (run sync_config_from_env.py)"
+            "[Gateway Guard ERROR] proxy_addr missing — set GATEWAY_PROXY_ADDR in .env "
+            "or proxy_addr in gateway_guard_config.json (run sync_config_from_env.py)"
         )
-    pac_url = pick("RAKSHA_PAC_URL", "pac_url", f"{backend}/api/browser-ai/pac")
+    pac_url = pick("GATEWAY_PAC_URL", "pac_url", f"{backend}/api/browser-ai/pac")
     # Default 3s: Monitor/Block host list enters PAC same few seconds (not 10–30s wait).
-    sync_secs = pick("RAKSHA_PAC_SYNC_SECONDS", "pac_sync_seconds", "3")
+    sync_secs = pick("GATEWAY_PAC_SYNC_SECONDS", "pac_sync_seconds", "3")
     try:
         sync_i = int(float(sync_secs))
     except Exception:
@@ -193,19 +205,19 @@ def load_runtime_config() -> dict:
     # Floor 2s — 1s PAC churn felt like connection cuts; 2–3s still feels instant.
     sync_secs = str(max(2, min(sync_i, 600)))
 
-    server_mode_raw = pick("RAKSHA_SERVER_MODE", "server_mode", "0").lower()
+    server_mode_raw = pick("GATEWAY_SERVER_MODE", "server_mode", "0").lower()
     server_mode = server_mode_raw in ("1", "true", "yes", "on", "server", "network")
-    agent_type = pick("RAKSHA_AGENT_TYPE", "agent_type", "network" if server_mode else "endpoint").lower()
+    agent_type = pick("GATEWAY_AGENT_TYPE", "agent_type", "network" if server_mode else "endpoint").lower()
     if agent_type in ("server", "gateway", "corp", "shared"):
         agent_type = "network"
     if agent_type not in ("endpoint", "network"):
         agent_type = "network" if server_mode else "endpoint"
     listen_host = pick(
-        "RAKSHA_LISTEN_HOST",
+        "GATEWAY_LISTEN_HOST",
         "listen_host",
         "0.0.0.0" if server_mode else "127.0.0.1",
     )
-    pac_advertise = pick("RAKSHA_PAC_ADVERTISE_ADDR", "pac_advertise_addr", "")
+    pac_advertise = pick("GATEWAY_PAC_ADVERTISE_ADDR", "pac_advertise_addr", "")
     if not pac_advertise:
         # Endpoint: PAC points at local bind. Network: prefer proxy_addr if it is a
         # reachable hostname; otherwise leave empty so IT sets advertise explicitly.
@@ -214,28 +226,32 @@ def load_runtime_config() -> dict:
         elif proxy_addr and not proxy_addr.startswith(("0.0.0.0:", "*:")):
             pac_advertise = proxy_addr
 
-    os.environ["RAKSHA_BACKEND_URL"] = backend
-    os.environ["RAKSHA_PROXY_ADDR"] = proxy_addr
-    os.environ["RAKSHA_PAC_URL"] = pac_url
-    os.environ["RAKSHA_PAC_SYNC_SECONDS"] = str(sync_secs)
-    os.environ["RAKSHA_SERVER_MODE"] = "1" if server_mode else "0"
-    os.environ["RAKSHA_AGENT_TYPE"] = agent_type
-    os.environ["RAKSHA_LISTEN_HOST"] = listen_host
+    def _set_both(suffix: str, value: str) -> None:
+        os.environ[f"GATEWAY_{suffix}"] = value
+        os.environ[f"GATEWAY_{suffix}"] = value  # legacy readers in older proxy parts
+
+    _set_both("BACKEND_URL", backend)
+    _set_both("PROXY_ADDR", proxy_addr)
+    _set_both("PAC_URL", pac_url)
+    _set_both("PAC_SYNC_SECONDS", str(sync_secs))
+    _set_both("SERVER_MODE", "1" if server_mode else "0")
+    _set_both("AGENT_TYPE", agent_type)
+    _set_both("LISTEN_HOST", listen_host)
     if pac_advertise:
-        os.environ["RAKSHA_PAC_ADVERTISE_ADDR"] = pac_advertise
+        _set_both("PAC_ADVERTISE_ADDR", pac_advertise)
 
     pac_http_port = pick("PAC_HTTP_PORT", "pac_http_port", "")
     if pac_http_port:
         os.environ["PAC_HTTP_PORT"] = str(pac_http_port)
 
-    guard_secret = pick("RAKSHA_GUARD_SECRET", "guard_secret", "")
+    guard_secret = pick("GATEWAY_GUARD_SECRET", "guard_secret", "")
     if guard_secret:
-        os.environ["RAKSHA_GUARD_SECRET"] = guard_secret
+        _set_both("GUARD_SECRET", guard_secret)
 
     # Keep a copy in data_dir so logs/support can see active config (only when valid)
     if backend or (pac_http_port and str(pac_http_port).isdigit()):
         try:
-            with open(os.path.join(data_dir(), "raksha_guard_config.json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(data_dir(), "gateway_guard_config.json"), "w", encoding="utf-8") as f:
                 json.dump(
                     {
                         "backend_url": backend,
@@ -270,7 +286,7 @@ def load_runtime_config() -> dict:
 
 
 _CFG = load_runtime_config()
-RAKSHA_BACKEND_URL = _CFG["backend_url"]
+GATEWAY_BACKEND_URL = _CFG["backend_url"]
 PAC_URL = _CFG["pac_url"]
 PROXY_ADDR = _CFG["proxy_addr"]
 PAC_SYNC_SECONDS = _CFG["pac_sync_seconds"]
@@ -278,22 +294,33 @@ SERVER_MODE = bool(_CFG.get("server_mode"))
 AGENT_TYPE = str(_CFG.get("agent_type") or "endpoint")
 LISTEN_HOST = str(_CFG.get("listen_host") or "127.0.0.1")
 PAC_ADVERTISE_ADDR = str(_CFG.get("pac_advertise_addr") or PROXY_ADDR)
-RAKSHA_GUARD_SECRET = str(_CFG.get("guard_secret") or os.environ.get("RAKSHA_GUARD_SECRET") or "").strip()
-if RAKSHA_GUARD_SECRET:
-    os.environ["RAKSHA_GUARD_SECRET"] = RAKSHA_GUARD_SECRET
+GATEWAY_GUARD_SECRET = str(
+    _CFG.get("guard_secret")
+    or os.environ.get("GATEWAY_GUARD_SECRET")
+    or os.environ.get("GATEWAY_GUARD_SECRET")
+    or ""
+).strip()
+if GATEWAY_GUARD_SECRET:
+    os.environ["GATEWAY_GUARD_SECRET"] = GATEWAY_GUARD_SECRET
+    os.environ["GATEWAY_GUARD_SECRET"] = GATEWAY_GUARD_SECRET
 
 _pac_port_raw = str(_CFG.get("pac_http_port") or os.environ.get("PAC_HTTP_PORT") or "").strip()
 if not _pac_port_raw.isdigit():
     raise RuntimeError(
-        "PAC_HTTP_PORT missing — set it in .env or pac_http_port in raksha_guard_config.json "
+        "PAC_HTTP_PORT missing — set it in .env or pac_http_port in gateway_guard_config.json "
         "(run sync_config_from_env.py)"
     )
 PAC_HTTP_PORT = int(_pac_port_raw)
 
 
 def proxy_listen_port() -> int:
-    """MitM listen port from RAKSHA_PROXY_ADDR / PROXY_ADDR — never a stale hardcoded 8085."""
-    addr = (os.environ.get("RAKSHA_PROXY_ADDR") or PROXY_ADDR or "").strip()
+    """MitM listen port from GATEWAY_PROXY_ADDR / PROXY_ADDR — never a stale hardcoded 8085."""
+    addr = (
+        os.environ.get("GATEWAY_PROXY_ADDR")
+        or os.environ.get("GATEWAY_PROXY_ADDR")
+        or PROXY_ADDR
+        or ""
+    ).strip()
     if ":" in addr:
         try:
             port = int(addr.rsplit(":", 1)[-1])
@@ -305,5 +332,5 @@ def proxy_listen_port() -> int:
     if pp.isdigit():
         return int(pp)
     raise RuntimeError(
-        "proxy port unknown — set RAKSHA_PROXY_ADDR in .env or raksha_guard_config.json"
+        "proxy port unknown — set GATEWAY_PROXY_ADDR in .env or gateway_guard_config.json"
     )

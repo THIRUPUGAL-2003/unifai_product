@@ -1,4 +1,4 @@
-// Package anthropic implements the Anthropic provider for the Raksha API.
+// Package anthropic implements the Anthropic provider for the Gateway API.
 package anthropic
 
 import (
@@ -16,8 +16,8 @@ import (
 
 	"github.com/bytedance/sonic"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -28,8 +28,8 @@ type AnthropicProvider struct {
 	streamingClient      *fasthttp.Client              // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	apiVersion           string                        // API version for the provider
 	networkConfig        schemas.NetworkConfig         // Network configuration including extra headers
-	sendBackRawRequest   bool                          // Whether to include raw request in RakshaResponse
-	sendBackRawResponse  bool                          // Whether to include raw response in RakshaResponse
+	sendBackRawRequest   bool                          // Whether to include raw request in GatewayResponse
+	sendBackRawResponse  bool                          // Whether to include raw response in GatewayResponse
 	customProviderConfig *schemas.CustomProviderConfig // Custom provider config
 }
 
@@ -127,7 +127,7 @@ func (provider *AnthropicProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // buildRequestURL constructs the full request URL using the provider's configuration.
-func (provider *AnthropicProvider) buildRequestURL(ctx *schemas.RakshaContext, defaultPath string, requestType schemas.RequestType) string {
+func (provider *AnthropicProvider) buildRequestURL(ctx *schemas.GatewayContext, defaultPath string, requestType schemas.RequestType) string {
 	path, isCompleteURL := providerUtils.GetRequestPath(ctx, defaultPath, provider.customProviderConfig, requestType)
 	if isCompleteURL {
 		return path
@@ -135,7 +135,7 @@ func (provider *AnthropicProvider) buildRequestURL(ctx *schemas.RakshaContext, d
 	return provider.networkConfig.BaseURL + path
 }
 
-func setAnthropicRequestBody(ctx *schemas.RakshaContext, req *fasthttp.Request, body []byte) bool {
+func setAnthropicRequestBody(ctx *schemas.GatewayContext, req *fasthttp.Request, body []byte) bool {
 	// Keep one request-body path for both modes:
 	// - normal mode: send converted JSON/multipart bytes
 	// - large payload mode: stream original client body reader
@@ -174,7 +174,7 @@ func extractAnthropicResponsesUsageFromPrefetch(data []byte) *schemas.ResponsesR
 // anthropicRequestHeaders builds the auth/version headers for an Anthropic request: the API
 // version plus x-api-key when a key is present and Claude Code max-mode is off. Shared by the
 // provider's unary (completeRequest / HandleAnthropic*Request) and streaming paths.
-func (provider *AnthropicProvider) anthropicRequestHeaders(ctx *schemas.RakshaContext, key schemas.Key) map[string]string {
+func (provider *AnthropicProvider) anthropicRequestHeaders(ctx *schemas.GatewayContext, key schemas.Key) map[string]string {
 	headers := map[string]string{
 		"anthropic-version": provider.apiVersion,
 	}
@@ -192,9 +192,9 @@ func (provider *AnthropicProvider) anthropicRequestHeaders(ctx *schemas.RakshaCo
 // beta filtering, large-payload request body, large-response detection) but reads a full
 // response instead of a stream. Auth and version headers are supplied by the caller via the
 // headers map. On a large response it returns a nil body and signals via the
-// RakshaContextKeyLargeResponseMode context value (set by FinalizeResponseWithLargeDetection).
+// GatewayContextKeyLargeResponseMode context value (set by FinalizeResponseWithLargeDetection).
 func completeRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
 	jsonBody []byte,
@@ -205,7 +205,7 @@ func completeRequest(
 	requestType schemas.RequestType,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
-) ([]byte, time.Duration, map[string]string, *schemas.RakshaError) {
+) ([]byte, time.Duration, map[string]string, *schemas.GatewayError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -252,7 +252,7 @@ func completeRequest(
 	}
 
 	requestClient := client
-	responseThreshold, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseThreshold).(int64)
+	responseThreshold, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseThreshold).(int64)
 	isCountTokens := requestType == schemas.CountTokensRequest
 	// Count-tokens responses are always tiny — skip the large-response streaming client so the
 	// response is buffered normally.
@@ -262,13 +262,13 @@ func completeRequest(
 	}
 
 	// Send the request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, requestClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, requestClient, req, resp)
 	defer wait()
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
 	}
-	if rakshaErr != nil {
-		return nil, latency, nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, latency, nil, gatewayErr
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
@@ -285,7 +285,7 @@ func completeRequest(
 	if isCountTokens {
 		body, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			return nil, latency, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			return nil, latency, providerResponseHeaders, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 		}
 		return body, latency, providerResponseHeaders, nil
 	}
@@ -304,7 +304,7 @@ func completeRequest(
 
 // listModelsByKey performs a list models request for a single key.
 // Returns the response and latency, or an error if the request fails.
-func (provider *AnthropicProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) listModelsByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -324,14 +324,14 @@ func (provider *AnthropicProvider) listModelsByKey(ctx *schemas.RakshaContext, k
 	req.Header.Set("anthropic-version", provider.apiVersion)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -340,13 +340,13 @@ func (provider *AnthropicProvider) listModelsByKey(ctx *schemas.RakshaContext, k
 
 	// Parse Anthropic's response
 	var anthropicResponse AnthropicListModelsResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(resp.Body(), &anthropicResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(resp.Body(), &anthropicResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create final response
-	response := anthropicResponse.ToRakshaListModelsResponse(provider.GetProviderKey(), key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+	response := anthropicResponse.ToGatewayListModelsResponse(provider.GetProviderKey(), key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 	response.ExtraFields.Latency = latency.Milliseconds()
 
 	// Set raw request if enabled
@@ -366,12 +366,12 @@ func (provider *AnthropicProvider) listModelsByKey(ctx *schemas.RakshaContext, k
 // It fetches models using all provided keys and aggregates the results.
 // Uses a best-effort approach: continues with remaining keys even if some fail.
 // Requests are made concurrently for improved performance.
-func (provider *AnthropicProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
 	if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
-		return providerUtils.HandleKeylessListModelsRequest(schemas.Anthropic, func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+		return providerUtils.HandleKeylessListModelsRequest(schemas.Anthropic, func() (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 			return provider.listModelsByKey(ctx, schemas.Key{Models: schemas.WhiteList{"*"}}, request)
 		})
 	}
@@ -385,8 +385,8 @@ func (provider *AnthropicProvider) ListModels(ctx *schemas.RakshaContext, keys [
 
 // TextCompletion performs a text completion request to Anthropic's API.
 // It formats the request, sends it to Anthropic, and processes the response.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *AnthropicProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *AnthropicProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.TextCompletionRequest); err != nil {
 		return nil, err
 	}
@@ -405,17 +405,17 @@ func (provider *AnthropicProvider) TextCompletion(ctx *schemas.RakshaContext, ke
 	// Use struct directly for JSON marshaling (no beta headers for text completion)
 	responseBody, latency, providerResponseHeaders, err := completeRequest(ctx, provider.client, provider.buildRequestURL(ctx, "/v1/complete", schemas.TextCompletionRequest), jsonData, provider.anthropicRequestHeaders(ctx, key), provider.networkConfig.ExtraHeaders, provider.networkConfig.BetaHeaderOverrides, provider.GetProviderKey(), schemas.TextCompletionRequest, nil, provider.logger)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.RakshaTextCompletionResponse{
+	if isLargeResp, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.GatewayTextCompletionResponse{
 			Model: request.Model,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -426,41 +426,41 @@ func (provider *AnthropicProvider) TextCompletion(ctx *schemas.RakshaContext, ke
 	response := acquireAnthropicTextResponse()
 	defer releaseAnthropicTextResponse(response)
 
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, response, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	rakshaResponse := response.ToRakshaTextCompletionResponse()
+	gatewayResponse := response.ToGatewayTextCompletionResponse()
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // TextCompletionStream performs a streaming text completion request to Anthropic's API.
 // It formats the request, sends it to Anthropic, and processes the response.
-// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
-func (provider *AnthropicProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel of GatewayStreamChunk objects or an error if the request fails.
+func (provider *AnthropicProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionStreamRequest, provider.GetProviderKey())
 }
 
 // ChatCompletion performs a chat completion request to Anthropic's API.
 // It formats the request, sends it to Anthropic, and processes the response.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *AnthropicProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *AnthropicProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
 	}
@@ -485,41 +485,41 @@ func (provider *AnthropicProvider) ChatCompletion(ctx *schemas.RakshaContext, ke
 
 // HandleAnthropicChatCompletionRequest builds the Anthropic Messages chat request body from
 // config, performs a non-streaming request, and parses the native Anthropic response into a
-// RakshaChatResponse. It is the unary counterpart to HandleAnthropicChatCompletionStreaming,
+// GatewayChatResponse. It is the unary counterpart to HandleAnthropicChatCompletionStreaming,
 // shared by the Anthropic, Azure, Vertex, and Bedrock providers. Callers supply the request,
 // the per-provider build config (Provider, Model, ShouldSendBackRaw*, BetaHeaderOverrides),
 // the request URL, and the auth/version headers (x-api-key, Bearer, SigV4, anthropic-version)
 // via the headers map; beta headers are filtered for config.Provider.
 func HandleAnthropicChatCompletionRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaChatRequest,
+	request *schemas.GatewayChatRequest,
 	config AnthropicRequestBuildConfig,
 	headers map[string]string,
 	extraHeaders map[string]string,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
-) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-	jsonBody, rakshaErr := BuildAnthropicChatRequestBody(ctx, request, config)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+	jsonBody, gatewayErr := BuildAnthropicChatRequestBody(ctx, request, config)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Use struct directly for JSON marshaling
-	responseBody, latency, providerResponseHeaders, rakshaErr := completeRequest(ctx, client, url, jsonBody, headers, extraHeaders, config.BetaHeaderOverrides, config.Provider, schemas.ChatCompletionRequest, signer, logger)
+	responseBody, latency, providerResponseHeaders, gatewayErr := completeRequest(ctx, client, url, jsonBody, headers, extraHeaders, config.BetaHeaderOverrides, config.Provider, schemas.ChatCompletionRequest, signer, logger)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, config.ShouldSendBackRawRequest, config.ShouldSendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, config.ShouldSendBackRawRequest, config.ShouldSendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only.
-	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.RakshaChatResponse{
+	if isLargeResp, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.GatewayChatResponse{
 			Model: request.Model,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -530,43 +530,43 @@ func HandleAnthropicChatCompletionRequest(
 	response := AcquireAnthropicMessageResponse()
 	defer ReleaseAnthropicMessageResponse(response)
 
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, config.ShouldSendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, config.ShouldSendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, config.ShouldSendBackRawRequest, config.ShouldSendBackRawResponse, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, response, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, config.ShouldSendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, config.ShouldSendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, responseBody, config.ShouldSendBackRawRequest, config.ShouldSendBackRawResponse, latency)
 	}
 	// Create final response
-	rakshaResponse := response.ToRakshaChatResponse(ctx)
+	gatewayResponse := response.ToGatewayChatResponse(ctx)
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, config.ShouldSendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, config.ShouldSendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ChatCompletionStream performs a streaming chat completion request to the Anthropic API.
 // It supports real-time streaming of responses using Server-Sent Events (SSE).
-// Returns a channel containing RakshaStreamChunk objects representing the stream or an error if the request fails.
-func (provider *AnthropicProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel containing GatewayStreamChunk objects representing the stream or an error if the request fails.
+func (provider *AnthropicProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
 	}
 
-	jsonData, rakshaErr := BuildAnthropicChatRequestBody(ctx, request, AnthropicRequestBuildConfig{
+	jsonData, gatewayErr := BuildAnthropicChatRequestBody(ctx, request, AnthropicRequestBuildConfig{
 		Provider:                  schemas.Anthropic,
 		IsStreaming:               true,
 		ShouldSendBackRawRequest:  provider.sendBackRawRequest,
 		ShouldSendBackRawResponse: provider.sendBackRawResponse,
 	})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Prepare Anthropic headers
@@ -607,7 +607,7 @@ func (provider *AnthropicProvider) ChatCompletionStream(ctx *schemas.RakshaConte
 // totals only after the full stream, so the streaming accumulator must apply the
 // same fold before billing - including on a mid-stream cancel/timeout. The += is
 // not idempotent; callers guard with a flag to apply it exactly once.
-func normalizeCachedUsage(usage *schemas.RakshaLLMUsage) {
+func normalizeCachedUsage(usage *schemas.GatewayLLMUsage) {
 	if usage == nil || usage.PromptTokensDetails == nil {
 		return
 	}
@@ -616,7 +616,7 @@ func normalizeCachedUsage(usage *schemas.RakshaLLMUsage) {
 	usage.TotalTokens += cached
 }
 
-func accumulateAnthropicResponsesUsage(usage *schemas.ResponsesResponseUsage, billedUsage *schemas.RakshaLLMUsage, usageToProcess *AnthropicUsage) {
+func accumulateAnthropicResponsesUsage(usage *schemas.ResponsesResponseUsage, billedUsage *schemas.GatewayLLMUsage, usageToProcess *AnthropicUsage) {
 	if usage == nil || usageToProcess == nil {
 		return
 	}
@@ -694,7 +694,7 @@ func accumulateAnthropicResponsesUsage(usage *schemas.ResponsesResponseUsage, bi
 // HandleAnthropicChatCompletionStreaming handles streaming for Anthropic-compatible APIs.
 // This shared function reduces code duplication between providers that use the same SSE event format.
 func HandleAnthropicChatCompletionStreaming(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
 	jsonBody []byte,
@@ -706,11 +706,11 @@ func HandleAnthropicChatCompletionStreaming(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	postResponseConverter func(*schemas.RakshaChatResponse) *schemas.RakshaChatResponse,
+	postResponseConverter func(*schemas.GatewayChatResponse) *schemas.GatewayChatResponse,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -776,8 +776,8 @@ func HandleAnthropicChatCompletionStreaming(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -786,17 +786,17 @@ func HandleAnthropicChatCompletionStreaming(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// non-streaming path - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -806,13 +806,13 @@ func HandleAnthropicChatCompletionStreaming(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -828,12 +828,12 @@ func HandleAnthropicChatCompletionStreaming(
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 
 		if resp.BodyStream() == nil {
-			rakshaErr := providerUtils.NewRakshaOperationError(
+			gatewayErr := providerUtils.NewGatewayOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"),
 			)
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -861,11 +861,11 @@ func HandleAnthropicChatCompletionStreaming(
 		var modelName string
 		var finishReason *string
 
-		usage := &schemas.RakshaLLMUsage{}
+		usage := &schemas.GatewayLLMUsage{}
 		// Register the accumulating usage handle so a mid-stream cancel/timeout
 		// can bill for tokens already processed Mutated in place below;
 		// the deferred HandleStreamCancellation/Timeout reads it from context.
-		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, usage)
+		ctx.SetValue(schemas.GatewayContextKeyStreamAccumulatedUsage, usage)
 
 		// Fold cached tokens into prompt/total exactly once at stream end. The EOF
 		// path calls normalizeUsage() after the loop; on a mid-stream cancel/timeout
@@ -890,7 +890,7 @@ func HandleAnthropicChatCompletionStreaming(
 		var structuredOutputToolName string
 		var isAccumulatingStructuredOutput bool
 		var consumedStructuredOutput bool // true once the SO tool block has been fully streamed as content
-		if toolName, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok {
+		if toolName, ok := ctx.Value(schemas.GatewayContextKeyStructuredOutputToolName).(string); ok {
 			structuredOutputToolName = toolName
 		}
 
@@ -909,7 +909,7 @@ func HandleAnthropicChatCompletionStreaming(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading %s stream: %v", providerName, readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 					return
@@ -986,15 +986,15 @@ func HandleAnthropicChatCompletionStreaming(
 
 			// Extract finish reason from event delta
 			if event.Delta != nil && event.Delta.StopReason != nil {
-				mappedReason := ConvertAnthropicFinishReasonToRaksha(*event.Delta.StopReason)
+				mappedReason := ConvertAnthropicFinishReasonToGateway(*event.Delta.StopReason)
 				finishReason = &mappedReason
 
 				// Override finish reason for structured output only when the SO tool
 				// was consumed into content AND no real tool calls were also emitted.
 				// streamState.nextToolCallIndex > 0 means real tool_use blocks were seen.
 				if consumedStructuredOutput && streamState.nextToolCallIndex == 0 &&
-					*finishReason == string(schemas.RakshaFinishReasonToolCalls) {
-					stopReason := string(schemas.RakshaFinishReasonStop)
+					*finishReason == string(schemas.GatewayFinishReasonToolCalls) {
+					stopReason := string(schemas.GatewayFinishReasonStop)
 					finishReason = &stopReason
 				}
 			}
@@ -1017,10 +1017,10 @@ func HandleAnthropicChatCompletionStreaming(
 					if event.Delta != nil && event.Delta.Type == AnthropicStreamDeltaTypeInputJSON && event.Delta.PartialJSON != nil {
 						// Convert tool use delta to content delta
 						content := *event.Delta.PartialJSON
-						response := &schemas.RakshaChatResponse{
+						response := &schemas.GatewayChatResponse{
 							ID:     messageID,
 							Object: "chat.completion.chunk",
-							Choices: []schemas.RakshaResponseChoice{
+							Choices: []schemas.GatewayResponseChoice{
 								{
 									Index: 0,
 									ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1030,7 +1030,7 @@ func HandleAnthropicChatCompletionStreaming(
 									},
 								},
 							},
-							ExtraFields: schemas.RakshaResponseExtraFields{
+							ExtraFields: schemas.GatewayResponseExtraFields{
 								ChunkIndex: chunkIndex,
 								Latency:    time.Since(lastChunkTime).Milliseconds(),
 							},
@@ -1042,7 +1042,7 @@ func HandleAnthropicChatCompletionStreaming(
 							response.ExtraFields.RawResponse = eventData
 						}
 
-						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 						continue
 					}
 				}
@@ -1055,14 +1055,14 @@ func HandleAnthropicChatCompletionStreaming(
 				}
 			}
 
-			response, rakshaErr, isLastChunk := event.ToRakshaChatCompletionStream(ctx, structuredOutputToolName, streamState)
-			if rakshaErr != nil {
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, logger, postHookSpanFinalizer)
+			response, gatewayErr, isLastChunk := event.ToGatewayChatCompletionStream(ctx, structuredOutputToolName, streamState)
+			if gatewayErr != nil {
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, logger, postHookSpanFinalizer)
 				break
 			}
 			if response != nil {
-				response.ExtraFields = schemas.RakshaResponseExtraFields{
+				response.ExtraFields = schemas.GatewayResponseExtraFields{
 					ChunkIndex: chunkIndex,
 					Latency:    time.Since(lastChunkTime).Milliseconds(),
 				}
@@ -1081,20 +1081,20 @@ func HandleAnthropicChatCompletionStreaming(
 					response.ExtraFields.RawResponse = eventData
 				}
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 			if isLastChunk {
 				break
 			}
 		}
 		normalizeUsage()
-		response := providerUtils.CreateRakshaChatCompletionChunkResponse(messageID, usage, finishReason, chunkIndex, modelName, 0)
+		response := providerUtils.CreateGatewayChatCompletionChunkResponse(messageID, usage, finishReason, chunkIndex, modelName, 0)
 		if postResponseConverter != nil {
 			response = postResponseConverter(response)
 			if response == nil {
 				logger.Warn("postResponseConverter returned nil; skipping chunk")
 				// Setting error on the context to signal to the defer that we need to close the stream
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				return
 			}
 		}
@@ -1103,8 +1103,8 @@ func HandleAnthropicChatCompletionStreaming(
 			providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 		}
 		response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 	}()
 
 	return responseChan, nil
@@ -1112,8 +1112,8 @@ func HandleAnthropicChatCompletionStreaming(
 
 // Responses performs a chat completion request to Anthropic's API.
 // It formats the request, sends it to Anthropic, and processes the response.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *AnthropicProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *AnthropicProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.ResponsesRequest); err != nil {
 		return nil, err
 	}
@@ -1139,41 +1139,41 @@ func (provider *AnthropicProvider) Responses(ctx *schemas.RakshaContext, key sch
 // HandleAnthropicResponsesRequest is the Responses-API analogue of
 // HandleAnthropicChatCompletionRequest: it builds the Anthropic Messages request body from
 // config, performs a non-streaming request, and parses the native Anthropic response into a
-// RakshaResponsesResponse. Shared by the Anthropic, Azure, Vertex, and Bedrock providers.
+// GatewayResponsesResponse. Shared by the Anthropic, Azure, Vertex, and Bedrock providers.
 func HandleAnthropicResponsesRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
-	request *schemas.RakshaResponsesRequest,
+	request *schemas.GatewayResponsesRequest,
 	config AnthropicRequestBuildConfig,
 	headers map[string]string,
 	extraHeaders map[string]string,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
-) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-	jsonBody, rakshaErr := BuildAnthropicResponsesRequestBody(ctx, request, config)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+	jsonBody, gatewayErr := BuildAnthropicResponsesRequestBody(ctx, request, config)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	responseBody, latency, providerResponseHeaders, rakshaErr := completeRequest(ctx, client, url, jsonBody, headers, extraHeaders, config.BetaHeaderOverrides, config.Provider, schemas.ResponsesRequest, signer, logger)
+	responseBody, latency, providerResponseHeaders, gatewayErr := completeRequest(ctx, client, url, jsonBody, headers, extraHeaders, config.BetaHeaderOverrides, config.Provider, schemas.ResponsesRequest, signer, logger)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, config.ShouldSendBackRawRequest, config.ShouldSendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, config.ShouldSendBackRawRequest, config.ShouldSendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with usage from the prefetch preview.
-	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
-		preview, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadResponsePreview).(string)
-		return &schemas.RakshaResponsesResponse{
+	if isLargeResp, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); isLargeResp {
+		preview, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadResponsePreview).(string)
+		return &schemas.GatewayResponsesResponse{
 			ID:        schemas.Ptr("resp_" + providerUtils.GetRandomString(50)),
 			Object:    "response",
 			CreatedAt: int(time.Now().Unix()),
 			Model:     request.Model,
 			Usage:     extractAnthropicResponsesUsageFromPrefetch([]byte(preview)),
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -1184,30 +1184,30 @@ func HandleAnthropicResponsesRequest(
 	response := AcquireAnthropicMessageResponse()
 	defer ReleaseAnthropicMessageResponse(response)
 
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, config.ShouldSendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, config.ShouldSendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, config.ShouldSendBackRawRequest, config.ShouldSendBackRawResponse, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, response, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, config.ShouldSendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, config.ShouldSendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, responseBody, config.ShouldSendBackRawRequest, config.ShouldSendBackRawResponse, latency)
 	}
 
 	// Create final response
-	rakshaResponse := response.ToRakshaResponsesResponse(ctx)
+	gatewayResponse := response.ToGatewayResponsesResponse(ctx)
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, config.ShouldSendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, config.ShouldSendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ResponsesStream performs a streaming responses request to the Anthropic API.
-func (provider *AnthropicProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.ResponsesStreamRequest); err != nil {
 		return nil, err
 	}
@@ -1257,7 +1257,7 @@ func (provider *AnthropicProvider) ResponsesStream(ctx *schemas.RakshaContext, p
 // HandleAnthropicResponsesStream handles streaming for Anthropic-compatible APIs.
 // This shared function reduces code duplication between providers that use the same SSE event format.
 func HandleAnthropicResponsesStream(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
 	jsonBody []byte,
@@ -1269,11 +1269,11 @@ func HandleAnthropicResponsesStream(
 	sendBackRawResponse bool,
 	providerName schemas.ModelProvider,
 	postHookRunner schemas.PostHookRunner,
-	postResponseConverter func(*schemas.RakshaResponsesStreamResponse) *schemas.RakshaResponsesStreamResponse,
+	postResponseConverter func(*schemas.GatewayResponsesStreamResponse) *schemas.GatewayResponsesStreamResponse,
 	signer providerUtils.BodySigner,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, streamIdleTimeoutInSeconds)
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -1341,8 +1341,8 @@ func HandleAnthropicResponsesStream(
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1351,17 +1351,17 @@ func HandleAnthropicResponsesStream(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// non-streaming path - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1371,13 +1371,13 @@ func HandleAnthropicResponsesStream(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -1393,12 +1393,12 @@ func HandleAnthropicResponsesStream(
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		// If body stream is nil, return an error
 		if resp.BodyStream() == nil {
-			rakshaErr := providerUtils.NewRakshaOperationError(
+			gatewayErr := providerUtils.NewGatewayOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"),
 			)
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -1424,11 +1424,11 @@ func HandleAnthropicResponsesStream(
 
 		// Track minimal state needed for response format
 		usage := &schemas.ResponsesResponseUsage{}
-		billedUsage := &schemas.RakshaLLMUsage{}
+		billedUsage := &schemas.GatewayLLMUsage{}
 		// Register the accumulating usage handle so a mid-stream cancel/timeout
 		// can bill for Anthropic Responses usage already reported by message_start
 		// or message_delta events before the stream was interrupted.
-		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, billedUsage)
+		ctx.SetValue(schemas.GatewayContextKeyStreamAccumulatedUsage, billedUsage)
 
 		usageNormalized := false
 		normalizeBilledUsage := func() {
@@ -1449,7 +1449,7 @@ func HandleAnthropicResponsesStream(
 		defer ReleaseAnthropicResponsesStreamState(streamState)
 
 		// Set structured output tool name if present
-		if toolName, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok {
+		if toolName, ok := ctx.Value(schemas.GatewayContextKeyStructuredOutputToolName).(string); ok {
 			streamState.StructuredOutputToolName = toolName
 		}
 
@@ -1467,7 +1467,7 @@ func HandleAnthropicResponsesStream(
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					logger.Warn("Error reading %s stream: %v", providerName, readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				}
@@ -1485,7 +1485,7 @@ func HandleAnthropicResponsesStream(
 			if event.Message != nil && modelName == "" {
 				modelName = event.Message.Model
 			}
-			// Note: response.created and response.in_progress are now emitted by ToRakshaResponsesStream
+			// Note: response.created and response.in_progress are now emitted by ToGatewayResponsesStream
 			// from the message_start event, so we don't need to call them manually here
 
 			// Check for usage in both top-level event.Usage and nested event.Message.Usage
@@ -1504,23 +1504,23 @@ func HandleAnthropicResponsesStream(
 				accumulateAnthropicResponsesUsage(usage, billedUsage, usageToProcess)
 			}
 
-			responses, rakshaErr, isLastChunk := event.ToRakshaResponsesStream(ctx, chunkIndex, streamState)
+			responses, gatewayErr, isLastChunk := event.ToGatewayResponsesStream(ctx, chunkIndex, streamState)
 			// Propagate message_delta emission flag to context so the output converter
 			// (ToAnthropicResponsesStreamResponse) can skip synthesizing a duplicate.
 			if streamState.HasEmittedMessageDelta {
-				ctx.SetValue(schemas.RakshaContextKeyHasEmittedMessageDelta, true)
+				ctx.SetValue(schemas.GatewayContextKeyHasEmittedMessageDelta, true)
 			}
-			if rakshaErr != nil {
+			if gatewayErr != nil {
 				// If context was cancelled/timed out, let defer handle it
 				if ctx.Err() != nil {
 					return
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, logger, postHookSpanFinalizer)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, logger, postHookSpanFinalizer)
 				break
 			}
 
-			// Attach the upstream raw to exactly one raksha response. Default to the last,
+			// Attach the upstream raw to exactly one gateway response. Default to the last,
 			// but for the message_start expansion ([created, in_progress]) attach it to
 			// response.created
 			rawIdx := len(responses) - 1
@@ -1533,7 +1533,7 @@ func HandleAnthropicResponsesStream(
 			// Handle each response in the slice
 			for i, response := range responses {
 				if response != nil {
-					response.ExtraFields = schemas.RakshaResponseExtraFields{
+					response.ExtraFields = schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					}
@@ -1553,7 +1553,7 @@ func HandleAnthropicResponsesStream(
 
 					if isLastChunk && i == len(responses)-1 {
 						if response.Response == nil {
-							response.Response = &schemas.RakshaResponsesResponse{}
+							response.Response = &schemas.GatewayResponsesResponse{}
 						}
 						if usage.InputTokensDetails != nil {
 							usage.InputTokens = usage.InputTokens + usage.InputTokensDetails.CachedReadTokens + usage.InputTokensDetails.CachedWriteTokens
@@ -1565,11 +1565,11 @@ func HandleAnthropicResponsesStream(
 							providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 						}
 						response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 						return
 					}
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 				}
 			}
 
@@ -1580,7 +1580,7 @@ func HandleAnthropicResponsesStream(
 }
 
 // BatchCreate creates a new batch job.
-func (provider *AnthropicProvider) BatchCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) BatchCreate(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.BatchCreateRequest); err != nil {
 		return nil, err
 	}
@@ -1588,7 +1588,7 @@ func (provider *AnthropicProvider) BatchCreate(ctx *schemas.RakshaContext, key s
 	providerName := provider.GetProviderKey()
 
 	if len(request.Requests) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("requests array is required for Anthropic batch API", nil)
+		return nil, providerUtils.NewGatewayOperationError("requests array is required for Anthropic batch API", nil)
 	}
 
 	// Create request
@@ -1626,7 +1626,7 @@ func (provider *AnthropicProvider) BatchCreate(ctx *schemas.RakshaContext, key s
 
 	jsonData, err := providerUtils.MarshalSorted(anthropicReq)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 	usedLargePayloadBody := setAnthropicRequestBody(ctx, req, jsonData)
 
@@ -1634,13 +1634,13 @@ func (provider *AnthropicProvider) BatchCreate(ctx *schemas.RakshaContext, key s
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Handle error response
@@ -1651,21 +1651,21 @@ func (provider *AnthropicProvider) BatchCreate(ctx *schemas.RakshaContext, key s
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	var anthropicResp AnthropicBatchResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &anthropicResp, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &anthropicResp, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, body, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
-	return anthropicResp.ToRakshaBatchCreateResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+	return anthropicResp.ToGatewayBatchCreateResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 }
 
 // BatchList lists batch jobs using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *AnthropicProvider) BatchList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) BatchList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.BatchListRequest); err != nil {
 		return nil, err
 	}
@@ -1676,16 +1676,16 @@ func (provider *AnthropicProvider) BatchList(ctx *schemas.RakshaContext, keys []
 	// Initialize serial pagination helper (Anthropic uses AfterID for pagination)
 	helper, err := providerUtils.NewSerialListHelper(keys, request.AfterID, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaBatchListResponse{
+		return &schemas.GatewayBatchListResponse{
 			Object:  "list",
-			Data:    []schemas.RakshaBatchRetrieveResponse{},
+			Data:    []schemas.GatewayBatchRetrieveResponse{},
 			HasMore: false,
 		}, nil
 	}
@@ -1726,10 +1726,10 @@ func (provider *AnthropicProvider) BatchList(ctx *schemas.RakshaContext, keys []
 	req.Header.Set("anthropic-version", provider.apiVersion)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -1740,20 +1740,20 @@ func (provider *AnthropicProvider) BatchList(ctx *schemas.RakshaContext, keys []
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var anthropicResp AnthropicBatchListResponse
-	_, _, rakshaErr = providerUtils.HandleProviderResponse(body, &anthropicResp, nil, false, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, _, gatewayErr = providerUtils.HandleProviderResponse(body, &anthropicResp, nil, false, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert batches to Raksha format
-	batches := make([]schemas.RakshaBatchRetrieveResponse, 0, len(anthropicResp.Data))
+	// Convert batches to Gateway format
+	batches := make([]schemas.GatewayBatchRetrieveResponse, 0, len(anthropicResp.Data))
 	var lastBatchID string
 	for _, batch := range anthropicResp.Data {
-		batches = append(batches, *batch.ToRakshaBatchRetrieveResponse(latency, false, false, nil, nil))
+		batches = append(batches, *batch.ToGatewayBatchRetrieveResponse(latency, false, false, nil, nil))
 		lastBatchID = batch.ID
 	}
 
@@ -1761,38 +1761,38 @@ func (provider *AnthropicProvider) BatchList(ctx *schemas.RakshaContext, keys []
 	// Anthropic uses LastID as the cursor for pagination
 	nextCursor, hasMore := helper.BuildNextCursor(anthropicResp.HasMore, lastBatchID)
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaBatchListResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayBatchListResponse{
 		Object:  "list",
 		Data:    batches,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 	if nextCursor != "" {
-		rakshaResp.NextCursor = &nextCursor
+		gatewayResp.NextCursor = &nextCursor
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // BatchRetrieve retrieves a specific batch job by trying each key until found.
-func (provider *AnthropicProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) BatchRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.BatchRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	// batch id is required
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	providerName := provider.GetProviderKey()
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -1814,12 +1814,12 @@ func (provider *AnthropicProvider) BatchRetrieve(ctx *schemas.RakshaContext, key
 		req.Header.Set("anthropic-version", provider.apiVersion)
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -1838,17 +1838,17 @@ func (provider *AnthropicProvider) BatchRetrieve(ctx *schemas.RakshaContext, key
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var anthropicResp AnthropicBatchResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -1856,7 +1856,7 @@ func (provider *AnthropicProvider) BatchRetrieve(ctx *schemas.RakshaContext, key
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := anthropicResp.ToRakshaBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+		result := anthropicResp.ToGatewayBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 		return result, nil
 	}
 
@@ -1864,21 +1864,21 @@ func (provider *AnthropicProvider) BatchRetrieve(ctx *schemas.RakshaContext, key
 }
 
 // BatchCancel cancels a batch job by trying each key until successful.
-func (provider *AnthropicProvider) BatchCancel(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) BatchCancel(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.BatchCancelRequest); err != nil {
 		return nil, err
 	}
 
 	// batch id is required
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	providerName := provider.GetProviderKey()
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -1896,12 +1896,12 @@ func (provider *AnthropicProvider) BatchCancel(ctx *schemas.RakshaContext, keys 
 		req.Header.Set("anthropic-version", provider.apiVersion)
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -1920,17 +1920,17 @@ func (provider *AnthropicProvider) BatchCancel(ctx *schemas.RakshaContext, keys 
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var anthropicResp AnthropicBatchResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -1938,11 +1938,11 @@ func (provider *AnthropicProvider) BatchCancel(ctx *schemas.RakshaContext, keys 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := &schemas.RakshaBatchCancelResponse{
+		result := &schemas.GatewayBatchCancelResponse{
 			ID:     anthropicResp.ID,
 			Object: anthropicResp.Type,
-			Status: ToRakshaBatchStatus(anthropicResp.ProcessingStatus),
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			Status: ToGatewayBatchStatus(anthropicResp.ProcessingStatus),
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -1975,23 +1975,23 @@ func (provider *AnthropicProvider) BatchCancel(ctx *schemas.RakshaContext, keys 
 }
 
 // BatchDelete is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) BatchDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) BatchDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults retrieves batch results by trying each key until found.
-func (provider *AnthropicProvider) BatchResults(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) BatchResults(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.BatchResultsRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	providerName := provider.GetProviderKey()
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -2008,12 +2008,12 @@ func (provider *AnthropicProvider) BatchResults(ctx *schemas.RakshaContext, keys
 		req.Header.Set("anthropic-version", provider.apiVersion)
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2032,7 +2032,7 @@ func (provider *AnthropicProvider) BatchResults(ctx *schemas.RakshaContext, keys
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
@@ -2050,7 +2050,7 @@ func (provider *AnthropicProvider) BatchResults(ctx *schemas.RakshaContext, keys
 				return err
 			}
 
-			// Convert to Raksha format
+			// Convert to Gateway format
 			resultItem := schemas.BatchResultItem{
 				CustomID: anthropicResult.CustomID,
 				Result: &schemas.BatchResultData{
@@ -2070,10 +2070,10 @@ func (provider *AnthropicProvider) BatchResults(ctx *schemas.RakshaContext, keys
 			return nil
 		})
 
-		batchResultsResp := &schemas.RakshaBatchResultsResponse{
+		batchResultsResp := &schemas.GatewayBatchResultsResponse{
 			BatchID: request.BatchID,
 			Results: results,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -2089,67 +2089,67 @@ func (provider *AnthropicProvider) BatchResults(ctx *schemas.RakshaContext, keys
 }
 
 // Embedding is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, input *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, input *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.EmbeddingRequest, provider.GetProviderKey())
 }
 
 // Speech is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechRequest, provider.GetProviderKey())
 }
 
 // SpeechStream is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *AnthropicProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, provider.GetProviderKey())
 }
 
 // Transcription is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionRequest, provider.GetProviderKey())
 }
 
 // TranscriptionStream is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *AnthropicProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, provider.GetProviderKey())
 }
 
 // ImageGeneration is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationRequest, provider.GetProviderKey())
 }
 
 // ImageGenerationStream is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ImageGenerationStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageGenerationRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationStreamRequest, provider.GetProviderKey())
 }
 
 // ImageEdit is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditRequest, provider.GetProviderKey())
 }
 
 // ImageEditStream is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditStreamRequest, provider.GetProviderKey())
 }
 
 // ImageVariation is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // Rerank is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // FileUpload uploads a file to Anthropic's Files API.
-func (provider *AnthropicProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) FileUpload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.FileUploadRequest); err != nil {
 		return nil, err
 	}
@@ -2157,7 +2157,7 @@ func (provider *AnthropicProvider) FileUpload(ctx *schemas.RakshaContext, key sc
 	providerName := provider.GetProviderKey()
 
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("file content is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file content is required", nil)
 	}
 
 	// Create multipart form data
@@ -2171,14 +2171,14 @@ func (provider *AnthropicProvider) FileUpload(ctx *schemas.RakshaContext, key sc
 	}
 	part, err := writer.CreateFormFile("file", filename)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to create form file", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to create form file", err)
 	}
 	if _, err := part.Write(request.File); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write file content", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write file content", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to close multipart writer", err)
 	}
 
 	// Create request
@@ -2201,10 +2201,10 @@ func (provider *AnthropicProvider) FileUpload(ctx *schemas.RakshaContext, key sc
 	req.SetBody(buf.Bytes())
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -2215,24 +2215,24 @@ func (provider *AnthropicProvider) FileUpload(ctx *schemas.RakshaContext, key sc
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var anthropicResp AnthropicFileResponse
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	return anthropicResp.ToRakshaFileUploadResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+	return anthropicResp.ToGatewayFileUploadResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 }
 
 // FileList lists files from all provided keys and aggregates results.
 // FileList lists files using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *AnthropicProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) FileList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.FileListRequest); err != nil {
 		return nil, err
 	}
@@ -2244,14 +2244,14 @@ func (provider *AnthropicProvider) FileList(ctx *schemas.RakshaContext, keys []s
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaFileListResponse{
+		return &schemas.GatewayFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -2291,10 +2291,10 @@ func (provider *AnthropicProvider) FileList(ctx *schemas.RakshaContext, keys []s
 	appendBetaHeader(req, AnthropicFilesAPIBetaHeader)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -2305,16 +2305,16 @@ func (provider *AnthropicProvider) FileList(ctx *schemas.RakshaContext, keys []s
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var anthropicResp AnthropicFileListResponse
-	_, _, rakshaErr = providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, _, gatewayErr = providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert files to Raksha format
+	// Convert files to Gateway format
 	files := make([]schemas.FileObject, 0, len(anthropicResp.Data))
 	var lastFileID string
 	for _, file := range anthropicResp.Data {
@@ -2334,24 +2334,24 @@ func (provider *AnthropicProvider) FileList(ctx *schemas.RakshaContext, keys []s
 	// Anthropic uses LastID as the cursor for pagination
 	nextCursor, hasMore := helper.BuildNextCursor(anthropicResp.HasMore, lastFileID)
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaFileListResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayFileListResponse{
 		Object:  "list",
 		Data:    files,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 	if nextCursor != "" {
-		rakshaResp.After = &nextCursor
+		gatewayResp.After = &nextCursor
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // FileRetrieve retrieves file metadata from Anthropic's Files API by trying each key until found.
-func (provider *AnthropicProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) FileRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.FileRetrieveRequest); err != nil {
 		return nil, err
 	}
@@ -2359,13 +2359,13 @@ func (provider *AnthropicProvider) FileRetrieve(ctx *schemas.RakshaContext, keys
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -2388,12 +2388,12 @@ func (provider *AnthropicProvider) FileRetrieve(ctx *schemas.RakshaContext, keys
 		appendBetaHeader(req, AnthropicFilesAPIBetaHeader)
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2412,17 +2412,17 @@ func (provider *AnthropicProvider) FileRetrieve(ctx *schemas.RakshaContext, keys
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var anthropicResp AnthropicFileResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2430,14 +2430,14 @@ func (provider *AnthropicProvider) FileRetrieve(ctx *schemas.RakshaContext, keys
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		return anthropicResp.ToRakshaFileRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+		return anthropicResp.ToGatewayFileRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 	}
 
 	return nil, lastErr
 }
 
 // FileDelete deletes a file from Anthropic's Files API by trying each key until successful.
-func (provider *AnthropicProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) FileDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.FileDeleteRequest); err != nil {
 		return nil, err
 	}
@@ -2445,13 +2445,13 @@ func (provider *AnthropicProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -2470,12 +2470,12 @@ func (provider *AnthropicProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 		appendBetaHeader(req, AnthropicFilesAPIBetaHeader)
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2494,11 +2494,11 @@ func (provider *AnthropicProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			return &schemas.RakshaFileDeleteResponse{
+			return &schemas.GatewayFileDeleteResponse{
 				ID:      request.FileID,
 				Object:  "file",
 				Deleted: true,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					Latency: latency.Milliseconds(),
 				},
 			}, nil
@@ -2509,17 +2509,17 @@ func (provider *AnthropicProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var anthropicResp AnthropicFileDeleteResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &anthropicResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2527,11 +2527,11 @@ func (provider *AnthropicProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := &schemas.RakshaFileDeleteResponse{
+		result := &schemas.GatewayFileDeleteResponse{
 			ID:      anthropicResp.ID,
 			Object:  "file",
 			Deleted: anthropicResp.Type == "file_deleted",
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -2552,7 +2552,7 @@ func (provider *AnthropicProvider) FileDelete(ctx *schemas.RakshaContext, keys [
 
 // FileContent downloads file content from Anthropic's Files API by trying each key until found.
 // Note: Only files created by skills or the code execution tool can be downloaded.
-func (provider *AnthropicProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) FileContent(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.FileContentRequest); err != nil {
 		return nil, err
 	}
@@ -2560,10 +2560,10 @@ func (provider *AnthropicProvider) FileContent(ctx *schemas.RakshaContext, keys 
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		// Create request
 		req := fasthttp.AcquireRequest()
@@ -2580,12 +2580,12 @@ func (provider *AnthropicProvider) FileContent(ctx *schemas.RakshaContext, keys 
 		req.Header.Set("anthropic-version", provider.apiVersion)
 		appendBetaHeader(req, AnthropicFilesAPIBetaHeader)
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2604,7 +2604,7 @@ func (provider *AnthropicProvider) FileContent(ctx *schemas.RakshaContext, keys 
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
@@ -2619,11 +2619,11 @@ func (provider *AnthropicProvider) FileContent(ctx *schemas.RakshaContext, keys 
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		return &schemas.RakshaFileContentResponse{
+		return &schemas.GatewayFileContentResponse{
 			FileID:      request.FileID,
 			Content:     content,
 			ContentType: contentType,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
@@ -2633,7 +2633,7 @@ func (provider *AnthropicProvider) FileContent(ctx *schemas.RakshaContext, keys 
 }
 
 // CountTokens counts tokens for a given request using Anthropic's API.
-func (provider *AnthropicProvider) CountTokens(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) CountTokens(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.CountTokensRequest); err != nil {
 		return nil, err
 	}
@@ -2648,16 +2648,16 @@ func (provider *AnthropicProvider) CountTokens(ctx *schemas.RakshaContext, key s
 		return nil, err
 	}
 
-	responseBody, latency, providerResponseHeaders, rakshaErr := completeRequest(ctx, provider.client, provider.buildRequestURL(ctx, "/v1/messages/count_tokens", schemas.CountTokensRequest), jsonBody, provider.anthropicRequestHeaders(ctx, key), provider.networkConfig.ExtraHeaders, provider.networkConfig.BetaHeaderOverrides, provider.GetProviderKey(), schemas.CountTokensRequest, nil, provider.logger)
+	responseBody, latency, providerResponseHeaders, gatewayErr := completeRequest(ctx, provider.client, provider.buildRequestURL(ctx, "/v1/messages/count_tokens", schemas.CountTokensRequest), jsonBody, provider.anthropicRequestHeaders(ctx, key), provider.networkConfig.ExtraHeaders, provider.networkConfig.BetaHeaderOverrides, provider.GetProviderKey(), schemas.CountTokensRequest, nil, provider.logger)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	anthropicResponse := &AnthropicCountTokensResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(
 		responseBody,
 		anthropicResponse,
 		jsonBody,
@@ -2665,11 +2665,11 @@ func (provider *AnthropicProvider) CountTokens(ctx *schemas.RakshaContext, key s
 		providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse),
 	)
 
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	response := anthropicResponse.ToRakshaCountTokensResponse(request.Model)
+	response := anthropicResponse.ToGatewayCountTokensResponse(request.Model)
 	response.Model = request.Model
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -2687,90 +2687,90 @@ func (provider *AnthropicProvider) CountTokens(ctx *schemas.RakshaContext, key s
 }
 
 // Compaction is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) VideoGeneration(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) VideoGeneration(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoGenerationRequest, provider.GetProviderKey())
 }
 
 // VideoRetrieve is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) VideoRetrieve(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) VideoRetrieve(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRetrieveRequest, provider.GetProviderKey())
 }
 
 // VideoDownload is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) VideoDownload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) VideoDownload(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDownloadRequest, provider.GetProviderKey())
 }
 
 // VideoDelete is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) VideoDelete(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) VideoList(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) VideoRemix(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ContainerCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ContainerList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ContainerRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ContainerDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ContainerFileCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ContainerFileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ContainerFileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ContainerFileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Anthropic provider.
-func (provider *AnthropicProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *AnthropicProvider) ContainerFileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 func (provider *AnthropicProvider) Passthrough(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
-	req *schemas.RakshaPassthroughRequest,
-) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.PassthroughRequest); err != nil {
 		return nil, err
 	}
@@ -2801,30 +2801,30 @@ func (provider *AnthropicProvider) Passthrough(
 
 	fasthttpReq.SetBody(req.Body)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to decode response body", err)
 	}
 
-	var passthroughUsage *schemas.RakshaPassthroughUsage
+	var passthroughUsage *schemas.GatewayPassthroughUsage
 	if resp.StatusCode() >= 200 && resp.StatusCode() < 300 {
 		passthroughUsage = ExtractAnthropicPassthroughUsage(req.Path, req.Body, body)
 	}
 
-	rakshaResponse := &schemas.RakshaPassthroughResponse{
+	gatewayResponse := &schemas.GatewayPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 			PassthroughPath:         req.Path,
@@ -2832,16 +2832,16 @@ func (provider *AnthropicProvider) Passthrough(
 		PassthroughUsage: passthroughUsage,
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 func (provider *AnthropicProvider) PassthroughStream(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	req *schemas.RakshaPassthroughRequest,
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Anthropic, provider.customProviderConfig, schemas.PassthroughStreamRequest); err != nil {
 		return nil, err
 	}
@@ -2882,8 +2882,8 @@ func (provider *AnthropicProvider) PassthroughStream(
 	if err != nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -2892,18 +2892,18 @@ func (provider *AnthropicProvider) PassthroughStream(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	bodyStream := resp.BodyStream()
 	if bodyStream == nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			"provider returned an empty stream body",
 			fmt.Errorf("provider returned an empty stream body"),
 		)
@@ -2929,7 +2929,7 @@ func (provider *AnthropicProvider) PassthroughStream(
 			StartTime:        startTime,
 			Logger:           provider.logger,
 			HasUsage:         HasAnthropicPassthroughUsage,
-			Observe: func(event []byte) *schemas.RakshaPassthroughUsage {
+			Observe: func(event []byte) *schemas.GatewayPassthroughUsage {
 				if messagesUsage != nil {
 					return messagesUsage.ObserveEvent(event)
 				}

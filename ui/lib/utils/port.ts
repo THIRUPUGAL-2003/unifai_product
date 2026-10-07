@@ -1,5 +1,5 @@
 /**
- * Port and URL utility - single source of truth for Raksha backend connectivity
+ * Port and URL utility - single source of truth for gateway backend connectivity
  *
  * This utility handles:
  * - Development vs Production environment detection
@@ -24,8 +24,12 @@ function getPortConfig(): PortConfig {
 
 	if (isDevelopment) {
 		// Development mode: Vite dev server connects to configured backend
-		const configuredBackendUrl = (process.env.RAKSHA_BACKEND_URL || "").trim();
-		const port = process.env.RAKSHA_PORT || "8001";
+		const configuredBackendUrl = (
+			process.env.GATEWAY_BACKEND_URL ||
+			process.env.GATEWAY_BACKEND_URL ||
+			""
+		).trim();
+		const port = process.env.GATEWAY_PORT || process.env.GATEWAY_PORT || "8001";
 		const baseUrl = configuredBackendUrl || `http://localhost:${port}`;
 		const isHttps = baseUrl.startsWith("https:");
 		const wsProtocol = isHttps ? "wss:" : "ws:";

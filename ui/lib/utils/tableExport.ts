@@ -5,7 +5,7 @@
 export type ExportTableColumn = { key: string; header: string };
 export type ExportTableRow = Record<string, string | number | boolean | null | undefined>;
 
-import { COMPANY_LOGO } from "@/lib/constants/config";
+import { COMPANY_LOGO, PRODUCT_NAME } from "@/lib/constants/config";
 
 const LOGO_SRC = COMPANY_LOGO || "/yes-panchi-logo.png";
 
@@ -325,7 +325,7 @@ export async function downloadPdfTable(opts: {
 		pdf.setFontSize(7);
 		pdf.setTextColor(140, 140, 140);
 		pdf.text(`Page ${pageNum} · ${totalHint}`, margin, pageH - 4);
-		pdf.text("Powered by Raksha", pageW - margin, pageH - 4, { align: "right" });
+		pdf.text(`Powered by ${PRODUCT_NAME}`, pageW - margin, pageH - 4, { align: "right" });
 	};
 
 	// Title block (page 1)

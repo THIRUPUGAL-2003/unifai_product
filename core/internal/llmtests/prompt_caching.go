@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,7 +40,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "get_account_info",
-				Description: raksha.Ptr("Retrieve account information for a given account ID"),
+				Description: gateway.Ptr("Retrieve account information for a given account ID"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -57,7 +57,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "calculate_usage_cost",
-				Description: raksha.Ptr("Calculate the cost for cloud resource usage based on service type and quantity"),
+				Description: gateway.Ptr("Calculate the cost for cloud resource usage based on service type and quantity"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -84,7 +84,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "check_api_status",
-				Description: raksha.Ptr("Check the current status and health of the API service"),
+				Description: gateway.Ptr("Check the current status and health of the API service"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -101,7 +101,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "create_support_ticket",
-				Description: raksha.Ptr("Create a new support ticket for a customer issue"),
+				Description: gateway.Ptr("Create a new support ticket for a customer issue"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -132,7 +132,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "get_service_documentation",
-				Description: raksha.Ptr("Retrieve documentation for a specific service or feature"),
+				Description: gateway.Ptr("Retrieve documentation for a specific service or feature"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -154,7 +154,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "list_available_regions",
-				Description: raksha.Ptr("Get a list of available cloud regions for deployment"),
+				Description: gateway.Ptr("Get a list of available cloud regions for deployment"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -172,7 +172,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "estimate_deployment_cost",
-				Description: raksha.Ptr("Estimate the monthly cost for a cloud deployment configuration"),
+				Description: gateway.Ptr("Estimate the monthly cost for a cloud deployment configuration"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -201,7 +201,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "validate_api_key",
-				Description: raksha.Ptr("Validate an API key and return its permissions and status"),
+				Description: gateway.Ptr("Validate an API key and return its permissions and status"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -218,7 +218,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "get_usage_analytics",
-				Description: raksha.Ptr("Retrieve usage analytics and metrics for an account"),
+				Description: gateway.Ptr("Retrieve usage analytics and metrics for an account"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -248,7 +248,7 @@ func GetPromptCachingTools() []schemas.ChatTool {
 			Type: schemas.ChatToolTypeFunction,
 			Function: &schemas.ChatToolFunction{
 				Name:        "check_compliance_status",
-				Description: raksha.Ptr("Check compliance status and certifications for security and regulatory requirements"),
+				Description: gateway.Ptr("Check compliance status and certifications for security and regulatory requirements"),
 				Parameters: &schemas.ToolFunctionParameters{
 					Type: "object",
 					Properties: schemas.NewOrderedMapFromPairs(
@@ -273,13 +273,13 @@ func GetPromptCachingTools() []schemas.ChatTool {
 }
 
 // RunPromptCachingToolBlocksTest validates that cache_control on tool_use and tool_result
-// content blocks survives the Raksha round-trip (Anthropic format -> Raksha ResponsesMessage -> Provider format).
+// content blocks survives the Gateway round-trip (Anthropic format -> Gateway ResponsesMessage -> Provider format).
 // It sends a Responses API request with cache_control on function_call and function_call_output messages,
 // enables raw request capture, and inspects the outgoing provider request to verify cache markers are present.
 //
 // For Anthropic/Vertex: verifies "cache_control" appears on tool_use and tool_result content blocks.
 // For Bedrock: verifies "cachePoint" blocks appear after toolUse and toolResult blocks.
-func RunPromptCachingToolBlocksTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunPromptCachingToolBlocksTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.PromptCaching {
 		t.Logf("Prompt caching tool blocks test not supported for provider %s", testConfig.Provider)
 		return
@@ -303,13 +303,13 @@ func RunPromptCachingToolBlocksTest(t *testing.T, client *raksha.Raksha, ctx con
 
 		// System message with long prefix (ensures we exceed minimum cache token threshold)
 		systemMsg := schemas.ResponsesMessage{
-			Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
-			Role: raksha.Ptr(schemas.ResponsesInputMessageRoleSystem),
+			Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
+			Role: gateway.Ptr(schemas.ResponsesInputMessageRoleSystem),
 			Content: &schemas.ResponsesMessageContent{
 				ContentBlocks: []schemas.ResponsesMessageContentBlock{
 					{
 						Type:         schemas.ResponsesInputMessageContentBlockTypeText,
-						Text:         raksha.Ptr(longSharedPrefix),
+						Text:         gateway.Ptr(longSharedPrefix),
 						CacheControl: cacheControl,
 					},
 				},
@@ -318,47 +318,47 @@ func RunPromptCachingToolBlocksTest(t *testing.T, client *raksha.Raksha, ctx con
 
 		// User asks about weather
 		userMsg1 := schemas.ResponsesMessage{
-			Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
-			Role: raksha.Ptr(schemas.ResponsesInputMessageRoleUser),
+			Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
+			Role: gateway.Ptr(schemas.ResponsesInputMessageRoleUser),
 			Content: &schemas.ResponsesMessageContent{
-				ContentStr: raksha.Ptr("What's the weather in San Francisco?"),
+				ContentStr: gateway.Ptr("What's the weather in San Francisco?"),
 			},
 		}
 
 		// Assistant responds with a tool call (function_call with cache_control)
 		toolCallMsg := schemas.ResponsesMessage{
-			Type:         raksha.Ptr(schemas.ResponsesMessageTypeFunctionCall),
-			Status:       raksha.Ptr("completed"),
+			Type:         gateway.Ptr(schemas.ResponsesMessageTypeFunctionCall),
+			Status:       gateway.Ptr("completed"),
 			CacheControl: cacheControl,
 			ResponsesToolMessage: &schemas.ResponsesToolMessage{
-				CallID:    raksha.Ptr("call_weather_001"),
-				Name:      raksha.Ptr("weather"),
-				Arguments: raksha.Ptr(`{"location":"San Francisco"}`),
+				CallID:    gateway.Ptr("call_weather_001"),
+				Name:      gateway.Ptr("weather"),
+				Arguments: gateway.Ptr(`{"location":"San Francisco"}`),
 			},
 		}
 
 		// Tool result (function_call_output with cache_control)
 		toolResultMsg := schemas.ResponsesMessage{
-			Type:         raksha.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
+			Type:         gateway.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
 			CacheControl: cacheControl,
 			ResponsesToolMessage: &schemas.ResponsesToolMessage{
-				CallID: raksha.Ptr("call_weather_001"),
+				CallID: gateway.Ptr("call_weather_001"),
 				Output: &schemas.ResponsesToolMessageOutputStruct{
-					ResponsesToolCallOutputStr: raksha.Ptr(`{"temperature": 18, "unit": "celsius", "condition": "partly cloudy", "humidity": 72}`),
+					ResponsesToolCallOutputStr: gateway.Ptr(`{"temperature": 18, "unit": "celsius", "condition": "partly cloudy", "humidity": 72}`),
 				},
 			},
 		}
 
 		// Follow-up user message to prompt a response
 		userMsg2 := schemas.ResponsesMessage{
-			Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
-			Role: raksha.Ptr(schemas.ResponsesInputMessageRoleUser),
+			Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
+			Role: gateway.Ptr(schemas.ResponsesInputMessageRoleUser),
 			Content: &schemas.ResponsesMessageContent{
-				ContentStr: raksha.Ptr("Summarize the weather information you received."),
+				ContentStr: gateway.Ptr("Summarize the weather information you received."),
 			},
 		}
 
-		responsesReq := &schemas.RakshaResponsesRequest{
+		responsesReq := &schemas.GatewayResponsesRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.PromptCachingModel,
 			Input: []schemas.ResponsesMessage{
@@ -370,15 +370,15 @@ func RunPromptCachingToolBlocksTest(t *testing.T, client *raksha.Raksha, ctx con
 			},
 			Params: &schemas.ResponsesParameters{
 				Tools:           []schemas.ResponsesTool{*weatherTool},
-				MaxOutputTokens: raksha.Ptr(200),
+				MaxOutputTokens: gateway.Ptr(200),
 			},
 		}
 
 		// Enable raw request capture so we can inspect the outgoing provider request.
 		// AllowPerRequestRawOverride must be set for SendBackRawRequest to take effect
-		// (per raksha.go:5541 — opt-in gate added by the per-request-overrides feature).
-		rawCtx := context.WithValue(ctx, schemas.RakshaContextKeyAllowPerRequestRawOverride, true)
-		rawCtx = context.WithValue(rawCtx, schemas.RakshaContextKeySendBackRawRequest, true)
+		// (per gateway.go:5541 — opt-in gate added by the per-request-overrides feature).
+		rawCtx := context.WithValue(ctx, schemas.GatewayContextKeyAllowPerRequestRawOverride, true)
+		rawCtx = context.WithValue(rawCtx, schemas.GatewayContextKeySendBackRawRequest, true)
 
 		retryConfig := ResponsesRetryConfig{
 			MaxAttempts: 5,
@@ -406,8 +406,8 @@ func RunPromptCachingToolBlocksTest(t *testing.T, client *raksha.Raksha, ctx con
 			},
 		}
 
-		operation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(rawCtx, schemas.NoDeadline)
+		operation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(rawCtx, schemas.NoDeadline)
 			return client.ResponsesRequest(bfCtx, responsesReq)
 		}
 
@@ -422,7 +422,7 @@ func RunPromptCachingToolBlocksTest(t *testing.T, client *raksha.Raksha, ctx con
 
 		// Inspect the raw request to verify cache_control markers survived the conversion
 		rawReq := response.ExtraFields.RawRequest
-		require.NotNil(t, rawReq, "Raw request should be present (RakshaContextKeySendBackRawRequest was set)")
+		require.NotNil(t, rawReq, "Raw request should be present (GatewayContextKeySendBackRawRequest was set)")
 
 		rawJSON, marshalErr := sonic.Marshal(rawReq)
 		require.NoError(t, marshalErr, "Raw request should be marshalable to JSON")
@@ -465,7 +465,7 @@ func RunPromptCachingToolBlocksTest(t *testing.T, client *raksha.Raksha, ctx con
 
 // RunPromptCachingMultipleToolCallsTest verifies prompt caching across a 10-turn
 // conversation with tool calls scattered throughout. This directly reproduces the
-// Vertex caching bug where Raksha's key reordering in tool_use input fields caused
+// Vertex caching bug where Gateway's key reordering in tool_use input fields caused
 // the cache prefix to diverge at the first tool_use block.
 //
 // The conversation grows from ~9 messages (turn 1) to ~19 messages (turn 5),
@@ -477,7 +477,7 @@ func RunPromptCachingToolBlocksTest(t *testing.T, client *raksha.Raksha, ctx con
 //  2. cache_read_input_tokens grows across turns (proving prefix stability)
 //  3. For Anthropic/Vertex: cache_control markers survive in raw request
 //  4. For Anthropic/Vertex: tool_use input key ordering is preserved in raw request
-func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.PromptCaching {
 		t.Logf("Prompt caching multiple tool calls test not supported for provider %s", testConfig.Provider)
 		return
@@ -502,10 +502,10 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 		// Helper to create a user message
 		makeUserMsg := func(text string) schemas.ResponsesMessage {
 			return schemas.ResponsesMessage{
-				Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
-				Role: raksha.Ptr(schemas.ResponsesInputMessageRoleUser),
+				Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
+				Role: gateway.Ptr(schemas.ResponsesInputMessageRoleUser),
 				Content: &schemas.ResponsesMessageContent{
-					ContentStr: raksha.Ptr(text),
+					ContentStr: gateway.Ptr(text),
 				},
 			}
 		}
@@ -513,10 +513,10 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 		// Helper to create an assistant message
 		makeAssistantMsg := func(text string) schemas.ResponsesMessage {
 			return schemas.ResponsesMessage{
-				Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
-				Role: raksha.Ptr(schemas.ResponsesInputMessageRoleAssistant),
+				Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
+				Role: gateway.Ptr(schemas.ResponsesInputMessageRoleAssistant),
 				Content: &schemas.ResponsesMessageContent{
-					ContentStr: raksha.Ptr(text),
+					ContentStr: gateway.Ptr(text),
 				},
 			}
 		}
@@ -524,12 +524,12 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 		// Helper to create a tool call with specific key ordering in arguments
 		makeToolCall := func(callID, name, args string, withCacheControl bool) schemas.ResponsesMessage {
 			msg := schemas.ResponsesMessage{
-				Type:   raksha.Ptr(schemas.ResponsesMessageTypeFunctionCall),
-				Status: raksha.Ptr("completed"),
+				Type:   gateway.Ptr(schemas.ResponsesMessageTypeFunctionCall),
+				Status: gateway.Ptr("completed"),
 				ResponsesToolMessage: &schemas.ResponsesToolMessage{
-					CallID:    raksha.Ptr(callID),
-					Name:      raksha.Ptr(name),
-					Arguments: raksha.Ptr(args),
+					CallID:    gateway.Ptr(callID),
+					Name:      gateway.Ptr(name),
+					Arguments: gateway.Ptr(args),
 				},
 			}
 			if withCacheControl {
@@ -541,11 +541,11 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 		// Helper to create a tool result
 		makeToolResult := func(callID, output string, withCacheControl bool) schemas.ResponsesMessage {
 			msg := schemas.ResponsesMessage{
-				Type: raksha.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
+				Type: gateway.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
 				ResponsesToolMessage: &schemas.ResponsesToolMessage{
-					CallID: raksha.Ptr(callID),
+					CallID: gateway.Ptr(callID),
 					Output: &schemas.ResponsesToolMessageOutputStruct{
-						ResponsesToolCallOutputStr: raksha.Ptr(output),
+						ResponsesToolCallOutputStr: gateway.Ptr(output),
 					},
 				},
 			}
@@ -557,13 +557,13 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 
 		// System message with long prefix (exceeds minimum cache token threshold)
 		systemMsg := schemas.ResponsesMessage{
-			Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
-			Role: raksha.Ptr(schemas.ResponsesInputMessageRoleSystem),
+			Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
+			Role: gateway.Ptr(schemas.ResponsesInputMessageRoleSystem),
 			Content: &schemas.ResponsesMessageContent{
 				ContentBlocks: []schemas.ResponsesMessageContentBlock{
 					{
 						Type:         schemas.ResponsesInputMessageContentBlockTypeText,
-						Text:         raksha.Ptr(longSharedPrefix),
+						Text:         gateway.Ptr(longSharedPrefix),
 						CacheControl: cacheControl,
 					},
 				},
@@ -573,7 +573,7 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 		// Build the initial conversation with 3 parallel tool calls using DIFFERENT key orderings.
 		// This is the exact pattern from Claude Code: each tool_use has input keys
 		// in the order the model generated them (not alphabetical).
-		// If Raksha re-orders these keys, the cache prefix diverges at this point.
+		// If Gateway re-orders these keys, the cache prefix diverges at this point.
 		// Only the system message gets cache_control. Tool calls/results do NOT get cache_control
 		// markers — Vertex/Anthropic limits to 4 blocks with cache_control per request, and as
 		// the conversation grows across turns, markers would accumulate past the limit.
@@ -668,9 +668,9 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 		}
 
 		// AllowPerRequestRawOverride must be set for SendBackRawRequest to take effect
-		// (per raksha.go:5541 — opt-in gate added by the per-request-overrides feature).
-		rawCtx := context.WithValue(ctx, schemas.RakshaContextKeyAllowPerRequestRawOverride, true)
-		rawCtx = context.WithValue(rawCtx, schemas.RakshaContextKeySendBackRawRequest, true)
+		// (per gateway.go:5541 — opt-in gate added by the per-request-overrides feature).
+		rawCtx := context.WithValue(ctx, schemas.GatewayContextKeyAllowPerRequestRawOverride, true)
+		rawCtx = context.WithValue(rawCtx, schemas.GatewayContextKeySendBackRawRequest, true)
 
 		retryConfig := ResponsesRetryConfig{
 			MaxAttempts: 5,
@@ -778,13 +778,13 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 				input[cacheTargetIdx] = target
 			}
 
-			req := &schemas.RakshaResponsesRequest{
+			req := &schemas.GatewayResponsesRequest{
 					Provider: testConfig.Provider,
 					Model:    testConfig.PromptCachingModel,
 					Input:    input,
 					Params: &schemas.ResponsesParameters{
 						Tools:           []schemas.ResponsesTool{*weatherTool},
-						MaxOutputTokens: raksha.Ptr(200),
+						MaxOutputTokens: gateway.Ptr(200),
 					},
 				}
 
@@ -801,8 +801,8 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 					},
 				}
 
-				operation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(rawCtx, schemas.NoDeadline)
+				operation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(rawCtx, schemas.NoDeadline)
 					return client.ResponsesRequest(bfCtx, req)
 				}
 
@@ -939,7 +939,7 @@ func RunPromptCachingMultipleToolCallsTest(t *testing.T, client *raksha.Raksha, 
 // This test verifies that OpenAI's prompt caching works correctly with tools
 // by making multiple requests with the same long prefix and tools, and verifying
 // that cached tokens increase in subsequent requests.
-func RunPromptCachingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunPromptCachingTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.SimpleChat {
 		t.Logf("Prompt caching test requires SimpleChat support")
 		return
@@ -961,7 +961,7 @@ func RunPromptCachingTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 				ContentBlocks: []schemas.ChatContentBlock{
 					{
 						Type: schemas.ChatContentBlockTypeText,
-						Text: raksha.Ptr(longSharedPrefix),
+						Text: gateway.Ptr(longSharedPrefix),
 						CacheControl: &schemas.CacheControl{
 							Type: schemas.CacheControlTypeEphemeral,
 						},
@@ -984,11 +984,11 @@ func RunPromptCachingTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 				userMessage := schemas.ChatMessage{
 					Role: schemas.ChatMessageRoleUser,
 					Content: &schemas.ChatMessageContent{
-						ContentStr: raksha.Ptr(query.message),
+						ContentStr: gateway.Ptr(query.message),
 					},
 				}
 
-				chatReq := &schemas.RakshaChatRequest{
+				chatReq := &schemas.GatewayChatRequest{
 					Provider: testConfig.Provider,
 					Model:    testConfig.PromptCachingModel,
 					Input: []schemas.ChatMessage{
@@ -998,7 +998,7 @@ func RunPromptCachingTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 					Params: &schemas.ChatParameters{
 						Tools: tools,
 						ToolChoice: &schemas.ChatToolChoice{
-							ChatToolChoiceStr: raksha.Ptr("auto"),
+							ChatToolChoiceStr: gateway.Ptr("auto"),
 						},
 					},
 					Fallbacks: testConfig.Fallbacks,
@@ -1045,8 +1045,8 @@ func RunPromptCachingTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 				}
 
 				// Execute with retry framework
-				operation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				operation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.ChatCompletionRequest(bfCtx, chatReq)
 				}
 
@@ -1114,7 +1114,7 @@ func RunPromptCachingTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 // and a new user message, while keeping the system message and tools constant.
 // The system prefix + tools form the cached prefix; turns 2+ should show
 // cached_read_tokens > 0, proving caching is intact.
-func RunPromptCachingMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunPromptCachingMultiTurnTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.SimpleChat {
 		t.Logf("Prompt caching multi-turn test requires SimpleChat support")
 		return
@@ -1140,7 +1140,7 @@ func RunPromptCachingMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx cont
 				ContentBlocks: []schemas.ChatContentBlock{
 					{
 						Type: schemas.ChatContentBlockTypeText,
-						Text: raksha.Ptr(longSharedPrefix),
+						Text: gateway.Ptr(longSharedPrefix),
 						CacheControl: &schemas.CacheControl{
 							Type: schemas.CacheControlTypeEphemeral,
 						},
@@ -1172,7 +1172,7 @@ func RunPromptCachingMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx cont
 				userMessage := schemas.ChatMessage{
 					Role: schemas.ChatMessageRoleUser,
 					Content: &schemas.ChatMessageContent{
-						ContentStr: raksha.Ptr(query),
+						ContentStr: gateway.Ptr(query),
 					},
 				}
 
@@ -1182,14 +1182,14 @@ func RunPromptCachingMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx cont
 				input = append(input, conversationMessages...)
 				input = append(input, userMessage)
 
-				chatReq := &schemas.RakshaChatRequest{
+				chatReq := &schemas.GatewayChatRequest{
 					Provider: testConfig.Provider,
 					Model:    testConfig.PromptCachingModel,
 					Input:    input,
 					Params: &schemas.ChatParameters{
 						Tools: tools,
 						ToolChoice: &schemas.ChatToolChoice{
-							ChatToolChoiceStr: raksha.Ptr("none"),
+							ChatToolChoiceStr: gateway.Ptr("none"),
 						},
 					},
 					Fallbacks: testConfig.Fallbacks,
@@ -1229,8 +1229,8 @@ func RunPromptCachingMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx cont
 					},
 				}
 
-				operation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				operation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.ChatCompletionRequest(bfCtx, chatReq)
 				}
 

@@ -1,10 +1,11 @@
 import { LogsFilterSidebar } from "@/components/filters/logsFilterSidebar";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { DateTimePickerWithRange } from "@/components/ui/datePickerWithRange";
 import { ScrollArea } from "@/components/ui/scrollArea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTimezonePreference } from "@/lib/hooks/useTimezonePreference";
 import { parseAsSafeArrayOf } from "@/lib/queryParamsParser";
-import { baseApi, useAppDispatch, useGetMCPAvailableFilterDataQuery } from "@/lib/store";
+import { baseApi, getErrorMessage, useAppDispatch, useGetMCPAvailableFilterDataQuery } from "@/lib/store";
 import type { LogFilters, MCPToolLogFilters } from "@/lib/types/logs";
 import { dateUtils } from "@/lib/types/logs";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,7 @@ const toChartType = (value: string): ChartType => (value === "line" ? "line" : "
 
 export default function DashboardPage() {
 	// MCP filter data
-	const { data: mcpFilterData } = useGetMCPAvailableFilterDataQuery();
+	const { data: mcpFilterData, isError: mcpFilterFailed, error: mcpFilterError } = useGetMCPAvailableFilterDataQuery();
 
 	const defaultTimeRange = useMemo(() => dateUtils.getDefaultTimeRange(), []);
 
@@ -552,6 +553,13 @@ export default function DashboardPage() {
 							onPdfExport={handlePdfExport}
 							onPdfExportDone={handlePdfExportDone}
 						/>
+						{activeTab === "mcp" && mcpFilterFailed ? (
+							<QueryErrorBanner
+								testId="dashboard-mcp-filter-query-error"
+								message={getErrorMessage(mcpFilterError) || "Failed to load MCP filters."}
+								className="max-w-xs"
+							/>
+						) : null}
 						{activeTab === "mcp" && mcpFilterData && (
 							<div className="flex items-center gap-1">
 								{(mcpFilterData.tool_names?.length ?? 0) > 0 && (

@@ -47,6 +47,8 @@ interface PromptContextValue {
 	foldersError: unknown;
 	promptsError: unknown;
 	isLoadingPlayground: boolean;
+	/** Set when session/version fetch fails (avoids infinite loading / empty playground). */
+	playgroundError: string | null;
 	isStreaming: boolean;
 
 	// URL state
@@ -160,12 +162,33 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const [updateSession] = useUpdateSessionMutation();
 
 	const dispatch = useAppDispatch();
-	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
+	const PROMPTS_POLL_MS = 5000;
+	const [authPollMs, setAuthPollMs] = useState(PROMPTS_POLL_MS);
+	const [vkPollMs, setVkPollMs] = useState(PROMPTS_POLL_MS);
+	const [billingPollMs, setBillingPollMs] = useState(PROMPTS_POLL_MS);
+
+	const { data: authStatus, error: authPollError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
 	const isUserRole = isPromptMemberRole(authStatus?.role);
 
 	// Members prefer an assigned Virtual Key when present; otherwise Auto (provider keys).
-	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { skip: !isUserRole, pollingInterval: 5000 });
-	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { skip: !isUserRole, pollingInterval: 5000 });
+	const { data: virtualKeysData, error: vkPollError } = useGetVirtualKeysQuery(undefined, {
+		skip: !isUserRole,
+		pollingInterval: vkPollMs,
+	});
+	const { data: billingBlocks, error: billingPollError } = useGetVirtualKeyBillingBlocksQuery(undefined, {
+		skip: !isUserRole,
+		pollingInterval: billingPollMs,
+	});
+
+	useEffect(() => {
+		setAuthPollMs(authPollError ? 0 : PROMPTS_POLL_MS);
+	}, [authPollError]);
+	useEffect(() => {
+		setVkPollMs(vkPollError ? 0 : PROMPTS_POLL_MS);
+	}, [vkPollError]);
+	useEffect(() => {
+		setBillingPollMs(billingPollError ? 0 : PROMPTS_POLL_MS);
+	}, [billingPollError]);
 	const assignedMemberVkValue = useMemo(() => {
 		if (!isUserRole) return "";
 		const vks = virtualKeysData?.virtual_keys ?? [];
@@ -281,7 +304,12 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const supportsVision = datasheetData?.supports_vision ?? false;
 
 	// Fetch versions and sessions for selected prompt
-	const { data: sessionsData, isLoading: isSessionsLoading } = useGetSessionsQuery(selectedPromptId ?? "", { skip: !selectedPromptId });
+	const {
+		data: sessionsData,
+		isLoading: isSessionsLoading,
+		isError: sessionsFailed,
+		error: sessionsError,
+	} = useGetSessionsQuery(selectedPromptId ?? "", { skip: !selectedPromptId });
 
 	// Filter sessions to current prompt — RTK Query may briefly return stale cached data from the previous prompt
 	const sessions = useMemo(() => {
@@ -291,7 +319,12 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	}, [sessionsData, selectedPromptId]);
 	// The sessions list omits messages; the selected session is loaded in full on its own.
 	const selectedSessionListed = useMemo(() => sessions.some((s) => s.id === selectedSessionId), [sessions, selectedSessionId]);
-	const { data: selectedSessionData, isLoading: isSessionDetailLoading } = useGetSessionQuery(selectedSessionId ?? 0, {
+	const {
+		data: selectedSessionData,
+		isLoading: isSessionDetailLoading,
+		isError: sessionDetailFailed,
+		error: sessionDetailError,
+	} = useGetSessionQuery(selectedSessionId ?? 0, {
 		skip: !selectedSessionId || !selectedSessionListed,
 	});
 	const selectedSession = useMemo(() => {
@@ -305,14 +338,25 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		currentData: selectedVersionData,
 		isLoading: isVersionLoading,
 		isFetching: isVersionFetching,
+		isError: versionFailed,
+		error: versionError,
 	} = useGetPromptVersionQuery(selectedVersionId ?? 0, {
 		skip: !selectedVersionId,
 	});
 	const selectedVersion = selectedVersionData?.version;
 
+	const playgroundError = sessionsFailed
+		? getErrorMessage(sessionsError) || "Failed to load sessions."
+		: sessionDetailFailed
+			? getErrorMessage(sessionDetailError) || "Failed to load session."
+			: versionFailed
+				? getErrorMessage(versionError) || "Failed to load prompt version."
+				: null;
+
 	// Show loader only on initial fetch, not on cache refetches (avoids flicker on save)
 	const isLoadingPlayground = !!(
 		selectedPromptId &&
+		!playgroundError &&
 		(isSessionsLoading ||
 			(selectedSessionId && isSessionDetailLoading) ||
 			(selectedVersionId && isVersionLoading) ||
@@ -323,8 +367,8 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	// Load session or version data when selection changes — not on every refetch.
 	useEffect(() => {
 		// Don't reset state while waiting for data that hasn't arrived yet
-		if (selectedSessionId && !selectedSession) return;
-		if (selectedVersionId && !selectedVersion) return;
+		if (selectedSessionId && !selectedSession && !sessionDetailFailed) return;
+		if (selectedVersionId && !selectedVersion && !versionFailed) return;
 
 		const playgroundKey = selectedSessionId
 			? `session:${selectedSessionId}`
@@ -1034,6 +1078,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		foldersError,
 		promptsError,
 		isLoadingPlayground,
+		playgroundError,
 		isStreaming,
 		selectedPromptId,
 		selectedSessionId,

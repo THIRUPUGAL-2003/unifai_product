@@ -1,7 +1,7 @@
-// Package raksha provides the core implementation of the Raksha system.
-// Raksha is a unified interface for interacting with various AI model providers,
+// Package gateway provides the core implementation of the Gateway system.
+// Gateway is a unified interface for interacting with various AI model providers,
 // managing concurrent requests, and handling provider-specific configurations.
-package raksha
+package gateway
 
 import (
 	"context"
@@ -17,57 +17,57 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
 
-	"github.com/raksha/raksha/core/keyselectors"
-	"github.com/raksha/raksha/core/mcp"
-	"github.com/raksha/raksha/core/mcp/codemode/starlark"
-	"github.com/raksha/raksha/core/mcp/credstore"
-	"github.com/raksha/raksha/core/providers/anthropic"
-	"github.com/raksha/raksha/core/providers/azure"
-	"github.com/raksha/raksha/core/providers/bedrock"
-	"github.com/raksha/raksha/core/providers/bedrockmantle"
-	"github.com/raksha/raksha/core/providers/cerebras"
-	"github.com/raksha/raksha/core/providers/cohere"
-	"github.com/raksha/raksha/core/providers/deepseek"
-	"github.com/raksha/raksha/core/providers/elevenlabs"
-	"github.com/raksha/raksha/core/providers/fireworks"
-	"github.com/raksha/raksha/core/providers/gemini"
-	"github.com/raksha/raksha/core/providers/groq"
-	"github.com/raksha/raksha/core/providers/huggingface"
-	"github.com/raksha/raksha/core/providers/mistral"
-	"github.com/raksha/raksha/core/providers/nebius"
-	"github.com/raksha/raksha/core/providers/ollama"
-	"github.com/raksha/raksha/core/providers/openai"
-	"github.com/raksha/raksha/core/providers/openaicompat"
-	"github.com/raksha/raksha/core/providers/opencode"
-	"github.com/raksha/raksha/core/providers/openrouter"
-	"github.com/raksha/raksha/core/providers/parasail"
-	"github.com/raksha/raksha/core/providers/perplexity"
-	"github.com/raksha/raksha/core/providers/replicate"
-	"github.com/raksha/raksha/core/providers/runware"
-	"github.com/raksha/raksha/core/providers/runway"
-	"github.com/raksha/raksha/core/providers/sgl"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/providers/vertex"
-	"github.com/raksha/raksha/core/providers/vllm"
-	"github.com/raksha/raksha/core/providers/xai"
-	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/keyselectors"
+	"github.com/gateway/gateway/core/mcp"
+	"github.com/gateway/gateway/core/mcp/codemode/starlark"
+	"github.com/gateway/gateway/core/mcp/credstore"
+	"github.com/gateway/gateway/core/providers/anthropic"
+	"github.com/gateway/gateway/core/providers/azure"
+	"github.com/gateway/gateway/core/providers/bedrock"
+	"github.com/gateway/gateway/core/providers/bedrockmantle"
+	"github.com/gateway/gateway/core/providers/cerebras"
+	"github.com/gateway/gateway/core/providers/cohere"
+	"github.com/gateway/gateway/core/providers/deepseek"
+	"github.com/gateway/gateway/core/providers/elevenlabs"
+	"github.com/gateway/gateway/core/providers/fireworks"
+	"github.com/gateway/gateway/core/providers/gemini"
+	"github.com/gateway/gateway/core/providers/groq"
+	"github.com/gateway/gateway/core/providers/huggingface"
+	"github.com/gateway/gateway/core/providers/mistral"
+	"github.com/gateway/gateway/core/providers/nebius"
+	"github.com/gateway/gateway/core/providers/ollama"
+	"github.com/gateway/gateway/core/providers/openai"
+	"github.com/gateway/gateway/core/providers/openaicompat"
+	"github.com/gateway/gateway/core/providers/opencode"
+	"github.com/gateway/gateway/core/providers/openrouter"
+	"github.com/gateway/gateway/core/providers/parasail"
+	"github.com/gateway/gateway/core/providers/perplexity"
+	"github.com/gateway/gateway/core/providers/replicate"
+	"github.com/gateway/gateway/core/providers/runware"
+	"github.com/gateway/gateway/core/providers/runway"
+	"github.com/gateway/gateway/core/providers/sgl"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/providers/vertex"
+	"github.com/gateway/gateway/core/providers/vllm"
+	"github.com/gateway/gateway/core/providers/xai"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
 // ChannelMessage represents a message passed through the request channel.
 // It contains the request, response and error channels, and the request type.
 type ChannelMessage struct {
-	schemas.RakshaRequest
-	Context        *schemas.RakshaContext
-	Response       chan *schemas.RakshaResponse
-	ResponseStream chan chan *schemas.RakshaStreamChunk
-	Err            chan schemas.RakshaError
+	schemas.GatewayRequest
+	Context        *schemas.GatewayContext
+	Response       chan *schemas.GatewayResponse
+	ResponseStream chan chan *schemas.GatewayStreamChunk
+	Err            chan schemas.GatewayError
 }
 
-// Raksha manages providers and maintains specified open channels for concurrent processing.
+// Gateway manages providers and maintains specified open channels for concurrent processing.
 // It handles request routing, provider management, and response processing.
-type Raksha struct {
-	ctx                 *schemas.RakshaContext
+type Gateway struct {
+	ctx                 *schemas.GatewayContext
 	cancel              context.CancelFunc
 	account             schemas.Account                     // account interface
 	llmPlugins          atomic.Pointer[[]schemas.LLMPlugin] // list of llm plugins
@@ -84,7 +84,7 @@ type Raksha struct {
 	errorChannelPool    sync.Pool                           // Pool for error channels, initial pool size is set in Init
 	responseStreamPool  sync.Pool                           // Pool for response stream channels, initial pool size is set in Init
 	pluginPipelinePool  sync.Pool                           // Pool for PluginPipeline objects
-	rakshaRequestPool   sync.Pool                           // Pool for RakshaRequest objects
+	gatewayRequestPool   sync.Pool                           // Pool for GatewayRequest objects
 	logger              schemas.Logger                      // logger instance, default logger is used if not provided
 	tracer              atomic.Value                        // tracer for distributed tracing (stores schemas.Tracer, NoOpTracer if not configured)
 	MCPManager          mcp.MCPManagerInterface             // MCP integration manager (nil if MCP not configured)
@@ -125,7 +125,7 @@ type Raksha struct {
 //   - RemoveProvider calls requestQueues.Delete, dropping the map's reference.
 //   - UpdateProvider calls requestQueues.Store with a new queue, dropping the
 //     map's reference to oldPq. Shutdown does not Delete at all — the whole
-//     Raksha instance is torn down.
+//     Gateway instance is torn down.
 //     In all cases, once no producer goroutine holds a reference to the
 //     ProviderQueue, both the struct and pq.queue are eligible for GC.
 //     No explicit close is needed.
@@ -136,19 +136,19 @@ type ProviderQueue struct {
 	signalOnce sync.Once
 }
 
-func isLargePayloadPassthrough(ctx *schemas.RakshaContext) bool {
+func isLargePayloadPassthrough(ctx *schemas.GatewayContext) bool {
 	if ctx == nil {
 		return false
 	}
-	// Large payload mode intentionally skips JSON->Raksha input materialization.
+	// Large payload mode intentionally skips JSON->Gateway input materialization.
 	// Example: a 400MB multipart/audio upload sets Input=nil by design; strict
 	// non-nil validation here would reject valid passthrough requests.
-	isLargePayload, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool)
+	isLargePayload, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool)
 	if !isLargePayload {
 		return false
 	}
 	// Verify reader is present (flag and reader are always set together by middleware)
-	reader := ctx.Value(schemas.RakshaContextKeyLargePayloadReader)
+	reader := ctx.Value(schemas.GatewayContextKeyLargePayloadReader)
 	return reader != nil
 }
 
@@ -191,7 +191,7 @@ type PluginPipeline struct {
 	chunkCount          int
 
 	// Plugin logging: cached scoped contexts for streaming post-hooks (reused across chunks)
-	streamScopedCtxs map[string]*schemas.RakshaContext
+	streamScopedCtxs map[string]*schemas.GatewayContext
 }
 
 // pluginTimingAccumulator accumulates timing information for a plugin across streaming chunks
@@ -210,13 +210,13 @@ type tracerWrapper struct {
 
 // INITIALIZATION
 
-// Init initializes a new Raksha instance with the given configuration.
+// Init initializes a new Gateway instance with the given configuration.
 // It sets up the account, plugins, object pools, and initializes providers.
 // Returns an error if initialization fails.
 // Initial Memory Allocations happens here as per the initial pool size.
-func Init(ctx context.Context, config schemas.RakshaConfig) (*Raksha, error) {
+func Init(ctx context.Context, config schemas.GatewayConfig) (*Gateway, error) {
 	if config.Account == nil {
-		return nil, fmt.Errorf("account is required to initialize Raksha")
+		return nil, fmt.Errorf("account is required to initialize Gateway")
 	}
 
 	if config.Logger == nil {
@@ -230,9 +230,9 @@ func Init(ctx context.Context, config schemas.RakshaConfig) (*Raksha, error) {
 		tracer = schemas.DefaultTracer()
 	}
 
-	rakshaCtx, cancel := schemas.NewRakshaContextWithCancel(ctx)
-	raksha := &Raksha{
-		ctx:           rakshaCtx,
+	gatewayCtx, cancel := schemas.NewGatewayContextWithCancel(ctx)
+	gateway := &Gateway{
+		ctx:           gatewayCtx,
 		cancel:        cancel,
 		account:       config.Account,
 		llmPlugins:    atomic.Pointer[[]schemas.LLMPlugin]{},
@@ -245,47 +245,47 @@ func Init(ctx context.Context, config schemas.RakshaConfig) (*Raksha, error) {
 		logger:        config.Logger,
 		kvStore:       config.KVStore,
 	}
-	raksha.tracer.Store(&tracerWrapper{tracer: tracer})
+	gateway.tracer.Store(&tracerWrapper{tracer: tracer})
 	if config.LLMPlugins == nil {
 		config.LLMPlugins = make([]schemas.LLMPlugin, 0)
 	}
 	if config.MCPPlugins == nil {
 		config.MCPPlugins = make([]schemas.MCPPlugin, 0)
 	}
-	raksha.llmPlugins.Store(&config.LLMPlugins)
-	raksha.mcpPlugins.Store(&config.MCPPlugins)
+	gateway.llmPlugins.Store(&config.LLMPlugins)
+	gateway.mcpPlugins.Store(&config.MCPPlugins)
 
 	// Initialize providers slice
-	raksha.providers.Store(&[]schemas.Provider{})
+	gateway.providers.Store(&[]schemas.Provider{})
 
-	raksha.dropExcessRequests.Store(config.DropExcessRequests)
+	gateway.dropExcessRequests.Store(config.DropExcessRequests)
 
-	if raksha.keySelector == nil {
-		raksha.keySelector = keyselectors.WeightedRandom
+	if gateway.keySelector == nil {
+		gateway.keySelector = keyselectors.WeightedRandom
 	}
 
 	// Initialize object pools
-	raksha.channelMessagePool = sync.Pool{
+	gateway.channelMessagePool = sync.Pool{
 		New: func() interface{} {
 			return &ChannelMessage{}
 		},
 	}
-	raksha.responseChannelPool = sync.Pool{
+	gateway.responseChannelPool = sync.Pool{
 		New: func() interface{} {
-			return make(chan *schemas.RakshaResponse, 1)
+			return make(chan *schemas.GatewayResponse, 1)
 		},
 	}
-	raksha.errorChannelPool = sync.Pool{
+	gateway.errorChannelPool = sync.Pool{
 		New: func() interface{} {
-			return make(chan schemas.RakshaError, 1)
+			return make(chan schemas.GatewayError, 1)
 		},
 	}
-	raksha.responseStreamPool = sync.Pool{
+	gateway.responseStreamPool = sync.Pool{
 		New: func() interface{} {
-			return make(chan chan *schemas.RakshaStreamChunk, 1)
+			return make(chan chan *schemas.GatewayStreamChunk, 1)
 		},
 	}
-	raksha.pluginPipelinePool = sync.Pool{
+	gateway.pluginPipelinePool = sync.Pool{
 		New: func() interface{} {
 			return &PluginPipeline{
 				preHookErrors:  make([]error, 0),
@@ -293,42 +293,42 @@ func Init(ctx context.Context, config schemas.RakshaConfig) (*Raksha, error) {
 			}
 		},
 	}
-	raksha.rakshaRequestPool = sync.Pool{
+	gateway.gatewayRequestPool = sync.Pool{
 		New: func() interface{} {
-			return &schemas.RakshaRequest{}
+			return &schemas.GatewayRequest{}
 		},
 	}
 	// Prewarm pools. The MCP request pool is owned by the mcp package now —
 	// see core/mcp/exec.go.
 	for range config.InitialPoolSize {
 		// Create and put new objects directly into pools
-		raksha.channelMessagePool.Put(&ChannelMessage{})
-		raksha.responseChannelPool.Put(make(chan *schemas.RakshaResponse, 1))
-		raksha.errorChannelPool.Put(make(chan schemas.RakshaError, 1))
-		raksha.responseStreamPool.Put(make(chan chan *schemas.RakshaStreamChunk, 1))
-		raksha.pluginPipelinePool.Put(&PluginPipeline{
+		gateway.channelMessagePool.Put(&ChannelMessage{})
+		gateway.responseChannelPool.Put(make(chan *schemas.GatewayResponse, 1))
+		gateway.errorChannelPool.Put(make(chan schemas.GatewayError, 1))
+		gateway.responseStreamPool.Put(make(chan chan *schemas.GatewayStreamChunk, 1))
+		gateway.pluginPipelinePool.Put(&PluginPipeline{
 			preHookErrors:  make([]error, 0),
 			postHookErrors: make([]error, 0),
 		})
-		raksha.rakshaRequestPool.Put(&schemas.RakshaRequest{})
+		gateway.gatewayRequestPool.Put(&schemas.GatewayRequest{})
 	}
 
-	providerKeys, err := raksha.account.GetConfiguredProviders()
+	providerKeys, err := gateway.account.GetConfiguredProviders()
 	if err != nil {
 		return nil, err
 	}
 
 	// Initialize MCP manager if configured
 	if config.MCPConfig != nil {
-		raksha.mcpInitOnce.Do(func() {
+		gateway.mcpInitOnce.Do(func() {
 			// Set up plugin pipeline provider functions for executeCode tool hooks
 			mcpConfig := *config.MCPConfig
 			mcpConfig.PluginPipelineProvider = func() interface{} {
-				return raksha.getPluginPipeline()
+				return gateway.getPluginPipeline()
 			}
 			mcpConfig.ReleasePluginPipeline = func(pipeline interface{}) {
 				if pp, ok := pipeline.(*PluginPipeline); ok {
-					raksha.releasePluginPipeline(pp)
+					gateway.releasePluginPipeline(pp)
 				}
 			}
 			// Create Starlark CodeMode for code execution
@@ -339,102 +339,102 @@ func Init(ctx context.Context, config schemas.RakshaConfig) (*Raksha, error) {
 					ToolExecutionTimeout: time.Duration(mcpConfig.ToolManagerConfig.ToolExecutionTimeout),
 				}
 			}
-			codeMode := starlark.NewStarlarkCodeMode(codeModeConfig, raksha.logger)
-			raksha.MCPManager = mcp.NewMCPManager(rakshaCtx, mcpConfig, raksha.mcpCredStore, raksha.logger, codeMode)
-			raksha.logger.Info("MCP integration initialized successfully")
+			codeMode := starlark.NewStarlarkCodeMode(codeModeConfig, gateway.logger)
+			gateway.MCPManager = mcp.NewMCPManager(gatewayCtx, mcpConfig, gateway.mcpCredStore, gateway.logger, codeMode)
+			gateway.logger.Info("MCP integration initialized successfully")
 		})
 	}
 
 	// Create buffered channels for each provider and start workers
 	for _, providerKey := range providerKeys {
 		if strings.TrimSpace(string(providerKey)) == "" {
-			raksha.logger.Warn("provider key is empty, skipping init")
+			gateway.logger.Warn("provider key is empty, skipping init")
 			continue
 		}
 
-		config, err := raksha.account.GetConfigForProvider(providerKey)
+		config, err := gateway.account.GetConfigForProvider(providerKey)
 		if err != nil {
-			raksha.logger.Warn("failed to get config for provider %s, skipping init: %v", providerKey, err)
+			gateway.logger.Warn("failed to get config for provider %s, skipping init: %v", providerKey, err)
 			continue
 		}
 		if config == nil {
-			raksha.logger.Warn("config is nil for provider %s, skipping init", providerKey)
+			gateway.logger.Warn("config is nil for provider %s, skipping init", providerKey)
 			continue
 		}
 
 		// Lock the provider mutex during initialization
-		providerMutex := raksha.getProviderMutex(providerKey)
+		providerMutex := gateway.getProviderMutex(providerKey)
 		providerMutex.Lock()
-		err = raksha.prepareProvider(providerKey, config)
+		err = gateway.prepareProvider(providerKey, config)
 		providerMutex.Unlock()
 
 		if err != nil {
-			raksha.logger.Warn("failed to prepare provider %s: %v", providerKey, err)
+			gateway.logger.Warn("failed to prepare provider %s: %v", providerKey, err)
 		}
 	}
-	return raksha, nil
+	return gateway, nil
 }
 
-// SetTracer sets the tracer for the Raksha instance.
-func (raksha *Raksha) SetTracer(tracer schemas.Tracer) {
+// SetTracer sets the tracer for the Gateway instance.
+func (gateway *Gateway) SetTracer(tracer schemas.Tracer) {
 	if tracer == nil {
 		// Fall back to no-op tracer if not provided
 		tracer = schemas.DefaultTracer()
 	}
-	raksha.tracer.Store(&tracerWrapper{tracer: tracer})
+	gateway.tracer.Store(&tracerWrapper{tracer: tracer})
 }
 
 // getTracer returns the tracer from atomic storage with type assertion.
-func (raksha *Raksha) getTracer() schemas.Tracer {
-	return raksha.tracer.Load().(*tracerWrapper).tracer
+func (gateway *Gateway) getTracer() schemas.Tracer {
+	return gateway.tracer.Load().(*tracerWrapper).tracer
 }
 
 // ReloadConfig reloads the config from DB
 // Currently we update account, drop excess requests, and plugin lists
 // We will keep on adding other aspects as required
-func (raksha *Raksha) ReloadConfig(config schemas.RakshaConfig) error {
-	raksha.dropExcessRequests.Store(config.DropExcessRequests)
+func (gateway *Gateway) ReloadConfig(config schemas.GatewayConfig) error {
+	gateway.dropExcessRequests.Store(config.DropExcessRequests)
 	return nil
 }
 
 // PUBLIC API METHODS
 
 // ListModelsRequest sends a list models request to the specified provider.
-func (raksha *Raksha) ListModelsRequest(ctx *schemas.RakshaContext, req *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ListModelsRequest(ctx *schemas.GatewayContext, req *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "list models request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ListModelsRequest,
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for list models request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ListModelsRequest,
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	reqCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-	reqCtx.SetValue(schemas.RakshaContextKeySkipBudgetAndRateLimits, true)
+	reqCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+	reqCtx.SetValue(schemas.GatewayContextKeySkipBudgetAndRateLimits, true)
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ListModelsRequest
-	rakshaReq.ListModelsRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ListModelsRequest
+	gatewayReq.ListModelsRequest = req
 
-	resp, err := raksha.handleRequest(reqCtx, rakshaReq)
+	resp, err := gateway.handleRequest(reqCtx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -444,23 +444,23 @@ func (raksha *Raksha) ListModelsRequest(ctx *schemas.RakshaContext, req *schemas
 
 // ListAllModels lists all models from all configured providers.
 // It accumulates responses from all providers with a limit of 1000 per provider to get all results.
-func (raksha *Raksha) ListAllModels(ctx *schemas.RakshaContext, req *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ListAllModels(ctx *schemas.GatewayContext, req *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	if req == nil {
-		req = &schemas.RakshaListModelsRequest{}
+		req = &schemas.GatewayListModelsRequest{}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	providerKeys, err := raksha.GetConfiguredProviders()
+	providerKeys, err := gateway.GetConfiguredProviders()
 	if err != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: err.Error(),
 				Error:   err,
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ListModelsRequest,
 			},
 		}
@@ -474,7 +474,7 @@ func (raksha *Raksha) ListAllModels(ctx *schemas.RakshaContext, req *schemas.Rak
 		provider    schemas.ModelProvider
 		models      []schemas.Model
 		keyStatuses []schemas.KeyStatus
-		err         *schemas.RakshaError
+		err         *schemas.GatewayError
 	}
 
 	results := make(chan providerResult, len(providerKeys))
@@ -490,15 +490,15 @@ func (raksha *Raksha) ListAllModels(ctx *schemas.RakshaContext, req *schemas.Rak
 		go func(providerKey schemas.ModelProvider) {
 			defer wg.Done()
 
-			providerCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			providerCtx.SetValue(schemas.RakshaContextKeyRequestID, uuid.New().String())
+			providerCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			providerCtx.SetValue(schemas.GatewayContextKeyRequestID, uuid.New().String())
 
 			providerModels := make([]schemas.Model, 0)
 			var providerKeyStatuses []schemas.KeyStatus
-			var providerErr *schemas.RakshaError
+			var providerErr *schemas.GatewayError
 
 			// Create request for this provider with limit of 1000
-			providerRequest := &schemas.RakshaListModelsRequest{
+			providerRequest := &schemas.GatewayListModelsRequest{
 				Provider:   providerKey,
 				PageSize:   schemas.DefaultPageSize,
 				Unfiltered: req.Unfiltered,
@@ -509,39 +509,39 @@ func (raksha *Raksha) ListAllModels(ctx *schemas.RakshaContext, req *schemas.Rak
 				// check for context cancellation
 				select {
 				case <-ctx.Done():
-					raksha.logger.Warn("context cancelled for provider %s", providerKey)
+					gateway.logger.Warn("context cancelled for provider %s", providerKey)
 					return
 				default:
 				}
 
 				iterations++
 				if iterations > schemas.MaxPaginationRequests {
-					raksha.logger.Warn("reached maximum pagination requests (%d) for provider %s, please increase the page size", schemas.MaxPaginationRequests, providerKey)
+					gateway.logger.Warn("reached maximum pagination requests (%d) for provider %s, please increase the page size", schemas.MaxPaginationRequests, providerKey)
 					break
 				}
 
-				response, rakshaErr := raksha.ListModelsRequest(providerCtx, providerRequest)
-				if rakshaErr != nil {
+				response, gatewayErr := gateway.ListModelsRequest(providerCtx, providerRequest)
+				if gatewayErr != nil {
 					// Some per-provider failures are expected when fanning out across all
 					// configured providers and must not be surfaced as a top-level error
 					errType := ""
-					if rakshaErr.Type != nil {
-						errType = *rakshaErr.Type
+					if gatewayErr.Type != nil {
+						errType = *gatewayErr.Type
 					}
 					errMsg := ""
-					if rakshaErr.Error != nil {
-						errMsg = rakshaErr.Error.Message
+					if gatewayErr.Error != nil {
+						errMsg = gatewayErr.Error.Message
 					}
 					isExpected := strings.Contains(errMsg, "no keys found") ||
 						strings.Contains(errMsg, "not supported") ||
 						errType == "provider_blocked"
 					if !isExpected {
-						providerErr = rakshaErr
-						raksha.logger.Warn("failed to list models for provider %s: %s", providerKey, rakshaErr.GetErrorString())
+						providerErr = gatewayErr
+						gateway.logger.Warn("failed to list models for provider %s: %s", providerKey, gatewayErr.GetErrorString())
 					}
 					// Collect key statuses from error (failure case)
-					if len(rakshaErr.ExtraFields.KeyStatuses) > 0 {
-						providerKeyStatuses = append(providerKeyStatuses, rakshaErr.ExtraFields.KeyStatuses...)
+					if len(gatewayErr.ExtraFields.KeyStatuses) > 0 {
+						providerKeyStatuses = append(providerKeyStatuses, gatewayErr.ExtraFields.KeyStatuses...)
 					}
 					break
 				}
@@ -581,7 +581,7 @@ func (raksha *Raksha) ListAllModels(ctx *schemas.RakshaContext, req *schemas.Rak
 	// Accumulate all models and key statuses from all providers
 	allModels := make([]schemas.Model, 0)
 	allKeyStatuses := make([]schemas.KeyStatus, 0)
-	var firstError *schemas.RakshaError
+	var firstError *schemas.GatewayError
 
 	for result := range results {
 		if len(result.models) > 0 {
@@ -608,10 +608,10 @@ func (raksha *Raksha) ListAllModels(ctx *schemas.RakshaContext, req *schemas.Rak
 	})
 
 	// Return aggregated response with accumulated latency and key statuses
-	response := &schemas.RakshaListModelsResponse{
+	response := &schemas.GatewayListModelsResponse{
 		Data:        allModels,
 		KeyStatuses: allKeyStatuses,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			RequestType: schemas.ListModelsRequest,
 			Latency:     time.Since(startTime).Milliseconds(),
 		},
@@ -622,12 +622,12 @@ func (raksha *Raksha) ListAllModels(ctx *schemas.RakshaContext, req *schemas.Rak
 	return response, nil
 }
 
-func filterProvidersByContext(ctx *schemas.RakshaContext, providerKeys []schemas.ModelProvider) []schemas.ModelProvider {
+func filterProvidersByContext(ctx *schemas.GatewayContext, providerKeys []schemas.ModelProvider) []schemas.ModelProvider {
 	if ctx == nil {
 		return providerKeys
 	}
 
-	rawAvailableProviders := ctx.Value(schemas.RakshaContextKeyAvailableProviders)
+	rawAvailableProviders := ctx.Value(schemas.GatewayContextKeyAvailableProviders)
 	if rawAvailableProviders == nil {
 		return providerKeys
 	}
@@ -652,25 +652,25 @@ func filterProvidersByContext(ctx *schemas.RakshaContext, providerKeys []schemas
 }
 
 // TextCompletionRequest sends a text completion request to the specified provider.
-func (raksha *Raksha) TextCompletionRequest(ctx *schemas.RakshaContext, req *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+func (gateway *Gateway) TextCompletionRequest(ctx *schemas.GatewayContext, req *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "text completion request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.TextCompletionRequest,
 			},
 		}
 	}
 	if (req.Input == nil || (req.Input.PromptStr == nil && req.Input.PromptArray == nil)) && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "prompt not provided for text completion request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.TextCompletionRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -679,11 +679,11 @@ func (raksha *Raksha) TextCompletionRequest(ctx *schemas.RakshaContext, req *sch
 		}
 	}
 	// Preparing request
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.TextCompletionRequest
-	rakshaReq.TextCompletionRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.TextCompletionRequest
+	gatewayReq.TextCompletionRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -692,25 +692,25 @@ func (raksha *Raksha) TextCompletionRequest(ctx *schemas.RakshaContext, req *sch
 }
 
 // TextCompletionStreamRequest sends a streaming text completion request to the specified provider.
-func (raksha *Raksha) TextCompletionStreamRequest(ctx *schemas.RakshaContext, req *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (gateway *Gateway) TextCompletionStreamRequest(ctx *schemas.GatewayContext, req *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "text completion stream request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.TextCompletionStreamRequest,
 			},
 		}
 	}
 	if (req.Input == nil || (req.Input.PromptStr == nil && req.Input.PromptArray == nil)) && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "text not provided for text completion stream request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.TextCompletionStreamRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -718,31 +718,31 @@ func (raksha *Raksha) TextCompletionStreamRequest(ctx *schemas.RakshaContext, re
 			},
 		}
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.TextCompletionStreamRequest
-	rakshaReq.TextCompletionRequest = req
-	return raksha.handleStreamRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.TextCompletionStreamRequest
+	gatewayReq.TextCompletionRequest = req
+	return gateway.handleStreamRequest(ctx, gatewayReq)
 }
 
-func (raksha *Raksha) makeChatCompletionRequest(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func (gateway *Gateway) makeChatCompletionRequest(ctx *schemas.GatewayContext, req *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "chat completion request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ChatCompletionRequest,
 			},
 		}
 	}
 	if req.Input == nil && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "chats not provided for chat completion request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ChatCompletionRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -751,11 +751,11 @@ func (raksha *Raksha) makeChatCompletionRequest(ctx *schemas.RakshaContext, req 
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ChatCompletionRequest
-	rakshaReq.ChatRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ChatCompletionRequest
+	gatewayReq.ChatRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -764,24 +764,24 @@ func (raksha *Raksha) makeChatCompletionRequest(ctx *schemas.RakshaContext, req 
 }
 
 // ChatCompletionRequest sends a chat completion request to the specified provider.
-func (raksha *Raksha) ChatCompletionRequest(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-	// If ctx is nil, use the raksha context (defensive check for mcp agent mode)
+func (gateway *Gateway) ChatCompletionRequest(ctx *schemas.GatewayContext, req *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+	// If ctx is nil, use the gateway context (defensive check for mcp agent mode)
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	response, err := raksha.makeChatCompletionRequest(ctx, req)
+	response, err := gateway.makeChatCompletionRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check if we should enter agent mode.
-	if raksha.MCPManager != nil {
-		return raksha.MCPManager.CheckAndExecuteAgentForChatRequest(
+	if gateway.MCPManager != nil {
+		return gateway.MCPManager.CheckAndExecuteAgentForChatRequest(
 			ctx,
 			req,
 			response,
-			raksha.makeChatCompletionRequest,
+			gateway.makeChatCompletionRequest,
 		)
 	}
 
@@ -789,25 +789,25 @@ func (raksha *Raksha) ChatCompletionRequest(ctx *schemas.RakshaContext, req *sch
 }
 
 // ChatCompletionStreamRequest sends a chat completion stream request to the specified provider.
-func (raksha *Raksha) ChatCompletionStreamRequest(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (gateway *Gateway) ChatCompletionStreamRequest(ctx *schemas.GatewayContext, req *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "chat completion stream request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ChatCompletionStreamRequest,
 			},
 		}
 	}
 	if req.Input == nil && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "chats not provided for chat completion request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ChatCompletionStreamRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -816,35 +816,35 @@ func (raksha *Raksha) ChatCompletionStreamRequest(ctx *schemas.RakshaContext, re
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ChatCompletionStreamRequest
-	rakshaReq.ChatRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ChatCompletionStreamRequest
+	gatewayReq.ChatRequest = req
 
-	return raksha.handleStreamRequest(ctx, rakshaReq)
+	return gateway.handleStreamRequest(ctx, gatewayReq)
 }
 
-func (raksha *Raksha) makeResponsesRequest(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (gateway *Gateway) makeResponsesRequest(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "responses request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesRequest,
 			},
 		}
 	}
 	// In large payload mode, Input is intentionally nil — body streams directly to upstream
 	if req.Input == nil {
-		isLargePayload, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool)
+		isLargePayload, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool)
 		if !isLargePayload {
-			return nil, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Message: "responses not provided for responses request",
 				},
-				ExtraFields: schemas.RakshaErrorExtraFields{
+				ExtraFields: schemas.GatewayErrorExtraFields{
 					RequestType:            schemas.ResponsesRequest,
 					Provider:               req.Provider,
 					OriginalModelRequested: req.Model,
@@ -854,11 +854,11 @@ func (raksha *Raksha) makeResponsesRequest(ctx *schemas.RakshaContext, req *sche
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ResponsesRequest
-	rakshaReq.ResponsesRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ResponsesRequest
+	gatewayReq.ResponsesRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -866,24 +866,24 @@ func (raksha *Raksha) makeResponsesRequest(ctx *schemas.RakshaContext, req *sche
 }
 
 // ResponsesRequest sends a responses request to the specified provider.
-func (raksha *Raksha) ResponsesRequest(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-	// If ctx is nil, use the raksha context (defensive check for mcp agent mode)
+func (gateway *Gateway) ResponsesRequest(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+	// If ctx is nil, use the gateway context (defensive check for mcp agent mode)
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	response, err := raksha.makeResponsesRequest(ctx, req)
+	response, err := gateway.makeResponsesRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check if we should enter agent mode.
-	if raksha.MCPManager != nil {
-		return raksha.MCPManager.CheckAndExecuteAgentForResponsesRequest(
+	if gateway.MCPManager != nil {
+		return gateway.MCPManager.CheckAndExecuteAgentForResponsesRequest(
 			ctx,
 			req,
 			response,
-			raksha.makeResponsesRequest,
+			gateway.makeResponsesRequest,
 		)
 	}
 
@@ -891,28 +891,28 @@ func (raksha *Raksha) ResponsesRequest(ctx *schemas.RakshaContext, req *schemas.
 }
 
 // ResponsesStreamRequest sends a responses stream request to the specified provider.
-func (raksha *Raksha) ResponsesStreamRequest(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (gateway *Gateway) ResponsesStreamRequest(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "responses stream request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesStreamRequest,
 			},
 		}
 	}
 	// In large payload mode, Input is intentionally nil — body streams directly to upstream
 	if req.Input == nil {
-		isLargePayload, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool)
+		isLargePayload, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool)
 		if !isLargePayload {
-			return nil, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Message: "responses not provided for responses stream request",
 				},
-				ExtraFields: schemas.RakshaErrorExtraFields{
+				ExtraFields: schemas.GatewayErrorExtraFields{
 					RequestType:            schemas.ResponsesStreamRequest,
 					Provider:               req.Provider,
 					OriginalModelRequested: req.Model,
@@ -922,33 +922,33 @@ func (raksha *Raksha) ResponsesStreamRequest(ctx *schemas.RakshaContext, req *sc
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ResponsesStreamRequest
-	rakshaReq.ResponsesRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ResponsesStreamRequest
+	gatewayReq.ResponsesRequest = req
 
-	return raksha.handleStreamRequest(ctx, rakshaReq)
+	return gateway.handleStreamRequest(ctx, gatewayReq)
 }
 
 // CountTokensRequest sends a count tokens request to the specified provider.
-func (raksha *Raksha) CountTokensRequest(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (gateway *Gateway) CountTokensRequest(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "count tokens request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.CountTokensRequest,
 			},
 		}
 	}
 	if req.Input == nil && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "input not provided for count tokens request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.CountTokensRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -957,11 +957,11 @@ func (raksha *Raksha) CountTokensRequest(ctx *schemas.RakshaContext, req *schema
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.CountTokensRequest
-	rakshaReq.CountTokensRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.CountTokensRequest
+	gatewayReq.CountTokensRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -972,26 +972,26 @@ func (raksha *Raksha) CountTokensRequest(ctx *schemas.RakshaContext, req *schema
 // CompactionRequest compacts a conversation context window via providers that implement
 // the OpenAI-compatible /v1/responses/compact flow (OpenAI, Azure OpenAI, xAI).
 // Providers without compaction support return an unsupported-operation error.
-func (raksha *Raksha) CompactionRequest(ctx *schemas.RakshaContext, req *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (gateway *Gateway) CompactionRequest(ctx *schemas.GatewayContext, req *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "compaction request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.CompactionRequest,
 			},
 		}
 	}
 
 	if len(req.Input) == 0 && req.PreviousResponseID == nil && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "input not provided for compaction request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.CompactionRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1000,11 +1000,11 @@ func (raksha *Raksha) CompactionRequest(ctx *schemas.RakshaContext, req *schemas
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.CompactionRequest
-	rakshaReq.CompactionRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.CompactionRequest
+	gatewayReq.CompactionRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1013,49 +1013,49 @@ func (raksha *Raksha) CompactionRequest(ctx *schemas.RakshaContext, req *schemas
 }
 
 // ResponsesRetrieveRequest retrieves a stored response by ID (OpenAI GET /v1/responses/{id}).
-func (raksha *Raksha) ResponsesRetrieveRequest(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRetrieveRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ResponsesRetrieveRequest(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRetrieveRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "responses retrieve request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesRetrieveRequest,
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for responses retrieve request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesRetrieveRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
 	if req.ResponseID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "response_id is required for responses retrieve request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesRetrieveRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ResponsesRetrieveRequest
-	rakshaReq.ResponsesRetrieveRequest = req
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ResponsesRetrieveRequest
+	gatewayReq.ResponsesRetrieveRequest = req
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1063,48 +1063,48 @@ func (raksha *Raksha) ResponsesRetrieveRequest(ctx *schemas.RakshaContext, req *
 }
 
 // ResponsesDeleteRequest deletes a stored response (OpenAI DELETE /v1/responses/{id}).
-func (raksha *Raksha) ResponsesDeleteRequest(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesDeleteRequest) (*schemas.RakshaResponsesDeleteResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ResponsesDeleteRequest(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesDeleteRequest) (*schemas.GatewayResponsesDeleteResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "responses delete request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesDeleteRequest,
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for responses delete request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesDeleteRequest,
 			},
 		}
 	}
 	if req.ResponseID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "response_id is required for responses delete request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesDeleteRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ResponsesDeleteRequest
-	rakshaReq.ResponsesDeleteRequest = req
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ResponsesDeleteRequest
+	gatewayReq.ResponsesDeleteRequest = req
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1112,48 +1112,48 @@ func (raksha *Raksha) ResponsesDeleteRequest(ctx *schemas.RakshaContext, req *sc
 }
 
 // ResponsesCancelRequest cancels an in-flight stored response (OpenAI POST /v1/responses/{id}/cancel).
-func (raksha *Raksha) ResponsesCancelRequest(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesCancelRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ResponsesCancelRequest(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesCancelRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "responses cancel request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesCancelRequest,
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for responses cancel request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesCancelRequest,
 			},
 		}
 	}
 	if req.ResponseID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "response_id is required for responses cancel request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesCancelRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ResponsesCancelRequest
-	rakshaReq.ResponsesCancelRequest = req
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ResponsesCancelRequest
+	gatewayReq.ResponsesCancelRequest = req
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1161,48 +1161,48 @@ func (raksha *Raksha) ResponsesCancelRequest(ctx *schemas.RakshaContext, req *sc
 }
 
 // ResponsesInputItemsRequest lists input items for a stored response (OpenAI GET /v1/responses/{id}/input_items).
-func (raksha *Raksha) ResponsesInputItemsRequest(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesInputItemsRequest) (*schemas.RakshaResponsesInputItemsResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ResponsesInputItemsRequest(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesInputItemsRequest) (*schemas.GatewayResponsesInputItemsResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "responses input items request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesInputItemsRequest,
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for responses input items request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesInputItemsRequest,
 			},
 		}
 	}
 	if req.ResponseID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "response_id is required for responses input items request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ResponsesInputItemsRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ResponsesInputItemsRequest
-	rakshaReq.ResponsesInputItemsRequest = req
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ResponsesInputItemsRequest
+	gatewayReq.ResponsesInputItemsRequest = req
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1210,14 +1210,14 @@ func (raksha *Raksha) ResponsesInputItemsRequest(ctx *schemas.RakshaContext, req
 }
 
 // EmbeddingRequest sends an embedding request to the specified provider.
-func (raksha *Raksha) EmbeddingRequest(ctx *schemas.RakshaContext, req *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+func (gateway *Gateway) EmbeddingRequest(ctx *schemas.GatewayContext, req *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "embedding request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.EmbeddingRequest,
 			},
 		}
@@ -1225,12 +1225,12 @@ func (raksha *Raksha) EmbeddingRequest(ctx *schemas.RakshaContext, req *schemas.
 	hasExtraInputs := req.Params != nil && req.Params.ExtraParams != nil &&
 		(req.Params.ExtraParams["inputs"] != nil || req.Params.ExtraParams["images"] != nil)
 	if (req.Input == nil || (req.Input.Text == nil && req.Input.Texts == nil && req.Input.Embedding == nil && req.Input.Embeddings == nil)) && !hasExtraInputs && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "embedding input not provided for embedding request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.EmbeddingRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1239,11 +1239,11 @@ func (raksha *Raksha) EmbeddingRequest(ctx *schemas.RakshaContext, req *schemas.
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.EmbeddingRequest
-	rakshaReq.EmbeddingRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.EmbeddingRequest
+	gatewayReq.EmbeddingRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1252,25 +1252,25 @@ func (raksha *Raksha) EmbeddingRequest(ctx *schemas.RakshaContext, req *schemas.
 }
 
 // RerankRequest sends a rerank request to the specified provider.
-func (raksha *Raksha) RerankRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (gateway *Gateway) RerankRequest(ctx *schemas.GatewayContext, req *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "rerank request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.RerankRequest,
 			},
 		}
 	}
 	if strings.TrimSpace(req.Query) == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "query not provided for rerank request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.RerankRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1279,12 +1279,12 @@ func (raksha *Raksha) RerankRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 		}
 	}
 	if len(req.Documents) == 0 {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "documents not provided for rerank request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.RerankRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1294,12 +1294,12 @@ func (raksha *Raksha) RerankRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 	}
 	for i, doc := range req.Documents {
 		if strings.TrimSpace(doc.Text) == "" {
-			return nil, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("document text is empty at index %d", i),
 				},
-				ExtraFields: schemas.RakshaErrorExtraFields{
+				ExtraFields: schemas.GatewayErrorExtraFields{
 					RequestType:            schemas.RerankRequest,
 					Provider:               req.Provider,
 					OriginalModelRequested: req.Model,
@@ -1308,11 +1308,11 @@ func (raksha *Raksha) RerankRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 			}
 		}
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.RerankRequest
-	rakshaReq.RerankRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.RerankRequest
+	gatewayReq.RerankRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1320,25 +1320,25 @@ func (raksha *Raksha) RerankRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 }
 
 // OCRRequest sends an OCR request to the specified provider.
-func (raksha *Raksha) OCRRequest(ctx *schemas.RakshaContext, req *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (gateway *Gateway) OCRRequest(ctx *schemas.GatewayContext, req *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "ocr request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.OCRRequest,
 			},
 		}
 	}
 	if strings.TrimSpace(string(req.Document.Type)) == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "document type not provided for ocr request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.OCRRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1347,12 +1347,12 @@ func (raksha *Raksha) OCRRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 		}
 	}
 	if req.Document.Type == schemas.OCRDocumentTypeDocumentURL && (req.Document.DocumentURL == nil || strings.TrimSpace(*req.Document.DocumentURL) == "") {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "document_url not provided for document_url type ocr request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.OCRRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1361,12 +1361,12 @@ func (raksha *Raksha) OCRRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 		}
 	}
 	if req.Document.Type == schemas.OCRDocumentTypeImageURL && (req.Document.ImageURL == nil || strings.TrimSpace(*req.Document.ImageURL) == "") {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "image_url not provided for image_url type ocr request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.OCRRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1374,11 +1374,11 @@ func (raksha *Raksha) OCRRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 			},
 		}
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.OCRRequest
-	rakshaReq.OCRRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.OCRRequest
+	gatewayReq.OCRRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1386,25 +1386,25 @@ func (raksha *Raksha) OCRRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 }
 
 // SpeechRequest sends a speech request to the specified provider.
-func (raksha *Raksha) SpeechRequest(ctx *schemas.RakshaContext, req *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (gateway *Gateway) SpeechRequest(ctx *schemas.GatewayContext, req *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "speech request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.SpeechRequest,
 			},
 		}
 	}
 	if (req.Input == nil || req.Input.Input == "") && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "speech input not provided for speech request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.SpeechRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1413,11 +1413,11 @@ func (raksha *Raksha) SpeechRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.SpeechRequest
-	rakshaReq.SpeechRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.SpeechRequest
+	gatewayReq.SpeechRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1426,25 +1426,25 @@ func (raksha *Raksha) SpeechRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 }
 
 // SpeechStreamRequest sends a speech stream request to the specified provider.
-func (raksha *Raksha) SpeechStreamRequest(ctx *schemas.RakshaContext, req *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (gateway *Gateway) SpeechStreamRequest(ctx *schemas.GatewayContext, req *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "speech stream request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.SpeechStreamRequest,
 			},
 		}
 	}
 	if (req.Input == nil || req.Input.Input == "") && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "speech input not provided for speech stream request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.SpeechStreamRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1453,33 +1453,33 @@ func (raksha *Raksha) SpeechStreamRequest(ctx *schemas.RakshaContext, req *schem
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.SpeechStreamRequest
-	rakshaReq.SpeechRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.SpeechStreamRequest
+	gatewayReq.SpeechRequest = req
 
-	return raksha.handleStreamRequest(ctx, rakshaReq)
+	return gateway.handleStreamRequest(ctx, gatewayReq)
 }
 
 // TranscriptionRequest sends a transcription request to the specified provider.
-func (raksha *Raksha) TranscriptionRequest(ctx *schemas.RakshaContext, req *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (gateway *Gateway) TranscriptionRequest(ctx *schemas.GatewayContext, req *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "transcription request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.TranscriptionRequest,
 			},
 		}
 	}
 	if (req.Input == nil || req.Input.File == nil) && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "transcription input not provided for transcription request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.TranscriptionRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1488,11 +1488,11 @@ func (raksha *Raksha) TranscriptionRequest(ctx *schemas.RakshaContext, req *sche
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.TranscriptionRequest
-	rakshaReq.TranscriptionRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.TranscriptionRequest
+	gatewayReq.TranscriptionRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -1501,25 +1501,25 @@ func (raksha *Raksha) TranscriptionRequest(ctx *schemas.RakshaContext, req *sche
 }
 
 // TranscriptionStreamRequest sends a transcription stream request to the specified provider.
-func (raksha *Raksha) TranscriptionStreamRequest(ctx *schemas.RakshaContext, req *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (gateway *Gateway) TranscriptionStreamRequest(ctx *schemas.GatewayContext, req *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "transcription stream request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.TranscriptionStreamRequest,
 			},
 		}
 	}
 	if (req.Input == nil || req.Input.File == nil) && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "transcription input not provided for transcription stream request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.TranscriptionStreamRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1528,35 +1528,35 @@ func (raksha *Raksha) TranscriptionStreamRequest(ctx *schemas.RakshaContext, req
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.TranscriptionStreamRequest
-	rakshaReq.TranscriptionRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.TranscriptionStreamRequest
+	gatewayReq.TranscriptionRequest = req
 
-	return raksha.handleStreamRequest(ctx, rakshaReq)
+	return gateway.handleStreamRequest(ctx, gatewayReq)
 }
 
 // ImageGenerationRequest sends an image generation request to the specified provider.
-func (raksha *Raksha) ImageGenerationRequest(ctx *schemas.RakshaContext,
-	req *schemas.RakshaImageGenerationRequest,
-) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ImageGenerationRequest(ctx *schemas.GatewayContext,
+	req *schemas.GatewayImageGenerationRequest,
+) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "image generation request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ImageGenerationRequest,
 			},
 		}
 	}
 	if (req.Input == nil || req.Input.Prompt == "") && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "prompt not provided for image generation request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageGenerationRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1565,21 +1565,21 @@ func (raksha *Raksha) ImageGenerationRequest(ctx *schemas.RakshaContext,
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ImageGenerationRequest
-	rakshaReq.ImageGenerationRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ImageGenerationRequest
+	gatewayReq.ImageGenerationRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
 	if response == nil || response.ImageGenerationResponse == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "received nil response from provider",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageGenerationRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1592,27 +1592,27 @@ func (raksha *Raksha) ImageGenerationRequest(ctx *schemas.RakshaContext,
 }
 
 // ImageGenerationStreamRequest sends an image generation stream request to the specified provider.
-func (raksha *Raksha) ImageGenerationStreamRequest(ctx *schemas.RakshaContext,
-	req *schemas.RakshaImageGenerationRequest,
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (gateway *Gateway) ImageGenerationStreamRequest(ctx *schemas.GatewayContext,
+	req *schemas.GatewayImageGenerationRequest,
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "image generation stream request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ImageGenerationStreamRequest,
 			},
 		}
 	}
 	if (req.Input == nil || req.Input.Prompt == "") && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "prompt not provided for image generation stream request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageGenerationStreamRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1621,33 +1621,33 @@ func (raksha *Raksha) ImageGenerationStreamRequest(ctx *schemas.RakshaContext,
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ImageGenerationStreamRequest
-	rakshaReq.ImageGenerationRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ImageGenerationStreamRequest
+	gatewayReq.ImageGenerationRequest = req
 
-	return raksha.handleStreamRequest(ctx, rakshaReq)
+	return gateway.handleStreamRequest(ctx, gatewayReq)
 }
 
 // ImageEditRequest sends an image edit request to the specified provider.
-func (raksha *Raksha) ImageEditRequest(ctx *schemas.RakshaContext, req *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ImageEditRequest(ctx *schemas.GatewayContext, req *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "image edit request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ImageEditRequest,
 			},
 		}
 	}
 	if (req.Input == nil || req.Input.Images == nil || len(req.Input.Images) == 0) && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "images not provided for image edit request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageEditRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1662,12 +1662,12 @@ func (raksha *Raksha) ImageEditRequest(ctx *schemas.RakshaContext, req *schemas.
 	}
 	if !isPromptOptionalImageEditType(imageEditParamsType) &&
 		(req.Input == nil || req.Input.Prompt == "") && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "prompt not provided for image edit request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageEditRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1676,22 +1676,22 @@ func (raksha *Raksha) ImageEditRequest(ctx *schemas.RakshaContext, req *schemas.
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ImageEditRequest
-	rakshaReq.ImageEditRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ImageEditRequest
+	gatewayReq.ImageEditRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
 
 	if response == nil || response.ImageGenerationResponse == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "received nil response from provider",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageEditRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1704,25 +1704,25 @@ func (raksha *Raksha) ImageEditRequest(ctx *schemas.RakshaContext, req *schemas.
 }
 
 // ImageEditStreamRequest sends an image edit stream request to the specified provider.
-func (raksha *Raksha) ImageEditStreamRequest(ctx *schemas.RakshaContext, req *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (gateway *Gateway) ImageEditStreamRequest(ctx *schemas.GatewayContext, req *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "image edit stream request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ImageEditStreamRequest,
 			},
 		}
 	}
 	if (req.Input == nil || req.Input.Images == nil || len(req.Input.Images) == 0) && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "images not provided for image edit stream request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageEditStreamRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1737,12 +1737,12 @@ func (raksha *Raksha) ImageEditStreamRequest(ctx *schemas.RakshaContext, req *sc
 	}
 	if !isPromptOptionalImageEditType(imageEditStreamParamsType) &&
 		(req.Input == nil || req.Input.Prompt == "") && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "prompt not provided for image edit stream request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageEditStreamRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1751,33 +1751,33 @@ func (raksha *Raksha) ImageEditStreamRequest(ctx *schemas.RakshaContext, req *sc
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ImageEditStreamRequest
-	rakshaReq.ImageEditRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ImageEditStreamRequest
+	gatewayReq.ImageEditRequest = req
 
-	return raksha.handleStreamRequest(ctx, rakshaReq)
+	return gateway.handleStreamRequest(ctx, gatewayReq)
 }
 
 // ImageVariationRequest sends an image variation request to the specified provider.
-func (raksha *Raksha) ImageVariationRequest(ctx *schemas.RakshaContext, req *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ImageVariationRequest(ctx *schemas.GatewayContext, req *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "image variation request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.ImageVariationRequest,
 			},
 		}
 	}
 	if (req.Input == nil || req.Input.Image.Image == nil || len(req.Input.Image.Image) == 0) && !isLargePayloadPassthrough(ctx) {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "image not provided for image variation request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageVariationRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1786,22 +1786,22 @@ func (raksha *Raksha) ImageVariationRequest(ctx *schemas.RakshaContext, req *sch
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ImageVariationRequest
-	rakshaReq.ImageVariationRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ImageVariationRequest
+	gatewayReq.ImageVariationRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
 
 	if response == nil || response.ImageGenerationResponse == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "received nil response from provider",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.ImageVariationRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1814,27 +1814,27 @@ func (raksha *Raksha) ImageVariationRequest(ctx *schemas.RakshaContext, req *sch
 }
 
 // VideoGenerationRequest sends a video generation request to the specified provider.
-func (raksha *Raksha) VideoGenerationRequest(ctx *schemas.RakshaContext,
-	req *schemas.RakshaVideoGenerationRequest,
-) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (gateway *Gateway) VideoGenerationRequest(ctx *schemas.GatewayContext,
+	req *schemas.GatewayVideoGenerationRequest,
+) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video generation request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoGenerationRequest,
 			},
 		}
 	}
 	if req.Input == nil || req.Input.Prompt == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "prompt not provided for video generation request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.VideoGenerationRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1843,21 +1843,21 @@ func (raksha *Raksha) VideoGenerationRequest(ctx *schemas.RakshaContext,
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.VideoGenerationRequest
-	rakshaReq.VideoGenerationRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.VideoGenerationRequest
+	gatewayReq.VideoGenerationRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
 	if response == nil || response.VideoGenerationResponse == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "received nil response from provider",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            schemas.VideoGenerationRequest,
 				Provider:               req.Provider,
 				OriginalModelRequested: req.Model,
@@ -1869,57 +1869,57 @@ func (raksha *Raksha) VideoGenerationRequest(ctx *schemas.RakshaContext,
 	return response.VideoGenerationResponse, nil
 }
 
-func (raksha *Raksha) VideoRetrieveRequest(ctx *schemas.RakshaContext, req *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (gateway *Gateway) VideoRetrieveRequest(ctx *schemas.GatewayContext, req *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video retrieve request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoRetrieveRequest,
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for video retrieve request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoRetrieveRequest,
 			},
 		}
 	}
 	if req.ID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video_id is required for video retrieve request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoRetrieveRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.VideoRetrieveRequest
-	rakshaReq.VideoRetrieveRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.VideoRetrieveRequest
+	gatewayReq.VideoRetrieveRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
 	if response == nil || response.VideoGenerationResponse == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "received nil response from provider",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoRetrieveRequest,
 				Provider:    req.Provider,
 			},
@@ -1929,116 +1929,116 @@ func (raksha *Raksha) VideoRetrieveRequest(ctx *schemas.RakshaContext, req *sche
 }
 
 // VideoDownloadRequest downloads video content from the provider.
-func (raksha *Raksha) VideoDownloadRequest(ctx *schemas.RakshaContext, req *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (gateway *Gateway) VideoDownloadRequest(ctx *schemas.GatewayContext, req *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video download request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoDownloadRequest,
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for video download request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoDownloadRequest,
 			},
 		}
 	}
 	if req.ID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video_id is required for video download request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoDownloadRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.VideoDownloadRequest
-	rakshaReq.VideoDownloadRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.VideoDownloadRequest
+	gatewayReq.VideoDownloadRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
 	return response.VideoDownloadResponse, nil
 }
 
-func (raksha *Raksha) VideoRemixRequest(ctx *schemas.RakshaContext, req *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (gateway *Gateway) VideoRemixRequest(ctx *schemas.GatewayContext, req *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video remix request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoRemixRequest,
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for video remix request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoRemixRequest,
 			},
 		}
 	}
 	if req.ID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video_id is required for video remix request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoRemixRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
 	if req.Input == nil || req.Input.Prompt == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "prompt is required for video remix request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoRemixRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.VideoRemixRequest
-	rakshaReq.VideoRemixRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.VideoRemixRequest
+	gatewayReq.VideoRemixRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
 	if response == nil || response.VideoGenerationResponse == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "received nil response from provider",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoRemixRequest,
 				Provider:    req.Provider,
 			},
@@ -2047,82 +2047,82 @@ func (raksha *Raksha) VideoRemixRequest(ctx *schemas.RakshaContext, req *schemas
 	return response.VideoGenerationResponse, nil
 }
 
-func (raksha *Raksha) VideoListRequest(ctx *schemas.RakshaContext, req *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (gateway *Gateway) VideoListRequest(ctx *schemas.GatewayContext, req *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video list request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoListRequest,
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for video list request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoListRequest,
 			},
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.VideoListRequest
-	rakshaReq.VideoListRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.VideoListRequest
+	gatewayReq.VideoListRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
 	return response.VideoListResponse, nil
 }
 
-func (raksha *Raksha) VideoDeleteRequest(ctx *schemas.RakshaContext, req *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (gateway *Gateway) VideoDeleteRequest(ctx *schemas.GatewayContext, req *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video delete request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoDeleteRequest,
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for video delete request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoDeleteRequest,
 			},
 		}
 	}
 	if req.ID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "video_id is required for video delete request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.VideoDeleteRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.VideoDeleteRequest
-	rakshaReq.VideoDeleteRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.VideoDeleteRequest
+	gatewayReq.VideoDeleteRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2130,18 +2130,18 @@ func (raksha *Raksha) VideoDeleteRequest(ctx *schemas.RakshaContext, req *schema
 }
 
 // BatchCreateRequest creates a new batch job for asynchronous processing.
-func (raksha *Raksha) BatchCreateRequest(ctx *schemas.RakshaContext, req *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (gateway *Gateway) BatchCreateRequest(ctx *schemas.GatewayContext, req *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch create request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for batch create request",
 			},
@@ -2149,32 +2149,32 @@ func (raksha *Raksha) BatchCreateRequest(ctx *schemas.RakshaContext, req *schema
 	}
 	hasInputBlob := req.InputBlob != nil && strings.TrimSpace(*req.InputBlob) != ""
 	if req.InputFileID == "" && len(req.Requests) == 0 && !hasInputBlob {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "either input_file_id, input_blob, or requests is required for batch create request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	provider := raksha.getProviderByKey(req.Provider)
+	provider := gateway.getProviderByKey(req.Provider)
 	if provider == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider not found for batch create request",
 			},
 		}
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.BatchCreateRequest
-	rakshaReq.BatchCreateRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.BatchCreateRequest
+	gatewayReq.BatchCreateRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2182,32 +2182,32 @@ func (raksha *Raksha) BatchCreateRequest(ctx *schemas.RakshaContext, req *schema
 }
 
 // BatchListRequest lists batch jobs for the specified provider.
-func (raksha *Raksha) BatchListRequest(ctx *schemas.RakshaContext, req *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (gateway *Gateway) BatchListRequest(ctx *schemas.GatewayContext, req *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch list request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for batch list request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.BatchListRequest
-	rakshaReq.BatchListRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.BatchListRequest
+	gatewayReq.BatchListRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2215,40 +2215,40 @@ func (raksha *Raksha) BatchListRequest(ctx *schemas.RakshaContext, req *schemas.
 }
 
 // BatchRetrieveRequest retrieves a specific batch job.
-func (raksha *Raksha) BatchRetrieveRequest(ctx *schemas.RakshaContext, req *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (gateway *Gateway) BatchRetrieveRequest(ctx *schemas.GatewayContext, req *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch retrieve request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for batch retrieve request",
 			},
 		}
 	}
 	if req.BatchID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch_id is required for batch retrieve request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.BatchRetrieveRequest
-	rakshaReq.BatchRetrieveRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.BatchRetrieveRequest
+	gatewayReq.BatchRetrieveRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2256,40 +2256,40 @@ func (raksha *Raksha) BatchRetrieveRequest(ctx *schemas.RakshaContext, req *sche
 }
 
 // BatchCancelRequest cancels a batch job.
-func (raksha *Raksha) BatchCancelRequest(ctx *schemas.RakshaContext, req *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (gateway *Gateway) BatchCancelRequest(ctx *schemas.GatewayContext, req *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch cancel request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for batch cancel request",
 			},
 		}
 	}
 	if req.BatchID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch_id is required for batch cancel request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.BatchCancelRequest
-	rakshaReq.BatchCancelRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.BatchCancelRequest
+	gatewayReq.BatchCancelRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2297,40 +2297,40 @@ func (raksha *Raksha) BatchCancelRequest(ctx *schemas.RakshaContext, req *schema
 }
 
 // BatchDeleteRequest deletes a batch job.
-func (raksha *Raksha) BatchDeleteRequest(ctx *schemas.RakshaContext, req *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (gateway *Gateway) BatchDeleteRequest(ctx *schemas.GatewayContext, req *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch delete request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for batch delete request",
 			},
 		}
 	}
 	if req.BatchID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch_id is required for batch delete request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.BatchDeleteRequest
-	rakshaReq.BatchDeleteRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.BatchDeleteRequest
+	gatewayReq.BatchDeleteRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2338,50 +2338,50 @@ func (raksha *Raksha) BatchDeleteRequest(ctx *schemas.RakshaContext, req *schema
 }
 
 // BatchResultsRequest retrieves results from a completed batch job.
-func (raksha *Raksha) BatchResultsRequest(ctx *schemas.RakshaContext, req *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (gateway *Gateway) BatchResultsRequest(ctx *schemas.GatewayContext, req *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch results request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.BatchResultsRequest,
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for batch results request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.BatchResultsRequest,
 			},
 		}
 	}
 	if req.BatchID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "batch_id is required for batch results request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.BatchResultsRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.BatchResultsRequest
-	rakshaReq.BatchResultsRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.BatchResultsRequest
+	gatewayReq.BatchResultsRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2389,51 +2389,51 @@ func (raksha *Raksha) BatchResultsRequest(ctx *schemas.RakshaContext, req *schem
 }
 
 // FileUploadRequest uploads a file to the specified provider.
-func (raksha *Raksha) FileUploadRequest(ctx *schemas.RakshaContext, req *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (gateway *Gateway) FileUploadRequest(ctx *schemas.GatewayContext, req *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file upload request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.FileUploadRequest,
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for file upload request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.FileUploadRequest,
 			},
 		}
 	}
 
 	if len(req.File) == 0 && req.Provider != schemas.Vertex {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file content is required for file upload request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.FileUploadRequest,
 				Provider:    req.Provider,
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.FileUploadRequest
-	rakshaReq.FileUploadRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.FileUploadRequest
+	gatewayReq.FileUploadRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2441,38 +2441,38 @@ func (raksha *Raksha) FileUploadRequest(ctx *schemas.RakshaContext, req *schemas
 }
 
 // FileListRequest lists files from the specified provider.
-func (raksha *Raksha) FileListRequest(ctx *schemas.RakshaContext, req *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (gateway *Gateway) FileListRequest(ctx *schemas.GatewayContext, req *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file list request is nil",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.FileListRequest,
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for file list request",
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType: schemas.FileListRequest,
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.FileListRequest
-	rakshaReq.FileListRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.FileListRequest
+	gatewayReq.FileListRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2480,40 +2480,40 @@ func (raksha *Raksha) FileListRequest(ctx *schemas.RakshaContext, req *schemas.R
 }
 
 // FileRetrieveRequest retrieves file metadata from the specified provider.
-func (raksha *Raksha) FileRetrieveRequest(ctx *schemas.RakshaContext, req *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (gateway *Gateway) FileRetrieveRequest(ctx *schemas.GatewayContext, req *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file retrieve request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for file retrieve request",
 			},
 		}
 	}
 	if req.FileID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file_id is required for file retrieve request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.FileRetrieveRequest
-	rakshaReq.FileRetrieveRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.FileRetrieveRequest
+	gatewayReq.FileRetrieveRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2521,40 +2521,40 @@ func (raksha *Raksha) FileRetrieveRequest(ctx *schemas.RakshaContext, req *schem
 }
 
 // FileDeleteRequest deletes a file from the specified provider.
-func (raksha *Raksha) FileDeleteRequest(ctx *schemas.RakshaContext, req *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (gateway *Gateway) FileDeleteRequest(ctx *schemas.GatewayContext, req *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file delete request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for file delete request",
 			},
 		}
 	}
 	if req.FileID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file_id is required for file delete request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.FileDeleteRequest
-	rakshaReq.FileDeleteRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.FileDeleteRequest
+	gatewayReq.FileDeleteRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2562,40 +2562,40 @@ func (raksha *Raksha) FileDeleteRequest(ctx *schemas.RakshaContext, req *schemas
 }
 
 // FileContentRequest downloads file content from the specified provider.
-func (raksha *Raksha) FileContentRequest(ctx *schemas.RakshaContext, req *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (gateway *Gateway) FileContentRequest(ctx *schemas.GatewayContext, req *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file content request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for file content request",
 			},
 		}
 	}
 	if req.FileID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file_id is required for file content request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.FileContentRequest
-	rakshaReq.FileContentRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.FileContentRequest
+	gatewayReq.FileContentRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2603,23 +2603,23 @@ func (raksha *Raksha) FileContentRequest(ctx *schemas.RakshaContext, req *schema
 }
 
 // CachedContentCreateRequest creates a new cached content (Gemini / Vertex AI named cache lifecycle).
-func (raksha *Raksha) CachedContentCreateRequest(ctx *schemas.RakshaContext, req *schemas.RakshaCachedContentCreateRequest) (*schemas.RakshaCachedContentCreateResponse, *schemas.RakshaError) {
+func (gateway *Gateway) CachedContentCreateRequest(ctx *schemas.GatewayContext, req *schemas.GatewayCachedContentCreateRequest) (*schemas.GatewayCachedContentCreateResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "cached content create request is nil"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "cached content create request is nil"}}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content create request"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content create request"}}
 	}
 	if req.Model == "" {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "model is required for cached content create request"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "model is required for cached content create request"}}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.CachedContentCreateRequest
-	rakshaReq.CachedContentCreateRequest = req
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.CachedContentCreateRequest
+	gatewayReq.CachedContentCreateRequest = req
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2627,20 +2627,20 @@ func (raksha *Raksha) CachedContentCreateRequest(ctx *schemas.RakshaContext, req
 }
 
 // CachedContentListRequest lists cached contents.
-func (raksha *Raksha) CachedContentListRequest(ctx *schemas.RakshaContext, req *schemas.RakshaCachedContentListRequest) (*schemas.RakshaCachedContentListResponse, *schemas.RakshaError) {
+func (gateway *Gateway) CachedContentListRequest(ctx *schemas.GatewayContext, req *schemas.GatewayCachedContentListRequest) (*schemas.GatewayCachedContentListResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "cached content list request is nil"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "cached content list request is nil"}}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content list request"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content list request"}}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.CachedContentListRequest
-	rakshaReq.CachedContentListRequest = req
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.CachedContentListRequest
+	gatewayReq.CachedContentListRequest = req
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2648,23 +2648,23 @@ func (raksha *Raksha) CachedContentListRequest(ctx *schemas.RakshaContext, req *
 }
 
 // CachedContentRetrieveRequest retrieves a single cached content by name.
-func (raksha *Raksha) CachedContentRetrieveRequest(ctx *schemas.RakshaContext, req *schemas.RakshaCachedContentRetrieveRequest) (*schemas.RakshaCachedContentRetrieveResponse, *schemas.RakshaError) {
+func (gateway *Gateway) CachedContentRetrieveRequest(ctx *schemas.GatewayContext, req *schemas.GatewayCachedContentRetrieveRequest) (*schemas.GatewayCachedContentRetrieveResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "cached content retrieve request is nil"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "cached content retrieve request is nil"}}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content retrieve request"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content retrieve request"}}
 	}
 	if req.Name == "" {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "name is required for cached content retrieve request"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "name is required for cached content retrieve request"}}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.CachedContentRetrieveRequest
-	rakshaReq.CachedContentRetrieveRequest = req
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.CachedContentRetrieveRequest
+	gatewayReq.CachedContentRetrieveRequest = req
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2672,23 +2672,23 @@ func (raksha *Raksha) CachedContentRetrieveRequest(ctx *schemas.RakshaContext, r
 }
 
 // CachedContentUpdateRequest updates expiration on a cached content.
-func (raksha *Raksha) CachedContentUpdateRequest(ctx *schemas.RakshaContext, req *schemas.RakshaCachedContentUpdateRequest) (*schemas.RakshaCachedContentUpdateResponse, *schemas.RakshaError) {
+func (gateway *Gateway) CachedContentUpdateRequest(ctx *schemas.GatewayContext, req *schemas.GatewayCachedContentUpdateRequest) (*schemas.GatewayCachedContentUpdateResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "cached content update request is nil"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "cached content update request is nil"}}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content update request"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content update request"}}
 	}
 	if req.Name == "" {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "name is required for cached content update request"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "name is required for cached content update request"}}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.CachedContentUpdateRequest
-	rakshaReq.CachedContentUpdateRequest = req
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.CachedContentUpdateRequest
+	gatewayReq.CachedContentUpdateRequest = req
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2696,38 +2696,38 @@ func (raksha *Raksha) CachedContentUpdateRequest(ctx *schemas.RakshaContext, req
 }
 
 // CachedContentDeleteRequest deletes a cached content by name.
-func (raksha *Raksha) CachedContentDeleteRequest(ctx *schemas.RakshaContext, req *schemas.RakshaCachedContentDeleteRequest) (*schemas.RakshaCachedContentDeleteResponse, *schemas.RakshaError) {
+func (gateway *Gateway) CachedContentDeleteRequest(ctx *schemas.GatewayContext, req *schemas.GatewayCachedContentDeleteRequest) (*schemas.GatewayCachedContentDeleteResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "cached content delete request is nil"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "cached content delete request is nil"}}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content delete request"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "provider is required for cached content delete request"}}
 	}
 	if req.Name == "" {
-		return nil, &schemas.RakshaError{IsRakshaError: false, Error: &schemas.ErrorField{Message: "name is required for cached content delete request"}}
+		return nil, &schemas.GatewayError{IsGatewayError: false, Error: &schemas.ErrorField{Message: "name is required for cached content delete request"}}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.CachedContentDeleteRequest
-	rakshaReq.CachedContentDeleteRequest = req
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.CachedContentDeleteRequest
+	gatewayReq.CachedContentDeleteRequest = req
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
 	return response.CachedContentDeleteResponse, nil
 }
 
-func (raksha *Raksha) Passthrough(
-	ctx *schemas.RakshaContext,
+func (gateway *Gateway) Passthrough(
+	ctx *schemas.GatewayContext,
 	provider schemas.ModelProvider,
-	req *schemas.RakshaPassthroughRequest,
-) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	if req == nil {
 		sc := fasthttp.StatusBadRequest
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			StatusCode:    &sc,
 			Error:         &schemas.ErrorField{Message: "passthrough request is nil"},
 		}
@@ -2735,18 +2735,18 @@ func (raksha *Raksha) Passthrough(
 
 	req.Provider = provider
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.PassthroughRequest
-	rakshaReq.PassthroughRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.PassthroughRequest
+	gatewayReq.PassthroughRequest = req
 
-	resp, rakshaErr := raksha.handleRequest(ctx, rakshaReq)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	resp, gatewayErr := gateway.handleRequest(ctx, gatewayReq)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if resp == nil || resp.PassthroughResponse == nil {
 		sc := fasthttp.StatusBadGateway
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			StatusCode:    &sc,
 			Error:         &schemas.ErrorField{Message: "provider returned nil passthrough response"},
 		}
@@ -2754,15 +2754,15 @@ func (raksha *Raksha) Passthrough(
 	return resp.PassthroughResponse, nil
 }
 
-func (raksha *Raksha) PassthroughStream(
-	ctx *schemas.RakshaContext,
+func (gateway *Gateway) PassthroughStream(
+	ctx *schemas.GatewayContext,
 	provider schemas.ModelProvider,
-	req *schemas.RakshaPassthroughRequest,
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if req == nil {
 		sc := fasthttp.StatusBadRequest
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			StatusCode:    &sc,
 			Error:         &schemas.ErrorField{Message: "passthrough request is nil"},
 		}
@@ -2770,14 +2770,14 @@ func (raksha *Raksha) PassthroughStream(
 
 	req.Provider = provider
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.PassthroughStreamRequest
-	rakshaReq.PassthroughRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.PassthroughStreamRequest
+	gatewayReq.PassthroughRequest = req
 
-	return raksha.handleStreamRequest(ctx, rakshaReq)
+	return gateway.handleStreamRequest(ctx, gatewayReq)
 }
 
-// ensureMCPRawStorageContext sets RakshaContextKeyShouldStoreRawInLogs for standalone MCP
+// ensureMCPRawStorageContext sets GatewayContextKeyShouldStoreRawInLogs for standalone MCP
 // tool executions so PostMCPHook consumers (e.g. the logging plugin) see an explicit value.
 // In-pipeline tool calls already carry the key from the LLM request path (see the effective
 // raw-storage computation in requestWorker), so an existing value is never overwritten. There is
@@ -2785,99 +2785,99 @@ func (raksha *Raksha) PassthroughStream(
 // override is honored, mirroring the per-request half of the LLM pipeline's logic.
 //
 // Callers must only pass request-scoped contexts, never the shared instance context
-// (raksha.ctx): SetValue mutates the receiver's value map, so writing here would stamp the
+// (gateway.ctx): SetValue mutates the receiver's value map, so writing here would stamp the
 // flag onto state shared by unrelated calls. Nil-ctx standalone executions therefore skip this
 // entirely — consumers treat a missing key as false, and the per-request override keys can
 // never be present on the instance context, so the outcome is identical.
-func ensureMCPRawStorageContext(ctx *schemas.RakshaContext) {
+func ensureMCPRawStorageContext(ctx *schemas.GatewayContext) {
 	if ctx == nil {
 		return
 	}
-	if _, ok := ctx.Value(schemas.RakshaContextKeyShouldStoreRawInLogs).(bool); ok {
+	if _, ok := ctx.Value(schemas.GatewayContextKeyShouldStoreRawInLogs).(bool); ok {
 		return
 	}
 	effectiveStore := false
-	if allowStorageOverride, _ := ctx.Value(schemas.RakshaContextKeyAllowPerRequestStorageOverride).(bool); allowStorageOverride {
-		if override, ok := ctx.Value(schemas.RakshaContextKeyStoreRawRequestResponse).(bool); ok {
+	if allowStorageOverride, _ := ctx.Value(schemas.GatewayContextKeyAllowPerRequestStorageOverride).(bool); allowStorageOverride {
+		if override, ok := ctx.Value(schemas.GatewayContextKeyStoreRawRequestResponse).(bool); ok {
 			effectiveStore = override
 		}
 	}
-	ctx.SetValue(schemas.RakshaContextKeyShouldStoreRawInLogs, effectiveStore)
+	ctx.SetValue(schemas.GatewayContextKeyShouldStoreRawInLogs, effectiveStore)
 }
 
 // ExecuteChatMCPTool executes an MCP tool call and returns the result as a chat message.
 // This is the main public API for manual MCP tool execution in Chat format. All the
 // real work — request pooling, plugin gate (PreMCPHook / PostMCPHook), short-circuit
 // handling, error enrichment — lives on MCPManager.ExecuteChatTool.
-func (raksha *Raksha) ExecuteChatMCPTool(ctx *schemas.RakshaContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.RakshaError) {
+func (gateway *Gateway) ExecuteChatMCPTool(ctx *schemas.GatewayContext, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.GatewayError) {
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	} else {
 		ensureMCPRawStorageContext(ctx)
 	}
-	if raksha.MCPManager == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
-			Error:         &schemas.ErrorField{Message: "mcp is not configured in this raksha instance"},
-			ExtraFields:   schemas.RakshaErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
+	if gateway.MCPManager == nil {
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
+			Error:         &schemas.ErrorField{Message: "mcp is not configured in this gateway instance"},
+			ExtraFields:   schemas.GatewayErrorExtraFields{RequestType: schemas.ChatCompletionRequest},
 		}
 	}
-	return raksha.MCPManager.ExecuteChatTool(ctx, toolCall)
+	return gateway.MCPManager.ExecuteChatTool(ctx, toolCall)
 }
 
 // ExecuteResponsesMCPTool executes an MCP tool call and returns the result as a responses
 // message. Thin delegator — see ExecuteChatMCPTool for the rationale.
-func (raksha *Raksha) ExecuteResponsesMCPTool(ctx *schemas.RakshaContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.RakshaError) {
+func (gateway *Gateway) ExecuteResponsesMCPTool(ctx *schemas.GatewayContext, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.GatewayError) {
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	} else {
 		ensureMCPRawStorageContext(ctx)
 	}
-	if raksha.MCPManager == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
-			Error:         &schemas.ErrorField{Message: "mcp is not configured in this raksha instance"},
-			ExtraFields:   schemas.RakshaErrorExtraFields{RequestType: schemas.ResponsesRequest},
+	if gateway.MCPManager == nil {
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
+			Error:         &schemas.ErrorField{Message: "mcp is not configured in this gateway instance"},
+			ExtraFields:   schemas.GatewayErrorExtraFields{RequestType: schemas.ResponsesRequest},
 		}
 	}
-	return raksha.MCPManager.ExecuteResponsesTool(ctx, toolCall)
+	return gateway.MCPManager.ExecuteResponsesTool(ctx, toolCall)
 }
 
 // ContainerCreateRequest creates a new container.
-func (raksha *Raksha) ContainerCreateRequest(ctx *schemas.RakshaContext, req *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ContainerCreateRequest(ctx *schemas.GatewayContext, req *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container create request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for container create request",
 			},
 		}
 	}
 	if req.Name == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "name is required for container create request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ContainerCreateRequest
-	rakshaReq.ContainerCreateRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ContainerCreateRequest
+	gatewayReq.ContainerCreateRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2885,32 +2885,32 @@ func (raksha *Raksha) ContainerCreateRequest(ctx *schemas.RakshaContext, req *sc
 }
 
 // ContainerListRequest lists containers.
-func (raksha *Raksha) ContainerListRequest(ctx *schemas.RakshaContext, req *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ContainerListRequest(ctx *schemas.GatewayContext, req *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container list request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for container list request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ContainerListRequest
-	rakshaReq.ContainerListRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ContainerListRequest
+	gatewayReq.ContainerListRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2918,40 +2918,40 @@ func (raksha *Raksha) ContainerListRequest(ctx *schemas.RakshaContext, req *sche
 }
 
 // ContainerRetrieveRequest retrieves a specific container.
-func (raksha *Raksha) ContainerRetrieveRequest(ctx *schemas.RakshaContext, req *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ContainerRetrieveRequest(ctx *schemas.GatewayContext, req *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container retrieve request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for container retrieve request",
 			},
 		}
 	}
 	if req.ContainerID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container_id is required for container retrieve request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ContainerRetrieveRequest
-	rakshaReq.ContainerRetrieveRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ContainerRetrieveRequest
+	gatewayReq.ContainerRetrieveRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2959,40 +2959,40 @@ func (raksha *Raksha) ContainerRetrieveRequest(ctx *schemas.RakshaContext, req *
 }
 
 // ContainerDeleteRequest deletes a container.
-func (raksha *Raksha) ContainerDeleteRequest(ctx *schemas.RakshaContext, req *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ContainerDeleteRequest(ctx *schemas.GatewayContext, req *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container delete request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for container delete request",
 			},
 		}
 	}
 	if req.ContainerID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container_id is required for container delete request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ContainerDeleteRequest
-	rakshaReq.ContainerDeleteRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ContainerDeleteRequest
+	gatewayReq.ContainerDeleteRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -3000,48 +3000,48 @@ func (raksha *Raksha) ContainerDeleteRequest(ctx *schemas.RakshaContext, req *sc
 }
 
 // ContainerFileCreateRequest creates a file in a container.
-func (raksha *Raksha) ContainerFileCreateRequest(ctx *schemas.RakshaContext, req *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ContainerFileCreateRequest(ctx *schemas.GatewayContext, req *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container file create request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for container file create request",
 			},
 		}
 	}
 	if req.ContainerID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container_id is required for container file create request",
 			},
 		}
 	}
 	if len(req.File) == 0 && (req.FileID == nil || strings.TrimSpace(*req.FileID) == "") && (req.Path == nil || strings.TrimSpace(*req.Path) == "") {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "one of file, file_id, or path is required for container file create request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ContainerFileCreateRequest
-	rakshaReq.ContainerFileCreateRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ContainerFileCreateRequest
+	gatewayReq.ContainerFileCreateRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -3049,40 +3049,40 @@ func (raksha *Raksha) ContainerFileCreateRequest(ctx *schemas.RakshaContext, req
 }
 
 // ContainerFileListRequest lists files in a container.
-func (raksha *Raksha) ContainerFileListRequest(ctx *schemas.RakshaContext, req *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ContainerFileListRequest(ctx *schemas.GatewayContext, req *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container file list request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for container file list request",
 			},
 		}
 	}
 	if req.ContainerID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container_id is required for container file list request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ContainerFileListRequest
-	rakshaReq.ContainerFileListRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ContainerFileListRequest
+	gatewayReq.ContainerFileListRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -3090,48 +3090,48 @@ func (raksha *Raksha) ContainerFileListRequest(ctx *schemas.RakshaContext, req *
 }
 
 // ContainerFileRetrieveRequest retrieves a file from a container.
-func (raksha *Raksha) ContainerFileRetrieveRequest(ctx *schemas.RakshaContext, req *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ContainerFileRetrieveRequest(ctx *schemas.GatewayContext, req *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container file retrieve request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for container file retrieve request",
 			},
 		}
 	}
 	if req.ContainerID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container_id is required for container file retrieve request",
 			},
 		}
 	}
 	if req.FileID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file_id is required for container file retrieve request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ContainerFileRetrieveRequest
-	rakshaReq.ContainerFileRetrieveRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ContainerFileRetrieveRequest
+	gatewayReq.ContainerFileRetrieveRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -3139,48 +3139,48 @@ func (raksha *Raksha) ContainerFileRetrieveRequest(ctx *schemas.RakshaContext, r
 }
 
 // ContainerFileContentRequest retrieves the content of a file from a container.
-func (raksha *Raksha) ContainerFileContentRequest(ctx *schemas.RakshaContext, req *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ContainerFileContentRequest(ctx *schemas.GatewayContext, req *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container file content request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for container file content request",
 			},
 		}
 	}
 	if req.ContainerID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container_id is required for container file content request",
 			},
 		}
 	}
 	if req.FileID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file_id is required for container file content request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ContainerFileContentRequest
-	rakshaReq.ContainerFileContentRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ContainerFileContentRequest
+	gatewayReq.ContainerFileContentRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -3188,48 +3188,48 @@ func (raksha *Raksha) ContainerFileContentRequest(ctx *schemas.RakshaContext, re
 }
 
 // ContainerFileDeleteRequest deletes a file from a container.
-func (raksha *Raksha) ContainerFileDeleteRequest(ctx *schemas.RakshaContext, req *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (gateway *Gateway) ContainerFileDeleteRequest(ctx *schemas.GatewayContext, req *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	if req == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container file delete request is nil",
 			},
 		}
 	}
 	if req.Provider == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "provider is required for container file delete request",
 			},
 		}
 	}
 	if req.ContainerID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "container_id is required for container file delete request",
 			},
 		}
 	}
 	if req.FileID == "" {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "file_id is required for container file delete request",
 			},
 		}
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	rakshaReq := raksha.getRakshaRequest()
-	rakshaReq.RequestType = schemas.ContainerFileDeleteRequest
-	rakshaReq.ContainerFileDeleteRequest = req
+	gatewayReq := gateway.getGatewayRequest()
+	gatewayReq.RequestType = schemas.ContainerFileDeleteRequest
+	gatewayReq.ContainerFileDeleteRequest = req
 
-	response, err := raksha.handleRequest(ctx, rakshaReq)
+	response, err := gateway.handleRequest(ctx, gatewayReq)
 	if err != nil {
 		return nil, err
 	}
@@ -3237,16 +3237,16 @@ func (raksha *Raksha) ContainerFileDeleteRequest(ctx *schemas.RakshaContext, req
 }
 
 // RemovePlugin removes a plugin from the server.
-func (raksha *Raksha) RemovePlugin(name string, pluginTypes []schemas.PluginType) error {
+func (gateway *Gateway) RemovePlugin(name string, pluginTypes []schemas.PluginType) error {
 	for _, pluginType := range pluginTypes {
 		switch pluginType {
 		case schemas.PluginTypeLLM:
-			err := raksha.removeLLMPlugin(name)
+			err := gateway.removeLLMPlugin(name)
 			if err != nil {
 				return err
 			}
 		case schemas.PluginTypeMCP:
-			err := raksha.removeMCPPlugin(name)
+			err := gateway.removeMCPPlugin(name)
 			if err != nil {
 				return err
 			}
@@ -3256,9 +3256,9 @@ func (raksha *Raksha) RemovePlugin(name string, pluginTypes []schemas.PluginType
 }
 
 // removeLLMPlugin removes an LLM plugin from the server.
-func (raksha *Raksha) removeLLMPlugin(name string) error {
+func (gateway *Gateway) removeLLMPlugin(name string) error {
 	for {
-		oldPlugins := raksha.llmPlugins.Load()
+		oldPlugins := gateway.llmPlugins.Load()
 		if oldPlugins == nil {
 			return nil
 		}
@@ -3269,7 +3269,7 @@ func (raksha *Raksha) removeLLMPlugin(name string) error {
 		for _, p := range *oldPlugins {
 			if p.GetName() == name {
 				pluginToCleanup = p
-				raksha.logger.Debug("removing LLM plugin %s", name)
+				gateway.logger.Debug("removing LLM plugin %s", name)
 				found = true
 			} else {
 				newPlugins = append(newPlugins, p)
@@ -3279,11 +3279,11 @@ func (raksha *Raksha) removeLLMPlugin(name string) error {
 			return nil
 		}
 		// Atomic compare-and-swap
-		if raksha.llmPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
+		if gateway.llmPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
 			// Cleanup the old plugin
 			err := pluginToCleanup.Cleanup()
 			if err != nil {
-				raksha.logger.Warn("failed to cleanup old LLM plugin %s: %v", pluginToCleanup.GetName(), err)
+				gateway.logger.Warn("failed to cleanup old LLM plugin %s: %v", pluginToCleanup.GetName(), err)
 			}
 			return nil
 		}
@@ -3292,9 +3292,9 @@ func (raksha *Raksha) removeLLMPlugin(name string) error {
 }
 
 // removeMCPPlugin removes an MCP plugin from the server.
-func (raksha *Raksha) removeMCPPlugin(name string) error {
+func (gateway *Gateway) removeMCPPlugin(name string) error {
 	for {
-		oldPlugins := raksha.mcpPlugins.Load()
+		oldPlugins := gateway.mcpPlugins.Load()
 		if oldPlugins == nil {
 			return nil
 		}
@@ -3305,7 +3305,7 @@ func (raksha *Raksha) removeMCPPlugin(name string) error {
 		for _, p := range *oldPlugins {
 			if p.GetName() == name {
 				pluginToCleanup = p
-				raksha.logger.Debug("removing MCP plugin %s", name)
+				gateway.logger.Debug("removing MCP plugin %s", name)
 				found = true
 			} else {
 				newPlugins = append(newPlugins, p)
@@ -3315,11 +3315,11 @@ func (raksha *Raksha) removeMCPPlugin(name string) error {
 			return nil
 		}
 		// Atomic compare-and-swap
-		if raksha.mcpPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
+		if gateway.mcpPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
 			// Cleanup the old plugin
 			err := pluginToCleanup.Cleanup()
 			if err != nil {
-				raksha.logger.Warn("failed to cleanup old MCP plugin %s: %v", pluginToCleanup.GetName(), err)
+				gateway.logger.Warn("failed to cleanup old MCP plugin %s: %v", pluginToCleanup.GetName(), err)
 			}
 			return nil
 		}
@@ -3329,7 +3329,7 @@ func (raksha *Raksha) removeMCPPlugin(name string) error {
 
 // ReloadPlugin reloads a plugin with new instance
 // During the reload - it's stop the world phase where we take a global lock on the plugin mutex
-func (raksha *Raksha) ReloadPlugin(plugin schemas.BasePlugin, pluginTypes []schemas.PluginType) error {
+func (gateway *Gateway) ReloadPlugin(plugin schemas.BasePlugin, pluginTypes []schemas.PluginType) error {
 	for _, pluginType := range pluginTypes {
 		switch pluginType {
 		case schemas.PluginTypeLLM:
@@ -3337,7 +3337,7 @@ func (raksha *Raksha) ReloadPlugin(plugin schemas.BasePlugin, pluginTypes []sche
 			if !ok {
 				return fmt.Errorf("plugin %s is not an LLMPlugin", plugin.GetName())
 			}
-			err := raksha.reloadLLMPlugin(llmPlugin)
+			err := gateway.reloadLLMPlugin(llmPlugin)
 			if err != nil {
 				return err
 			}
@@ -3346,7 +3346,7 @@ func (raksha *Raksha) ReloadPlugin(plugin schemas.BasePlugin, pluginTypes []sche
 			if !ok {
 				return fmt.Errorf("plugin %s is not an MCPPlugin", plugin.GetName())
 			}
-			err := raksha.reloadMCPPlugin(mcpPlugin)
+			err := gateway.reloadMCPPlugin(mcpPlugin)
 			if err != nil {
 				return err
 			}
@@ -3356,11 +3356,11 @@ func (raksha *Raksha) ReloadPlugin(plugin schemas.BasePlugin, pluginTypes []sche
 }
 
 // reloadLLMPlugin reloads an LLM plugin with new instance
-func (raksha *Raksha) reloadLLMPlugin(plugin schemas.LLMPlugin) error {
+func (gateway *Gateway) reloadLLMPlugin(plugin schemas.LLMPlugin) error {
 	for {
 		var pluginToCleanup schemas.LLMPlugin
 		found := false
-		oldPlugins := raksha.llmPlugins.Load()
+		oldPlugins := gateway.llmPlugins.Load()
 
 		// Create new slice with replaced plugin or initialize empty slice
 		var newPlugins []schemas.LLMPlugin
@@ -3376,7 +3376,7 @@ func (raksha *Raksha) reloadLLMPlugin(plugin schemas.LLMPlugin) error {
 			if p.GetName() == plugin.GetName() {
 				// Cleaning up old plugin before replacing it
 				pluginToCleanup = p
-				raksha.logger.Debug("replacing LLM plugin %s with new instance", plugin.GetName())
+				gateway.logger.Debug("replacing LLM plugin %s with new instance", plugin.GetName())
 				newPlugins[i] = plugin
 				found = true
 				break
@@ -3384,16 +3384,16 @@ func (raksha *Raksha) reloadLLMPlugin(plugin schemas.LLMPlugin) error {
 		}
 		if !found {
 			// This means that user is adding a new plugin
-			raksha.logger.Debug("adding new LLM plugin %s", plugin.GetName())
+			gateway.logger.Debug("adding new LLM plugin %s", plugin.GetName())
 			newPlugins = append(newPlugins, plugin)
 		}
 		// Atomic compare-and-swap
-		if raksha.llmPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
+		if gateway.llmPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
 			// Cleanup the old plugin
 			if found && pluginToCleanup != nil {
 				err := pluginToCleanup.Cleanup()
 				if err != nil {
-					raksha.logger.Warn("failed to cleanup old LLM plugin %s: %v", pluginToCleanup.GetName(), err)
+					gateway.logger.Warn("failed to cleanup old LLM plugin %s: %v", pluginToCleanup.GetName(), err)
 				}
 			}
 			return nil
@@ -3403,11 +3403,11 @@ func (raksha *Raksha) reloadLLMPlugin(plugin schemas.LLMPlugin) error {
 }
 
 // reloadMCPPlugin reloads an MCP plugin with new instance
-func (raksha *Raksha) reloadMCPPlugin(plugin schemas.MCPPlugin) error {
+func (gateway *Gateway) reloadMCPPlugin(plugin schemas.MCPPlugin) error {
 	for {
 		var pluginToCleanup schemas.MCPPlugin
 		found := false
-		oldPlugins := raksha.mcpPlugins.Load()
+		oldPlugins := gateway.mcpPlugins.Load()
 		if oldPlugins == nil {
 			return nil
 		}
@@ -3418,7 +3418,7 @@ func (raksha *Raksha) reloadMCPPlugin(plugin schemas.MCPPlugin) error {
 			if p.GetName() == plugin.GetName() {
 				// Cleaning up old plugin before replacing it
 				pluginToCleanup = p
-				raksha.logger.Debug("replacing MCP plugin %s with new instance", plugin.GetName())
+				gateway.logger.Debug("replacing MCP plugin %s with new instance", plugin.GetName())
 				newPlugins[i] = plugin
 				found = true
 				break
@@ -3426,16 +3426,16 @@ func (raksha *Raksha) reloadMCPPlugin(plugin schemas.MCPPlugin) error {
 		}
 		if !found {
 			// This means that user is adding a new plugin
-			raksha.logger.Debug("adding new MCP plugin %s", plugin.GetName())
+			gateway.logger.Debug("adding new MCP plugin %s", plugin.GetName())
 			newPlugins = append(newPlugins, plugin)
 		}
 		// Atomic compare-and-swap
-		if raksha.mcpPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
+		if gateway.mcpPlugins.CompareAndSwap(oldPlugins, &newPlugins) {
 			// Cleanup the old plugin
 			if found && pluginToCleanup != nil {
 				err := pluginToCleanup.Cleanup()
 				if err != nil {
-					raksha.logger.Warn("failed to cleanup old MCP plugin %s: %v", pluginToCleanup.GetName(), err)
+					gateway.logger.Warn("failed to cleanup old MCP plugin %s: %v", pluginToCleanup.GetName(), err)
 				}
 			}
 			return nil
@@ -3448,13 +3448,13 @@ func (raksha *Raksha) reloadMCPPlugin(plugin schemas.MCPPlugin) error {
 // base plugin name ordering. This should be called after SortAndRebuildPlugins
 // on the config layer to sync the core's execution order.
 // Plugins not in the ordering are appended at the end (defensive).
-func (raksha *Raksha) ReorderPlugins(orderedNames []string) {
+func (gateway *Gateway) ReorderPlugins(orderedNames []string) {
 	pos := make(map[string]int, len(orderedNames))
 	for i, name := range orderedNames {
 		pos[name] = i
 	}
-	reorderAtomicSlice(&raksha.llmPlugins, pos)
-	reorderAtomicSlice(&raksha.mcpPlugins, pos)
+	reorderAtomicSlice(&gateway.llmPlugins, pos)
+	reorderAtomicSlice(&gateway.mcpPlugins, pos)
 }
 
 // pluginWithName is satisfied by both LLMPlugin and MCPPlugin.
@@ -3501,13 +3501,13 @@ func reorderAtomicSlice[T pluginWithName](ptr *atomic.Pointer[[]T], pos map[stri
 //
 // Example:
 //
-//	providers, err := raksha.GetConfiguredProviders()
+//	providers, err := gateway.GetConfiguredProviders()
 //	if err != nil {
 //		return nil, err
 //	}
 //	fmt.Println(providers)
-func (raksha *Raksha) GetConfiguredProviders() ([]schemas.ModelProvider, error) {
-	providers := raksha.providers.Load()
+func (gateway *Gateway) GetConfiguredProviders() ([]schemas.ModelProvider, error) {
+	providers := gateway.providers.Load()
 	if providers == nil {
 		return nil, fmt.Errorf("no providers configured")
 	}
@@ -3527,14 +3527,14 @@ func (raksha *Raksha) GetConfiguredProviders() ([]schemas.ModelProvider, error) 
 //
 // Returns:
 //   - error: Any error that occurred during the removal process
-func (raksha *Raksha) RemoveProvider(providerKey schemas.ModelProvider) error {
-	raksha.logger.Info("Removing provider %s", providerKey)
-	providerMutex := raksha.getProviderMutex(providerKey)
+func (gateway *Gateway) RemoveProvider(providerKey schemas.ModelProvider) error {
+	gateway.logger.Info("Removing provider %s", providerKey)
+	providerMutex := gateway.getProviderMutex(providerKey)
 	providerMutex.Lock()
 	defer providerMutex.Unlock()
 
 	// Step 1: Load the ProviderQueue and verify provider exists
-	pqValue, exists := raksha.requestQueues.Load(providerKey)
+	pqValue, exists := gateway.requestQueues.Load(providerKey)
 	if !exists {
 		return fmt.Errorf("provider %s not found in request queues", providerKey)
 	}
@@ -3543,45 +3543,45 @@ func (raksha *Raksha) RemoveProvider(providerKey schemas.ModelProvider) error {
 	// Step 2: Signal closing. Blocks new producers (isClosing() returns true) and
 	// causes idle workers to drain remaining buffered requests with errors then exit.
 	pq.signalClosing()
-	raksha.logger.Debug("signaled closing for provider %s", providerKey)
+	gateway.logger.Debug("signaled closing for provider %s", providerKey)
 
 	// Step 3: Wait for all workers to finish in-flight requests and exit.
-	waitGroup, exists := raksha.waitGroups.Load(providerKey)
+	waitGroup, exists := gateway.waitGroups.Load(providerKey)
 	if exists {
 		waitGroup.(*sync.WaitGroup).Wait()
-		raksha.logger.Debug("all workers for provider %s have stopped", providerKey)
+		gateway.logger.Debug("all workers for provider %s have stopped", providerKey)
 	}
 
 	// Step 3b: Final drain sweep — see drainQueueWithErrors for full explanation.
-	raksha.drainQueueWithErrors(pq)
+	gateway.drainQueueWithErrors(pq)
 
 	// Step 3c: Wait for retired worker generations from earlier provider updates.
-	// They are no longer tracked in raksha.waitGroups after a new generation is
+	// They are no longer tracked in gateway.waitGroups after a new generation is
 	// published, but removing the provider must still wait for their in-flight work.
-	if retiredWaitValue, exists := raksha.retiredWorkerWaits.Load(providerKey); exists {
+	if retiredWaitValue, exists := gateway.retiredWorkerWaits.Load(providerKey); exists {
 		retiredWaitValue.(*sync.WaitGroup).Wait()
-		raksha.retiredWorkerWaits.Delete(providerKey)
-		raksha.logger.Debug("all retired workers for provider %s have stopped", providerKey)
+		gateway.retiredWorkerWaits.Delete(providerKey)
+		gateway.logger.Debug("all retired workers for provider %s have stopped", providerKey)
 	}
 
 	// Step 4: Remove the provider from the request queues.
-	raksha.requestQueues.Delete(providerKey)
+	gateway.requestQueues.Delete(providerKey)
 
 	// Step 5: Remove the provider from the wait groups.
-	raksha.waitGroups.Delete(providerKey)
+	gateway.waitGroups.Delete(providerKey)
 
 	// Step 6: Remove the provider from the providers slice.
-	if err := raksha.removeProviderFromSlice(providerKey); err != nil {
-		raksha.logger.Error(
+	if err := gateway.removeProviderFromSlice(providerKey); err != nil {
+		gateway.logger.Error(
 			"provider %s was removed from queues but could not be removed from the providers slice — "+
-				"raksha.providers is now inconsistent. "+
-				"To recover: retry RemoveProvider(%s), or restart Raksha if that fails.",
+				"gateway.providers is now inconsistent. "+
+				"To recover: retry RemoveProvider(%s), or restart Gateway if that fails.",
 			providerKey, providerKey,
 		)
 		return err
 	}
 
-	raksha.logger.Info("successfully removed provider %s", providerKey)
+	gateway.logger.Info("successfully removed provider %s", providerKey)
 	schemas.UnregisterKnownProvider(providerKey)
 	return nil
 }
@@ -3607,16 +3607,16 @@ func (raksha *Raksha) RemoveProvider(providerKey schemas.ModelProvider) error {
 // old queue is signalled closed, then releases the lock before old workers are
 // waited on. This avoids high-load updates blocking new requests behind the
 // provider read lock while slow in-flight old-worker requests finish.
-func (raksha *Raksha) UpdateProvider(providerKey schemas.ModelProvider) error {
-	raksha.providerLifecycleMu.RLock()
-	defer raksha.providerLifecycleMu.RUnlock()
-	if raksha.ctx.Err() != nil {
-		return fmt.Errorf("raksha is shutting down")
+func (gateway *Gateway) UpdateProvider(providerKey schemas.ModelProvider) error {
+	gateway.providerLifecycleMu.RLock()
+	defer gateway.providerLifecycleMu.RUnlock()
+	if gateway.ctx.Err() != nil {
+		return fmt.Errorf("gateway is shutting down")
 	}
 
-	raksha.logger.Info(fmt.Sprintf("Updating provider configuration for provider %s", providerKey))
+	gateway.logger.Info(fmt.Sprintf("Updating provider configuration for provider %s", providerKey))
 	// Get the updated configuration from the account
-	providerConfig, err := raksha.account.GetConfigForProvider(providerKey)
+	providerConfig, err := gateway.account.GetConfigForProvider(providerKey)
 	if err != nil {
 		return fmt.Errorf("failed to get updated config for provider %s: %v", providerKey, err)
 	}
@@ -3625,29 +3625,29 @@ func (raksha *Raksha) UpdateProvider(providerKey schemas.ModelProvider) error {
 	}
 	// Lock the provider while publishing the new runtime state. The slow cleanup
 	// of old workers happens after unlock so new requests can route to newPq.
-	providerMutex := raksha.getProviderMutex(providerKey)
+	providerMutex := gateway.getProviderMutex(providerKey)
 	providerMutex.Lock()
 	defer providerMutex.Unlock()
 
 	// Check if provider currently exists
-	oldPqValue, exists := raksha.requestQueues.Load(providerKey)
+	oldPqValue, exists := gateway.requestQueues.Load(providerKey)
 	if !exists {
-		raksha.logger.Debug("provider %s not currently active, initializing with new configuration", providerKey)
+		gateway.logger.Debug("provider %s not currently active, initializing with new configuration", providerKey)
 		// If provider doesn't exist, just prepare it with new configuration
-		return raksha.prepareProvider(providerKey, providerConfig)
+		return gateway.prepareProvider(providerKey, providerConfig)
 	}
 
 	oldPq := oldPqValue.(*ProviderQueue)
 	var oldWaitGroup *sync.WaitGroup
-	if waitGroupValue, exists := raksha.waitGroups.Load(providerKey); exists {
+	if waitGroupValue, exists := gateway.waitGroups.Load(providerKey); exists {
 		oldWaitGroup = waitGroupValue.(*sync.WaitGroup)
 	}
 
-	raksha.logger.Debug("gracefully replacing existing workers for provider %s", providerKey)
+	gateway.logger.Debug("gracefully replacing existing workers for provider %s", providerKey)
 
 	// Step 1: Create provider instance before touching live routing state. If
 	// provider construction fails, the old provider/queue continues serving.
-	provider, err := raksha.createBaseProvider(providerKey, providerConfig)
+	provider, err := gateway.createBaseProvider(providerKey, providerConfig)
 	if err != nil {
 		return fmt.Errorf("provider update for %s failed during initialization; old provider is still active: %v", providerKey, err)
 	}
@@ -3662,7 +3662,7 @@ func (raksha *Raksha) UpdateProvider(providerKey schemas.ModelProvider) error {
 
 	// Step 3: Atomically replace the provider in the providers slice before new
 	// workers start so all fresh worker executions use the updated provider.
-	raksha.logger.Debug("atomically replacing provider instance in providers slice for %s", providerKey)
+	gateway.logger.Debug("atomically replacing provider instance in providers slice for %s", providerKey)
 
 	replacementAttempts := 0
 	maxReplacementAttempts := 100 // Prevent infinite loops in high-contention scenarios
@@ -3673,7 +3673,7 @@ func (raksha *Raksha) UpdateProvider(providerKey schemas.ModelProvider) error {
 			return fmt.Errorf("failed to replace provider %s in providers slice after %d attempts; old provider is still active", providerKey, maxReplacementAttempts)
 		}
 
-		oldPtr := raksha.providers.Load()
+		oldPtr := gateway.providers.Load()
 		var oldSlice []schemas.Provider
 		if oldPtr != nil {
 			oldSlice = *oldPtr
@@ -3692,11 +3692,11 @@ func (raksha *Raksha) UpdateProvider(providerKey schemas.ModelProvider) error {
 
 		newSlice = append(newSlice, provider)
 
-		if raksha.providers.CompareAndSwap(oldPtr, &newSlice) {
+		if gateway.providers.CompareAndSwap(oldPtr, &newSlice) {
 			if oldProviderFound {
-				raksha.logger.Debug("successfully replaced existing provider instance for %s in providers slice", providerKey)
+				gateway.logger.Debug("successfully replaced existing provider instance for %s in providers slice", providerKey)
 			} else {
-				raksha.logger.Debug("successfully added new provider instance for %s to providers slice", providerKey)
+				gateway.logger.Debug("successfully added new provider instance for %s to providers slice", providerKey)
 			}
 			break
 		}
@@ -3706,17 +3706,17 @@ func (raksha *Raksha) UpdateProvider(providerKey schemas.ModelProvider) error {
 	// Step 4: Publish the new queue/wait group and start new workers before old
 	// workers are stopped. This avoids the update-induced no-worker window while
 	// still preventing new producers from seeing partial state until unlock.
-	raksha.requestQueues.Store(providerKey, newPq)
-	raksha.waitGroups.Store(providerKey, newWaitGroup)
-	raksha.logger.Debug("stored new queue for provider %s, new producers will use it", providerKey)
+	gateway.requestQueues.Store(providerKey, newPq)
+	gateway.waitGroups.Store(providerKey, newWaitGroup)
+	gateway.logger.Debug("stored new queue for provider %s, new producers will use it", providerKey)
 
-	raksha.logger.Debug("starting %d new workers for provider %s with buffer size %d",
+	gateway.logger.Debug("starting %d new workers for provider %s with buffer size %d",
 		providerConfig.ConcurrencyAndBufferSize.Concurrency,
 		providerKey,
 		providerConfig.ConcurrencyAndBufferSize.BufferSize)
 	for range providerConfig.ConcurrencyAndBufferSize.Concurrency {
 		newWaitGroup.Add(1)
-		go raksha.requestWorker(provider, providerConfig, newPq, newWaitGroup)
+		go gateway.requestWorker(provider, providerConfig, newPq, newWaitGroup)
 	}
 
 	// Step 5: Transfer buffered requests from the old queue to the new queue BEFORE
@@ -3734,12 +3734,12 @@ func (raksha *Raksha) UpdateProvider(providerKey schemas.ModelProvider) error {
 			default:
 				// newPq is full — cancel this message and all remaining in oldPq.
 				cancelMsg := func(r *ChannelMessage) {
-					prov, mod, _ := r.RakshaRequest.GetRequestFields()
+					prov, mod, _ := r.GatewayRequest.GetRequestFields()
 					select {
-					case r.Err <- schemas.RakshaError{
-						IsRakshaError: false,
+					case r.Err <- schemas.GatewayError{
+						IsGatewayError: false,
 						Error:         &schemas.ErrorField{Message: "request failed during provider concurrency update: queue full"},
-						ExtraFields: schemas.RakshaErrorExtraFields{
+						ExtraFields: schemas.GatewayErrorExtraFields{
 							RequestType:            r.RequestType,
 							Provider:               prov,
 							OriginalModelRequested: mod,
@@ -3768,10 +3768,10 @@ func (raksha *Raksha) UpdateProvider(providerKey schemas.ModelProvider) error {
 
 transferComplete:
 	if transferredCount > 0 {
-		raksha.logger.Info("transferred %d buffered requests to new queue for provider %s", transferredCount, providerKey)
+		gateway.logger.Info("transferred %d buffered requests to new queue for provider %s", transferredCount, providerKey)
 	}
 	if cancelledCount > 0 {
-		raksha.logger.Warn("cancelled %d buffered requests during transfer for provider %s: new queue was full", cancelledCount, providerKey)
+		gateway.logger.Warn("cancelled %d buffered requests during transfer for provider %s: new queue was full", cancelledCount, providerKey)
 	}
 
 	// Step 6: Register cleanup before signalling the old queue. Otherwise
@@ -3779,70 +3779,70 @@ transferComplete:
 	// old wait group is replaced, then return while old in-flight requests run.
 	var retiredWaitGroup *sync.WaitGroup
 	if oldWaitGroup != nil {
-		retiredWaitGroup = raksha.getRetiredWorkerWaitGroup(providerKey)
+		retiredWaitGroup = gateway.getRetiredWorkerWaitGroup(providerKey)
 		retiredWaitGroup.Add(1)
-		raksha.oldWorkerCleanups.Add(1)
+		gateway.oldWorkerCleanups.Add(1)
 	}
 
 	// Step 7: Signal the old queue is closing. Stale producers that still hold a
 	// reference to oldPq will detect this via isClosing() and re-route to newPq.
 	oldPq.signalClosing()
-	raksha.logger.Debug("signaled closing for old queue of provider %s", providerKey)
+	gateway.logger.Debug("signaled closing for old queue of provider %s", providerKey)
 
 	// Step 8: Cleanup old workers asynchronously. Waiting here under the provider
 	// lock caused high-load provider updates to block new requests until every slow
 	// in-flight old-worker request completed.
 	if oldWaitGroup != nil {
 		go func(pq *ProviderQueue, wg *sync.WaitGroup, cleanupWg *sync.WaitGroup, key schemas.ModelProvider) {
-			defer raksha.oldWorkerCleanups.Done()
+			defer gateway.oldWorkerCleanups.Done()
 			defer cleanupWg.Done()
 			wg.Wait()
-			raksha.logger.Debug("all old workers for provider %s have stopped", key)
-			raksha.drainQueueWithErrors(pq)
+			gateway.logger.Debug("all old workers for provider %s have stopped", key)
+			gateway.drainQueueWithErrors(pq)
 		}(oldPq, oldWaitGroup, retiredWaitGroup, providerKey)
 	} else {
-		raksha.drainQueueWithErrors(oldPq)
+		gateway.drainQueueWithErrors(oldPq)
 	}
 
-	raksha.logger.Info("successfully updated provider configuration for provider %s", providerKey)
+	gateway.logger.Info("successfully updated provider configuration for provider %s", providerKey)
 	return nil
 }
 
 // GetDropExcessRequests returns the current value of DropExcessRequests
-func (raksha *Raksha) GetDropExcessRequests() bool {
-	return raksha.dropExcessRequests.Load()
+func (gateway *Gateway) GetDropExcessRequests() bool {
+	return gateway.dropExcessRequests.Load()
 }
 
 // UpdateDropExcessRequests updates the DropExcessRequests setting at runtime.
 // This allows for hot-reloading of this configuration value.
-func (raksha *Raksha) UpdateDropExcessRequests(value bool) {
-	raksha.dropExcessRequests.Store(value)
-	raksha.logger.Info("drop_excess_requests updated to: %v", value)
+func (gateway *Gateway) UpdateDropExcessRequests(value bool) {
+	gateway.dropExcessRequests.Store(value)
+	gateway.logger.Info("drop_excess_requests updated to: %v", value)
 }
 
 // getProviderMutex gets or creates a mutex for the given provider
-func (raksha *Raksha) getProviderMutex(providerKey schemas.ModelProvider) *sync.RWMutex {
-	mutexValue, _ := raksha.providerMutexes.LoadOrStore(providerKey, &sync.RWMutex{})
+func (gateway *Gateway) getProviderMutex(providerKey schemas.ModelProvider) *sync.RWMutex {
+	mutexValue, _ := gateway.providerMutexes.LoadOrStore(providerKey, &sync.RWMutex{})
 	return mutexValue.(*sync.RWMutex)
 }
 
 // getRetiredWorkerWaitGroup gets or creates a wait group for retired worker
 // generations for the given provider.
-func (raksha *Raksha) getRetiredWorkerWaitGroup(providerKey schemas.ModelProvider) *sync.WaitGroup {
-	waitGroupValue, _ := raksha.retiredWorkerWaits.LoadOrStore(providerKey, &sync.WaitGroup{})
+func (gateway *Gateway) getRetiredWorkerWaitGroup(providerKey schemas.ModelProvider) *sync.WaitGroup {
+	waitGroupValue, _ := gateway.retiredWorkerWaits.LoadOrStore(providerKey, &sync.WaitGroup{})
 	return waitGroupValue.(*sync.WaitGroup)
 }
 
 // removeProviderFromSlice atomically removes the provider with the given key
-// from raksha.providers using a CAS retry loop. Callers hold the per-provider
+// from gateway.providers using a CAS retry loop. Callers hold the per-provider
 // write mutex so no concurrent goroutine can re-add this key — contention is
 // only from other providers' CAS operations, so the loop converges in at most
 // a few iterations under any concurrency level.
 // Returns an error if the limit is hit (state will be inconsistent).
-func (raksha *Raksha) removeProviderFromSlice(providerKey schemas.ModelProvider) error {
+func (gateway *Gateway) removeProviderFromSlice(providerKey schemas.ModelProvider) error {
 	const maxAttempts = 100
 	for range maxAttempts {
-		oldPtr := raksha.providers.Load()
+		oldPtr := gateway.providers.Load()
 		if oldPtr == nil {
 			return nil
 		}
@@ -3853,7 +3853,7 @@ func (raksha *Raksha) removeProviderFromSlice(providerKey schemas.ModelProvider)
 				newSlice = append(newSlice, p)
 			}
 		}
-		if raksha.providers.CompareAndSwap(oldPtr, &newSlice) {
+		if gateway.providers.CompareAndSwap(oldPtr, &newSlice) {
 			return nil
 		}
 	}
@@ -3864,13 +3864,13 @@ func (raksha *Raksha) removeProviderFromSlice(providerKey schemas.ModelProvider)
 
 // RegisterMCPTool registers a typed tool handler with the MCP integration.
 // This allows developers to easily add custom tools that will be available
-// to all LLM requests processed by this Raksha instance.
+// to all LLM requests processed by this Gateway instance.
 //
 // Parameters:
 //   - name: Unique tool name
 //   - description: Human-readable tool description
 //   - handler: Function that handles tool execution
-//   - toolSchema: Raksha tool schema for function calling
+//   - toolSchema: Gateway tool schema for function calling
 //
 // Returns:
 //   - error: Any registration error
@@ -3881,16 +3881,16 @@ func (raksha *Raksha) removeProviderFromSlice(providerKey schemas.ModelProvider)
 //	    Message string `json:"message"`
 //	}
 //
-//	err := raksha.RegisterMCPTool("echo", "Echo a message",
+//	err := gateway.RegisterMCPTool("echo", "Echo a message",
 //	    func(args EchoArgs) (string, error) {
 //	        return args.Message, nil
 //	    }, toolSchema)
-func (raksha *Raksha) RegisterMCPTool(name, description string, handler func(args any) (string, error), toolSchema schemas.ChatTool) error {
-	if raksha.MCPManager == nil {
-		return fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) RegisterMCPTool(name, description string, handler func(args any) (string, error), toolSchema schemas.ChatTool) error {
+	if gateway.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this gateway instance")
 	}
 
-	return raksha.MCPManager.RegisterTool(name, description, handler, toolSchema)
+	return gateway.MCPManager.RegisterTool(name, description, handler, toolSchema)
 }
 
 // IMPORTANT: Running the MCP client management operations (GetMCPClients, AddMCPClient, RemoveMCPClient, EditMCPClientTools)
@@ -3898,17 +3898,17 @@ func (raksha *Raksha) RegisterMCPTool(name, description string, handler func(arg
 // These operations involve network I/O and connection management that require mutex locks
 // which can block briefly during execution.
 
-// GetMCPClients returns all MCP clients managed by the Raksha instance.
+// GetMCPClients returns all MCP clients managed by the Gateway instance.
 //
 // Returns:
 //   - []schemas.MCPClient: List of all MCP clients
 //   - error: Any retrieval error
-func (raksha *Raksha) GetMCPClients() ([]schemas.MCPClient, error) {
-	if raksha.MCPManager == nil {
-		return nil, fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) GetMCPClients() ([]schemas.MCPClient, error) {
+	if gateway.MCPManager == nil {
+		return nil, fmt.Errorf("mcp is not configured in this gateway instance")
 	}
 
-	clients := raksha.MCPManager.GetClients()
+	clients := gateway.MCPManager.GetClients()
 	clientsInConfig := make([]schemas.MCPClient, 0, len(clients))
 
 	for _, client := range clients {
@@ -3945,14 +3945,14 @@ func (raksha *Raksha) GetMCPClients() ([]schemas.MCPClient, error) {
 //
 // Returns:
 //   - []schemas.ChatTool: List of available tools
-func (raksha *Raksha) GetAvailableMCPTools(ctx *schemas.RakshaContext) []schemas.ChatTool {
-	if raksha.MCPManager == nil {
+func (gateway *Gateway) GetAvailableMCPTools(ctx *schemas.GatewayContext) []schemas.ChatTool {
+	if gateway.MCPManager == nil {
 		return nil
 	}
-	return raksha.MCPManager.GetAvailableTools(ctx)
+	return gateway.MCPManager.GetAvailableTools(ctx)
 }
 
-// AddMCPClient adds a new MCP client to the Raksha instance.
+// AddMCPClient adds a new MCP client to the Gateway instance.
 // This allows for dynamic MCP client management at runtime.
 //
 // Parameters:
@@ -3963,7 +3963,7 @@ func (raksha *Raksha) GetAvailableMCPTools(ctx *schemas.RakshaContext) []schemas
 //
 // Example:
 //
-//	err := raksha.AddMCPClient(ctx, &schemas.MCPClientConfig{
+//	err := gateway.AddMCPClient(ctx, &schemas.MCPClientConfig{
 //	    Name: "my-mcp-client",
 //	    ConnectionType: schemas.MCPConnectionTypeHTTP,
 //	    ConnectionString: &url,
@@ -3973,44 +3973,44 @@ func (raksha *Raksha) GetAvailableMCPTools(ctx *schemas.RakshaContext) []schemas
 // no longer auto-connects, so callers invoke this after all plugins are registered
 // (so every PreMCPConnectionHook participates in the connection). No-op if MCP is
 // not configured.
-func (raksha *Raksha) ConnectConfiguredMCPClients(ctx context.Context) {
-	if raksha.MCPManager != nil {
-		raksha.MCPManager.ConnectConfiguredClients(ctx)
+func (gateway *Gateway) ConnectConfiguredMCPClients(ctx context.Context) {
+	if gateway.MCPManager != nil {
+		gateway.MCPManager.ConnectConfiguredClients(ctx)
 	}
 }
 
-func (raksha *Raksha) AddMCPClient(ctx context.Context, config *schemas.MCPClientConfig) error {
-	if raksha.MCPManager == nil {
+func (gateway *Gateway) AddMCPClient(ctx context.Context, config *schemas.MCPClientConfig) error {
+	if gateway.MCPManager == nil {
 		// Use sync.Once to ensure thread-safe initialization
-		raksha.mcpInitOnce.Do(func() {
+		gateway.mcpInitOnce.Do(func() {
 			// Initialize with empty config - client will be added via AddClient below
 			mcpConfig := schemas.MCPConfig{
 				ClientConfigs: []*schemas.MCPClientConfig{},
 			}
 			// Set up plugin pipeline provider functions for executeCode tool hooks
 			mcpConfig.PluginPipelineProvider = func() interface{} {
-				return raksha.getPluginPipeline()
+				return gateway.getPluginPipeline()
 			}
 			mcpConfig.ReleasePluginPipeline = func(pipeline interface{}) {
 				if pp, ok := pipeline.(*PluginPipeline); ok {
-					raksha.releasePluginPipeline(pp)
+					gateway.releasePluginPipeline(pp)
 				}
 			}
 			// Create Starlark CodeMode for code execution (with default config)
-			codeMode := starlark.NewStarlarkCodeMode(nil, raksha.logger)
-			raksha.MCPManager = mcp.NewMCPManager(raksha.ctx, mcpConfig, raksha.mcpCredStore, raksha.logger, codeMode)
+			codeMode := starlark.NewStarlarkCodeMode(nil, gateway.logger)
+			gateway.MCPManager = mcp.NewMCPManager(gateway.ctx, mcpConfig, gateway.mcpCredStore, gateway.logger, codeMode)
 		})
 	}
 
 	// Handle case where initialization succeeded elsewhere but manager is still nil
-	if raksha.MCPManager == nil {
+	if gateway.MCPManager == nil {
 		return fmt.Errorf("MCP manager is not initialized")
 	}
 
-	return raksha.MCPManager.AddClient(ctx, config)
+	return gateway.MCPManager.AddClient(ctx, config)
 }
 
-// RemoveMCPClient removes an MCP client from the Raksha instance.
+// RemoveMCPClient removes an MCP client from the Gateway instance.
 // This allows for dynamic MCP client management at runtime.
 //
 // Parameters:
@@ -4021,33 +4021,33 @@ func (raksha *Raksha) AddMCPClient(ctx context.Context, config *schemas.MCPClien
 //
 // Example:
 //
-//	err := raksha.RemoveMCPClient("my-mcp-client-id")
+//	err := gateway.RemoveMCPClient("my-mcp-client-id")
 //	if err != nil {
 //	    log.Fatalf("Failed to remove MCP client: %v", err)
 //	}
-func (raksha *Raksha) RemoveMCPClient(id string) error {
-	if raksha.MCPManager == nil {
-		return fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) RemoveMCPClient(id string) error {
+	if gateway.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this gateway instance")
 	}
 
-	return raksha.MCPManager.RemoveClient(id)
+	return gateway.MCPManager.RemoveClient(id)
 }
 
-// SetMCPManager sets the MCP manager for this Raksha instance.
+// SetMCPManager sets the MCP manager for this Gateway instance.
 // This allows injecting a custom MCP manager implementation.
-// If the provided manager is a concrete *mcp.MCPManager, Raksha's plugin pipeline is injected
+// If the provided manager is a concrete *mcp.MCPManager, Gateway's plugin pipeline is injected
 // into the manager's CodeMode so that nested tool calls run through the plugin hooks.
 //
 // Parameters:
 //   - manager: The MCP manager to set (must implement MCPManagerInterface)
-func (raksha *Raksha) SetMCPManager(manager mcp.MCPManagerInterface) {
-	raksha.MCPManager = manager
-	// Inject Raksha's plugin pipeline into the manager's CodeMode so that
+func (gateway *Gateway) SetMCPManager(manager mcp.MCPManagerInterface) {
+	gateway.MCPManager = manager
+	// Inject Gateway's plugin pipeline into the manager's CodeMode so that
 	// nested tool calls (e.g. via Starlark executeCode) run through plugin hooks.
 	if m, ok := manager.(*mcp.MCPManager); ok {
 		m.SetPluginPipeline(
 			func() mcp.PluginPipeline {
-				pipeline := raksha.getPluginPipeline()
+				pipeline := gateway.getPluginPipeline()
 				if pp, ok := any(pipeline).(mcp.PluginPipeline); ok {
 					return pp
 				}
@@ -4055,7 +4055,7 @@ func (raksha *Raksha) SetMCPManager(manager mcp.MCPManagerInterface) {
 			},
 			func(pipeline mcp.PluginPipeline) {
 				if pp, ok := pipeline.(*PluginPipeline); ok {
-					raksha.releasePluginPipeline(pp)
+					gateway.releasePluginPipeline(pp)
 				}
 			},
 		)
@@ -4074,24 +4074,24 @@ func (raksha *Raksha) SetMCPManager(manager mcp.MCPManagerInterface) {
 //
 // Example:
 //
-//	err := raksha.UpdateMCPClient("my-mcp-client-id", schemas.MCPClientConfig{
+//	err := gateway.UpdateMCPClient("my-mcp-client-id", schemas.MCPClientConfig{
 //	    Name:           "my-mcp-client-name",
 //	    ToolsToExecute: []string{"tool1", "tool2"},
 //	})
-func (raksha *Raksha) UpdateMCPClient(id string, updatedConfig *schemas.MCPClientConfig) error {
-	if raksha.MCPManager == nil {
-		return fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) UpdateMCPClient(id string, updatedConfig *schemas.MCPClientConfig) error {
+	if gateway.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this gateway instance")
 	}
 
-	return raksha.MCPManager.UpdateClient(id, updatedConfig)
+	return gateway.MCPManager.UpdateClient(id, updatedConfig)
 }
 
 // UpdateMCPClientConnection reconnects an existing MCP client using updated headers
-func (raksha *Raksha) UpdateMCPClientConnection(id string, newConfig *schemas.MCPClientConfig) error {
-	if raksha.MCPManager == nil {
-		return fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) UpdateMCPClientConnection(id string, newConfig *schemas.MCPClientConfig) error {
+	if gateway.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this gateway instance")
 	}
-	return raksha.MCPManager.UpdateClientConnection(id, newConfig)
+	return gateway.MCPManager.UpdateClientConnection(id, newConfig)
 }
 
 // ReconnectMCPClient attempts to reconnect an MCP client if it is disconnected.
@@ -4101,95 +4101,95 @@ func (raksha *Raksha) UpdateMCPClientConnection(id string, newConfig *schemas.MC
 //
 // Returns:
 //   - error: Any reconnection error
-func (raksha *Raksha) ReconnectMCPClient(id string) error {
-	if raksha.MCPManager == nil {
-		return fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) ReconnectMCPClient(id string) error {
+	if gateway.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this gateway instance")
 	}
 
-	return raksha.MCPManager.ReconnectClient(id)
+	return gateway.MCPManager.ReconnectClient(id)
 }
 
 // DisableMCPClient shuts down an MCP client's connection, health monitor, and tool
 // syncer without removing it. The client entry is kept in a "disabled" state so it
 // can be re-enabled via EnableMCPClient.
-func (raksha *Raksha) DisableMCPClient(id string) error {
-	if raksha.MCPManager == nil {
-		return fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) DisableMCPClient(id string) error {
+	if gateway.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this gateway instance")
 	}
-	return raksha.MCPManager.DisableClient(id)
+	return gateway.MCPManager.DisableClient(id)
 }
 
 // EnableMCPClient reconnects a previously disabled MCP client and restarts its
 // health monitor and tool syncer.
-func (raksha *Raksha) EnableMCPClient(id string) error {
-	if raksha.MCPManager == nil {
-		return fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) EnableMCPClient(id string) error {
+	if gateway.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this gateway instance")
 	}
-	return raksha.MCPManager.EnableClient(id)
+	return gateway.MCPManager.EnableClient(id)
 }
 
 // VerifyPerUserOAuthConnection delegates to the MCP manager to verify an MCP
 // server using a temporary access token and discover available tools. The
 // connection is closed after verification. If the MCP manager is not yet
 // initialized, it is lazily created (same as AddMCPClient).
-func (raksha *Raksha) VerifyPerUserOAuthConnection(ctx context.Context, config *schemas.MCPClientConfig, accessToken string) (map[string]schemas.ChatTool, map[string]string, error) {
+func (gateway *Gateway) VerifyPerUserOAuthConnection(ctx context.Context, config *schemas.MCPClientConfig, accessToken string) (map[string]schemas.ChatTool, map[string]string, error) {
 	// Ensure MCP manager is initialized (lazy init, same pattern as AddMCPClient)
-	if raksha.MCPManager == nil {
-		raksha.mcpInitOnce.Do(func() {
+	if gateway.MCPManager == nil {
+		gateway.mcpInitOnce.Do(func() {
 			mcpConfig := schemas.MCPConfig{
 				ClientConfigs: []*schemas.MCPClientConfig{},
 			}
 			mcpConfig.PluginPipelineProvider = func() interface{} {
-				return raksha.getPluginPipeline()
+				return gateway.getPluginPipeline()
 			}
 			mcpConfig.ReleasePluginPipeline = func(pipeline interface{}) {
 				if pp, ok := pipeline.(*PluginPipeline); ok {
-					raksha.releasePluginPipeline(pp)
+					gateway.releasePluginPipeline(pp)
 				}
 			}
-			codeMode := starlark.NewStarlarkCodeMode(nil, raksha.logger)
-			raksha.MCPManager = mcp.NewMCPManager(raksha.ctx, mcpConfig, raksha.mcpCredStore, raksha.logger, codeMode)
+			codeMode := starlark.NewStarlarkCodeMode(nil, gateway.logger)
+			gateway.MCPManager = mcp.NewMCPManager(gateway.ctx, mcpConfig, gateway.mcpCredStore, gateway.logger, codeMode)
 		})
 	}
-	if raksha.MCPManager == nil {
+	if gateway.MCPManager == nil {
 		return nil, nil, fmt.Errorf("MCP manager is not initialized")
 	}
-	return raksha.MCPManager.VerifyPerUserOAuthConnection(ctx, config, accessToken)
+	return gateway.MCPManager.VerifyPerUserOAuthConnection(ctx, config, accessToken)
 }
 
 // VerifyHeadersConnection delegates to the MCP manager to verify an MCP
 // server using caller-supplied header values (admin sample or user-submitted)
 // and discover available tools. Mirrors VerifyPerUserOAuthConnection's lazy
 // MCP-manager init.
-func (raksha *Raksha) VerifyHeadersConnection(ctx context.Context, config *schemas.MCPClientConfig, userHeaders map[string]string) (map[string]schemas.ChatTool, map[string]string, error) {
-	if raksha.MCPManager == nil {
-		raksha.mcpInitOnce.Do(func() {
+func (gateway *Gateway) VerifyHeadersConnection(ctx context.Context, config *schemas.MCPClientConfig, userHeaders map[string]string) (map[string]schemas.ChatTool, map[string]string, error) {
+	if gateway.MCPManager == nil {
+		gateway.mcpInitOnce.Do(func() {
 			mcpConfig := schemas.MCPConfig{
 				ClientConfigs: []*schemas.MCPClientConfig{},
 			}
 			mcpConfig.PluginPipelineProvider = func() interface{} {
-				return raksha.getPluginPipeline()
+				return gateway.getPluginPipeline()
 			}
 			mcpConfig.ReleasePluginPipeline = func(pipeline interface{}) {
 				if pp, ok := pipeline.(*PluginPipeline); ok {
-					raksha.releasePluginPipeline(pp)
+					gateway.releasePluginPipeline(pp)
 				}
 			}
-			codeMode := starlark.NewStarlarkCodeMode(nil, raksha.logger)
-			raksha.MCPManager = mcp.NewMCPManager(raksha.ctx, mcpConfig, raksha.mcpCredStore, raksha.logger, codeMode)
+			codeMode := starlark.NewStarlarkCodeMode(nil, gateway.logger)
+			gateway.MCPManager = mcp.NewMCPManager(gateway.ctx, mcpConfig, gateway.mcpCredStore, gateway.logger, codeMode)
 		})
 	}
-	if raksha.MCPManager == nil {
+	if gateway.MCPManager == nil {
 		return nil, nil, fmt.Errorf("MCP manager is not initialized")
 	}
-	return raksha.MCPManager.VerifyHeadersConnection(ctx, config, userHeaders)
+	return gateway.MCPManager.VerifyHeadersConnection(ctx, config, userHeaders)
 }
 
 // SetClientTools delegates to the MCP manager to update the tool map for an
 // existing MCP client.
-func (raksha *Raksha) SetClientTools(clientID string, tools map[string]schemas.ChatTool, toolNameMapping map[string]string) {
-	if raksha.MCPManager != nil {
-		raksha.MCPManager.SetClientTools(clientID, tools, toolNameMapping)
+func (gateway *Gateway) SetClientTools(clientID string, tools map[string]schemas.ChatTool, toolNameMapping map[string]string) {
+	if gateway.MCPManager != nil {
+		gateway.MCPManager.SetClientTools(clientID, tools, toolNameMapping)
 	}
 }
 
@@ -4197,12 +4197,12 @@ func (raksha *Raksha) SetClientTools(clientID string, tools map[string]schemas.C
 // This allows for hot-reloading of the tool manager config at runtime.
 // Pass the current value of disableAutoToolInject whenever only other fields
 // change so the flag is never silently reset to its zero value.
-func (raksha *Raksha) UpdateToolManagerConfig(maxAgentDepth int, toolExecutionTimeoutInSeconds int, codeModeBindingLevel string, disableAutoToolInject bool) error {
-	if raksha.MCPManager == nil {
-		return fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) UpdateToolManagerConfig(maxAgentDepth int, toolExecutionTimeoutInSeconds int, codeModeBindingLevel string, disableAutoToolInject bool) error {
+	if gateway.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this gateway instance")
 	}
 
-	raksha.MCPManager.UpdateToolManagerConfig(&schemas.MCPToolManagerConfig{
+	gateway.MCPManager.UpdateToolManagerConfig(&schemas.MCPToolManagerConfig{
 		MaxAgentDepth:         maxAgentDepth,
 		ToolExecutionTimeout:  schemas.Duration(time.Duration(toolExecutionTimeoutInSeconds) * time.Second),
 		CodeModeBindingLevel:  schemas.CodeModeBindingLevel(codeModeBindingLevel),
@@ -4213,11 +4213,11 @@ func (raksha *Raksha) UpdateToolManagerConfig(maxAgentDepth int, toolExecutionTi
 
 // SetMCPToolSyncInterval applies a new global MCP tool sync interval to running clients that
 // follow the global setting. A non-positive interval resets to the default.
-func (raksha *Raksha) SetMCPToolSyncInterval(interval time.Duration) error {
-	if raksha.MCPManager == nil {
-		return fmt.Errorf("mcp is not configured in this raksha instance")
+func (gateway *Gateway) SetMCPToolSyncInterval(interval time.Duration) error {
+	if gateway.MCPManager == nil {
+		return fmt.Errorf("mcp is not configured in this gateway instance")
 	}
-	setter, ok := raksha.MCPManager.(interface{ SetToolSyncInterval(time.Duration) })
+	setter, ok := gateway.MCPManager.(interface{ SetToolSyncInterval(time.Duration) })
 	if !ok {
 		return fmt.Errorf("mcp manager does not support live tool sync interval changes")
 	}
@@ -4228,7 +4228,7 @@ func (raksha *Raksha) SetMCPToolSyncInterval(interval time.Duration) error {
 // PROVIDER MANAGEMENT
 
 // createBaseProvider creates a provider based on the base provider type
-func (raksha *Raksha) createBaseProvider(providerKey schemas.ModelProvider, config *schemas.ProviderConfig) (schemas.Provider, error) {
+func (gateway *Gateway) createBaseProvider(providerKey schemas.ModelProvider, config *schemas.ProviderConfig) (schemas.Provider, error) {
 	// Determine which provider type to create
 	targetProviderKey := providerKey
 
@@ -4251,64 +4251,64 @@ func (raksha *Raksha) createBaseProvider(providerKey schemas.ModelProvider, conf
 
 	switch targetProviderKey {
 	case schemas.OpenAI:
-		return openai.NewOpenAIProvider(config, raksha.logger), nil
+		return openai.NewOpenAIProvider(config, gateway.logger), nil
 	case schemas.Anthropic:
-		return anthropic.NewAnthropicProvider(config, raksha.logger), nil
+		return anthropic.NewAnthropicProvider(config, gateway.logger), nil
 	case schemas.Bedrock:
-		return bedrock.NewBedrockProvider(config, raksha.logger)
+		return bedrock.NewBedrockProvider(config, gateway.logger)
 	case schemas.BedrockMantle:
-		return bedrockmantle.NewBedrockMantleProvider(config, raksha.logger)
+		return bedrockmantle.NewBedrockMantleProvider(config, gateway.logger)
 	case schemas.Cohere:
-		return cohere.NewCohereProvider(config, raksha.logger)
+		return cohere.NewCohereProvider(config, gateway.logger)
 	case schemas.Azure:
-		return azure.NewAzureProvider(config, raksha.logger)
+		return azure.NewAzureProvider(config, gateway.logger)
 	case schemas.Vertex:
-		return vertex.NewVertexProvider(config, raksha.logger)
+		return vertex.NewVertexProvider(config, gateway.logger)
 	case schemas.Mistral:
-		return mistral.NewMistralProvider(config, raksha.logger), nil
+		return mistral.NewMistralProvider(config, gateway.logger), nil
 	case schemas.Ollama:
-		return ollama.NewOllamaProvider(config, raksha.logger)
+		return ollama.NewOllamaProvider(config, gateway.logger)
 	case schemas.Groq:
-		return groq.NewGroqProvider(config, raksha.logger)
+		return groq.NewGroqProvider(config, gateway.logger)
 	case schemas.OpencodeGo:
-		return opencode.NewOpencodeGoProvider(config, raksha.logger)
+		return opencode.NewOpencodeGoProvider(config, gateway.logger)
 	case schemas.OpencodeZen:
-		return opencode.NewOpencodeZenProvider(config, raksha.logger)
+		return opencode.NewOpencodeZenProvider(config, gateway.logger)
 	case schemas.SGL:
-		return sgl.NewSGLProvider(config, raksha.logger)
+		return sgl.NewSGLProvider(config, gateway.logger)
 	case schemas.Parasail:
-		return parasail.NewParasailProvider(config, raksha.logger)
+		return parasail.NewParasailProvider(config, gateway.logger)
 	case schemas.Perplexity:
-		return perplexity.NewPerplexityProvider(config, raksha.logger)
+		return perplexity.NewPerplexityProvider(config, gateway.logger)
 	case schemas.Cerebras:
-		return cerebras.NewCerebrasProvider(config, raksha.logger)
+		return cerebras.NewCerebrasProvider(config, gateway.logger)
 	case schemas.DeepSeek:
-		return deepseek.NewDeepSeekProvider(config, raksha.logger)
+		return deepseek.NewDeepSeekProvider(config, gateway.logger)
 	case schemas.Gemini:
-		return gemini.NewGeminiProvider(config, raksha.logger), nil
+		return gemini.NewGeminiProvider(config, gateway.logger), nil
 	case schemas.OpenRouter:
-		return openrouter.NewOpenRouterProvider(config, raksha.logger), nil
+		return openrouter.NewOpenRouterProvider(config, gateway.logger), nil
 	case schemas.Elevenlabs:
-		return elevenlabs.NewElevenlabsProvider(config, raksha.logger), nil
+		return elevenlabs.NewElevenlabsProvider(config, gateway.logger), nil
 	case schemas.Nebius:
-		return nebius.NewNebiusProvider(config, raksha.logger)
+		return nebius.NewNebiusProvider(config, gateway.logger)
 	case schemas.HuggingFace:
-		return huggingface.NewHuggingFaceProvider(config, raksha.logger), nil
+		return huggingface.NewHuggingFaceProvider(config, gateway.logger), nil
 	case schemas.XAI:
-		return xai.NewXAIProvider(config, raksha.logger)
+		return xai.NewXAIProvider(config, gateway.logger)
 	case schemas.Replicate:
-		return replicate.NewReplicateProvider(config, raksha.logger)
+		return replicate.NewReplicateProvider(config, gateway.logger)
 	case schemas.VLLM:
-		return vllm.NewVLLMProvider(config, raksha.logger)
+		return vllm.NewVLLMProvider(config, gateway.logger)
 	case schemas.Runway:
-		return runway.NewRunwayProvider(config, raksha.logger)
+		return runway.NewRunwayProvider(config, gateway.logger)
 	case schemas.Runware:
-		return runware.NewRunwareProvider(config, raksha.logger)
+		return runware.NewRunwareProvider(config, gateway.logger)
 	case schemas.Fireworks:
-		return fireworks.NewFireworksProvider(config, raksha.logger)
+		return fireworks.NewFireworksProvider(config, gateway.logger)
 	default:
 		if _, ok := openaicompat.Registry[targetProviderKey]; ok {
-			return openaicompat.New(targetProviderKey, config, raksha.logger)
+			return openaicompat.New(targetProviderKey, config, gateway.logger)
 		}
 		return nil, fmt.Errorf("unsupported provider: %s", targetProviderKey)
 	}
@@ -4317,7 +4317,7 @@ func (raksha *Raksha) createBaseProvider(providerKey schemas.ModelProvider, conf
 // prepareProvider sets up a provider with its configuration, keys, and worker channels.
 // It initializes the request queue and starts worker goroutines for processing requests.
 // Note: This function assumes the caller has already acquired the appropriate mutex for the provider.
-func (raksha *Raksha) prepareProvider(providerKey schemas.ModelProvider, config *schemas.ProviderConfig) error {
+func (gateway *Gateway) prepareProvider(providerKey schemas.ModelProvider, config *schemas.ProviderConfig) error {
 	// Create ProviderQueue with lifecycle management
 	pq := &ProviderQueue{
 		queue:      make(chan *ChannelMessage, config.ConcurrencyAndBufferSize.BufferSize),
@@ -4325,22 +4325,22 @@ func (raksha *Raksha) prepareProvider(providerKey schemas.ModelProvider, config 
 		signalOnce: sync.Once{},
 	}
 
-	raksha.requestQueues.Store(providerKey, pq)
+	gateway.requestQueues.Store(providerKey, pq)
 
 	// Start specified number of workers
-	raksha.waitGroups.Store(providerKey, &sync.WaitGroup{})
+	gateway.waitGroups.Store(providerKey, &sync.WaitGroup{})
 
-	provider, err := raksha.createBaseProvider(providerKey, config)
+	provider, err := gateway.createBaseProvider(providerKey, config)
 	if err != nil {
 		return fmt.Errorf("failed to create provider for the given key: %v", err)
 	}
 
-	waitGroupValue, _ := raksha.waitGroups.Load(providerKey)
+	waitGroupValue, _ := gateway.waitGroups.Load(providerKey)
 	currentWaitGroup := waitGroupValue.(*sync.WaitGroup)
 
 	// Atomically append provider to the providers slice
 	for {
-		oldPtr := raksha.providers.Load()
+		oldPtr := gateway.providers.Load()
 		var oldSlice []schemas.Provider
 		if oldPtr != nil {
 			oldSlice = *oldPtr
@@ -4348,7 +4348,7 @@ func (raksha *Raksha) prepareProvider(providerKey schemas.ModelProvider, config 
 		newSlice := make([]schemas.Provider, len(oldSlice)+1)
 		copy(newSlice, oldSlice)
 		newSlice[len(oldSlice)] = provider
-		if raksha.providers.CompareAndSwap(oldPtr, &newSlice) {
+		if gateway.providers.CompareAndSwap(oldPtr, &newSlice) {
 			break
 		}
 	}
@@ -4357,7 +4357,7 @@ func (raksha *Raksha) prepareProvider(providerKey schemas.ModelProvider, config 
 
 	for range config.ConcurrencyAndBufferSize.Concurrency {
 		currentWaitGroup.Add(1)
-		go raksha.requestWorker(provider, config, pq, currentWaitGroup)
+		go gateway.requestWorker(provider, config, pq, currentWaitGroup)
 	}
 
 	return nil
@@ -4368,12 +4368,12 @@ func (raksha *Raksha) prepareProvider(providerKey schemas.ModelProvider, config 
 // given the provider config is provided in the account interface implementation.
 // This function uses read locks to prevent race conditions during provider updates.
 // Callers must check the closing flag or select on the done channel before sending.
-func (raksha *Raksha) getProviderQueue(providerKey schemas.ModelProvider) (*ProviderQueue, error) {
+func (gateway *Gateway) getProviderQueue(providerKey schemas.ModelProvider) (*ProviderQueue, error) {
 	// Use read lock to allow concurrent reads but prevent concurrent updates
-	providerMutex := raksha.getProviderMutex(providerKey)
+	providerMutex := gateway.getProviderMutex(providerKey)
 	providerMutex.RLock()
 
-	if pqValue, exists := raksha.requestQueues.Load(providerKey); exists {
+	if pqValue, exists := gateway.requestQueues.Load(providerKey); exists {
 		pq := pqValue.(*ProviderQueue)
 		providerMutex.RUnlock()
 		return pq, nil
@@ -4386,22 +4386,22 @@ func (raksha *Raksha) getProviderQueue(providerKey schemas.ModelProvider) (*Prov
 	defer providerMutex.Unlock()
 
 	// Double-check after acquiring write lock (another goroutine might have created it)
-	if pqValue, exists := raksha.requestQueues.Load(providerKey); exists {
+	if pqValue, exists := gateway.requestQueues.Load(providerKey); exists {
 		pq := pqValue.(*ProviderQueue)
 		return pq, nil
 	}
-	raksha.logger.Debug(fmt.Sprintf("Creating new request queue for provider %s at runtime", providerKey))
-	config, err := raksha.account.GetConfigForProvider(providerKey)
+	gateway.logger.Debug(fmt.Sprintf("Creating new request queue for provider %s at runtime", providerKey))
+	config, err := gateway.account.GetConfigForProvider(providerKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config for provider %s: %v", providerKey, err)
 	}
 	if config == nil {
 		return nil, fmt.Errorf("config is nil for provider %s", providerKey)
 	}
-	if err := raksha.prepareProvider(providerKey, config); err != nil {
+	if err := gateway.prepareProvider(providerKey, config); err != nil {
 		return nil, err
 	}
-	pqValue, ok := raksha.requestQueues.Load(providerKey)
+	pqValue, ok := gateway.requestQueues.Load(providerKey)
 	if !ok {
 		return nil, fmt.Errorf("request queue not found for provider %s", providerKey)
 	}
@@ -4411,23 +4411,23 @@ func (raksha *Raksha) getProviderQueue(providerKey schemas.ModelProvider) (*Prov
 
 // GetProviderByKey returns the provider instance for the given provider key.
 // Returns nil if no provider with the given key exists.
-func (raksha *Raksha) GetProviderByKey(providerKey schemas.ModelProvider) schemas.Provider {
-	return raksha.getProviderByKey(providerKey)
+func (gateway *Gateway) GetProviderByKey(providerKey schemas.ModelProvider) schemas.Provider {
+	return gateway.getProviderByKey(providerKey)
 }
 
 // SelectKeyForProviderRequestType selects an API key for the given provider, request type, and model.
 // Used by WebSocket handlers that need a key for upstream connections while honoring request-specific
 // AllowedRequests gates such as realtime-only support.
-func (raksha *Raksha) SelectKeyForProviderRequestType(ctx *schemas.RakshaContext, requestType schemas.RequestType, providerKey schemas.ModelProvider, model string) (schemas.Key, error) {
+func (gateway *Gateway) SelectKeyForProviderRequestType(ctx *schemas.GatewayContext, requestType schemas.RequestType, providerKey schemas.ModelProvider, model string) (schemas.Key, error) {
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 	baseProvider := providerKey
-	if config, err := raksha.account.GetConfigForProvider(providerKey); err == nil && config != nil &&
+	if config, err := gateway.account.GetConfigForProvider(providerKey); err == nil && config != nil &&
 		config.CustomProviderConfig != nil && config.CustomProviderConfig.BaseProviderType != "" {
 		baseProvider = config.CustomProviderConfig.BaseProviderType
 	}
-	supportedKeys, _, err := raksha.selectKeyFromProviderForModelWithPool(ctx, requestType, providerKey, model, baseProvider)
+	supportedKeys, _, err := gateway.selectKeyFromProviderForModelWithPool(ctx, requestType, providerKey, model, baseProvider)
 	if err != nil {
 		return schemas.Key{}, err
 	}
@@ -4437,28 +4437,28 @@ func (raksha *Raksha) SelectKeyForProviderRequestType(ctx *schemas.RakshaContext
 	if len(supportedKeys) == 1 {
 		return supportedKeys[0], nil
 	}
-	return raksha.keySelector(ctx, supportedKeys, providerKey, model)
+	return gateway.keySelector(ctx, supportedKeys, providerKey, model)
 }
 
 // ComputeRawStorageForProvider determines whether raw request/response payloads should be
 // captured and stored in log records for the given provider. This is the same computation
 // performed inside executeRequest (lines 5675-5713), exported for callers that bypass
 // the normal inference path (e.g. realtime WebSocket/WebRTC sessions).
-func (raksha *Raksha) ComputeRawStorageForProvider(ctx *schemas.RakshaContext, providerKey schemas.ModelProvider) bool {
+func (gateway *Gateway) ComputeRawStorageForProvider(ctx *schemas.GatewayContext, providerKey schemas.ModelProvider) bool {
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 	if ctx == nil {
 		return false
 	}
-	config, err := raksha.account.GetConfigForProvider(providerKey)
+	config, err := gateway.account.GetConfigForProvider(providerKey)
 	if err != nil || config == nil {
 		return false
 	}
 	effectiveStore := config.StoreRawRequestResponse
-	allowStorageOverride, _ := ctx.Value(schemas.RakshaContextKeyAllowPerRequestStorageOverride).(bool)
+	allowStorageOverride, _ := ctx.Value(schemas.GatewayContextKeyAllowPerRequestStorageOverride).(bool)
 	if allowStorageOverride {
-		if override, ok := ctx.Value(schemas.RakshaContextKeyStoreRawRequestResponse).(bool); ok {
+		if override, ok := ctx.Value(schemas.GatewayContextKeyStoreRawRequestResponse).(bool); ok {
 			effectiveStore = override
 		}
 	}
@@ -4473,7 +4473,7 @@ func (raksha *Raksha) ComputeRawStorageForProvider(ctx *schemas.RakshaContext, p
 type WSStreamHooks struct {
 	PostHookRunner       schemas.PostHookRunner
 	Cleanup              func()
-	ShortCircuitResponse *schemas.RakshaResponse
+	ShortCircuitResponse *schemas.GatewayResponse
 }
 
 // RealtimeTurnHooks mirrors RunStreamPreHooks but is explicitly scoped to a
@@ -4489,20 +4489,20 @@ type RealtimeTurnHooks struct {
 // but the per-turn pipeline handles PreLLMHook/PostLLMHook separately.
 //
 // Mutations to req.Provider/req.Model/req.Fallbacks made by PreRequestHook plugins are committed
-// to the shared *RakshaRequest. Plugin errors are non-blocking — they are logged as warnings
+// to the shared *GatewayRequest. Plugin errors are non-blocking — they are logged as warnings
 // and the pipeline continues to the next plugin (same semantics as RunLLMPreHooks). Callers
 // should validate req.Provider after this returns if a provider is required.
-func (raksha *Raksha) RunPreRequestHooks(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) {
+func (gateway *Gateway) RunPreRequestHooks(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) {
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	if _, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); !ok {
-		ctx.SetValue(schemas.RakshaContextKeyRequestID, uuid.New().String())
+	if _, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string); !ok {
+		ctx.SetValue(schemas.GatewayContextKeyRequestID, uuid.New().String())
 	}
 
-	pipeline := raksha.getPluginPipeline()
-	defer raksha.releasePluginPipeline(pipeline)
+	pipeline := gateway.getPluginPipeline()
+	defer gateway.releasePluginPipeline(pipeline)
 	pipeline.RunPreRequestHooks(ctx, req)
 	// This path has no downstream post-hook cleanup, so drain any plugin logs
 	// emitted by PreRequestHook here to avoid them bleeding into a later request
@@ -4513,37 +4513,37 @@ func (raksha *Raksha) RunPreRequestHooks(ctx *schemas.RakshaContext, req *schema
 // RunStreamPreHooks acquires a plugin pipeline, sets up tracing context, runs PreLLMHooks,
 // and returns a PostHookRunner for per-chunk post-processing.
 // Used by WebSocket handlers that bypass the normal inference path but still need plugin hooks.
-func (raksha *Raksha) RunStreamPreHooks(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*WSStreamHooks, *schemas.RakshaError) {
+func (gateway *Gateway) RunStreamPreHooks(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*WSStreamHooks, *schemas.GatewayError) {
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	if _, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); !ok {
-		ctx.SetValue(schemas.RakshaContextKeyRequestID, uuid.New().String())
+	if _, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string); !ok {
+		ctx.SetValue(schemas.GatewayContextKeyRequestID, uuid.New().String())
 	}
 
-	tracer := raksha.getTracer()
-	ctx.SetValue(schemas.RakshaContextKeyTracer, tracer)
+	tracer := gateway.getTracer()
+	ctx.SetValue(schemas.GatewayContextKeyTracer, tracer)
 
 	// Create a trace so the logging plugin can accumulate streaming chunks.
 	// The traceID is used as the accumulator key in ProcessStreamingChunk.
-	if _, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); !ok {
+	if _, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); !ok {
 		traceID := tracer.CreateTrace("")
 		if traceID != "" {
-			ctx.SetValue(schemas.RakshaContextKeyTraceID, traceID)
+			ctx.SetValue(schemas.GatewayContextKeyTraceID, traceID)
 		}
 	}
 
 	// Mark as streaming context so RunPostLLMHooks uses accumulated timing
-	ctx.SetValue(schemas.RakshaContextKeyStreamStartTime, time.Now())
+	ctx.SetValue(schemas.GatewayContextKeyStreamStartTime, time.Now())
 
-	pipeline := raksha.getPluginPipeline()
+	pipeline := gateway.getPluginPipeline()
 
 	cleanup := func() {
-		if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && traceID != "" {
+		if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && traceID != "" {
 			tracer.CleanupStreamAccumulator(traceID)
 		}
-		raksha.releasePluginPipeline(pipeline)
+		gateway.releasePluginPipeline(pipeline)
 	}
 
 	// Capture provider/model from the original request for early-exit paths below.
@@ -4554,51 +4554,51 @@ func (raksha *Raksha) RunStreamPreHooks(ctx *schemas.RakshaContext, req *schemas
 
 	preReq, shortCircuit, preCount := pipeline.RunLLMPreHooks(ctx, req)
 	if preReq == nil && shortCircuit == nil {
-		rakshaErr := newRakshaErrorFromMsg("raksha request after plugin hooks cannot be nil")
-		rakshaErr.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
-		_, rakshaErr = pipeline.RunPostLLMHooks(ctx, nil, rakshaErr, preCount)
-		if rakshaErr != nil {
-			rakshaErr.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
+		gatewayErr := newGatewayErrorFromMsg("gateway request after plugin hooks cannot be nil")
+		gatewayErr.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
+		_, gatewayErr = pipeline.RunPostLLMHooks(ctx, nil, gatewayErr, preCount)
+		if gatewayErr != nil {
+			gatewayErr.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
 		}
 		drainAndAttachPluginLogs(ctx)
-		if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
+		if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
 			tracer.CompleteAndFlushTrace(strings.TrimSpace(traceID))
 		}
 		cleanup()
-		return nil, rakshaErr
+		return nil, gatewayErr
 	}
 	if shortCircuit != nil {
 		if shortCircuit.Error != nil {
 			shortCircuit.Error.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
-			_, rakshaErr := pipeline.RunPostLLMHooks(ctx, nil, shortCircuit.Error, preCount)
-			if rakshaErr != nil {
-				rakshaErr.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
+			_, gatewayErr := pipeline.RunPostLLMHooks(ctx, nil, shortCircuit.Error, preCount)
+			if gatewayErr != nil {
+				gatewayErr.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
 			}
 			drainAndAttachPluginLogs(ctx)
-			if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
+			if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
 				tracer.CompleteAndFlushTrace(strings.TrimSpace(traceID))
 			}
 			cleanup()
-			if rakshaErr != nil {
-				return nil, rakshaErr
+			if gatewayErr != nil {
+				return nil, gatewayErr
 			}
 			return nil, shortCircuit.Error
 		}
 		if shortCircuit.Response != nil {
 			shortCircuit.Response.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
-			resp, rakshaErr := pipeline.RunPostLLMHooks(ctx, shortCircuit.Response, nil, preCount)
-			if rakshaErr != nil {
-				rakshaErr.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
+			resp, gatewayErr := pipeline.RunPostLLMHooks(ctx, shortCircuit.Response, nil, preCount)
+			if gatewayErr != nil {
+				gatewayErr.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
 			} else if resp != nil {
 				resp.PopulateExtraFields(req.RequestType, reqProvider, reqModel, reqModel)
 			}
 			drainAndAttachPluginLogs(ctx)
-			if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
+			if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
 				tracer.CompleteAndFlushTrace(strings.TrimSpace(traceID))
 			}
 			cleanup()
-			if rakshaErr != nil {
-				return nil, rakshaErr
+			if gatewayErr != nil {
+				return nil, gatewayErr
 			}
 			return &WSStreamHooks{
 				Cleanup:              func() {},
@@ -4608,7 +4608,7 @@ func (raksha *Raksha) RunStreamPreHooks(ctx *schemas.RakshaContext, req *schemas
 	}
 
 	wsProvider, wsModel, _ := preReq.GetRequestFields()
-	postHookRunner := func(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError) {
+	postHookRunner := func(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError) {
 		// Populate extra fields before RunPostLLMHooks so plugins (e.g. logging)
 		// can read requestType/provider/model from the chunk or error.
 		if result != nil {
@@ -4617,16 +4617,16 @@ func (raksha *Raksha) RunStreamPreHooks(ctx *schemas.RakshaContext, req *schemas
 		if err != nil {
 			err.PopulateExtraFields(req.RequestType, wsProvider, wsModel, wsModel)
 		}
-		resp, rakshaErr := pipeline.RunPostLLMHooks(ctx, result, err, preCount)
+		resp, gatewayErr := pipeline.RunPostLLMHooks(ctx, result, err, preCount)
 		if IsFinalChunk(ctx) {
 			drainAndAttachPluginLogs(ctx)
-			if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
+			if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
 				tracer.CompleteAndFlushTrace(strings.TrimSpace(traceID))
 			}
 		}
-		if rakshaErr != nil {
-			rakshaErr.PopulateExtraFields(req.RequestType, wsProvider, wsModel, wsModel)
-			return nil, rakshaErr
+		if gatewayErr != nil {
+			gatewayErr.PopulateExtraFields(req.RequestType, wsProvider, wsModel, wsModel)
+			return nil, gatewayErr
 		} else if resp != nil {
 			resp.PopulateExtraFields(req.RequestType, wsProvider, wsModel, wsModel)
 		}
@@ -4643,95 +4643,95 @@ func (raksha *Raksha) RunStreamPreHooks(ctx *schemas.RakshaContext, req *schemas
 // a single realtime turn. Unlike generic stream hooks, realtime turns do not
 // support short-circuit responses in v1 because the transports cannot yet emit a
 // fully synthetic assistant turn without an upstream generation.
-func (raksha *Raksha) RunRealtimeTurnPreHooks(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*RealtimeTurnHooks, *schemas.RakshaError) {
+func (gateway *Gateway) RunRealtimeTurnPreHooks(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*RealtimeTurnHooks, *schemas.GatewayError) {
 	if req == nil {
-		rakshaErr := newRakshaErrorFromMsg("realtime turn request is nil")
-		rakshaErr.ExtraFields.RequestType = schemas.RealtimeRequest
-		return nil, rakshaErr
+		gatewayErr := newGatewayErrorFromMsg("realtime turn request is nil")
+		gatewayErr.ExtraFields.RequestType = schemas.RealtimeRequest
+		return nil, gatewayErr
 	}
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
-	if _, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); !ok {
-		ctx.SetValue(schemas.RakshaContextKeyRequestID, uuid.New().String())
+	if _, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string); !ok {
+		ctx.SetValue(schemas.GatewayContextKeyRequestID, uuid.New().String())
 	}
 
-	tracer := raksha.getTracer()
-	ctx.SetValue(schemas.RakshaContextKeyTracer, tracer)
+	tracer := gateway.getTracer()
+	ctx.SetValue(schemas.GatewayContextKeyTracer, tracer)
 
-	if _, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); !ok {
+	if _, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); !ok {
 		traceID := tracer.CreateTrace("")
 		if traceID != "" {
-			ctx.SetValue(schemas.RakshaContextKeyTraceID, traceID)
+			ctx.SetValue(schemas.GatewayContextKeyTraceID, traceID)
 		}
 	}
 
-	pipeline := raksha.getPluginPipeline()
+	pipeline := gateway.getPluginPipeline()
 	cleanup := func() {
-		if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && traceID != "" {
+		if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && traceID != "" {
 			tracer.CleanupStreamAccumulator(traceID)
 		}
-		raksha.releasePluginPipeline(pipeline)
+		gateway.releasePluginPipeline(pipeline)
 	}
 	provider, model, _ := req.GetRequestFields()
 
 	preReq, shortCircuit, preCount := pipeline.RunLLMPreHooks(ctx, req)
 	if preReq == nil && shortCircuit == nil {
-		rakshaErr := newRakshaErrorFromMsg("raksha request after plugin hooks cannot be nil")
-		rakshaErr.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
-		_, rakshaErr = pipeline.RunPostLLMHooks(ctx, nil, rakshaErr, preCount)
+		gatewayErr := newGatewayErrorFromMsg("gateway request after plugin hooks cannot be nil")
+		gatewayErr.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
+		_, gatewayErr = pipeline.RunPostLLMHooks(ctx, nil, gatewayErr, preCount)
 		drainAndAttachPluginLogs(ctx)
-		if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
+		if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
 			tracer.CompleteAndFlushTrace(strings.TrimSpace(traceID))
 		}
 		cleanup()
-		return nil, rakshaErr
+		return nil, gatewayErr
 	}
 	if shortCircuit != nil {
 		if shortCircuit.Error != nil {
 			shortCircuit.Error.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
-			_, rakshaErr := pipeline.RunPostLLMHooks(ctx, nil, shortCircuit.Error, preCount)
+			_, gatewayErr := pipeline.RunPostLLMHooks(ctx, nil, shortCircuit.Error, preCount)
 			drainAndAttachPluginLogs(ctx)
-			if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
+			if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
 				tracer.CompleteAndFlushTrace(strings.TrimSpace(traceID))
 			}
 			cleanup()
-			if rakshaErr != nil {
-				return nil, rakshaErr
+			if gatewayErr != nil {
+				return nil, gatewayErr
 			}
 			return nil, shortCircuit.Error
 		}
 		if shortCircuit.Response != nil {
 			// Short-circuit responses are not supported for realtime turns (v1).
 			// Treat this like an error turn so plugins can close pending state cleanly.
-			rakshaErr := newRakshaErrorFromMsg("realtime turn short-circuit responses are not supported")
-			rakshaErr.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
-			_, rakshaErr = pipeline.RunPostLLMHooks(ctx, nil, rakshaErr, preCount)
+			gatewayErr := newGatewayErrorFromMsg("realtime turn short-circuit responses are not supported")
+			gatewayErr.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
+			_, gatewayErr = pipeline.RunPostLLMHooks(ctx, nil, gatewayErr, preCount)
 			drainAndAttachPluginLogs(ctx)
-			if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
+			if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && strings.TrimSpace(traceID) != "" {
 				tracer.CompleteAndFlushTrace(strings.TrimSpace(traceID))
 			}
 			cleanup()
-			return nil, rakshaErr
+			return nil, gatewayErr
 		}
 	}
 
 	provider, model, _ = preReq.GetRequestFields()
 
 	return &RealtimeTurnHooks{
-		PostHookRunner: func(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError) {
+		PostHookRunner: func(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError) {
 			if result != nil {
 				result.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
 			}
 			if err != nil {
 				err.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
 			}
-			resp, rakshaErr := pipeline.RunPostLLMHooks(ctx, result, err, preCount)
+			resp, gatewayErr := pipeline.RunPostLLMHooks(ctx, result, err, preCount)
 			drainAndAttachPluginLogs(ctx)
-			if rakshaErr != nil {
-				rakshaErr.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
-				return nil, rakshaErr
+			if gatewayErr != nil {
+				gatewayErr.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
+				return nil, gatewayErr
 			} else if resp != nil {
 				resp.PopulateExtraFields(schemas.RealtimeRequest, provider, model, model)
 			}
@@ -4743,8 +4743,8 @@ func (raksha *Raksha) RunRealtimeTurnPreHooks(ctx *schemas.RakshaContext, req *s
 
 // getProviderByKey retrieves a provider instance from the providers array by its provider key.
 // Returns the provider if found, or nil if no provider with the given key exists.
-func (raksha *Raksha) getProviderByKey(providerKey schemas.ModelProvider) schemas.Provider {
-	providers := raksha.providers.Load()
+func (gateway *Gateway) getProviderByKey(providerKey schemas.ModelProvider) schemas.Provider {
+	providers := gateway.providers.Load()
 	if providers == nil {
 		return nil
 	}
@@ -4755,10 +4755,10 @@ func (raksha *Raksha) getProviderByKey(providerKey schemas.ModelProvider) schema
 		}
 	}
 	// Could happen when provider is not initialized yet, check if provider config exists in account and if so, initialize it
-	config, err := raksha.account.GetConfigForProvider(providerKey)
+	config, err := gateway.account.GetConfigForProvider(providerKey)
 	if err != nil || config == nil {
 		if slices.Contains(dynamicallyConfigurableProviders, providerKey) {
-			raksha.logger.Info(fmt.Sprintf("initializing provider %s with default config", providerKey))
+			gateway.logger.Info(fmt.Sprintf("initializing provider %s with default config", providerKey))
 			// If no config found, use default config
 			config = &schemas.ProviderConfig{
 				NetworkConfig:            schemas.DefaultNetworkConfig,
@@ -4769,11 +4769,11 @@ func (raksha *Raksha) getProviderByKey(providerKey schemas.ModelProvider) schema
 		}
 	}
 	// Lock the provider mutex to avoid races
-	providerMutex := raksha.getProviderMutex(providerKey)
+	providerMutex := gateway.getProviderMutex(providerKey)
 	providerMutex.Lock()
 	defer providerMutex.Unlock()
 	// Double-check after acquiring the lock
-	providers = raksha.providers.Load()
+	providers = gateway.providers.Load()
 	if providers != nil {
 		for _, p := range *providers {
 			if p.GetProviderKey() == providerKey {
@@ -4782,11 +4782,11 @@ func (raksha *Raksha) getProviderByKey(providerKey schemas.ModelProvider) schema
 		}
 	}
 	// Preparing provider
-	if err := raksha.prepareProvider(providerKey, config); err != nil {
+	if err := gateway.prepareProvider(providerKey, config); err != nil {
 		return nil
 	}
 	// Return newly prepared provider without recursion
-	providers = raksha.providers.Load()
+	providers = gateway.providers.Load()
 	if providers != nil {
 		for _, p := range *providers {
 			if p.GetProviderKey() == providerKey {
@@ -4800,30 +4800,30 @@ func (raksha *Raksha) getProviderByKey(providerKey schemas.ModelProvider) schema
 // CORE INTERNAL LOGIC
 
 // shouldTryFallbacks handles the primary error and returns true if we should proceed with fallbacks, false if we should return immediately
-func (raksha *Raksha) shouldTryFallbacks(req *schemas.RakshaRequest, primaryErr *schemas.RakshaError) bool {
+func (gateway *Gateway) shouldTryFallbacks(req *schemas.GatewayRequest, primaryErr *schemas.GatewayError) bool {
 	// If no primary error, we succeeded
 	if primaryErr == nil {
-		raksha.logger.Debug("no primary error, we should not try fallbacks")
+		gateway.logger.Debug("no primary error, we should not try fallbacks")
 		return false
 	}
 
 	// Handle request cancellation
 	if primaryErr.Error != nil && primaryErr.Error.Type != nil && *primaryErr.Error.Type == schemas.RequestCancelled {
-		raksha.logger.Debug("request cancelled, we should not try fallbacks")
+		gateway.logger.Debug("request cancelled, we should not try fallbacks")
 		return false
 	}
 
 	// Check if this is a short-circuit error that doesn't allow fallbacks
 	// Note: AllowFallbacks = nil is treated as true (allow fallbacks by default)
 	if primaryErr.AllowFallbacks != nil && !*primaryErr.AllowFallbacks {
-		raksha.logger.Debug("allowFallbacks is false, we should not try fallbacks")
+		gateway.logger.Debug("allowFallbacks is false, we should not try fallbacks")
 		return false
 	}
 
 	// If no fallbacks configured, return primary error
 	_, _, fallbacks := req.GetRequestFields()
 	if len(fallbacks) == 0 {
-		raksha.logger.Debug("no fallbacks configured, we should not try fallbacks")
+		gateway.logger.Debug("no fallbacks configured, we should not try fallbacks")
 		return false
 	}
 
@@ -4833,11 +4833,11 @@ func (raksha *Raksha) shouldTryFallbacks(req *schemas.RakshaRequest, primaryErr 
 
 // prepareFallbackRequest creates a fallback request and validates the provider config
 // Returns the fallback request or nil if this fallback should be skipped
-func (raksha *Raksha) prepareFallbackRequest(req *schemas.RakshaRequest, fallback schemas.Fallback) *schemas.RakshaRequest {
+func (gateway *Gateway) prepareFallbackRequest(req *schemas.GatewayRequest, fallback schemas.Fallback) *schemas.GatewayRequest {
 	// Check if we have config for this fallback provider
-	_, err := raksha.account.GetConfigForProvider(fallback.Provider)
+	_, err := gateway.account.GetConfigForProvider(fallback.Provider)
 	if err != nil {
-		raksha.logger.Warn("config not found for provider %s, skipping fallback: %v", fallback.Provider, err)
+		gateway.logger.Warn("config not found for provider %s, skipping fallback: %v", fallback.Provider, err)
 		return nil
 	}
 
@@ -4928,7 +4928,7 @@ func (raksha *Raksha) prepareFallbackRequest(req *schemas.RakshaRequest, fallbac
 
 // shouldContinueWithFallbacks processes errors from fallback attempts
 // Returns true if we should continue with more fallbacks, false if we should stop
-func (raksha *Raksha) shouldContinueWithFallbacks(fallback schemas.Fallback, fallbackErr *schemas.RakshaError) bool {
+func (gateway *Gateway) shouldContinueWithFallbacks(fallback schemas.Fallback, fallbackErr *schemas.GatewayError) bool {
 	if fallbackErr.Error.Type != nil && *fallbackErr.Error.Type == schemas.RequestCancelled {
 		return false
 	}
@@ -4938,7 +4938,7 @@ func (raksha *Raksha) shouldContinueWithFallbacks(fallback schemas.Fallback, fal
 		return false
 	}
 
-	raksha.logger.Debug(fmt.Sprintf("Fallback provider %s failed: %s", fallback.Provider, fallbackErr.Error.Message))
+	gateway.logger.Debug(fmt.Sprintf("Fallback provider %s failed: %s", fallback.Provider, fallbackErr.Error.Message))
 	return true
 }
 
@@ -4946,29 +4946,29 @@ func (raksha *Raksha) shouldContinueWithFallbacks(fallback schemas.Fallback, fal
 // It handles plugin hooks, request validation, response processing, and fallback providers.
 // If the primary provider fails, it will try each fallback provider in order until one succeeds.
 // It is the wrapper for all non-streaming public API methods.
-func (raksha *Raksha) handleRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaResponse, *schemas.RakshaError) {
-	defer raksha.releaseRakshaRequest(req)
+func (gateway *Gateway) handleRequest(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayResponse, *schemas.GatewayError) {
+	defer gateway.releaseGatewayRequest(req)
 	provider, model, fallbacks := req.GetRequestFields()
 
 	// Handle nil context early to prevent blocking
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
 	// Try the primary provider first
-	ctx.SetValue(schemas.RakshaContextKeyFallbackIndex, 0)
+	ctx.SetValue(schemas.GatewayContextKeyFallbackIndex, 0)
 	// Ensure request ID is set in context before PreHooks
-	if _, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); !ok {
+	if _, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string); !ok {
 		requestID := uuid.New().String()
-		ctx.SetValue(schemas.RakshaContextKeyRequestID, requestID)
+		ctx.SetValue(schemas.GatewayContextKeyRequestID, requestID)
 	}
 
 	// PreRequestHook: once-per-request phase where plugins decide provider/model/fallbacks
 	// (and may mutate other request fields). Mutations commit to req and are observed by
 	// all downstream phases and fallbacks. Plugin errors are non-blocking (logged + skipped).
-	preReqPipeline := raksha.getPluginPipeline()
+	preReqPipeline := gateway.getPluginPipeline()
 	preReqPipeline.RunPreRequestHooks(ctx, req)
-	raksha.releasePluginPipeline(preReqPipeline)
+	gateway.releasePluginPipeline(preReqPipeline)
 	// Re-read after PreRequestHook — provider/model/fallbacks may have changed.
 	provider, model, fallbacks = req.GetRequestFields()
 	// Empty provider/model after PreRequestHook means no plugin
@@ -4981,22 +4981,22 @@ func (raksha *Raksha) handleRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 		return nil, err
 	}
 
-	raksha.logger.Debug(fmt.Sprintf("primary provider %s with model %s and %d fallbacks", provider, model, len(fallbacks)))
+	gateway.logger.Debug(fmt.Sprintf("primary provider %s with model %s and %d fallbacks", provider, model, len(fallbacks)))
 
-	primaryResult, primaryErr := raksha.tryRequest(ctx, req)
+	primaryResult, primaryErr := gateway.tryRequest(ctx, req)
 	if primaryErr != nil {
 		if primaryErr.Error != nil {
-			raksha.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %s", provider, model, primaryErr.Error.Message))
+			gateway.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %s", provider, model, primaryErr.Error.Message))
 		} else {
-			raksha.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %v", provider, model, primaryErr))
+			gateway.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %v", provider, model, primaryErr))
 		}
 		if len(fallbacks) > 0 {
-			raksha.logger.Debug(fmt.Sprintf("check if we should try %d fallbacks", len(fallbacks)))
+			gateway.logger.Debug(fmt.Sprintf("check if we should try %d fallbacks", len(fallbacks)))
 		}
 	}
 
 	// Check if we should proceed with fallbacks
-	shouldTryFallbacks := raksha.shouldTryFallbacks(req, primaryErr)
+	shouldTryFallbacks := gateway.shouldTryFallbacks(req, primaryErr)
 	if !shouldTryFallbacks {
 		return primaryResult, primaryErr
 	}
@@ -5004,7 +5004,7 @@ func (raksha *Raksha) handleRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 	// Core is about to make routing decisions of its own (fallback transitions)
 	// — record it on the request's used-engines list so the audit trail closes
 	// the loop on whatever plugin-level engine selected the primary upstream.
-	schemas.AppendToContextList(ctx, schemas.RakshaContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
+	schemas.AppendToContextList(ctx, schemas.GatewayContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
 	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(fallbacks)))
 
 	// Tracks the most recent failure so each fallback transition log carries
@@ -5014,24 +5014,24 @@ func (raksha *Raksha) handleRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 
 	// Try fallbacks in order
 	for i, fallback := range fallbacks {
-		ctx.SetValue(schemas.RakshaContextKeyFallbackIndex, i+1)
-		raksha.logger.Debug(fmt.Sprintf("trying fallback provider %s with model %s", fallback.Provider, fallback.Model))
+		ctx.SetValue(schemas.GatewayContextKeyFallbackIndex, i+1)
+		gateway.logger.Debug(fmt.Sprintf("trying fallback provider %s with model %s", fallback.Provider, fallback.Model))
 		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(fallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
-		ctx.SetValue(schemas.RakshaContextKeyFallbackRequestID, uuid.New().String())
+		ctx.SetValue(schemas.GatewayContextKeyFallbackRequestID, uuid.New().String())
 		clearCtxForFallback(ctx)
 
 		// Start span for fallback attempt
-		tracer := raksha.getTracer()
+		tracer := gateway.getTracer()
 		spanCtx, handle := tracer.StartSpan(ctx, fmt.Sprintf("fallback.%s.%s", fallback.Provider, fallback.Model), schemas.SpanKindFallback)
 		tracer.SetAttribute(handle, schemas.AttrProviderName, schemas.OTelProviderName(fallback.Provider))
-		tracer.SetAttribute(handle, schemas.AttrRakshaProviderName, string(fallback.Provider)) // raw Raksha short name, mirrors canonical gen_ai.provider.name
+		tracer.SetAttribute(handle, schemas.AttrGatewayProviderName, string(fallback.Provider)) // raw Gateway short name, mirrors canonical gen_ai.provider.name
 		tracer.SetAttribute(handle, schemas.AttrRequestModel, fallback.Model)
 		tracer.SetAttribute(handle, "fallback.index", i+1)
-		ctx.SetValue(schemas.RakshaContextKeySpanID, spanCtx.Value(schemas.RakshaContextKeySpanID))
+		ctx.SetValue(schemas.GatewayContextKeySpanID, spanCtx.Value(schemas.GatewayContextKeySpanID))
 
-		fallbackReq := raksha.prepareFallbackRequest(req, fallback)
+		fallbackReq := gateway.prepareFallbackRequest(req, fallback)
 		if fallbackReq == nil {
-			raksha.logger.Debug(fmt.Sprintf("fallback provider %s with model %s is nil", fallback.Provider, fallback.Model))
+			gateway.logger.Debug(fmt.Sprintf("fallback provider %s with model %s is nil", fallback.Provider, fallback.Model))
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Fallback %s/%s skipped: missing provider config", fallback.Provider, fallback.Model))
 			tracer.SetAttribute(handle, "error", "fallback request preparation failed")
 			tracer.EndSpan(handle, schemas.SpanStatusError, "fallback request preparation failed")
@@ -5039,14 +5039,14 @@ func (raksha *Raksha) handleRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 		}
 
 		// Try the fallback provider
-		result, fallbackErr := raksha.tryRequest(ctx, fallbackReq)
+		result, fallbackErr := gateway.tryRequest(ctx, fallbackReq)
 		// Layer on Primary/IsFallback — the per-attempt code populates only
 		// attempt-level RoutingInfo (Provider/Model/Key/ResolvedKeyAlias);
 		// fallback-relative signals belong to the orchestrator scope.
 		result.SetFallbackRoutingInfo(provider, model)
 		fallbackErr.SetFallbackRoutingInfo(provider, model)
 		if fallbackErr == nil {
-			raksha.logger.Debug(fmt.Sprintf("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model))
+			gateway.logger.Debug(fmt.Sprintf("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model))
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(fallbacks)))
 			tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			return result, nil
@@ -5059,7 +5059,7 @@ func (raksha *Raksha) handleRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 
 		// Check if we should continue with more fallbacks
-		if !raksha.shouldContinueWithFallbacks(fallback, fallbackErr) {
+		if !gateway.shouldContinueWithFallbacks(fallback, fallbackErr) {
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Fallback %s/%s failed (%s); halting further fallbacks", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr)))
 			return nil, fallbackErr
 		}
@@ -5076,27 +5076,27 @@ func (raksha *Raksha) handleRequest(ctx *schemas.RakshaContext, req *schemas.Rak
 // It handles plugin hooks, request validation, response processing, and fallback providers.
 // If the primary provider fails, it will try each fallback provider in order until one succeeds.
 // It is the wrapper for all streaming public API methods.
-func (raksha *Raksha) handleStreamRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-	defer raksha.releaseRakshaRequest(req)
+func (gateway *Gateway) handleStreamRequest(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+	defer gateway.releaseGatewayRequest(req)
 	provider, model, fallbacks := req.GetRequestFields()
 
 	// Handle nil context early to prevent blocking
 	if ctx == nil {
-		ctx = raksha.ctx
+		ctx = gateway.ctx
 	}
 
 	// Try the primary provider first
-	ctx.SetValue(schemas.RakshaContextKeyFallbackIndex, 0)
+	ctx.SetValue(schemas.GatewayContextKeyFallbackIndex, 0)
 	// Ensure request ID is set in context before PreHooks
-	if _, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); !ok {
+	if _, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string); !ok {
 		requestID := uuid.New().String()
-		ctx.SetValue(schemas.RakshaContextKeyRequestID, requestID)
+		ctx.SetValue(schemas.GatewayContextKeyRequestID, requestID)
 	}
 
 	// PreRequestHook: once-per-request phase. See handleRequest for semantics.
-	preReqPipeline := raksha.getPluginPipeline()
+	preReqPipeline := gateway.getPluginPipeline()
 	preReqPipeline.RunPreRequestHooks(ctx, req)
-	raksha.releasePluginPipeline(preReqPipeline)
+	gateway.releasePluginPipeline(preReqPipeline)
 	// Re-read after PreRequestHook — provider/model/fallbacks may have changed.
 	provider, model, fallbacks = req.GetRequestFields()
 	// Empty provider after PreRequestHook means no plugin
@@ -5109,22 +5109,22 @@ func (raksha *Raksha) handleStreamRequest(ctx *schemas.RakshaContext, req *schem
 		return nil, err
 	}
 
-	raksha.logger.Debug(fmt.Sprintf("primary provider %s with model %s and %d fallbacks", provider, model, len(fallbacks)))
+	gateway.logger.Debug(fmt.Sprintf("primary provider %s with model %s and %d fallbacks", provider, model, len(fallbacks)))
 
-	primaryResult, primaryErr := raksha.tryStreamRequest(ctx, req)
+	primaryResult, primaryErr := gateway.tryStreamRequest(ctx, req)
 	if primaryErr != nil {
 		if primaryErr.Error != nil {
-			raksha.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %s", provider, model, primaryErr.Error.Message))
+			gateway.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %s", provider, model, primaryErr.Error.Message))
 		} else {
-			raksha.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %v", provider, model, primaryErr))
+			gateway.logger.Debug(fmt.Sprintf("primary provider %s with model %s returned error: %v", provider, model, primaryErr))
 		}
 		if len(fallbacks) > 0 {
-			raksha.logger.Debug(fmt.Sprintf("check if we should try %d fallbacks", len(fallbacks)))
+			gateway.logger.Debug(fmt.Sprintf("check if we should try %d fallbacks", len(fallbacks)))
 		}
 	}
 
 	// Check if we should proceed with fallbacks
-	shouldTryFallbacks := raksha.shouldTryFallbacks(req, primaryErr)
+	shouldTryFallbacks := gateway.shouldTryFallbacks(req, primaryErr)
 	if !shouldTryFallbacks {
 		return primaryResult, primaryErr
 	}
@@ -5132,28 +5132,28 @@ func (raksha *Raksha) handleStreamRequest(ctx *schemas.RakshaContext, req *schem
 	// Mirror handleRequest: register core on the engines-used list and post
 	// the primary-failure entry to the routing engine log trail before
 	// iterating fallbacks. See handleRequest for the rationale.
-	schemas.AppendToContextList(ctx, schemas.RakshaContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
+	schemas.AppendToContextList(ctx, schemas.GatewayContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
 	ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Primary %s/%s failed (%s); evaluating %d configured fallback(s)", provider, model, routingErrorSummary(primaryErr), len(fallbacks)))
 
 	lastErr := primaryErr
 
 	// Try fallbacks in order
 	for i, fallback := range fallbacks {
-		ctx.SetValue(schemas.RakshaContextKeyFallbackIndex, i+1)
+		ctx.SetValue(schemas.GatewayContextKeyFallbackIndex, i+1)
 		ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Trying fallback %d/%d: %s/%s (previous attempt failed: %s)", i+1, len(fallbacks), fallback.Provider, fallback.Model, routingErrorSummary(lastErr)))
-		ctx.SetValue(schemas.RakshaContextKeyFallbackRequestID, uuid.New().String())
+		ctx.SetValue(schemas.GatewayContextKeyFallbackRequestID, uuid.New().String())
 		clearCtxForFallback(ctx)
 
 		// Start span for fallback attempt
-		tracer := raksha.getTracer()
+		tracer := gateway.getTracer()
 		spanCtx, handle := tracer.StartSpan(ctx, fmt.Sprintf("fallback.%s.%s", fallback.Provider, fallback.Model), schemas.SpanKindFallback)
 		tracer.SetAttribute(handle, schemas.AttrProviderName, schemas.OTelProviderName(fallback.Provider))
-		tracer.SetAttribute(handle, schemas.AttrRakshaProviderName, string(fallback.Provider)) // raw Raksha short name, mirrors canonical gen_ai.provider.name
+		tracer.SetAttribute(handle, schemas.AttrGatewayProviderName, string(fallback.Provider)) // raw Gateway short name, mirrors canonical gen_ai.provider.name
 		tracer.SetAttribute(handle, schemas.AttrRequestModel, fallback.Model)
 		tracer.SetAttribute(handle, "fallback.index", i+1)
-		ctx.SetValue(schemas.RakshaContextKeySpanID, spanCtx.Value(schemas.RakshaContextKeySpanID))
+		ctx.SetValue(schemas.GatewayContextKeySpanID, spanCtx.Value(schemas.GatewayContextKeySpanID))
 
-		fallbackReq := raksha.prepareFallbackRequest(req, fallback)
+		fallbackReq := gateway.prepareFallbackRequest(req, fallback)
 		if fallbackReq == nil {
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelWarn, fmt.Sprintf("Fallback %s/%s skipped: missing provider config", fallback.Provider, fallback.Model))
 			tracer.SetAttribute(handle, "error", "fallback request preparation failed")
@@ -5162,7 +5162,7 @@ func (raksha *Raksha) handleStreamRequest(ctx *schemas.RakshaContext, req *schem
 		}
 
 		// Try the fallback provider
-		result, fallbackErr := raksha.tryStreamRequest(ctx, fallbackReq)
+		result, fallbackErr := gateway.tryStreamRequest(ctx, fallbackReq)
 		// Layer on Primary/IsFallback on errors. For the success case the
 		// result is a chan of stream chunks emitted asynchronously — those
 		// chunks already carry per-attempt RoutingInfo populated upstream,
@@ -5170,7 +5170,7 @@ func (raksha *Raksha) handleStreamRequest(ctx *schemas.RakshaContext, req *schem
 		// the channel. See SetFallbackRoutingInfo doc.
 		fallbackErr.SetFallbackRoutingInfo(provider, model)
 		if fallbackErr == nil {
-			raksha.logger.Debug(fmt.Sprintf("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model))
+			gateway.logger.Debug(fmt.Sprintf("successfully used fallback provider %s with model %s", fallback.Provider, fallback.Model))
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request served by fallback %s/%s (attempt %d/%d)", fallback.Provider, fallback.Model, i+1, len(fallbacks)))
 			tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			return result, nil
@@ -5183,7 +5183,7 @@ func (raksha *Raksha) handleStreamRequest(ctx *schemas.RakshaContext, req *schem
 		tracer.EndSpan(handle, schemas.SpanStatusError, "fallback failed")
 
 		// Check if we should continue with more fallbacks
-		if !raksha.shouldContinueWithFallbacks(fallback, fallbackErr) {
+		if !gateway.shouldContinueWithFallbacks(fallback, fallbackErr) {
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Fallback %s/%s failed (%s); halting further fallbacks", fallback.Provider, fallback.Model, routingErrorSummary(fallbackErr)))
 			return nil, fallbackErr
 		}
@@ -5198,35 +5198,35 @@ func (raksha *Raksha) handleStreamRequest(ctx *schemas.RakshaContext, req *schem
 
 // tryRequest is a generic function that handles common request processing logic
 // It consolidates queue setup, plugin pipeline execution, enqueue logic, and response handling
-func (raksha *Raksha) tryRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaResponse, *schemas.RakshaError) {
+func (gateway *Gateway) tryRequest(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayResponse, *schemas.GatewayError) {
 	provider, model, _ := req.GetRequestFields()
-	pq, err := raksha.getProviderQueue(provider)
+	pq, err := gateway.getProviderQueue(provider)
 	if err != nil {
-		rakshaErr := newRakshaError(err)
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gatewayErr := newGatewayError(err)
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	}
 
 	// Add MCP tools to request if MCP is configured and requested
-	if raksha.MCPManager != nil {
-		req = raksha.MCPManager.AddToolsToRequest(ctx, req)
+	if gateway.MCPManager != nil {
+		req = gateway.MCPManager.AddToolsToRequest(ctx, req)
 	}
 
-	tracer := raksha.getTracer()
+	tracer := gateway.getTracer()
 	if tracer == nil {
-		rakshaErr := newRakshaErrorFromMsg("tracer not found in context")
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gatewayErr := newGatewayErrorFromMsg("tracer not found in context")
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	}
 
 	// Store tracer in context BEFORE calling requestHandler, so streaming goroutines
 	// have access to it for completing deferred spans when the stream ends.
 	// The streaming goroutine captures the context when it starts, so these values
 	// must be set before requestHandler() is called.
-	ctx.SetValue(schemas.RakshaContextKeyTracer, tracer)
+	ctx.SetValue(schemas.GatewayContextKeyTracer, tracer)
 
-	pipeline := raksha.getPluginPipeline()
-	defer raksha.releasePluginPipeline(pipeline)
+	pipeline := gateway.getPluginPipeline()
+	defer gateway.releasePluginPipeline(pipeline)
 
 	// RequestType, Provider, OriginalModelRequested, and ResolvedModelUsed are always
 	// overwritten around RunPostLLMHooks — plugin modifications to these 4 fields are
@@ -5236,43 +5236,43 @@ func (raksha *Raksha) tryRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 		// Handle short-circuit with response (success case)
 		if shortCircuit.Response != nil {
 			shortCircuit.Response.PopulateExtraFields(req.RequestType, provider, model, model)
-			resp, rakshaErr := pipeline.RunPostLLMHooks(ctx, shortCircuit.Response, nil, preCount)
-			if rakshaErr != nil {
-				rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			resp, gatewayErr := pipeline.RunPostLLMHooks(ctx, shortCircuit.Response, nil, preCount)
+			if gatewayErr != nil {
+				gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
 			} else if resp != nil {
 				resp.PopulateExtraFields(req.RequestType, provider, model, model)
 			}
 			drainAndAttachPluginLogs(ctx)
-			if rakshaErr != nil {
-				return nil, rakshaErr
+			if gatewayErr != nil {
+				return nil, gatewayErr
 			}
 			return resp, nil
 		}
 		// Handle short-circuit with error
 		if shortCircuit.Error != nil {
 			shortCircuit.Error.PopulateExtraFields(req.RequestType, provider, model, model)
-			resp, rakshaErr := pipeline.RunPostLLMHooks(ctx, nil, shortCircuit.Error, preCount)
-			if rakshaErr != nil {
-				rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			resp, gatewayErr := pipeline.RunPostLLMHooks(ctx, nil, shortCircuit.Error, preCount)
+			if gatewayErr != nil {
+				gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
 			} else if resp != nil {
 				resp.PopulateExtraFields(req.RequestType, provider, model, model)
 			}
 			drainAndAttachPluginLogs(ctx)
-			if rakshaErr != nil {
-				return nil, rakshaErr
+			if gatewayErr != nil {
+				return nil, gatewayErr
 			}
 			return resp, nil
 		}
 	}
 	if preReq == nil {
-		rakshaErr := newRakshaErrorFromMsg("raksha request after plugin hooks cannot be nil")
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gatewayErr := newGatewayErrorFromMsg("gateway request after plugin hooks cannot be nil")
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	}
 
 	provider, model, _ = preReq.GetRequestFields()
 
-	msg := raksha.getChannelMessage(*preReq)
+	msg := gateway.getChannelMessage(*preReq)
 	msg.Context = ctx
 
 	// If the queue is closing, check whether the provider was updated (new queue
@@ -5284,16 +5284,16 @@ func (raksha *Raksha) tryRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 	// just removed by RemoveProvider if the account config still exists.
 	if pq.isClosing() {
 		var reroutedPq *ProviderQueue
-		if val, ok := raksha.requestQueues.Load(provider); ok {
+		if val, ok := gateway.requestQueues.Load(provider); ok {
 			if candidate := val.(*ProviderQueue); candidate != pq && !candidate.isClosing() {
 				reroutedPq = candidate
 			}
 		}
 		if reroutedPq == nil {
-			raksha.releaseChannelMessage(msg)
-			rakshaErr := newRakshaErrorFromMsg("provider is shutting down")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+			gateway.releaseChannelMessage(msg)
+			gatewayErr := newGatewayErrorFromMsg("provider is shutting down")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		}
 		pq = reroutedPq
 	}
@@ -5303,67 +5303,67 @@ func (raksha *Raksha) tryRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 	case pq.queue <- msg:
 		// Message was sent successfully
 	case <-pq.done:
-		raksha.releaseChannelMessage(msg)
-		rakshaErr := newRakshaErrorFromMsg("provider is shutting down")
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gateway.releaseChannelMessage(msg)
+		gatewayErr := newGatewayErrorFromMsg("provider is shutting down")
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	case <-ctx.Done():
-		raksha.releaseChannelMessage(msg)
-		rakshaErr := newRakshaCtxDoneError(ctx, "while waiting for queue space")
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gateway.releaseChannelMessage(msg)
+		gatewayErr := newGatewayCtxDoneError(ctx, "while waiting for queue space")
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	default:
-		if raksha.dropExcessRequests.Load() {
-			raksha.releaseChannelMessage(msg)
-			raksha.logger.Warn("request dropped: queue is full, please increase the queue size or set dropExcessRequests to false")
-			rakshaErr := newRakshaErrorFromMsg("request dropped: queue is full")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+		if gateway.dropExcessRequests.Load() {
+			gateway.releaseChannelMessage(msg)
+			gateway.logger.Warn("request dropped: queue is full, please increase the queue size or set dropExcessRequests to false")
+			gatewayErr := newGatewayErrorFromMsg("request dropped: queue is full")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		}
 		// Re-check closing flag before blocking send (lock-free atomic check)
 		if pq.isClosing() {
-			raksha.releaseChannelMessage(msg)
-			rakshaErr := newRakshaErrorFromMsg("provider is shutting down")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+			gateway.releaseChannelMessage(msg)
+			gatewayErr := newGatewayErrorFromMsg("provider is shutting down")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		}
 		select {
 		case pq.queue <- msg:
 			// Message was sent successfully
 		case <-pq.done:
-			raksha.releaseChannelMessage(msg)
-			rakshaErr := newRakshaErrorFromMsg("provider is shutting down")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+			gateway.releaseChannelMessage(msg)
+			gatewayErr := newGatewayErrorFromMsg("provider is shutting down")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		case <-ctx.Done():
-			raksha.releaseChannelMessage(msg)
-			rakshaErr := newRakshaCtxDoneError(ctx, "while waiting for queue space")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+			gateway.releaseChannelMessage(msg)
+			gatewayErr := newGatewayCtxDoneError(ctx, "while waiting for queue space")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		}
 	}
 
-	var result *schemas.RakshaResponse
-	var resp *schemas.RakshaResponse
-	pluginCount := len(*raksha.llmPlugins.Load())
+	var result *schemas.GatewayResponse
+	var resp *schemas.GatewayResponse
+	pluginCount := len(*gateway.llmPlugins.Load())
 	select {
 	case result = <-msg.Response:
-		resp, rakshaErr := pipeline.RunPostLLMHooks(msg.Context, result, nil, pluginCount)
-		if rakshaErr != nil {
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		resp, gatewayErr := pipeline.RunPostLLMHooks(msg.Context, result, nil, pluginCount)
+		if gatewayErr != nil {
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
 			resp.PopulateExtraFields(req.RequestType, provider, model, model)
 		}
 		drainAndAttachPluginLogs(msg.Context)
-		if rakshaErr != nil {
-			raksha.releaseChannelMessage(msg)
-			return nil, rakshaErr
+		if gatewayErr != nil {
+			gateway.releaseChannelMessage(msg)
+			return nil, gatewayErr
 		}
-		raksha.releaseChannelMessage(msg)
+		gateway.releaseChannelMessage(msg)
 		// Strip raw fields that were captured for logging but should not reach the client.
 		if resp != nil {
-			dropReq, _ := ctx.Value(schemas.RakshaContextKeyDropRawRequestFromClient).(bool)
-			dropResp, _ := ctx.Value(schemas.RakshaContextKeyDropRawResponseFromClient).(bool)
+			dropReq, _ := ctx.Value(schemas.GatewayContextKeyDropRawRequestFromClient).(bool)
+			dropResp, _ := ctx.Value(schemas.GatewayContextKeyDropRawResponseFromClient).(bool)
 			if dropReq || dropResp {
 				extraField := resp.GetExtraFields()
 				if dropReq {
@@ -5375,26 +5375,26 @@ func (raksha *Raksha) tryRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 			}
 		}
 		return resp, nil
-	case rakshaErrVal := <-msg.Err:
-		rakshaErrPtr := &rakshaErrVal
-		resp, rakshaErrPtr = pipeline.RunPostLLMHooks(msg.Context, nil, rakshaErrPtr, pluginCount)
-		if rakshaErrPtr != nil {
-			rakshaErrPtr.PopulateExtraFields(req.RequestType, provider, model, model)
+	case gatewayErrVal := <-msg.Err:
+		gatewayErrPtr := &gatewayErrVal
+		resp, gatewayErrPtr = pipeline.RunPostLLMHooks(msg.Context, nil, gatewayErrPtr, pluginCount)
+		if gatewayErrPtr != nil {
+			gatewayErrPtr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if resp != nil {
 			resp.PopulateExtraFields(req.RequestType, provider, model, model)
 		}
 		drainAndAttachPluginLogs(msg.Context)
-		raksha.releaseChannelMessage(msg)
+		gateway.releaseChannelMessage(msg)
 		// Strip raw fields on error path too.
-		dropReq, _ := ctx.Value(schemas.RakshaContextKeyDropRawRequestFromClient).(bool)
-		dropResp, _ := ctx.Value(schemas.RakshaContextKeyDropRawResponseFromClient).(bool)
+		dropReq, _ := ctx.Value(schemas.GatewayContextKeyDropRawRequestFromClient).(bool)
+		dropResp, _ := ctx.Value(schemas.GatewayContextKeyDropRawResponseFromClient).(bool)
 		if dropReq || dropResp {
-			if rakshaErrPtr != nil {
+			if gatewayErrPtr != nil {
 				if dropReq {
-					rakshaErrPtr.ExtraFields.RawRequest = nil
+					gatewayErrPtr.ExtraFields.RawRequest = nil
 				}
 				if dropResp {
-					rakshaErrPtr.ExtraFields.RawResponse = nil
+					gatewayErrPtr.ExtraFields.RawResponse = nil
 				}
 			}
 			if resp != nil {
@@ -5407,8 +5407,8 @@ func (raksha *Raksha) tryRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 				}
 			}
 		}
-		if rakshaErrPtr != nil {
-			return nil, rakshaErrPtr
+		if gatewayErrPtr != nil {
+			return nil, gatewayErrPtr
 		}
 		return resp, nil
 	case <-ctx.Done():
@@ -5420,57 +5420,57 @@ func (raksha *Raksha) tryRequest(ctx *schemas.RakshaContext, req *schemas.Raksha
 		// pool and is GC'd. That is intentional: a small pool leak on cancellation
 		// is far safer than corrupting another request's channels.
 		provider, model, _ := req.GetRequestFields()
-		rakshaErr := newRakshaCtxDoneError(ctx, "waiting for provider response")
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gatewayErr := newGatewayCtxDoneError(ctx, "waiting for provider response")
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	}
 }
 
 // tryStreamRequest is a generic function that handles common request processing logic
 // It consolidates queue setup, plugin pipeline execution, enqueue logic, and response handling
-func (raksha *Raksha) tryStreamRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (gateway *Gateway) tryStreamRequest(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	provider, model, _ := req.GetRequestFields()
-	pq, err := raksha.getProviderQueue(provider)
+	pq, err := gateway.getProviderQueue(provider)
 	if err != nil {
-		rakshaErr := newRakshaError(err)
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gatewayErr := newGatewayError(err)
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	}
 
 	// Add MCP tools to request if MCP is configured and requested
-	if req.RequestType != schemas.SpeechStreamRequest && req.RequestType != schemas.TranscriptionStreamRequest && raksha.MCPManager != nil {
-		req = raksha.MCPManager.AddToolsToRequest(ctx, req)
+	if req.RequestType != schemas.SpeechStreamRequest && req.RequestType != schemas.TranscriptionStreamRequest && gateway.MCPManager != nil {
+		req = gateway.MCPManager.AddToolsToRequest(ctx, req)
 	}
 
-	tracer := raksha.getTracer()
+	tracer := gateway.getTracer()
 	if tracer == nil {
-		rakshaErr := newRakshaErrorFromMsg("tracer not found in context")
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gatewayErr := newGatewayErrorFromMsg("tracer not found in context")
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	}
 
 	// Store tracer in context BEFORE calling RunLLMPreHooks, so plugins and streaming goroutines
 	// have access to it for completing deferred spans when the stream ends.
 	// The streaming goroutine captures the context when it starts, so these values
 	// must be set before requestHandler() is called.
-	ctx.SetValue(schemas.RakshaContextKeyTracer, tracer)
+	ctx.SetValue(schemas.GatewayContextKeyTracer, tracer)
 
 	// Ensure traceID exists so the logging plugin can create a stream accumulator
 	// in PreLLMHook and accumulate chunks in PostLLMHook. For HTTP handler requests the
 	// tracing middleware already sets this; for WebSocket bridge and Go SDK callers it
 	// may be absent.
-	if _, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); !ok {
+	if _, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); !ok {
 		traceID := tracer.CreateTrace("")
 		if traceID != "" {
-			ctx.SetValue(schemas.RakshaContextKeyTraceID, traceID)
+			ctx.SetValue(schemas.GatewayContextKeyTraceID, traceID)
 		}
 	}
 
-	pipeline := raksha.getPluginPipeline()
+	pipeline := gateway.getPluginPipeline()
 	releasePipeline := true
 	defer func() {
 		if releasePipeline {
-			raksha.releasePluginPipeline(pipeline)
+			gateway.releasePluginPipeline(pipeline)
 		}
 	}()
 
@@ -5482,42 +5482,42 @@ func (raksha *Raksha) tryStreamRequest(ctx *schemas.RakshaContext, req *schemas.
 		// Handle short-circuit with response (success case)
 		if shortCircuit.Response != nil {
 			shortCircuit.Response.PopulateExtraFields(req.RequestType, provider, model, model)
-			resp, rakshaErr := pipeline.RunPostLLMHooks(ctx, shortCircuit.Response, nil, preCount)
-			if rakshaErr != nil {
-				rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			resp, gatewayErr := pipeline.RunPostLLMHooks(ctx, shortCircuit.Response, nil, preCount)
+			if gatewayErr != nil {
+				gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
 			} else if resp != nil {
 				resp.PopulateExtraFields(req.RequestType, provider, model, model)
 			}
 			drainAndAttachPluginLogs(ctx)
-			if rakshaErr != nil {
-				return nil, rakshaErr
+			if gatewayErr != nil {
+				return nil, gatewayErr
 			}
-			return newRakshaMessageChan(resp), nil
+			return newGatewayMessageChan(resp), nil
 		}
 		// Handle short-circuit with stream
 		if shortCircuit.Stream != nil {
-			outputStream := make(chan *schemas.RakshaStreamChunk)
+			outputStream := make(chan *schemas.GatewayStreamChunk)
 			releasePipeline = false // pipeline is released inside the goroutine after stream drains
 
-			// Snapshot RequestType before the closure. The *RakshaRequest is released
-			// back to rakshaRequestPool when handleStreamRequest returns (via defer);
+			// Snapshot RequestType before the closure. The *GatewayRequest is released
+			// back to gatewayRequestPool when handleStreamRequest returns (via defer);
 			// a concurrent request can reuse it and overwrite RequestType.
 			shortCircuitRequestType := req.RequestType
 			// Create a post hook runner cause pipeline object is put back in the pool on defer
-			pipelinePostHookRunner := func(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError) {
+			pipelinePostHookRunner := func(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError) {
 				if result != nil {
 					result.PopulateExtraFields(shortCircuitRequestType, provider, model, model)
 				}
 				if err != nil {
 					err.PopulateExtraFields(shortCircuitRequestType, provider, model, model)
 				}
-				resp, rakshaErr := pipeline.RunPostLLMHooks(ctx, result, err, preCount)
+				resp, gatewayErr := pipeline.RunPostLLMHooks(ctx, result, err, preCount)
 				if IsFinalChunk(ctx) {
 					drainAndAttachPluginLogs(ctx)
 				}
-				if rakshaErr != nil {
-					rakshaErr.PopulateExtraFields(shortCircuitRequestType, provider, model, model)
-					return nil, rakshaErr
+				if gatewayErr != nil {
+					gatewayErr.PopulateExtraFields(shortCircuitRequestType, provider, model, model)
+					return nil, gatewayErr
 				} else if resp != nil {
 					resp.PopulateExtraFields(shortCircuitRequestType, provider, model, model)
 				}
@@ -5528,7 +5528,7 @@ func (raksha *Raksha) tryStreamRequest(ctx *schemas.RakshaContext, req *schemas.
 				defer func() {
 					drainAndAttachPluginLogs(ctx) // ensure logs are drained even if stream closes without a final chunk
 					pipeline.FinalizeStreamingPostHookSpans(ctx)
-					raksha.releasePluginPipeline(pipeline)
+					gateway.releasePluginPipeline(pipeline)
 				}()
 				defer providerUtils.CloseStream(ctx, outputStream)
 
@@ -5537,28 +5537,28 @@ func (raksha *Raksha) tryStreamRequest(ctx *schemas.RakshaContext, req *schemas.
 						continue
 					}
 
-					rakshaResponse := &schemas.RakshaResponse{}
-					if streamMsg.RakshaTextCompletionResponse != nil {
-						rakshaResponse.TextCompletionResponse = streamMsg.RakshaTextCompletionResponse
+					gatewayResponse := &schemas.GatewayResponse{}
+					if streamMsg.GatewayTextCompletionResponse != nil {
+						gatewayResponse.TextCompletionResponse = streamMsg.GatewayTextCompletionResponse
 					}
-					if streamMsg.RakshaChatResponse != nil {
-						rakshaResponse.ChatResponse = streamMsg.RakshaChatResponse
+					if streamMsg.GatewayChatResponse != nil {
+						gatewayResponse.ChatResponse = streamMsg.GatewayChatResponse
 					}
-					if streamMsg.RakshaResponsesStreamResponse != nil {
-						rakshaResponse.ResponsesStreamResponse = streamMsg.RakshaResponsesStreamResponse
+					if streamMsg.GatewayResponsesStreamResponse != nil {
+						gatewayResponse.ResponsesStreamResponse = streamMsg.GatewayResponsesStreamResponse
 					}
-					if streamMsg.RakshaSpeechStreamResponse != nil {
-						rakshaResponse.SpeechStreamResponse = streamMsg.RakshaSpeechStreamResponse
+					if streamMsg.GatewaySpeechStreamResponse != nil {
+						gatewayResponse.SpeechStreamResponse = streamMsg.GatewaySpeechStreamResponse
 					}
-					if streamMsg.RakshaTranscriptionStreamResponse != nil {
-						rakshaResponse.TranscriptionStreamResponse = streamMsg.RakshaTranscriptionStreamResponse
+					if streamMsg.GatewayTranscriptionStreamResponse != nil {
+						gatewayResponse.TranscriptionStreamResponse = streamMsg.GatewayTranscriptionStreamResponse
 					}
-					if streamMsg.RakshaImageGenerationStreamResponse != nil {
-						rakshaResponse.ImageGenerationStreamResponse = streamMsg.RakshaImageGenerationStreamResponse
+					if streamMsg.GatewayImageGenerationStreamResponse != nil {
+						gatewayResponse.ImageGenerationStreamResponse = streamMsg.GatewayImageGenerationStreamResponse
 					}
 
 					// Run post hooks on the stream message
-					processedResponse, processedError := pipelinePostHookRunner(ctx, rakshaResponse, streamMsg.RakshaError)
+					processedResponse, processedError := pipelinePostHookRunner(ctx, gatewayResponse, streamMsg.GatewayError)
 
 					// Build the client-facing chunk via the shared helper, which strips raw
 					// request/response fields when in logging-only mode without mutating the
@@ -5585,28 +5585,28 @@ func (raksha *Raksha) tryStreamRequest(ctx *schemas.RakshaContext, req *schemas.
 		// Handle short-circuit with error
 		if shortCircuit.Error != nil {
 			shortCircuit.Error.PopulateExtraFields(req.RequestType, provider, model, model)
-			resp, rakshaErr := pipeline.RunPostLLMHooks(ctx, nil, shortCircuit.Error, preCount)
-			if rakshaErr != nil {
-				rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			resp, gatewayErr := pipeline.RunPostLLMHooks(ctx, nil, shortCircuit.Error, preCount)
+			if gatewayErr != nil {
+				gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
 			} else if resp != nil {
 				resp.PopulateExtraFields(req.RequestType, provider, model, model)
 			}
 			drainAndAttachPluginLogs(ctx)
-			if rakshaErr != nil {
-				return nil, rakshaErr
+			if gatewayErr != nil {
+				return nil, gatewayErr
 			}
-			return newRakshaMessageChan(resp), nil
+			return newGatewayMessageChan(resp), nil
 		}
 	}
 	if preReq == nil {
-		rakshaErr := newRakshaErrorFromMsg("raksha request after plugin hooks cannot be nil")
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gatewayErr := newGatewayErrorFromMsg("gateway request after plugin hooks cannot be nil")
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	}
 
 	provider, model, _ = preReq.GetRequestFields()
 
-	msg := raksha.getChannelMessage(*preReq)
+	msg := gateway.getChannelMessage(*preReq)
 	msg.Context = ctx
 
 	// If the queue is closing, check whether the provider was updated (new queue
@@ -5618,16 +5618,16 @@ func (raksha *Raksha) tryStreamRequest(ctx *schemas.RakshaContext, req *schemas.
 	// just removed by RemoveProvider if the account config still exists.
 	if pq.isClosing() {
 		var reroutedPq *ProviderQueue
-		if val, ok := raksha.requestQueues.Load(provider); ok {
+		if val, ok := gateway.requestQueues.Load(provider); ok {
 			if candidate := val.(*ProviderQueue); candidate != pq && !candidate.isClosing() {
 				reroutedPq = candidate
 			}
 		}
 		if reroutedPq == nil {
-			raksha.releaseChannelMessage(msg)
-			rakshaErr := newRakshaErrorFromMsg("provider is shutting down")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+			gateway.releaseChannelMessage(msg)
+			gatewayErr := newGatewayErrorFromMsg("provider is shutting down")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		}
 		pq = reroutedPq
 	}
@@ -5637,79 +5637,79 @@ func (raksha *Raksha) tryStreamRequest(ctx *schemas.RakshaContext, req *schemas.
 	case pq.queue <- msg:
 		// Message was sent successfully
 	case <-pq.done:
-		raksha.releaseChannelMessage(msg)
-		rakshaErr := newRakshaErrorFromMsg("provider is shutting down")
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gateway.releaseChannelMessage(msg)
+		gatewayErr := newGatewayErrorFromMsg("provider is shutting down")
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	case <-ctx.Done():
-		raksha.releaseChannelMessage(msg)
-		rakshaErr := newRakshaCtxDoneError(ctx, "while waiting for queue space")
-		rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-		return nil, rakshaErr
+		gateway.releaseChannelMessage(msg)
+		gatewayErr := newGatewayCtxDoneError(ctx, "while waiting for queue space")
+		gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+		return nil, gatewayErr
 	default:
-		if raksha.dropExcessRequests.Load() {
-			raksha.releaseChannelMessage(msg)
-			raksha.logger.Warn("request dropped: queue is full, please increase the queue size or set dropExcessRequests to false")
-			rakshaErr := newRakshaErrorFromMsg("request dropped: queue is full")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+		if gateway.dropExcessRequests.Load() {
+			gateway.releaseChannelMessage(msg)
+			gateway.logger.Warn("request dropped: queue is full, please increase the queue size or set dropExcessRequests to false")
+			gatewayErr := newGatewayErrorFromMsg("request dropped: queue is full")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		}
 		// Re-check closing flag before blocking send (lock-free atomic check)
 		if pq.isClosing() {
-			raksha.releaseChannelMessage(msg)
-			rakshaErr := newRakshaErrorFromMsg("provider is shutting down")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+			gateway.releaseChannelMessage(msg)
+			gatewayErr := newGatewayErrorFromMsg("provider is shutting down")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		}
 		select {
 		case pq.queue <- msg:
 			// Message was sent successfully
 		case <-pq.done:
-			raksha.releaseChannelMessage(msg)
-			rakshaErr := newRakshaErrorFromMsg("provider is shutting down")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+			gateway.releaseChannelMessage(msg)
+			gatewayErr := newGatewayErrorFromMsg("provider is shutting down")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		case <-ctx.Done():
-			raksha.releaseChannelMessage(msg)
-			rakshaErr := newRakshaCtxDoneError(ctx, "while waiting for queue space")
-			rakshaErr.PopulateExtraFields(req.RequestType, provider, model, model)
-			return nil, rakshaErr
+			gateway.releaseChannelMessage(msg)
+			gatewayErr := newGatewayCtxDoneError(ctx, "while waiting for queue space")
+			gatewayErr.PopulateExtraFields(req.RequestType, provider, model, model)
+			return nil, gatewayErr
 		}
 	}
 
 	select {
 	case stream := <-msg.ResponseStream:
-		raksha.releaseChannelMessage(msg)
+		gateway.releaseChannelMessage(msg)
 		return stream, nil
-	case rakshaErrVal := <-msg.Err:
-		if rakshaErrVal.Error != nil {
-			raksha.logger.Debug("error while executing stream request: %s", rakshaErrVal.Error.Message)
+	case gatewayErrVal := <-msg.Err:
+		if gatewayErrVal.Error != nil {
+			gateway.logger.Debug("error while executing stream request: %s", gatewayErrVal.Error.Message)
 		} else {
-			raksha.logger.Debug("error while executing stream request: %+v", rakshaErrVal)
+			gateway.logger.Debug("error while executing stream request: %+v", gatewayErrVal)
 		}
 		// Marking final chunk
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 		// On error we will complete post-hooks
-		recoveredResp, recoveredErr := pipeline.RunPostLLMHooks(ctx, nil, &rakshaErrVal, len(*raksha.llmPlugins.Load()))
+		recoveredResp, recoveredErr := pipeline.RunPostLLMHooks(ctx, nil, &gatewayErrVal, len(*gateway.llmPlugins.Load()))
 		if recoveredErr != nil {
 			recoveredErr.PopulateExtraFields(req.RequestType, provider, model, model)
 		} else if recoveredResp != nil {
 			recoveredResp.PopulateExtraFields(req.RequestType, provider, model, model)
 		}
 		drainAndAttachPluginLogs(ctx)
-		raksha.releaseChannelMessage(msg)
+		gateway.releaseChannelMessage(msg)
 		if recoveredErr != nil {
 			return nil, recoveredErr
 		}
 		if recoveredResp != nil {
-			return newRakshaMessageChan(recoveredResp), nil
+			return newGatewayMessageChan(recoveredResp), nil
 		}
-		return nil, &rakshaErrVal
+		return nil, &gatewayErrVal
 	case <-ctx.Done():
 		// Do NOT releaseChannelMessage here — see the identical note in tryRequest.
 		// Worker still holds msg.ResponseStream/msg.Err; releasing now corrupts the
 		// next request that reuses those pooled channels.
-		return nil, newRakshaCtxDoneError(ctx, "while waiting for stream response")
+		return nil, newGatewayCtxDoneError(ctx, "while waiting for stream response")
 	}
 }
 
@@ -5717,7 +5717,7 @@ func (raksha *Raksha) tryStreamRequest(ctx *schemas.RakshaContext, req *schemas.
 // has been marked permanently dead via deadKeyIDs (or, for a fixed/sticky key, when that key
 // is itself dead). executeRequestWithRetries detects this via errors.Is and surfaces it as a
 // synthetic 502 upstream_credentials_exhausted, rather than bubbling the raw 401/403 which
-// would falsely suggest the *caller's* Raksha API key is bad. Any other error from the
+// would falsely suggest the *caller's* Gateway API key is bad. Any other error from the
 // keyProvider (custom selector failure, etc.) is propagated unchanged.
 var errAllKeysDead = errors.New("all configured keys returned permanent per-key errors (401/402/403)")
 
@@ -5728,7 +5728,7 @@ var errAllKeysFiltered = errors.New("all eligible keys are temporarily suppresse
 
 // executeRequestWithRetries is a generic function that handles common request processing logic.
 // It consolidates retry logic, backoff calculation, error handling, and key rotation.
-// It is not a raksha method because interface methods in go cannot be generic.
+// It is not a gateway method because interface methods in go cannot be generic.
 //
 // keyProvider, when non-nil, is called on the first attempt and again whenever a per-key error
 // triggers a rotation. It receives two sets of key IDs to exclude:
@@ -5740,16 +5740,16 @@ var errAllKeysFiltered = errors.New("all eligible keys are temporarily suppresse
 //
 // Network/5xx errors reuse the same key since they are transient server issues, not per-key.
 func executeRequestWithRetries[T any](
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	config *schemas.ProviderConfig,
-	requestHandler func(key schemas.Key) (T, *schemas.RakshaError),
+	requestHandler func(key schemas.Key) (T, *schemas.GatewayError),
 	keyProvider func(usedKeyIDs, deadKeyIDs map[string]bool) (schemas.Key, error),
 	requestType schemas.RequestType,
 	providerKey schemas.ModelProvider,
 	model string,
-	req *schemas.RakshaRequest,
+	req *schemas.GatewayRequest,
 	logger schemas.Logger,
-) (result T, rakshaError *schemas.RakshaError) {
+) (result T, gatewayError *schemas.GatewayError) {
 	var attempts int
 
 	// Emit the terminal routing-engine entry on every return path — including
@@ -5762,16 +5762,16 @@ func executeRequestWithRetries[T any](
 		if attempts <= 0 {
 			return
 		}
-		schemas.AppendToContextList(ctx, schemas.RakshaContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
+		schemas.AppendToContextList(ctx, schemas.GatewayContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
 		switch {
-		case rakshaError == nil:
+		case gatewayError == nil:
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Request to %s/%s succeeded after %d retry attempt(s)", providerKey, model, attempts))
-		case rakshaError.IsRakshaError:
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Retries halted for %s/%s after %d attempt(s): internal Raksha error (%s)", providerKey, model, attempts, routingErrorSummary(rakshaError)))
-		case rakshaError.Error != nil && rakshaError.Error.Type != nil && *rakshaError.Error.Type == schemas.RequestCancelled:
+		case gatewayError.IsGatewayError:
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Retries halted for %s/%s after %d attempt(s): internal Gateway error (%s)", providerKey, model, attempts, routingErrorSummary(gatewayError)))
+		case gatewayError.Error != nil && gatewayError.Error.Type != nil && *gatewayError.Error.Type == schemas.RequestCancelled:
 			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Request to %s/%s cancelled after %d attempt(s)", providerKey, model, attempts))
 		default:
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Retries exhausted for %s/%s after %d attempt(s); last error: %s", providerKey, model, attempts, routingErrorSummary(rakshaError)))
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelError, fmt.Sprintf("Retries exhausted for %s/%s after %d attempt(s); last error: %s", providerKey, model, attempts, routingErrorSummary(gatewayError)))
 		}
 	}()
 
@@ -5788,17 +5788,17 @@ func executeRequestWithRetries[T any](
 	// key to confirm an actual credential swap happened before suppressing backoff —
 	// after a 429 pool reset, the selector can legitimately re-pick the same key.
 	previousKeyID := ""
-	// Index in RakshaContextKeyAttemptTrail of an attempt that hit a rate limit and is waiting
+	// Index in GatewayContextKeyAttemptTrail of an attempt that hit a rate limit and is waiting
 	// to learn whether the *next* key selection actually picks a different key. -1 = no pending.
 	pendingRotationAttemptIdx := -1
 
 	for attempts = 0; attempts <= config.NetworkConfig.MaxRetries; attempts++ {
-		ctx.SetValue(schemas.RakshaContextKeyNumberOfRetries, attempts)
+		ctx.SetValue(schemas.GatewayContextKeyNumberOfRetries, attempts)
 
-		// Reset the trail on the first attempt so a reused or shared context (raksha.ctx)
+		// Reset the trail on the first attempt so a reused or shared context (gateway.ctx)
 		// doesn't carry over records from a previous request.
 		if keyProvider != nil && attempts == 0 {
-			ctx.SetValue(schemas.RakshaContextKeyAttemptTrail, []schemas.KeyAttemptRecord{})
+			ctx.SetValue(schemas.GatewayContextKeyAttemptTrail, []schemas.KeyAttemptRecord{})
 		}
 
 		// Select / rotate key: always on attempt 0, and again when the previous failure was
@@ -5812,13 +5812,13 @@ func executeRequestWithRetries[T any](
 			// Wrap key selection in a dedicated span so traces show which key was chosen
 			// (and when rotation happened). The span is opened before keyProvider is called
 			// so selection errors are captured too.
-			keyTracer, _ := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
+			keyTracer, _ := ctx.Value(schemas.GatewayContextKeyTracer).(schemas.Tracer)
 			var keySpanCtx context.Context
 			var keyHandle schemas.SpanHandle
 			if keyTracer != nil {
 				keySpanCtx, keyHandle = keyTracer.StartSpan(ctx, "key.selection", schemas.SpanKindInternal)
 				keyTracer.SetAttribute(keyHandle, schemas.AttrProviderName, schemas.OTelProviderName(providerKey))
-				keyTracer.SetAttribute(keyHandle, schemas.AttrRakshaProviderName, string(providerKey)) // raw Raksha short name, mirrors canonical gen_ai.provider.name
+				keyTracer.SetAttribute(keyHandle, schemas.AttrGatewayProviderName, string(providerKey)) // raw Gateway short name, mirrors canonical gen_ai.provider.name
 				keyTracer.SetAttribute(keyHandle, schemas.AttrRequestModel, model)
 				if attempts > 0 {
 					keyTracer.SetAttribute(keyHandle, schemas.AttrLegacyRetryCount, attempts)
@@ -5837,7 +5837,7 @@ func executeRequestWithRetries[T any](
 					keyTracer.EndSpan(keyHandle, schemas.SpanStatusOk, "")
 					// Propagate the span context so subsequent spans (llm.call / retry.attempt.N)
 					// are correctly linked in the trace hierarchy.
-					ctx.SetValue(schemas.RakshaContextKeySpanID, keySpanCtx.Value(schemas.RakshaContextKeySpanID))
+					ctx.SetValue(schemas.GatewayContextKeySpanID, keySpanCtx.Value(schemas.GatewayContextKeySpanID))
 				}
 			}
 
@@ -5847,8 +5847,8 @@ func executeRequestWithRetries[T any](
 				// skips the terminal cleanup at the end of the function, and the invariant
 				// is that selected_key_id / selected_key_name are populated only on a
 				// successful response. Use attempt_trail for failure attribution.
-				ctx.SetValue(schemas.RakshaContextKeySelectedKeyID, "")
-				ctx.SetValue(schemas.RakshaContextKeySelectedKeyName, "")
+				ctx.SetValue(schemas.GatewayContextKeySelectedKeyID, "")
+				ctx.SetValue(schemas.GatewayContextKeySelectedKeyName, "")
 				// Only collapse into 502 upstream_credentials_exhausted when keyProvider
 				// explicitly signals "every key is dead" via the errAllKeysDead sentinel.
 				// Any other error (custom selector failure, etc.) propagates unchanged so
@@ -5857,8 +5857,8 @@ func executeRequestWithRetries[T any](
 				if errors.Is(err, errAllKeysFiltered) {
 					statusCode := 503
 					errType := "no_eligible_keys"
-					return zero, &schemas.RakshaError{
-						IsRakshaError: false,
+					return zero, &schemas.GatewayError{
+						IsGatewayError: false,
 						StatusCode:    &statusCode,
 						Type:          &errType,
 						Error: &schemas.ErrorField{
@@ -5870,8 +5870,8 @@ func executeRequestWithRetries[T any](
 				if errors.Is(err, errAllKeysDead) {
 					statusCode := 502
 					errType := "upstream_credentials_exhausted"
-					return zero, &schemas.RakshaError{
-						IsRakshaError: false,
+					return zero, &schemas.GatewayError{
+						IsGatewayError: false,
 						StatusCode:    &statusCode,
 						Type:          &errType,
 						Error: &schemas.ErrorField{
@@ -5880,21 +5880,21 @@ func executeRequestWithRetries[T any](
 						},
 					}
 				}
-				return zero, newRakshaErrorFromMsg(err.Error())
+				return zero, newGatewayErrorFromMsg(err.Error())
 			}
 			currentKey = selectedKey
-			ctx.SetValue(schemas.RakshaContextKeySelectedKeyID, currentKey.ID)
-			ctx.SetValue(schemas.RakshaContextKeySelectedKeyName, currentKey.Name)
+			ctx.SetValue(schemas.GatewayContextKeySelectedKeyID, currentKey.ID)
+			ctx.SetValue(schemas.GatewayContextKeySelectedKeyName, currentKey.Name)
 
 			// Resolve any pending rotation marker from the previous failed attempt. Only mark
 			// TriggeredRotation=true if the newly selected key differs from the failed one —
 			// fixed-key paths return the same key, in which case no rotation actually happened.
 			if pendingRotationAttemptIdx >= 0 {
-				if trail, ok := ctx.Value(schemas.RakshaContextKeyAttemptTrail).([]schemas.KeyAttemptRecord); ok &&
+				if trail, ok := ctx.Value(schemas.GatewayContextKeyAttemptTrail).([]schemas.KeyAttemptRecord); ok &&
 					pendingRotationAttemptIdx < len(trail) &&
 					trail[pendingRotationAttemptIdx].KeyID != currentKey.ID {
 					trail[pendingRotationAttemptIdx].TriggeredRotation = true
-					ctx.SetValue(schemas.RakshaContextKeyAttemptTrail, trail)
+					ctx.SetValue(schemas.GatewayContextKeyAttemptTrail, trail)
 				}
 				pendingRotationAttemptIdx = -1
 			}
@@ -5904,7 +5904,7 @@ func executeRequestWithRetries[T any](
 		// Skipped when keyProvider is nil (keyless providers have no key to track).
 		// FailReason is populated below once the attempt outcome is known.
 		if keyProvider != nil {
-			schemas.AppendToContextList(ctx, schemas.RakshaContextKeyAttemptTrail, schemas.KeyAttemptRecord{
+			schemas.AppendToContextList(ctx, schemas.GatewayContextKeyAttemptTrail, schemas.KeyAttemptRecord{
 				Attempt: attempts,
 				KeyID:   currentKey.ID,
 				KeyName: currentKey.Name,
@@ -5914,12 +5914,12 @@ func executeRequestWithRetries[T any](
 		if attempts > 0 {
 			// Log retry attempt
 			var retryMsg string
-			if rakshaError != nil && rakshaError.Error != nil {
-				retryMsg = rakshaError.Error.Message
-			} else if rakshaError != nil && rakshaError.StatusCode != nil {
-				retryMsg = fmt.Sprintf("status=%d", *rakshaError.StatusCode)
-				if rakshaError.Type != nil {
-					retryMsg += ", type=" + *rakshaError.Type
+			if gatewayError != nil && gatewayError.Error != nil {
+				retryMsg = gatewayError.Error.Message
+			} else if gatewayError != nil && gatewayError.StatusCode != nil {
+				retryMsg = fmt.Sprintf("status=%d", *gatewayError.StatusCode)
+				if gatewayError.Type != nil {
+					retryMsg += ", type=" + *gatewayError.Type
 				}
 			}
 			logger.Debug("retrying request (attempt %d/%d) for model %s: %s", attempts, config.NetworkConfig.MaxRetries, model, retryMsg)
@@ -5941,7 +5941,7 @@ func executeRequestWithRetries[T any](
 			// whether it rotated the credential. routingErrorSummary() omits
 			// the upstream message so keys/PII don't leak into the log row.
 			// Key.Name is a user-set label (not the secret value) and is safe.
-			schemas.AppendToContextList(ctx, schemas.RakshaContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
+			schemas.AppendToContextList(ctx, schemas.GatewayContextKeyRoutingEnginesUsed, schemas.RoutingEngineCore)
 			// Omit the key=... segment for keyless providers, where currentKey is
 			// the zero value and the trailing token would render as "same key=".
 			keyNote := ""
@@ -5952,7 +5952,7 @@ func executeRequestWithRetries[T any](
 				}
 				keyNote = fmt.Sprintf("; %s=%s", rotationNote, currentKey.Name)
 			}
-			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Retry %d/%d for %s/%s (previous attempt failed: %s%s)", attempts, config.NetworkConfig.MaxRetries, providerKey, model, routingErrorSummary(rakshaError), keyNote))
+			ctx.AppendRoutingEngineLog(schemas.RoutingEngineCore, schemas.LogLevelInfo, fmt.Sprintf("Retry %d/%d for %s/%s (previous attempt failed: %s%s)", attempts, config.NetworkConfig.MaxRetries, providerKey, model, routingErrorSummary(gatewayError), keyNote))
 
 			if !(lastWasPermanentKeyFailure && keyChanged) {
 				backoff := calculateBackoff(attempts-1, config)
@@ -5964,10 +5964,10 @@ func executeRequestWithRetries[T any](
 		logger.Debug("attempting %s request for provider %s", requestType, providerKey)
 
 		// Start span for LLM call (or retry attempt)
-		tracer, ok := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
+		tracer, ok := ctx.Value(schemas.GatewayContextKeyTracer).(schemas.Tracer)
 		if !ok || tracer == nil {
 			logger.Error("tracer not found in context of executeRequestWithRetries")
-			return result, newRakshaErrorFromMsg("tracer not found in context")
+			return result, newGatewayErrorFromMsg("tracer not found in context")
 		}
 		var spanName string
 		var spanKind schemas.SpanKind
@@ -5982,7 +5982,7 @@ func executeRequestWithRetries[T any](
 		}
 		spanCtx, handle := tracer.StartSpan(ctx, spanName, spanKind)
 		tracer.SetAttribute(handle, schemas.AttrProviderName, schemas.OTelProviderName(providerKey))
-		tracer.SetAttribute(handle, schemas.AttrRakshaProviderName, string(providerKey)) // raw Raksha short name, mirrors canonical gen_ai.provider.name
+		tracer.SetAttribute(handle, schemas.AttrGatewayProviderName, string(providerKey)) // raw Gateway short name, mirrors canonical gen_ai.provider.name
 		tracer.SetAttribute(handle, schemas.AttrRequestModel, model)
 		tracer.SetAttribute(handle, schemas.AttrOperationName, otelOp)
 		tracer.SetAttribute(handle, schemas.AttrLegacyRequestType, string(requestType)) // legacy: replaced by gen_ai.operation.name
@@ -5992,82 +5992,82 @@ func executeRequestWithRetries[T any](
 
 		// Add context-related attributes (selected key, virtual key, team, customer, etc.)
 		// Each AttrXxx (gen_ai.*) emission below is LEGACY namespace pollution: the
-		// Raksha-internal concept does not belong under gen_ai.*. The raksha.* mirrors
+		// Gateway-internal concept does not belong under gen_ai.*. The gateway.* mirrors
 		// are the canonical home going forward; once all dashboards migrate, drop the
 		// gen_ai.* lines (grep for "// legacy:" in this block).
-		if selectedKeyID, ok := ctx.Value(schemas.RakshaContextKeySelectedKeyID).(string); ok && selectedKeyID != "" {
-			tracer.SetAttribute(handle, schemas.AttrSelectedKeyID, selectedKeyID) // legacy: gen_ai.* placement of raksha-internal attr
-			tracer.SetAttribute(handle, schemas.AttrRakshaSelectedKeyID, selectedKeyID)
+		if selectedKeyID, ok := ctx.Value(schemas.GatewayContextKeySelectedKeyID).(string); ok && selectedKeyID != "" {
+			tracer.SetAttribute(handle, schemas.AttrSelectedKeyID, selectedKeyID) // legacy: gen_ai.* placement of gateway-internal attr
+			tracer.SetAttribute(handle, schemas.AttrGatewaySelectedKeyID, selectedKeyID)
 		}
-		if selectedKeyName, ok := ctx.Value(schemas.RakshaContextKeySelectedKeyName).(string); ok && selectedKeyName != "" {
-			tracer.SetAttribute(handle, schemas.AttrSelectedKeyName, selectedKeyName) // legacy: gen_ai.* placement of raksha-internal attr
-			tracer.SetAttribute(handle, schemas.AttrRakshaSelectedKeyName, selectedKeyName)
+		if selectedKeyName, ok := ctx.Value(schemas.GatewayContextKeySelectedKeyName).(string); ok && selectedKeyName != "" {
+			tracer.SetAttribute(handle, schemas.AttrSelectedKeyName, selectedKeyName) // legacy: gen_ai.* placement of gateway-internal attr
+			tracer.SetAttribute(handle, schemas.AttrGatewaySelectedKeyName, selectedKeyName)
 		}
-		if virtualKeyID, ok := ctx.Value(schemas.RakshaContextKeyGovernanceVirtualKeyID).(string); ok && virtualKeyID != "" {
-			tracer.SetAttribute(handle, schemas.AttrVirtualKeyID, virtualKeyID) // legacy: gen_ai.* placement of raksha-internal attr
-			tracer.SetAttribute(handle, schemas.AttrRakshaVirtualKeyID, virtualKeyID)
+		if virtualKeyID, ok := ctx.Value(schemas.GatewayContextKeyGovernanceVirtualKeyID).(string); ok && virtualKeyID != "" {
+			tracer.SetAttribute(handle, schemas.AttrVirtualKeyID, virtualKeyID) // legacy: gen_ai.* placement of gateway-internal attr
+			tracer.SetAttribute(handle, schemas.AttrGatewayVirtualKeyID, virtualKeyID)
 		}
-		if virtualKeyName, ok := ctx.Value(schemas.RakshaContextKeyGovernanceVirtualKeyName).(string); ok && virtualKeyName != "" {
-			tracer.SetAttribute(handle, schemas.AttrVirtualKeyName, virtualKeyName) // legacy: gen_ai.* placement of raksha-internal attr
-			tracer.SetAttribute(handle, schemas.AttrRakshaVirtualKeyName, virtualKeyName)
+		if virtualKeyName, ok := ctx.Value(schemas.GatewayContextKeyGovernanceVirtualKeyName).(string); ok && virtualKeyName != "" {
+			tracer.SetAttribute(handle, schemas.AttrVirtualKeyName, virtualKeyName) // legacy: gen_ai.* placement of gateway-internal attr
+			tracer.SetAttribute(handle, schemas.AttrGatewayVirtualKeyName, virtualKeyName)
 		}
-		if teamID, ok := ctx.Value(schemas.RakshaContextKeyGovernanceTeamID).(string); ok && teamID != "" {
-			tracer.SetAttribute(handle, schemas.AttrTeamID, teamID) // legacy: gen_ai.* placement of raksha-internal attr
-			tracer.SetAttribute(handle, schemas.AttrRakshaTeamID, teamID)
+		if teamID, ok := ctx.Value(schemas.GatewayContextKeyGovernanceTeamID).(string); ok && teamID != "" {
+			tracer.SetAttribute(handle, schemas.AttrTeamID, teamID) // legacy: gen_ai.* placement of gateway-internal attr
+			tracer.SetAttribute(handle, schemas.AttrGatewayTeamID, teamID)
 		}
-		if teamName, ok := ctx.Value(schemas.RakshaContextKeyGovernanceTeamName).(string); ok && teamName != "" {
-			tracer.SetAttribute(handle, schemas.AttrTeamName, teamName) // legacy: gen_ai.* placement of raksha-internal attr
-			tracer.SetAttribute(handle, schemas.AttrRakshaTeamName, teamName)
+		if teamName, ok := ctx.Value(schemas.GatewayContextKeyGovernanceTeamName).(string); ok && teamName != "" {
+			tracer.SetAttribute(handle, schemas.AttrTeamName, teamName) // legacy: gen_ai.* placement of gateway-internal attr
+			tracer.SetAttribute(handle, schemas.AttrGatewayTeamName, teamName)
 		}
-		if customerID, ok := ctx.Value(schemas.RakshaContextKeyGovernanceCustomerID).(string); ok && customerID != "" {
-			tracer.SetAttribute(handle, schemas.AttrCustomerID, customerID) // legacy: gen_ai.* placement of raksha-internal attr
-			tracer.SetAttribute(handle, schemas.AttrRakshaCustomerID, customerID)
+		if customerID, ok := ctx.Value(schemas.GatewayContextKeyGovernanceCustomerID).(string); ok && customerID != "" {
+			tracer.SetAttribute(handle, schemas.AttrCustomerID, customerID) // legacy: gen_ai.* placement of gateway-internal attr
+			tracer.SetAttribute(handle, schemas.AttrGatewayCustomerID, customerID)
 		}
-		if customerName, ok := ctx.Value(schemas.RakshaContextKeyGovernanceCustomerName).(string); ok && customerName != "" {
-			tracer.SetAttribute(handle, schemas.AttrCustomerName, customerName) // legacy: gen_ai.* placement of raksha-internal attr
-			tracer.SetAttribute(handle, schemas.AttrRakshaCustomerName, customerName)
+		if customerName, ok := ctx.Value(schemas.GatewayContextKeyGovernanceCustomerName).(string); ok && customerName != "" {
+			tracer.SetAttribute(handle, schemas.AttrCustomerName, customerName) // legacy: gen_ai.* placement of gateway-internal attr
+			tracer.SetAttribute(handle, schemas.AttrGatewayCustomerName, customerName)
 		}
-		if businessUnitID, ok := ctx.Value(schemas.RakshaContextKeyGovernanceBusinessUnitID).(string); ok && businessUnitID != "" {
-			tracer.SetAttribute(handle, schemas.AttrRakshaBusinessUnitID, businessUnitID)
+		if businessUnitID, ok := ctx.Value(schemas.GatewayContextKeyGovernanceBusinessUnitID).(string); ok && businessUnitID != "" {
+			tracer.SetAttribute(handle, schemas.AttrGatewayBusinessUnitID, businessUnitID)
 		}
-		if businessUnitName, ok := ctx.Value(schemas.RakshaContextKeyGovernanceBusinessUnitName).(string); ok && businessUnitName != "" {
-			tracer.SetAttribute(handle, schemas.AttrRakshaBusinessUnitName, businessUnitName)
+		if businessUnitName, ok := ctx.Value(schemas.GatewayContextKeyGovernanceBusinessUnitName).(string); ok && businessUnitName != "" {
+			tracer.SetAttribute(handle, schemas.AttrGatewayBusinessUnitName, businessUnitName)
 		}
-		if teamIDs, ok := ctx.Value(schemas.RakshaContextKeyGovernanceTeamIDs).([]string); ok && len(teamIDs) > 0 {
-			tracer.SetAttribute(handle, schemas.AttrRakshaTeamIDs, teamIDs)
+		if teamIDs, ok := ctx.Value(schemas.GatewayContextKeyGovernanceTeamIDs).([]string); ok && len(teamIDs) > 0 {
+			tracer.SetAttribute(handle, schemas.AttrGatewayTeamIDs, teamIDs)
 		}
-		if teamNames, ok := ctx.Value(schemas.RakshaContextKeyGovernanceTeamNames).([]string); ok && len(teamNames) > 0 {
-			tracer.SetAttribute(handle, schemas.AttrRakshaTeamNames, teamNames)
+		if teamNames, ok := ctx.Value(schemas.GatewayContextKeyGovernanceTeamNames).([]string); ok && len(teamNames) > 0 {
+			tracer.SetAttribute(handle, schemas.AttrGatewayTeamNames, teamNames)
 		}
-		if customerIDs, ok := ctx.Value(schemas.RakshaContextKeyGovernanceCustomerIDs).([]string); ok && len(customerIDs) > 0 {
-			tracer.SetAttribute(handle, schemas.AttrRakshaCustomerIDs, customerIDs)
+		if customerIDs, ok := ctx.Value(schemas.GatewayContextKeyGovernanceCustomerIDs).([]string); ok && len(customerIDs) > 0 {
+			tracer.SetAttribute(handle, schemas.AttrGatewayCustomerIDs, customerIDs)
 		}
-		if customerNames, ok := ctx.Value(schemas.RakshaContextKeyGovernanceCustomerNames).([]string); ok && len(customerNames) > 0 {
-			tracer.SetAttribute(handle, schemas.AttrRakshaCustomerNames, customerNames)
+		if customerNames, ok := ctx.Value(schemas.GatewayContextKeyGovernanceCustomerNames).([]string); ok && len(customerNames) > 0 {
+			tracer.SetAttribute(handle, schemas.AttrGatewayCustomerNames, customerNames)
 		}
-		if businessUnitIDs, ok := ctx.Value(schemas.RakshaContextKeyGovernanceBusinessUnitIDs).([]string); ok && len(businessUnitIDs) > 0 {
-			tracer.SetAttribute(handle, schemas.AttrRakshaBusinessUnitIDs, businessUnitIDs)
+		if businessUnitIDs, ok := ctx.Value(schemas.GatewayContextKeyGovernanceBusinessUnitIDs).([]string); ok && len(businessUnitIDs) > 0 {
+			tracer.SetAttribute(handle, schemas.AttrGatewayBusinessUnitIDs, businessUnitIDs)
 		}
-		if businessUnitNames, ok := ctx.Value(schemas.RakshaContextKeyGovernanceBusinessUnitNames).([]string); ok && len(businessUnitNames) > 0 {
-			tracer.SetAttribute(handle, schemas.AttrRakshaBusinessUnitNames, businessUnitNames)
+		if businessUnitNames, ok := ctx.Value(schemas.GatewayContextKeyGovernanceBusinessUnitNames).([]string); ok && len(businessUnitNames) > 0 {
+			tracer.SetAttribute(handle, schemas.AttrGatewayBusinessUnitNames, businessUnitNames)
 		}
-		if userID, ok := ctx.Value(schemas.RakshaContextKeyUserID).(string); ok && userID != "" {
-			tracer.SetAttribute(handle, schemas.AttrRakshaUserID, userID)
+		if userID, ok := ctx.Value(schemas.GatewayContextKeyUserID).(string); ok && userID != "" {
+			tracer.SetAttribute(handle, schemas.AttrGatewayUserID, userID)
 		}
-		if userName, ok := ctx.Value(schemas.RakshaContextKeyUserName).(string); ok && userName != "" {
-			tracer.SetAttribute(handle, schemas.AttrRakshaUserName, userName)
+		if userName, ok := ctx.Value(schemas.GatewayContextKeyUserName).(string); ok && userName != "" {
+			tracer.SetAttribute(handle, schemas.AttrGatewayUserName, userName)
 		}
-		if fallbackIndex, ok := ctx.Value(schemas.RakshaContextKeyFallbackIndex).(int); ok {
-			tracer.SetAttribute(handle, schemas.AttrFallbackIndex, fallbackIndex) // legacy: gen_ai.* placement of raksha-internal attr
-			tracer.SetAttribute(handle, schemas.AttrRakshaFallbackIndex, fallbackIndex)
+		if fallbackIndex, ok := ctx.Value(schemas.GatewayContextKeyFallbackIndex).(int); ok {
+			tracer.SetAttribute(handle, schemas.AttrFallbackIndex, fallbackIndex) // legacy: gen_ai.* placement of gateway-internal attr
+			tracer.SetAttribute(handle, schemas.AttrGatewayFallbackIndex, fallbackIndex)
 		}
-		tracer.SetAttribute(handle, schemas.AttrNumberOfRetries, attempts) // legacy: gen_ai.* placement of raksha-internal attr
-		tracer.SetAttribute(handle, schemas.AttrRakshaRetries, attempts)
+		tracer.SetAttribute(handle, schemas.AttrNumberOfRetries, attempts) // legacy: gen_ai.* placement of gateway-internal attr
+		tracer.SetAttribute(handle, schemas.AttrGatewayRetries, attempts)
 
 		// Surface caller-supplied extra headers (from x-uf-eh-* and direct-allowlist
 		// header forwarding) as span attributes so observability backends see the
-		// same set Raksha forwards to the upstream provider.
-		if extraHeaders, ok := ctx.Value(schemas.RakshaContextKeyExtraHeaders).(map[string][]string); ok {
+		// same set Gateway forwards to the upstream provider.
+		if extraHeaders, ok := ctx.Value(schemas.GatewayContextKeyExtraHeaders).(map[string][]string); ok {
 			for name, values := range extraHeaders {
 				if name == "" || len(values) == 0 {
 					continue
@@ -6094,24 +6094,24 @@ func executeRequestWithRetries[T any](
 		}
 
 		// Update context with span ID
-		ctx.SetValue(schemas.RakshaContextKeySpanID, spanCtx.Value(schemas.RakshaContextKeySpanID))
+		ctx.SetValue(schemas.GatewayContextKeySpanID, spanCtx.Value(schemas.GatewayContextKeySpanID))
 
 		// Record stream start time for TTFT calculation (only for streaming requests)
 		// This is also used by RunPostLLMHooks to detect streaming mode
 		if IsStreamRequestType(requestType) {
 			streamStartTime := time.Now()
-			ctx.SetValue(schemas.RakshaContextKeyStreamStartTime, streamStartTime)
+			ctx.SetValue(schemas.GatewayContextKeyStreamStartTime, streamStartTime)
 		}
 
 		// Attempt the request
-		result, rakshaError = requestHandler(currentKey)
+		result, gatewayError = requestHandler(currentKey)
 
 		// For streaming requests that returned success, check if the first chunk
 		// is actually an error (e.g., rate limits sent as SSE events in HTTP 200).
 		// This enables retries and fallbacks for providers that embed errors in
 		// the SSE stream instead of returning proper HTTP error status codes.
-		if rakshaError == nil {
-			if streamChan, ok := any(result).(chan *schemas.RakshaStreamChunk); ok {
+		if gatewayError == nil {
+			if streamChan, ok := any(result).(chan *schemas.GatewayStreamChunk); ok {
 				checkedStream, drainDone, firstChunkErr := providerUtils.CheckFirstStreamChunkForError(ctx, streamChan)
 				if firstChunkErr != nil {
 					<-drainDone
@@ -6120,8 +6120,8 @@ func executeRequestWithRetries[T any](
 					// to the response it released; clear it so the retry or fallback
 					// attempt that follows doesn't see its own fresh stream as already
 					// closed and fail every read with ErrStreamClosed.
-					ctx.ClearValue(schemas.RakshaContextKeyConnectionClosed)
-					rakshaError = firstChunkErr
+					ctx.ClearValue(schemas.GatewayContextKeyConnectionClosed)
+					gatewayError = firstChunkErr
 				} else {
 					result = any(checkedStream).(T)
 				}
@@ -6131,21 +6131,21 @@ func executeRequestWithRetries[T any](
 		// Check if result is a streaming channel - if so, defer span completion
 		// Only defer for successful stream setup; error paths must end the span synchronously
 		isStreamChan := false
-		if rakshaError == nil {
-			if ch, ok := any(result).(chan *schemas.RakshaStreamChunk); ok && ch != nil {
+		if gatewayError == nil {
+			if ch, ok := any(result).(chan *schemas.GatewayStreamChunk); ok && ch != nil {
 				isStreamChan = true
 			}
 		}
 		if isStreamChan {
 			// For streaming requests, store the span handle in TraceStore keyed by trace ID
 			// This allows the provider's streaming goroutine to retrieve it later
-			if traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string); ok && traceID != "" {
+			if traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string); ok && traceID != "" {
 				tracer.StoreDeferredSpan(traceID, handle)
 			}
 			// Don't end the span here - it will be ended when streaming completes
 		} else {
 			// Populate LLM response attributes for non-streaming responses
-			if resp, ok := any(result).(*schemas.RakshaResponse); ok {
+			if resp, ok := any(result).(*schemas.GatewayResponse); ok {
 				// Populate ExtraFields with provider/model/requestType before cost
 				// calculation, because the per-request worker only calls PopulateExtraFields
 				// after executeRequestWithRetries returns (line ~5802).  Without this,
@@ -6158,16 +6158,16 @@ func executeRequestWithRetries[T any](
 					}
 				}
 				resp.PopulateExtraFields(requestType, providerKey, model, resolvedModelUsed)
-				tracer.PopulateLLMResponseAttributes(ctx, handle, resp, rakshaError)
+				tracer.PopulateLLMResponseAttributes(ctx, handle, resp, gatewayError)
 			}
 
 			// End span with appropriate status
-			if rakshaError != nil {
-				if rakshaError.Error != nil {
-					tracer.SetAttribute(handle, "error", rakshaError.Error.Message)
+			if gatewayError != nil {
+				if gatewayError.Error != nil {
+					tracer.SetAttribute(handle, "error", gatewayError.Error.Message)
 				}
-				if rakshaError.StatusCode != nil {
-					tracer.SetAttribute(handle, "status_code", *rakshaError.StatusCode)
+				if gatewayError.StatusCode != nil {
+					tracer.SetAttribute(handle, "status_code", *gatewayError.StatusCode)
 				}
 				tracer.EndSpan(handle, schemas.SpanStatusError, "request failed")
 			} else {
@@ -6178,9 +6178,9 @@ func executeRequestWithRetries[T any](
 		logger.Debug("request %s for provider %s completed", requestType, providerKey)
 
 		// Check if successful or if we should retry
-		if rakshaError == nil ||
-			rakshaError.IsRakshaError ||
-			(rakshaError.Error != nil && rakshaError.Error.Type != nil && *rakshaError.Error.Type == schemas.RequestCancelled) {
+		if gatewayError == nil ||
+			gatewayError.IsGatewayError ||
+			(gatewayError.Error != nil && gatewayError.Error.Type != nil && *gatewayError.Error.Type == schemas.RequestCancelled) {
 			break
 		}
 
@@ -6191,20 +6191,20 @@ func executeRequestWithRetries[T any](
 		//   won't help — try a different one.
 		// retryable 5xx / network errors: transient server issues — retry with the same key.
 		shouldRetry := false
-		isPerKeyFailure := (rakshaError.StatusCode != nil && perKeyFailureStatusCodes[*rakshaError.StatusCode]) ||
-			(rakshaError.Error != nil &&
-				(IsRateLimitErrorMessage(rakshaError.Error.Message) ||
-					(rakshaError.Error.Type != nil && IsRateLimitErrorMessage(*rakshaError.Error.Type)) ||
-					(rakshaError.Error.Code != nil && IsRateLimitErrorMessage(*rakshaError.Error.Code))))
+		isPerKeyFailure := (gatewayError.StatusCode != nil && perKeyFailureStatusCodes[*gatewayError.StatusCode]) ||
+			(gatewayError.Error != nil &&
+				(IsRateLimitErrorMessage(gatewayError.Error.Message) ||
+					(gatewayError.Error.Type != nil && IsRateLimitErrorMessage(*gatewayError.Error.Type)) ||
+					(gatewayError.Error.Code != nil && IsRateLimitErrorMessage(*gatewayError.Error.Code))))
 
-		errMessage := rakshaError.GetErrorString()
+		errMessage := gatewayError.GetErrorString()
 
-		if rakshaError.Error != nil &&
-			(rakshaError.Error.Message == schemas.ErrProviderDoRequest ||
-				rakshaError.Error.Message == schemas.ErrProviderNetworkError) {
+		if gatewayError.Error != nil &&
+			(gatewayError.Error.Message == schemas.ErrProviderDoRequest ||
+				gatewayError.Error.Message == schemas.ErrProviderNetworkError) {
 			shouldRetry = true
 			logger.Debug("detected request HTTP/network error, will retry: %s", errMessage)
-		} else if (rakshaError.StatusCode != nil && transientServerStatusCodes[*rakshaError.StatusCode]) || isPerKeyFailure {
+		} else if (gatewayError.StatusCode != nil && transientServerStatusCodes[*gatewayError.StatusCode]) || isPerKeyFailure {
 			shouldRetry = true
 			logger.Debug("encountered error that should be retried: %s", errMessage)
 		}
@@ -6215,20 +6215,20 @@ func executeRequestWithRetries[T any](
 		// (e.g. OpenAI returns Type="invalid_request_error" for 401 invalid_api_key, which
 		// describes the request, not the rotation reason). Fall back to provider Type for
 		// non-rotation failures, then "unknown".
-		if trail, ok := ctx.Value(schemas.RakshaContextKeyAttemptTrail).([]schemas.KeyAttemptRecord); ok && len(trail) > 0 {
+		if trail, ok := ctx.Value(schemas.GatewayContextKeyAttemptTrail).([]schemas.KeyAttemptRecord); ok && len(trail) > 0 {
 			reason := "unknown"
 			switch {
-			case rakshaError.StatusCode != nil && *rakshaError.StatusCode == 429:
+			case gatewayError.StatusCode != nil && *gatewayError.StatusCode == 429:
 				reason = "rate_limit_error"
-			case rakshaError.StatusCode != nil && (*rakshaError.StatusCode == 401 || *rakshaError.StatusCode == 403):
+			case gatewayError.StatusCode != nil && (*gatewayError.StatusCode == 401 || *gatewayError.StatusCode == 403):
 				reason = "authentication_error"
-			case rakshaError.StatusCode != nil && *rakshaError.StatusCode == 402:
+			case gatewayError.StatusCode != nil && *gatewayError.StatusCode == 402:
 				reason = "billing_error"
-			case rakshaError.Error != nil && rakshaError.Error.Type != nil && *rakshaError.Error.Type != "":
-				reason = *rakshaError.Error.Type
+			case gatewayError.Error != nil && gatewayError.Error.Type != nil && *gatewayError.Error.Type != "":
+				reason = *gatewayError.Error.Type
 			}
 			trail[len(trail)-1].FailReason = &reason
-			ctx.SetValue(schemas.RakshaContextKeyAttemptTrail, trail)
+			ctx.SetValue(schemas.GatewayContextKeyAttemptTrail, trail)
 		}
 
 		if !shouldRetry {
@@ -6243,8 +6243,8 @@ func executeRequestWithRetries[T any](
 		// the time we come back to it.
 		isPermanentKeyFailure := false
 		if isPerKeyFailure && keyProvider != nil {
-			isPermanentKeyFailure = rakshaError.StatusCode != nil &&
-				(*rakshaError.StatusCode == 401 || *rakshaError.StatusCode == 402 || *rakshaError.StatusCode == 403)
+			isPermanentKeyFailure = gatewayError.StatusCode != nil &&
+				(*gatewayError.StatusCode == 401 || *gatewayError.StatusCode == 402 || *gatewayError.StatusCode == 403)
 			if isPermanentKeyFailure {
 				if deadKeyIDs == nil {
 					deadKeyIDs = make(map[string]bool)
@@ -6269,7 +6269,7 @@ func executeRequestWithRetries[T any](
 		// is non-nil but returns the same key. Network-error retries reuse the same key, and
 		// terminal attempts (attempts == MaxRetries) won't run another iteration.
 		if lastWasPerKeyFailure && keyProvider != nil && attempts < config.NetworkConfig.MaxRetries {
-			if trail, ok := ctx.Value(schemas.RakshaContextKeyAttemptTrail).([]schemas.KeyAttemptRecord); ok && len(trail) > 0 {
+			if trail, ok := ctx.Value(schemas.GatewayContextKeyAttemptTrail).([]schemas.KeyAttemptRecord); ok && len(trail) > 0 {
 				pendingRotationAttemptIdx = len(trail) - 1
 			}
 		}
@@ -6286,12 +6286,12 @@ func executeRequestWithRetries[T any](
 
 	// On final error, clear selected_key so it only reflects a key that actually served a successful response.
 	// The attempt trail is the authoritative record of which keys were tried.
-	if rakshaError != nil && keyProvider != nil {
-		ctx.SetValue(schemas.RakshaContextKeySelectedKeyID, "")
-		ctx.SetValue(schemas.RakshaContextKeySelectedKeyName, "")
+	if gatewayError != nil && keyProvider != nil {
+		ctx.SetValue(schemas.GatewayContextKeySelectedKeyID, "")
+		ctx.SetValue(schemas.GatewayContextKeySelectedKeyName, "")
 	}
 
-	return result, rakshaError
+	return result, gatewayError
 }
 
 // clearAnthropicPassthroughForNonNativeProvider disables Anthropic raw-body passthrough when a
@@ -6300,8 +6300,8 @@ func executeRequestWithRetries[T any](
 // itself. Gated on the final resolved provider so it fires regardless of how the provider was
 // picked (prefix, catalog, key alias, governance) and re-runs per attempt for fallbacks. No-op
 // for Anthropic/Vertex/Azure providers and for non-Anthropic integrations.
-func clearAnthropicPassthroughForNonNativeProvider(ctx *schemas.RakshaContext, baseProvider schemas.ModelProvider) {
-	if integrationType, _ := ctx.Value(schemas.RakshaContextKeyIntegrationType).(string); integrationType != "anthropic" {
+func clearAnthropicPassthroughForNonNativeProvider(ctx *schemas.GatewayContext, baseProvider schemas.ModelProvider) {
+	if integrationType, _ := ctx.Value(schemas.GatewayContextKeyIntegrationType).(string); integrationType != "anthropic" {
 		return
 	}
 	if baseProvider == schemas.Anthropic ||
@@ -6310,14 +6310,14 @@ func clearAnthropicPassthroughForNonNativeProvider(ctx *schemas.RakshaContext, b
 		baseProvider == schemas.BedrockMantle {
 		return
 	}
-	ctx.SetValue(schemas.RakshaContextKeyUseRawRequestBody, false)
-	ctx.SetValue(schemas.RakshaContextKeySendBackRawResponse, false)
-	ctx.SetValue(schemas.RakshaContextKeyPassthroughOverridesPresent, false)
+	ctx.SetValue(schemas.GatewayContextKeyUseRawRequestBody, false)
+	ctx.SetValue(schemas.GatewayContextKeySendBackRawResponse, false)
+	ctx.SetValue(schemas.GatewayContextKeyPassthroughOverridesPresent, false)
 }
 
 // requestWorker handles incoming requests from the queue for a specific provider.
 // It manages retries, error handling, and response processing.
-func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.ProviderConfig, pq *ProviderQueue, waitGroup *sync.WaitGroup) {
+func (gateway *Gateway) requestWorker(provider schemas.Provider, config *schemas.ProviderConfig, pq *ProviderQueue, waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 
 	for {
@@ -6333,12 +6333,12 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 				case r := <-pq.queue:
 					provKey, mod, _ := r.GetRequestFields()
 					select {
-					case r.Err <- schemas.RakshaError{
-						IsRakshaError: false,
+					case r.Err <- schemas.GatewayError{
+						IsGatewayError: false,
 						Error: &schemas.ErrorField{
 							Message: "provider is shutting down",
 						},
-						ExtraFields: schemas.RakshaErrorExtraFields{
+						ExtraFields: schemas.GatewayErrorExtraFields{
 							RequestType:            r.RequestType,
 							Provider:               provKey,
 							OriginalModelRequested: mod,
@@ -6352,11 +6352,11 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 			}
 		}
 
-		_, model, _ := req.RakshaRequest.GetRequestFields()
+		_, model, _ := req.GatewayRequest.GetRequestFields()
 
-		var result *schemas.RakshaResponse
-		var stream chan *schemas.RakshaStreamChunk
-		var rakshaError *schemas.RakshaError
+		var result *schemas.GatewayResponse
+		var stream chan *schemas.GatewayStreamChunk
+		var gatewayError *schemas.GatewayError
 		var err error
 
 		// Determine the base provider type for key requirement checks
@@ -6364,7 +6364,7 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 		if cfg := config.CustomProviderConfig; cfg != nil && cfg.BaseProviderType != "" {
 			baseProvider = cfg.BaseProviderType
 		}
-		req.Context.SetValue(schemas.RakshaContextKeyIsCustomProvider, !IsStandardProvider(baseProvider))
+		req.Context.SetValue(schemas.GatewayContextKeyIsCustomProvider, !IsStandardProvider(baseProvider))
 
 		// Disable Anthropic raw-body passthrough when this attempt's provider isn't Anthropic-native (e.g. Bedrock).
 		clearAnthropicPassthroughForNonNativeProvider(req.Context, baseProvider)
@@ -6372,8 +6372,8 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 		// Determine whether this provider attempt should capture raw payloads.
 		//
 		// Effective values are computed by merging provider config with any per-request
-		// context overrides (RakshaContextKeySendBackRawRequest/Response and
-		// RakshaContextKeyStoreRawRequestResponse). A context value set to either true
+		// context overrides (GatewayContextKeySendBackRawRequest/Response and
+		// GatewayContextKeyStoreRawRequestResponse). A context value set to either true
 		// or false fully overrides the provider config for that flag.
 		//
 		// Each flag is independent:
@@ -6388,29 +6388,29 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 		// All internal signals are always written explicitly on every attempt so stale values
 		// from a previous provider attempt (e.g. different fallback provider config) cannot
 		// leak into the new attempt on a reused context. The user override keys
-		// (RakshaContextKeySendBackRaw*, RakshaContextKeyStoreRawRequestResponse) are
-		// never overwritten — they are read-only from raksha.go's perspective.
+		// (GatewayContextKeySendBackRaw*, GatewayContextKeyStoreRawRequestResponse) are
+		// never overwritten — they are read-only from gateway.go's perspective.
 
 		// Step 1: compute effective value for each flag (provider config ← per-request override).
 		effectiveSendBackReq := config.SendBackRawRequest
-		allowRawOverride, _ := req.Context.Value(schemas.RakshaContextKeyAllowPerRequestRawOverride).(bool)
-		passthroughOverridePresent, _ := req.Context.Value(schemas.RakshaContextKeyPassthroughOverridesPresent).(bool)
+		allowRawOverride, _ := req.Context.Value(schemas.GatewayContextKeyAllowPerRequestRawOverride).(bool)
+		passthroughOverridePresent, _ := req.Context.Value(schemas.GatewayContextKeyPassthroughOverridesPresent).(bool)
 
 		if allowRawOverride || passthroughOverridePresent {
-			if override, ok := req.Context.Value(schemas.RakshaContextKeySendBackRawRequest).(bool); ok {
+			if override, ok := req.Context.Value(schemas.GatewayContextKeySendBackRawRequest).(bool); ok {
 				effectiveSendBackReq = override
 			}
 		}
 		effectiveSendBackResp := config.SendBackRawResponse
 		if allowRawOverride || passthroughOverridePresent {
-			if override, ok := req.Context.Value(schemas.RakshaContextKeySendBackRawResponse).(bool); ok {
+			if override, ok := req.Context.Value(schemas.GatewayContextKeySendBackRawResponse).(bool); ok {
 				effectiveSendBackResp = override
 			}
 		}
 		effectiveStore := config.StoreRawRequestResponse
-		allowStorageOverride, _ := req.Context.Value(schemas.RakshaContextKeyAllowPerRequestStorageOverride).(bool)
+		allowStorageOverride, _ := req.Context.Value(schemas.GatewayContextKeyAllowPerRequestStorageOverride).(bool)
 		if allowStorageOverride {
-			if override, ok := req.Context.Value(schemas.RakshaContextKeyStoreRawRequestResponse).(bool); ok {
+			if override, ok := req.Context.Value(schemas.GatewayContextKeyStoreRawRequestResponse).(bool); ok {
 				effectiveStore = override
 			}
 		}
@@ -6424,12 +6424,12 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 		dropResp := effectiveStore && !effectiveSendBackResp
 
 		// Step 3: write all internal signals explicitly (never touch the user override keys).
-		req.Context.SetValue(schemas.RakshaContextKeyCaptureRawRequest, captureReq)
-		req.Context.SetValue(schemas.RakshaContextKeyCaptureRawResponse, captureResp)
-		req.Context.SetValue(schemas.RakshaContextKeyDropRawRequestFromClient, dropReq)
-		req.Context.SetValue(schemas.RakshaContextKeyDropRawResponseFromClient, dropResp)
+		req.Context.SetValue(schemas.GatewayContextKeyCaptureRawRequest, captureReq)
+		req.Context.SetValue(schemas.GatewayContextKeyCaptureRawResponse, captureResp)
+		req.Context.SetValue(schemas.GatewayContextKeyDropRawRequestFromClient, dropReq)
+		req.Context.SetValue(schemas.GatewayContextKeyDropRawResponseFromClient, dropResp)
 		// Tells the logging plugin whether to persist raw bytes in log records.
-		req.Context.SetValue(schemas.RakshaContextKeyShouldStoreRawInLogs, effectiveStore)
+		req.Context.SetValue(schemas.GatewayContextKeyShouldStoreRawInLogs, effectiveStore)
 
 		var keys []schemas.Key
 		// keyProvider is passed to executeRequestWithRetries to manage key selection and rotation.
@@ -6441,16 +6441,16 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 			// ListModels needs all enabled/supported keys so providers can aggregate
 			// and report per-key statuses (KeyStatuses).
 			if req.RequestType == schemas.ListModelsRequest {
-				keys, err = raksha.getAllSupportedKeys(req.Context, provider.GetProviderKey(), baseProvider)
+				keys, err = gateway.getAllSupportedKeys(req.Context, provider.GetProviderKey(), baseProvider)
 				if err != nil {
-					raksha.logger.Debug("error getting supported keys for list models: %v", err)
-					req.Err <- schemas.RakshaError{
-						IsRakshaError: false,
+					gateway.logger.Debug("error getting supported keys for list models: %v", err)
+					req.Err <- schemas.GatewayError{
+						IsGatewayError: false,
 						Error: &schemas.ErrorField{
 							Message: err.Error(),
 							Error:   err,
 						},
-						ExtraFields: schemas.RakshaErrorExtraFields{
+						ExtraFields: schemas.GatewayErrorExtraFields{
 							Provider:               provider.GetProviderKey(),
 							RequestType:            req.RequestType,
 							OriginalModelRequested: model,
@@ -6463,16 +6463,16 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 				// callers (the catalog composer) can cache per-key without an
 				// extra round-trip and without the provider aggregating across
 				// every configured key.
-				if lmr := req.RakshaRequest.ListModelsRequest; lmr != nil && lmr.KeyID != nil {
+				if lmr := req.GatewayRequest.ListModelsRequest; lmr != nil && lmr.KeyID != nil {
 					target := *lmr.KeyID
 					keys = filterKeysByID(keys, target)
 					if len(keys) == 0 {
-						req.Err <- schemas.RakshaError{
-							IsRakshaError: false,
+						req.Err <- schemas.GatewayError{
+							IsGatewayError: false,
 							Error: &schemas.ErrorField{
 								Message: fmt.Sprintf("no key found with id %q for provider %s", target, provider.GetProviderKey()),
 							},
-							ExtraFields: schemas.RakshaErrorExtraFields{
+							ExtraFields: schemas.GatewayErrorExtraFields{
 								Provider:               provider.GetProviderKey(),
 								RequestType:            req.RequestType,
 								OriginalModelRequested: model,
@@ -6495,16 +6495,16 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 					if model != "" {
 						modelPtr = &model
 					}
-					keys, err = raksha.getKeysForBatchAndFileOps(req.Context, provider.GetProviderKey(), baseProvider, modelPtr, isMultiKeyBatchOp)
+					keys, err = gateway.getKeysForBatchAndFileOps(req.Context, provider.GetProviderKey(), baseProvider, modelPtr, isMultiKeyBatchOp)
 					if err != nil {
-						raksha.logger.Debug("error getting keys for batch/file operation: %v", err)
-						req.Err <- schemas.RakshaError{
-							IsRakshaError: false,
+						gateway.logger.Debug("error getting keys for batch/file operation: %v", err)
+						req.Err <- schemas.GatewayError{
+							IsGatewayError: false,
 							Error: &schemas.ErrorField{
 								Message: err.Error(),
 								Error:   err,
 							},
-							ExtraFields: schemas.RakshaErrorExtraFields{
+							ExtraFields: schemas.GatewayErrorExtraFields{
 								Provider:               provider.GetProviderKey(),
 								RequestType:            req.RequestType,
 								OriginalModelRequested: model,
@@ -6517,16 +6517,16 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 					// Build the key pool for this request. Selection and rotation are deferred to
 					// executeRequestWithRetries via keyProvider so that each retry attempt can use
 					// a different key (on rate-limit errors) without re-running the full filtering.
-					supportedKeys, canRotate, keyPoolErr := raksha.selectKeyFromProviderForModelWithPool(req.Context, req.RequestType, provider.GetProviderKey(), model, baseProvider)
+					supportedKeys, canRotate, keyPoolErr := gateway.selectKeyFromProviderForModelWithPool(req.Context, req.RequestType, provider.GetProviderKey(), model, baseProvider)
 					if keyPoolErr != nil {
-						raksha.logger.Debug("error building key pool for model %s: %v", model, keyPoolErr)
-						req.Err <- schemas.RakshaError{
-							IsRakshaError: false,
+						gateway.logger.Debug("error building key pool for model %s: %v", model, keyPoolErr)
+						req.Err <- schemas.GatewayError{
+							IsGatewayError: false,
 							Error: &schemas.ErrorField{
 								Message: keyPoolErr.Error(),
 								Error:   keyPoolErr,
 							},
-							ExtraFields: schemas.RakshaErrorExtraFields{
+							ExtraFields: schemas.GatewayErrorExtraFields{
 								Provider:               provider.GetProviderKey(),
 								RequestType:            req.RequestType,
 								OriginalModelRequested: model,
@@ -6553,7 +6553,7 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 						}
 					} else {
 						// Rotating pool: weighted selection with per-cycle exclusion.
-						// Captures supportedKeys, raksha.keySelector, provider/model by value.
+						// Captures supportedKeys, gateway.keySelector, provider/model by value.
 						pool := supportedKeys
 						provKey := provider.GetProviderKey()
 						mdl := model
@@ -6565,9 +6565,9 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 								}
 								available = append(available, k)
 							}
-							if raksha.keyPoolFilter != nil {
-								if filtered, err := raksha.keyPoolFilter(req.Context, provKey, mdl, available); err != nil {
-									raksha.logger.Warn("key pool filter failed for provider %s, using unfiltered keys: %v", provKey, err)
+							if gateway.keyPoolFilter != nil {
+								if filtered, err := gateway.keyPoolFilter(req.Context, provKey, mdl, available); err != nil {
+									gateway.logger.Warn("key pool filter failed for provider %s, using unfiltered keys: %v", provKey, err)
 								} else {
 									available = filtered
 								}
@@ -6584,9 +6584,9 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 									}
 								}
 								liveCount := len(available) // non-dead keys before the filter runs
-								if raksha.keyPoolFilter != nil {
-									if filtered, err := raksha.keyPoolFilter(req.Context, provKey, mdl, available); err != nil {
-										raksha.logger.Warn("key pool filter failed for provider %s, using unfiltered keys: %v", provKey, err)
+								if gateway.keyPoolFilter != nil {
+									if filtered, err := gateway.keyPoolFilter(req.Context, provKey, mdl, available); err != nil {
+										gateway.logger.Warn("key pool filter failed for provider %s, using unfiltered keys: %v", provKey, err)
 									} else {
 										available = filtered
 									}
@@ -6601,7 +6601,7 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 									delete(usedKeyIDs, id)
 								}
 							}
-							return raksha.keySelector(req.Context, available, provKey, mdl)
+							return gateway.keySelector(req.Context, available, provKey, mdl)
 						}
 					}
 				}
@@ -6644,13 +6644,13 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 		// pipeline the previous attempt's provider goroutine has already
 		// returned to the pool via its deferred finalizer.
 		if IsStreamRequestType(req.RequestType) {
-			stream, rakshaError = executeRequestWithRetries(req.Context, config, func(k schemas.Key) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+			stream, gatewayError = executeRequestWithRetries(req.Context, config, func(k schemas.Key) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 				if aliasConfig := k.Aliases.ResolveConfig(originalModelRequested); aliasConfig != nil {
 					resolvedModel = aliasConfig.ModelID
-					req.Context.SetValue(schemas.RakshaContextKeyResolvedAlias, &schemas.ResolvedAlias{Key: originalModelRequested, Config: aliasConfig})
+					req.Context.SetValue(schemas.GatewayContextKeyResolvedAlias, &schemas.ResolvedAlias{Key: originalModelRequested, Config: aliasConfig})
 				} else {
 					resolvedModel = originalModelRequested
-					req.Context.SetValue(schemas.RakshaContextKeyResolvedAlias, nil)
+					req.Context.SetValue(schemas.GatewayContextKeyResolvedAlias, nil)
 				}
 				req.SetModel(resolvedModel)
 				// Snapshot per-attempt so postHookRunner doesn't observe a later retry's
@@ -6665,8 +6665,8 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 				// a concurrent request can then reuse it and overwrite RequestType.
 				// Reading req.RequestType inside the closure would observe the new request's type.
 				attemptRequestType := req.RequestType
-				pipeline := raksha.getPluginPipeline()
-				postHookRunner := func(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError) {
+				pipeline := gateway.getPluginPipeline()
+				postHookRunner := func(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError) {
 					// Populate extra fields before RunPostLLMHooks so plugins (e.g. logging)
 					// can read requestType/provider/model from the chunk or error.
 					// Uses the per-attempt snapshot — capturing the outer resolvedModel by
@@ -6679,14 +6679,14 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 						err.PopulateExtraFields(attemptRequestType, provider.GetProviderKey(), originalModelRequested, attemptResolvedModel)
 						err.PopulateRoutingInfo(perAttemptRoutingInfo)
 					}
-					resp, rakshaErr := pipeline.RunPostLLMHooks(ctx, result, err, len(*raksha.llmPlugins.Load()))
+					resp, gatewayErr := pipeline.RunPostLLMHooks(ctx, result, err, len(*gateway.llmPlugins.Load()))
 					if IsFinalChunk(ctx) {
 						drainAndAttachPluginLogs(ctx)
 					}
-					if rakshaErr != nil {
-						rakshaErr.PopulateExtraFields(attemptRequestType, provider.GetProviderKey(), originalModelRequested, attemptResolvedModel)
-						rakshaErr.PopulateRoutingInfo(perAttemptRoutingInfo)
-						return nil, rakshaErr
+					if gatewayErr != nil {
+						gatewayErr.PopulateExtraFields(attemptRequestType, provider.GetProviderKey(), originalModelRequested, attemptResolvedModel)
+						gatewayErr.PopulateRoutingInfo(perAttemptRoutingInfo)
+						return nil, gatewayErr
 					} else if resp != nil {
 						resp.PopulateExtraFields(attemptRequestType, provider.GetProviderKey(), originalModelRequested, attemptResolvedModel)
 						resp.PopulateRoutingInfo(perAttemptRoutingInfo)
@@ -6701,34 +6701,34 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 				postHookSpanFinalizer := func(ctx context.Context) {
 					finalizerOnce.Do(func() {
 						pipeline.FinalizeStreamingPostHookSpans(ctx)
-						raksha.releasePluginPipeline(pipeline)
+						gateway.releasePluginPipeline(pipeline)
 					})
 				}
 				lastAttemptFinalizer = postHookSpanFinalizer
-				streamCh, streamErr := raksha.handleProviderStreamRequest(provider, req, k, postHookRunner, postHookSpanFinalizer)
+				streamCh, streamErr := gateway.handleProviderStreamRequest(provider, req, k, postHookRunner, postHookSpanFinalizer)
 				// If stream setup failed before any provider goroutine started,
 				// no deferred finalizer will run — release the pipeline directly
 				// so a retry doesn't inherit a leaked pool entry.
 				if streamErr != nil && streamCh == nil {
 					finalizerOnce.Do(func() {
-						raksha.releasePluginPipeline(pipeline)
+						gateway.releasePluginPipeline(pipeline)
 					})
 				}
 				return streamCh, streamErr
-			}, keyProvider, req.RequestType, provider.GetProviderKey(), model, &req.RakshaRequest, raksha.logger)
+			}, keyProvider, req.RequestType, provider.GetProviderKey(), model, &req.GatewayRequest, gateway.logger)
 		} else {
-			result, rakshaError = executeRequestWithRetries(req.Context, config, func(k schemas.Key) (*schemas.RakshaResponse, *schemas.RakshaError) {
+			result, gatewayError = executeRequestWithRetries(req.Context, config, func(k schemas.Key) (*schemas.GatewayResponse, *schemas.GatewayError) {
 				if aliasConfig := k.Aliases.ResolveConfig(originalModelRequested); aliasConfig != nil {
 					resolvedModel = aliasConfig.ModelID
-					req.Context.SetValue(schemas.RakshaContextKeyResolvedAlias, &schemas.ResolvedAlias{Key: originalModelRequested, Config: aliasConfig})
+					req.Context.SetValue(schemas.GatewayContextKeyResolvedAlias, &schemas.ResolvedAlias{Key: originalModelRequested, Config: aliasConfig})
 				} else {
 					resolvedModel = originalModelRequested
-					req.Context.SetValue(schemas.RakshaContextKeyResolvedAlias, nil)
+					req.Context.SetValue(schemas.GatewayContextKeyResolvedAlias, nil)
 				}
 				req.SetModel(resolvedModel)
 				attemptRoutingInfo = schemas.BuildRoutingInfo(req.Context, provider.GetProviderKey(), originalModelRequested, k)
-				return raksha.handleProviderRequest(provider, config, req, k, keys)
-			}, keyProvider, req.RequestType, provider.GetProviderKey(), model, &req.RakshaRequest, raksha.logger)
+				return gateway.handleProviderRequest(provider, config, req, k, keys)
+			}, keyProvider, req.RequestType, provider.GetProviderKey(), model, &req.GatewayRequest, gateway.logger)
 		}
 
 		// For streaming with an error, route release through the LAST attempt's
@@ -6741,30 +6741,30 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 		// directly to handleProviderStreamRequest). For streaming without error,
 		// the finalizer is invoked by completeDeferredSpan / the provider
 		// goroutine's defer.
-		if IsStreamRequestType(req.RequestType) && rakshaError != nil {
+		if IsStreamRequestType(req.RequestType) && gatewayError != nil {
 			if lastAttemptFinalizer != nil {
 				lastAttemptFinalizer(req.Context)
 			}
 		}
 
-		if rakshaError != nil {
-			rakshaError.PopulateExtraFields(req.RequestType, provider.GetProviderKey(), originalModelRequested, resolvedModel)
-			rakshaError.PopulateRoutingInfo(attemptRoutingInfo)
+		if gatewayError != nil {
+			gatewayError.PopulateExtraFields(req.RequestType, provider.GetProviderKey(), originalModelRequested, resolvedModel)
+			gatewayError.PopulateRoutingInfo(attemptRoutingInfo)
 
 			// Send error with context awareness to prevent deadlock
 			select {
-			case req.Err <- *rakshaError:
+			case req.Err <- *gatewayError:
 				// Error sent successfully
 			case <-req.Context.Done():
 				// Client no longer listening, log and continue
-				raksha.logger.Debug("Client context cancelled while sending error response")
+				gateway.logger.Debug("Client context cancelled while sending error response")
 				// The provider already produced this error (possibly after
 				// processing input tokens). tryRequest returned on ctx.Done and will
 				// never receive it, so bill/log it here. Non-streaming only.
-				raksha.billAbandonedTerminal(req, nil, rakshaError)
+				gateway.billAbandonedTerminal(req, nil, gatewayError)
 			case <-time.After(5 * time.Second):
 				// Timeout to prevent indefinite blocking
-				raksha.logger.Warn("Timeout while sending error response, client may have disconnected")
+				gateway.logger.Warn("Timeout while sending error response, client may have disconnected")
 			}
 		} else {
 			if result != nil {
@@ -6778,10 +6778,10 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 					// Stream sent successfully
 				case <-req.Context.Done():
 					// Client no longer listening, log and continue
-					raksha.logger.Debug("Client context cancelled while sending stream response")
+					gateway.logger.Debug("Client context cancelled while sending stream response")
 				case <-time.After(5 * time.Second):
 					// Timeout to prevent indefinite blocking
-					raksha.logger.Warn("Timeout while sending stream response, client may have disconnected")
+					gateway.logger.Warn("Timeout while sending stream response, client may have disconnected")
 				}
 			} else {
 				// Send response with context awareness to prevent deadlock
@@ -6790,20 +6790,20 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 					// Response sent successfully
 				case <-req.Context.Done():
 					// Client no longer listening, log and continue
-					raksha.logger.Debug("Client context cancelled while sending response")
+					gateway.logger.Debug("Client context cancelled while sending response")
 					// The provider already produced this non-streaming result
 					// (consuming tokens). tryRequest returned on ctx.Done and will never
 					// receive it, so bill/log it here.
-					raksha.billAbandonedTerminal(req, result, nil)
+					gateway.billAbandonedTerminal(req, result, nil)
 				case <-time.After(5 * time.Second):
 					// Timeout to prevent indefinite blocking
-					raksha.logger.Warn("Timeout while sending response, client may have disconnected")
+					gateway.logger.Warn("Timeout while sending response, client may have disconnected")
 				}
 			}
 		}
 	}
 
-	// raksha.logger.Debug("worker for provider %s exiting...", provider.GetProviderKey())
+	// gateway.logger.Debug("worker for provider %s exiting...", provider.GetProviderKey())
 }
 
 // billAbandonedTerminal runs terminal post-LLM hooks for a NON-STREAMING request
@@ -6817,15 +6817,15 @@ func (raksha *Raksha) requestWorker(provider schemas.Provider, config *schemas.P
 //   - The governance tracker additionally dedupes on RequestID+attempt.
 //   - Streaming requests are excluded: their provider goroutine already runs
 //     terminal post-hooks via HandleStreamCancellation.
-func (raksha *Raksha) billAbandonedTerminal(req *ChannelMessage, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) {
+func (gateway *Gateway) billAbandonedTerminal(req *ChannelMessage, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) {
 	if req == nil || req.Context == nil || IsStreamRequestType(req.RequestType) {
 		return
 	}
-	pipeline := raksha.getPluginPipeline()
-	defer raksha.releasePluginPipeline(pipeline)
-	pluginCount := len(*raksha.llmPlugins.Load())
-	if rakshaErr != nil {
-		_, _ = pipeline.RunPostLLMHooks(req.Context, nil, rakshaErr, pluginCount)
+	pipeline := gateway.getPluginPipeline()
+	defer gateway.releasePluginPipeline(pipeline)
+	pluginCount := len(*gateway.llmPlugins.Load())
+	if gatewayErr != nil {
+		_, _ = pipeline.RunPostLLMHooks(req.Context, nil, gatewayErr, pluginCount)
 	} else if result != nil {
 		_, _ = pipeline.RunPostLLMHooks(req.Context, result, nil, pluginCount)
 	}
@@ -6834,61 +6834,61 @@ func (raksha *Raksha) billAbandonedTerminal(req *ChannelMessage, result *schemas
 
 // handleProviderRequest handles the request to the provider based on the request type
 // key is used for single-key operations, keys is used for batch/file operations that need multiple keys
-func (raksha *Raksha) handleProviderRequest(provider schemas.Provider, config *schemas.ProviderConfig, req *ChannelMessage, key schemas.Key, keys []schemas.Key) (*schemas.RakshaResponse, *schemas.RakshaError) {
-	response := &schemas.RakshaResponse{}
+func (gateway *Gateway) handleProviderRequest(provider schemas.Provider, config *schemas.ProviderConfig, req *ChannelMessage, key schemas.Key, keys []schemas.Key) (*schemas.GatewayResponse, *schemas.GatewayError) {
+	response := &schemas.GatewayResponse{}
 	switch req.RequestType {
 	case schemas.ListModelsRequest:
-		listModelsResponse, rakshaError := provider.ListModels(req.Context, keys, req.RakshaRequest.ListModelsRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		listModelsResponse, gatewayError := provider.ListModels(req.Context, keys, req.GatewayRequest.ListModelsRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ListModelsResponse = listModelsResponse
 	case schemas.TextCompletionRequest:
-		if changeType, ok := req.Context.Value(schemas.RakshaContextKeyChangeRequestType).(schemas.RequestType); ok && changeType == schemas.ChatCompletionRequest {
-			chatRequest := req.RakshaRequest.TextCompletionRequest.ToRakshaChatRequest()
+		if changeType, ok := req.Context.Value(schemas.GatewayContextKeyChangeRequestType).(schemas.RequestType); ok && changeType == schemas.ChatCompletionRequest {
+			chatRequest := req.GatewayRequest.TextCompletionRequest.ToGatewayChatRequest()
 			if chatRequest != nil {
-				chatCompletionResponse, rakshaError := provider.ChatCompletion(req.Context, key, chatRequest)
-				if rakshaError != nil {
-					return nil, rakshaError
+				chatCompletionResponse, gatewayError := provider.ChatCompletion(req.Context, key, chatRequest)
+				if gatewayError != nil {
+					return nil, gatewayError
 				}
-				response.TextCompletionResponse = chatCompletionResponse.ToRakshaTextCompletionResponse()
+				response.TextCompletionResponse = chatCompletionResponse.ToGatewayTextCompletionResponse()
 				break
 			}
 		}
-		textCompletionResponse, rakshaError := provider.TextCompletion(req.Context, key, req.RakshaRequest.TextCompletionRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		textCompletionResponse, gatewayError := provider.TextCompletion(req.Context, key, req.GatewayRequest.TextCompletionRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.TextCompletionResponse = textCompletionResponse
 	case schemas.ChatCompletionRequest:
-		if changeType, ok := req.Context.Value(schemas.RakshaContextKeyChangeRequestType).(schemas.RequestType); ok && changeType == schemas.ResponsesRequest {
-			responsesRequest := req.RakshaRequest.ChatRequest.ToResponsesRequest()
+		if changeType, ok := req.Context.Value(schemas.GatewayContextKeyChangeRequestType).(schemas.RequestType); ok && changeType == schemas.ResponsesRequest {
+			responsesRequest := req.GatewayRequest.ChatRequest.ToResponsesRequest()
 			if responsesRequest != nil {
-				responsesResponse, rakshaError := provider.Responses(req.Context, key, responsesRequest)
-				if rakshaError != nil {
-					return nil, rakshaError
+				responsesResponse, gatewayError := provider.Responses(req.Context, key, responsesRequest)
+				if gatewayError != nil {
+					return nil, gatewayError
 				}
-				response.ChatResponse = responsesResponse.ToRakshaChatResponse()
+				response.ChatResponse = responsesResponse.ToGatewayChatResponse()
 				break
 			}
 		}
-		chatCompletionResponse, rakshaError := provider.ChatCompletion(req.Context, key, req.RakshaRequest.ChatRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		chatCompletionResponse, gatewayError := provider.ChatCompletion(req.Context, key, req.GatewayRequest.ChatRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
-		chatCompletionResponse.BackfillParams(req.RakshaRequest.ChatRequest)
+		chatCompletionResponse.BackfillParams(req.GatewayRequest.ChatRequest)
 		response.ChatResponse = chatCompletionResponse
 	case schemas.ResponsesRequest:
-		responsesResponse, rakshaError := provider.Responses(req.Context, key, req.RakshaRequest.ResponsesRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		responsesResponse, gatewayError := provider.Responses(req.Context, key, req.GatewayRequest.ResponsesRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
-		responsesResponse.BackfillParams(req.RakshaRequest.ResponsesRequest)
+		responsesResponse.BackfillParams(req.GatewayRequest.ResponsesRequest)
 		response.ResponsesResponse = responsesResponse
 	case schemas.CountTokensRequest:
-		countTokensResponse, rakshaError := provider.CountTokens(req.Context, key, req.RakshaRequest.CountTokensRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		countTokensResponse, gatewayError := provider.CountTokens(req.Context, key, req.GatewayRequest.CountTokensRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.CountTokensResponse = countTokensResponse
 	case schemas.ResponsesRetrieveRequest:
@@ -6896,9 +6896,9 @@ func (raksha *Raksha) handleProviderRequest(provider schemas.Provider, config *s
 		if !ok {
 			return nil, providerUtils.NewUnsupportedOperationError(schemas.ResponsesRetrieveRequest, provider.GetProviderKey())
 		}
-		retrieveResp, rakshaError := lifecycle.ResponsesRetrieve(req.Context, key, req.RakshaRequest.ResponsesRetrieveRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		retrieveResp, gatewayError := lifecycle.ResponsesRetrieve(req.Context, key, req.GatewayRequest.ResponsesRetrieveRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ResponsesResponse = retrieveResp
 	case schemas.ResponsesDeleteRequest:
@@ -6906,9 +6906,9 @@ func (raksha *Raksha) handleProviderRequest(provider schemas.Provider, config *s
 		if !ok {
 			return nil, providerUtils.NewUnsupportedOperationError(schemas.ResponsesDeleteRequest, provider.GetProviderKey())
 		}
-		deleteResp, rakshaError := lifecycle.ResponsesDelete(req.Context, key, req.RakshaRequest.ResponsesDeleteRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		deleteResp, gatewayError := lifecycle.ResponsesDelete(req.Context, key, req.GatewayRequest.ResponsesDeleteRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ResponsesDeleteResponse = deleteResp
 	case schemas.ResponsesCancelRequest:
@@ -6916,9 +6916,9 @@ func (raksha *Raksha) handleProviderRequest(provider schemas.Provider, config *s
 		if !ok {
 			return nil, providerUtils.NewUnsupportedOperationError(schemas.ResponsesCancelRequest, provider.GetProviderKey())
 		}
-		cancelResp, rakshaError := lifecycle.ResponsesCancel(req.Context, key, req.RakshaRequest.ResponsesCancelRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		cancelResp, gatewayError := lifecycle.ResponsesCancel(req.Context, key, req.GatewayRequest.ResponsesCancelRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ResponsesResponse = cancelResp
 	case schemas.ResponsesInputItemsRequest:
@@ -6926,28 +6926,28 @@ func (raksha *Raksha) handleProviderRequest(provider schemas.Provider, config *s
 		if !ok {
 			return nil, providerUtils.NewUnsupportedOperationError(schemas.ResponsesInputItemsRequest, provider.GetProviderKey())
 		}
-		itemsResp, rakshaError := lifecycle.ResponsesInputItems(req.Context, key, req.RakshaRequest.ResponsesInputItemsRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		itemsResp, gatewayError := lifecycle.ResponsesInputItems(req.Context, key, req.GatewayRequest.ResponsesInputItemsRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ResponsesInputItemsResponse = itemsResp
 	case schemas.CompactionRequest:
-		compactionResponse, rakshaError := provider.Compaction(req.Context, key, req.RakshaRequest.CompactionRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		compactionResponse, gatewayError := provider.Compaction(req.Context, key, req.GatewayRequest.CompactionRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.CompactionResponse = compactionResponse
 	case schemas.EmbeddingRequest:
-		embeddingResponse, rakshaError := provider.Embedding(req.Context, key, req.RakshaRequest.EmbeddingRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		embeddingResponse, gatewayError := provider.Embedding(req.Context, key, req.GatewayRequest.EmbeddingRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
-		embeddingResponse.BackfillParams(req.RakshaRequest.EmbeddingRequest)
+		embeddingResponse.BackfillParams(req.GatewayRequest.EmbeddingRequest)
 		response.EmbeddingResponse = embeddingResponse
 	case schemas.RerankRequest:
-		rerankResponse, rakshaError := provider.Rerank(req.Context, key, req.RakshaRequest.RerankRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		rerankResponse, gatewayError := provider.Rerank(req.Context, key, req.GatewayRequest.RerankRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.RerankResponse = rerankResponse
 	case schemas.OCRRequest:
@@ -6955,256 +6955,256 @@ func (raksha *Raksha) handleProviderRequest(provider schemas.Provider, config *s
 		if config != nil {
 			customProviderConfig = config.CustomProviderConfig
 		}
-		if rakshaError := providerUtils.CheckOperationAllowed(provider.GetProviderKey(), customProviderConfig, schemas.OCRRequest); rakshaError != nil {
-			if req.RakshaRequest.OCRRequest != nil {
-				rakshaError.ExtraFields.OriginalModelRequested = req.RakshaRequest.OCRRequest.Model
+		if gatewayError := providerUtils.CheckOperationAllowed(provider.GetProviderKey(), customProviderConfig, schemas.OCRRequest); gatewayError != nil {
+			if req.GatewayRequest.OCRRequest != nil {
+				gatewayError.ExtraFields.OriginalModelRequested = req.GatewayRequest.OCRRequest.Model
 			}
-			return nil, rakshaError
+			return nil, gatewayError
 		}
-		ocrResponse, rakshaError := provider.OCR(req.Context, key, req.RakshaRequest.OCRRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		ocrResponse, gatewayError := provider.OCR(req.Context, key, req.GatewayRequest.OCRRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.OCRResponse = ocrResponse
 	case schemas.SpeechRequest:
-		speechResponse, rakshaError := provider.Speech(req.Context, key, req.RakshaRequest.SpeechRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		speechResponse, gatewayError := provider.Speech(req.Context, key, req.GatewayRequest.SpeechRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
-		speechResponse.BackfillParams(req.RakshaRequest.SpeechRequest)
+		speechResponse.BackfillParams(req.GatewayRequest.SpeechRequest)
 		response.SpeechResponse = speechResponse
 	case schemas.TranscriptionRequest:
-		transcriptionResponse, rakshaError := provider.Transcription(req.Context, key, req.RakshaRequest.TranscriptionRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		transcriptionResponse, gatewayError := provider.Transcription(req.Context, key, req.GatewayRequest.TranscriptionRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
-		transcriptionResponse.BackfillParams(req.RakshaRequest.TranscriptionRequest)
+		transcriptionResponse.BackfillParams(req.GatewayRequest.TranscriptionRequest)
 		response.TranscriptionResponse = transcriptionResponse
 	case schemas.ImageGenerationRequest:
-		imageResponse, rakshaError := provider.ImageGeneration(req.Context, key, req.RakshaRequest.ImageGenerationRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		imageResponse, gatewayError := provider.ImageGeneration(req.Context, key, req.GatewayRequest.ImageGenerationRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
-		imageResponse.BackfillParams(&req.RakshaRequest)
+		imageResponse.BackfillParams(&req.GatewayRequest)
 		response.ImageGenerationResponse = imageResponse
 	case schemas.ImageEditRequest:
-		imageEditResponse, rakshaError := provider.ImageEdit(req.Context, key, req.RakshaRequest.ImageEditRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		imageEditResponse, gatewayError := provider.ImageEdit(req.Context, key, req.GatewayRequest.ImageEditRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
-		imageEditResponse.BackfillParams(&req.RakshaRequest)
+		imageEditResponse.BackfillParams(&req.GatewayRequest)
 		response.ImageGenerationResponse = imageEditResponse
 	case schemas.ImageVariationRequest:
-		imageVariationResponse, rakshaError := provider.ImageVariation(req.Context, key, req.RakshaRequest.ImageVariationRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		imageVariationResponse, gatewayError := provider.ImageVariation(req.Context, key, req.GatewayRequest.ImageVariationRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
-		imageVariationResponse.BackfillParams(&req.RakshaRequest)
+		imageVariationResponse.BackfillParams(&req.GatewayRequest)
 		response.ImageGenerationResponse = imageVariationResponse
 	case schemas.VideoGenerationRequest:
-		videoGenerationResponse, rakshaError := provider.VideoGeneration(req.Context, key, req.RakshaRequest.VideoGenerationRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		videoGenerationResponse, gatewayError := provider.VideoGeneration(req.Context, key, req.GatewayRequest.VideoGenerationRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
-		videoGenerationResponse.BackfillParams(&req.RakshaRequest)
+		videoGenerationResponse.BackfillParams(&req.GatewayRequest)
 		response.VideoGenerationResponse = videoGenerationResponse
 	case schemas.VideoRetrieveRequest:
-		videoRetrieveResponse, rakshaError := provider.VideoRetrieve(req.Context, key, req.RakshaRequest.VideoRetrieveRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		videoRetrieveResponse, gatewayError := provider.VideoRetrieve(req.Context, key, req.GatewayRequest.VideoRetrieveRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.VideoGenerationResponse = videoRetrieveResponse
 	case schemas.VideoDownloadRequest:
-		videoDownloadResponse, rakshaError := provider.VideoDownload(req.Context, key, req.RakshaRequest.VideoDownloadRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		videoDownloadResponse, gatewayError := provider.VideoDownload(req.Context, key, req.GatewayRequest.VideoDownloadRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.VideoDownloadResponse = videoDownloadResponse
 	case schemas.VideoListRequest:
-		videoListResponse, rakshaError := provider.VideoList(req.Context, key, req.RakshaRequest.VideoListRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		videoListResponse, gatewayError := provider.VideoList(req.Context, key, req.GatewayRequest.VideoListRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.VideoListResponse = videoListResponse
 	case schemas.VideoDeleteRequest:
-		videoDeleteResponse, rakshaError := provider.VideoDelete(req.Context, key, req.RakshaRequest.VideoDeleteRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		videoDeleteResponse, gatewayError := provider.VideoDelete(req.Context, key, req.GatewayRequest.VideoDeleteRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.VideoDeleteResponse = videoDeleteResponse
 	case schemas.VideoRemixRequest:
-		videoRemixResponse, rakshaError := provider.VideoRemix(req.Context, key, req.RakshaRequest.VideoRemixRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		videoRemixResponse, gatewayError := provider.VideoRemix(req.Context, key, req.GatewayRequest.VideoRemixRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.VideoGenerationResponse = videoRemixResponse
 	case schemas.FileUploadRequest:
-		fileUploadResponse, rakshaError := provider.FileUpload(req.Context, key, req.RakshaRequest.FileUploadRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		fileUploadResponse, gatewayError := provider.FileUpload(req.Context, key, req.GatewayRequest.FileUploadRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.FileUploadResponse = fileUploadResponse
 	case schemas.FileListRequest:
-		fileListResponse, rakshaError := provider.FileList(req.Context, keys, req.RakshaRequest.FileListRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		fileListResponse, gatewayError := provider.FileList(req.Context, keys, req.GatewayRequest.FileListRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.FileListResponse = fileListResponse
 	case schemas.FileRetrieveRequest:
-		fileRetrieveResponse, rakshaError := provider.FileRetrieve(req.Context, keys, req.RakshaRequest.FileRetrieveRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		fileRetrieveResponse, gatewayError := provider.FileRetrieve(req.Context, keys, req.GatewayRequest.FileRetrieveRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.FileRetrieveResponse = fileRetrieveResponse
 	case schemas.FileDeleteRequest:
-		fileDeleteResponse, rakshaError := provider.FileDelete(req.Context, keys, req.RakshaRequest.FileDeleteRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		fileDeleteResponse, gatewayError := provider.FileDelete(req.Context, keys, req.GatewayRequest.FileDeleteRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.FileDeleteResponse = fileDeleteResponse
 	case schemas.FileContentRequest:
-		fileContentResponse, rakshaError := provider.FileContent(req.Context, keys, req.RakshaRequest.FileContentRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		fileContentResponse, gatewayError := provider.FileContent(req.Context, keys, req.GatewayRequest.FileContentRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.FileContentResponse = fileContentResponse
 	case schemas.CachedContentCreateRequest:
-		cachedContentCreateResponse, rakshaError := provider.CachedContentCreate(req.Context, key, req.RakshaRequest.CachedContentCreateRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		cachedContentCreateResponse, gatewayError := provider.CachedContentCreate(req.Context, key, req.GatewayRequest.CachedContentCreateRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.CachedContentCreateResponse = cachedContentCreateResponse
 	case schemas.CachedContentListRequest:
-		cachedContentListResponse, rakshaError := provider.CachedContentList(req.Context, keys, req.RakshaRequest.CachedContentListRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		cachedContentListResponse, gatewayError := provider.CachedContentList(req.Context, keys, req.GatewayRequest.CachedContentListRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.CachedContentListResponse = cachedContentListResponse
 	case schemas.CachedContentRetrieveRequest:
-		cachedContentRetrieveResponse, rakshaError := provider.CachedContentRetrieve(req.Context, keys, req.RakshaRequest.CachedContentRetrieveRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		cachedContentRetrieveResponse, gatewayError := provider.CachedContentRetrieve(req.Context, keys, req.GatewayRequest.CachedContentRetrieveRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.CachedContentRetrieveResponse = cachedContentRetrieveResponse
 	case schemas.CachedContentUpdateRequest:
-		cachedContentUpdateResponse, rakshaError := provider.CachedContentUpdate(req.Context, keys, req.RakshaRequest.CachedContentUpdateRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		cachedContentUpdateResponse, gatewayError := provider.CachedContentUpdate(req.Context, keys, req.GatewayRequest.CachedContentUpdateRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.CachedContentUpdateResponse = cachedContentUpdateResponse
 	case schemas.CachedContentDeleteRequest:
-		cachedContentDeleteResponse, rakshaError := provider.CachedContentDelete(req.Context, keys, req.RakshaRequest.CachedContentDeleteRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		cachedContentDeleteResponse, gatewayError := provider.CachedContentDelete(req.Context, keys, req.GatewayRequest.CachedContentDeleteRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.CachedContentDeleteResponse = cachedContentDeleteResponse
 	case schemas.BatchCreateRequest:
-		batchCreateResponse, rakshaError := provider.BatchCreate(req.Context, key, req.RakshaRequest.BatchCreateRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		batchCreateResponse, gatewayError := provider.BatchCreate(req.Context, key, req.GatewayRequest.BatchCreateRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.BatchCreateResponse = batchCreateResponse
 	case schemas.BatchListRequest:
-		batchListResponse, rakshaError := provider.BatchList(req.Context, keys, req.RakshaRequest.BatchListRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		batchListResponse, gatewayError := provider.BatchList(req.Context, keys, req.GatewayRequest.BatchListRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.BatchListResponse = batchListResponse
 	case schemas.BatchRetrieveRequest:
-		batchRetrieveResponse, rakshaError := provider.BatchRetrieve(req.Context, keys, req.RakshaRequest.BatchRetrieveRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		batchRetrieveResponse, gatewayError := provider.BatchRetrieve(req.Context, keys, req.GatewayRequest.BatchRetrieveRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.BatchRetrieveResponse = batchRetrieveResponse
 	case schemas.BatchCancelRequest:
-		batchCancelResponse, rakshaError := provider.BatchCancel(req.Context, keys, req.RakshaRequest.BatchCancelRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		batchCancelResponse, gatewayError := provider.BatchCancel(req.Context, keys, req.GatewayRequest.BatchCancelRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.BatchCancelResponse = batchCancelResponse
 	case schemas.BatchDeleteRequest:
-		batchDeleteResponse, rakshaError := provider.BatchDelete(req.Context, keys, req.RakshaRequest.BatchDeleteRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		batchDeleteResponse, gatewayError := provider.BatchDelete(req.Context, keys, req.GatewayRequest.BatchDeleteRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.BatchDeleteResponse = batchDeleteResponse
 	case schemas.BatchResultsRequest:
-		batchResultsResponse, rakshaError := provider.BatchResults(req.Context, keys, req.RakshaRequest.BatchResultsRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		batchResultsResponse, gatewayError := provider.BatchResults(req.Context, keys, req.GatewayRequest.BatchResultsRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.BatchResultsResponse = batchResultsResponse
 	case schemas.ContainerCreateRequest:
-		containerCreateResponse, rakshaError := provider.ContainerCreate(req.Context, key, req.RakshaRequest.ContainerCreateRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		containerCreateResponse, gatewayError := provider.ContainerCreate(req.Context, key, req.GatewayRequest.ContainerCreateRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ContainerCreateResponse = containerCreateResponse
 	case schemas.ContainerListRequest:
-		containerListResponse, rakshaError := provider.ContainerList(req.Context, keys, req.RakshaRequest.ContainerListRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		containerListResponse, gatewayError := provider.ContainerList(req.Context, keys, req.GatewayRequest.ContainerListRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ContainerListResponse = containerListResponse
 	case schemas.ContainerRetrieveRequest:
-		containerRetrieveResponse, rakshaError := provider.ContainerRetrieve(req.Context, keys, req.RakshaRequest.ContainerRetrieveRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		containerRetrieveResponse, gatewayError := provider.ContainerRetrieve(req.Context, keys, req.GatewayRequest.ContainerRetrieveRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ContainerRetrieveResponse = containerRetrieveResponse
 	case schemas.ContainerDeleteRequest:
-		containerDeleteResponse, rakshaError := provider.ContainerDelete(req.Context, keys, req.RakshaRequest.ContainerDeleteRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		containerDeleteResponse, gatewayError := provider.ContainerDelete(req.Context, keys, req.GatewayRequest.ContainerDeleteRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ContainerDeleteResponse = containerDeleteResponse
 	case schemas.ContainerFileCreateRequest:
-		containerFileCreateResponse, rakshaError := provider.ContainerFileCreate(req.Context, key, req.RakshaRequest.ContainerFileCreateRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		containerFileCreateResponse, gatewayError := provider.ContainerFileCreate(req.Context, key, req.GatewayRequest.ContainerFileCreateRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ContainerFileCreateResponse = containerFileCreateResponse
 	case schemas.ContainerFileListRequest:
-		containerFileListResponse, rakshaError := provider.ContainerFileList(req.Context, keys, req.RakshaRequest.ContainerFileListRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		containerFileListResponse, gatewayError := provider.ContainerFileList(req.Context, keys, req.GatewayRequest.ContainerFileListRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ContainerFileListResponse = containerFileListResponse
 	case schemas.ContainerFileRetrieveRequest:
-		containerFileRetrieveResponse, rakshaError := provider.ContainerFileRetrieve(req.Context, keys, req.RakshaRequest.ContainerFileRetrieveRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		containerFileRetrieveResponse, gatewayError := provider.ContainerFileRetrieve(req.Context, keys, req.GatewayRequest.ContainerFileRetrieveRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ContainerFileRetrieveResponse = containerFileRetrieveResponse
 	case schemas.ContainerFileContentRequest:
-		containerFileContentResponse, rakshaError := provider.ContainerFileContent(req.Context, keys, req.RakshaRequest.ContainerFileContentRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		containerFileContentResponse, gatewayError := provider.ContainerFileContent(req.Context, keys, req.GatewayRequest.ContainerFileContentRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ContainerFileContentResponse = containerFileContentResponse
 	case schemas.ContainerFileDeleteRequest:
-		containerFileDeleteResponse, rakshaError := provider.ContainerFileDelete(req.Context, keys, req.RakshaRequest.ContainerFileDeleteRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		containerFileDeleteResponse, gatewayError := provider.ContainerFileDelete(req.Context, keys, req.GatewayRequest.ContainerFileDeleteRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		response.ContainerFileDeleteResponse = containerFileDeleteResponse
 	case schemas.PassthroughRequest:
-		passthroughResponse, rakshaError := provider.Passthrough(req.Context, key, req.RakshaRequest.PassthroughRequest)
-		if rakshaError != nil {
-			return nil, rakshaError
+		passthroughResponse, gatewayError := provider.Passthrough(req.Context, key, req.GatewayRequest.PassthroughRequest)
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		if passthroughResponse != nil {
-			passthroughResponse.Path = req.RakshaRequest.PassthroughRequest.Path
+			passthroughResponse.Path = req.GatewayRequest.PassthroughRequest.Path
 		}
 		response.PassthroughResponse = passthroughResponse
 	default:
-		_, model, _ := req.RakshaRequest.GetRequestFields()
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		_, model, _ := req.GatewayRequest.GetRequestFields()
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: fmt.Sprintf("unsupported request type: %s", req.RequestType),
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            req.RequestType,
 				Provider:               provider.GetProviderKey(),
 				OriginalModelRequested: model,
@@ -7216,44 +7216,44 @@ func (raksha *Raksha) handleProviderRequest(provider schemas.Provider, config *s
 }
 
 // handleProviderStreamRequest handles the stream request to the provider based on the request type
-func (raksha *Raksha) handleProviderStreamRequest(provider schemas.Provider, req *ChannelMessage, key schemas.Key, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context)) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (gateway *Gateway) handleProviderStreamRequest(provider schemas.Provider, req *ChannelMessage, key schemas.Key, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context)) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	switch req.RequestType {
 	case schemas.TextCompletionStreamRequest:
-		if changeType, ok := req.Context.Value(schemas.RakshaContextKeyChangeRequestType).(schemas.RequestType); ok && changeType == schemas.ChatCompletionRequest {
-			chatRequest := req.RakshaRequest.TextCompletionRequest.ToRakshaChatRequest()
+		if changeType, ok := req.Context.Value(schemas.GatewayContextKeyChangeRequestType).(schemas.RequestType); ok && changeType == schemas.ChatCompletionRequest {
+			chatRequest := req.GatewayRequest.TextCompletionRequest.ToGatewayChatRequest()
 			if chatRequest != nil {
 				return provider.ChatCompletionStream(req.Context, wrapConvertedStreamPostHookRunner(postHookRunner, schemas.ChatCompletionRequest), postHookSpanFinalizer, key, chatRequest)
 			}
 		}
-		return provider.TextCompletionStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.RakshaRequest.TextCompletionRequest)
+		return provider.TextCompletionStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.GatewayRequest.TextCompletionRequest)
 	case schemas.ChatCompletionStreamRequest:
-		if changeType, ok := req.Context.Value(schemas.RakshaContextKeyChangeRequestType).(schemas.RequestType); ok && changeType == schemas.ResponsesRequest {
-			responsesRequest := req.RakshaRequest.ChatRequest.ToResponsesRequest()
+		if changeType, ok := req.Context.Value(schemas.GatewayContextKeyChangeRequestType).(schemas.RequestType); ok && changeType == schemas.ResponsesRequest {
+			responsesRequest := req.GatewayRequest.ChatRequest.ToResponsesRequest()
 			if responsesRequest != nil {
 				return provider.ResponsesStream(req.Context, wrapConvertedStreamPostHookRunner(postHookRunner, schemas.ResponsesRequest), postHookSpanFinalizer, key, responsesRequest)
 			}
 		}
-		return provider.ChatCompletionStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.RakshaRequest.ChatRequest)
+		return provider.ChatCompletionStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.GatewayRequest.ChatRequest)
 	case schemas.ResponsesStreamRequest:
-		return provider.ResponsesStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.RakshaRequest.ResponsesRequest)
+		return provider.ResponsesStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.GatewayRequest.ResponsesRequest)
 	case schemas.SpeechStreamRequest:
-		return provider.SpeechStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.RakshaRequest.SpeechRequest)
+		return provider.SpeechStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.GatewayRequest.SpeechRequest)
 	case schemas.TranscriptionStreamRequest:
-		return provider.TranscriptionStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.RakshaRequest.TranscriptionRequest)
+		return provider.TranscriptionStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.GatewayRequest.TranscriptionRequest)
 	case schemas.ImageGenerationStreamRequest:
-		return provider.ImageGenerationStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.RakshaRequest.ImageGenerationRequest)
+		return provider.ImageGenerationStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.GatewayRequest.ImageGenerationRequest)
 	case schemas.ImageEditStreamRequest:
-		return provider.ImageEditStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.RakshaRequest.ImageEditRequest)
+		return provider.ImageEditStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.GatewayRequest.ImageEditRequest)
 	case schemas.PassthroughStreamRequest:
-		return provider.PassthroughStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.RakshaRequest.PassthroughRequest)
+		return provider.PassthroughStream(req.Context, postHookRunner, postHookSpanFinalizer, key, req.GatewayRequest.PassthroughRequest)
 	default:
-		_, model, _ := req.RakshaRequest.GetRequestFields()
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		_, model, _ := req.GatewayRequest.GetRequestFields()
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: fmt.Sprintf("unsupported request type: %s", req.RequestType),
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RequestType:            req.RequestType,
 				Provider:               provider.GetProviderKey(),
 				OriginalModelRequested: model,
@@ -7266,9 +7266,9 @@ func (raksha *Raksha) handleProviderStreamRequest(provider schemas.Provider, req
 // PLUGIN MANAGEMENT
 
 // RunLLMPreHooks executes PreHooks in order, tracks how many ran, and returns the final request, any short-circuit decision, and the count.
-func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, int) {
+func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, int) {
 	// If the skip plugin pipeline flag is set, skip the plugin pipeline
-	if skipPluginPipeline, ok := ctx.Value(schemas.RakshaContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
+	if skipPluginPipeline, ok := ctx.Value(schemas.GatewayContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
 		return req, nil, 0
 	}
 	var shortCircuit *schemas.LLMPluginShortCircuit
@@ -7282,8 +7282,8 @@ func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.RakshaContext, req *schemas
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.prehook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 		// Update pluginCtx with span context for nested operations
 		if spanCtx != nil {
-			if spanID, ok := spanCtx.Value(schemas.RakshaContextKeySpanID).(string); ok {
-				ctx.SetValue(schemas.RakshaContextKeySpanID, spanID)
+			if spanID, ok := spanCtx.Value(schemas.GatewayContextKeySpanID).(string); ok {
+				ctx.SetValue(schemas.GatewayContextKeySpanID, spanID)
 			}
 		}
 
@@ -7314,7 +7314,7 @@ func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.RakshaContext, req *schemas
 
 // RunPreRequestHooks executes PreRequestHook on each LLM plugin in registration order, once per
 // top-level request. Plugins mutate req.Provider, req.Model, req.Fallbacks (and any other field
-// they choose); mutations are committed to the shared *RakshaRequest and observed by every
+// they choose); mutations are committed to the shared *GatewayRequest and observed by every
 // subsequent plugin, the provider call, and every fallback attempt. There is no short-circuit
 // and errors are non-blocking — same semantics as RunLLMPreHooks: errors are logged as warnings
 // and accumulated in p.preHookErrors, then the pipeline continues to the next plugin. The empty-
@@ -7323,9 +7323,9 @@ func (p *PluginPipeline) RunLLMPreHooks(ctx *schemas.RakshaContext, req *schemas
 //
 // Per-request semantics: unlike PreLLMHook (which runs again on every fallback), PreRequestHook
 // runs exactly once at the top of handleRequest/handleStreamRequest, before any fan-out.
-func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) {
+func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) {
 	// If the skip plugin pipeline flag is set, skip the plugin pipeline
-	if skipPluginPipeline, ok := ctx.Value(schemas.RakshaContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
+	if skipPluginPipeline, ok := ctx.Value(schemas.GatewayContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
 		return
 	}
 	ctx.BlockRestrictedWrites()
@@ -7334,8 +7334,8 @@ func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.RakshaContext, req *sch
 		p.logger.Debug("running pre-request hook for plugin %s", pluginName)
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.prerequesthook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 		if spanCtx != nil {
-			if spanID, ok := spanCtx.Value(schemas.RakshaContextKeySpanID).(string); ok {
-				ctx.SetValue(schemas.RakshaContextKeySpanID, spanID)
+			if spanID, ok := spanCtx.Value(schemas.GatewayContextKeySpanID).(string); ok {
+				ctx.SetValue(schemas.GatewayContextKeySpanID, spanID)
 			}
 		}
 
@@ -7355,15 +7355,15 @@ func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.RakshaContext, req *sch
 	ctx.UnblockRestrictedWrites()
 
 	// Commit the routing-rule key pin. A matched routing rule writes the pinned key ID to the
-	// non-reserved RakshaContextKeyRoutingPinnedAPIKeyID during the blocked phase above — a
-	// direct write to the reserved RakshaContextKeyAPIKeyID would have been silently dropped.
+	// non-reserved GatewayContextKeyRoutingPinnedAPIKeyID during the blocked phase above — a
+	// direct write to the reserved GatewayContextKeyAPIKeyID would have been silently dropped.
 	// Core is the sole writer of the reserved key, so normalize the routing pin into it here,
 	// after unblocking, so key selection reads a single canonical pin. A non-empty routing pin
 	// overrides a caller-supplied pin: the routing rule is authoritative server-side policy and
 	// has typically already rewritten provider/model for this request.
-	if pin, ok := ctx.Value(schemas.RakshaContextKeyRoutingPinnedAPIKeyID).(string); ok {
+	if pin, ok := ctx.Value(schemas.GatewayContextKeyRoutingPinnedAPIKeyID).(string); ok {
 		if pin = strings.TrimSpace(pin); pin != "" {
-			ctx.SetValue(schemas.RakshaContextKeyAPIKeyID, pin)
+			ctx.SetValue(schemas.GatewayContextKeyAPIKeyID, pin)
 		}
 	}
 }
@@ -7373,10 +7373,10 @@ func (p *PluginPipeline) RunPreRequestHooks(ctx *schemas.RakshaContext, req *sch
 // Returns the final response and error after all hooks. If both are set, error takes precedence unless error is nil.
 // runFrom is the count of plugins whose PreHooks ran; PostHooks will run in reverse from index (runFrom - 1) down to 0
 // For streaming requests, it accumulates timing per plugin instead of creating individual spans per chunk.
-func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.RakshaContext, resp *schemas.RakshaResponse, rakshaErr *schemas.RakshaError, runFrom int) (*schemas.RakshaResponse, *schemas.RakshaError) {
+func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.GatewayContext, resp *schemas.GatewayResponse, gatewayErr *schemas.GatewayError, runFrom int) (*schemas.GatewayResponse, *schemas.GatewayError) {
 	// If the skip plugin pipeline flag is set, skip the plugin pipeline
-	if skipPluginPipeline, ok := ctx.Value(schemas.RakshaContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
-		return resp, rakshaErr
+	if skipPluginPipeline, ok := ctx.Value(schemas.GatewayContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
+		return resp, gatewayErr
 	}
 	// Defensive: ensure count is within valid bounds
 	if runFrom < 0 {
@@ -7385,10 +7385,10 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.RakshaContext, resp *schem
 	if runFrom > len(p.llmPlugins) {
 		runFrom = len(p.llmPlugins)
 	}
-	requestType, _, _, _ := GetResponseFields(resp, rakshaErr)
+	requestType, _, _, _ := GetResponseFields(resp, gatewayErr)
 	// Realtime turns carry StreamStartTime for plugin latency/final-chunk context,
 	// but they are finalized as one completed turn, not chunk-by-chunk stream output.
-	isStreaming := ctx.Value(schemas.RakshaContextKeyStreamStartTime) != nil && requestType != schemas.RealtimeRequest
+	isStreaming := ctx.Value(schemas.GatewayContextKeyStreamStartTime) != nil && requestType != schemas.RealtimeRequest
 	ctx.BlockRestrictedWrites()
 	defer ctx.UnblockRestrictedWrites()
 	var err error
@@ -7400,7 +7400,7 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.RakshaContext, resp *schem
 			// For streaming: accumulate timing, don't create individual spans per chunk
 			// Lazily create cached scoped contexts on first chunk (reused across all chunks)
 			if p.streamScopedCtxs == nil {
-				p.streamScopedCtxs = make(map[string]*schemas.RakshaContext, len(p.llmPlugins))
+				p.streamScopedCtxs = make(map[string]*schemas.GatewayContext, len(p.llmPlugins))
 				for _, pl := range p.llmPlugins {
 					name := pl.GetName()
 					p.streamScopedCtxs[name] = ctx.WithPluginScope(&name)
@@ -7408,7 +7408,7 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.RakshaContext, resp *schem
 			}
 			pluginCtx := p.streamScopedCtxs[pluginName]
 			start := time.Now()
-			resp, rakshaErr, err = plugin.PostLLMHook(pluginCtx, resp, rakshaErr)
+			resp, gatewayErr, err = plugin.PostLLMHook(pluginCtx, resp, gatewayErr)
 			duration := time.Since(start)
 
 			p.accumulatePluginTiming(pluginName, duration, err != nil)
@@ -7421,12 +7421,12 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.RakshaContext, resp *schem
 			spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.posthook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 			// Update pluginCtx with span context for nested operations
 			if spanCtx != nil {
-				if spanID, ok := spanCtx.Value(schemas.RakshaContextKeySpanID).(string); ok {
-					ctx.SetValue(schemas.RakshaContextKeySpanID, spanID)
+				if spanID, ok := spanCtx.Value(schemas.GatewayContextKeySpanID).(string); ok {
+					ctx.SetValue(schemas.GatewayContextKeySpanID, spanID)
 				}
 			}
 			pluginCtx := ctx.WithPluginScope(&pluginName)
-			resp, rakshaErr, err = plugin.PostLLMHook(pluginCtx, resp, rakshaErr)
+			resp, gatewayErr, err = plugin.PostLLMHook(pluginCtx, resp, gatewayErr)
 			pluginCtx.ReleasePluginScope()
 			// End span with appropriate status
 			if err != nil {
@@ -7438,8 +7438,8 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.RakshaContext, resp *schem
 				p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 			}
 		}
-		// If a plugin recovers from an error (sets rakshaErr to nil and sets resp), allow that
-		// If a plugin invalidates a response (sets resp to nil and sets rakshaErr), allow that
+		// If a plugin recovers from an error (sets gatewayErr to nil and sets resp), allow that
+		// If a plugin invalidates a response (sets resp to nil and sets gatewayErr), allow that
 	}
 	// Increment chunk count for streaming
 	if isStreaming {
@@ -7448,13 +7448,13 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.RakshaContext, resp *schem
 		p.streamingMu.Unlock()
 	}
 	// Final logic: if both are set, error takes precedence, unless error is nil
-	if rakshaErr != nil {
-		if resp != nil && rakshaErr.StatusCode == nil && rakshaErr.Error != nil && rakshaErr.Error.Type == nil &&
-			rakshaErr.Error.Message == "" && rakshaErr.Error.Error == nil {
+	if gatewayErr != nil {
+		if resp != nil && gatewayErr.StatusCode == nil && gatewayErr.Error != nil && gatewayErr.Error.Type == nil &&
+			gatewayErr.Error.Message == "" && gatewayErr.Error.Error == nil {
 			// Defensive: treat as recovery if error is empty
 			return resp, nil
 		}
-		return resp, rakshaErr
+		return resp, gatewayErr
 	}
 	return resp, nil
 }
@@ -7463,9 +7463,9 @@ func (p *PluginPipeline) RunPostLLMHooks(ctx *schemas.RakshaContext, resp *schem
 // Handles the envelope-based MCP pipeline (Ping / ListTools / ExecuteTool variants).
 // Connect requests do NOT flow through here — they use RunMCPPreConnectionHooks
 // with typed signatures.
-func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, int) {
+func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.GatewayContext, req *schemas.GatewayMCPRequest) (*schemas.GatewayMCPRequest, *schemas.MCPPluginShortCircuit, int) {
 	// If the skip plugin pipeline flag is set, skip the plugin pipeline
-	if skipPluginPipeline, ok := ctx.Value(schemas.RakshaContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
+	if skipPluginPipeline, ok := ctx.Value(schemas.GatewayContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
 		return req, nil, 0
 	}
 	var shortCircuit *schemas.MCPPluginShortCircuit
@@ -7479,8 +7479,8 @@ func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.RakshaContext, req *schemas
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.mcp_prehook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 		// Update pluginCtx with span context for nested operations
 		if spanCtx != nil {
-			if spanID, ok := spanCtx.Value(schemas.RakshaContextKeySpanID).(string); ok {
-				ctx.SetValue(schemas.RakshaContextKeySpanID, spanID)
+			if spanID, ok := spanCtx.Value(schemas.GatewayContextKeySpanID).(string); ok {
+				ctx.SetValue(schemas.GatewayContextKeySpanID, spanID)
 			}
 		}
 
@@ -7512,10 +7512,10 @@ func (p *PluginPipeline) RunMCPPreHooks(ctx *schemas.RakshaContext, req *schemas
 // RunMCPPostHooks executes MCP PostHooks in reverse order for the envelope-based
 // pipeline (Ping / ListTools / ExecuteTool variants). Connect responses do NOT
 // flow through here — they use RunMCPPostConnectionHooks.
-func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.RakshaContext, mcpResp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError, runFrom int) (*schemas.RakshaMCPResponse, *schemas.RakshaError) {
+func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.GatewayContext, mcpResp *schemas.GatewayMCPResponse, gatewayErr *schemas.GatewayError, runFrom int) (*schemas.GatewayMCPResponse, *schemas.GatewayError) {
 	// If the skip plugin pipeline flag is set, skip the plugin pipeline
-	if skipPluginPipeline, ok := ctx.Value(schemas.RakshaContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
-		return mcpResp, rakshaErr
+	if skipPluginPipeline, ok := ctx.Value(schemas.GatewayContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
+		return mcpResp, gatewayErr
 	}
 	// Defensive: ensure count is within valid bounds
 	if runFrom < 0 {
@@ -7535,13 +7535,13 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.RakshaContext, mcpResp *sc
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.mcp_posthook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 		// Update pluginCtx with span context for nested operations
 		if spanCtx != nil {
-			if spanID, ok := spanCtx.Value(schemas.RakshaContextKeySpanID).(string); ok {
-				ctx.SetValue(schemas.RakshaContextKeySpanID, spanID)
+			if spanID, ok := spanCtx.Value(schemas.GatewayContextKeySpanID).(string); ok {
+				ctx.SetValue(schemas.GatewayContextKeySpanID, spanID)
 			}
 		}
 
 		pluginCtx := ctx.WithPluginScope(&pluginName)
-		mcpResp, rakshaErr, err = plugin.PostMCPHook(pluginCtx, mcpResp, rakshaErr)
+		mcpResp, gatewayErr, err = plugin.PostMCPHook(pluginCtx, mcpResp, gatewayErr)
 		pluginCtx.ReleasePluginScope()
 
 		// End span with appropriate status
@@ -7553,17 +7553,17 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.RakshaContext, mcpResp *sc
 		} else {
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 		}
-		// If a plugin recovers from an error (sets rakshaErr to nil and sets mcpResp), allow that
-		// If a plugin invalidates a response (sets mcpResp to nil and sets rakshaErr), allow that
+		// If a plugin recovers from an error (sets gatewayErr to nil and sets mcpResp), allow that
+		// If a plugin invalidates a response (sets mcpResp to nil and sets gatewayErr), allow that
 	}
 	// Final logic: if both are set, error takes precedence, unless error is nil
-	if rakshaErr != nil {
-		if mcpResp != nil && rakshaErr.StatusCode == nil && rakshaErr.Error != nil && rakshaErr.Error.Type == nil &&
-			rakshaErr.Error.Message == "" && rakshaErr.Error.Error == nil {
+	if gatewayErr != nil {
+		if mcpResp != nil && gatewayErr.StatusCode == nil && gatewayErr.Error != nil && gatewayErr.Error.Type == nil &&
+			gatewayErr.Error.Message == "" && gatewayErr.Error.Error == nil {
 			// Defensive: treat as recovery if error is empty
 			return mcpResp, nil
 		}
-		return mcpResp, rakshaErr
+		return mcpResp, gatewayErr
 	}
 	return mcpResp, nil
 }
@@ -7575,8 +7575,8 @@ func (p *PluginPipeline) RunMCPPostHooks(ctx *schemas.RakshaContext, mcpResp *sc
 //
 // Returns the (possibly mutated) typed sub-request, any short-circuit decision, and
 // the count of hooks that executed (for matching PostHook dispatch).
-func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.RakshaContext, req *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectRequest, *schemas.MCPConnectionShortCircuit, int) {
-	if skipPluginPipeline, ok := ctx.Value(schemas.RakshaContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
+func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.GatewayContext, req *schemas.GatewayMCPConnectRequest) (*schemas.GatewayMCPConnectRequest, *schemas.MCPConnectionShortCircuit, int) {
+	if skipPluginPipeline, ok := ctx.Value(schemas.GatewayContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
 		return req, nil, 0
 	}
 	var shortCircuit *schemas.MCPConnectionShortCircuit
@@ -7588,8 +7588,8 @@ func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.RakshaContext, re
 		p.logger.Debug("running MCP connect pre-hook for plugin %s", pluginName)
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.mcp_connect_prehook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 		if spanCtx != nil {
-			if spanID, ok := spanCtx.Value(schemas.RakshaContextKeySpanID).(string); ok {
-				ctx.SetValue(schemas.RakshaContextKeySpanID, spanID)
+			if spanID, ok := spanCtx.Value(schemas.GatewayContextKeySpanID).(string); ok {
+				ctx.SetValue(schemas.GatewayContextKeySpanID, spanID)
 			}
 		}
 
@@ -7632,9 +7632,9 @@ func (p *PluginPipeline) RunMCPPreConnectionHooks(ctx *schemas.RakshaContext, re
 // RunMCPPostConnectionHooks executes typed Connect PostHooks in reverse order for
 // the plugins whose PreMCPConnectionHook ran. Plugins that only implement MCPPlugin
 // are skipped (they didn't run in PreHook, they don't run in PostHook).
-func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPConnectResponse, rakshaErr *schemas.RakshaError, runFrom int) (*schemas.RakshaMCPConnectResponse, *schemas.RakshaError) {
-	if skipPluginPipeline, ok := ctx.Value(schemas.RakshaContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
-		return resp, rakshaErr
+func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.GatewayContext, resp *schemas.GatewayMCPConnectResponse, gatewayErr *schemas.GatewayError, runFrom int) (*schemas.GatewayMCPConnectResponse, *schemas.GatewayError) {
+	if skipPluginPipeline, ok := ctx.Value(schemas.GatewayContextKeySkipPluginPipeline).(bool); ok && skipPluginPipeline {
+		return resp, gatewayErr
 	}
 	if runFrom < 0 {
 		runFrom = 0
@@ -7651,8 +7651,8 @@ func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.RakshaContext, r
 		p.logger.Debug("running MCP connect post-hook for plugin %s", pluginName)
 		spanCtx, handle := p.tracer.StartSpan(ctx, fmt.Sprintf("plugin.%s.mcp_connect_posthook", sanitizeSpanName(pluginName)), schemas.SpanKindPlugin)
 		if spanCtx != nil {
-			if spanID, ok := spanCtx.Value(schemas.RakshaContextKeySpanID).(string); ok {
-				ctx.SetValue(schemas.RakshaContextKeySpanID, spanID)
+			if spanID, ok := spanCtx.Value(schemas.GatewayContextKeySpanID).(string); ok {
+				ctx.SetValue(schemas.GatewayContextKeySpanID, spanID)
 			}
 		}
 
@@ -7665,7 +7665,7 @@ func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.RakshaContext, r
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "skipped (not MCPConnectionPlugin)")
 			continue
 		}
-		resp, rakshaErr, err = cp.PostMCPConnectionHook(pluginCtx, resp, rakshaErr)
+		resp, gatewayErr, err = cp.PostMCPConnectionHook(pluginCtx, resp, gatewayErr)
 		pluginCtx.ReleasePluginScope()
 
 		if err != nil {
@@ -7677,18 +7677,18 @@ func (p *PluginPipeline) RunMCPPostConnectionHooks(ctx *schemas.RakshaContext, r
 			p.tracer.EndSpan(handle, schemas.SpanStatusOk, "")
 		}
 	}
-	if rakshaErr != nil {
-		if resp != nil && rakshaErr.StatusCode == nil && rakshaErr.Error != nil && rakshaErr.Error.Type == nil &&
-			rakshaErr.Error.Message == "" && rakshaErr.Error.Error == nil {
+	if gatewayErr != nil {
+		if resp != nil && gatewayErr.StatusCode == nil && gatewayErr.Error != nil && gatewayErr.Error.Type == nil &&
+			gatewayErr.Error.Message == "" && gatewayErr.Error.Error == nil {
 			return resp, nil
 		}
-		return resp, rakshaErr
+		return resp, gatewayErr
 	}
 	return resp, nil
 }
 
 // resetPluginPipeline resets a PluginPipeline instance for reuse.
-// IMPORTANT: drainAndAttachPluginLogs must be called on the root RakshaContext
+// IMPORTANT: drainAndAttachPluginLogs must be called on the root GatewayContext
 // BEFORE this method, because it calls ReleasePluginScope on cached scoped contexts
 // which nils out their pluginLogs pointer. The drain reads from the shared store
 // on the root context, so it must happen while the store is still referenced.
@@ -7728,11 +7728,11 @@ func (p *PluginPipeline) resetPluginPipeline() {
 	p.streamingMu.Unlock()
 }
 
-// flushPluginLogs drains accumulated plugin logs from the RakshaContext and
+// flushPluginLogs drains accumulated plugin logs from the GatewayContext and
 // attaches them to the active trace when one exists. Unlike drainAndAttachPluginLogs,
 // it always drains the buffer first, so logs emitted before any trace is established
 // (e.g. by PreRequestHook) are not carried over to a later request on a reused context.
-func flushPluginLogs(ctx *schemas.RakshaContext) {
+func flushPluginLogs(ctx *schemas.GatewayContext) {
 	logs := ctx.DrainPluginLogs()
 	if len(logs) == 0 {
 		return
@@ -7744,9 +7744,9 @@ func flushPluginLogs(ctx *schemas.RakshaContext) {
 	tracer.AttachPluginLogs(traceID, logs)
 }
 
-// drainAndAttachPluginLogs drains accumulated plugin logs from the RakshaContext
+// drainAndAttachPluginLogs drains accumulated plugin logs from the GatewayContext
 // and attaches them to the trace for later retrieval by observability plugins.
-func drainAndAttachPluginLogs(ctx *schemas.RakshaContext) {
+func drainAndAttachPluginLogs(ctx *schemas.GatewayContext) {
 	tracer, traceID, err := GetTracerFromContext(ctx)
 	if err != nil || tracer == nil || traceID == "" {
 		return
@@ -7870,31 +7870,31 @@ func (p *PluginPipeline) GetChunkCount() int {
 }
 
 // getPluginPipeline gets a PluginPipeline from the pool and configures it
-func (raksha *Raksha) getPluginPipeline() *PluginPipeline {
-	pipeline := raksha.pluginPipelinePool.Get().(*PluginPipeline)
-	pipeline.llmPlugins = *raksha.llmPlugins.Load()
-	pipeline.mcpPlugins = *raksha.mcpPlugins.Load()
-	pipeline.logger = raksha.logger
-	pipeline.tracer = raksha.getTracer()
+func (gateway *Gateway) getPluginPipeline() *PluginPipeline {
+	pipeline := gateway.pluginPipelinePool.Get().(*PluginPipeline)
+	pipeline.llmPlugins = *gateway.llmPlugins.Load()
+	pipeline.mcpPlugins = *gateway.mcpPlugins.Load()
+	pipeline.logger = gateway.logger
+	pipeline.tracer = gateway.getTracer()
 	return pipeline
 }
 
 // releasePluginPipeline returns a PluginPipeline to the pool.
 // Caller must ensure drainAndAttachPluginLogs has already been called on the
-// associated RakshaContext before calling this method.
-func (raksha *Raksha) releasePluginPipeline(pipeline *PluginPipeline) {
+// associated GatewayContext before calling this method.
+func (gateway *Gateway) releasePluginPipeline(pipeline *PluginPipeline) {
 	pipeline.resetPluginPipeline()
-	raksha.pluginPipelinePool.Put(pipeline)
+	gateway.pluginPipelinePool.Put(pipeline)
 }
 
 // POOL & RESOURCE MANAGEMENT
 
 // getChannelMessage gets a ChannelMessage from the pool and configures it with the request.
 // It also gets response and error channels from their respective pools.
-func (raksha *Raksha) getChannelMessage(req schemas.RakshaRequest) *ChannelMessage {
+func (gateway *Gateway) getChannelMessage(req schemas.GatewayRequest) *ChannelMessage {
 	// Get channels from pool
-	responseChan := raksha.responseChannelPool.Get().(chan *schemas.RakshaResponse)
-	errorChan := raksha.errorChannelPool.Get().(chan schemas.RakshaError)
+	responseChan := gateway.responseChannelPool.Get().(chan *schemas.GatewayResponse)
+	errorChan := gateway.errorChannelPool.Get().(chan schemas.GatewayError)
 
 	// Clear any previous values to avoid leaking between requests
 	select {
@@ -7907,14 +7907,14 @@ func (raksha *Raksha) getChannelMessage(req schemas.RakshaRequest) *ChannelMessa
 	}
 
 	// Get message from pool and configure it
-	msg := raksha.channelMessagePool.Get().(*ChannelMessage)
-	msg.RakshaRequest = req
+	msg := gateway.channelMessagePool.Get().(*ChannelMessage)
+	msg.GatewayRequest = req
 	msg.Response = responseChan
 	msg.Err = errorChan
 
 	// Conditionally allocate ResponseStream for streaming requests only
 	if IsStreamRequestType(req.RequestType) {
-		responseStreamChan := raksha.responseStreamPool.Get().(chan chan *schemas.RakshaStreamChunk)
+		responseStreamChan := gateway.responseStreamPool.Get().(chan chan *schemas.GatewayStreamChunk)
 		// Clear any previous values to avoid leaking between requests
 		select {
 		case <-responseStreamChan:
@@ -7941,16 +7941,16 @@ func (raksha *Raksha) getChannelMessage(req schemas.RakshaRequest) *ChannelMessa
 // this window requires a sender-side reference count (so the last producer can
 // signal "queue is fully idle"), which is intentionally not implemented because
 // it would add per-send atomic overhead on the hot path.
-func (raksha *Raksha) drainQueueWithErrors(pq *ProviderQueue) {
+func (gateway *Gateway) drainQueueWithErrors(pq *ProviderQueue) {
 	for {
 		select {
 		case r := <-pq.queue:
 			provKey, mod, _ := r.GetRequestFields()
 			select {
-			case r.Err <- schemas.RakshaError{
-				IsRakshaError: false,
+			case r.Err <- schemas.GatewayError{
+				IsGatewayError: false,
 				Error:         &schemas.ErrorField{Message: "provider is shutting down"},
-				ExtraFields: schemas.RakshaErrorExtraFields{
+				ExtraFields: schemas.GatewayErrorExtraFields{
 					RequestType:            r.RequestType,
 					Provider:               provKey,
 					OriginalModelRequested: mod,
@@ -7968,10 +7968,10 @@ func (raksha *Raksha) drainQueueWithErrors(pq *ProviderQueue) {
 }
 
 // releaseChannelMessage returns a ChannelMessage and its channels to their respective pools.
-func (raksha *Raksha) releaseChannelMessage(msg *ChannelMessage) {
+func (gateway *Gateway) releaseChannelMessage(msg *ChannelMessage) {
 	// Put channels back in pools
-	raksha.responseChannelPool.Put(msg.Response)
-	raksha.errorChannelPool.Put(msg.Err)
+	gateway.responseChannelPool.Put(msg.Response)
+	gateway.errorChannelPool.Put(msg.Err)
 
 	// Return ResponseStream to pool if it was used
 	if msg.ResponseStream != nil {
@@ -7980,20 +7980,20 @@ func (raksha *Raksha) releaseChannelMessage(msg *ChannelMessage) {
 		case <-msg.ResponseStream:
 		default:
 		}
-		raksha.responseStreamPool.Put(msg.ResponseStream)
+		gateway.responseStreamPool.Put(msg.ResponseStream)
 	}
 
-	// Release of Raksha Request is handled in handle methods as they are required for fallbacks
+	// Release of Gateway Request is handled in handle methods as they are required for fallbacks
 
 	// Clear references and return to pool
 	msg.Response = nil
 	msg.ResponseStream = nil
 	msg.Err = nil
-	raksha.channelMessagePool.Put(msg)
+	gateway.channelMessagePool.Put(msg)
 }
 
-// resetRakshaRequest resets a RakshaRequest instance for reuse
-func resetRakshaRequest(req *schemas.RakshaRequest) {
+// resetGatewayRequest resets a GatewayRequest instance for reuse
+func resetGatewayRequest(req *schemas.GatewayRequest) {
 	req.RequestType = ""
 	req.ListModelsRequest = nil
 	req.TextCompletionRequest = nil
@@ -8047,16 +8047,16 @@ func resetRakshaRequest(req *schemas.RakshaRequest) {
 	req.PassthroughRequest = nil
 }
 
-// getRakshaRequest gets a RakshaRequest from the pool
-func (raksha *Raksha) getRakshaRequest() *schemas.RakshaRequest {
-	req := raksha.rakshaRequestPool.Get().(*schemas.RakshaRequest)
+// getGatewayRequest gets a GatewayRequest from the pool
+func (gateway *Gateway) getGatewayRequest() *schemas.GatewayRequest {
+	req := gateway.gatewayRequestPool.Get().(*schemas.GatewayRequest)
 	return req
 }
 
-// releaseRakshaRequest returns a RakshaRequest to the pool
-func (raksha *Raksha) releaseRakshaRequest(req *schemas.RakshaRequest) {
-	resetRakshaRequest(req)
-	raksha.rakshaRequestPool.Put(req)
+// releaseGatewayRequest returns a GatewayRequest to the pool
+func (gateway *Gateway) releaseGatewayRequest(req *schemas.GatewayRequest) {
+	resetGatewayRequest(req)
+	gateway.gatewayRequestPool.Put(req)
 }
 
 // filterKeysByID returns the subset of keys whose ID equals target. Used to
@@ -8075,14 +8075,14 @@ func filterKeysByID(keys []schemas.Key, target string) []schemas.Key {
 
 // getAllSupportedKeys retrieves all valid keys for a ListModels request.
 // allowing the provider to aggregate results from multiple keys.
-func (raksha *Raksha) getAllSupportedKeys(ctx *schemas.RakshaContext, providerKey schemas.ModelProvider, baseProviderType schemas.ModelProvider) ([]schemas.Key, error) {
+func (gateway *Gateway) getAllSupportedKeys(ctx *schemas.GatewayContext, providerKey schemas.ModelProvider, baseProviderType schemas.ModelProvider) ([]schemas.Key, error) {
 	if ctx != nil {
-		if key, ok := ctx.Value(schemas.RakshaContextKeyDirectKey).(schemas.Key); ok {
+		if key, ok := ctx.Value(schemas.GatewayContextKeyDirectKey).(schemas.Key); ok {
 			return []schemas.Key{key}, nil
 		}
 	}
 
-	keys, err := raksha.account.GetKeysForProvider(ctx, providerKey)
+	keys, err := gateway.account.GetKeysForProvider(ctx, providerKey)
 	if err != nil {
 		return nil, err
 	}
@@ -8099,7 +8099,7 @@ func (raksha *Raksha) getAllSupportedKeys(ctx *schemas.RakshaContext, providerKe
 			continue
 		}
 		if err := validateKey(baseProviderType, &key); err != nil {
-			raksha.logger.Warn("error validating key %s (%s) for provider %s: %s, skipping key", key.Name, key.ID, providerKey, err.Error())
+			gateway.logger.Warn("error validating key %s (%s) for provider %s: %s, skipping key", key.Name, key.ID, providerKey, err.Error())
 			continue
 		}
 		if strings.TrimSpace(key.Value.GetValue()) != "" || CanProviderKeyValueBeEmpty(baseProviderType) {
@@ -8107,7 +8107,7 @@ func (raksha *Raksha) getAllSupportedKeys(ctx *schemas.RakshaContext, providerKe
 		}
 	}
 
-	raksha.logger.Debug("[Raksha] Provider %s: %d valid keys found", providerKey, len(supportedKeys))
+	gateway.logger.Debug("[Gateway] Provider %s: %d valid keys found", providerKey, len(supportedKeys))
 
 	if len(supportedKeys) == 0 {
 		return nil, fmt.Errorf("no valid keys found for provider: %v", providerKey)
@@ -8119,14 +8119,14 @@ func (raksha *Raksha) getAllSupportedKeys(ctx *schemas.RakshaContext, providerKe
 // getKeysForBatchAndFileOps retrieves keys for batch and file operations with model filtering.
 // For batch operations, only keys with UseForBatchAPI enabled are included.
 // Model filtering: if model is specified and key has model restrictions, only include if model is in list.
-func (raksha *Raksha) getKeysForBatchAndFileOps(ctx *schemas.RakshaContext, providerKey schemas.ModelProvider, baseProviderType schemas.ModelProvider, model *string, isBatchOp bool) ([]schemas.Key, error) {
+func (gateway *Gateway) getKeysForBatchAndFileOps(ctx *schemas.GatewayContext, providerKey schemas.ModelProvider, baseProviderType schemas.ModelProvider, model *string, isBatchOp bool) ([]schemas.Key, error) {
 	if ctx != nil {
-		if key, ok := ctx.Value(schemas.RakshaContextKeyDirectKey).(schemas.Key); ok {
+		if key, ok := ctx.Value(schemas.GatewayContextKeyDirectKey).(schemas.Key); ok {
 			return []schemas.Key{key}, nil
 		}
 	}
 
-	keys, err := raksha.account.GetKeysForProvider(ctx, providerKey)
+	keys, err := gateway.account.GetKeysForProvider(ctx, providerKey)
 	if err != nil {
 		return nil, err
 	}
@@ -8148,7 +8148,7 @@ func (raksha *Raksha) getKeysForBatchAndFileOps(ctx *schemas.RakshaContext, prov
 		}
 
 		if err := validateKey(baseProviderType, &k); err != nil {
-			raksha.logger.Warn("error validating key %s (%s) for provider %s: %s, skipping key", k.Name, k.ID, providerKey, err.Error())
+			gateway.logger.Warn("error validating key %s (%s) for provider %s: %s, skipping key", k.Name, k.ID, providerKey, err.Error())
 			continue
 		}
 
@@ -8198,27 +8198,27 @@ func (raksha *Raksha) getKeysForBatchAndFileOps(ctx *schemas.RakshaContext, prov
 //
 // canRotate=false is returned for cases where the caller must always use the same key:
 //   - SkipKeySelection (provider allows keyless requests; empty slice returned)
-//   - Explicit RakshaContextKeyAPIKeyID / APIKeyName (user pinned a specific key)
+//   - Explicit GatewayContextKeyAPIKeyID / APIKeyName (user pinned a specific key)
 //   - Session stickiness (key persisted in KV store for the session lifetime)
 //   - Single-key pool (only one eligible key — rotation is a no-op, KV write skipped)
 //
 // canRotate=true is returned when there are two or more eligible keys and no pinning
 // or stickiness constraint is in effect.
-func (raksha *Raksha) selectKeyFromProviderForModelWithPool(ctx *schemas.RakshaContext, requestType schemas.RequestType, providerKey schemas.ModelProvider, model string, baseProviderType schemas.ModelProvider) ([]schemas.Key, bool, error) {
+func (gateway *Gateway) selectKeyFromProviderForModelWithPool(ctx *schemas.GatewayContext, requestType schemas.RequestType, providerKey schemas.ModelProvider, model string, baseProviderType schemas.ModelProvider) ([]schemas.Key, bool, error) {
 	// Direct key bypass: caller supplied a raw API key via x-uf-direct-key header.
 	if ctx != nil {
-		if key, ok := ctx.Value(schemas.RakshaContextKeyDirectKey).(schemas.Key); ok {
+		if key, ok := ctx.Value(schemas.GatewayContextKeyDirectKey).(schemas.Key); ok {
 			return []schemas.Key{key}, false, nil
 		}
 	}
 
 	// SkipKeySelection: provider allows keyless requests — return empty pool, no rotation.
-	if skipKeySelection, ok := ctx.Value(schemas.RakshaContextKeySkipKeySelection).(bool); ok && skipKeySelection && isKeySkippingAllowed(providerKey) {
+	if skipKeySelection, ok := ctx.Value(schemas.GatewayContextKeySkipKeySelection).(bool); ok && skipKeySelection && isKeySkippingAllowed(providerKey) {
 		return []schemas.Key{}, false, nil
 	}
 
 	// Get keys for provider
-	keys, err := raksha.account.GetKeysForProvider(ctx, providerKey)
+	keys, err := gateway.account.GetKeysForProvider(ctx, providerKey)
 	if err != nil {
 		return nil, false, err
 	}
@@ -8255,7 +8255,7 @@ func (raksha *Raksha) selectKeyFromProviderForModelWithPool(ctx *schemas.RakshaC
 				continue
 			}
 			if err := validateKey(baseProviderType, &key); err != nil {
-				raksha.logger.Warn("error validating key %s (%s) for provider %s: %s, skipping key", key.Name, key.ID, providerKey, err.Error())
+				gateway.logger.Warn("error validating key %s (%s) for provider %s: %s, skipping key", key.Name, key.ID, providerKey, err.Error())
 				continue
 			}
 			if strings.TrimSpace(key.Value.GetValue()) != "" || CanProviderKeyValueBeEmpty(baseProviderType) {
@@ -8270,7 +8270,7 @@ func (raksha *Raksha) selectKeyFromProviderForModelWithPool(ctx *schemas.RakshaC
 				continue
 			}
 			if err := validateKey(baseProviderType, &key); err != nil {
-				raksha.logger.Warn("error validating key %s (%s) for provider %s: %s, skipping key", key.Name, key.ID, providerKey, err.Error())
+				gateway.logger.Warn("error validating key %s (%s) for provider %s: %s, skipping key", key.Name, key.ID, providerKey, err.Error())
 				continue
 			}
 			hasValue := strings.TrimSpace(key.Value.GetValue()) != "" || CanProviderKeyValueBeEmpty(baseProviderType)
@@ -8295,7 +8295,7 @@ func (raksha *Raksha) selectKeyFromProviderForModelWithPool(ctx *schemas.RakshaC
 
 	// Explicit key ID takes priority over key name — pin to that key, no rotation.
 	if ctx != nil {
-		if keyID, ok := ctx.Value(schemas.RakshaContextKeyAPIKeyID).(string); ok {
+		if keyID, ok := ctx.Value(schemas.GatewayContextKeyAPIKeyID).(string); ok {
 			if keyID = strings.TrimSpace(keyID); keyID != "" {
 				for _, key := range supportedKeys {
 					if key.ID == keyID {
@@ -8305,7 +8305,7 @@ func (raksha *Raksha) selectKeyFromProviderForModelWithPool(ctx *schemas.RakshaC
 				return nil, false, fmt.Errorf("no supported key found with id %q for provider: %v and model: %s", keyID, providerKey, model)
 			}
 		}
-		if keyName, ok := ctx.Value(schemas.RakshaContextKeyAPIKeyName).(string); ok {
+		if keyName, ok := ctx.Value(schemas.GatewayContextKeyAPIKeyName).(string); ok {
 			if keyName = strings.TrimSpace(keyName); keyName != "" {
 				for _, key := range supportedKeys {
 					if key.Name == keyName {
@@ -8328,42 +8328,42 @@ func (raksha *Raksha) selectKeyFromProviderForModelWithPool(ctx *schemas.RakshaC
 	// pool with canRotate=false so rate-limit retries also stay on the same key.
 	sessionID := ""
 	if ctx != nil {
-		if id, ok := ctx.Value(schemas.RakshaContextKeySessionID).(string); ok && id != "" {
+		if id, ok := ctx.Value(schemas.GatewayContextKeySessionID).(string); ok && id != "" {
 			sessionID = id
 		}
 	}
 	fallbackIndex := 0
 	if ctx != nil {
-		fallbackIndex, _ = ctx.Value(schemas.RakshaContextKeyFallbackIndex).(int)
+		fallbackIndex, _ = ctx.Value(schemas.GatewayContextKeyFallbackIndex).(int)
 	}
-	stickinessActive := sessionID != "" && raksha.kvStore != nil && fallbackIndex == 0
+	stickinessActive := sessionID != "" && gateway.kvStore != nil && fallbackIndex == 0
 
 	if stickinessActive {
 		kvKey := buildSessionKey(providerKey, sessionID, model)
-		ttl, _ := ctx.Value(schemas.RakshaContextKeySessionTTL).(time.Duration)
+		ttl, _ := ctx.Value(schemas.GatewayContextKeySessionTTL).(time.Duration)
 		if ttl <= 0 {
 			ttl = schemas.DefaultSessionStickyTTL
 		}
 
-		if cachedKey, found, stale := getCachedKeyFromStore(raksha.kvStore, kvKey, supportedKeys); found {
-			if err := raksha.kvStore.SetWithTTL(kvKey, cachedKey.ID, ttl); err != nil {
-				raksha.logger.Warn("error setting session cache for provider=%s key_id=%s: %s", providerKey, cachedKey.ID, err.Error())
+		if cachedKey, found, stale := getCachedKeyFromStore(gateway.kvStore, kvKey, supportedKeys); found {
+			if err := gateway.kvStore.SetWithTTL(kvKey, cachedKey.ID, ttl); err != nil {
+				gateway.logger.Warn("error setting session cache for provider=%s key_id=%s: %s", providerKey, cachedKey.ID, err.Error())
 			}
 			return []schemas.Key{cachedKey}, false, nil
 		} else if stale {
-			if _, err := raksha.kvStore.Delete(kvKey); err != nil {
-				raksha.logger.Warn("error deleting stale session cache for provider=%s: %s", providerKey, err.Error())
+			if _, err := gateway.kvStore.Delete(kvKey); err != nil {
+				gateway.logger.Warn("error deleting stale session cache for provider=%s: %s", providerKey, err.Error())
 			}
 		}
 
-		selectedKey, err := raksha.keySelector(ctx, supportedKeys, providerKey, model)
+		selectedKey, err := gateway.keySelector(ctx, supportedKeys, providerKey, model)
 		if err != nil {
 			return nil, false, err
 		}
 
-		wasSet, err := raksha.kvStore.SetNXWithTTL(kvKey, selectedKey.ID, ttl)
+		wasSet, err := gateway.kvStore.SetNXWithTTL(kvKey, selectedKey.ID, ttl)
 		if err != nil {
-			raksha.logger.Warn("error setting session cache for provider=%s key_id=%s: %s", providerKey, selectedKey.ID, err.Error())
+			gateway.logger.Warn("error setting session cache for provider=%s key_id=%s: %s", providerKey, selectedKey.ID, err.Error())
 			return []schemas.Key{selectedKey}, false, nil
 		}
 		if wasSet {
@@ -8371,11 +8371,11 @@ func (raksha *Raksha) selectKeyFromProviderForModelWithPool(ctx *schemas.RakshaC
 		}
 
 		// Another concurrent request won the race — re-read the persisted key.
-		if currentKey, found, stale := getCachedKeyFromStore(raksha.kvStore, kvKey, supportedKeys); found {
+		if currentKey, found, stale := getCachedKeyFromStore(gateway.kvStore, kvKey, supportedKeys); found {
 			return []schemas.Key{currentKey}, false, nil
 		} else if stale {
-			if _, err := raksha.kvStore.Delete(kvKey); err != nil {
-				raksha.logger.Warn("error deleting stale session cache for provider=%s: %s", providerKey, err.Error())
+			if _, err := gateway.kvStore.Delete(kvKey); err != nil {
+				gateway.logger.Warn("error deleting stale session cache for provider=%s: %s", providerKey, err.Error())
 			}
 			return []schemas.Key{selectedKey}, false, nil
 		}
@@ -8423,71 +8423,71 @@ func getCachedKeyFromStore(kvStore schemas.KVStore, kvKey string, supportedKeys 
 
 // Shutdown gracefully stops all workers when triggered.
 // It closes all request channels and waits for workers to exit.
-func (raksha *Raksha) Shutdown() {
-	raksha.providerLifecycleMu.Lock()
-	defer raksha.providerLifecycleMu.Unlock()
+func (gateway *Gateway) Shutdown() {
+	gateway.providerLifecycleMu.Lock()
+	defer gateway.providerLifecycleMu.Unlock()
 
-	raksha.logger.Info("closing all request channels...")
+	gateway.logger.Info("closing all request channels...")
 	// Cancel the context if not already done
-	if raksha.ctx.Err() == nil && raksha.cancel != nil {
-		raksha.cancel()
+	if gateway.ctx.Err() == nil && gateway.cancel != nil {
+		gateway.cancel()
 	}
 	// Signal all provider queues to close. Workers exit via pq.done;
 	// we never close pq.queue to avoid "send on closed channel" panics in
 	// producers that are concurrently in tryRequest.
-	raksha.requestQueues.Range(func(key, value interface{}) bool {
+	gateway.requestQueues.Range(func(key, value interface{}) bool {
 		pq := value.(*ProviderQueue)
 		pq.signalClosing()
 		return true
 	})
 
 	// Wait for all workers to exit
-	raksha.waitGroups.Range(func(key, value interface{}) bool {
+	gateway.waitGroups.Range(func(key, value interface{}) bool {
 		waitGroup := value.(*sync.WaitGroup)
 		waitGroup.Wait()
 		return true
 	})
 
 	// Wait for async cleanup of old workers from provider updates. Those old
-	// wait groups are no longer in raksha.waitGroups after the new queue is
+	// wait groups are no longer in gateway.waitGroups after the new queue is
 	// published, but Shutdown must still wait for their in-flight requests.
-	raksha.oldWorkerCleanups.Wait()
+	gateway.oldWorkerCleanups.Wait()
 
 	// Final drain sweep — same reasoning as RemoveProvider's Step 3b.
-	raksha.requestQueues.Range(func(key, value interface{}) bool {
-		raksha.drainQueueWithErrors(value.(*ProviderQueue))
+	gateway.requestQueues.Range(func(key, value interface{}) bool {
+		gateway.drainQueueWithErrors(value.(*ProviderQueue))
 		return true
 	})
 
 	// Cleanup MCP manager
-	if raksha.MCPManager != nil {
-		err := raksha.MCPManager.Cleanup()
+	if gateway.MCPManager != nil {
+		err := gateway.MCPManager.Cleanup()
 		if err != nil {
-			raksha.logger.Warn("Error cleaning up MCP manager: %s", err.Error())
+			gateway.logger.Warn("Error cleaning up MCP manager: %s", err.Error())
 		}
 	}
 
 	// Stop the tracerWrapper to clean up background goroutines
-	if tracerWrapper := raksha.tracer.Load().(*tracerWrapper); tracerWrapper != nil && tracerWrapper.tracer != nil {
+	if tracerWrapper := gateway.tracer.Load().(*tracerWrapper); tracerWrapper != nil && tracerWrapper.tracer != nil {
 		tracerWrapper.tracer.Stop()
 	}
 
 	// Cleanup plugins
-	if llmPlugins := raksha.llmPlugins.Load(); llmPlugins != nil {
+	if llmPlugins := gateway.llmPlugins.Load(); llmPlugins != nil {
 		for _, plugin := range *llmPlugins {
 			err := plugin.Cleanup()
 			if err != nil {
-				raksha.logger.Warn(fmt.Sprintf("Error cleaning up LLM plugin: %s", err.Error()))
+				gateway.logger.Warn(fmt.Sprintf("Error cleaning up LLM plugin: %s", err.Error()))
 			}
 		}
 	}
-	if mcpPlugins := raksha.mcpPlugins.Load(); mcpPlugins != nil {
+	if mcpPlugins := gateway.mcpPlugins.Load(); mcpPlugins != nil {
 		for _, plugin := range *mcpPlugins {
 			err := plugin.Cleanup()
 			if err != nil {
-				raksha.logger.Warn(fmt.Sprintf("Error cleaning up MCP plugin: %s", err.Error()))
+				gateway.logger.Warn(fmt.Sprintf("Error cleaning up MCP plugin: %s", err.Error()))
 			}
 		}
 	}
-	raksha.logger.Info("all request channels closed")
+	gateway.logger.Info("all request channels closed")
 }

@@ -1,4 +1,4 @@
-# Raksha Framework Development Services
+# Gateway Framework Development Services
 #
 # Supported Vector Stores:
 # - Weaviate: Runs locally via this docker-compose (port 9000)
@@ -11,28 +11,28 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: raksha-postgres-fw
+    container_name: gateway-postgres-fw
     environment:
-      POSTGRES_USER: raksha
-      POSTGRES_PASSWORD: raksha_password
-      POSTGRES_DB: raksha
+      POSTGRES_USER: gateway
+      POSTGRES_PASSWORD: gateway_password
+      POSTGRES_DB: gateway
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U raksha -d raksha"]
+      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
     networks:
-      - raksha_network
+      - gateway_network
 
   redis:
     image: redis/redis-stack:latest
-    container_name: raksha-redis
+    container_name: gateway-redis
     ports:
       - "6379:6379"
     healthcheck:
@@ -42,11 +42,11 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - raksha_network
+      - gateway_network
 
   weaviate:
     image: cr.weaviate.io/semitechnologies/weaviate:1.25.0
-    container_name: raksha-weaviate
+    container_name: gateway-weaviate
     ports:
       - "9000:8080"
       - "50051:50051"
@@ -65,11 +65,11 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - raksha_network
+      - gateway_network
 
   pinecone:
     image: ghcr.io/pinecone-io/pinecone-index:latest
-    container_name: raksha-pinecone
+    container_name: gateway-pinecone
     environment:
       PORT: 5081
       INDEX_TYPE: serverless
@@ -86,11 +86,11 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - raksha_network
+      - gateway_network
 
   qdrant:
     image: qdrant/qdrant:v1.16.3
-    container_name: raksha-qdrant
+    container_name: gateway-qdrant
     ports:
       - "6333:6333"
       - "6334:6334"
@@ -103,10 +103,10 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - raksha_network
+      - gateway_network
 
 networks:
-  raksha_network:
+  gateway_network:
     driver: bridge
 
 volumes:

@@ -46,11 +46,11 @@ func (ids UserAgentIdentifiers) String() string {
 	return ids[0]
 }
 
-func ExtractAndSetUserAgentFromHeaders(headers map[string][]string, rakshaCtx *RakshaContext) {
+func ExtractAndSetUserAgentFromHeaders(headers map[string][]string, gatewayCtx *GatewayContext) {
 	if len(headers) == 0 {
 		return
 	}
-	if rakshaCtx == nil {
+	if gatewayCtx == nil {
 		return
 	}
 	var userAgent []string
@@ -64,7 +64,7 @@ func ExtractAndSetUserAgentFromHeaders(headers map[string][]string, rakshaCtx *R
 		ua := userAgent[0]
 		for _, ids := range integrationUserAgents {
 			if ids.Matches(ua) {
-				rakshaCtx.SetValue(RakshaContextKeyUserAgent, ua)
+				gatewayCtx.SetValue(GatewayContextKeyUserAgent, ua)
 				break
 			}
 		}

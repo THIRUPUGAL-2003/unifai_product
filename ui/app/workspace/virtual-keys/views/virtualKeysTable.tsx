@@ -24,6 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { resetDurationLabels } from "@/lib/constants/governance";
 import {
 	getErrorMessage,
@@ -109,8 +110,17 @@ function downloadCSV(content: string) {
 	URL.revokeObjectURL(url);
 }
 
+function UsageLoadFailedHint() {
+	return (
+		<span className="text-destructive/80 text-xs" title="Failed to load usage">
+			—
+		</span>
+	);
+}
+
 function VKBudgetCell({ vk }: { vk: VirtualKey }) {
-	const { displayBudgets } = useVirtualKeyUsage(vk);
+	const { displayBudgets, isApUsageError, isVkUsersError } = useVirtualKeyUsage(vk);
+	if (isApUsageError || isVkUsersError) return <UsageLoadFailedHint />;
 	return <BudgetDisplay budgets={displayBudgets} calendarAligned={vk.calendar_aligned} />;
 }
 
@@ -119,7 +129,7 @@ function getUserDisplayName(u: { name?: string; username?: string; email?: strin
 }
 
 function VKAssignedToCell({ vk }: { vk: VirtualKey }) {
-	const { directUsers } = useVirtualKeyUsage(vk);
+	const { directUsers, isVkUsersError } = useVirtualKeyUsage(vk);
 
 	const parts: string[] = [];
 	if (vk.teams && vk.teams.length > 0) {
@@ -149,6 +159,7 @@ function VKAssignedToCell({ vk }: { vk: VirtualKey }) {
 	}
 
 	if (parts.length === 0) {
+		if (isVkUsersError) return <UsageLoadFailedHint />;
 		return <span className="text-muted-foreground max-w-full truncate text-left text-sm">-</span>;
 	}
 
@@ -167,7 +178,8 @@ function VKAssignedToCell({ vk }: { vk: VirtualKey }) {
 }
 
 function VKRateLimitCell({ vk }: { vk: VirtualKey }) {
-	const { displayRateLimit } = useVirtualKeyUsage(vk);
+	const { displayRateLimit, isApUsageError, isVkUsersError } = useVirtualKeyUsage(vk);
+	if (isApUsageError || isVkUsersError) return <UsageLoadFailedHint />;
 	return <RateLimitDisplay rateLimits={displayRateLimit} calendarAligned={vk.calendar_aligned} />;
 }
 
@@ -253,8 +265,8 @@ function VKActionsMenu({
 						data-testid={`vk-copy-snippet-btn-${vk.name}`}
 						onSelect={(e) => {
 							e.preventDefault();
-							const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin.replace(/\/+$/, "") : "<YOUR_RAKSHA_URL>";
-							const snippet = `from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${origin}/v1",\n    api_key="${vk.value}"\n)\n\nresponse = client.chat.completions.create(\n    model="mistral/mistral-tiny",\n    messages=[{"role": "user", "content": "Hello Raksha!"}]\n)\nprint(response.choices[0].message.content)`;
+							const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin.replace(/\/+$/, "") : "<YOUR_GATEWAY_URL>";
+							const snippet = `from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${origin}/v1",\n    api_key="${vk.value}"\n)\n\nresponse = client.chat.completions.create(\n    model="mistral/mistral-tiny",\n    messages=[{"role": "user", "content": "Hello ${PRODUCT_NAME}!"}]\n)\nprint(response.choices[0].message.content)`;
 							void copyToClipboard(snippet);
 							toast.success("Python integration snippet copied to clipboard");
 							setIsOpen(false);
@@ -374,7 +386,12 @@ export default function VirtualKeysTable({
 				: null,
 		[editingVirtualKeyId, editingVirtualKeySnapshot, virtualKeys],
 	);
-	const { data: sessionUsersData } = useGetSessionUsersQuery();
+	const { data: sessionUsersData, isError: sessionUsersFailed, error: sessionUsersError } = useGetSessionUsersQuery();
+	useEffect(() => {
+		if (sessionUsersFailed) {
+			toast.error(`Failed to load users: ${getErrorMessage(sessionUsersError)}`);
+		}
+	}, [sessionUsersFailed, sessionUsersError]);
 	const userNames = useMemo(() => {
 		const names = new Map<string, string>();
 		for (const u of sessionUsersData ?? []) {
@@ -390,7 +407,12 @@ export default function VirtualKeysTable({
 	// The target may not be on the current page/filter, so fetch it by id as a fallback.
 	const [vkParam, setVkParam] = useQueryState("vk");
 	const needsVkFetch = !!selectedVkId && !selectedVkInList;
-	const { data: fetchedVkData } = useGetVirtualKeyQuery(selectedVkId ?? "", { skip: !needsVkFetch });
+	const {
+		data: fetchedVkData,
+		isError: isVkFetchError,
+		error: vkFetchError,
+		isFetching: isVkFetching,
+	} = useGetVirtualKeyQuery(selectedVkId ?? "", { skip: !needsVkFetch });
 	const selectedVirtualKey = selectedVkInList ?? (needsVkFetch ? (fetchedVkData?.virtual_key ?? null) : null);
 
 	useEffect(() => {
@@ -398,6 +420,12 @@ export default function VirtualKeysTable({
 		onSelectedVkChange(vkParam);
 		setVkParam(null); // consume the param; selection is held in parent state from here
 	}, [vkParam, setVkParam, onSelectedVkChange]);
+
+	useEffect(() => {
+		if (!needsVkFetch || isVkFetching || !isVkFetchError) return;
+		toast.error(getErrorMessage(vkFetchError) || "Virtual key not found");
+		onSelectedVkChange("");
+	}, [needsVkFetch, isVkFetching, isVkFetchError, vkFetchError, onSelectedVkChange]);
 
 	const hasCreateAccess = useRbac(RbacResource.VirtualKeys, RbacOperation.Create);
 	const hasUpdateAccess = useRbac(RbacResource.VirtualKeys, RbacOperation.Update);
@@ -964,8 +992,8 @@ export default function VirtualKeysTable({
 																	variant="ghost"
 																	size="sm"
 																	onClick={() => {
-																		const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin.replace(/\/+$/, "") : "<YOUR_RAKSHA_URL>";
-																		const snippet = `from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${origin}/v1",\n    api_key="${vk.value}"\n)\n\nresponse = client.chat.completions.create(\n    model="mistral/mistral-tiny",\n    messages=[{"role": "user", "content": "Hello Raksha!"}]\n)\nprint(response.choices[0].message.content)`;
+																		const origin = typeof window !== "undefined" && window.location.origin ? window.location.origin.replace(/\/+$/, "") : "<YOUR_GATEWAY_URL>";
+																		const snippet = `from openai import OpenAI\n\nclient = OpenAI(\n    base_url="${origin}/v1",\n    api_key="${vk.value}"\n)\n\nresponse = client.chat.completions.create(\n    model="mistral/mistral-tiny",\n    messages=[{"role": "user", "content": "Hello ${PRODUCT_NAME}!"}]\n)\nprint(response.choices[0].message.content)`;
 																		void copyToClipboard(snippet);
 																		toast.success("Python integration snippet copied to clipboard");
 																	}}

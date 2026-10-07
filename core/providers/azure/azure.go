@@ -19,16 +19,16 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/providers/anthropic"
-	"github.com/raksha/raksha/core/providers/openai"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/anthropic"
+	"github.com/gateway/gateway/core/providers/openai"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 
 	"github.com/valyala/fasthttp"
 )
 
 // AzureAuthorizationTokenKey is the context key for the Azure authentication token.
-const AzureAuthorizationTokenKey schemas.RakshaContextKey = "azure-authorization-token"
+const AzureAuthorizationTokenKey schemas.GatewayContextKey = "azure-authorization-token"
 
 // DefaultAzureScope is the default scope for Azure authentication.
 const DefaultAzureScope = "https://cognitiveservices.azure.com/.default"
@@ -44,8 +44,8 @@ type AzureProvider struct {
 	networkConfig   schemas.NetworkConfig // Network configuration including extra headers
 
 	credentials         sync.Map // map of tenant ID:client ID to azcore.TokenCredential
-	sendBackRawRequest  bool     // Whether to include raw request in RakshaResponse
-	sendBackRawResponse bool     // Whether to include raw response in RakshaResponse
+	sendBackRawRequest  bool     // Whether to include raw request in GatewayResponse
+	sendBackRawResponse bool     // Whether to include raw response in GatewayResponse
 }
 
 func (p *AzureProvider) getOrCreateAuth(
@@ -96,7 +96,7 @@ func (p *AzureProvider) getOrCreateDefaultAzureCredential() (azcore.TokenCredent
 // 1. Service Principal (client ID/secret/tenant ID) - Bearer token
 // 2. Context token - Bearer token
 // 3. API key - api-key or x-api-key header
-func (provider *AzureProvider) getAzureAuthHeaders(ctx *schemas.RakshaContext, key schemas.Key, isAnthropicModel bool) (map[string]string, *schemas.RakshaError) {
+func (provider *AzureProvider) getAzureAuthHeaders(ctx *schemas.GatewayContext, key schemas.Key, isAnthropicModel bool) (map[string]string, *schemas.GatewayError) {
 	authHeader := make(map[string]string)
 
 	// Service Principal authentication
@@ -104,7 +104,7 @@ func (provider *AzureProvider) getAzureAuthHeaders(ctx *schemas.RakshaContext, k
 		key.AzureKeyConfig.ClientSecret != nil && key.AzureKeyConfig.TenantID != nil && key.AzureKeyConfig.ClientID.GetValue() != "" && key.AzureKeyConfig.ClientSecret.GetValue() != "" && key.AzureKeyConfig.TenantID.GetValue() != "" {
 		cred, err := provider.getOrCreateAuth(key.AzureKeyConfig.TenantID.GetValue(), key.AzureKeyConfig.ClientID.GetValue(), key.AzureKeyConfig.ClientSecret.GetValue())
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to get or create Azure authentication", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to get or create Azure authentication", err)
 		}
 
 		scopes := getAzureScopes(key.AzureKeyConfig.Scopes)
@@ -113,11 +113,11 @@ func (provider *AzureProvider) getAzureAuthHeaders(ctx *schemas.RakshaContext, k
 			Scopes: scopes,
 		})
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to get Azure access token", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to get Azure access token", err)
 		}
 
 		if token.Token == "" {
-			return nil, providerUtils.NewRakshaOperationError("Azure access token is empty", errors.New("token is empty"))
+			return nil, providerUtils.NewGatewayOperationError("Azure access token is empty", errors.New("token is empty"))
 		}
 
 		authHeader["Authorization"] = fmt.Sprintf("Bearer %s", token.Token)
@@ -142,16 +142,16 @@ func (provider *AzureProvider) getAzureAuthHeaders(ctx *schemas.RakshaContext, k
 
 		cred, err := provider.getOrCreateDefaultAzureCredential()
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError("no credentials provided and DefaultAzureCredential unavailable", err)
+			return nil, providerUtils.NewGatewayOperationError("no credentials provided and DefaultAzureCredential unavailable", err)
 		}
 
 		token, err := cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: scopes})
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError("no credentials provided and DefaultAzureCredential failed to get token", err)
+			return nil, providerUtils.NewGatewayOperationError("no credentials provided and DefaultAzureCredential failed to get token", err)
 		}
 
 		if token.Token == "" {
-			return nil, providerUtils.NewRakshaOperationError("no credentials provided and DefaultAzureCredential returned empty token", errors.New("token is empty"))
+			return nil, providerUtils.NewGatewayOperationError("no credentials provided and DefaultAzureCredential returned empty token", errors.New("token is empty"))
 		}
 
 		authHeader["Authorization"] = fmt.Sprintf("Bearer %s", token.Token)
@@ -206,7 +206,7 @@ func (provider *AzureProvider) GetProviderKey() schemas.ModelProvider {
 
 // listModelsByKey performs a list models request for a single key.
 // Returns the response and latency, or an error if the request fails.
-func (provider *AzureProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) listModelsByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -226,23 +226,23 @@ func (provider *AzureProvider) listModelsByKey(ctx *schemas.RakshaContext, key s
 	req.Header.SetContentType("application/json")
 
 	// Set Azure authentication
-	authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	for k, v := range authHeaders {
 		req.Header.Set(k, v)
 	}
 
 	// Send the request and measure latency
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -251,7 +251,7 @@ func (provider *AzureProvider) listModelsByKey(ctx *schemas.RakshaContext, key s
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Read the response body and copy it before releasing the response
@@ -260,15 +260,15 @@ func (provider *AzureProvider) listModelsByKey(ctx *schemas.RakshaContext, key s
 
 	// Parse Azure-specific response
 	azureResponse := &AzureListModelsResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, azureResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, azureResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert to Raksha response
-	response := azureResponse.ToRakshaListModelsResponse(key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+	// Convert to Gateway response
+	response := azureResponse.ToGatewayListModelsResponse(key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 	if response == nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to convert Azure model list response", nil)
+		return nil, providerUtils.NewGatewayOperationError("failed to convert Azure model list response", nil)
 	}
 
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -289,7 +289,7 @@ func (provider *AzureProvider) listModelsByKey(ctx *schemas.RakshaContext, key s
 // ListModels performs a list models request to Azure's API.
 // It retrieves all models accessible by the Azure resource
 // Requests are made concurrently for improved performance.
-func (provider *AzureProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	return providerUtils.HandleMultipleListModelsRequests(
 		ctx,
 		keys,
@@ -300,15 +300,15 @@ func (provider *AzureProvider) ListModels(ctx *schemas.RakshaContext, keys []sch
 
 // TextCompletion performs a text completion request to Azure's API.
 // It formats the request, sends it to Azure, and processes the response.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *AzureProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *AzureProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
 	}
-	authHeader, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeader, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	return openai.HandleOpenAITextCompletionRequest(
 		ctx,
@@ -328,8 +328,8 @@ func (provider *AzureProvider) TextCompletion(ctx *schemas.RakshaContext, key sc
 
 // TextCompletionStream performs a streaming text completion request to Azure's API.
 // It formats the request, sends it to Azure, and processes the response.
-// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
-func (provider *AzureProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel of GatewayStreamChunk objects or an error if the request fails.
+func (provider *AzureProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -364,8 +364,8 @@ func (provider *AzureProvider) TextCompletionStream(ctx *schemas.RakshaContext, 
 
 // ChatCompletion performs a chat completion request to Azure's API.
 // It formats the request, sends it to Azure, and processes the response.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *AzureProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *AzureProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -373,9 +373,9 @@ func (provider *AzureProvider) ChatCompletion(ctx *schemas.RakshaContext, key sc
 
 	if schemas.IsAnthropicModelFamily(ctx, request.Model) {
 		// Anthropic-family models use the native Anthropic Messages endpoint via the shared handler.
-		authHeader, rakshaErr := provider.getAzureAuthHeaders(ctx, key, true)
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		authHeader, gatewayErr := provider.getAzureAuthHeaders(ctx, key, true)
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 		authHeader["anthropic-version"] = resolveAnthropicVersion(ctx)
 		return anthropic.HandleAnthropicChatCompletionRequest(
@@ -399,9 +399,9 @@ func (provider *AzureProvider) ChatCompletion(ctx *schemas.RakshaContext, key sc
 	}
 
 	// OpenAI-family models use the OpenAI-compatible Azure endpoint via the shared handler.
-	authHeader, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeader, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	return openai.HandleOpenAIChatCompletionRequest(
 		ctx,
@@ -423,8 +423,8 @@ func (provider *AzureProvider) ChatCompletion(ctx *schemas.RakshaContext, key sc
 // ChatCompletionStream performs a streaming chat completion request to Azure's API.
 // It supports real-time streaming of responses using Server-Sent Events (SSE).
 // Uses Azure-specific URL construction with deployments and supports both api-key and Bearer token authentication.
-// Returns a channel containing RakshaResponse objects representing the stream or an error if the request fails.
-func (provider *AzureProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel containing GatewayResponse objects representing the stream or an error if the request fails.
+func (provider *AzureProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -502,8 +502,8 @@ func (provider *AzureProvider) ChatCompletionStream(ctx *schemas.RakshaContext, 
 
 // Responses performs a responses request to Azure's API.
 // It formats the request, sends it to Azure, and processes the response.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *AzureProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *AzureProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -511,9 +511,9 @@ func (provider *AzureProvider) Responses(ctx *schemas.RakshaContext, key schemas
 
 	if schemas.IsAnthropicModelFamily(ctx, request.Model) {
 		// Anthropic-family models use the native Anthropic Messages endpoint via the shared handler.
-		authHeader, rakshaErr := provider.getAzureAuthHeaders(ctx, key, true)
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		authHeader, gatewayErr := provider.getAzureAuthHeaders(ctx, key, true)
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 		authHeader["anthropic-version"] = resolveAnthropicVersion(ctx)
 		return anthropic.HandleAnthropicResponsesRequest(
@@ -538,9 +538,9 @@ func (provider *AzureProvider) Responses(ctx *schemas.RakshaContext, key schemas
 	}
 
 	// OpenAI-family models use the OpenAI-compatible Azure endpoint via the shared handler.
-	authHeader, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeader, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	path := fmt.Sprintf("openai/v1/responses?api-version=%s", resolveAPIVersion(ctx, AzureAPIVersionPreview))
 	return openai.HandleOpenAIResponsesRequest(
@@ -561,7 +561,7 @@ func (provider *AzureProvider) Responses(ctx *schemas.RakshaContext, key schemas
 }
 
 // ResponsesStream performs a streaming responses request to Azure's API.
-func (provider *AzureProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *AzureProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -575,7 +575,7 @@ func (provider *AzureProvider) ResponsesStream(ctx *schemas.RakshaContext, postH
 		authHeader["anthropic-version"] = resolveAnthropicVersion(ctx)
 		url = fmt.Sprintf("%s/anthropic/v1/messages", endpoint)
 
-		jsonData, rakshaErr := anthropic.BuildAnthropicResponsesRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
+		jsonData, gatewayErr := anthropic.BuildAnthropicResponsesRequestBody(ctx, request, anthropic.AnthropicRequestBuildConfig{
 			Provider:                  schemas.Azure,
 			Model:                     request.Model,
 			IsStreaming:               true,
@@ -583,8 +583,8 @@ func (provider *AzureProvider) ResponsesStream(ctx *schemas.RakshaContext, postH
 			ShouldSendBackRawRequest:  provider.sendBackRawRequest,
 			ShouldSendBackRawResponse: provider.sendBackRawResponse,
 		})
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 
 		// Use shared streaming logic from Anthropic
@@ -639,15 +639,15 @@ func (provider *AzureProvider) ResponsesStream(ctx *schemas.RakshaContext, postH
 
 // Embedding generates embeddings for the given input text(s) using Azure.
 // The input can be either a single string or a slice of strings for batch embedding.
-// Returns a RakshaResponse containing the embedding(s) and any error that occurred.
-func (provider *AzureProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the embedding(s) and any error that occurred.
+func (provider *AzureProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
 	}
-	authHeader, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeader, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	return openai.HandleOpenAIEmbeddingRequest(
 		ctx,
@@ -665,7 +665,7 @@ func (provider *AzureProvider) Embedding(ctx *schemas.RakshaContext, key schemas
 }
 
 // Speech is not supported by the Azure provider.
-func (provider *AzureProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -695,18 +695,18 @@ func (provider *AzureProvider) Speech(ctx *schemas.RakshaContext, key schemas.Ke
 }
 
 // Rerank is not supported by the Azure provider.
-func (provider *AzureProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Azure provider.
-func (provider *AzureProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // SpeechStream handles streaming for speech synthesis with Azure.
 // Azure sends raw binary audio bytes in SSE format, unlike OpenAI which sends JSON.
-func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *AzureProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -751,7 +751,7 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
 	// Build request body
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -761,8 +761,8 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 			}
 			return reqBody, nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if !providerUtils.ApplyLargePayloadRequestBodyWithModelNormalization(ctx, req, schemas.OpenAI) {
@@ -776,8 +776,8 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 	if requestErr != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(requestErr, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -786,17 +786,17 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(requestErr, fasthttp.ErrTimeout) || errors.Is(requestErr, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, requestErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, requestErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, requestErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		// non-streaming path - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, requestErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -805,7 +805,7 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -907,17 +907,17 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 
 					// Azure sends JSON-wrapped responses for speech streaming
 					// Parse the JSON to extract the response type and audio data
-					var response schemas.RakshaSpeechStreamResponse
+					var response schemas.GatewaySpeechStreamResponse
 					if err := sonic.Unmarshal(audioData, &response); err != nil {
 						// If JSON parsing fails, check if this might be an error response
 						// Quick check for error field (allocation-free using sonic.Get)
 						if errorNode, _ := sonic.Get(audioData, "error"); errorNode.Exists() {
 							// Only unmarshal when we know there's an error
-							var rakshaErr schemas.RakshaError
-							if errParseErr := sonic.Unmarshal(audioData, &rakshaErr); errParseErr == nil {
-								if rakshaErr.Error != nil && rakshaErr.Error.Message != "" {
-									ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-									providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, &rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+							var gatewayErr schemas.GatewayError
+							if errParseErr := sonic.Unmarshal(audioData, &gatewayErr); errParseErr == nil {
+								if gatewayErr.Error != nil && gatewayErr.Error.Message != "" {
+									ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+									providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, &gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 									return
 								}
 							}
@@ -936,7 +936,7 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 					chunkIndex++
 
 					// Set extra fields for the response
-					response.ExtraFields = schemas.RakshaResponseExtraFields{
+					response.ExtraFields = schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					}
@@ -946,7 +946,7 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 						response.ExtraFields.RawResponse = audioData
 					}
 
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, &response, nil, nil), responseChan, postHookSpanFinalizer)
 				}
 
 				// Check if we received [DONE] marker - break outer loop to send final response
@@ -965,7 +965,7 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 					// Non-EOF errors (e.g., connection reset by peer due to TPM throttling)
 					// must be reported to the client instead of falling through to send
 					// a fake "done" response with truncated audio.
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
@@ -977,9 +977,9 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 		// Send final "done" response only if we received the [DONE] marker from the provider.
 		// Without [DONE], the stream ended abnormally (e.g., clean EOF without proper SSE termination).
 		if chunkIndex >= 0 && doneReceived {
-			finalResponse := schemas.RakshaSpeechStreamResponse{
+			finalResponse := schemas.GatewaySpeechStreamResponse{
 				Type: schemas.SpeechStreamResponseTypeDone,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					ChunkIndex: chunkIndex + 1,
 					Latency:    time.Since(startTime).Milliseconds(),
 				},
@@ -990,8 +990,8 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 			}
 
 			finalResponse.BackfillParams(request)
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, &finalResponse, nil, nil), responseChan, postHookSpanFinalizer)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, &finalResponse, nil, nil), responseChan, postHookSpanFinalizer)
 		} else if chunkIndex >= 0 && !doneReceived {
 			provider.logger.Warn("Stream ended without receiving [DONE] marker after %d chunks", chunkIndex+1)
 		}
@@ -1003,7 +1003,7 @@ func (provider *AzureProvider) SpeechStream(ctx *schemas.RakshaContext, postHook
 }
 
 // Transcription is not supported by the Azure provider.
-func (provider *AzureProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -1031,15 +1031,15 @@ func (provider *AzureProvider) Transcription(ctx *schemas.RakshaContext, key sch
 }
 
 // TranscriptionStream is not supported by the Azure provider.
-func (provider *AzureProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *AzureProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, provider.GetProviderKey())
 }
 
 // ImageGeneration performs an Image Generation request to Azure's API.
 // It formats the request, sends it to Azure, and processes the response.
-// Returns a RakshaResponse containing the raksha response or an error if the request fails.
-func (provider *AzureProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key,
-	request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the gateway response or an error if the request fails.
+func (provider *AzureProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key,
+	request *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -1066,14 +1066,14 @@ func (provider *AzureProvider) ImageGeneration(ctx *schemas.RakshaContext, key s
 
 // ImageGenerationStream performs a streaming image generation request to Azure's API.
 // It formats the request, sends it to Azure, and processes the response.
-// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
+// Returns a channel of GatewayStreamChunk objects or an error if the request fails.
 func (provider *AzureProvider) ImageGenerationStream(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	request *schemas.RakshaImageGenerationRequest,
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+	request *schemas.GatewayImageGenerationRequest,
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -1109,7 +1109,7 @@ func (provider *AzureProvider) ImageGenerationStream(
 }
 
 // ImageEdit performs an image edit request to Azure's API.
-func (provider *AzureProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -1136,7 +1136,7 @@ func (provider *AzureProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas
 }
 
 // ImageEditStream performs a streaming image edit request to Azure's API.
-func (provider *AzureProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *AzureProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -1172,13 +1172,13 @@ func (provider *AzureProvider) ImageEditStream(ctx *schemas.RakshaContext, postH
 }
 
 // ImageVariation is not supported by the Azure provider.
-func (provider *AzureProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration creates a video using Azure's OpenAI-compatible Sora API.
 // This delegates to the OpenAI handler with Azure-specific URL and authentication.
-func (provider *AzureProvider) VideoGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) VideoGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -1187,7 +1187,7 @@ func (provider *AzureProvider) VideoGeneration(ctx *schemas.RakshaContext, key s
 	// Build Azure URL for OpenAI-compatible video generation endpoint
 	url := fmt.Sprintf("%s/openai/v1/videos", endpoint)
 
-	response, rakshaErr := openai.HandleOpenAIVideoGenerationRequest(
+	response, gatewayErr := openai.HandleOpenAIVideoGenerationRequest(
 		ctx,
 		provider.client,
 		url,
@@ -1199,18 +1199,18 @@ func (provider *AzureProvider) VideoGeneration(ctx *schemas.RakshaContext, key s
 		providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse),
 		provider.logger,
 	)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	return response, nil
 }
 
 // VideoRetrieve retrieves the status of a video from Azure's OpenAI-compatible API.
-func (provider *AzureProvider) VideoRetrieve(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) VideoRetrieve(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
 
@@ -1219,9 +1219,9 @@ func (provider *AzureProvider) VideoRetrieve(ctx *schemas.RakshaContext, key sch
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
 	}
 
-	authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	return openai.HandleOpenAIVideoRetrieveRequest(
@@ -1241,11 +1241,11 @@ func (provider *AzureProvider) VideoRetrieve(ctx *schemas.RakshaContext, key sch
 }
 
 // VideoDownload downloads video content from Azure's OpenAI-compatible API.
-func (provider *AzureProvider) VideoDownload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) VideoDownload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
 
@@ -1270,19 +1270,19 @@ func (provider *AzureProvider) VideoDownload(ctx *schemas.RakshaContext, key sch
 	req.Header.SetMethod(http.MethodGet)
 
 	// Get authentication headers
-	authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	for k, v := range authHeaders {
 		req.Header.Set(k, v)
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -1292,7 +1292,7 @@ func (provider *AzureProvider) VideoDownload(ctx *schemas.RakshaContext, key sch
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Get content type from response
@@ -1303,11 +1303,11 @@ func (provider *AzureProvider) VideoDownload(ctx *schemas.RakshaContext, key sch
 	}
 
 	// Create response
-	response := &schemas.RakshaVideoDownloadResponse{
+	response := &schemas.GatewayVideoDownloadResponse{
 		VideoID:     request.ID,
 		Content:     append([]byte(nil), body...),
 		ContentType: contentType,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -1316,11 +1316,11 @@ func (provider *AzureProvider) VideoDownload(ctx *schemas.RakshaContext, key sch
 }
 
 // VideoDelete deletes a video from Azure's OpenAI-compatible API.
-func (provider *AzureProvider) VideoDelete(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) VideoDelete(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 
 	if request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 	videoID := providerUtils.StripVideoIDProviderSuffix(request.ID, providerName)
 
@@ -1332,7 +1332,7 @@ func (provider *AzureProvider) VideoDelete(ctx *schemas.RakshaContext, key schem
 	// Build Azure URL
 	url := fmt.Sprintf("%s/openai/v1/videos/%s", endpoint, videoID)
 
-	response, rakshaErr := openai.HandleOpenAIVideoDeleteRequest(
+	response, gatewayErr := openai.HandleOpenAIVideoDeleteRequest(
 		ctx,
 		provider.client,
 		url,
@@ -1344,15 +1344,15 @@ func (provider *AzureProvider) VideoDelete(ctx *schemas.RakshaContext, key schem
 		providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse),
 		provider.logger,
 	)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	return response, nil
 }
 
 // VideoList lists videos from Azure's OpenAI-compatible API.
-func (provider *AzureProvider) VideoList(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) VideoList(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -1361,7 +1361,7 @@ func (provider *AzureProvider) VideoList(ctx *schemas.RakshaContext, key schemas
 	// Build Azure URL
 	baseURL := fmt.Sprintf("%s/openai/v1/videos", endpoint)
 
-	response, rakshaErr := openai.HandleOpenAIVideoListRequest(
+	response, gatewayErr := openai.HandleOpenAIVideoListRequest(
 		ctx,
 		provider.client,
 		baseURL,
@@ -1373,30 +1373,30 @@ func (provider *AzureProvider) VideoList(ctx *schemas.RakshaContext, key schemas
 		providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse),
 		provider.logger,
 	)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	return response, nil
 }
 
 // VideoRemix is not supported by Azure provider.
-func (provider *AzureProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) VideoRemix(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // FileUpload uploads a file to Azure OpenAI.
-func (provider *AzureProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) FileUpload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
 	}
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("file content is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file content is required", nil)
 	}
 
 	if request.Purpose == "" {
-		return nil, providerUtils.NewRakshaOperationError("purpose is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("purpose is required", nil)
 	}
 
 	// Create multipart form data
@@ -1405,7 +1405,7 @@ func (provider *AzureProvider) FileUpload(ctx *schemas.RakshaContext, key schema
 
 	// Add purpose field
 	if err := writer.WriteField("purpose", string(request.Purpose)); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write purpose field", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write purpose field", err)
 	}
 
 	// Add file field
@@ -1415,14 +1415,14 @@ func (provider *AzureProvider) FileUpload(ctx *schemas.RakshaContext, key schema
 	}
 	part, err := writer.CreateFormFile("file", filename)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to create form file", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to create form file", err)
 	}
 	if _, err := part.Write(request.File); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write file content", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write file content", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to close multipart writer", err)
 	}
 
 	// Create request
@@ -1448,10 +1448,10 @@ func (provider *AzureProvider) FileUpload(ctx *schemas.RakshaContext, key schema
 	req.SetBody(buf.Bytes())
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -1461,24 +1461,24 @@ func (provider *AzureProvider) FileUpload(ctx *schemas.RakshaContext, key schema
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var openAIResp openai.OpenAIFileResponse
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	return openAIResp.ToRakshaFileUploadResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+	return openAIResp.ToGatewayFileUploadResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 }
 
 // FileList lists files from all provided Azure keys and aggregates results.
 // FileList lists files using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *AzureProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) FileList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	if len(keys) == 0 {
 		return nil, providerUtils.NewConfigurationError("no Azure keys available for file list operation")
 	}
@@ -1489,14 +1489,14 @@ func (provider *AzureProvider) FileList(ctx *schemas.RakshaContext, keys []schem
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaFileListResponse{
+		return &schemas.GatewayFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -1540,10 +1540,10 @@ func (provider *AzureProvider) FileList(ctx *schemas.RakshaContext, keys []schem
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -1553,16 +1553,16 @@ func (provider *AzureProvider) FileList(ctx *schemas.RakshaContext, keys []schem
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var openAIResp openai.OpenAIFileListResponse
-	_, _, rakshaErr = providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, _, gatewayErr = providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert files to Raksha format
+	// Convert files to Gateway format
 	files := make([]schemas.FileObject, 0, len(openAIResp.Data))
 	var lastFileID string
 	for _, file := range openAIResp.Data {
@@ -1573,7 +1573,7 @@ func (provider *AzureProvider) FileList(ctx *schemas.RakshaContext, keys []schem
 			CreatedAt:     file.CreatedAt,
 			Filename:      file.Filename,
 			Purpose:       schemas.FilePurpose(file.Purpose),
-			Status:        openai.ToRakshaFileStatus(file.Status),
+			Status:        openai.ToGatewayFileStatus(file.Status),
 			StatusDetails: file.StatusDetails,
 		})
 		lastFileID = file.ID
@@ -1582,34 +1582,34 @@ func (provider *AzureProvider) FileList(ctx *schemas.RakshaContext, keys []schem
 	// Build cursor for next request
 	nextCursor, hasMore := helper.BuildNextCursor(openAIResp.HasMore, lastFileID)
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaFileListResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayFileListResponse{
 		Object:  "list",
 		Data:    files,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 	if nextCursor != "" {
-		rakshaResp.After = &nextCursor
+		gatewayResp.After = &nextCursor
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // FileRetrieve retrieves file metadata from Azure OpenAI by trying each key until found.
-func (provider *AzureProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) FileRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		endpoint := resolveAzureEndpoint(ctx, key)
 		if endpoint == "" {
@@ -1638,12 +1638,12 @@ func (provider *AzureProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []s
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -1661,17 +1661,17 @@ func (provider *AzureProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []s
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp openai.OpenAIFileResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -1679,16 +1679,16 @@ func (provider *AzureProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []s
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		return openAIResp.ToRakshaFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+		return openAIResp.ToGatewayFileRetrieveResponse(providerName, latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 	}
 
 	return nil, lastErr
 }
 
 // FileDelete deletes a file from Azure OpenAI by trying each key until successful.
-func (provider *AzureProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) FileDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	if len(keys) == 0 {
@@ -1698,7 +1698,7 @@ func (provider *AzureProvider) FileDelete(ctx *schemas.RakshaContext, keys []sch
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		endpoint := resolveAzureEndpoint(ctx, key)
 		if endpoint == "" {
@@ -1727,12 +1727,12 @@ func (provider *AzureProvider) FileDelete(ctx *schemas.RakshaContext, keys []sch
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -1749,11 +1749,11 @@ func (provider *AzureProvider) FileDelete(ctx *schemas.RakshaContext, keys []sch
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			return &schemas.RakshaFileDeleteResponse{
+			return &schemas.GatewayFileDeleteResponse{
 				ID:      request.FileID,
 				Object:  "file",
 				Deleted: true,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					Latency: latency.Milliseconds(),
 				},
 			}, nil
@@ -1764,17 +1764,17 @@ func (provider *AzureProvider) FileDelete(ctx *schemas.RakshaContext, keys []sch
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp openai.OpenAIFileDeleteResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -1782,11 +1782,11 @@ func (provider *AzureProvider) FileDelete(ctx *schemas.RakshaContext, keys []sch
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := &schemas.RakshaFileDeleteResponse{
+		result := &schemas.GatewayFileDeleteResponse{
 			ID:      openAIResp.ID,
 			Object:  openAIResp.Object,
 			Deleted: openAIResp.Deleted,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -1806,16 +1806,16 @@ func (provider *AzureProvider) FileDelete(ctx *schemas.RakshaContext, keys []sch
 }
 
 // FileContent downloads file content from Azure OpenAI by trying each key until found.
-func (provider *AzureProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) FileContent(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	if len(keys) == 0 {
 		return nil, providerUtils.NewConfigurationError("no Azure keys available for file content operation")
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 
 	for _, key := range keys {
 		endpoint := resolveAzureEndpoint(ctx, key)
@@ -1844,12 +1844,12 @@ func (provider *AzureProvider) FileContent(ctx *schemas.RakshaContext, keys []sc
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -1867,7 +1867,7 @@ func (provider *AzureProvider) FileContent(ctx *schemas.RakshaContext, keys []sc
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
@@ -1882,11 +1882,11 @@ func (provider *AzureProvider) FileContent(ctx *schemas.RakshaContext, keys []sc
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		return &schemas.RakshaFileContentResponse{
+		return &schemas.GatewayFileContentResponse{
 			FileID:      request.FileID,
 			Content:     content,
 			ContentType: contentType,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
@@ -1897,7 +1897,7 @@ func (provider *AzureProvider) FileContent(ctx *schemas.RakshaContext, keys []sc
 
 // BatchCreate creates a new batch job on Azure OpenAI.
 // Azure Batch API uses the same format as OpenAI but with Azure-specific URL patterns.
-func (provider *AzureProvider) BatchCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) BatchCreate(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -1909,17 +1909,17 @@ func (provider *AzureProvider) BatchCreate(ctx *schemas.RakshaContext, key schem
 		// Convert inline requests to JSONL format
 		jsonlData, err := openai.ConvertRequestsToJSONL(request.Requests)
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to convert requests to JSONL", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to convert requests to JSONL", err)
 		}
 
 		// Upload the file with purpose "batch"
-		uploadResp, rakshaErr := provider.FileUpload(ctx, key, &schemas.RakshaFileUploadRequest{
+		uploadResp, gatewayErr := provider.FileUpload(ctx, key, &schemas.GatewayFileUploadRequest{
 			File:     jsonlData,
 			Filename: "batch_requests.jsonl",
 			Purpose:  "batch",
 		})
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 
 		inputFileID = uploadResp.ID
@@ -1927,7 +1927,7 @@ func (provider *AzureProvider) BatchCreate(ctx *schemas.RakshaContext, key schem
 
 	// Validate that we have a file ID (either provided or uploaded)
 	if inputFileID == "" && request.InputBlob == nil {
-		return nil, providerUtils.NewRakshaOperationError("either input_file_id, input_blob, or requests array is required for Azure batch API", nil)
+		return nil, providerUtils.NewGatewayOperationError("either input_file_id, input_blob, or requests array is required for Azure batch API", nil)
 	}
 
 	// Create request
@@ -1976,15 +1976,15 @@ func (provider *AzureProvider) BatchCreate(ctx *schemas.RakshaContext, key schem
 
 	jsonData, err := providerUtils.MarshalSorted(openAIReq)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Handle error response
@@ -1994,24 +1994,24 @@ func (provider *AzureProvider) BatchCreate(ctx *schemas.RakshaContext, key schem
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	var openAIResp openai.OpenAIBatchResponse
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, jsonData, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, jsonData, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	return openAIResp.ToRakshaBatchCreateResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
+	return openAIResp.ToGatewayBatchCreateResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse), nil
 }
 
 // BatchList lists batch jobs from all provided Azure keys and aggregates results.
 // BatchList lists batch jobs using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *AzureProvider) BatchList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) BatchList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
@@ -2022,16 +2022,16 @@ func (provider *AzureProvider) BatchList(ctx *schemas.RakshaContext, keys []sche
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaBatchListResponse{
+		return &schemas.GatewayBatchListResponse{
 			Object:  "list",
-			Data:    []schemas.RakshaBatchRetrieveResponse{},
+			Data:    []schemas.GatewayBatchRetrieveResponse{},
 			HasMore: false,
 		}, nil
 	}
@@ -2071,10 +2071,10 @@ func (provider *AzureProvider) BatchList(ctx *schemas.RakshaContext, keys []sche
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -2084,46 +2084,46 @@ func (provider *AzureProvider) BatchList(ctx *schemas.RakshaContext, keys []sche
 
 	body, decodeErr := providerUtils.CheckAndDecodeBody(resp)
 	if decodeErr != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 	}
 
 	var openAIResp openai.OpenAIBatchListResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert batches to Raksha format
-	batches := make([]schemas.RakshaBatchRetrieveResponse, 0, len(openAIResp.Data))
+	// Convert batches to Gateway format
+	batches := make([]schemas.GatewayBatchRetrieveResponse, 0, len(openAIResp.Data))
 	var lastBatchID string
 	for _, batch := range openAIResp.Data {
-		batches = append(batches, *batch.ToRakshaBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse))
+		batches = append(batches, *batch.ToGatewayBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse))
 		lastBatchID = batch.ID
 	}
 
 	// Build cursor for next request
 	nextCursor, hasMore := helper.BuildNextCursor(openAIResp.HasMore, lastBatchID)
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaBatchListResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayBatchListResponse{
 		Object:  "list",
 		Data:    batches,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 	if nextCursor != "" {
-		rakshaResp.NextCursor = &nextCursor
+		gatewayResp.NextCursor = &nextCursor
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // BatchRetrieve retrieves a specific batch job from Azure OpenAI by trying each key until found.
-func (provider *AzureProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) BatchRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
@@ -2133,7 +2133,7 @@ func (provider *AzureProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		endpoint := resolveAzureEndpoint(ctx, key)
 		if endpoint == "" {
@@ -2162,12 +2162,12 @@ func (provider *AzureProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2185,17 +2185,17 @@ func (provider *AzureProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp openai.OpenAIBatchResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2203,7 +2203,7 @@ func (provider *AzureProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := openAIResp.ToRakshaBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
+		result := openAIResp.ToGatewayBatchRetrieveResponse(latency, sendBackRawRequest, sendBackRawResponse, rawRequest, rawResponse)
 		return result, nil
 	}
 
@@ -2211,9 +2211,9 @@ func (provider *AzureProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []
 }
 
 // BatchCancel cancels a batch job on Azure OpenAI by trying each key until successful.
-func (provider *AzureProvider) BatchCancel(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) BatchCancel(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
@@ -2223,7 +2223,7 @@ func (provider *AzureProvider) BatchCancel(ctx *schemas.RakshaContext, keys []sc
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		endpoint := resolveAzureEndpoint(ctx, key)
 		if endpoint == "" {
@@ -2252,12 +2252,12 @@ func (provider *AzureProvider) BatchCancel(ctx *schemas.RakshaContext, keys []sc
 		}
 
 		// Make request
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
-		if rakshaErr != nil {
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2275,17 +2275,17 @@ func (provider *AzureProvider) BatchCancel(ctx *schemas.RakshaContext, keys []sc
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
 		var openAIResp openai.OpenAIBatchResponse
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &openAIResp, nil, sendBackRawRequest, sendBackRawResponse)
+		if gatewayErr != nil {
 			wait()
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
@@ -2293,13 +2293,13 @@ func (provider *AzureProvider) BatchCancel(ctx *schemas.RakshaContext, keys []sc
 		fasthttp.ReleaseRequest(req)
 		fasthttp.ReleaseResponse(resp)
 
-		result := &schemas.RakshaBatchCancelResponse{
+		result := &schemas.GatewayBatchCancelResponse{
 			ID:           openAIResp.ID,
 			Object:       openAIResp.Object,
-			Status:       openai.ToRakshaBatchStatus(openAIResp.Status),
+			Status:       openai.ToGatewayBatchStatus(openAIResp.Status),
 			CancellingAt: openAIResp.CancellingAt,
 			CancelledAt:  openAIResp.CancelledAt,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -2327,12 +2327,12 @@ func (provider *AzureProvider) BatchCancel(ctx *schemas.RakshaContext, keys []sc
 }
 
 // BatchDelete is not supported by the Azure provider.
-func (provider *AzureProvider) BatchDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) BatchDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, schemas.Azure)
 }
 
 // getBlobStorageTokenForKey returns a Bearer token scoped to Azure Blob Storage for a single key.
-func (provider *AzureProvider) getBlobStorageTokenForKey(ctx *schemas.RakshaContext, key schemas.Key) (string, *schemas.RakshaError) {
+func (provider *AzureProvider) getBlobStorageTokenForKey(ctx *schemas.GatewayContext, key schemas.Key) (string, *schemas.GatewayError) {
 	if key.AzureKeyConfig == nil {
 		return "", nil
 	}
@@ -2377,11 +2377,11 @@ func isTrustedAzureBlobHost(host string) bool {
 // credentials in sequence until a download succeeds — mirroring how FileContent loops keys.
 // SAS URLs (containing "sig=") are fetched in a single unauthenticated attempt since the
 // token in the URL already grants access.
-func (provider *AzureProvider) downloadBlobURL(ctx *schemas.RakshaContext, blobURL string, keys []schemas.Key) ([]byte, int64, *schemas.RakshaError) {
+func (provider *AzureProvider) downloadBlobURL(ctx *schemas.GatewayContext, blobURL string, keys []schemas.Key) ([]byte, int64, *schemas.GatewayError) {
 	// Validate host for all blob URLs before any outbound request
 	parsed, parseErr := url.Parse(blobURL)
 	if parseErr != nil || parsed.Scheme != "https" || !isTrustedAzureBlobHost(parsed.Hostname()) {
-		return nil, 0, providerUtils.NewRakshaOperationError(
+		return nil, 0, providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("blob URL is not a trusted Azure Blob Storage endpoint: %s", blobURL), nil,
 		)
 	}
@@ -2392,7 +2392,7 @@ func (provider *AzureProvider) downloadBlobURL(ctx *schemas.RakshaContext, blobU
 	}
 
 	// Plain URL: try each key's storage credentials until one succeeds.
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		token, tokenErr := provider.getBlobStorageTokenForKey(ctx, key)
 		if tokenErr != nil {
@@ -2412,11 +2412,11 @@ func (provider *AzureProvider) downloadBlobURL(ctx *schemas.RakshaContext, blobU
 	if lastErr != nil {
 		return nil, 0, lastErr
 	}
-	return nil, 0, providerUtils.NewRakshaOperationError("no Azure keys available for blob download", nil)
+	return nil, 0, providerUtils.NewGatewayOperationError("no Azure keys available for blob download", nil)
 }
 
 // doGetBlob performs a single GET request to a blob URL, optionally adding a Bearer token.
-func (provider *AzureProvider) doGetBlob(ctx *schemas.RakshaContext, blobURL string, bearerToken string) ([]byte, int64, *schemas.RakshaError) {
+func (provider *AzureProvider) doGetBlob(ctx *schemas.GatewayContext, blobURL string, bearerToken string) ([]byte, int64, *schemas.GatewayError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -2429,21 +2429,21 @@ func (provider *AzureProvider) doGetBlob(ctx *schemas.RakshaContext, blobURL str
 		req.Header.Set("x-ms-version", "2020-04-08")
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, 0, rakshaErr
+	if gatewayErr != nil {
+		return nil, 0, gatewayErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
-		return nil, 0, providerUtils.NewRakshaOperationError(
+		return nil, 0, providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("blob download failed with status %d", resp.StatusCode()), nil,
 		)
 	}
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, 0, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, 0, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	return append([]byte(nil), body...), latency.Milliseconds(), nil
@@ -2452,13 +2452,13 @@ func (provider *AzureProvider) doGetBlob(ctx *schemas.RakshaContext, blobURL str
 // BatchResults retrieves batch results from Azure OpenAI.
 // For file-based batches it downloads via output_file_id using the Files API.
 // For blob-based batches it fetches the output_blob URL directly using Azure Storage credentials.
-func (provider *AzureProvider) BatchResults(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
-	batchResp, rakshaErr := provider.BatchRetrieve(ctx, keys, &schemas.RakshaBatchRetrieveRequest{
+func (provider *AzureProvider) BatchResults(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
+	batchResp, gatewayErr := provider.BatchRetrieve(ctx, keys, &schemas.GatewayBatchRetrieveRequest{
 		Provider: request.Provider,
 		BatchID:  request.BatchID,
 	})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	var content []byte
@@ -2466,7 +2466,7 @@ func (provider *AzureProvider) BatchResults(ctx *schemas.RakshaContext, keys []s
 
 	switch {
 	case batchResp.OutputFileID != nil && *batchResp.OutputFileID != "":
-		fileContentResp, err := provider.FileContent(ctx, keys, &schemas.RakshaFileContentRequest{
+		fileContentResp, err := provider.FileContent(ctx, keys, &schemas.GatewayFileContentRequest{
 			Provider: request.Provider,
 			FileID:   *batchResp.OutputFileID,
 		})
@@ -2485,7 +2485,7 @@ func (provider *AzureProvider) BatchResults(ctx *schemas.RakshaContext, keys []s
 		latencyMs = blobLatency
 
 	default:
-		return nil, providerUtils.NewRakshaOperationError("batch results not available: neither output_file_id nor output_blob is set (batch may not be completed yet)", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch results not available: neither output_file_id nor output_blob is set (batch may not be completed yet)", nil)
 	}
 
 	var results []schemas.BatchResultItem
@@ -2499,10 +2499,10 @@ func (provider *AzureProvider) BatchResults(ctx *schemas.RakshaContext, keys []s
 		return nil
 	})
 
-	batchResultsResp := &schemas.RakshaBatchResultsResponse{
+	batchResultsResp := &schemas.GatewayBatchResultsResponse{
 		BatchID: request.BatchID,
 		Results: results,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latencyMs,
 		},
 	}
@@ -2515,19 +2515,19 @@ func (provider *AzureProvider) BatchResults(ctx *schemas.RakshaContext, keys []s
 }
 
 // CountTokens is not supported by the Azure provider.
-func (provider *AzureProvider) CountTokens(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) CountTokens(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CountTokensRequest, provider.GetProviderKey())
 }
 
 // Compaction compacts a conversation context window using Azure OpenAI's /openai/v1/responses/compact endpoint.
-func (provider *AzureProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
 	}
-	authHeader, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeader, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	path := fmt.Sprintf("openai/v1/responses/compact?api-version=%s", resolveAPIVersion(ctx, AzureAPIVersionPreview))
 	return openai.HandleOpenAICompactionRequest(
@@ -2547,18 +2547,18 @@ func (provider *AzureProvider) Compaction(ctx *schemas.RakshaContext, key schema
 // buildContainerURL constructs the Azure container API URL.
 // Container endpoints are not per-deployment, so they use the openai/v1 prefix directly.
 // ctx carries the resolved alias so per-alias Endpoint overrides are honored.
-func (provider *AzureProvider) buildContainerURL(ctx *schemas.RakshaContext, key schemas.Key, path string) string {
+func (provider *AzureProvider) buildContainerURL(ctx *schemas.GatewayContext, key schemas.Key, path string) string {
 	endpoint := strings.TrimRight(resolveAzureEndpoint(ctx, key), "/")
 	return fmt.Sprintf("%s/openai/v1%s", endpoint, path)
 }
 
 // ContainerCreate creates a new container via Azure's OpenAI API.
-func (provider *AzureProvider) ContainerCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ContainerCreate(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if request.Name == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: name is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: name is required", nil)
 	}
 	if resolveAzureEndpoint(ctx, key) == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -2588,7 +2588,7 @@ func (provider *AzureProvider) ContainerCreate(ctx *schemas.RakshaContext, key s
 
 	jsonBody, err := providerUtils.MarshalSorted(reqBody)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -2602,18 +2602,18 @@ func (provider *AzureProvider) ContainerCreate(ctx *schemas.RakshaContext, key s
 	req.Header.SetContentType("application/json")
 	req.SetBody(jsonBody)
 
-	authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	for k, v := range authHeaders {
 		req.Header.Set(k, v)
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if resp.StatusCode() != fasthttp.StatusOK && resp.StatusCode() != fasthttp.StatusCreated {
 		return nil, providerUtils.SetErrorLatency(openai.ParseOpenAIError(resp), latency)
@@ -2621,7 +2621,7 @@ func (provider *AzureProvider) ContainerCreate(ctx *schemas.RakshaContext, key s
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 	responseBody := append([]byte(nil), body...)
 	var containerResp struct {
@@ -2636,12 +2636,12 @@ func (provider *AzureProvider) ContainerCreate(ctx *schemas.RakshaContext, key s
 		Metadata     map[string]string              `json:"metadata"`
 	}
 
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	response := &schemas.RakshaContainerCreateResponse{
+	response := &schemas.GatewayContainerCreateResponse{
 		ID:           containerResp.ID,
 		Object:       containerResp.Object,
 		Name:         containerResp.Name,
@@ -2651,7 +2651,7 @@ func (provider *AzureProvider) ContainerCreate(ctx *schemas.RakshaContext, key s
 		LastActiveAt: containerResp.LastActiveAt,
 		MemoryLimit:  containerResp.MemoryLimit,
 		Metadata:     containerResp.Metadata,
-		ExtraFields:  schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()},
+		ExtraFields:  schemas.GatewayResponseExtraFields{Latency: latency.Milliseconds()},
 	}
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 		response.ExtraFields.RawRequest = rawRequest
@@ -2663,23 +2663,23 @@ func (provider *AzureProvider) ContainerCreate(ctx *schemas.RakshaContext, key s
 }
 
 // ContainerList lists containers via Azure's OpenAI API.
-func (provider *AzureProvider) ContainerList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ContainerList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve retrieves a specific container via Azure's OpenAI API.
-func (provider *AzureProvider) ContainerRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ContainerRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("container_id is required", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
+		return nil, providerUtils.NewGatewayOperationError("provider config not found", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		if resolveAzureEndpoint(ctx, key) == "" {
 			lastErr = providerUtils.NewConfigurationError("endpoint not set")
@@ -2693,23 +2693,23 @@ func (provider *AzureProvider) ContainerRetrieve(ctx *schemas.RakshaContext, key
 		req.SetRequestURI(provider.buildContainerURL(ctx, key, "/containers/"+url.PathEscape(request.ContainerID)))
 		req.Header.SetMethod(http.MethodGet)
 
-		authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-		if rakshaErr != nil {
+		authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		for k, v := range authHeaders {
 			req.Header.Set(k, v)
 		}
 
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		if resp.StatusCode() >= 400 {
@@ -2723,7 +2723,7 @@ func (provider *AzureProvider) ContainerRetrieve(ctx *schemas.RakshaContext, key
 		if decodeErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 			continue
 		}
 		responseBody := append([]byte(nil), body...)
@@ -2739,15 +2739,15 @@ func (provider *AzureProvider) ContainerRetrieve(ctx *schemas.RakshaContext, key
 			Metadata     map[string]string              `json:"metadata"`
 		}
 
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &containerResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
-		response := &schemas.RakshaContainerRetrieveResponse{
+		response := &schemas.GatewayContainerRetrieveResponse{
 			ID:           containerResp.ID,
 			Object:       containerResp.Object,
 			Name:         containerResp.Name,
@@ -2757,7 +2757,7 @@ func (provider *AzureProvider) ContainerRetrieve(ctx *schemas.RakshaContext, key
 			LastActiveAt: containerResp.LastActiveAt,
 			MemoryLimit:  containerResp.MemoryLimit,
 			Metadata:     containerResp.Metadata,
-			ExtraFields:  schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()},
+			ExtraFields:  schemas.GatewayResponseExtraFields{Latency: latency.Milliseconds()},
 		}
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			response.ExtraFields.RawRequest = rawRequest
@@ -2774,18 +2774,18 @@ func (provider *AzureProvider) ContainerRetrieve(ctx *schemas.RakshaContext, key
 }
 
 // ContainerDelete deletes a container via Azure's OpenAI API.
-func (provider *AzureProvider) ContainerDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ContainerDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("container_id is required", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
+		return nil, providerUtils.NewGatewayOperationError("provider config not found", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		if resolveAzureEndpoint(ctx, key) == "" {
 			lastErr = providerUtils.NewConfigurationError("endpoint not set")
@@ -2800,23 +2800,23 @@ func (provider *AzureProvider) ContainerDelete(ctx *schemas.RakshaContext, keys 
 		req.Header.SetMethod(http.MethodDelete)
 		req.Header.SetContentType("application/json")
 
-		authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-		if rakshaErr != nil {
+		authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		for k, v := range authHeaders {
 			req.Header.Set(k, v)
 		}
 
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		if resp.StatusCode() >= 400 {
@@ -2830,7 +2830,7 @@ func (provider *AzureProvider) ContainerDelete(ctx *schemas.RakshaContext, keys 
 		if decodeErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, decodeErr)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, decodeErr)
 			continue
 		}
 		responseBody := append([]byte(nil), body...)
@@ -2840,19 +2840,19 @@ func (provider *AzureProvider) ContainerDelete(ctx *schemas.RakshaContext, keys 
 			Deleted bool   `json:"deleted"`
 		}
 
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
-		response := &schemas.RakshaContainerDeleteResponse{
+		response := &schemas.GatewayContainerDeleteResponse{
 			ID:          deleteResp.ID,
 			Object:      deleteResp.Object,
 			Deleted:     deleteResp.Deleted,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: latency.Milliseconds()},
 		}
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			response.ExtraFields.RawRequest = rawRequest
@@ -2869,15 +2869,15 @@ func (provider *AzureProvider) ContainerDelete(ctx *schemas.RakshaContext, keys 
 }
 
 // ContainerFileCreate uploads a file to a container via Azure's OpenAI API.
-func (provider *AzureProvider) ContainerFileCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ContainerFileCreate(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: file is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: file is required", nil)
 	}
 	if resolveAzureEndpoint(ctx, key) == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -2887,13 +2887,13 @@ func (provider *AzureProvider) ContainerFileCreate(ctx *schemas.RakshaContext, k
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("file", "file")
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to create multipart form", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to create multipart form", err)
 	}
 	if _, err = part.Write(request.File); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write file to multipart form", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write file to multipart form", err)
 	}
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to close multipart form", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to close multipart form", err)
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -2907,18 +2907,18 @@ func (provider *AzureProvider) ContainerFileCreate(ctx *schemas.RakshaContext, k
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.SetBody(body.Bytes())
 
-	authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	for k, v := range authHeaders {
 		req.Header.Set(k, v)
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if resp.StatusCode() >= 400 {
 		return nil, providerUtils.SetErrorLatency(openai.ParseOpenAIError(resp), latency)
@@ -2926,7 +2926,7 @@ func (provider *AzureProvider) ContainerFileCreate(ctx *schemas.RakshaContext, k
 
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var fileResp struct {
@@ -2939,12 +2939,12 @@ func (provider *AzureProvider) ContainerFileCreate(ctx *schemas.RakshaContext, k
 		Source      string `json:"source"`
 	}
 
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, false, providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, false, providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	response := &schemas.RakshaContainerFileCreateResponse{
+	response := &schemas.GatewayContainerFileCreateResponse{
 		ID:          fileResp.ID,
 		Object:      fileResp.Object,
 		Bytes:       fileResp.Bytes,
@@ -2952,7 +2952,7 @@ func (provider *AzureProvider) ContainerFileCreate(ctx *schemas.RakshaContext, k
 		ContainerID: fileResp.ContainerID,
 		Path:        fileResp.Path,
 		Source:      fileResp.Source,
-		ExtraFields: schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()},
+		ExtraFields: schemas.GatewayResponseExtraFields{Latency: latency.Milliseconds()},
 	}
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 		response.ExtraFields.RawRequest = "<REDACTED>"
@@ -2964,15 +2964,15 @@ func (provider *AzureProvider) ContainerFileCreate(ctx *schemas.RakshaContext, k
 }
 
 // ContainerFileList lists files in a container via Azure's OpenAI API.
-func (provider *AzureProvider) ContainerFileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ContainerFileList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
+		return nil, providerUtils.NewGatewayOperationError("provider config not found", nil)
 	}
 
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
@@ -2980,12 +2980,12 @@ func (provider *AzureProvider) ContainerFileList(ctx *schemas.RakshaContext, key
 
 	helper, herr := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if herr != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", herr)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", herr)
 	}
 
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
-		return &schemas.RakshaContainerFileListResponse{Object: "list", Data: []schemas.ContainerFileObject{}, HasMore: false}, nil
+		return &schemas.GatewayContainerFileListResponse{Object: "list", Data: []schemas.ContainerFileObject{}, HasMore: false}, nil
 	}
 	if resolveAzureEndpoint(ctx, key) == "" {
 		return nil, providerUtils.NewConfigurationError("endpoint not set")
@@ -3015,18 +3015,18 @@ func (provider *AzureProvider) ContainerFileList(ctx *schemas.RakshaContext, key
 	req.SetRequestURI(requestURL)
 	req.Header.SetMethod(http.MethodGet)
 
-	authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	for k, v := range authHeaders {
 		req.Header.Set(k, v)
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if resp.StatusCode() >= 400 {
 		return nil, providerUtils.SetErrorLatency(openai.ParseOpenAIError(resp), latency)
@@ -3034,7 +3034,7 @@ func (provider *AzureProvider) ContainerFileList(ctx *schemas.RakshaContext, key
 
 	responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var listResp struct {
@@ -3045,9 +3045,9 @@ func (provider *AzureProvider) ContainerFileList(ctx *schemas.RakshaContext, key
 		HasMore bool                          `json:"has_more"`
 	}
 
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &listResp, nil, sendBackRawRequest, sendBackRawResponse)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	cursorID := ""
@@ -3056,13 +3056,13 @@ func (provider *AzureProvider) ContainerFileList(ctx *schemas.RakshaContext, key
 	}
 	nextCursor, hasMore := helper.BuildNextCursor(listResp.HasMore, cursorID)
 
-	response := &schemas.RakshaContainerFileListResponse{
+	response := &schemas.GatewayContainerFileListResponse{
 		Object:      listResp.Object,
 		Data:        listResp.Data,
 		FirstID:     listResp.FirstID,
 		LastID:      listResp.LastID,
 		HasMore:     hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()},
+		ExtraFields: schemas.GatewayResponseExtraFields{Latency: latency.Milliseconds()},
 	}
 	if nextCursor != "" {
 		response.After = &nextCursor
@@ -3077,21 +3077,21 @@ func (provider *AzureProvider) ContainerFileList(ctx *schemas.RakshaContext, key
 }
 
 // ContainerFileRetrieve retrieves file metadata from a container via Azure's OpenAI API.
-func (provider *AzureProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ContainerFileRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: file_id is required", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
+		return nil, providerUtils.NewGatewayOperationError("provider config not found", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		if resolveAzureEndpoint(ctx, key) == "" {
 			lastErr = providerUtils.NewConfigurationError("endpoint not set")
@@ -3105,23 +3105,23 @@ func (provider *AzureProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext,
 		req.SetRequestURI(provider.buildContainerURL(ctx, key, fmt.Sprintf("/containers/%s/files/%s", url.PathEscape(request.ContainerID), url.PathEscape(request.FileID))))
 		req.Header.SetMethod(http.MethodGet)
 
-		authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-		if rakshaErr != nil {
+		authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		for k, v := range authHeaders {
 			req.Header.Set(k, v)
 		}
 
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		if resp.StatusCode() >= 400 {
@@ -3133,7 +3133,7 @@ func (provider *AzureProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext,
 
 		responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -3149,15 +3149,15 @@ func (provider *AzureProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext,
 			Source      string `json:"source"`
 		}
 
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &fileResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
-		response := &schemas.RakshaContainerFileRetrieveResponse{
+		response := &schemas.GatewayContainerFileRetrieveResponse{
 			ID:          fileResp.ID,
 			Object:      fileResp.Object,
 			Bytes:       fileResp.Bytes,
@@ -3165,7 +3165,7 @@ func (provider *AzureProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext,
 			ContainerID: fileResp.ContainerID,
 			Path:        fileResp.Path,
 			Source:      fileResp.Source,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: latency.Milliseconds()},
 		}
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			response.ExtraFields.RawRequest = rawRequest
@@ -3182,21 +3182,21 @@ func (provider *AzureProvider) ContainerFileRetrieve(ctx *schemas.RakshaContext,
 }
 
 // ContainerFileContent retrieves the binary content of a file from a container via Azure's OpenAI API.
-func (provider *AzureProvider) ContainerFileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ContainerFileContent(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: file_id is required", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
+		return nil, providerUtils.NewGatewayOperationError("provider config not found", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		if resolveAzureEndpoint(ctx, key) == "" {
 			lastErr = providerUtils.NewConfigurationError("endpoint not set")
@@ -3210,23 +3210,23 @@ func (provider *AzureProvider) ContainerFileContent(ctx *schemas.RakshaContext, 
 		req.SetRequestURI(provider.buildContainerURL(ctx, key, fmt.Sprintf("/containers/%s/files/%s/content", url.PathEscape(request.ContainerID), url.PathEscape(request.FileID))))
 		req.Header.SetMethod(http.MethodGet)
 
-		authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-		if rakshaErr != nil {
+		authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		for k, v := range authHeaders {
 			req.Header.Set(k, v)
 		}
 
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		if resp.StatusCode() >= 400 {
@@ -3245,14 +3245,14 @@ func (provider *AzureProvider) ContainerFileContent(ctx *schemas.RakshaContext, 
 		if err != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			continue
 		}
 
-		response := &schemas.RakshaContainerFileContentResponse{
+		response := &schemas.GatewayContainerFileContentResponse{
 			Content:     append([]byte(nil), body...),
 			ContentType: contentType,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: latency.Milliseconds()},
 		}
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			response.ExtraFields.RawRequest = map[string]string{
@@ -3272,21 +3272,21 @@ func (provider *AzureProvider) ContainerFileContent(ctx *schemas.RakshaContext, 
 }
 
 // ContainerFileDelete deletes a file from a container via Azure's OpenAI API.
-func (provider *AzureProvider) ContainerFileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *AzureProvider) ContainerFileDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	if request == nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: nil", nil)
 	}
 	if request.ContainerID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: container_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: container_id is required", nil)
 	}
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid request: file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid request: file_id is required", nil)
 	}
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("provider config not found", nil)
+		return nil, providerUtils.NewGatewayOperationError("provider config not found", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		if resolveAzureEndpoint(ctx, key) == "" {
 			lastErr = providerUtils.NewConfigurationError("endpoint not set")
@@ -3300,23 +3300,23 @@ func (provider *AzureProvider) ContainerFileDelete(ctx *schemas.RakshaContext, k
 		req.SetRequestURI(provider.buildContainerURL(ctx, key, fmt.Sprintf("/containers/%s/files/%s", url.PathEscape(request.ContainerID), url.PathEscape(request.FileID))))
 		req.Header.SetMethod(http.MethodDelete)
 
-		authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, false)
-		if rakshaErr != nil {
+		authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, false)
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		for k, v := range authHeaders {
 			req.Header.Set(k, v)
 		}
 
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 		wait()
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 		if resp.StatusCode() >= 400 {
@@ -3328,7 +3328,7 @@ func (provider *AzureProvider) ContainerFileDelete(ctx *schemas.RakshaContext, k
 
 		responseBody, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
 			continue
@@ -3340,19 +3340,19 @@ func (provider *AzureProvider) ContainerFileDelete(ctx *schemas.RakshaContext, k
 			Deleted bool   `json:"deleted"`
 		}
 
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if rakshaErr != nil {
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, &deleteResp, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if gatewayErr != nil {
 			fasthttp.ReleaseRequest(req)
 			fasthttp.ReleaseResponse(resp)
-			lastErr = rakshaErr
+			lastErr = gatewayErr
 			continue
 		}
 
-		response := &schemas.RakshaContainerFileDeleteResponse{
+		response := &schemas.GatewayContainerFileDeleteResponse{
 			ID:          deleteResp.ID,
 			Object:      deleteResp.Object,
 			Deleted:     deleteResp.Deleted,
-			ExtraFields: schemas.RakshaResponseExtraFields{Latency: latency.Milliseconds()},
+			ExtraFields: schemas.GatewayResponseExtraFields{Latency: latency.Milliseconds()},
 		}
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			response.ExtraFields.RawRequest = rawRequest
@@ -3370,10 +3370,10 @@ func (provider *AzureProvider) ContainerFileDelete(ctx *schemas.RakshaContext, k
 
 // Passthrough forwards a raw request to Azure's API without any transformation.
 func (provider *AzureProvider) Passthrough(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
-	req *schemas.RakshaPassthroughRequest,
-) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	url, err := provider.buildPassthroughURL(ctx, key, req.Path, req.RawQuery)
 	if err != nil {
 		return nil, providerUtils.NewConfigurationError(fmt.Sprintf("failed to build passthrough URL: %s", err.Error()))
@@ -3393,9 +3393,9 @@ func (provider *AzureProvider) Passthrough(
 		fasthttpReq.Header.Set(k, v)
 	}
 
-	authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, schemas.IsAnthropicModelFamily(ctx, req.Model))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, schemas.IsAnthropicModelFamily(ctx, req.Model))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	for k, v := range authHeaders {
 		fasthttpReq.Header.Set(k, v)
@@ -3403,30 +3403,30 @@ func (provider *AzureProvider) Passthrough(
 
 	fasthttpReq.SetBody(req.Body)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to decode response body", err)
 	}
 
-	var passthroughUsage *schemas.RakshaPassthroughUsage
+	var passthroughUsage *schemas.GatewayPassthroughUsage
 	if resp.StatusCode() >= 200 && resp.StatusCode() < 300 {
 		passthroughUsage = extractAzurePassthroughUsage(req.Method, req.Path, req.Body, body, req.Model)
 	}
 
-	rakshaResponse := &schemas.RakshaPassthroughResponse{
+	gatewayResponse := &schemas.GatewayPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 			PassthroughPath:         req.Path,
@@ -3434,18 +3434,18 @@ func (provider *AzureProvider) Passthrough(
 		PassthroughUsage: passthroughUsage,
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // PassthroughStream forwards a raw streaming request to Azure's API without any transformation.
 // Chunks are piped back as raw bytes, preserving the upstream SSE or binary stream format.
 func (provider *AzureProvider) PassthroughStream(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	req *schemas.RakshaPassthroughRequest,
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	url, err := provider.buildPassthroughURL(ctx, key, req.Path, req.RawQuery)
 	if err != nil {
 		return nil, providerUtils.NewConfigurationError(fmt.Sprintf("failed to build passthrough URL: %s", err.Error()))
@@ -3467,9 +3467,9 @@ func (provider *AzureProvider) PassthroughStream(
 
 	fasthttpReq.Header.Set("Connection", "close")
 
-	authHeaders, rakshaErr := provider.getAzureAuthHeaders(ctx, key, schemas.IsAnthropicModelFamily(ctx, req.Model))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	authHeaders, gatewayErr := provider.getAzureAuthHeaders(ctx, key, schemas.IsAnthropicModelFamily(ctx, req.Model))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	for k, v := range authHeaders {
 		fasthttpReq.Header.Set(k, v)
@@ -3487,8 +3487,8 @@ func (provider *AzureProvider) PassthroughStream(
 	if err != nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -3497,22 +3497,22 @@ func (provider *AzureProvider) PassthroughStream(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		// non-streaming path - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	rawBodyStream := resp.BodyStream()
 	if rawBodyStream == nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
-		return nil, providerUtils.NewRakshaOperationError("provider returned an empty stream body", fmt.Errorf("provider returned an empty stream body"))
+		return nil, providerUtils.NewGatewayOperationError("provider returned an empty stream body", fmt.Errorf("provider returned an empty stream body"))
 	}
 
 	var anthropicUsage *anthropic.AnthropicPassthroughStreamUsage
@@ -3535,7 +3535,7 @@ func (provider *AzureProvider) PassthroughStream(
 				}
 				return openai.HasOpenAIPassthroughUsage(event)
 			},
-			Observe: func(event []byte) *schemas.RakshaPassthroughUsage {
+			Observe: func(event []byte) *schemas.GatewayPassthroughUsage {
 				if anthropicUsage != nil {
 					return anthropicUsage.ObserveEvent(event)
 				}
@@ -3548,7 +3548,7 @@ func (provider *AzureProvider) PassthroughStream(
 // buildPassthroughURL constructs the full Azure URL for a passthrough request.
 // ctx carries the resolved alias used to pick a per-alias api-version override
 // when the caller did not supply one in rawQuery.
-func (provider *AzureProvider) buildPassthroughURL(ctx *schemas.RakshaContext, key schemas.Key, path, rawQuery string) (string, error) {
+func (provider *AzureProvider) buildPassthroughURL(ctx *schemas.GatewayContext, key schemas.Key, path, rawQuery string) (string, error) {
 	endpoint := resolveAzureEndpoint(ctx, key)
 	if endpoint == "" {
 		return "", fmt.Errorf("endpoint not set")
@@ -3592,7 +3592,7 @@ func (provider *AzureProvider) buildPassthroughURL(ctx *schemas.RakshaContext, k
 // passthrough request targets. Azure serves both OpenAI and Azure-hosted Anthropic models,
 // so Anthropic routes (e.g. /messages) must use the Anthropic extractor — otherwise their
 // usage is dropped and budgets/logging stay wrong.
-func extractAzurePassthroughUsage(method, path string, reqBody, body []byte, model string) *schemas.RakshaPassthroughUsage {
+func extractAzurePassthroughUsage(method, path string, reqBody, body []byte, model string) *schemas.GatewayPassthroughUsage {
 	if schemas.IsAnthropicModel(model) {
 		return anthropic.ExtractAnthropicPassthroughUsage(path, reqBody, body)
 	}

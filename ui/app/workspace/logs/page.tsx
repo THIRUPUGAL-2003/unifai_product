@@ -279,10 +279,12 @@ export default function LogsPage() {
 		return currentRange < defaultRange * 0.9;
 	}, [urlState.start_time, urlState.end_time, urlState.period]);
 
+	const [logsPollMs, setLogsPollMs] = useState(0);
 	const {
 		data: logsData,
 		isFetching: logsIsFetching,
 		error: logsError,
+		isError: logsIsError,
 		refetch: refetchLogs,
 	} = useGetLogsQuery(
 		{
@@ -290,21 +292,30 @@ export default function LogsPage() {
 			pagination,
 		},
 		{
-			pollingInterval: showEmptyState || polling ? 10000 : 0,
+			pollingInterval: logsPollMs,
 			skipPollingIfUnfocused: true,
 		},
 	);
 
+	useEffect(() => {
+		setLogsPollMs(!logsIsError && (showEmptyState || polling) ? 10000 : 0);
+	}, [logsIsError, showEmptyState, polling]);
+
+	const [statsPollMs, setStatsPollMs] = useState(0);
+	const [histogramPollMs, setHistogramPollMs] = useState(0);
+
 	const {
 		data: stats,
 		isFetching: statsIsFetching,
+		isError: statsIsError,
+		error: statsError,
 		refetch: refetchStats,
 	} = useGetLogsStatsQuery(
 		{
 			filters,
 		},
 		{
-			pollingInterval: polling ? 10000 : 0,
+			pollingInterval: statsPollMs,
 			skipPollingIfUnfocused: true,
 		},
 	);
@@ -312,16 +323,26 @@ export default function LogsPage() {
 	const {
 		data: histogram,
 		isLoading: histogramIsLoading,
+		isError: histogramIsError,
+		error: histogramError,
 		refetch: refetchHistogram,
 	} = useGetLogsHistogramQuery(
 		{
 			filters,
 		},
 		{
-			pollingInterval: polling ? 10000 : 0,
+			pollingInterval: histogramPollMs,
 			skipPollingIfUnfocused: true,
 		},
 	);
+
+	useEffect(() => {
+		setStatsPollMs(!statsIsError && polling ? 10000 : 0);
+	}, [statsIsError, polling]);
+
+	useEffect(() => {
+		setHistogramPollMs(!histogramIsError && polling ? 10000 : 0);
+	}, [histogramIsError, polling]);
 
 	// Set showEmptyState on first response; clear it as soon as logs appear.
 	useEffect(() => {
@@ -474,7 +495,9 @@ export default function LogsPage() {
 
 	// Only need metadata_keys here (used to render dynamic columns even when the
 	// current page has no rows). Scope the request to that one dimension.
-	const { data: filterData } = useGetAvailableFilterDataQuery({ dimensions: ["metadata_keys"] });
+	const { data: filterData, isError: filterDataIsError, error: filterDataError } = useGetAvailableFilterDataQuery({
+		dimensions: ["metadata_keys"],
+	});
 
 	// Get metadata keys from filterdata API so columns always show even with no data on current page
 	const metadataKeys = useMemo(() => {
@@ -523,7 +546,7 @@ export default function LogsPage() {
 	} = useColumnConfig({
 		columnIds,
 		paramName: "cols",
-		storageKey: "raksha.logs.cols",
+		storageKey: "gateway.logs.cols",
 		defaultHidden: DEFAULT_HIDDEN_COLUMNS,
 		fixedColumns: hasDeleteAccess ? { right: ["actions"] } : undefined,
 	});
@@ -700,11 +723,20 @@ export default function LogsPage() {
 							/>
 						</div>
 
-						{(error || !!logsError) && (
+						{(error || !!logsError || statsIsError || histogramIsError || filterDataIsError) && (
 							<Alert variant="destructive" className="shrink-0">
 								<AlertCircle className="h-4 w-4" />
 								<AlertDescription>
-									{error ?? (logsError ? getErrorMessage(logsError as Parameters<typeof getErrorMessage>[0]) : "")}
+									{error ??
+										(logsError
+											? getErrorMessage(logsError as Parameters<typeof getErrorMessage>[0])
+											: statsIsError
+												? `Stats failed: ${getErrorMessage(statsError)}`
+												: histogramIsError
+													? `Chart failed: ${getErrorMessage(histogramError)}`
+													: filterDataIsError
+														? `Filter metadata failed: ${getErrorMessage(filterDataError)}`
+														: "")}
 								</AlertDescription>
 							</Alert>
 						)}

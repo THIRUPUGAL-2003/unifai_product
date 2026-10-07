@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
 )
 
 // TestResult reports whether a connector can reach its destination.

@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -24,7 +24,7 @@ func NewOAuth2SessionsHandler(store *lib.Config) *OAuth2SessionsHandler {
 }
 
 // RegisterRoutes wires the Connected Clients endpoints.
-func (h *OAuth2SessionsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *OAuth2SessionsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/oauth2/sessions", lib.ChainMiddlewares(h.listSessions, middlewares...))
 	r.DELETE("/api/oauth2/sessions/{id}", lib.ChainMiddlewares(h.revokeSession, middlewares...))
 }

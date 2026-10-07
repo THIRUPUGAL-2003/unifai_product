@@ -1,44 +1,44 @@
 package perplexity
 
 import (
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-// ToPerplexityChatCompletionRequest converts a Raksha request to Perplexity chat completion request
-func ToPerplexityChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) *PerplexityChatRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil {
+// ToPerplexityChatCompletionRequest converts a Gateway request to Perplexity chat completion request
+func ToPerplexityChatCompletionRequest(gatewayReq *schemas.GatewayChatRequest) *PerplexityChatRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil {
 		return nil
 	}
 
-	messages := rakshaReq.Input
+	messages := gatewayReq.Input
 	perplexityReq := &PerplexityChatRequest{
-		Model:    rakshaReq.Model,
+		Model:    gatewayReq.Model,
 		Messages: messages,
 	}
 
 	// Map parameters if they exist
-	if rakshaReq.Params != nil {
+	if gatewayReq.Params != nil {
 		// Core parameters
-		perplexityReq.MaxTokens = rakshaReq.Params.MaxCompletionTokens
-		perplexityReq.Temperature = rakshaReq.Params.Temperature
-		perplexityReq.TopP = rakshaReq.Params.TopP
-		perplexityReq.PresencePenalty = rakshaReq.Params.PresencePenalty
-		perplexityReq.FrequencyPenalty = rakshaReq.Params.FrequencyPenalty
-		perplexityReq.ResponseFormat = rakshaReq.Params.ResponseFormat
+		perplexityReq.MaxTokens = gatewayReq.Params.MaxCompletionTokens
+		perplexityReq.Temperature = gatewayReq.Params.Temperature
+		perplexityReq.TopP = gatewayReq.Params.TopP
+		perplexityReq.PresencePenalty = gatewayReq.Params.PresencePenalty
+		perplexityReq.FrequencyPenalty = gatewayReq.Params.FrequencyPenalty
+		perplexityReq.ResponseFormat = gatewayReq.Params.ResponseFormat
 
 		// Tool calling parameters
-		perplexityReq.Tools = rakshaReq.Params.Tools
-		perplexityReq.ToolChoice = rakshaReq.Params.ToolChoice
-		perplexityReq.ParallelToolCalls = rakshaReq.Params.ParallelToolCalls
+		perplexityReq.Tools = gatewayReq.Params.Tools
+		perplexityReq.ToolChoice = gatewayReq.Params.ToolChoice
+		perplexityReq.ParallelToolCalls = gatewayReq.Params.ParallelToolCalls
 
 		// Standard parameters
-		perplexityReq.Stop = rakshaReq.Params.Stop
-		perplexityReq.LogProbs = rakshaReq.Params.LogProbs
-		perplexityReq.TopLogProbs = rakshaReq.Params.TopLogProbs
+		perplexityReq.Stop = gatewayReq.Params.Stop
+		perplexityReq.LogProbs = gatewayReq.Params.LogProbs
+		perplexityReq.TopLogProbs = gatewayReq.Params.TopLogProbs
 
 		// Handle reasoning effort mapping
-		if rakshaReq.Params.Reasoning != nil && rakshaReq.Params.Reasoning.Effort != nil {
-			effort := *rakshaReq.Params.Reasoning.Effort
+		if gatewayReq.Params.Reasoning != nil && gatewayReq.Params.Reasoning.Effort != nil {
+			effort := *gatewayReq.Params.Reasoning.Effort
 			switch effort {
 			case "minimal":
 				perplexityReq.ReasoningEffort = schemas.Ptr("low")
@@ -50,117 +50,117 @@ func ToPerplexityChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) *Pe
 		}
 
 		// Handle extra parameters for Perplexity-specific fields
-		if rakshaReq.Params.ExtraParams != nil {
-			perplexityReq.ExtraParams = rakshaReq.Params.ExtraParams
+		if gatewayReq.Params.ExtraParams != nil {
+			perplexityReq.ExtraParams = gatewayReq.Params.ExtraParams
 			// Search-related parameters
-			if searchMode, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["search_mode"]); ok {
+			if searchMode, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["search_mode"]); ok {
 				delete(perplexityReq.ExtraParams, "search_mode")
 				perplexityReq.SearchMode = searchMode
 			}
 
-			if languagePreference, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["language_preference"]); ok {
+			if languagePreference, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["language_preference"]); ok {
 				delete(perplexityReq.ExtraParams, "language_preference")
 				perplexityReq.LanguagePreference = languagePreference
 			}
 
-			if searchDomainFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["search_domain_filter"]); ok {
+			if searchDomainFilter, ok := schemas.SafeExtractStringSlice(gatewayReq.Params.ExtraParams["search_domain_filter"]); ok {
 				delete(perplexityReq.ExtraParams, "search_domain_filter")
 				perplexityReq.SearchDomainFilter = searchDomainFilter
 			}
 
-			if returnImages, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["return_images"]); ok {
+			if returnImages, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["return_images"]); ok {
 				delete(perplexityReq.ExtraParams, "return_images")
 				perplexityReq.ReturnImages = returnImages
 			}
 
-			if returnRelatedQuestions, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["return_related_questions"]); ok {
+			if returnRelatedQuestions, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["return_related_questions"]); ok {
 				delete(perplexityReq.ExtraParams, "return_related_questions")
 				perplexityReq.ReturnRelatedQuestions = returnRelatedQuestions
 			}
 
-			if searchRecencyFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["search_recency_filter"]); ok {
+			if searchRecencyFilter, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["search_recency_filter"]); ok {
 				delete(perplexityReq.ExtraParams, "search_recency_filter")
 				perplexityReq.SearchRecencyFilter = searchRecencyFilter
 			}
 
-			if searchAfterDateFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["search_after_date_filter"]); ok {
+			if searchAfterDateFilter, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["search_after_date_filter"]); ok {
 				delete(perplexityReq.ExtraParams, "search_after_date_filter")
 				perplexityReq.SearchAfterDateFilter = searchAfterDateFilter
 			}
 
-			if searchBeforeDateFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["search_before_date_filter"]); ok {
+			if searchBeforeDateFilter, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["search_before_date_filter"]); ok {
 				delete(perplexityReq.ExtraParams, "search_before_date_filter")
 				perplexityReq.SearchBeforeDateFilter = searchBeforeDateFilter
 			}
 
-			if lastUpdatedAfterFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["last_updated_after_filter"]); ok {
+			if lastUpdatedAfterFilter, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["last_updated_after_filter"]); ok {
 				delete(perplexityReq.ExtraParams, "last_updated_after_filter")
 				perplexityReq.LastUpdatedAfterFilter = lastUpdatedAfterFilter
 			}
 
-			if lastUpdatedBeforeFilter, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["last_updated_before_filter"]); ok {
+			if lastUpdatedBeforeFilter, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["last_updated_before_filter"]); ok {
 				delete(perplexityReq.ExtraParams, "last_updated_before_filter")
 				perplexityReq.LastUpdatedBeforeFilter = lastUpdatedBeforeFilter
 			}
 
-			if topK, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["top_k"]); ok {
+			if topK, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["top_k"]); ok {
 				delete(perplexityReq.ExtraParams, "top_k")
 				perplexityReq.TopK = topK
 			}
 
-			if stream, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["stream"]); ok {
+			if stream, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["stream"]); ok {
 				delete(perplexityReq.ExtraParams, "stream")
 				perplexityReq.Stream = stream
 			}
 
-			if disableSearch, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["disable_search"]); ok {
+			if disableSearch, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["disable_search"]); ok {
 				delete(perplexityReq.ExtraParams, "disable_search")
 				perplexityReq.DisableSearch = disableSearch
 			}
 
-			if enableSearchClassifier, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enable_search_classifier"]); ok {
+			if enableSearchClassifier, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["enable_search_classifier"]); ok {
 				delete(perplexityReq.ExtraParams, "enable_search_classifier")
 				perplexityReq.EnableSearchClassifier = enableSearchClassifier
 			}
 
 			// Perplexity-specific request fields
-			if numSearchResults, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["num_search_results"]); ok {
+			if numSearchResults, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["num_search_results"]); ok {
 				delete(perplexityReq.ExtraParams, "num_search_results")
 				perplexityReq.NumSearchResults = numSearchResults
 			}
 
-			if numImages, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["num_images"]); ok {
+			if numImages, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["num_images"]); ok {
 				delete(perplexityReq.ExtraParams, "num_images")
 				perplexityReq.NumImages = numImages
 			}
 
-			if searchLanguageFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["search_language_filter"]); ok {
+			if searchLanguageFilter, ok := schemas.SafeExtractStringSlice(gatewayReq.Params.ExtraParams["search_language_filter"]); ok {
 				delete(perplexityReq.ExtraParams, "search_language_filter")
 				perplexityReq.SearchLanguageFilter = searchLanguageFilter
 			}
 
-			if imageFormatFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["image_format_filter"]); ok {
+			if imageFormatFilter, ok := schemas.SafeExtractStringSlice(gatewayReq.Params.ExtraParams["image_format_filter"]); ok {
 				delete(perplexityReq.ExtraParams, "image_format_filter")
 				perplexityReq.ImageFormatFilter = imageFormatFilter
 			}
 
-			if imageDomainFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["image_domain_filter"]); ok {
+			if imageDomainFilter, ok := schemas.SafeExtractStringSlice(gatewayReq.Params.ExtraParams["image_domain_filter"]); ok {
 				delete(perplexityReq.ExtraParams, "image_domain_filter")
 				perplexityReq.ImageDomainFilter = imageDomainFilter
 			}
 
-			if safeSearch, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["safe_search"]); ok {
+			if safeSearch, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["safe_search"]); ok {
 				delete(perplexityReq.ExtraParams, "safe_search")
 				perplexityReq.SafeSearch = safeSearch
 			}
 
-			if streamMode, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["stream_mode"]); ok {
+			if streamMode, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["stream_mode"]); ok {
 				delete(perplexityReq.ExtraParams, "stream_mode")
 				perplexityReq.StreamMode = streamMode
 			}
 
 			// Handle web_search_options
-			if webSearchOptionsParam, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "web_search_options"); ok {
+			if webSearchOptionsParam, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "web_search_options"); ok {
 				if webSearchOptionsSlice, ok := webSearchOptionsParam.([]interface{}); ok {
 					var webSearchOptions []WebSearchOption
 					updatedWebSearchOptionsSlice := make([]interface{}, 0, len(webSearchOptionsSlice))
@@ -237,7 +237,7 @@ func ToPerplexityChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) *Pe
 			}
 
 			// Handle media_response
-			if mediaResponseParam, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "media_response"); ok {
+			if mediaResponseParam, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "media_response"); ok {
 				if mediaResponseMap, ok := mediaResponseParam.(map[string]interface{}); ok {
 					mediaResponse := &MediaResponse{}
 
@@ -272,18 +272,18 @@ func ToPerplexityChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) *Pe
 	return perplexityReq
 }
 
-// ToRakshaChatResponse converts a Perplexity chat completion response to Raksha format
-func (response *PerplexityChatResponse) ToRakshaChatResponse(model string) *schemas.RakshaChatResponse {
+// ToGatewayChatResponse converts a Perplexity chat completion response to Gateway format
+func (response *PerplexityChatResponse) ToGatewayChatResponse(model string) *schemas.GatewayChatResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaChatResponse{
+	gatewayResponse := &schemas.GatewayChatResponse{
 		ID:      response.ID,
 		Model:   model,
 		Object:  response.Object,
 		Created: response.Created,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 		},
 		SearchResults: response.SearchResults,
 		Videos:        response.Videos,
@@ -292,12 +292,12 @@ func (response *PerplexityChatResponse) ToRakshaChatResponse(model string) *sche
 
 	// Map all response fields
 	if len(response.Choices) > 0 {
-		rakshaResponse.Choices = response.Choices
+		gatewayResponse.Choices = response.Choices
 	}
 
 	// Convert usage information with all available fields
 	if response.Usage != nil {
-		usage := &schemas.RakshaLLMUsage{
+		usage := &schemas.GatewayLLMUsage{
 			PromptTokens:     response.Usage.PromptTokens,
 			CompletionTokens: response.Usage.CompletionTokens,
 			TotalTokens:      response.Usage.TotalTokens,
@@ -330,8 +330,8 @@ func (response *PerplexityChatResponse) ToRakshaChatResponse(model string) *sche
 			usage.Cost = response.Usage.Cost
 		}
 
-		rakshaResponse.Usage = usage
+		gatewayResponse.Usage = usage
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }

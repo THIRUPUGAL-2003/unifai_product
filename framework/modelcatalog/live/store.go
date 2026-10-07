@@ -13,8 +13,8 @@ import (
 	"slices"
 	"sync"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // Key identifies one cached response. KeyID is "" for keyless providers
@@ -38,7 +38,7 @@ type Store struct {
 
 func New(logger schemas.Logger) *Store {
 	if logger == nil {
-		logger = raksha.NewNoOpLogger()
+		logger = gateway.NewNoOpLogger()
 	}
 	return &Store{entries: make(map[Key]Entry), logger: logger}
 }

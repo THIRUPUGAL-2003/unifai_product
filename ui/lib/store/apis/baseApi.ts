@@ -1,5 +1,5 @@
 import { IS_ENTERPRISE } from "@/lib/constants/config";
-import { RakshaErrorResponse } from "@/lib/types/config";
+import { GatewayErrorResponse } from "@/lib/types/config";
 import { getApiBaseUrl } from "@/lib/utils/port";
 import { createBaseQueryWithRefresh } from "@enterprise/lib/store/utils/baseQueryWithRefresh";
 import { clearOAuthStorage } from "@enterprise/lib/store/utils/tokenManager";
@@ -27,7 +27,7 @@ export const clearAuthStorage = () => {
 	}
 	try {
 		// Clear traditional auth token
-		localStorage.removeItem("raksha-auth-token");
+		localStorage.removeItem("gateway-auth-token");
 
 		// Clear enterprise OAuth tokens using tokenManager
 		if (IS_ENTERPRISE) {
@@ -57,7 +57,7 @@ const baseQuery = fetchBaseQuery({
 		// browsers visiting a scoped page.
 		const tempToken = getActiveTempToken();
 		if (tempToken) {
-			headers.set("X-Raksha-Temp-Token", tempToken);
+			headers.set("X-Gateway-Temp-Token", tempToken);
 		}
 		return headers;
 	},
@@ -129,9 +129,9 @@ const baseQueryWithErrorHandling: typeof baseQueryWithRefresh = async (args: any
 			};
 		}
 
-		// Handle other errors with proper RakshaErrorResponse format
+		// Handle other errors with proper GatewayErrorResponse format
 		if (error?.data) {
-			const errorData = error.data as RakshaErrorResponse;
+			const errorData = error.data as GatewayErrorResponse;
 			if (errorData.error?.message) {
 				return result;
 			}

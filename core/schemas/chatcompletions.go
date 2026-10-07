@@ -10,41 +10,41 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-// RakshaChatRequest is the request struct for chat completion requests
-type RakshaChatRequest struct {
+// GatewayChatRequest is the request struct for chat completion requests
+type GatewayChatRequest struct {
 	Provider       ModelProvider   `json:"provider"`
 	Model          string          `json:"model"`
 	Input          []ChatMessage   `json:"input,omitempty"`
 	Params         *ChatParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback      `json:"fallbacks,omitempty"`
-	RawRequestBody []byte          `json:"-"` // set raksha-use-raw-request-body to true in ctx to use the raw request body. Raksha will directly send this to the downstream provider.
+	RawRequestBody []byte          `json:"-"` // set gateway-use-raw-request-body to true in ctx to use the raw request body. Gateway will directly send this to the downstream provider.
 }
 
 // GetRawRequestBody returns the raw request body
-func (cr *RakshaChatRequest) GetRawRequestBody() []byte {
+func (cr *GatewayChatRequest) GetRawRequestBody() []byte {
 	return cr.RawRequestBody
 }
 
-func (cr *RakshaChatRequest) GetExtraParams() map[string]interface{} {
+func (cr *GatewayChatRequest) GetExtraParams() map[string]interface{} {
 	if cr.Params == nil {
 		return make(map[string]interface{}, 0)
 	}
 	return cr.Params.ExtraParams
 }
 
-// RakshaChatResponse represents the complete result from a chat completion request.
-type RakshaChatResponse struct {
+// GatewayChatResponse represents the complete result from a chat completion request.
+type GatewayChatResponse struct {
 	ID                string                     `json:"id"`
-	Choices           []RakshaResponseChoice    `json:"choices"`
+	Choices           []GatewayResponseChoice    `json:"choices"`
 	Created           int                        `json:"created"` // The Unix timestamp (in seconds).
 	Model             string                     `json:"model"`
 	Object            string                     `json:"object"` // "chat.completion" or "chat.completion.chunk"
-	ServiceTier       *RakshaServiceTier        `json:"service_tier,omitempty"`
+	ServiceTier       *GatewayServiceTier        `json:"service_tier,omitempty"`
 	Speed             *string                    `json:"speed,omitempty"` // "fast" | "standard" — speed actually served (Anthropic fast mode); drives fast-mode billing
 	Diagnostics       *CacheDiagnostics          `json:"diagnostics,omitempty"` // Anthropic cache diagnostics (cache-diagnosis-2026-04-07); first prompt-cache prefix divergence point
 	SystemFingerprint string                     `json:"system_fingerprint"`
-	Usage             *RakshaLLMUsage           `json:"usage"`
-	ExtraFields       RakshaResponseExtraFields `json:"extra_fields"`
+	Usage             *GatewayLLMUsage           `json:"usage"`
+	ExtraFields       GatewayResponseExtraFields `json:"extra_fields"`
 	ExtraParams       map[string]interface{}     `json:"-"`
 
 	// Perplexity-specific fields
@@ -54,7 +54,7 @@ type RakshaChatResponse struct {
 }
 
 // BackfillParams populates response fields from the request that are needed
-func (cr *RakshaChatResponse) BackfillParams(request *RakshaChatRequest) {
+func (cr *GatewayChatResponse) BackfillParams(request *GatewayChatRequest) {
 	if cr == nil || request == nil {
 		return
 	}
@@ -69,20 +69,20 @@ func (cr *RakshaChatResponse) BackfillParams(request *RakshaChatRequest) {
 	}
 }
 
-// ToTextCompletionResponse converts a RakshaChatResponse to a RakshaTextCompletionResponse
-func (cr *RakshaChatResponse) ToTextCompletionResponse() *RakshaTextCompletionResponse {
+// ToTextCompletionResponse converts a GatewayChatResponse to a GatewayTextCompletionResponse
+func (cr *GatewayChatResponse) ToTextCompletionResponse() *GatewayTextCompletionResponse {
 	if cr == nil {
 		return nil
 	}
 
 	if len(cr.Choices) == 0 {
-		return &RakshaTextCompletionResponse{
+		return &GatewayTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
 			Usage:             cr.Usage,
-			ExtraFields: RakshaResponseExtraFields{
+			ExtraFields: GatewayResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -100,12 +100,12 @@ func (cr *RakshaChatResponse) ToTextCompletionResponse() *RakshaTextCompletionRe
 
 	// Handle streaming response choice
 	if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
-		return &RakshaTextCompletionResponse{
+		return &GatewayTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
-			Choices: []RakshaResponseChoice{
+			Choices: []GatewayResponseChoice{
 				{
 					Index: 0,
 					TextCompletionResponseChoice: &TextCompletionResponseChoice{
@@ -116,7 +116,7 @@ func (cr *RakshaChatResponse) ToTextCompletionResponse() *RakshaTextCompletionRe
 				},
 			},
 			Usage: cr.Usage,
-			ExtraFields: RakshaResponseExtraFields{
+			ExtraFields: GatewayResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -137,12 +137,12 @@ func (cr *RakshaChatResponse) ToTextCompletionResponse() *RakshaTextCompletionRe
 		if msg != nil && msg.Content != nil && msg.Content.ContentStr != nil {
 			textContent = msg.Content.ContentStr
 		}
-		return &RakshaTextCompletionResponse{
+		return &GatewayTextCompletionResponse{
 			ID:                cr.ID,
 			Model:             cr.Model,
 			Object:            "text_completion",
 			SystemFingerprint: cr.SystemFingerprint,
-			Choices: []RakshaResponseChoice{
+			Choices: []GatewayResponseChoice{
 				{
 					Index: 0,
 					TextCompletionResponseChoice: &TextCompletionResponseChoice{
@@ -153,7 +153,7 @@ func (cr *RakshaChatResponse) ToTextCompletionResponse() *RakshaTextCompletionRe
 				},
 			},
 			Usage: cr.Usage,
-			ExtraFields: RakshaResponseExtraFields{
+			ExtraFields: GatewayResponseExtraFields{
 				RequestType:             TextCompletionRequest,
 				ChunkIndex:              cr.ExtraFields.ChunkIndex,
 				Provider:                cr.ExtraFields.Provider,
@@ -168,13 +168,13 @@ func (cr *RakshaChatResponse) ToTextCompletionResponse() *RakshaTextCompletionRe
 	}
 
 	// Fallback case - return basic response structure
-	return &RakshaTextCompletionResponse{
+	return &GatewayTextCompletionResponse{
 		ID:                cr.ID,
 		Model:             cr.Model,
 		Object:            "text_completion",
 		SystemFingerprint: cr.SystemFingerprint,
 		Usage:             cr.Usage,
-		ExtraFields: RakshaResponseExtraFields{
+		ExtraFields: GatewayResponseExtraFields{
 			RequestType:             TextCompletionRequest,
 			ChunkIndex:              cr.ExtraFields.ChunkIndex,
 			Provider:                cr.ExtraFields.Provider,
@@ -207,7 +207,7 @@ type ChatParameters struct {
 	ResponseFormat       *interface{}          `json:"response_format,omitempty"`        // Format for the response
 	SafetyIdentifier     *string               `json:"safety_identifier,omitempty"`      // Safety identifier
 	Seed                 *int                  `json:"seed,omitempty"`
-	ServiceTier          *RakshaServiceTier   `json:"service_tier,omitempty"`
+	ServiceTier          *GatewayServiceTier   `json:"service_tier,omitempty"`
 	StreamOptions        *ChatStreamOptions    `json:"stream_options,omitempty"`
 	Stop                 []string              `json:"stop,omitempty"`
 	Store                *bool                 `json:"store,omitempty"`
@@ -334,7 +334,7 @@ type ChatWebSearchOptionsUserLocationApproximate struct {
 // ChatStreamOptions represents the stream options for a chat completion.
 type ChatStreamOptions struct {
 	IncludeObfuscation *bool `json:"include_obfuscation,omitempty"`
-	IncludeUsage       *bool `json:"include_usage,omitempty"` // Raksha marks this as true by default
+	IncludeUsage       *bool `json:"include_usage,omitempty"` // Gateway marks this as true by default
 }
 
 // ChatToolType represents the type of tool.
@@ -379,7 +379,7 @@ type ChatTool struct {
 	Function     *ChatToolFunction   `json:"function,omitempty"`      // Function definition (shape 1)
 	Custom       *ChatToolCustom     `json:"custom,omitempty"`        // Custom tool definition (shape 2)
 	CacheControl *CacheControl       `json:"cache_control,omitempty"` // Cache control for the tool
-	Annotations  *MCPToolAnnotations `json:"-"`                       // MCP tool annotations (Raksha-internal, never forwarded to providers)
+	Annotations  *MCPToolAnnotations `json:"-"`                       // MCP tool annotations (Gateway-internal, never forwarded to providers)
 
 	// Anthropic-native tool flags promoted to the neutral layer. All optional;
 	// ignored by providers that don't support them. Gating per ProviderFeatures
@@ -1129,7 +1129,7 @@ type ChatContentBlock struct {
 }
 
 // UnmarshalJSON normalizes Anthropic-style document content blocks
-// (`{"type":"document","source":{...}}`) into raksha's canonical file shape
+// (`{"type":"document","source":{...}}`) into gateway's canonical file shape
 // (`{"type":"file","file":{file_data|file_url, file_type}}`) before the default
 // unmarshal runs. This lets every code path - native /v1/chat/completions, drop-in
 // routes, programmatic JSON callers - reuse the existing ChatContentBlockTypeFile
@@ -1401,7 +1401,7 @@ func (cm *ChatAssistantMessage) UnmarshalJSON(data []byte) error {
 	// Copy decoded data back into the original type
 	*cm = ChatAssistantMessage(aux.Alias)
 
-	// Map xAI's reasoning_content to Raksha's Reasoning field
+	// Map xAI's reasoning_content to Gateway's Reasoning field
 	// This allows both OpenAI's "reasoning" and xAI's "reasoning_content" to work
 	if aux.ReasoningContent != nil && cm.Reasoning == nil {
 		cm.Reasoning = aux.ReasoningContent
@@ -1414,7 +1414,7 @@ func (cm *ChatAssistantMessage) UnmarshalJSON(data []byte) error {
 		cm.ReasoningDetails = []ChatReasoningDetails{
 			{
 				Index: 0,
-				Type:  RakshaReasoningDetailsTypeText,
+				Type:  GatewayReasoningDetailsTypeText,
 				Text:  &text,
 			},
 		}
@@ -1466,64 +1466,64 @@ type ChatAudioMessageAudio struct {
 	Transcript string `json:"transcript"`
 }
 
-// RakshaResponseChoice represents a choice in the completion result.
+// GatewayResponseChoice represents a choice in the completion result.
 // This struct can represent either a streaming or non-streaming response choice.
 // IMPORTANT: Only one of TextCompletionResponseChoice, NonStreamResponseChoice or StreamResponseChoice
 // should be non-nil at a time.
-type RakshaResponseChoice struct {
+type GatewayResponseChoice struct {
 	Index        int              `json:"index"`
 	FinishReason *string          `json:"finish_reason,omitempty"`
-	LogProbs     *RakshaLogProbs `json:"logprobs,omitempty"`
+	LogProbs     *GatewayLogProbs `json:"logprobs,omitempty"`
 
 	*TextCompletionResponseChoice
 	*ChatNonStreamResponseChoice
 	*ChatStreamResponseChoice
 }
 
-// RakshaFinishReason represents the reason why the model stopped generating.
-type RakshaFinishReason string
+// GatewayFinishReason represents the reason why the model stopped generating.
+type GatewayFinishReason string
 
-// RakshaFinishReason values
+// GatewayFinishReason values
 const (
-	RakshaFinishReasonStop      RakshaFinishReason = "stop"
-	RakshaFinishReasonLength    RakshaFinishReason = "length"
-	RakshaFinishReasonToolCalls RakshaFinishReason = "tool_calls"
+	GatewayFinishReasonStop      GatewayFinishReason = "stop"
+	GatewayFinishReasonLength    GatewayFinishReason = "length"
+	GatewayFinishReasonToolCalls GatewayFinishReason = "tool_calls"
 )
 
-// RakshaServiceTier represents the service tier for a request/response.
-type RakshaServiceTier string
+// GatewayServiceTier represents the service tier for a request/response.
+type GatewayServiceTier string
 
-// RakshaServiceTier values
+// GatewayServiceTier values
 const (
-	RakshaServiceTierAuto        RakshaServiceTier = "auto"
-	RakshaServiceTierDefault     RakshaServiceTier = "default"
-	RakshaServiceTierFlex        RakshaServiceTier = "flex"
-	RakshaServiceTierPriority    RakshaServiceTier = "priority"
-	RakshaServiceTierProvisioned RakshaServiceTier = "provisioned"
+	GatewayServiceTierAuto        GatewayServiceTier = "auto"
+	GatewayServiceTierDefault     GatewayServiceTier = "default"
+	GatewayServiceTierFlex        GatewayServiceTier = "flex"
+	GatewayServiceTierPriority    GatewayServiceTier = "priority"
+	GatewayServiceTierProvisioned GatewayServiceTier = "provisioned"
 )
 
-type RakshaReasoningDetailsType string
+type GatewayReasoningDetailsType string
 
 const (
-	RakshaReasoningDetailsTypeSummary       RakshaReasoningDetailsType = "reasoning.summary"
-	RakshaReasoningDetailsTypeEncrypted     RakshaReasoningDetailsType = "reasoning.encrypted"
-	RakshaReasoningDetailsTypeText          RakshaReasoningDetailsType = "reasoning.text"
-	RakshaReasoningDetailsTypeContentBlocks RakshaReasoningDetailsType = "reasoning.content_blocks"
+	GatewayReasoningDetailsTypeSummary       GatewayReasoningDetailsType = "reasoning.summary"
+	GatewayReasoningDetailsTypeEncrypted     GatewayReasoningDetailsType = "reasoning.encrypted"
+	GatewayReasoningDetailsTypeText          GatewayReasoningDetailsType = "reasoning.text"
+	GatewayReasoningDetailsTypeContentBlocks GatewayReasoningDetailsType = "reasoning.content_blocks"
 )
 
 // Not in OpenAI's spec, but needed to support inter provider reasoning capabilities.
 type ChatReasoningDetails struct {
 	ID        *string                     `json:"id,omitempty"`
 	Index     int                         `json:"index"`
-	Type      RakshaReasoningDetailsType `json:"type"`
+	Type      GatewayReasoningDetailsType `json:"type"`
 	Summary   *string                     `json:"summary,omitempty"`
 	Text      *string                     `json:"text,omitempty"`
 	Signature *string                     `json:"signature,omitempty"`
 	Data      *string                     `json:"data,omitempty"` // for encrypted data
 }
 
-// RakshaLogProbs represents the log probabilities for different aspects of a response.
-type RakshaLogProbs struct {
+// GatewayLogProbs represents the log probabilities for different aspects of a response.
+type GatewayLogProbs struct {
 	Content []ContentLogProb `json:"content,omitempty"`
 	Refusal []LogProb        `json:"refusal,omitempty"`
 
@@ -1576,7 +1576,7 @@ func (d *ChatStreamResponseChoiceDelta) UnmarshalJSON(data []byte) error {
 	// Copy decoded data back into the original type
 	*d = ChatStreamResponseChoiceDelta(aux.Alias)
 
-	// Map xAI's reasoning_content to Raksha's Reasoning field
+	// Map xAI's reasoning_content to Gateway's Reasoning field
 	// This allows both OpenAI's "reasoning" and xAI's "reasoning_content" to work
 	if aux.ReasoningContent != nil && d.Reasoning == nil {
 		d.Reasoning = aux.ReasoningContent
@@ -1589,7 +1589,7 @@ func (d *ChatStreamResponseChoiceDelta) UnmarshalJSON(data []byte) error {
 		d.ReasoningDetails = []ChatReasoningDetails{
 			{
 				Index: 0,
-				Type:  RakshaReasoningDetailsTypeText,
+				Type:  GatewayReasoningDetailsTypeText,
 				Text:  &text,
 			},
 		}
@@ -1613,14 +1613,14 @@ type ContentLogProb struct {
 	TopLogProbs []LogProb `json:"top_logprobs"`
 }
 
-// RakshaLLMUsage represents token usage information
-type RakshaLLMUsage struct {
+// GatewayLLMUsage represents token usage information
+type GatewayLLMUsage struct {
 	PromptTokens            int                          `json:"prompt_tokens,omitempty"`
 	PromptTokensDetails     *ChatPromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
 	CompletionTokens        int                          `json:"completion_tokens,omitempty"`
 	CompletionTokensDetails *ChatCompletionTokensDetails `json:"completion_tokens_details,omitempty"`
 	TotalTokens             int                          `json:"total_tokens"`
-	Cost                    *RakshaCost                 `json:"cost,omitempty"` // Only for the providers which support cost calculation
+	Cost                    *GatewayCost                 `json:"cost,omitempty"` // Only for the providers which support cost calculation
 }
 
 type ChatPromptTokensDetails struct {
@@ -1701,7 +1701,7 @@ type ChatCompletionTokensDetails struct {
 	RejectedPredictionTokens int  `json:"rejected_prediction_tokens,omitempty"`
 }
 
-type RakshaCost struct {
+type GatewayCost struct {
 	InputTokensCost     float64 `json:"input_tokens_cost,omitempty"`
 	OutputTokensCost    float64 `json:"output_tokens_cost,omitempty"`
 	ReasoningTokensCost float64 `json:"reasoning_tokens_cost,omitempty"`
@@ -1711,8 +1711,8 @@ type RakshaCost struct {
 	TotalCost           float64 `json:"total_cost,omitempty"`
 }
 
-// UnmarshalJSON implements custom JSON unmarshalling for RakshaCost.
-func (bc *RakshaCost) UnmarshalJSON(data []byte) error {
+// UnmarshalJSON implements custom JSON unmarshalling for GatewayCost.
+func (bc *GatewayCost) UnmarshalJSON(data []byte) error {
 	// First, try to unmarshal as a direct float
 	var costFloat float64
 	if err := Unmarshal(data, &costFloat); err == nil {
@@ -1720,12 +1720,12 @@ func (bc *RakshaCost) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	// Try to unmarshal as a full RakshaCost struct
+	// Try to unmarshal as a full GatewayCost struct
 	// Use a type alias to avoid infinite recursion
-	type Alias RakshaCost
+	type Alias GatewayCost
 	var costStruct Alias
 	if err := Unmarshal(data, &costStruct); err == nil {
-		*bc = RakshaCost(costStruct)
+		*bc = GatewayCost(costStruct)
 		return nil
 	}
 

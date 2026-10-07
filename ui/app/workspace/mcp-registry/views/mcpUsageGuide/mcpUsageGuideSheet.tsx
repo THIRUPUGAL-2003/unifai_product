@@ -1,10 +1,12 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multiSelect";
 import { SearchSelect } from "@/components/ui/searchSelect";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useDebouncedValue } from "@/hooks/useDebounce";
-import { useGetCoreConfigQuery, useGetMCPClientsQuery, useGetVirtualKeysQuery } from "@/lib/store";
+import { PRODUCT_NAME } from "@/lib/constants/config";
+import { getErrorMessage, useGetCoreConfigQuery, useGetMCPClientsQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Check, Globe2, KeyRound, Server, SquareTerminal } from "lucide-react";
 import { parseAsArrayOf, parseAsBoolean, parseAsString, parseAsStringLiteral, useQueryStates } from "nuqs";
@@ -48,15 +50,19 @@ export function MCPUsageGuideSheet() {
 	const debouncedVirtualKeySearch = useDebouncedValue(virtualKeySearch, 250);
 
 	// ── Queries ──────────────────────────────────────────────────────────
-	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });
-	const { data: virtualKeysData, isFetching: isFetchingVirtualKeys } = useGetVirtualKeysQuery(
-		{ limit: 50, search: debouncedVirtualKeySearch || undefined },
-		{ skip: !open },
-	);
-	const { data: mcpClientsData, isFetching: isFetchingMCPClients } = useGetMCPClientsQuery(
-		{ limit: 50 },
-		{ skip: !open || !selectedVirtualKey, refetchOnMountOrArgChange: true },
-	);
+	const { data: gatewayConfig, isError: coreConfigFailed, error: coreConfigError } = useGetCoreConfigQuery({ fromDB: true }, { skip: !open });
+	const {
+		data: virtualKeysData,
+		isFetching: isFetchingVirtualKeys,
+		isError: virtualKeysFailed,
+		error: virtualKeysError,
+	} = useGetVirtualKeysQuery({ limit: 50, search: debouncedVirtualKeySearch || undefined }, { skip: !open });
+	const {
+		data: mcpClientsData,
+		isFetching: isFetchingMCPClients,
+		isError: mcpClientsFailed,
+		error: mcpClientsError,
+	} = useGetMCPClientsQuery({ limit: 50 }, { skip: !open || !selectedVirtualKey, refetchOnMountOrArgChange: true });
 
 	// ── Derived data ─────────────────────────────────────────────────────
 	const activeVirtualKeys = useMemo(() => virtualKeysData?.virtual_keys?.filter((vk) => vk.is_active) ?? [], [virtualKeysData]);
@@ -73,15 +79,17 @@ export function MCPUsageGuideSheet() {
 
 	const serverOptions = useMemo<MultiSelectOption[]>(
 		() =>
-			allowedMCPClients.map((client) => ({
-				value: client.config.client_id,
-				label: client.config.name,
-			})),
+			allowedMCPClients
+				.filter((client) => client.config?.client_id)
+				.map((client) => ({
+					value: client.config.client_id,
+					label: client.config?.name || client.config.client_id,
+				})),
 		[allowedMCPClients],
 	);
 
 	const selectedServers = useMemo(
-		() => allowedMCPClients.filter((client) => urlState.servers.includes(client.config.client_id)),
+		() => allowedMCPClients.filter((client) => client.config?.client_id && urlState.servers.includes(client.config.client_id)),
 		[allowedMCPClients, urlState.servers],
 	);
 
@@ -134,13 +142,22 @@ export function MCPUsageGuideSheet() {
 					<SheetHeader className="flex flex-col items-start px-0 py-4" headerClassName="mb-0 sticky px-8 -top-4 bg-card z-10">
 						<div className="flex items-center gap-2">
 							<div>
-								<SheetTitle>Install Raksha MCP</SheetTitle>
+								<SheetTitle>Install {PRODUCT_NAME} MCP</SheetTitle>
 								<SheetDescription>Build a copy-ready command or config for your agent harness.</SheetDescription>
 							</div>
 						</div>
 					</SheetHeader>
 
 					<div className="flex flex-col gap-6 px-8 py-4">
+						{virtualKeysFailed || mcpClientsFailed || coreConfigFailed ? (
+							<QueryErrorBanner
+								testId="mcp-usage-guide-query-error"
+								message={
+									getErrorMessage(virtualKeysError || mcpClientsError || coreConfigError) ||
+									"Failed to load MCP connection options."
+								}
+							/>
+						) : null}
 						{/* ── Harness selector tabs ───────────────────────── */}
 						<section className="flex flex-col gap-2 transition-[border-color,background-color] duration-150 ease-out">
 							<div className="flex items-center gap-2 text-sm font-medium">
@@ -279,7 +296,7 @@ export function MCPUsageGuideSheet() {
 						{/* ── Active harness install panel ────────────────── */}
 						<activeHarness.Install
 							canGenerateCommand={canGenerateCommand}
-							clientConfig={rakshaConfig?.client_config}
+							clientConfig={gatewayConfig?.client_config}
 							platform={platform}
 							selectedServers={selectedServers}
 							serverScope={serverScope}

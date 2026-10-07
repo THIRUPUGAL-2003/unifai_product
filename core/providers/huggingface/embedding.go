@@ -4,16 +4,16 @@ import (
 	"fmt"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToHuggingFaceEmbeddingRequest converts a Raksha embedding request to HuggingFace format
-func ToHuggingFaceEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (*HuggingFaceEmbeddingRequest, error) {
-	if rakshaReq == nil {
+// ToHuggingFaceEmbeddingRequest converts a Gateway embedding request to HuggingFace format
+func ToHuggingFaceEmbeddingRequest(gatewayReq *schemas.GatewayEmbeddingRequest) (*HuggingFaceEmbeddingRequest, error) {
+	if gatewayReq == nil {
 		return nil, nil
 	}
 
-	inferenceProvider, modelName, nameErr := splitIntoModelProvider(rakshaReq.Model)
+	inferenceProvider, modelName, nameErr := splitIntoModelProvider(gatewayReq.Model)
 	if nameErr != nil {
 		return nil, nameErr
 	}
@@ -29,13 +29,13 @@ func ToHuggingFaceEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (*
 	}
 
 	// Convert input
-	if rakshaReq.Input != nil {
+	if gatewayReq.Input != nil {
 		var input InputsCustomType
-		if rakshaReq.Input.Text != nil {
-			input = InputsCustomType{Text: rakshaReq.Input.Text}
+		if gatewayReq.Input.Text != nil {
+			input = InputsCustomType{Text: gatewayReq.Input.Text}
 
-		} else if rakshaReq.Input.Texts != nil {
-			input = InputsCustomType{Texts: rakshaReq.Input.Texts}
+		} else if gatewayReq.Input.Texts != nil {
+			input = InputsCustomType{Texts: gatewayReq.Input.Texts}
 		}
 		if inferenceProvider == hfInference {
 			hfReq.Inputs = &input
@@ -45,8 +45,8 @@ func ToHuggingFaceEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (*
 	}
 
 	// Map parameters
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		// Map standard parameters
 		if params.EncodingFormat != nil {
@@ -82,9 +82,9 @@ func ToHuggingFaceEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (*
 	return hfReq, nil
 }
 
-// UnmarshalHuggingFaceEmbeddingResponse unmarshals HuggingFace API response directly into RakshaEmbeddingResponse
+// UnmarshalHuggingFaceEmbeddingResponse unmarshals HuggingFace API response directly into GatewayEmbeddingResponse
 // Handles multiple formats: standard object, 2D array, or 1D array
-func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.RakshaEmbeddingResponse, error) {
+func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.GatewayEmbeddingResponse, error) {
 	if data == nil {
 		return nil, fmt.Errorf("response data is nil")
 	}
@@ -93,29 +93,29 @@ func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.
 	type tempResponse struct {
 		Data  []schemas.EmbeddingData  `json:"data,omitempty"`
 		Model *string                  `json:"model,omitempty"`
-		Usage *schemas.RakshaLLMUsage `json:"usage,omitempty"`
+		Usage *schemas.GatewayLLMUsage `json:"usage,omitempty"`
 	}
 	var obj tempResponse
 	if err := sonic.Unmarshal(data, &obj); err == nil {
 		if obj.Data != nil || obj.Model != nil || obj.Usage != nil {
-			rakshaResponse := &schemas.RakshaEmbeddingResponse{
+			gatewayResponse := &schemas.GatewayEmbeddingResponse{
 				Data:   obj.Data,
 				Model:  model,
 				Object: "list",
 			}
 			if obj.Model != nil {
-				rakshaResponse.Model = *obj.Model
+				gatewayResponse.Model = *obj.Model
 			}
 			if obj.Usage != nil {
-				rakshaResponse.Usage = obj.Usage
+				gatewayResponse.Usage = obj.Usage
 			} else {
-				rakshaResponse.Usage = &schemas.RakshaLLMUsage{
+				gatewayResponse.Usage = &schemas.GatewayLLMUsage{
 					PromptTokens:     0,
 					CompletionTokens: 0,
 					TotalTokens:      0,
 				}
 			}
-			return rakshaResponse, nil
+			return gatewayResponse, nil
 		}
 	}
 
@@ -130,11 +130,11 @@ func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.
 				Object:    "embedding",
 			}
 		}
-		return &schemas.RakshaEmbeddingResponse{
+		return &schemas.GatewayEmbeddingResponse{
 			Data:   embeddings,
 			Model:  model,
 			Object: "list",
-			Usage: &schemas.RakshaLLMUsage{
+			Usage: &schemas.GatewayLLMUsage{
 				PromptTokens:     0,
 				CompletionTokens: 0,
 				TotalTokens:      0,
@@ -145,7 +145,7 @@ func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.
 	// Try 1D array: [num, ...]
 	var arr1D []float64
 	if err := sonic.Unmarshal(data, &arr1D); err == nil {
-		return &schemas.RakshaEmbeddingResponse{
+		return &schemas.GatewayEmbeddingResponse{
 			Data: []schemas.EmbeddingData{{
 				Embedding: schemas.EmbeddingStruct{EmbeddingArray: append([]float64(nil), arr1D...)},
 				Index:     0,
@@ -153,7 +153,7 @@ func UnmarshalHuggingFaceEmbeddingResponse(data []byte, model string) (*schemas.
 			}},
 			Model:  model,
 			Object: "list",
-			Usage: &schemas.RakshaLLMUsage{
+			Usage: &schemas.GatewayLLMUsage{
 				PromptTokens:     0,
 				CompletionTokens: 0,
 				TotalTokens:      0,

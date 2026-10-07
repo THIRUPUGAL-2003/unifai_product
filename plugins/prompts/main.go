@@ -1,4 +1,4 @@
-// Package prompts implements the Raksha LLM plugin that resolves stored prompt templates
+// Package prompts implements the Gateway LLM plugin that resolves stored prompt templates
 // from the config store and prepends their messages to chat and Responses API requests.
 // HTTP clients select a prompt via x-uf-prompt-id / x-uf-prompt-version headers; optional
 // custom PromptResolver implementations can override how ID and version are chosen.
@@ -13,16 +13,16 @@ import (
 	"strings"
 	"sync"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 )
 
 const (
 	// PluginName is the canonical name registered for the prompts plugin.
 	PluginName = "prompts"
 
-	// PromptIDHeader and PromptVersionHeader are request headers copied into RakshaContext
+	// PromptIDHeader and PromptVersionHeader are request headers copied into GatewayContext
 	// in HTTPTransportPreHook so PreLLMHook and custom resolvers can read them.
 	PromptIDHeader      = "x-uf-prompt-id"
 	PromptVersionHeader = "x-uf-prompt-version"
@@ -38,11 +38,11 @@ const (
 	PromptInjectHeader = "x-uf-prompt-inject"
 
 	// PromptIDKey and PromptVersionKey are context keys for the resolved header values.
-	PromptIDKey          schemas.RakshaContextKey = PromptIDHeader
-	PromptVersionKey     schemas.RakshaContextKey = PromptVersionHeader
-	PromptEnvironmentKey schemas.RakshaContextKey = PromptEnvironmentHeader
-	SkillIDKey           schemas.RakshaContextKey = SkillIDHeader
-	PromptInjectKey      schemas.RakshaContextKey = PromptInjectHeader
+	PromptIDKey          schemas.GatewayContextKey = PromptIDHeader
+	PromptVersionKey     schemas.GatewayContextKey = PromptVersionHeader
+	PromptEnvironmentKey schemas.GatewayContextKey = PromptEnvironmentHeader
+	SkillIDKey           schemas.GatewayContextKey = SkillIDHeader
+	PromptInjectKey      schemas.GatewayContextKey = PromptInjectHeader
 )
 
 // InMemoryStore is the data source for prompts and all versions. Implementations typically
@@ -67,7 +67,7 @@ type SkillBodyStore interface {
 // PromptResolver decides which prompt and version to inject for a given request.
 // Returning an empty promptID means no injection for this request.
 type PromptResolver interface {
-	Resolve(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (promptID string, versionNumber int, err error)
+	Resolve(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (promptID string, versionNumber int, err error)
 }
 
 // headerResolver is the default OSS resolver: it reads prompt ID and version from context
@@ -78,8 +78,8 @@ type headerResolver struct {
 
 // Resolve returns the prompt ID and version number from context. An empty promptID means
 // no prompt injection for this request. Version 0 means “use latest” when passed to resolveVersion.
-func (r *headerResolver) Resolve(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (string, int, error) {
-	promptID := raksha.GetStringFromContext(ctx, PromptIDKey)
+func (r *headerResolver) Resolve(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (string, int, error) {
+	promptID := gateway.GetStringFromContext(ctx, PromptIDKey)
 	if promptID == "" {
 		return "", 0, nil
 	}
@@ -99,7 +99,7 @@ type deploymentAwareResolver struct {
 	logger      schemas.Logger
 }
 
-func (r *deploymentAwareResolver) Resolve(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (string, int, error) {
+func (r *deploymentAwareResolver) Resolve(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (string, int, error) {
 	promptID, versionNumber, err := r.headers.Resolve(ctx, req)
 	if err != nil {
 		return "", 0, err
@@ -109,11 +109,11 @@ func (r *deploymentAwareResolver) Resolve(ctx *schemas.RakshaContext, req *schem
 		return promptID, versionNumber, nil
 	}
 
-	env := strings.TrimSpace(raksha.GetStringFromContext(ctx, PromptEnvironmentKey))
+	env := strings.TrimSpace(gateway.GetStringFromContext(ctx, PromptEnvironmentKey))
 	if env == "" && promptID != "" {
 		// The generic environment dimension only picks a version for a prompt the caller named;
 		// it never injects a prompt into traffic that did not ask for one.
-		if dims, ok := ctx.Value(schemas.RakshaContextKeyDimensions).(map[string]string); ok {
+		if dims, ok := ctx.Value(schemas.GatewayContextKeyDimensions).(map[string]string); ok {
 			env = strings.TrimSpace(dims["environment"])
 		}
 	}
@@ -154,7 +154,7 @@ func (r *deploymentAwareResolver) Resolve(ctx *schemas.RakshaContext, req *schem
 //
 // Fields:
 //   - store: backing persistence for prompts and versions
-//   - logger: Raksha logger for non-fatal merge/param warnings
+//   - logger: Gateway logger for non-fatal merge/param warnings
 //   - resolver: chooses prompt ID and version; defaults to headerResolver
 //   - mu: protects promptsByID and versionsByPromptAndNumber
 //   - promptsByID: prompt ID → prompt row (includes LatestVersion when using “latest”)
@@ -267,9 +267,9 @@ func (p *Plugin) GetName() string {
 }
 
 // HTTPTransportPreHook copies x-uf-prompt-id, x-uf-prompt-version, and
-// x-uf-prompt-environment from the incoming HTTP request into RakshaContext so the
+// x-uf-prompt-environment from the incoming HTTP request into GatewayContext so the
 // default resolvers and PreLLMHook can read them.
-func (p *Plugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *Plugin) HTTPTransportPreHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	if req == nil {
 		return nil, nil
 	}
@@ -292,18 +292,18 @@ func (p *Plugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.H
 }
 
 // HTTPTransportPostHook is a no-op; this plugin does not modify HTTP response headers.
-func (p *Plugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *Plugin) HTTPTransportPostHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes streaming chunks through unchanged; prompt injection
 // happens in PreLLMHook before the provider call.
-func (p *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
+func (p *Plugin) HTTPTransportStreamChunkHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, chunk *schemas.GatewayStreamChunk) (*schemas.GatewayStreamChunk, error) {
 	return chunk, nil
 }
 
 // PreRequestHook implements schemas.LLMPlugin (no-op — required for plugin indexing).
-func (p *Plugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaRequest) error {
+func (p *Plugin) PreRequestHook(_ *schemas.GatewayContext, _ *schemas.GatewayRequest) error {
 	return nil
 }
 
@@ -314,15 +314,15 @@ func (p *Plugin) PreRequestHook(_ *schemas.RakshaContext, _ *schemas.RakshaReque
 // on context keys set by callers instead of HTTPTransportPreHook.
 //
 // Parameters:
-//   - ctx: may set RakshaContextKeySelectedPromptName, RakshaContextKeySelectedPromptID and RakshaContextKeySelectedPromptVersion when a prompt is applied
+//   - ctx: may set GatewayContextKeySelectedPromptName, GatewayContextKeySelectedPromptID and GatewayContextKeySelectedPromptVersion when a prompt is applied
 //   - req: chat or Responses request to mutate in place
 //
 // Returns:
-//   - *schemas.RakshaRequest: possibly modified request
+//   - *schemas.GatewayRequest: possibly modified request
 //   - *schemas.LLMPluginShortCircuit: always nil
 //   - error: resolution failure or missing prompt/version; invalid or empty template returns
 //     the request unchanged with a nil error
-func (p *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	if req == nil {
 		return req, nil, nil
 	}
@@ -351,12 +351,12 @@ func (p *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaReque
 	}
 
 	if prompt != nil && prompt.Name != "" {
-		ctx.SetValue(schemas.RakshaContextKeySelectedPromptID, prompt.ID)
-		ctx.SetValue(schemas.RakshaContextKeySelectedPromptName, prompt.Name)
+		ctx.SetValue(schemas.GatewayContextKeySelectedPromptID, prompt.ID)
+		ctx.SetValue(schemas.GatewayContextKeySelectedPromptName, prompt.Name)
 	}
-	ctx.SetValue(schemas.RakshaContextKeySelectedPromptVersion, strconv.Itoa(version.VersionNumber))
+	ctx.SetValue(schemas.GatewayContextKeySelectedPromptVersion, strconv.Itoa(version.VersionNumber))
 
-	if strings.EqualFold(strings.TrimSpace(raksha.GetStringFromContext(ctx, PromptInjectKey)), "false") {
+	if strings.EqualFold(strings.TrimSpace(gateway.GetStringFromContext(ctx, PromptInjectKey)), "false") {
 		return req, nil, nil
 	}
 
@@ -390,8 +390,8 @@ func (p *Plugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaReque
 
 // injectSkillSystemMessage prepends Skills Repository skill_md_body when
 // x-uf-skill-id (or skill name) is present on the request context.
-func (p *Plugin) injectSkillSystemMessage(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) {
-	skillRef := strings.TrimSpace(raksha.GetStringFromContext(ctx, SkillIDKey))
+func (p *Plugin) injectSkillSystemMessage(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) {
+	skillRef := strings.TrimSpace(gateway.GetStringFromContext(ctx, SkillIDKey))
 	if skillRef == "" {
 		return
 	}
@@ -424,8 +424,8 @@ func (p *Plugin) injectSkillSystemMessage(ctx *schemas.RakshaContext, req *schem
 }
 
 // PostLLMHook is a no-op; the plugin does not modify responses.
-func (p *Plugin) PostLLMHook(ctx *schemas.RakshaContext, resp *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
-	return resp, rakshaErr, nil
+func (p *Plugin) PostLLMHook(ctx *schemas.GatewayContext, resp *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error) {
+	return resp, gatewayErr, nil
 }
 
 // knownSyntheticChatParamKeys are flat JSON keys that ChatParameters.UnmarshalJSON
@@ -465,7 +465,7 @@ func buildMergedParamsMap(versionParams configstoreTables.ModelParams, reqParams
 
 // applyVersionParamsToChatRequest applies the prompt version's ModelParams to the
 // chat request. Version params are defaults; params already set in the request win.
-func applyVersionParamsToChatRequest(version *configstoreTables.TablePromptVersion, req *schemas.RakshaChatRequest, logger schemas.Logger) {
+func applyVersionParamsToChatRequest(version *configstoreTables.TablePromptVersion, req *schemas.GatewayChatRequest, logger schemas.Logger) {
 	if len(version.ModelParams) == 0 {
 		return
 	}
@@ -532,7 +532,7 @@ func applyVersionParamsToChatRequest(version *configstoreTables.TablePromptVersi
 
 // applyVersionParamsToResponsesRequest applies the prompt version's ModelParams to the
 // responses request. Version params are defaults; params already set in the request win.
-func applyVersionParamsToResponsesRequest(version *configstoreTables.TablePromptVersion, req *schemas.RakshaResponsesRequest, logger schemas.Logger) {
+func applyVersionParamsToResponsesRequest(version *configstoreTables.TablePromptVersion, req *schemas.GatewayResponsesRequest, logger schemas.Logger) {
 	if len(version.ModelParams) == 0 {
 		return
 	}
@@ -630,7 +630,7 @@ func (p *Plugin) Cleanup() error {
 
 // parseNumberFromContext parses a decimal integer from a string context value. Missing or
 // empty values yield 0 with no error (treated as “no explicit version”).
-func parseNumberFromContext(ctx *schemas.RakshaContext, key schemas.RakshaContextKey) (num int, err error) {
+func parseNumberFromContext(ctx *schemas.GatewayContext, key schemas.GatewayContextKey) (num int, err error) {
 	s, ok := ctx.Value(key).(string)
 	if !ok {
 		return 0, nil

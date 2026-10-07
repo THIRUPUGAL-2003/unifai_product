@@ -1,9 +1,9 @@
 package integrations
 
 import (
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 )
 
 // PassthroughRouter is a catch-all router that forwards all requests directly
@@ -14,7 +14,7 @@ type PassthroughRouter struct {
 
 // NewPassthroughRouter creates a passthrough-only router for any prefix/provider combo.
 func NewPassthroughRouter(
-	client *raksha.Raksha,
+	client *gateway.Gateway,
 	handlerStore lib.HandlerStore,
 	logger schemas.Logger,
 	cfg *PassthroughConfig,
@@ -28,7 +28,7 @@ func NewPassthroughRouter(
 }
 
 // NewAnthropicPassthroughRouter creates a passthrough router for /anthropic_passthrough.
-func NewAnthropicPassthroughRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *PassthroughRouter {
+func NewAnthropicPassthroughRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *PassthroughRouter {
 	return NewPassthroughRouter(client, handlerStore, logger, &PassthroughConfig{
 		Provider: schemas.Anthropic,
 		StripPrefix: []string{
@@ -38,7 +38,7 @@ func NewAnthropicPassthroughRouter(client *raksha.Raksha, handlerStore lib.Handl
 }
 
 // NewOpenAIPassthroughRouter creates a passthrough router for /openai_passthrough.
-func NewOpenAIPassthroughRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *PassthroughRouter {
+func NewOpenAIPassthroughRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *PassthroughRouter {
 	return NewPassthroughRouter(client, handlerStore, logger, &PassthroughConfig{
 		Provider: schemas.OpenAI,
 		StripPrefix: []string{
@@ -48,7 +48,7 @@ func NewOpenAIPassthroughRouter(client *raksha.Raksha, handlerStore lib.HandlerS
 }
 
 // NewAzurePassthroughRouter creates a passthrough router for /azure_passthrough.
-func NewAzurePassthroughRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *PassthroughRouter {
+func NewAzurePassthroughRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *PassthroughRouter {
 	return NewPassthroughRouter(client, handlerStore, logger, &PassthroughConfig{
 		Provider: schemas.Azure,
 		StripPrefix: []string{
@@ -58,7 +58,7 @@ func NewAzurePassthroughRouter(client *raksha.Raksha, handlerStore lib.HandlerSt
 }
 
 // NewGenAIPassthroughRouter creates a passthrough router for /genai_passthrough.
-func NewGenAIPassthroughRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *PassthroughRouter {
+func NewGenAIPassthroughRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *PassthroughRouter {
 	return NewPassthroughRouter(client, handlerStore, logger, &PassthroughConfig{
 		Provider:         schemas.Gemini,
 		ProviderDetector: detectProviderFromGenAIRequest,

@@ -1,5 +1,6 @@
 import ModelProviderConfig from "@/app/workspace/providers/views/modelProviderConfig";
 import FullPageLoader from "@/components/fullPageLoader";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TruncatedLabel } from "@/components/ui/truncatedLabel";
@@ -52,7 +53,13 @@ export default function Providers() {
 	const [showCustomProviderSheet, setShowCustomProviderSheet] = useState(false);
 	const [provider, setProvider] = useQueryState("provider");
 
-	const { data: savedProviders, isLoading: isLoadingProviders } = useGetProvidersQuery();
+	const {
+		data: savedProviders,
+		isLoading: isLoadingProviders,
+		isError: providersFailed,
+		error: providersError,
+		refetch: refetchProviders,
+	} = useGetProvidersQuery();
 	const [getProvider, { isLoading: isLoadingProvider }] = useLazyGetProviderQuery();
 	const [createProvider] = useCreateProviderMutation();
 
@@ -119,6 +126,24 @@ export default function Providers() {
 	}
 	if (isLoadingProviders) {
 		return <FullPageLoader />;
+	}
+
+	if (providersFailed) {
+		return (
+			<div className="mx-auto flex w-full max-w-7xl flex-col gap-3 p-4">
+				<QueryErrorBanner
+					message={getErrorMessage(providersError) || "Failed to load providers."}
+					testId="providers-query-error"
+				/>
+				<button
+					type="button"
+					className="text-muted-foreground hover:text-foreground w-fit text-sm underline"
+					onClick={() => void refetchProviders()}
+				>
+					Retry
+				</button>
+			</div>
+		);
 	}
 
 	const handleSelectKnownProvider = async (name: string) => {

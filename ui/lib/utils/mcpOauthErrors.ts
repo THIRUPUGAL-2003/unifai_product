@@ -1,6 +1,8 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
+
 /**
  * Human-readable MCP OAuth install / connect errors.
- * Vendors (Adobe IMS, AWS Sign-In, …) often reject Raksha's DCR redirect —
+ * Vendors (Adobe IMS, AWS Sign-In, …) often reject the gateway DCR redirect —
  * surface next steps instead of raw Go / JSON toasts.
  */
 
@@ -12,10 +14,10 @@ export function mcpOAuthRedirectUri(baseUrl?: string): string {
 	if (typeof window !== "undefined" && window.location.origin) {
 		return `${window.location.origin.replace(/\/+$/, "")}/api/oauth/callback`;
 	}
-	return "<YOUR_RAKSHA_URL>/api/oauth/callback";
+	return "<YOUR_GATEWAY_URL>/api/oauth/callback";
 }
 
-/** Providers that commonly reject open Dynamic Client Registration for hosted Raksha. */
+/** Providers that commonly reject open Dynamic Client Registration for hosted gateways. */
 export function oauthLikelyNeedsPreRegisteredClient(connectionUrl?: string, serverName?: string): boolean {
 	const hay = `${connectionUrl || ""} ${serverName || ""}`.toLowerCase();
 	return (
@@ -64,7 +66,7 @@ export function formatMcpOauthError(raw: string, redirectUri?: string): string {
 
 	const redirectHint = redirectUri
 		? ` Register this exact Redirect URI on the provider: ${redirectUri}`
-		: " Register Raksha's Redirect URI (Settings → MCP → External client URL + /api/oauth/callback) on the provider.";
+		: ` Register ${PRODUCT_NAME}'s Redirect URI (Settings → MCP → External client URL + /api/oauth/callback) on the provider.`;
 
 	const lower = message.toLowerCase();
 
@@ -90,7 +92,7 @@ export function formatMcpOauthError(raw: string, redirectUri?: string): string {
 		lower.includes("redirect uri")
 	) {
 		return (
-			"This provider does not allow automatic client registration for Raksha. " +
+			`This provider does not allow automatic client registration for ${PRODUCT_NAME}. ` +
 			"Create an OAuth app in the provider console, set the Redirect URI below, then paste Client ID (and Secret if required) here before Continue." +
 			redirectHint
 		);

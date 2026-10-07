@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/mysqlconn"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/mysqlconn"
 )
 
 // MysqlConfig is logs_store MySQL/MariaDB config (same JSON shape as Postgres).

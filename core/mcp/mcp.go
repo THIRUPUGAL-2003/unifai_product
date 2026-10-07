@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raksha/raksha/core/mcp/credstore"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/mcp/credstore"
+	"github.com/gateway/gateway/core/schemas"
 
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -17,10 +17,10 @@ import (
 
 const (
 	// MCP defaults and identifiers
-	RakshaMCPVersion                    = "1.0.0"          // Version identifier for Raksha
-	RakshaMCPClientName                 = "RakshaClient"   // Name for internal Raksha MCP client
-	RakshaMCPClientKey                  = "rakshaInternal" // Key for internal Raksha client in clientMap
-	MCPLogPrefix                        = "[Raksha MCP]"   // Consistent logging prefix
+	GatewayMCPVersion                    = "1.0.0"          // Version identifier for Gateway
+	GatewayMCPClientName                 = "GatewayClient"   // Name for internal Gateway MCP client
+	GatewayMCPClientKey                  = "gatewayInternal" // Key for internal Gateway client in clientMap
+	MCPLogPrefix                        = "[Gateway MCP]"   // Consistent logging prefix
 	MCPClientConnectionEstablishTimeout = 30 * time.Second // Timeout for MCP client connection establishment
 )
 
@@ -28,8 +28,8 @@ const (
 // TYPE DEFINITIONS
 // ============================================================================
 
-// MCPManager manages MCP integration for Raksha core.
-// It provides a bridge between Raksha and various MCP servers, supporting
+// MCPManager manages MCP integration for Gateway core.
+// It provides a bridge between Gateway and various MCP servers, supporting
 // both local tool hosting and external MCP server connections.
 type MCPManager struct {
 	ctx                  context.Context
@@ -206,8 +206,8 @@ func (m *MCPManager) connectConfiguredClients(ctx context.Context) {
 }
 
 // SetPluginPipeline updates the plugin pipeline provider and release function on the manager's
-// ToolsManager and CodeMode. Call this after attaching an externally-created MCPManager to a Raksha
-// instance so that nested tool calls in code mode can run through Raksha's plugin hooks.
+// ToolsManager and CodeMode. Call this after attaching an externally-created MCPManager to a Gateway
+// instance so that nested tool calls in code mode can run through Gateway's plugin hooks.
 func (manager *MCPManager) SetPluginPipeline(provider func() PluginPipeline, release func(PluginPipeline)) {
 	manager.pluginPipelineProvider = provider
 	manager.releasePluginPipeline = release
@@ -234,15 +234,15 @@ func (manager *MCPManager) ReleasePluginPipeline(pipeline PluginPipeline) {
 //
 // Parameters:
 //   - ctx: Context containing optional client/tool filtering keys
-//   - req: The Raksha request to add tools to
+//   - req: The Gateway request to add tools to
 //
 // Returns:
-//   - *schemas.RakshaRequest: The request with tools added
-func (m *MCPManager) AddToolsToRequest(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) *schemas.RakshaRequest {
+//   - *schemas.GatewayRequest: The request with tools added
+func (m *MCPManager) AddToolsToRequest(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) *schemas.GatewayRequest {
 	return m.toolsManager.ParseAndAddToolsToRequest(ctx, req)
 }
 
-func (m *MCPManager) GetAvailableTools(ctx *schemas.RakshaContext) []schemas.ChatTool {
+func (m *MCPManager) GetAvailableTools(ctx *schemas.GatewayContext) []schemas.ChatTool {
 	return m.toolsManager.GetAvailableTools(ctx)
 }
 
@@ -280,17 +280,17 @@ func (m *MCPManager) SetToolSyncInterval(interval time.Duration) {
 //   - makeReq: Function to make subsequent chat requests during agent execution
 //
 // Returns:
-//   - *schemas.RakshaChatResponse: The final response after agent execution (or original if no tool calls)
-//   - *schemas.RakshaError: Any error that occurred during agent execution
+//   - *schemas.GatewayChatResponse: The final response after agent execution (or original if no tool calls)
+//   - *schemas.GatewayError: Any error that occurred during agent execution
 func (m *MCPManager) CheckAndExecuteAgentForChatRequest(
-	ctx *schemas.RakshaContext,
-	req *schemas.RakshaChatRequest,
-	response *schemas.RakshaChatResponse,
-	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError),
-) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+	ctx *schemas.GatewayContext,
+	req *schemas.GatewayChatRequest,
+	response *schemas.GatewayChatResponse,
+	makeReq func(ctx *schemas.GatewayContext, req *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError),
+) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	if makeReq == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "makeReq is required to execute agent mode",
 			},
@@ -332,17 +332,17 @@ func (m *MCPManager) CheckAndExecuteAgentForChatRequest(
 //   - makeReq: Function to make subsequent responses requests during agent execution
 //
 // Returns:
-//   - *schemas.RakshaResponsesResponse: The final response after agent execution (or original if no tool calls)
-//   - *schemas.RakshaError: Any error that occurred during agent execution
+//   - *schemas.GatewayResponsesResponse: The final response after agent execution (or original if no tool calls)
+//   - *schemas.GatewayError: Any error that occurred during agent execution
 func (m *MCPManager) CheckAndExecuteAgentForResponsesRequest(
-	ctx *schemas.RakshaContext,
-	req *schemas.RakshaResponsesRequest,
-	response *schemas.RakshaResponsesResponse,
-	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError),
-) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+	ctx *schemas.GatewayContext,
+	req *schemas.GatewayResponsesRequest,
+	response *schemas.GatewayResponsesResponse,
+	makeReq func(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError),
+) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if makeReq == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "makeReq is required to execute agent mode",
 			},

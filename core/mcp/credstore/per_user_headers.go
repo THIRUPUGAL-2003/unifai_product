@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/raksha/raksha/core/mcp/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/mcp/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // perUserHeadersResolver handles MCPAuthTypePerUserHeaders — each caller's
@@ -29,7 +29,7 @@ type perUserHeadersResolver struct {
 	provider schemas.MCPHeadersProvider
 }
 
-func (r *perUserHeadersResolver) ConnectionHeaders(ctx *schemas.RakshaContext, config *schemas.MCPClientConfig) (http.Header, error) {
+func (r *perUserHeadersResolver) ConnectionHeaders(ctx *schemas.GatewayContext, config *schemas.MCPClientConfig) (http.Header, error) {
 	if r.provider == nil {
 		return nil, fmt.Errorf("per-user headers requires an MCPHeadersProvider but none is configured")
 	}
@@ -75,7 +75,7 @@ func (r *perUserHeadersResolver) RequiresPerCallConnection() bool { return true 
 // flow ID and embeds it as a `#t=<token>` URL fragment so anonymous
 // browser visitors can complete the submission without a dashboard
 // session.
-func (r *perUserHeadersResolver) buildAuthRequiredError(ctx *schemas.RakshaContext, config *schemas.MCPClientConfig) error {
+func (r *perUserHeadersResolver) buildAuthRequiredError(ctx *schemas.GatewayContext, config *schemas.MCPClientConfig) error {
 	baseURL := utils.BuildMCPCallbackBaseURL(ctx)
 	if baseURL == "" {
 		return fmt.Errorf("per-user headers requires a callback base URL but none is available in context")

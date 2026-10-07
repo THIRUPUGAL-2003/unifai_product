@@ -17,14 +17,14 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/queryscope"
-	"github.com/raksha/raksha/framework/vectorstore"
+	gateway "github.com/gateway/gateway/core"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/queryscope"
+	"github.com/gateway/gateway/framework/vectorstore"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -5638,11 +5638,11 @@ func (s *RDBConfigStore) GetGovernanceConfig(ctx context.Context) (*GovernanceCo
 		for _, entry := range governanceConfigs {
 			switch entry.Key {
 			case tables.ConfigAdminUsernameKey:
-				username = raksha.Ptr(entry.Value)
+				username = gateway.Ptr(entry.Value)
 			case tables.ConfigAdminPasswordKey:
-				password = raksha.Ptr(entry.Value)
+				password = gateway.Ptr(entry.Value)
 			case tables.ConfigAdminEmailKey:
-				email = raksha.Ptr(entry.Value)
+				email = gateway.Ptr(entry.Value)
 			case tables.ConfigIsAuthEnabledKey:
 				isEnabled = entry.Value == "true"
 			case tables.ConfigComplexityAnalyzerConfigKey:

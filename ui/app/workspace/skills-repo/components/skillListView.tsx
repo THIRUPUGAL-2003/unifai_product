@@ -14,6 +14,7 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
 import { Badge } from "@/components/ui/badge";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdownMenu";
 import { Input } from "@/components/ui/input";
@@ -290,10 +291,15 @@ export function SkillsListView({
 	const hasCreateAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Create);
 	const hasEditAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Delete);
-	const { data: rakshaConfig } = useGetCoreConfigQuery({});
-	const isGitAvailable = rakshaConfig?.is_git_available ?? false;
+	const { data: gatewayConfig } = useGetCoreConfigQuery({});
+	const isGitAvailable = gatewayConfig?.is_git_available ?? false;
 	const [deleteSkill, { isLoading: isDeleting }] = useDeleteSkillMutation();
-	const { data: allSkillsVersionData, refetch: refetchAllSkillsVersion } = useGetAllSkillsVersionQuery();
+	const {
+		data: allSkillsVersionData,
+		refetch: refetchAllSkillsVersion,
+		isError: allSkillsVersionFailed,
+	} = useGetAllSkillsVersionQuery();
+	const allSkillsVersionLabel = allSkillsVersionFailed ? "—" : (allSkillsVersionData?.version ?? "0.0.0");
 	const [bumpAllSkillsVersion, { isLoading: isBumpingAllSkillsVersion }] = useBumpAllSkillsVersionMutation();
 
 	const [isDownloadingAll, setIsDownloadingAll] = useState(false);
@@ -376,7 +382,7 @@ export function SkillsListView({
 					<BookOpenText className="h-24 w-24" strokeWidth={1} />
 				</div>
 				<div className="flex flex-col gap-1">
-					<h1 className="text-muted-foreground text-xl font-medium">Create, version, and share Agent Skills from Raksha</h1>
+					<h1 className="text-muted-foreground text-xl font-medium">Create, version, and share Agent Skills from {PRODUCT_NAME}</h1>
 					<div className="text-muted-foreground mx-auto mt-2 max-w-xl text-sm font-normal">
 						Manage SKILL.md instructions and supporting files in one place, publish immutable versions, and expose them as installable
 						plugins for Claude Code, Codex, and other skill-aware clients.
@@ -419,7 +425,7 @@ export function SkillsListView({
 							</TooltipTrigger>
 							<TooltipContent side="bottom">
 								<p className="max-w-xs text-xs">
-									Git is not available on the server. Install git and restart Raksha to enable marketplace registration for Claude Code and
+									Git is not available on the server. Install git and restart {PRODUCT_NAME} to enable marketplace registration for Claude Code and
 									Codex.
 								</p>
 							</TooltipContent>
@@ -503,7 +509,7 @@ export function SkillsListView({
 											<Loader2 className="h-3 w-3 animate-spin" />
 										) : (
 											<>
-												{allSkillsVersionData?.version ?? "0.0.0"}
+												{allSkillsVersionLabel}
 												<ChevronDown className="h-3 w-3" />
 											</>
 										)}
@@ -525,7 +531,7 @@ export function SkillsListView({
 						</DropdownMenu>
 					) : (
 						<Badge variant="secondary" className="font-mono text-xs">
-							{allSkillsVersionData?.version ?? "0.0.0"}
+							{allSkillsVersionLabel}
 						</Badge>
 					)}
 				</div>

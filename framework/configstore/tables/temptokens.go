@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/raksha/raksha/framework/encrypt"
+	"github.com/gateway/gateway/framework/encrypt"
 	"gorm.io/gorm"
 )
 

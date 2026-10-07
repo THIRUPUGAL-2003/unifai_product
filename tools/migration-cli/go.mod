@@ -1,4 +1,4 @@
-module github.com/raksha/raksha/scripts/raksha-migration-cli
+module github.com/gateway/gateway/scripts/gateway-migration-cli
 
 go 1.26.4
 

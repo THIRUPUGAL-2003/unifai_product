@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-UnifAI / Raksha Enterprise Documentation PDF Generator
+UnifAI / Gateway Enterprise Documentation PDF Generator
 Converts markdown documentation files into professional, styled PDF documents using ReportLab.
 """
 
@@ -58,7 +58,7 @@ class NumberedCanvas(canvas.Canvas):
         if self._pageNumber > 1:
             self.setFont("Helvetica-Bold", 8)
             self.setFillColor(MUTED_TEXT)
-            self.drawString(54, height - 36, "UNIFAI / RAKSHA ENTERPRISE AI PLATFORM")
+            self.drawString(54, height - 36, "UNIFAI / GATEWAY ENTERPRISE AI PLATFORM")
             self.setFont("Helvetica", 8)
             self.drawRightString(width - 54, height - 36, "OFFICIAL SYSTEM MANUAL")
 
@@ -518,7 +518,7 @@ def main():
         ("04_USER_GUIDE.md", "04_User_Guide.pdf"),
         ("05_DATABASE_CONFIGURATION_GUIDE.md", "05_Database_Configuration_Guide.pdf"),
         ("06_DOCKER_AND_SSL_CONFIGURATION_GUIDE.md", "06_Docker_and_SSL_Configuration_Guide.pdf"),
-        ("Raksha_Technical_Documentation.md", "Raksha_Technical_Documentation.pdf"),
+        ("Gateway_Technical_Documentation.md", "Gateway_Technical_Documentation.pdf"),
     ]
 
     generated_pdfs = []

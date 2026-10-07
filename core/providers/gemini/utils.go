@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"github.com/valyala/fasthttp"
@@ -355,50 +355,50 @@ func (r *GeminiGenerationRequest) convertGenerationConfigToResponsesParameters()
 	return params
 }
 
-// mapGeminiServiceTierToRaksha converts a Gemini ServiceTier to an OpenAI-compatible RakshaServiceTier.
-func mapGeminiServiceTierToRaksha(tier ServiceTier) schemas.RakshaServiceTier {
+// mapGeminiServiceTierToGateway converts a Gemini ServiceTier to an OpenAI-compatible GatewayServiceTier.
+func mapGeminiServiceTierToGateway(tier ServiceTier) schemas.GatewayServiceTier {
 	switch tier {
 	case ServiceTierStandard:
-		return schemas.RakshaServiceTierDefault
+		return schemas.GatewayServiceTierDefault
 	case ServiceTierFlex:
-		return schemas.RakshaServiceTierFlex
+		return schemas.GatewayServiceTierFlex
 	case ServiceTierPriority:
-		return schemas.RakshaServiceTierPriority
+		return schemas.GatewayServiceTierPriority
 	default:
-		return schemas.RakshaServiceTierAuto
+		return schemas.GatewayServiceTierAuto
 	}
 }
 
-// mapGeminiTrafficTypeToRaksha converts a Vertex AI usageMetadata.trafficType to a RakshaServiceTier.
+// mapGeminiTrafficTypeToGateway converts a Vertex AI usageMetadata.trafficType to a GatewayServiceTier.
 // Returns nil for empty or unrecognised values.
-func mapGeminiTrafficTypeToRaksha(trafficType TrafficType) *schemas.RakshaServiceTier {
-	var tier schemas.RakshaServiceTier
+func mapGeminiTrafficTypeToGateway(trafficType TrafficType) *schemas.GatewayServiceTier {
+	var tier schemas.GatewayServiceTier
 	switch trafficType {
 	case TrafficTypeOnDemand:
-		tier = schemas.RakshaServiceTierDefault
+		tier = schemas.GatewayServiceTierDefault
 	case TrafficTypeOnDemandPriority:
-		tier = schemas.RakshaServiceTierPriority
+		tier = schemas.GatewayServiceTierPriority
 	case TrafficTypeOnDemandFlex:
-		tier = schemas.RakshaServiceTierFlex
+		tier = schemas.GatewayServiceTierFlex
 	case TrafficTypeProvisionedThroughput:
-		tier = schemas.RakshaServiceTierProvisioned
+		tier = schemas.GatewayServiceTierProvisioned
 	default:
 		return nil
 	}
 	return &tier
 }
 
-// mapRakshaServiceTierToVertexTrafficType converts a RakshaServiceTier to a Vertex AI trafficType string.
+// mapGatewayServiceTierToVertexTrafficType converts a GatewayServiceTier to a Vertex AI trafficType string.
 // Returns "" for auto (unresolved) since the actual traffic type cannot be determined.
-func mapRakshaServiceTierToVertexTrafficType(tier schemas.RakshaServiceTier) TrafficType {
+func mapGatewayServiceTierToVertexTrafficType(tier schemas.GatewayServiceTier) TrafficType {
 	switch tier {
-	case schemas.RakshaServiceTierDefault:
+	case schemas.GatewayServiceTierDefault:
 		return TrafficTypeOnDemand
-	case schemas.RakshaServiceTierPriority:
+	case schemas.GatewayServiceTierPriority:
 		return TrafficTypeOnDemandPriority
-	case schemas.RakshaServiceTierFlex:
+	case schemas.GatewayServiceTierFlex:
 		return TrafficTypeOnDemandFlex
-	case schemas.RakshaServiceTierProvisioned:
+	case schemas.GatewayServiceTierProvisioned:
 		return TrafficTypeProvisionedThroughput
 	default:
 		return ""
@@ -689,8 +689,8 @@ func convertFileDataToBytes(fileData string) ([]byte, string) {
 }
 
 var (
-	// Maps Gemini finish reasons to Raksha format
-	geminiFinishReasonToRaksha = map[FinishReason]string{
+	// Maps Gemini finish reasons to Gateway format
+	geminiFinishReasonToGateway = map[FinishReason]string{
 		FinishReasonStop:                    "stop",
 		FinishReasonMaxTokens:               "length",
 		FinishReasonSafety:                  "content_filter",
@@ -712,8 +712,8 @@ var (
 		FinishReasonMalformedResponse:       "stop",
 	}
 
-	// Maps Raksha canonical finish reasons back to the most representative Gemini finish reason
-	rakshaToGeminiFinishReason = map[string]FinishReason{
+	// Maps Gateway canonical finish reasons back to the most representative Gemini finish reason
+	gatewayToGeminiFinishReason = map[string]FinishReason{
 		"stop":           FinishReasonStop,
 		"length":         FinishReasonMaxTokens,
 		"content_filter": FinishReasonSafety,
@@ -721,29 +721,29 @@ var (
 	}
 )
 
-// ConvertGeminiFinishReasonToRaksha converts Gemini finish reasons to Raksha format
-func ConvertGeminiFinishReasonToRaksha(providerReason FinishReason) string {
-	if rakshaReason, ok := geminiFinishReasonToRaksha[providerReason]; ok {
-		return rakshaReason
+// ConvertGeminiFinishReasonToGateway converts Gemini finish reasons to Gateway format
+func ConvertGeminiFinishReasonToGateway(providerReason FinishReason) string {
+	if gatewayReason, ok := geminiFinishReasonToGateway[providerReason]; ok {
+		return gatewayReason
 	}
 	return string(providerReason)
 }
 
-// ConvertRakshaFinishReasonToGemini converts Raksha canonical finish reasons back to Gemini format.
-func ConvertRakshaFinishReasonToGemini(rakshaReason string) FinishReason {
-	if geminiReason, ok := rakshaToGeminiFinishReason[rakshaReason]; ok {
+// ConvertGatewayFinishReasonToGemini converts Gateway canonical finish reasons back to Gemini format.
+func ConvertGatewayFinishReasonToGemini(gatewayReason string) FinishReason {
+	if geminiReason, ok := gatewayToGeminiFinishReason[gatewayReason]; ok {
 		return geminiReason
 	}
 	return FinishReasonStop
 }
 
-// ConvertGeminiUsageMetadataToChatUsage converts Gemini usage metadata to Raksha chat LLM usage
-func ConvertGeminiUsageMetadataToChatUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.RakshaLLMUsage {
+// ConvertGeminiUsageMetadataToChatUsage converts Gemini usage metadata to Gateway chat LLM usage
+func ConvertGeminiUsageMetadataToChatUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.GatewayLLMUsage {
 	if metadata == nil {
 		return nil
 	}
 
-	usage := &schemas.RakshaLLMUsage{
+	usage := &schemas.GatewayLLMUsage{
 		PromptTokens:     int(metadata.PromptTokenCount),
 		CompletionTokens: int(metadata.CandidatesTokenCount),
 		TotalTokens:      int(metadata.TotalTokenCount),
@@ -801,7 +801,7 @@ func ConvertGeminiUsageMetadataToChatUsage(metadata *GenerateContentResponseUsag
 	return usage
 }
 
-// convertGeminiUsageMetadataToSpeechUsage converts Gemini usage metadata to Raksha speech usage
+// convertGeminiUsageMetadataToSpeechUsage converts Gemini usage metadata to Gateway speech usage
 func convertGeminiUsageMetadataToSpeechUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.SpeechUsage {
 	if metadata == nil {
 		return nil
@@ -830,8 +830,8 @@ func convertGeminiUsageMetadataToSpeechUsage(metadata *GenerateContentResponseUs
 	return usage
 }
 
-// convertRakshaSpeechUsageToGeminiUsageMetadata converts Raksha speech usage to Gemini usage metadata
-func convertRakshaSpeechUsageToGeminiUsageMetadata(usage *schemas.SpeechUsage) *GenerateContentResponseUsageMetadata {
+// convertGatewaySpeechUsageToGeminiUsageMetadata converts Gateway speech usage to Gemini usage metadata
+func convertGatewaySpeechUsageToGeminiUsageMetadata(usage *schemas.SpeechUsage) *GenerateContentResponseUsageMetadata {
 	if usage == nil {
 		return nil
 	}
@@ -861,7 +861,7 @@ func convertRakshaSpeechUsageToGeminiUsageMetadata(usage *schemas.SpeechUsage) *
 	return metadata
 }
 
-// convertGeminiUsageMetadataToTranscriptionUsage converts Gemini usage metadata to Raksha transcription usage
+// convertGeminiUsageMetadataToTranscriptionUsage converts Gemini usage metadata to Gateway transcription usage
 func convertGeminiUsageMetadataToTranscriptionUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.TranscriptionUsage {
 	if metadata == nil {
 		return nil
@@ -891,8 +891,8 @@ func convertGeminiUsageMetadataToTranscriptionUsage(metadata *GenerateContentRes
 	return usage
 }
 
-// convertRakshaTranscriptionUsageToGeminiUsageMetadata converts Raksha transcription usage to Gemini usage metadata
-func convertRakshaTranscriptionUsageToGeminiUsageMetadata(usage *schemas.TranscriptionUsage) *GenerateContentResponseUsageMetadata {
+// convertGatewayTranscriptionUsageToGeminiUsageMetadata converts Gateway transcription usage to Gemini usage metadata
+func convertGatewayTranscriptionUsageToGeminiUsageMetadata(usage *schemas.TranscriptionUsage) *GenerateContentResponseUsageMetadata {
 	if usage == nil {
 		return nil
 	}
@@ -928,7 +928,7 @@ func convertRakshaTranscriptionUsageToGeminiUsageMetadata(usage *schemas.Transcr
 	return metadata
 }
 
-// convertGeminiUsageMetadataToImageUsage converts Gemini usage metadata to Raksha image usage
+// convertGeminiUsageMetadataToImageUsage converts Gemini usage metadata to Gateway image usage
 func convertGeminiUsageMetadataToImageUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.ImageUsage {
 	if metadata == nil {
 		return nil
@@ -971,8 +971,8 @@ func convertGeminiUsageMetadataToImageUsage(metadata *GenerateContentResponseUsa
 	return usage
 }
 
-// convertRakshaImageUsageToGeminiUsageMetadata converts Raksha image usage to Gemini usage metadata
-func convertRakshaImageUsageToGeminiUsageMetadata(usage *schemas.ImageUsage) *GenerateContentResponseUsageMetadata {
+// convertGatewayImageUsageToGeminiUsageMetadata converts Gateway image usage to Gemini usage metadata
+func convertGatewayImageUsageToGeminiUsageMetadata(usage *schemas.ImageUsage) *GenerateContentResponseUsageMetadata {
 	if usage == nil {
 		return nil
 	}
@@ -1018,7 +1018,7 @@ func convertRakshaImageUsageToGeminiUsageMetadata(usage *schemas.ImageUsage) *Ge
 	return metadata
 }
 
-// ConvertGeminiUsageMetadataToResponsesUsage converts Gemini usage metadata to Raksha responses usage
+// ConvertGeminiUsageMetadataToResponsesUsage converts Gemini usage metadata to Gateway responses usage
 func ConvertGeminiUsageMetadataToResponsesUsage(metadata *GenerateContentResponseUsageMetadata) *schemas.ResponsesResponseUsage {
 	if metadata == nil {
 		return nil
@@ -1074,7 +1074,7 @@ func ConvertGeminiUsageMetadataToResponsesUsage(metadata *GenerateContentRespons
 	return usage
 }
 
-func ConvertRakshaResponsesUsageToGeminiUsageMetadata(usage *schemas.ResponsesResponseUsage) *GenerateContentResponseUsageMetadata {
+func ConvertGatewayResponsesUsageToGeminiUsageMetadata(usage *schemas.ResponsesResponseUsage) *GenerateContentResponseUsageMetadata {
 	if usage == nil {
 		return nil
 	}
@@ -1135,7 +1135,7 @@ func ConvertRakshaResponsesUsageToGeminiUsageMetadata(usage *schemas.ResponsesRe
 	return metadata
 }
 
-// convertParamsToGenerationConfig converts Raksha parameters to Gemini GenerationConfig
+// convertParamsToGenerationConfig converts Gateway parameters to Gemini GenerationConfig
 func convertParamsToGenerationConfig(params *schemas.ChatParameters, responseModalities []string, model string) (GenerationConfig, error) {
 	config := GenerationConfig{}
 
@@ -1291,25 +1291,25 @@ func convertParamsToGenerationConfig(params *schemas.ChatParameters, responseMod
 	return config, nil
 }
 
-// mapRakshaServiceTierToGemini converts a RakshaServiceTier to a Gemini ServiceTier.
-func mapRakshaServiceTierToGemini(tier schemas.RakshaServiceTier) ServiceTier {
+// mapGatewayServiceTierToGemini converts a GatewayServiceTier to a Gemini ServiceTier.
+func mapGatewayServiceTierToGemini(tier schemas.GatewayServiceTier) ServiceTier {
 	switch tier {
-	case schemas.RakshaServiceTierDefault:
+	case schemas.GatewayServiceTierDefault:
 		return ServiceTierStandard
-	case schemas.RakshaServiceTierFlex:
+	case schemas.GatewayServiceTierFlex:
 		return ServiceTierFlex
-	case schemas.RakshaServiceTierPriority:
+	case schemas.GatewayServiceTierPriority:
 		return ServiceTierPriority
 	default:
 		return ServiceTierUnspecified
 	}
 }
 
-// convertRakshaToolsToGemini converts Raksha tools to Gemini format
-func convertRakshaToolsToGemini(rakshaTools []schemas.ChatTool) ([]Tool, error) {
+// convertGatewayToolsToGemini converts Gateway tools to Gemini format
+func convertGatewayToolsToGemini(gatewayTools []schemas.ChatTool) ([]Tool, error) {
 	geminiTool := Tool{}
 
-	for _, tool := range rakshaTools {
+	for _, tool := range gatewayTools {
 		if tool.Type == "" {
 			continue
 		}
@@ -1337,7 +1337,7 @@ func convertRakshaToolsToGemini(rakshaTools []schemas.ChatTool) ([]Tool, error) 
 	return []Tool{}, nil
 }
 
-// convertFunctionParametersToSchema converts Raksha function parameters to Gemini Schema
+// convertFunctionParametersToSchema converts Gateway function parameters to Gemini Schema
 func convertFunctionParametersToSchema(params schemas.ToolFunctionParameters) *Schema {
 	schema := &Schema{
 		Type: Type(params.Type),
@@ -1732,7 +1732,7 @@ func toFloat64(v interface{}) (float64, bool) {
 	}
 }
 
-// convertToolChoiceToToolConfig converts Raksha tool choice to Gemini tool config
+// convertToolChoiceToToolConfig converts Gateway tool choice to Gemini tool config
 func convertToolChoiceToToolConfig(toolChoice *schemas.ChatToolChoice) *ToolConfig {
 	if toolChoice == nil || (toolChoice.ChatToolChoiceStr == nil && toolChoice.ChatToolChoiceStruct == nil) {
 		return nil
@@ -1809,8 +1809,8 @@ func addSpeechConfigToGenerationConfig(config *GenerationConfig, voiceConfig *sc
 	config.SpeechConfig = &speechConfig
 }
 
-// convertRakshaMessagesToGemini converts Raksha messages to Gemini format
-func convertRakshaMessagesToGemini(messages []schemas.ChatMessage, allowedImageURLSchemes ...string) ([]Content, *Content, error) {
+// convertGatewayMessagesToGemini converts Gateway messages to Gemini format
+func convertGatewayMessagesToGemini(messages []schemas.ChatMessage, allowedImageURLSchemes ...string) ([]Content, *Content, error) {
 	if len(allowedImageURLSchemes) == 0 {
 		allowedImageURLSchemes = defaultGeminiImageURLSchemes
 	}
@@ -2134,7 +2134,7 @@ func convertRakshaMessagesToGemini(messages []schemas.ChatMessage, allowedImageU
 						lookupID := fmt.Sprintf("tool_call_%s", baseCallID)
 						for _, reasoningDetail := range message.ChatAssistantMessage.ReasoningDetails {
 							if reasoningDetail.ID != nil && *reasoningDetail.ID == lookupID &&
-								reasoningDetail.Type == schemas.RakshaReasoningDetailsTypeEncrypted &&
+								reasoningDetail.Type == schemas.GatewayReasoningDetailsTypeEncrypted &&
 								reasoningDetail.Signature != nil {
 								// Decode the base64 string to raw bytes
 								decoded, err := base64.StdEncoding.DecodeString(*reasoningDetail.Signature)
@@ -2789,10 +2789,10 @@ func downloadImageFromURL(ctx context.Context, imageURL string) (string, error) 
 	req.SetRequestURI(imageURL)
 	req.Header.SetMethod(http.MethodGet)
 
-	_, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, &client, req, resp)
+	_, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, &client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return "", fmt.Errorf("failed to download image: %v", rakshaErr)
+	if gatewayErr != nil {
+		return "", fmt.Errorf("failed to download image: %v", gatewayErr)
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -2820,8 +2820,8 @@ func tokenToBytes(token string) []int {
 	return result
 }
 
-// ConvertGeminiLogprobsResultToRaksha converts a Gemini LogprobsResult to Raksha RakshaLogProbs
-func ConvertGeminiLogprobsResultToRaksha(result *LogprobsResult) *schemas.RakshaLogProbs {
+// ConvertGeminiLogprobsResultToGateway converts a Gemini LogprobsResult to Gateway GatewayLogProbs
+func ConvertGeminiLogprobsResultToGateway(result *LogprobsResult) *schemas.GatewayLogProbs {
 	if result == nil || len(result.ChosenCandidates) == 0 {
 		return nil
 	}
@@ -2843,5 +2843,5 @@ func ConvertGeminiLogprobsResultToRaksha(result *LogprobsResult) *schemas.Raksha
 			}
 		}
 	}
-	return &schemas.RakshaLogProbs{Content: content}
+	return &schemas.GatewayLogProbs{Content: content}
 }

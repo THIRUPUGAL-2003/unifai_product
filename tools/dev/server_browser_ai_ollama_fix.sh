@@ -23,7 +23,7 @@ fi
 echo "OK: Ollama at ${OLLAMA_URL}"
 
 echo ""
-echo "=== 2) Find Raksha backend container (${TARGET_CONTAINER}) ==="
+echo "=== 2) Find Gateway backend container (${TARGET_CONTAINER}) ==="
 CID="$(docker ps -q -f "name=^/${TARGET_CONTAINER}$" 2>/dev/null | head -1)"
 if [ -z "$CID" ]; then
   CID="$(docker ps -q -f "name=${TARGET_CONTAINER}" 2>/dev/null | head -1)"
@@ -31,7 +31,7 @@ fi
 
 if [ -z "$CID" ]; then
   echo "WARN: Container ${TARGET_CONTAINER} not running. Listing:"
-  docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' | grep -E "${APP_PORT:?set APP_PORT in .env}|raksha|raksha" || docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}'
+  docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' | grep -E "${APP_PORT:?set APP_PORT in .env}|gateway|gateway" || docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}'
   echo ""
   echo "Set CONTAINER_NAME in .env and start: docker compose up -d"
   exit 1
@@ -57,7 +57,7 @@ fi
 echo ""
 echo "=== 4) Set env + restart backend ==="
 COMPOSE_DIR=""
-for d in /opt/1panel/apps/raksha_tech/raksha_tech /opt/1panel/apps/raksha/raksha "$(dirname "$0")/../.."; do
+for d in /opt/1panel/apps/gateway_tech/gateway_tech /opt/1panel/apps/gateway/gateway "$(dirname "$0")/../.."; do
   if [ -f "$d/docker-compose.yml" ]; then
     COMPOSE_DIR="$d"
     break
@@ -85,7 +85,7 @@ echo ""
 echo "=== 5) Backend health ==="
 APP_PORT="${APP_PORT:?set APP_PORT in .env}"
 if docker exec "$CID" wget -q -O /dev/null "http://127.0.0.1:${APP_PORT}/health" 2>/dev/null; then
-  echo "OK: Raksha healthy on :${APP_PORT}"
+  echo "OK: Gateway healthy on :${APP_PORT}"
 else
   echo "WARN: health check failed — docker logs $CNAME --tail 30"
 fi

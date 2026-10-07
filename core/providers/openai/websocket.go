@@ -3,7 +3,7 @@ package openai
 import (
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // SupportsWebSocketMode returns true since OpenAI natively supports the Responses API WebSocket Mode.

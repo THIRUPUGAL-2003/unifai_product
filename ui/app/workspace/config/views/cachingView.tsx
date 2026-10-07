@@ -209,20 +209,24 @@ const validateForSave = (config: EditorCacheConfig, mode: CacheMode): string | n
 };
 
 export default function CachingView() {
-	const { data: rakshaConfig, isLoading: configLoading, error: configError, refetch: refetchCoreConfig } = useGetCoreConfigQuery({
+	const { data: gatewayConfig, isLoading: configLoading, error: configError, refetch: refetchCoreConfig } = useGetCoreConfigQuery({
 		fromDB: true,
 	});
-	const isVectorStoreEnabled = rakshaConfig?.is_cache_connected ?? false;
+	const isVectorStoreEnabled = gatewayConfig?.is_cache_connected ?? false;
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
 
-	const { data: vectorStoreData, isLoading: vectorStoreLoading } = useGetVectorStoreConfigQuery();
+	const {
+		data: vectorStoreData,
+		isLoading: vectorStoreLoading,
+		error: vectorStoreError,
+	} = useGetVectorStoreConfigQuery();
 	const [updateVectorStore, { isLoading: isSavingVectorStore }] = useUpdateVectorStoreConfigMutation();
 	const [vectorForm, setVectorForm] = useState<VectorStoreFormState>(defaultVectorForm);
 
 	// Local cache state lives on the plugin row keyed by SEMANTIC_CACHE_PLUGIN.
 	// No dedicated /local-cache-config endpoint exists — the plugins API is
 	// the source of truth for both the enabled flag and the config blob.
-	const { data: plugins, isLoading: pluginsLoading } = useGetPluginsQuery();
+	const { data: plugins, isLoading: pluginsLoading, error: pluginsError } = useGetPluginsQuery();
 	const semanticCachePlugin = useMemo(() => plugins?.find((p) => p.name === SEMANTIC_CACHE_PLUGIN), [plugins]);
 	const enabledOnServer = Boolean(semanticCachePlugin?.enabled);
 
@@ -592,13 +596,22 @@ export default function CachingView() {
 				</div>
 			)}
 
+			{(vectorStoreError || pluginsError) && (
+				<div className="border-destructive/50 bg-destructive/10 rounded-sm border p-4">
+					<p className="text-destructive text-sm font-medium">Failed to load cache settings</p>
+					<p className="text-muted-foreground mt-1 text-sm">
+						{getErrorMessage(vectorStoreError || pluginsError) || "An unexpected error occurred. Please try again."}
+					</p>
+				</div>
+			)}
+
 			{isLoading && (
 				<div className="flex items-center justify-center py-8">
 					<Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
 				</div>
 			)}
 
-			{!isLoading && !configError && (
+			{!isLoading && !configError && !vectorStoreError && !pluginsError && (
 				<div className="space-y-4">
 					{/* Enable toggle flips plugin.enabled on the semantic_cache
 					    plugin row. The plugins API handles ReloadPlugin /
@@ -844,12 +857,12 @@ export default function CachingView() {
 												id="vector_store_namespace"
 												data-testid="caching-vector-store-namespace-input"
 												type="text"
-												placeholder="RakshaLocalCachePlugin"
+												placeholder="GatewayLocalCachePlugin"
 												value={cacheConfig.vector_store_namespace ?? ""}
 												onChange={(e) => updateLocal({ vector_store_namespace: e.target.value })}
 											/>
 											<p className="text-muted-foreground text-xs">
-												Bucket/index name where cache entries live. Leave blank to use the default (<code>RakshaLocalCachePlugin</code>).
+												Bucket/index name where cache entries live. Leave blank to use the default (<code>GatewayLocalCachePlugin</code>).
 												Changing this points the plugin at a different (possibly empty) bucket. Old entries are not deleted, they just stop
 												being queried.
 											</p>

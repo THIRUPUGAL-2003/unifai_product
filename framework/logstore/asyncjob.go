@@ -9,9 +9,9 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
 
@@ -29,8 +29,8 @@ const (
 // --- AsyncJobExecutor ---
 
 // AsyncOperation represents a function that can be executed asynchronously.
-// It returns the response and an optional RakshaError.
-type AsyncOperation func(ctx *schemas.RakshaContext) (any, *schemas.RakshaError)
+// It returns the response and an optional GatewayError.
+type AsyncOperation func(ctx *schemas.GatewayContext) (any, *schemas.GatewayError)
 
 // GovernanceStore is an interface that provides access to the governance store.
 type GovernanceStore interface {
@@ -81,16 +81,16 @@ func (e *AsyncJobExecutor) RetrieveJob(ctx context.Context, jobID string, vkValu
 }
 
 // SubmitJob creates a pending job, starts background execution, and returns the job record.
-func (e *AsyncJobExecutor) SubmitJob(rakshaCtx *schemas.RakshaContext, resultTTL int, operation AsyncOperation, operationType schemas.RequestType) (*AsyncJob, error) {
+func (e *AsyncJobExecutor) SubmitJob(gatewayCtx *schemas.GatewayContext, resultTTL int, operation AsyncOperation, operationType schemas.RequestType) (*AsyncJob, error) {
 	if resultTTL <= 0 {
 		resultTTL = DefaultAsyncJobResultTTL
 	}
 
-	virtualKeyValue := getVirtualKeyFromContext(rakshaCtx)
+	virtualKeyValue := getVirtualKeyFromContext(gatewayCtx)
 
 	var virtualKeyID *string
 	if virtualKeyValue != nil {
-		vk, ok := e.governanceStore.GetVirtualKey(rakshaCtx, *virtualKeyValue)
+		vk, ok := e.governanceStore.GetVirtualKey(gatewayCtx, *virtualKeyValue)
 		if !ok {
 			return nil, fmt.Errorf("virtual key not found")
 		}
@@ -113,8 +113,8 @@ func (e *AsyncJobExecutor) SubmitJob(rakshaCtx *schemas.RakshaContext, resultTTL
 	}
 
 	var contextValues map[any]any
-	if rakshaCtx != nil {
-		contextValues = rakshaCtx.GetUserValues()
+	if gatewayCtx != nil {
+		contextValues = gatewayCtx.GetUserValues()
 	}
 	go e.executeJob(job.ID, job.ResultTTL, operation, contextValues)
 
@@ -123,7 +123,7 @@ func (e *AsyncJobExecutor) SubmitJob(rakshaCtx *schemas.RakshaContext, resultTTL
 
 // executeJob runs the operation in the background and updates the job record.
 func (e *AsyncJobExecutor) executeJob(jobID string, resultTTL int, operation AsyncOperation, contextValues map[any]any) {
-	ctx := schemas.NewRakshaContext(context.Background(), schemas.NoDeadline)
+	ctx := schemas.NewGatewayContext(context.Background(), schemas.NoDeadline)
 
 	// Restore original request context values (virtual key, tracing headers, etc.)
 	for k, v := range contextValues {
@@ -131,14 +131,14 @@ func (e *AsyncJobExecutor) executeJob(jobID string, resultTTL int, operation Asy
 	}
 
 	// Clear trace context inherited from the original HTTP request.
-	ctx.ClearValue(schemas.RakshaContextKeyTraceID)
-	ctx.ClearValue(schemas.RakshaContextKeyParentSpanID)
-	ctx.ClearValue(schemas.RakshaContextKeySpanID)
+	ctx.ClearValue(schemas.GatewayContextKeyTraceID)
+	ctx.ClearValue(schemas.GatewayContextKeyParentSpanID)
+	ctx.ClearValue(schemas.GatewayContextKeySpanID)
 
 	markFailed := func(msg string) {
 		now := time.Now().UTC()
 		expiresAt := now.Add(time.Duration(resultTTL) * time.Second)
-		errJSON, _ := sonic.Marshal(&schemas.RakshaError{Error: &schemas.ErrorField{Message: msg}})
+		errJSON, _ := sonic.Marshal(&schemas.GatewayError{Error: &schemas.ErrorField{Message: msg}})
 		if err := e.logstore.UpdateAsyncJob(ctx, jobID, map[string]any{
 			"status":       schemas.AsyncJobStatusFailed,
 			"status_code":  fasthttp.StatusInternalServerError,
@@ -150,7 +150,7 @@ func (e *AsyncJobExecutor) executeJob(jobID string, resultTTL int, operation Asy
 		}
 	}
 
-	// The raksha execution flow is very stable and panics are not expected.
+	// The gateway execution flow is very stable and panics are not expected.
 	// This recover is purely defensive to ensure the job always reaches a terminal
 	// state rather than being stuck in "processing" if an unexpected panic occurs.
 	defer func() {
@@ -167,24 +167,24 @@ func (e *AsyncJobExecutor) executeJob(jobID string, resultTTL int, operation Asy
 		e.logger.Warn("failed to update async job: %v", err)
 	}
 
-	ctx.SetValue(schemas.RakshaIsAsyncRequest, true)
+	ctx.SetValue(schemas.GatewayIsAsyncRequest, true)
 
 	// Execute the operation
-	resp, rakshaErr := operation(ctx)
+	resp, gatewayErr := operation(ctx)
 
 	now := time.Now().UTC()
 	expiresAt := now.Add(time.Duration(resultTTL) * time.Second)
 
-	if rakshaErr != nil {
-		errJSON, err := sonic.Marshal(rakshaErr)
+	if gatewayErr != nil {
+		errJSON, err := sonic.Marshal(gatewayErr)
 		if err != nil {
-			e.logger.Warn("failed to marshal raksha error: %v", err)
+			e.logger.Warn("failed to marshal gateway error: %v", err)
 			markFailed(fmt.Sprintf("failed to serialize error response: %v", err))
 			return
 		}
 		statusCode := fasthttp.StatusInternalServerError
-		if rakshaErr.StatusCode != nil {
-			statusCode = *rakshaErr.StatusCode
+		if gatewayErr.StatusCode != nil {
+			statusCode = *gatewayErr.StatusCode
 		}
 		if err := e.logstore.UpdateAsyncJob(ctx, jobID, map[string]interface{}{
 			"status":       schemas.AsyncJobStatusFailed,
@@ -306,11 +306,11 @@ func (c *AsyncJobCleaner) cleanupExpiredJobs(ctx context.Context) {
 // Returns nil if no VK is present (e.g., direct key mode or no governance),
 // or if the context itself is nil (callers like SubmitJob may be invoked with
 // a nil ctx by background paths that don't carry a VK).
-func getVirtualKeyFromContext(ctx *schemas.RakshaContext) *string {
+func getVirtualKeyFromContext(ctx *schemas.GatewayContext) *string {
 	if ctx == nil {
 		return nil
 	}
-	vkValue := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyVirtualKey)
+	vkValue := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyVirtualKey)
 	if vkValue == "" {
 		return nil
 	}

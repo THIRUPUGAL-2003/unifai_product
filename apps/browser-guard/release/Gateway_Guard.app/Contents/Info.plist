@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Gateway Guard</string>
+	<key>CFBundleExecutable</key>
+	<string>Gateway_Guard</string>
+	<key>CFBundleIconFile</key>
+	<string>gateway_guard.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.gateway.guard</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Gateway Guard</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.1.16</string>
+	<key>CFBundleVersion</key>
+	<string>1.1.16</string>
+	<key>LSBackgroundOnly</key>
+	<false/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>

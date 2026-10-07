@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scrollArea";
 import { Textarea } from "@/components/ui/textarea";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { SkillFileEntry } from "@/lib/types/skills";
 import { getApiBaseUrl } from "@/lib/utils/port";
 import { Download, File as FileIcon, Info, Loader2, Save } from "lucide-react";
@@ -401,7 +402,7 @@ function FileSourceEditor({
 				</div>
 				<div className="flex items-start gap-2 rounded-sm border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 dark:border-blue-900/50 dark:bg-blue-950/30 dark:text-blue-200">
 					<Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-					<span>This source is saved as a live reference. Raksha reads from this URL when the skill file is retrieved.</span>
+					<span>This source is saved as a live reference. {PRODUCT_NAME} reads from this URL when the skill file is retrieved.</span>
 				</div>
 			</div>
 		);

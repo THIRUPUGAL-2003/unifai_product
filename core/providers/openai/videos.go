@@ -6,24 +6,24 @@ import (
 	"mime/multipart"
 	"net/http"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToOpenAIVideoGenerationRequest converts a Raksha Video Request to OpenAI format
-func ToOpenAIVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequest) (*OpenAIVideoGenerationRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil || rakshaReq.Input.Prompt == "" {
-		return nil, fmt.Errorf("raksha request, input, or prompt is nil/empty")
+// ToOpenAIVideoGenerationRequest converts a Gateway Video Request to OpenAI format
+func ToOpenAIVideoGenerationRequest(gatewayReq *schemas.GatewayVideoGenerationRequest) (*OpenAIVideoGenerationRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil || gatewayReq.Input.Prompt == "" {
+		return nil, fmt.Errorf("gateway request, input, or prompt is nil/empty")
 	}
 
 	req := &OpenAIVideoGenerationRequest{
-		Model:  rakshaReq.Model,
-		Prompt: rakshaReq.Input.Prompt,
+		Model:  gatewayReq.Model,
+		Prompt: gatewayReq.Input.Prompt,
 	}
 
-	if rakshaReq.Input.InputReference != nil {
+	if gatewayReq.Input.InputReference != nil {
 		// convert base64 to bytes
-		sanitizedURL, err := schemas.SanitizeImageURL(*rakshaReq.Input.InputReference)
+		sanitizedURL, err := schemas.SanitizeImageURL(*gatewayReq.Input.InputReference)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input reference: %w", err)
 		}
@@ -39,16 +39,16 @@ func ToOpenAIVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 		}
 	}
 
-	if rakshaReq.Params != nil {
-		if rakshaReq.Params.Seconds != nil {
-			req.Seconds = rakshaReq.Params.Seconds
+	if gatewayReq.Params != nil {
+		if gatewayReq.Params.Seconds != nil {
+			req.Seconds = gatewayReq.Params.Seconds
 		}
 
 		// Validate and set size
-		if rakshaReq.Params.Size != "" {
+		if gatewayReq.Params.Size != "" {
 			// Check if the provided size is valid
-			if ValidOpenAIVideoSizes[rakshaReq.Params.Size] {
-				req.Size = rakshaReq.Params.Size
+			if ValidOpenAIVideoSizes[gatewayReq.Params.Size] {
+				req.Size = gatewayReq.Params.Size
 			} else {
 				// Invalid size provided, use default
 				req.Size = string(DefaultOpenAIVideoSize)
@@ -58,25 +58,25 @@ func ToOpenAIVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 			req.Size = string(DefaultOpenAIVideoSize)
 		}
 
-		req.ExtraParams = rakshaReq.Params.ExtraParams
+		req.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 
 	return req, nil
 }
 
-func ToOpenAIVideoRemixRequest(rakshaReq *schemas.RakshaVideoRemixRequest) (*OpenAIVideoRemixRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil || rakshaReq.Input.Prompt == "" {
-		return nil, fmt.Errorf("raksha request, input, or prompt is nil/empty")
+func ToOpenAIVideoRemixRequest(gatewayReq *schemas.GatewayVideoRemixRequest) (*OpenAIVideoRemixRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil || gatewayReq.Input.Prompt == "" {
+		return nil, fmt.Errorf("gateway request, input, or prompt is nil/empty")
 	}
 
 	req := &OpenAIVideoRemixRequest{
-		Prompt: rakshaReq.Input.Prompt,
+		Prompt: gatewayReq.Input.Prompt,
 	}
 
 	return req, nil
 }
 
-func ToRakshaVideoRemixRequest(openaiReq *OpenAIVideoRemixRequest) *schemas.RakshaVideoRemixRequest {
+func ToGatewayVideoRemixRequest(openaiReq *OpenAIVideoRemixRequest) *schemas.GatewayVideoRemixRequest {
 	if openaiReq == nil || openaiReq.Prompt == "" {
 		return nil
 	}
@@ -86,7 +86,7 @@ func ToRakshaVideoRemixRequest(openaiReq *OpenAIVideoRemixRequest) *schemas.Raks
 		provider = schemas.OpenAI
 	}
 
-	return &schemas.RakshaVideoRemixRequest{
+	return &schemas.GatewayVideoRemixRequest{
 		ID:       openaiReq.ID,
 		Provider: provider,
 		Input: &schemas.VideoGenerationInput{
@@ -95,7 +95,7 @@ func ToRakshaVideoRemixRequest(openaiReq *OpenAIVideoRemixRequest) *schemas.Raks
 	}
 }
 
-func (req *OpenAIVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx *schemas.RakshaContext) *schemas.RakshaVideoGenerationRequest {
+func (req *OpenAIVideoGenerationRequest) ToGatewayVideoGenerationRequest(ctx *schemas.GatewayContext) *schemas.GatewayVideoGenerationRequest {
 	if req == nil {
 		return nil
 	}
@@ -109,7 +109,7 @@ func (req *OpenAIVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx *sch
 		input.InputReference = schemas.Ptr(providerUtils.FileBytesToBase64DataURL(req.InputReference))
 	}
 
-	return &schemas.RakshaVideoGenerationRequest{
+	return &schemas.GatewayVideoGenerationRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     input,
@@ -119,33 +119,33 @@ func (req *OpenAIVideoGenerationRequest) ToRakshaVideoGenerationRequest(ctx *sch
 }
 
 // parseVideoGenerationFormDataBodyFromRequest parses the video generation request and writes it to the multipart form.
-func parseVideoGenerationFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAIVideoGenerationRequest, providerName schemas.ModelProvider) *schemas.RakshaError {
+func parseVideoGenerationFormDataBodyFromRequest(writer *multipart.Writer, openaiReq *OpenAIVideoGenerationRequest, providerName schemas.ModelProvider) *schemas.GatewayError {
 	// Add prompt field (required)
 	if openaiReq.Prompt == "" {
-		return providerUtils.NewRakshaOperationError("prompt is required", nil)
+		return providerUtils.NewGatewayOperationError("prompt is required", nil)
 	}
 	if err := writer.WriteField("prompt", openaiReq.Prompt); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to write prompt field", err)
+		return providerUtils.NewGatewayOperationError("failed to write prompt field", err)
 	}
 
 	// Add optional model field
 	if openaiReq.Model != "" {
 		if err := writer.WriteField("model", openaiReq.Model); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write model field", err)
+			return providerUtils.NewGatewayOperationError("failed to write model field", err)
 		}
 	}
 
 	// Add optional seconds field
 	if openaiReq.Seconds != nil {
 		if err := writer.WriteField("seconds", *openaiReq.Seconds); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write seconds field", err)
+			return providerUtils.NewGatewayOperationError("failed to write seconds field", err)
 		}
 	}
 
 	// Add optional size field
 	if openaiReq.Size != "" {
 		if err := writer.WriteField("size", openaiReq.Size); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write size field", err)
+			return providerUtils.NewGatewayOperationError("failed to write size field", err)
 		}
 	}
 
@@ -186,16 +186,16 @@ func parseVideoGenerationFormDataBodyFromRequest(writer *multipart.Writer, opena
 			"Content-Type":        {mimeType},
 		})
 		if err != nil {
-			return providerUtils.NewRakshaOperationError("failed to create form part for input_reference", err)
+			return providerUtils.NewGatewayOperationError("failed to create form part for input_reference", err)
 		}
 		if _, err := part.Write(openaiReq.InputReference); err != nil {
-			return providerUtils.NewRakshaOperationError("failed to write input_reference file data", err)
+			return providerUtils.NewGatewayOperationError("failed to write input_reference file data", err)
 		}
 	}
 
 	// Close the multipart writer
 	if err := writer.Close(); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
+		return providerUtils.NewGatewayOperationError("failed to close multipart writer", err)
 	}
 
 	return nil

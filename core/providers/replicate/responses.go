@@ -5,51 +5,51 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-func ToReplicateResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*ReplicatePredictionRequest, error) {
-	if rakshaReq == nil {
-		return nil, fmt.Errorf("raksha request is nil")
+func ToReplicateResponsesRequest(gatewayReq *schemas.GatewayResponsesRequest) (*ReplicatePredictionRequest, error) {
+	if gatewayReq == nil {
+		return nil, fmt.Errorf("gateway request is nil")
 	}
 
 	input := &ReplicatePredictionRequestInput{}
 
-	if strings.HasPrefix(rakshaReq.Model, "openai/") && strings.Contains(rakshaReq.Model, "gpt-5-structured") {
+	if strings.HasPrefix(gatewayReq.Model, "openai/") && strings.Contains(gatewayReq.Model, "gpt-5-structured") {
 		// handle responses style request
-		if len(rakshaReq.Input) > 0 {
-			input.InputItemList = rakshaReq.Input
+		if len(gatewayReq.Input) > 0 {
+			input.InputItemList = gatewayReq.Input
 		}
-		if rakshaReq.Params != nil {
-			if rakshaReq.Params.Instructions != nil {
-				input.Instructions = rakshaReq.Params.Instructions
+		if gatewayReq.Params != nil {
+			if gatewayReq.Params.Instructions != nil {
+				input.Instructions = gatewayReq.Params.Instructions
 			}
-			if rakshaReq.Params.Tools != nil {
-				input.Tools = rakshaReq.Params.Tools
+			if gatewayReq.Params.Tools != nil {
+				input.Tools = gatewayReq.Params.Tools
 			}
-			if rakshaReq.Params.MaxOutputTokens != nil {
-				input.MaxOutputTokens = rakshaReq.Params.MaxOutputTokens
+			if gatewayReq.Params.MaxOutputTokens != nil {
+				input.MaxOutputTokens = gatewayReq.Params.MaxOutputTokens
 			}
-			if rakshaReq.Params.Text != nil {
-				input.JsonSchema = rakshaReq.Params.Text
+			if gatewayReq.Params.Text != nil {
+				input.JsonSchema = gatewayReq.Params.Text
 			}
-			if rakshaReq.Params.ExtraParams != nil {
-				input.ExtraParams = rakshaReq.Params.ExtraParams
+			if gatewayReq.Params.ExtraParams != nil {
+				input.ExtraParams = gatewayReq.Params.ExtraParams
 			}
 		}
 	} else {
 		// handle chat style request (same logic as chat converter)
-		if len(rakshaReq.Input) > 0 {
+		if len(gatewayReq.Input) > 0 {
 			// if model is from openai family, use messages
-			if strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) {
-				input.Messages = schemas.ToChatMessages(rakshaReq.Input)
+			if strings.HasPrefix(gatewayReq.Model, string(schemas.OpenAI)) {
+				input.Messages = schemas.ToChatMessages(gatewayReq.Input)
 			} else {
 				// convert input to prompt and system prompt
 				var systemPrompt string
 				var conversationParts []string
 				var imageInput []string
 
-				for _, msg := range rakshaReq.Input {
+				for _, msg := range gatewayReq.Input {
 					if msg.Content == nil {
 						continue
 					}
@@ -95,7 +95,7 @@ func ToReplicateResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*Re
 				}
 
 				// Set system prompt if present and model supports it
-				modelSupportsSystemPrompt := supportsSystemPrompt(rakshaReq.Model)
+				modelSupportsSystemPrompt := supportsSystemPrompt(gatewayReq.Model)
 
 				if systemPrompt != "" {
 					if modelSupportsSystemPrompt {
@@ -126,8 +126,8 @@ func ToReplicateResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*Re
 		}
 
 		// Map parameters if present
-		if rakshaReq.Params != nil {
-			params := rakshaReq.Params
+		if gatewayReq.Params != nil {
+			params := gatewayReq.Params
 
 			// Temperature
 			if params.Temperature != nil {
@@ -141,7 +141,7 @@ func ToReplicateResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*Re
 
 			// Max tokens - use max_completion_tokens if available
 			if params.MaxOutputTokens != nil {
-				if strings.HasPrefix(rakshaReq.Model, string(schemas.OpenAI)) {
+				if strings.HasPrefix(gatewayReq.Model, string(schemas.OpenAI)) {
 					input.MaxCompletionTokens = params.MaxOutputTokens
 				} else {
 					input.MaxTokens = params.MaxOutputTokens
@@ -156,7 +156,7 @@ func ToReplicateResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*Re
 			}
 
 			if params.Instructions != nil && *params.Instructions != "" {
-				if supportsSystemPrompt(rakshaReq.Model) {
+				if supportsSystemPrompt(gatewayReq.Model) {
 					if input.SystemPrompt == nil {
 						input.SystemPrompt = params.Instructions
 					}
@@ -181,15 +181,15 @@ func ToReplicateResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*Re
 		Input: input,
 	}
 
-	if isVersionID(rakshaReq.Model) {
-		req.Version = &rakshaReq.Model
+	if isVersionID(gatewayReq.Model) {
+		req.Version = &gatewayReq.Model
 	}
 
-	if rakshaReq.Params != nil && rakshaReq.Params.ExtraParams != nil {
-		if webhook, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["webhook"]); ok {
+	if gatewayReq.Params != nil && gatewayReq.Params.ExtraParams != nil {
+		if webhook, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["webhook"]); ok {
 			req.Webhook = webhook
 		}
-		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(rakshaReq.Params.ExtraParams["webhook_events_filter"]); ok {
+		if webhookEventsFilter, ok := schemas.SafeExtractStringSlice(gatewayReq.Params.ExtraParams["webhook_events_filter"]); ok {
 			req.WebhookEventsFilter = webhookEventsFilter
 		}
 	}
@@ -197,7 +197,7 @@ func ToReplicateResponsesRequest(rakshaReq *schemas.RakshaResponsesRequest) (*Re
 	return req, nil
 }
 
-func (response *ReplicatePredictionResponse) ToRakshaResponsesResponse() *schemas.RakshaResponsesResponse {
+func (response *ReplicatePredictionResponse) ToGatewayResponsesResponse() *schemas.GatewayResponsesResponse {
 	if response == nil {
 		return nil
 	}
@@ -216,8 +216,8 @@ func (response *ReplicatePredictionResponse) ToRakshaResponsesResponse() *schema
 		}
 	}
 
-	// Initialize Raksha response
-	rakshaResponse := &schemas.RakshaResponsesResponse{
+	// Initialize Gateway response
+	gatewayResponse := &schemas.GatewayResponsesResponse{
 		ID:          schemas.Ptr(response.ID),
 		Model:       response.Model,
 		CreatedAt:   int(createdAt),
@@ -256,7 +256,7 @@ func (response *ReplicatePredictionResponse) ToRakshaResponsesResponse() *schema
 		}
 	}
 
-	rakshaResponse.Output = outputMessages
+	gatewayResponse.Output = outputMessages
 
 	// Set status based on prediction status
 	var status string
@@ -274,11 +274,11 @@ func (response *ReplicatePredictionResponse) ToRakshaResponsesResponse() *schema
 	default:
 		status = string(response.Status)
 	}
-	rakshaResponse.Status = &status
+	gatewayResponse.Status = &status
 
 	// Set error if present
 	if response.Error != nil && *response.Error != "" {
-		rakshaResponse.Error = &schemas.ResponsesResponseError{
+		gatewayResponse.Error = &schemas.ResponsesResponseError{
 			Code:    "provider_error",
 			Message: *response.Error,
 		}
@@ -288,7 +288,7 @@ func (response *ReplicatePredictionResponse) ToRakshaResponsesResponse() *schema
 	if response.Logs != nil {
 		inputTokens, outputTokens, totalTokens, found := parseTokenUsageFromLogs(response.Logs, schemas.ResponsesRequest)
 		if found {
-			rakshaResponse.Usage = &schemas.ResponsesResponseUsage{
+			gatewayResponse.Usage = &schemas.ResponsesResponseUsage{
 				InputTokens:  inputTokens,
 				OutputTokens: outputTokens,
 				TotalTokens:  totalTokens,
@@ -296,5 +296,5 @@ func (response *ReplicatePredictionResponse) ToRakshaResponsesResponse() *schema
 		}
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }

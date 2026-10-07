@@ -16,8 +16,8 @@ import (
 
 	"github.com/fasthttp/router"
 	"github.com/google/pprof/profile"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -142,7 +142,7 @@ var collectorOnce sync.Once
 
 // IsDevMode checks if dev mode is enabled via environment variable
 func IsDevMode() bool {
-	return os.Getenv("RAKSHA_UI_DEV") == "true"
+	return gatewayEnv("UI_DEV") == "true"
 }
 
 // getOrCreateCollector returns the global metrics collector, creating it if needed
@@ -425,7 +425,7 @@ func flattenAndTopN(m map[string]*AllocationInfo) []AllocationInfo {
 }
 
 // RegisterRoutes registers the dev pprof routes
-func (h *DevPprofHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *DevPprofHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	// Start the collector when routes are registered
 	h.collector.Start()
 

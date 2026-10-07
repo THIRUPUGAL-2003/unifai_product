@@ -9,15 +9,15 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/providers/gemini"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/kvstore"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/providers/gemini"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/kvstore"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
-var rakshaContextKeyProvider = schemas.RakshaContextKey("provider")
+var gatewayContextKeyProvider = schemas.GatewayContextKey("provider")
 
 var availableIntegrations = []string{
 	"openai",
@@ -30,27 +30,27 @@ var availableIntegrations = []string{
 	"cohere",
 }
 
-// newRakshaErrorWithCode is like newRakshaError but sets an explicit HTTP status code.
-func newRakshaErrorWithCode(err error, message string, statusCode int) *schemas.RakshaError {
-	e := newRakshaError(err, message)
+// newGatewayErrorWithCode is like newGatewayError but sets an explicit HTTP status code.
+func newGatewayErrorWithCode(err error, message string, statusCode int) *schemas.GatewayError {
+	e := newGatewayError(err, message)
 	e.StatusCode = &statusCode
 	return e
 }
 
-// newRakshaError wraps a standard error into a RakshaError with IsRakshaError set to false.
-// This helper function reduces code duplication when handling non-Raksha errors.
-func newRakshaError(err error, message string) *schemas.RakshaError {
+// newGatewayError wraps a standard error into a GatewayError with IsGatewayError set to false.
+// This helper function reduces code duplication when handling non-Gateway errors.
+func newGatewayError(err error, message string) *schemas.GatewayError {
 	if err == nil {
-		return &schemas.RakshaError{
-			IsRakshaError: false,
+		return &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: message,
 			},
 		}
 	}
 
-	return &schemas.RakshaError{
-		IsRakshaError: false,
+	return &schemas.GatewayError{
+		IsGatewayError: false,
 		Error: &schemas.ErrorField{
 			Message: message,
 			Error:   err,
@@ -58,33 +58,33 @@ func newRakshaError(err error, message string) *schemas.RakshaError {
 	}
 }
 
-// safeGetRequestType safely obtains the request type from a RakshaStreamChunk chunk.
+// safeGetRequestType safely obtains the request type from a GatewayStreamChunk chunk.
 // It checks multiple sources in order of preference:
 // 1. Response ExtraFields if any response is available
-// 2. RakshaError ExtraFields if error is available and not nil
+// 2. GatewayError ExtraFields if error is available and not nil
 // 3. Falls back to "unknown" if no source is available
-func safeGetRequestType(chunk *schemas.RakshaStreamChunk) string {
+func safeGetRequestType(chunk *schemas.GatewayStreamChunk) string {
 	if chunk == nil {
 		return "unknown"
 	}
 
 	// Try to get RequestType from response ExtraFields (preferred source)
 	switch {
-	case chunk.RakshaTextCompletionResponse != nil:
-		return string(chunk.RakshaTextCompletionResponse.ExtraFields.RequestType)
-	case chunk.RakshaChatResponse != nil:
-		return string(chunk.RakshaChatResponse.ExtraFields.RequestType)
-	case chunk.RakshaResponsesStreamResponse != nil:
-		return string(chunk.RakshaResponsesStreamResponse.ExtraFields.RequestType)
-	case chunk.RakshaSpeechStreamResponse != nil:
-		return string(chunk.RakshaSpeechStreamResponse.ExtraFields.RequestType)
-	case chunk.RakshaTranscriptionStreamResponse != nil:
-		return string(chunk.RakshaTranscriptionStreamResponse.ExtraFields.RequestType)
+	case chunk.GatewayTextCompletionResponse != nil:
+		return string(chunk.GatewayTextCompletionResponse.ExtraFields.RequestType)
+	case chunk.GatewayChatResponse != nil:
+		return string(chunk.GatewayChatResponse.ExtraFields.RequestType)
+	case chunk.GatewayResponsesStreamResponse != nil:
+		return string(chunk.GatewayResponsesStreamResponse.ExtraFields.RequestType)
+	case chunk.GatewaySpeechStreamResponse != nil:
+		return string(chunk.GatewaySpeechStreamResponse.ExtraFields.RequestType)
+	case chunk.GatewayTranscriptionStreamResponse != nil:
+		return string(chunk.GatewayTranscriptionStreamResponse.ExtraFields.RequestType)
 	}
 
 	// Try to get RequestType from error ExtraFields (fallback)
-	if chunk.RakshaError != nil && chunk.RakshaError.ExtraFields.RequestType != "" {
-		return string(chunk.RakshaError.ExtraFields.RequestType)
+	if chunk.GatewayError != nil && chunk.GatewayError.ExtraFields.RequestType != "" {
+		return string(chunk.GatewayError.ExtraFields.RequestType)
 	}
 
 	// Final fallback
@@ -152,15 +152,15 @@ func extractExactPath(ctx *fasthttp.RequestCtx) string {
 // sendStreamError sends an error response for a streaming request that failed before streaming started.
 // It propagates the provider's HTTP status code and returns a JSON error body (not SSE format),
 // since no streaming has begun and clients should receive a standard error response.
-func (g *GenericRouter) sendStreamError(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, config RouteConfig, rakshaErr *schemas.RakshaError) {
-	rakshaErr = lib.SanitizeRakshaErrorForClient(rakshaErr)
-	if rakshaErr == nil {
-		rakshaErr = newRakshaErrorWithCode(nil, lib.ClientSafeInternalErrorMessage, fasthttp.StatusInternalServerError)
+func (g *GenericRouter) sendStreamError(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, config RouteConfig, gatewayErr *schemas.GatewayError) {
+	gatewayErr = lib.SanitizeGatewayErrorForClient(gatewayErr)
+	if gatewayErr == nil {
+		gatewayErr = newGatewayErrorWithCode(nil, lib.ClientSafeInternalErrorMessage, fasthttp.StatusInternalServerError)
 	}
 
 	// Forward provider response headers from context so streaming error responses include them
-	if rakshaCtx != nil {
-		if headers, ok := rakshaCtx.Value(schemas.RakshaContextKeyProviderResponseHeaders).(map[string]string); ok {
+	if gatewayCtx != nil {
+		if headers, ok := gatewayCtx.Value(schemas.GatewayContextKeyProviderResponseHeaders).(map[string]string); ok {
 			for key, value := range headers {
 				ctx.Response.Header.Set(key, value)
 			}
@@ -168,8 +168,8 @@ func (g *GenericRouter) sendStreamError(ctx *fasthttp.RequestCtx, rakshaCtx *sch
 	}
 
 	// Set the HTTP status code from the provider error
-	if rakshaErr.StatusCode != nil {
-		ctx.SetStatusCode(*rakshaErr.StatusCode)
+	if gatewayErr.StatusCode != nil {
+		ctx.SetStatusCode(*gatewayErr.StatusCode)
 	} else {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 	}
@@ -179,7 +179,7 @@ func (g *GenericRouter) sendStreamError(ctx *fasthttp.RequestCtx, rakshaCtx *sch
 	// sendStreamError returns JSON, not SSE. StreamConfig.ErrorConverter is designed for
 	// in-stream SSE errors (e.g., Anthropic's returns a raw SSE string that would be
 	// double-escaped by JSON marshaling).
-	errorResponse := config.ErrorConverter(rakshaCtx, rakshaErr)
+	errorResponse := config.ErrorConverter(gatewayCtx, gatewayErr)
 
 	errorJSON, err := sonic.Marshal(errorResponse)
 	if err != nil {
@@ -195,29 +195,29 @@ func (g *GenericRouter) sendStreamError(ctx *fasthttp.RequestCtx, rakshaCtx *sch
 
 // sendError sends an error response with the appropriate status code and JSON body.
 // It handles different error types (string, error interface, or arbitrary objects).
-func (g *GenericRouter) sendError(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, errorConverter ErrorConverter, rakshaErr *schemas.RakshaError) {
-	rakshaErr = lib.SanitizeRakshaErrorForClient(rakshaErr)
-	if rakshaErr == nil {
-		rakshaErr = newRakshaErrorWithCode(nil, lib.ClientSafeInternalErrorMessage, fasthttp.StatusInternalServerError)
+func (g *GenericRouter) sendError(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, errorConverter ErrorConverter, gatewayErr *schemas.GatewayError) {
+	gatewayErr = lib.SanitizeGatewayErrorForClient(gatewayErr)
+	if gatewayErr == nil {
+		gatewayErr = newGatewayErrorWithCode(nil, lib.ClientSafeInternalErrorMessage, fasthttp.StatusInternalServerError)
 	}
 
 	// Forward provider response headers from context so error responses include them
-	if rakshaCtx != nil {
-		if headers, ok := rakshaCtx.Value(schemas.RakshaContextKeyProviderResponseHeaders).(map[string]string); ok {
+	if gatewayCtx != nil {
+		if headers, ok := gatewayCtx.Value(schemas.GatewayContextKeyProviderResponseHeaders).(map[string]string); ok {
 			for key, value := range headers {
 				ctx.Response.Header.Set(key, value)
 			}
 		}
 	}
 
-	if rakshaErr.StatusCode != nil {
-		ctx.SetStatusCode(*rakshaErr.StatusCode)
-	} else if !rakshaErr.IsRakshaError {
+	if gatewayErr.StatusCode != nil {
+		ctx.SetStatusCode(*gatewayErr.StatusCode)
+	} else if !gatewayErr.IsGatewayError {
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 	} else {
-		if rakshaErr.Error != nil &&
-			(rakshaErr.Error.Message == raksha.ProviderAutoResolveErrorMessage ||
-				rakshaErr.Error.Message == raksha.ModelAutoResolveErrorMessage) {
+		if gatewayErr.Error != nil &&
+			(gatewayErr.Error.Message == gateway.ProviderAutoResolveErrorMessage ||
+				gatewayErr.Error.Message == gateway.ModelAutoResolveErrorMessage) {
 			ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		} else {
 			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
@@ -226,7 +226,7 @@ func (g *GenericRouter) sendError(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.R
 	ctx.SetContentType("application/json")
 
 	// Marshal the error for response and log the error for diagnostics
-	responseObj := errorConverter(rakshaCtx, rakshaErr)
+	responseObj := errorConverter(gatewayCtx, gatewayErr)
 	errorBody, err := sonic.Marshal(responseObj)
 	if err != nil {
 		// Log the marshal failure and return a plain text error
@@ -244,69 +244,69 @@ func (g *GenericRouter) sendError(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.R
 // response from any integration so callers can recover the actual provider /
 // model that handled the request — even when the integration converts the
 // body to a provider-native shape (Anthropic, OpenAI, Bedrock) that has no
-// place to surface Raksha's `extra_fields`.
+// place to surface Gateway's `extra_fields`.
 //
-// Header values are derived from RakshaResponseExtraFields (populated by
+// Header values are derived from GatewayResponseExtraFields (populated by
 // PopulateExtraFields at the end of every request path, including after
 // fallback / routing-rule resolution). FallbackIndex is read from the
-// RakshaContext because it isn't a field on the response struct.
+// GatewayContext because it isn't a field on the response struct.
 //
 // Naming follows the existing `x-uf-*` request-side convention (see
 // `x-uf-vk`, `x-uf-key-id`, etc.).
 const (
-	HeaderRakshaProvider      = "x-raksha-provider"
-	HeaderRakshaOriginalModel = "x-raksha-original-model"
-	HeaderRakshaResolvedModel = "x-raksha-resolved-model"
-	HeaderRakshaFallbackIndex = "x-raksha-fallback-index"
-	HeaderRakshaRequestType   = "x-raksha-request-type"
-	// HeaderRakshaCircuitBreaker is set when an open circuit rerouted the request:
+	HeaderGatewayProvider      = "x-gateway-provider"
+	HeaderGatewayOriginalModel = "x-gateway-original-model"
+	HeaderGatewayResolvedModel = "x-gateway-resolved-model"
+	HeaderGatewayFallbackIndex = "x-gateway-fallback-index"
+	HeaderGatewayRequestType   = "x-gateway-request-type"
+	// HeaderGatewayCircuitBreaker is set when an open circuit rerouted the request:
 	// "<policy>; <primary provider/model> -> <fallback provider/model>".
-	HeaderRakshaCircuitBreaker = "x-raksha-circuit-breaker"
-	// HeaderRakshaRoutingRule names the routing rule that matched the request.
-	HeaderRakshaRoutingRule = "x-raksha-routing-rule"
+	HeaderGatewayCircuitBreaker = "x-gateway-circuit-breaker"
+	// HeaderGatewayRoutingRule names the routing rule that matched the request.
+	HeaderGatewayRoutingRule = "x-gateway-routing-rule"
 )
 
-// applyRakshaResponseHeaders writes both the upstream provider response
-// headers (forwarded verbatim) and the raksha-level `x-raksha-*` routing
+// applyGatewayResponseHeaders writes both the upstream provider response
+// headers (forwarded verbatim) and the gateway-level `x-gateway-*` routing
 // identity headers onto the fasthttp response. Empty fields are skipped so
 // the headers never appear with a blank value. Safe to call when the case
 // didn't populate `extra` — the zero value for ExtraFields produces no
 // headers.
-func applyRakshaResponseHeaders(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, extra schemas.RakshaResponseExtraFields) {
+func applyGatewayResponseHeaders(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, extra schemas.GatewayResponseExtraFields) {
 	for key, value := range extra.ProviderResponseHeaders {
 		ctx.Response.Header.Set(key, value)
 	}
 	if extra.Provider != "" {
-		ctx.Response.Header.Set(HeaderRakshaProvider, string(extra.Provider))
+		ctx.Response.Header.Set(HeaderGatewayProvider, string(extra.Provider))
 	}
 	if extra.OriginalModelRequested != "" {
-		ctx.Response.Header.Set(HeaderRakshaOriginalModel, extra.OriginalModelRequested)
+		ctx.Response.Header.Set(HeaderGatewayOriginalModel, extra.OriginalModelRequested)
 	}
 	if extra.ResolvedModelUsed != "" {
-		ctx.Response.Header.Set(HeaderRakshaResolvedModel, extra.ResolvedModelUsed)
+		ctx.Response.Header.Set(HeaderGatewayResolvedModel, extra.ResolvedModelUsed)
 	}
 	if extra.RequestType != "" {
-		ctx.Response.Header.Set(HeaderRakshaRequestType, string(extra.RequestType))
+		ctx.Response.Header.Set(HeaderGatewayRequestType, string(extra.RequestType))
 	}
 	// Fallback index lives on the request context, not the response struct.
 	// 0 = primary provider succeeded; non-zero = which fallback fired
 	// (1-indexed). Only emit when non-zero so the absence of the header is
 	// the unambiguous "no fallback fired" signal.
-	if rakshaCtx != nil {
-		if idx, ok := rakshaCtx.Value(schemas.RakshaContextKeyFallbackIndex).(int); ok && idx > 0 {
-			ctx.Response.Header.Set(HeaderRakshaFallbackIndex, strconv.Itoa(idx))
+	if gatewayCtx != nil {
+		if idx, ok := gatewayCtx.Value(schemas.GatewayContextKeyFallbackIndex).(int); ok && idx > 0 {
+			ctx.Response.Header.Set(HeaderGatewayFallbackIndex, strconv.Itoa(idx))
 		}
-		if cb, ok := rakshaCtx.Value(schemas.RakshaContextKeyCircuitBreakerFailover).(string); ok && cb != "" {
-			ctx.Response.Header.Set(HeaderRakshaCircuitBreaker, cb)
+		if cb, ok := gatewayCtx.Value(schemas.GatewayContextKeyCircuitBreakerFailover).(string); ok && cb != "" {
+			ctx.Response.Header.Set(HeaderGatewayCircuitBreaker, cb)
 		}
-		if rule, ok := rakshaCtx.Value(schemas.RakshaContextKeyGovernanceRoutingRuleName).(string); ok && rule != "" {
-			ctx.Response.Header.Set(HeaderRakshaRoutingRule, rule)
+		if rule, ok := gatewayCtx.Value(schemas.GatewayContextKeyGovernanceRoutingRuleName).(string); ok && rule != "" {
+			ctx.Response.Header.Set(HeaderGatewayRoutingRule, rule)
 		}
 	}
 }
 
 // sendSuccess sends a successful response with HTTP 200 status and JSON body.
-func (g *GenericRouter) sendSuccess(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, errorConverter ErrorConverter, response interface{}, extraHeaders map[string]string) {
+func (g *GenericRouter) sendSuccess(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, errorConverter ErrorConverter, response interface{}, extraHeaders map[string]string) {
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/json")
 
@@ -318,7 +318,7 @@ func (g *GenericRouter) sendSuccess(ctx *fasthttp.RequestCtx, rakshaCtx *schemas
 
 	responseBody, err := sonic.Marshal(response)
 	if err != nil {
-		g.sendError(ctx, rakshaCtx, errorConverter, newRakshaError(err, "failed to encode response"))
+		g.sendError(ctx, gatewayCtx, errorConverter, newGatewayError(err, "failed to encode response"))
 		return
 	}
 
@@ -328,20 +328,20 @@ func (g *GenericRouter) sendSuccess(ctx *fasthttp.RequestCtx, rakshaCtx *schemas
 // tryStreamLargeResponse checks if large response mode was activated by the provider,
 // sets the transport marker, and streams the response directly to the client.
 // Returns true if the response was handled (caller should return).
-func (g *GenericRouter) tryStreamLargeResponse(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext) bool {
-	isLargeResponse, ok := rakshaCtx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool)
+func (g *GenericRouter) tryStreamLargeResponse(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext) bool {
+	isLargeResponse, ok := gatewayCtx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool)
 	if !ok || !isLargeResponse {
 		return false
 	}
 	// Forward provider response headers before streaming — providers store them in
-	// context via RakshaContextKeyProviderResponseHeaders, but some early-return
+	// context via GatewayContextKeyProviderResponseHeaders, but some early-return
 	// branches in the router skip the common footer that normally forwards them.
-	if headers, ok := rakshaCtx.Value(schemas.RakshaContextKeyProviderResponseHeaders).(map[string]string); ok {
+	if headers, ok := gatewayCtx.Value(schemas.GatewayContextKeyProviderResponseHeaders).(map[string]string); ok {
 		for key, value := range headers {
 			ctx.Response.Header.Set(key, value)
 		}
 	}
-	if g.streamLargeResponse(ctx, rakshaCtx) {
+	if g.streamLargeResponse(ctx, gatewayCtx) {
 		ctx.SetUserValue(lib.FastHTTPUserValueLargeResponseMode, true)
 	}
 	return true
@@ -349,14 +349,14 @@ func (g *GenericRouter) tryStreamLargeResponse(ctx *fasthttp.RequestCtx, rakshaC
 
 // streamLargeResponse streams the large response body directly from the upstream provider to the client.
 // This bypasses the normal serialize → set body path, piping the response bytes unchanged.
-func (g *GenericRouter) streamLargeResponse(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext) bool {
+func (g *GenericRouter) streamLargeResponse(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext) bool {
 	// Enterprise hook: wrap the reader with Phase B scanning (e.g., usage extraction
 	// from the full response stream) before streaming to client.
 	if g.largeResponseHook != nil {
-		g.largeResponseHook(ctx, rakshaCtx)
+		g.largeResponseHook(ctx, gatewayCtx)
 	}
 
-	if !lib.StreamLargeResponseBody(ctx, rakshaCtx) {
+	if !lib.StreamLargeResponseBody(ctx, gatewayCtx) {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.SetBodyString("large response reader not available")
 		return false
@@ -364,8 +364,8 @@ func (g *GenericRouter) streamLargeResponse(ctx *fasthttp.RequestCtx, rakshaCtx 
 	return true
 }
 
-// extractAndParseFallbacks extracts fallbacks from the integration request and adds them to the RakshaRequest.
-func (g *GenericRouter) extractAndParseFallbacks(ctx *schemas.RakshaContext, req interface{}, rakshaReq *schemas.RakshaRequest) error {
+// extractAndParseFallbacks extracts fallbacks from the integration request and adds them to the GatewayRequest.
+func (g *GenericRouter) extractAndParseFallbacks(ctx *schemas.GatewayContext, req interface{}, gatewayReq *schemas.GatewayRequest) error {
 	// Check if the request has a fallbacks field ([]string)
 	fallbacks, err := g.extractFallbacksFromRequest(req)
 	if err != nil {
@@ -376,7 +376,7 @@ func (g *GenericRouter) extractAndParseFallbacks(ctx *schemas.RakshaContext, req
 		return nil // No fallbacks to process
 	}
 
-	provider, _, _ := rakshaReq.GetRequestFields()
+	provider, _, _ := gatewayReq.GetRequestFields()
 
 	// Parse fallbacks from strings to Fallback structs
 	parsedFallbacks := make([]schemas.Fallback, 0, len(fallbacks))
@@ -399,42 +399,42 @@ func (g *GenericRouter) extractAndParseFallbacks(ctx *schemas.RakshaContext, req
 		return nil // No valid fallbacks found
 	}
 
-	// Add fallbacks to the main RakshaRequest
-	rakshaReq.SetFallbacks(parsedFallbacks)
+	// Add fallbacks to the main GatewayRequest
+	gatewayReq.SetFallbacks(parsedFallbacks)
 
 	// Also add fallbacks to the specific request type if it exists
-	switch rakshaReq.RequestType {
+	switch gatewayReq.RequestType {
 	case schemas.TextCompletionRequest, schemas.TextCompletionStreamRequest:
-		if rakshaReq.TextCompletionRequest != nil {
-			rakshaReq.TextCompletionRequest.Fallbacks = parsedFallbacks
+		if gatewayReq.TextCompletionRequest != nil {
+			gatewayReq.TextCompletionRequest.Fallbacks = parsedFallbacks
 		}
 	case schemas.ChatCompletionRequest, schemas.ChatCompletionStreamRequest:
-		if rakshaReq.ChatRequest != nil {
-			rakshaReq.ChatRequest.Fallbacks = parsedFallbacks
+		if gatewayReq.ChatRequest != nil {
+			gatewayReq.ChatRequest.Fallbacks = parsedFallbacks
 		}
 	case schemas.ResponsesRequest, schemas.ResponsesStreamRequest:
-		if rakshaReq.ResponsesRequest != nil {
-			rakshaReq.ResponsesRequest.Fallbacks = parsedFallbacks
+		if gatewayReq.ResponsesRequest != nil {
+			gatewayReq.ResponsesRequest.Fallbacks = parsedFallbacks
 		}
 	case schemas.EmbeddingRequest:
-		if rakshaReq.EmbeddingRequest != nil {
-			rakshaReq.EmbeddingRequest.Fallbacks = parsedFallbacks
+		if gatewayReq.EmbeddingRequest != nil {
+			gatewayReq.EmbeddingRequest.Fallbacks = parsedFallbacks
 		}
 	case schemas.RerankRequest:
-		if rakshaReq.RerankRequest != nil {
-			rakshaReq.RerankRequest.Fallbacks = parsedFallbacks
+		if gatewayReq.RerankRequest != nil {
+			gatewayReq.RerankRequest.Fallbacks = parsedFallbacks
 		}
 	case schemas.SpeechRequest, schemas.SpeechStreamRequest:
-		if rakshaReq.SpeechRequest != nil {
-			rakshaReq.SpeechRequest.Fallbacks = parsedFallbacks
+		if gatewayReq.SpeechRequest != nil {
+			gatewayReq.SpeechRequest.Fallbacks = parsedFallbacks
 		}
 	case schemas.TranscriptionRequest, schemas.TranscriptionStreamRequest:
-		if rakshaReq.TranscriptionRequest != nil {
-			rakshaReq.TranscriptionRequest.Fallbacks = parsedFallbacks
+		if gatewayReq.TranscriptionRequest != nil {
+			gatewayReq.TranscriptionRequest.Fallbacks = parsedFallbacks
 		}
 	case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest:
-		if rakshaReq.ImageGenerationRequest != nil {
-			rakshaReq.ImageGenerationRequest.Fallbacks = parsedFallbacks
+		if gatewayReq.ImageGenerationRequest != nil {
+			gatewayReq.ImageGenerationRequest.Fallbacks = parsedFallbacks
 		}
 	}
 
@@ -494,10 +494,10 @@ func (g *GenericRouter) extractFallbacksFromRequest(req interface{}) ([]string, 
 	return nil, nil
 }
 
-// getVirtualKeyFromRakshaContext extracts the virtual key value from raksha context.
+// getVirtualKeyFromGatewayContext extracts the virtual key value from gateway context.
 // Returns nil if no VK is present (e.g., direct key mode or no governance).
-func getVirtualKeyFromRakshaContext(ctx *schemas.RakshaContext) *string {
-	vkValue := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyVirtualKey)
+func getVirtualKeyFromGatewayContext(ctx *schemas.GatewayContext) *string {
+	vkValue := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyVirtualKey)
 	if vkValue == "" {
 		return nil
 	}
@@ -540,21 +540,21 @@ func isAnthropicAPIKeyAuth(ctx *fasthttp.RequestCtx) bool {
 // resolveLargePayloadMetadata returns metadata from the sync context key,
 // falling back to a non-blocking read from the deferred channel.
 // If deferred metadata is resolved, it is cached in the sync key for later readers.
-func resolveLargePayloadMetadata(rakshaCtx *schemas.RakshaContext) *schemas.LargePayloadMetadata {
-	if rakshaCtx == nil {
+func resolveLargePayloadMetadata(gatewayCtx *schemas.GatewayContext) *schemas.LargePayloadMetadata {
+	if gatewayCtx == nil {
 		return nil
 	}
-	if metadata, ok := rakshaCtx.Value(schemas.RakshaContextKeyLargePayloadMetadata).(*schemas.LargePayloadMetadata); ok && metadata != nil {
+	if metadata, ok := gatewayCtx.Value(schemas.GatewayContextKeyLargePayloadMetadata).(*schemas.LargePayloadMetadata); ok && metadata != nil {
 		return metadata
 	}
-	ch, ok := rakshaCtx.Value(schemas.RakshaContextKeyDeferredLargePayloadMetadata).(<-chan *schemas.LargePayloadMetadata)
+	ch, ok := gatewayCtx.Value(schemas.GatewayContextKeyDeferredLargePayloadMetadata).(<-chan *schemas.LargePayloadMetadata)
 	if !ok || ch == nil {
 		return nil
 	}
 	select {
 	case metadata := <-ch:
 		if metadata != nil {
-			rakshaCtx.SetValue(schemas.RakshaContextKeyLargePayloadMetadata, metadata)
+			gatewayCtx.SetValue(schemas.GatewayContextKeyLargePayloadMetadata, metadata)
 		}
 		return metadata
 	default:

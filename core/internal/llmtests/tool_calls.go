@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/stretchr/testify/require"
 )
 
 // RunToolCallsTest executes the tool calls test scenario using dual API testing framework
-func RunToolCallsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunToolCallsTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ToolCalls {
 		t.Logf("Tool calls not supported for provider %s", testConfig.Provider)
 		return
@@ -59,14 +59,14 @@ func RunToolCallsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 		}
 
 		// Create operations for both Chat Completions and Responses API
-		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(150),
+					MaxCompletionTokens: gateway.Ptr(150),
 					Tools:               []schemas.ChatTool{*chatTool},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -74,9 +74,9 @@ func RunToolCallsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
@@ -112,12 +112,12 @@ func RunToolCallsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 		}
 
 		// Verify location argument mentions New York using universal tool extraction
-		validateLocationInChatToolCalls := func(response *schemas.RakshaChatResponse, apiName string) {
+		validateLocationInChatToolCalls := func(response *schemas.GatewayChatResponse, apiName string) {
 			toolCalls := ExtractChatToolCalls(response)
 			validateLocationInToolCalls(t, toolCalls, apiName)
 		}
 
-		validateLocationInResponsesToolCalls := func(response *schemas.RakshaResponsesResponse, apiName string) {
+		validateLocationInResponsesToolCalls := func(response *schemas.GatewayResponsesResponse, apiName string) {
 			toolCalls := ExtractResponsesToolCalls(response)
 			validateLocationInToolCalls(t, toolCalls, apiName)
 		}
@@ -158,7 +158,7 @@ func validateLocationInToolCalls(t *testing.T, toolCalls []ToolCallInfo, apiName
 }
 
 // RunToolCallsWithEmptyPropertiesTest tests tool calls with explicitly empty properties ({})
-func RunToolCallsWithEmptyPropertiesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunToolCallsWithEmptyPropertiesTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ToolCalls {
 		t.Logf("Tool calls not supported for provider %s", testConfig.Provider)
 		return
@@ -195,17 +195,17 @@ func RunToolCallsWithEmptyPropertiesTest(t *testing.T, client *raksha.Raksha, ct
 		expectations := ToolCallExpectations("ping", []string{}) // No required arguments
 		expectations = ModifyExpectationsForProvider(expectations, testConfig.Provider)
 
-		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(150),
+					MaxCompletionTokens: gateway.Ptr(150),
 					Tools:               []schemas.ChatTool{*chatTool},
 					ToolChoice: &schemas.ChatToolChoice{
-						ChatToolChoiceStr: raksha.Ptr("required"),
+						ChatToolChoiceStr: gateway.Ptr("required"),
 					},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -213,16 +213,16 @@ func RunToolCallsWithEmptyPropertiesTest(t *testing.T, client *raksha.Raksha, ct
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools: []schemas.ResponsesTool{*responsesTool},
 					ToolChoice: &schemas.ResponsesToolChoice{
-						ResponsesToolChoiceStr: raksha.Ptr("required"),
+						ResponsesToolChoiceStr: gateway.Ptr("required"),
 					},
 				},
 			}
@@ -251,7 +251,7 @@ func RunToolCallsWithEmptyPropertiesTest(t *testing.T, client *raksha.Raksha, ct
 			t.Fatalf("❌ ToolCallsWithEmptyProperties dual API test failed: %v", errors)
 		}
 
-		validatePingToolCall := func(response *schemas.RakshaChatResponse, apiName string) {
+		validatePingToolCall := func(response *schemas.GatewayChatResponse, apiName string) {
 			toolCalls := ExtractChatToolCalls(response)
 			require.True(t, len(toolCalls) > 0, "%s API should have tool calls", apiName)
 			pingFound := false
@@ -265,7 +265,7 @@ func RunToolCallsWithEmptyPropertiesTest(t *testing.T, client *raksha.Raksha, ct
 			require.True(t, pingFound, "%s API tool call should include ping tool", apiName)
 		}
 
-		validatePingResponsesToolCall := func(response *schemas.RakshaResponsesResponse, apiName string) {
+		validatePingResponsesToolCall := func(response *schemas.GatewayResponsesResponse, apiName string) {
 			toolCalls := ExtractResponsesToolCalls(response)
 			require.True(t, len(toolCalls) > 0, "%s API should have tool calls", apiName)
 			pingFound := false
@@ -292,7 +292,7 @@ func RunToolCallsWithEmptyPropertiesTest(t *testing.T, client *raksha.Raksha, ct
 }
 
 // RunToolCallsWithNilPropertiesTest tests tool calls with nil properties (not defined)
-func RunToolCallsWithNilPropertiesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunToolCallsWithNilPropertiesTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ToolCalls {
 		t.Logf("Tool calls not supported for provider %s", testConfig.Provider)
 		return
@@ -329,17 +329,17 @@ func RunToolCallsWithNilPropertiesTest(t *testing.T, client *raksha.Raksha, ctx 
 		expectations := ToolCallExpectations("ping", []string{}) // No required arguments
 		expectations = ModifyExpectationsForProvider(expectations, testConfig.Provider)
 
-		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(150),
+					MaxCompletionTokens: gateway.Ptr(150),
 					Tools:               []schemas.ChatTool{*chatTool},
 					ToolChoice: &schemas.ChatToolChoice{
-						ChatToolChoiceStr: raksha.Ptr("required"),
+						ChatToolChoiceStr: gateway.Ptr("required"),
 					},
 				},
 				Fallbacks: testConfig.Fallbacks,
@@ -347,16 +347,16 @@ func RunToolCallsWithNilPropertiesTest(t *testing.T, client *raksha.Raksha, ctx 
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools: []schemas.ResponsesTool{*responsesTool},
 					ToolChoice: &schemas.ResponsesToolChoice{
-						ResponsesToolChoiceStr: raksha.Ptr("required"),
+						ResponsesToolChoiceStr: gateway.Ptr("required"),
 					},
 				},
 			}
@@ -385,7 +385,7 @@ func RunToolCallsWithNilPropertiesTest(t *testing.T, client *raksha.Raksha, ctx 
 			t.Fatalf("❌ ToolCallsWithNilProperties dual API test failed: %v", errors)
 		}
 
-		validatePingToolCall := func(response *schemas.RakshaChatResponse, apiName string) {
+		validatePingToolCall := func(response *schemas.GatewayChatResponse, apiName string) {
 			toolCalls := ExtractChatToolCalls(response)
 			require.True(t, len(toolCalls) > 0, "%s API should have tool calls", apiName)
 			pingFound := false
@@ -399,7 +399,7 @@ func RunToolCallsWithNilPropertiesTest(t *testing.T, client *raksha.Raksha, ctx 
 			require.True(t, pingFound, "%s API tool call should include ping tool", apiName)
 		}
 
-		validatePingResponsesToolCall := func(response *schemas.RakshaResponsesResponse, apiName string) {
+		validatePingResponsesToolCall := func(response *schemas.GatewayResponsesResponse, apiName string) {
 			toolCalls := ExtractResponsesToolCalls(response)
 			require.True(t, len(toolCalls) > 0, "%s API should have tool calls", apiName)
 			pingFound := false

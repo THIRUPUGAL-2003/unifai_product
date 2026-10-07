@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/mysqlconn"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/mysqlconn"
 	"gorm.io/gorm"
 )
 

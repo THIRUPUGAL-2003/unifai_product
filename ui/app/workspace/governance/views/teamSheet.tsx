@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -120,8 +121,13 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 	const [updateTeam, { isLoading: isUpdating }] = useUpdateTeamMutation();
 	const loading = isCreating || isUpdating;
 
-	const { data: membersData } = useGetTeamMembersQuery(team?.id || "", { skip: !team?.id });
-	const { data: sessionUsers } = useGetSessionUsersQuery(undefined, { skip: !team?.id });
+	const { data: membersData, isError: membersFailed, error: membersError } = useGetTeamMembersQuery(team?.id || "", {
+		skip: !team?.id,
+	});
+	const { data: sessionUsers, isError: sessionUsersFailed, error: sessionUsersError } = useGetSessionUsersQuery(undefined, {
+		skip: !team?.id,
+	});
+	const membersQueryFailed = membersFailed || sessionUsersFailed;
 	const [addTeamMember, { isLoading: isAddingMember }] = useAddTeamMemberMutation();
 	const [removeTeamMember, { isLoading: isRemovingMember }] = useRemoveTeamMemberMutation();
 	const [memberToAdd, setMemberToAdd] = useState("");
@@ -225,10 +231,11 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 	const requestMaxLimitNum = formData.requestMaxLimit;
 
 	// Teams under one customer share its budget: per reset period, their total may not exceed it.
-	const { data: customerTeamsData } = useGetTeamsQuery(
-		{ customer_id: formData.customerId, limit: 500, offset: 0 },
-		{ skip: !formData.customerId },
-	);
+	const {
+		data: customerTeamsData,
+		isError: customerTeamsFailed,
+		error: customerTeamsError,
+	} = useGetTeamsQuery({ customer_id: formData.customerId, limit: 500, offset: 0 }, { skip: !formData.customerId });
 	const customerAllocation = useMemo(() => {
 		const byPeriod = new Map<string, { limit: number; available: number }>();
 		const customer = customers.find((c) => c.id === formData.customerId);
@@ -447,6 +454,15 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 
 						{/* Multi-budget configuration: one row per budget, each keyed by reset_duration */}
 						<div className="space-y-3">
+							{customerTeamsFailed ? (
+								<QueryErrorBanner
+									testId="team-sheet-customer-teams-query-error"
+									message={
+										getErrorMessage(customerTeamsError) ||
+										"Failed to load sibling teams. Customer budget remaining may be inaccurate."
+									}
+								/>
+							) : null}
 							<div className="flex items-center justify-between">
 								<Label>Budgets</Label>
 								<button
@@ -664,9 +680,17 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 						<div className="space-y-3 border-t pt-6">
 							<Label>Team members</Label>
 							<p className="text-muted-foreground text-sm">Assign users to this team for org membership and BU rankings.</p>
-							{(membersData?.members || []).length === 0 ? (
+							{membersQueryFailed ? (
+								<QueryErrorBanner
+									testId="team-sheet-members-query-error"
+									message={
+										getErrorMessage(membersError || sessionUsersError) || "Failed to load team members or available users."
+									}
+								/>
+							) : null}
+							{(membersData?.members || []).length === 0 && !membersQueryFailed ? (
 								<p className="text-muted-foreground text-xs">No members yet.</p>
-							) : (
+							) : (membersData?.members || []).length > 0 ? (
 								<ul className="space-y-2">
 									{(membersData?.members || []).map((m) => (
 										<li key={m.user_id || m.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
@@ -692,7 +716,7 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 										</li>
 									))}
 								</ul>
-							)}
+							) : null}
 							<div className="flex gap-2">
 								<Select value={memberToAdd || "__none__"} onValueChange={(v) => setMemberToAdd(v === "__none__" ? "" : v)}>
 									<SelectTrigger className="w-full">

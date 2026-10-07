@@ -341,20 +341,33 @@ export const PROVIDER_SUPPORTED_REQUESTS: Record<BaseProvider, string[]> = {
 	],
 };
 
-export const IS_ENTERPRISE = process.env.RAKSHA_IS_ENTERPRISE === "true";
-export const TRIAL_EXPIRY = parseTrialExpiry(process.env.RAKSHA_ENTERPRISE_TRIAL_EXPIRY);
+/** Prefer GATEWAY_* from vite/define / .env. */
+function gatewayEnv(name: string): string {
+	const key = name.replace(/^(GATEWAY_)/, "");
+	return String(process.env[`GATEWAY_${key}`] || "").trim();
+}
 
-/** Product branding — override via RAKSHA_PRODUCT_NAME / RAKSHA_PRODUCT_SUBTITLE in .env. */
-export const PRODUCT_NAME = (process.env.RAKSHA_PRODUCT_NAME || "Raksha").trim() || "Raksha";
-export const PRODUCT_FULL_NAME = (process.env.RAKSHA_PRODUCT_FULL_NAME || process.env.RAKSHA_PRODUCT_SUBTITLE || "Real-time AI Knowledge Screening & Hazard Audit").trim();
+export const IS_ENTERPRISE = gatewayEnv("IS_ENTERPRISE") === "true";
+export const TRIAL_EXPIRY = parseTrialExpiry(gatewayEnv("ENTERPRISE_TRIAL_EXPIRY"));
 
-/** Dashboard & company branding — override via RAKSHA_COMPANY_NAME / RAKSHA_COMPANY_LOGO in .env. */
-export const COMPANY_NAME = (process.env.RAKSHA_COMPANY_NAME || "YesPanchi Group of Companies").trim() || "YesPanchi Group of Companies";
-export const COMPANY_SHORT_NAME = (process.env.RAKSHA_COMPANY_SHORT_NAME || COMPANY_NAME.split(/\s+/)[0] || "YesPanchi").trim();
+/**
+ * Home-page brand mark only - always "Raksha" unless GATEWAY_BRAND_NAME is set.
+ * Container names (CONTAINER_NAME=raksha_...) stay branded; setting keys use GATEWAY_*.
+ */
+export const BRAND_NAME = gatewayEnv("BRAND_NAME") || "Raksha";
+
+/** In-app product name - common default "Gateway". */
+export const PRODUCT_NAME = gatewayEnv("PRODUCT_NAME") || "Gateway";
+export const PRODUCT_FULL_NAME =
+	gatewayEnv("PRODUCT_FULL_NAME") || gatewayEnv("PRODUCT_SUBTITLE") || "Real-time AI Knowledge Screening & Hazard Audit";
+
+/** Dashboard & company branding. */
+export const COMPANY_NAME = gatewayEnv("COMPANY_NAME") || "YesPanchi Group of Companies";
+export const COMPANY_SHORT_NAME = gatewayEnv("COMPANY_SHORT_NAME") || COMPANY_NAME.split(/\s+/)[0] || "YesPanchi";
 /** Official company logo mark (default: /yes-panchi-logo.png). */
-export const COMPANY_LOGO = (process.env.RAKSHA_COMPANY_LOGO || "/yes-panchi-logo.png").trim() || "/yes-panchi-logo.png";
+export const COMPANY_LOGO = gatewayEnv("COMPANY_LOGO") || "/yes-panchi-logo.png";
 
-/** Footer copyright text — override via RAKSHA_FOOTER_COPYRIGHT / RAKSHA_FOOTER_SUBTITLE in .env. */
-export const FOOTER_COPYRIGHT = (process.env.RAKSHA_FOOTER_COPYRIGHT || "").trim();
-export const FOOTER_SUBTITLE = (process.env.RAKSHA_FOOTER_SUBTITLE || "Raksha - Real-time AI Knowledge Screening & Hazard Audit").trim();
+/** Footer copyright text. */
+export const FOOTER_COPYRIGHT = gatewayEnv("FOOTER_COPYRIGHT");
+export const FOOTER_SUBTITLE = gatewayEnv("FOOTER_SUBTITLE") || `${PRODUCT_NAME} - Real-time AI Knowledge Screening & Hazard Audit`;
 export const DEFAULT_FOOTER_TEXT = FOOTER_COPYRIGHT || `© ${new Date().getFullYear()} ${COMPANY_NAME}. All rights reserved. ${FOOTER_SUBTITLE}`;

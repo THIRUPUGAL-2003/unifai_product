@@ -5,60 +5,60 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToGeminiChatCompletionRequest converts a RakshaChatRequest to Gemini's generation request format for chat completion
-func ToGeminiChatCompletionRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest) (*GeminiGenerationRequest, error) {
-	return ToGeminiChatCompletionRequestWithImageURLSchemes(ctx, rakshaReq, defaultGeminiImageURLSchemes...)
+// ToGeminiChatCompletionRequest converts a GatewayChatRequest to Gemini's generation request format for chat completion
+func ToGeminiChatCompletionRequest(ctx *schemas.GatewayContext, gatewayReq *schemas.GatewayChatRequest) (*GeminiGenerationRequest, error) {
+	return ToGeminiChatCompletionRequestWithImageURLSchemes(ctx, gatewayReq, defaultGeminiImageURLSchemes...)
 }
 
-// ToGeminiChatCompletionRequestWithImageURLSchemes converts a RakshaChatRequest
+// ToGeminiChatCompletionRequestWithImageURLSchemes converts a GatewayChatRequest
 // to Gemini format using the provider-specific allowlist for non-data image URLs.
-func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest, allowedImageURLSchemes ...string) (*GeminiGenerationRequest, error) {
-	if rakshaReq == nil {
+func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.GatewayContext, gatewayReq *schemas.GatewayChatRequest, allowedImageURLSchemes ...string) (*GeminiGenerationRequest, error) {
+	if gatewayReq == nil {
 		return nil, nil
 	}
 
-	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
+	gatewayReq.Model = NormalizeModelName(gatewayReq.Model)
 
 	// Create the base Gemini generation request
 	geminiReq := &GeminiGenerationRequest{
-		Model: rakshaReq.Model,
+		Model: gatewayReq.Model,
 	}
 
 	// Canonical model for capability gating only; wire model is untouched.
-	capModel := NormalizeModelName(schemas.ResolveCanonicalModel(ctx, rakshaReq.Model))
+	capModel := NormalizeModelName(schemas.ResolveCanonicalModel(ctx, gatewayReq.Model))
 
 	// Convert parameters to generation config
-	if rakshaReq.Params != nil {
-		geminiReq.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		geminiReq.ExtraParams = gatewayReq.Params.ExtraParams
 		var err error
-		geminiReq.GenerationConfig, err = convertParamsToGenerationConfig(rakshaReq.Params, []string{}, capModel)
+		geminiReq.GenerationConfig, err = convertParamsToGenerationConfig(gatewayReq.Params, []string{}, capModel)
 		if err != nil {
 			return nil, err
 		}
 		// Handle tool-related parameters
-		if len(rakshaReq.Params.Tools) > 0 {
-			geminiReq.Tools, err = convertRakshaToolsToGemini(rakshaReq.Params.Tools)
+		if len(gatewayReq.Params.Tools) > 0 {
+			geminiReq.Tools, err = convertGatewayToolsToGemini(gatewayReq.Params.Tools)
 			if err != nil {
 				return nil, err
 			}
 
 			// Convert tool choice to tool config
-			if rakshaReq.Params.ToolChoice != nil {
-				geminiReq.ToolConfig = convertToolChoiceToToolConfig(rakshaReq.Params.ToolChoice)
+			if gatewayReq.Params.ToolChoice != nil {
+				geminiReq.ToolConfig = convertToolChoiceToToolConfig(gatewayReq.Params.ToolChoice)
 			}
 		}
 
-		if rakshaReq.Params.ServiceTier != nil {
-			geminiReq.ServiceTier = mapRakshaServiceTierToGemini(*rakshaReq.Params.ServiceTier)
+		if gatewayReq.Params.ServiceTier != nil {
+			geminiReq.ServiceTier = mapGatewayServiceTierToGemini(*gatewayReq.Params.ServiceTier)
 		}
 
 		// Handle extra parameters
-		if rakshaReq.Params.ExtraParams != nil {
+		if gatewayReq.Params.ExtraParams != nil {
 			// Safety settings
-			if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safety_settings"); ok {
+			if safetySettings, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "safety_settings"); ok {
 				delete(geminiReq.ExtraParams, "safety_settings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
@@ -66,13 +66,13 @@ func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.RakshaContext
 			}
 
 			// Cached content
-			if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cached_content"]); ok {
+			if cachedContent, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["cached_content"]); ok {
 				delete(geminiReq.ExtraParams, "cached_content")
 				geminiReq.CachedContent = cachedContent
 			}
 
 			// Labels
-			if labels, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "labels"); ok {
+			if labels, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "labels"); ok {
 				delete(geminiReq.ExtraParams, "labels")
 				if labelMap, ok := schemas.SafeExtractStringMap(labels); ok {
 					geminiReq.Labels = labelMap
@@ -81,7 +81,7 @@ func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.RakshaContext
 		}
 	}
 	// Convert chat completion messages to Gemini format
-	contents, systemInstruction, err := convertRakshaMessagesToGemini(rakshaReq.Input, allowedImageURLSchemes...)
+	contents, systemInstruction, err := convertGatewayMessagesToGemini(gatewayReq.Input, allowedImageURLSchemes...)
 	if err != nil {
 		return nil, err
 	}
@@ -92,9 +92,9 @@ func ToGeminiChatCompletionRequestWithImageURLSchemes(ctx *schemas.RakshaContext
 	return geminiReq, nil
 }
 
-// ToRakshaChatResponse converts a GenerateContentResponse to a RakshaChatResponse
-func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaChatResponse {
-	rakshaResp := &schemas.RakshaChatResponse{
+// ToGatewayChatResponse converts a GenerateContentResponse to a GatewayChatResponse
+func (response *GenerateContentResponse) ToGatewayChatResponse() *schemas.GatewayChatResponse {
+	gatewayResp := &schemas.GatewayChatResponse{
 		ID:     response.ResponseID,
 		Model:  response.ModelVersion,
 		Object: "chat.completion",
@@ -102,12 +102,12 @@ func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaC
 
 	// Set creation timestamp if available
 	if !response.CreateTime.IsZero() {
-		rakshaResp.Created = int(response.CreateTime.Unix())
+		gatewayResp.Created = int(response.CreateTime.Unix())
 	}
 
 	// Handle empty candidates (filtered/malformed responses)
 	if len(response.Candidates) == 0 {
-		finishReason := ConvertGeminiFinishReasonToRaksha(FinishReasonMalformedFunctionCall)
+		finishReason := ConvertGeminiFinishReasonToGateway(FinishReasonMalformedFunctionCall)
 		return createErrorResponse(response, finishReason, false)
 	}
 
@@ -115,7 +115,7 @@ func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaC
 
 	// Check for filtered finish reasons that indicate errors
 	if isErrorFinishReason(candidate.FinishReason) {
-		finishReason := ConvertGeminiFinishReasonToRaksha(candidate.FinishReason)
+		finishReason := ConvertGeminiFinishReasonToGateway(candidate.FinishReason)
 		return createErrorResponse(response, finishReason, false)
 	}
 
@@ -132,7 +132,7 @@ func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaC
 			if part.Text != "" && part.Thought {
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index: len(reasoningDetails),
-					Type:  schemas.RakshaReasoningDetailsTypeText,
+					Type:  schemas.GatewayReasoningDetailsTypeText,
 					Text:  &part.Text,
 				})
 				continue
@@ -148,7 +148,7 @@ func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaC
 					thoughtSig := base64.StdEncoding.EncodeToString(part.ThoughtSignature)
 					reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 						Index:     len(reasoningDetails),
-						Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
+						Type:      schemas.GatewayReasoningDetailsTypeEncrypted,
 						Signature: &thoughtSig,
 					})
 				}
@@ -195,7 +195,7 @@ func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaC
 					}
 					reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 						Index:     len(reasoningDetails),
-						Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
+						Type:      schemas.GatewayReasoningDetailsTypeEncrypted,
 						Signature: &thoughtSig,
 						ID:        schemas.Ptr(fmt.Sprintf("tool_call_%s", baseCallID)),
 					})
@@ -243,7 +243,7 @@ func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaC
 				thoughtSig := base64.StdEncoding.EncodeToString(part.ThoughtSignature)
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index:     len(reasoningDetails),
-					Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
+					Type:      schemas.GatewayReasoningDetailsTypeEncrypted,
 					Signature: &thoughtSig,
 				})
 			}
@@ -271,19 +271,19 @@ func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaC
 			}
 		}
 
-		// Convert finish reason to Raksha format.
+		// Convert finish reason to Gateway format.
 		// Gemini uses "STOP" for both normal text completions and tool call responses —
 		// it has no dedicated finish reason for tool calls. Override to "tool_calls" when
 		// tool calls are present so downstream consumers see a uniform signal.
-		finishReason := ConvertGeminiFinishReasonToRaksha(candidate.FinishReason)
+		finishReason := ConvertGeminiFinishReasonToGateway(candidate.FinishReason)
 		if len(toolCalls) > 0 && finishReason == "stop" {
 			finishReason = "tool_calls"
 		}
 
-		rakshaResp.Choices = append(rakshaResp.Choices, schemas.RakshaResponseChoice{
+		gatewayResp.Choices = append(gatewayResp.Choices, schemas.GatewayResponseChoice{
 			Index:        0,
 			FinishReason: &finishReason,
-			LogProbs:     ConvertGeminiLogprobsResultToRaksha(candidate.LogprobsResult),
+			LogProbs:     ConvertGeminiLogprobsResultToGateway(candidate.LogprobsResult),
 			ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
 				Message: message,
 			},
@@ -291,18 +291,18 @@ func (response *GenerateContentResponse) ToRakshaChatResponse() *schemas.RakshaC
 	}
 
 	// Set usage information
-	rakshaResp.Usage = ConvertGeminiUsageMetadataToChatUsage(response.UsageMetadata)
+	gatewayResp.Usage = ConvertGeminiUsageMetadataToChatUsage(response.UsageMetadata)
 
 	if response.UsageMetadata != nil {
-		if t := mapGeminiTrafficTypeToRaksha(response.UsageMetadata.TrafficType); t != nil {
-			rakshaResp.ServiceTier = t
+		if t := mapGeminiTrafficTypeToGateway(response.UsageMetadata.TrafficType); t != nil {
+			gatewayResp.ServiceTier = t
 		} else if response.UsageMetadata.ServiceTier != "" {
-			tier := mapGeminiServiceTierToRaksha(response.UsageMetadata.ServiceTier)
-			rakshaResp.ServiceTier = &tier
+			tier := mapGeminiServiceTierToGateway(response.UsageMetadata.ServiceTier)
+			gatewayResp.ServiceTier = &tier
 		}
 	}
 
-	return rakshaResp
+	return gatewayResp
 }
 
 // GeminiStreamState tracks tool-call index across streaming chunks.
@@ -316,9 +316,9 @@ func NewGeminiStreamState() *GeminiStreamState {
 	return &GeminiStreamState{}
 }
 
-// ToRakshaChatCompletionStream converts a Gemini streaming response to a Raksha Chat Completion Stream response
+// ToGatewayChatCompletionStream converts a Gemini streaming response to a Gateway Chat Completion Stream response
 // Returns the response, error (if any), and a boolean indicating if this is the last chunk
-func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *GeminiStreamState) (*schemas.RakshaChatResponse, *schemas.RakshaError, bool) {
+func (response *GenerateContentResponse) ToGatewayChatCompletionStream(state *GeminiStreamState) (*schemas.GatewayChatResponse, *schemas.GatewayError, bool) {
 	if response == nil {
 		return nil, nil, false
 	}
@@ -329,7 +329,7 @@ func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *Gem
 
 	// Handle empty candidates (filtered/malformed responses)
 	if len(response.Candidates) == 0 {
-		finishReason := ConvertGeminiFinishReasonToRaksha(FinishReasonMalformedFunctionCall)
+		finishReason := ConvertGeminiFinishReasonToGateway(FinishReasonMalformedFunctionCall)
 		return createErrorResponse(response, finishReason, true), nil, true
 	}
 
@@ -337,7 +337,7 @@ func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *Gem
 
 	// Check for filtered finish reasons that indicate errors
 	if isErrorFinishReason(candidate.FinishReason) {
-		finishReason := ConvertGeminiFinishReasonToRaksha(candidate.FinishReason)
+		finishReason := ConvertGeminiFinishReasonToGateway(candidate.FinishReason)
 		return createErrorResponse(response, finishReason, true), nil, true
 	}
 
@@ -345,7 +345,7 @@ func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *Gem
 	isLastChunk := candidate.FinishReason != "" && response.UsageMetadata != nil
 
 	// Create the streaming response
-	streamResponse := &schemas.RakshaChatResponse{
+	streamResponse := &schemas.GatewayChatResponse{
 		ID:     response.ResponseID,
 		Model:  response.ModelVersion,
 		Object: "chat.completion.chunk",
@@ -380,7 +380,7 @@ func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *Gem
 				// Thought/reasoning content - add to reasoning details
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index: len(reasoningDetails),
-					Type:  schemas.RakshaReasoningDetailsTypeText,
+					Type:  schemas.GatewayReasoningDetailsTypeText,
 					Text:  &part.Text,
 				})
 
@@ -435,7 +435,7 @@ func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *Gem
 					}
 					reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 						Index:     len(reasoningDetails),
-						Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
+						Type:      schemas.GatewayReasoningDetailsTypeEncrypted,
 						Signature: &thoughtSig,
 						ID:        schemas.Ptr(fmt.Sprintf("tool_call_%s", baseCallID)),
 					})
@@ -465,7 +465,7 @@ func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *Gem
 				thoughtSig := base64.StdEncoding.EncodeToString(part.ThoughtSignature)
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index:     len(reasoningDetails),
-					Type:      schemas.RakshaReasoningDetailsTypeEncrypted,
+					Type:      schemas.GatewayReasoningDetailsTypeEncrypted,
 					Signature: &thoughtSig,
 				})
 			}
@@ -497,7 +497,7 @@ func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *Gem
 	// Build the choice
 	var finishReason *string
 	if isLastChunk && candidate.FinishReason != "" {
-		reason := ConvertGeminiFinishReasonToRaksha(candidate.FinishReason)
+		reason := ConvertGeminiFinishReasonToGateway(candidate.FinishReason)
 		// Gemini uses "STOP" for both text completions and tool call responses.
 		// Override to "tool_calls" when tool calls were seen in this stream for uniformity.
 		if (len(delta.ToolCalls) > 0 || state.hadToolCalls) && reason == "stop" {
@@ -506,24 +506,24 @@ func (response *GenerateContentResponse) ToRakshaChatCompletionStream(state *Gem
 		finishReason = &reason
 	}
 
-	choice := schemas.RakshaResponseChoice{
+	choice := schemas.GatewayResponseChoice{
 		Index:        int(candidate.Index),
 		FinishReason: finishReason,
-		LogProbs:     ConvertGeminiLogprobsResultToRaksha(candidate.LogprobsResult),
+		LogProbs:     ConvertGeminiLogprobsResultToGateway(candidate.LogprobsResult),
 		ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
 			Delta: delta,
 		},
 	}
 
-	streamResponse.Choices = []schemas.RakshaResponseChoice{choice}
+	streamResponse.Choices = []schemas.GatewayResponseChoice{choice}
 
 	// Add usage information if this is the last chunk
 	if isLastChunk && response.UsageMetadata != nil {
 		streamResponse.Usage = ConvertGeminiUsageMetadataToChatUsage(response.UsageMetadata)
-		if t := mapGeminiTrafficTypeToRaksha(response.UsageMetadata.TrafficType); t != nil {
+		if t := mapGeminiTrafficTypeToGateway(response.UsageMetadata.TrafficType); t != nil {
 			streamResponse.ServiceTier = t
 		} else if response.UsageMetadata.ServiceTier != "" {
-			tier := mapGeminiServiceTierToRaksha(response.UsageMetadata.ServiceTier)
+			tier := mapGeminiServiceTierToGateway(response.UsageMetadata.ServiceTier)
 			streamResponse.ServiceTier = &tier
 		}
 	}
@@ -549,11 +549,11 @@ func isErrorFinishReason(reason FinishReason) bool {
 		reason == FinishReasonNoImage
 }
 
-// createErrorResponse creates a complete RakshaChatResponse for error cases
-func createErrorResponse(response *GenerateContentResponse, finishReason string, isStream bool) *schemas.RakshaChatResponse {
-	var choice schemas.RakshaResponseChoice
+// createErrorResponse creates a complete GatewayChatResponse for error cases
+func createErrorResponse(response *GenerateContentResponse, finishReason string, isStream bool) *schemas.GatewayChatResponse {
+	var choice schemas.GatewayResponseChoice
 	if isStream {
-		choice = schemas.RakshaResponseChoice{
+		choice = schemas.GatewayResponseChoice{
 			Index:        0,
 			FinishReason: &finishReason,
 			ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -561,7 +561,7 @@ func createErrorResponse(response *GenerateContentResponse, finishReason string,
 			},
 		}
 	} else {
-		choice = schemas.RakshaResponseChoice{
+		choice = schemas.GatewayResponseChoice{
 			Index:        0,
 			FinishReason: &finishReason,
 			ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -578,11 +578,11 @@ func createErrorResponse(response *GenerateContentResponse, finishReason string,
 		objectType = "chat.completion.chunk"
 	}
 
-	errorResp := &schemas.RakshaChatResponse{
+	errorResp := &schemas.GatewayChatResponse{
 		ID:      response.ResponseID,
 		Model:   response.ModelVersion,
 		Object:  objectType,
-		Choices: []schemas.RakshaResponseChoice{choice},
+		Choices: []schemas.GatewayResponseChoice{choice},
 		Usage:   ConvertGeminiUsageMetadataToChatUsage(response.UsageMetadata),
 	}
 

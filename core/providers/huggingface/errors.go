@@ -4,23 +4,23 @@ import (
 	"fmt"
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
 // parseHuggingFaceImageError parses HuggingFace error responses
-func parseHuggingFaceImageError(resp *fasthttp.Response) *schemas.RakshaError {
+func parseHuggingFaceImageError(resp *fasthttp.Response) *schemas.GatewayError {
 	var errorResp HuggingFaceResponseError
-	rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+	gatewayErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
 
 	if strings.TrimSpace(errorResp.Type) != "" {
 		typeCopy := errorResp.Type
-		rakshaErr.Type = &typeCopy
+		gatewayErr.Type = &typeCopy
 	}
 
-	if rakshaErr.Error == nil {
-		rakshaErr.Error = &schemas.ErrorField{}
+	if gatewayErr.Error == nil {
+		gatewayErr.Error = &schemas.ErrorField{}
 	}
 
 	// Handle FastAPI validation errors
@@ -45,13 +45,13 @@ func parseHuggingFaceImageError(resp *fasthttp.Response) *schemas.RakshaError {
 			errorMessages = append(errorMessages, msg)
 		}
 		if len(errorMessages) > 0 {
-			rakshaErr.Error.Message = strings.Join(errorMessages, "; ")
+			gatewayErr.Error.Message = strings.Join(errorMessages, "; ")
 		}
 	} else if strings.TrimSpace(errorResp.Message) != "" {
-		rakshaErr.Error.Message = errorResp.Message
+		gatewayErr.Error.Message = errorResp.Message
 	} else if strings.TrimSpace(errorResp.Error) != "" {
-		rakshaErr.Error.Message = errorResp.Error
+		gatewayErr.Error.Message = errorResp.Error
 	}
 
-	return rakshaErr
+	return gatewayErr
 }

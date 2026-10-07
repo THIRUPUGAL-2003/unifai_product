@@ -2,7 +2,7 @@ package schemas
 
 import "time"
 
-// KVStore is a minimal interface for a key-value store used by Raksha internals.
+// KVStore is a minimal interface for a key-value store used by Gateway internals.
 // The concrete implementation (e.g. framework/kvstore.Store) is injected by the
 // caller and must satisfy this interface. Passing nil disables KV-backed features.
 type KVStore interface {

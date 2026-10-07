@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -34,7 +34,7 @@ type PassthroughStreamParams struct {
 	// returns the running usage (nil when the event adds nothing). The last non-nil value is
 	// attached to the final chunk. Implementations populate usage directly from the event —
 	// no full response body is retained.
-	Observe func(event []byte) *schemas.RakshaPassthroughUsage
+	Observe func(event []byte) *schemas.GatewayPassthroughUsage
 }
 
 // StreamPassthrough runs the shared passthrough streaming loop. It forwards each raw upstream
@@ -45,24 +45,24 @@ type PassthroughStreamParams struct {
 //
 // This owns the idle-timeout wrapper, cancellation hookup, response release, and goroutine.
 func StreamPassthrough(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	resp *fasthttp.Response,
 	rawBodyStream io.Reader,
 	params PassthroughStreamParams,
-) chan *schemas.RakshaStreamChunk {
+) chan *schemas.GatewayStreamChunk {
 	// Wrap reader with idle timeout to detect stalled streams.
 	bodyStream, stopIdleTimeout := NewIdleTimeoutReader(rawBodyStream, rawBodyStream, GetStreamIdleTimeout(ctx), ctx)
 	// Cancellation must close the raw stream to unblock reads.
 	stopCancellation := SetupStreamCancellation(ctx, rawBodyStream, params.Logger)
 
-	extraFields := schemas.RakshaResponseExtraFields{
+	extraFields := schemas.GatewayResponseExtraFields{
 		ProviderResponseHeaders: params.Headers,
 		PassthroughPath:         params.Path,
 	}
 
-	ch := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	ch := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 	go func() {
 		defer EnsureStreamFinalizerCalled(ctx, postHookSpanFinalizer)
 		defer func() {
@@ -78,7 +78,7 @@ func StreamPassthrough(
 		defer stopCancellation()
 
 		var pending bytes.Buffer
-		var usage *schemas.RakshaPassthroughUsage
+		var usage *schemas.GatewayPassthroughUsage
 
 		success := params.StatusCode >= 200 && params.StatusCode < 300
 
@@ -127,11 +127,11 @@ func StreamPassthrough(
 		}
 
 		finalize := func() {
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			extraFields.Latency = time.Since(params.StartTime).Milliseconds()
 			extraFields.RawRequest = params.RawRequest
-			ProcessAndSendResponse(ctx, postHookRunner, &schemas.RakshaResponse{
-				PassthroughResponse: &schemas.RakshaPassthroughResponse{
+			ProcessAndSendResponse(ctx, postHookRunner, &schemas.GatewayResponse{
+				PassthroughResponse: &schemas.GatewayPassthroughResponse{
 					StatusCode:       params.StatusCode,
 					Headers:          params.Headers,
 					ExtraFields:      extraFields,
@@ -147,8 +147,8 @@ func StreamPassthrough(
 				chunk := make([]byte, n)
 				copy(chunk, buf[:n])
 				// Forward the raw chunk to the client unchanged.
-				ProcessAndSendResponse(ctx, postHookRunner, &schemas.RakshaResponse{
-					PassthroughResponse: &schemas.RakshaPassthroughResponse{
+				ProcessAndSendResponse(ctx, postHookRunner, &schemas.GatewayResponse{
+					PassthroughResponse: &schemas.GatewayPassthroughResponse{
 						StatusCode:  params.StatusCode,
 						Headers:     params.Headers,
 						Body:        chunk,
@@ -174,7 +174,7 @@ func StreamPassthrough(
 				if ctx.Err() != nil {
 					return // let defer handle cancel/timeout
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				extraFields.Latency = time.Since(params.StartTime).Milliseconds()
 				ProcessAndSendError(ctx, postHookRunner, readErr, ch, params.Logger, postHookSpanFinalizer)
 				return

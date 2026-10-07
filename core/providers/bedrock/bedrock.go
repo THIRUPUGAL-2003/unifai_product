@@ -25,10 +25,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/providers/anthropic"
-	openai "github.com/raksha/raksha/core/providers/openai"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/anthropic"
+	openai "github.com/gateway/gateway/core/providers/openai"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -41,8 +41,8 @@ type BedrockProvider struct {
 	mantleStreamingClient *fasthttp.Client              // fasthttp streaming client for Bedrock Mantle streaming requests
 	networkConfig         schemas.NetworkConfig         // Network configuration including extra headers
 	customProviderConfig  *schemas.CustomProviderConfig // Custom provider config
-	sendBackRawRequest    bool                          // Whether to include raw request in RakshaResponse
-	sendBackRawResponse   bool                          // Whether to include raw response in RakshaResponse
+	sendBackRawRequest    bool                          // Whether to include raw request in GatewayResponse
+	sendBackRawResponse   bool                          // Whether to include raw response in GatewayResponse
 }
 
 // assumeRoleCredsCache caches *aws.CredentialsCache instances keyed by the
@@ -216,17 +216,17 @@ var retryableBedrockExceptions = map[string]int{
 	"modelTimeoutException":       504, // native 408; processing timeout, transient
 }
 
-// newBedrockStreamException builds a RakshaError from an AWS EventStream
+// newBedrockStreamException builds a GatewayError from an AWS EventStream
 // exception message (any :message-type other than "event"). It preserves the
 // upstream exception type — the payload's "__type" when present, else the
 // :exception-type header value (excType) — so downstream conversion
 // (ToBedrockError) forwards it instead of falling back to "InternalServerError".
 //
-// Retryable exceptions are emitted with IsRakshaError:false and the equivalent
+// Retryable exceptions are emitted with IsGatewayError:false and the equivalent
 // HTTP status so the retry gate in executeRequestWithRetries handles them;
-// non-retryable ones are terminal (IsRakshaError:true). providerName is an
+// non-retryable ones are terminal (IsGatewayError:true). providerName is an
 // optional label prefix for the message.
-func newBedrockStreamException(providerName, excType string, payload []byte) *schemas.RakshaError {
+func newBedrockStreamException(providerName, excType string, payload []byte) *schemas.GatewayError {
 	errMsg := string(payload)
 	var bedrockErr BedrockError
 	if err := sonic.Unmarshal(payload, &bedrockErr); err == nil && bedrockErr.Message != "" {
@@ -243,8 +243,8 @@ func newBedrockStreamException(providerName, excType string, payload []byte) *sc
 		prefix = providerName + " stream"
 	}
 
-	streamErr := &schemas.RakshaError{
-		IsRakshaError: false,
+	streamErr := &schemas.GatewayError{
+		IsGatewayError: false,
 		Error: &schemas.ErrorField{
 			Message: fmt.Sprintf("%s %s: %s", prefix, excType, errMsg),
 		},
@@ -256,7 +256,7 @@ func newBedrockStreamException(providerName, excType string, payload []byte) *sc
 		sc := statusCode
 		streamErr.StatusCode = &sc
 	} else {
-		streamErr.IsRakshaError = true
+		streamErr.IsGatewayError = true
 	}
 	return streamErr
 }
@@ -264,7 +264,7 @@ func newBedrockStreamException(providerName, excType string, payload []byte) *sc
 // completeRequest sends a request to Bedrock's API and handles the response.
 // It constructs the API URL, sets up AWS authentication, and processes the response.
 // Returns the response body, request latency, or an error if the request fails.
-func (provider *BedrockProvider) completeRequest(ctx *schemas.RakshaContext, jsonData []byte, path string, key schemas.Key, model string) ([]byte, time.Duration, map[string]string, *schemas.RakshaError) {
+func (provider *BedrockProvider) completeRequest(ctx *schemas.GatewayContext, jsonData []byte, path string, key schemas.Key, model string) ([]byte, time.Duration, map[string]string, *schemas.GatewayError) {
 	config := key.BedrockKeyConfig
 	region := resolveBedrockRegion(ctx, key, model)
 
@@ -272,8 +272,8 @@ func (provider *BedrockProvider) completeRequest(ctx *schemas.RakshaContext, jso
 	requestURL := fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com/model/%s", region, path)
 	req, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, 0, nil, &schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, 0, nil, &schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: "error creating request",
 				Error:   err,
@@ -300,22 +300,22 @@ func (provider *BedrockProvider) completeRequest(ctx *schemas.RakshaContext, jso
 		}
 	}
 
-	body, latency, providerResponseHeaders, rakshaErr := provider.executeBedrockRequest(req)
-	return body, latency, providerResponseHeaders, rakshaErr
+	body, latency, providerResponseHeaders, gatewayErr := provider.executeBedrockRequest(req)
+	return body, latency, providerResponseHeaders, gatewayErr
 }
 
 // executeBedrockRequest sends an already-built (and authenticated) request via the
 // unary HTTP client, measures latency, and parses a Bedrock error envelope on non-200
 // responses. Used by completeRequest for the bedrock-runtime (Converse) path.
-func (provider *BedrockProvider) executeBedrockRequest(req *http.Request) ([]byte, time.Duration, map[string]string, *schemas.RakshaError) {
+func (provider *BedrockProvider) executeBedrockRequest(req *http.Request) ([]byte, time.Duration, map[string]string, *schemas.GatewayError) {
 	// Execute the request and measure latency
 	startTime := time.Now()
 	resp, err := provider.client.Do(req)
 	latency := time.Since(startTime)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -326,25 +326,25 @@ func (provider *BedrockProvider) executeBedrockRequest(req *http.Request) ([]byt
 		// Check for timeout first using net.Error before checking net.OpError
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
-			return nil, latency, nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, latency, nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		if errors.Is(err, http.ErrHandlerTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, latency, nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, latency, nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		// Check for DNS lookup and network errors after timeout checks
 		var opErr *net.OpError
 		var dnsErr *net.DNSError
 		if errors.As(err, &opErr) || errors.As(err, &dnsErr) {
-			return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Message: schemas.ErrProviderNetworkError,
 					Error:   err,
 				},
 			}, latency)
 		}
-		return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderDoRequest,
 				Error:   err,
@@ -359,8 +359,8 @@ func (provider *BedrockProvider) executeBedrockRequest(req *http.Request) ([]byt
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, latency, providerResponseHeaders, providerUtils.SetErrorLatency(&schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, latency, providerResponseHeaders, providerUtils.SetErrorLatency(&schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: "error reading request",
 				Error:   err,
@@ -377,25 +377,25 @@ func (provider *BedrockProvider) executeBedrockRequest(req *http.Request) ([]byt
 		}
 
 		if err := sonic.Unmarshal(body, &errorResp); err != nil {
-			return nil, latency, providerResponseHeaders, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: true,
+			return nil, latency, providerResponseHeaders, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: true,
 				StatusCode:     &resp.StatusCode,
 				Error: &schemas.ErrorField{
 					Message: schemas.ErrProviderResponseUnmarshal,
 					Error:   err,
 				},
-				ExtraFields: schemas.RakshaErrorExtraFields{
+				ExtraFields: schemas.GatewayErrorExtraFields{
 					RawResponse: rawErrorResponse,
 				},
 			}, latency)
 		}
 
-		return nil, latency, providerResponseHeaders, providerUtils.SetErrorLatency(&schemas.RakshaError{
+		return nil, latency, providerResponseHeaders, providerUtils.SetErrorLatency(&schemas.GatewayError{
 			StatusCode: &resp.StatusCode,
 			Error: &schemas.ErrorField{
 				Message: errorResp.Message,
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RawResponse: rawErrorResponse,
 			},
 		}, latency)
@@ -406,7 +406,7 @@ func (provider *BedrockProvider) executeBedrockRequest(req *http.Request) ([]byt
 
 // completeAgentRuntimeRequest sends a request to Bedrock Agent Runtime API and handles the response.
 // This is used for operations (like rerank) that are served by bedrock-agent-runtime.
-func (provider *BedrockProvider) completeAgentRuntimeRequest(ctx *schemas.RakshaContext, jsonData []byte, path string, key schemas.Key) ([]byte, time.Duration, map[string]string, *schemas.RakshaError) {
+func (provider *BedrockProvider) completeAgentRuntimeRequest(ctx *schemas.GatewayContext, jsonData []byte, path string, key schemas.Key) ([]byte, time.Duration, map[string]string, *schemas.GatewayError) {
 	config := key.BedrockKeyConfig
 
 	region := DefaultBedrockRegion
@@ -416,8 +416,8 @@ func (provider *BedrockProvider) completeAgentRuntimeRequest(ctx *schemas.Raksha
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("https://bedrock-agent-runtime.%s.amazonaws.com%s", region, path), bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, 0, nil, &schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, 0, nil, &schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: "error creating request",
 				Error:   err,
@@ -440,8 +440,8 @@ func (provider *BedrockProvider) completeAgentRuntimeRequest(ctx *schemas.Raksha
 	latency := time.Since(startTime)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -451,24 +451,24 @@ func (provider *BedrockProvider) completeAgentRuntimeRequest(ctx *schemas.Raksha
 		}
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
-			return nil, latency, nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, latency, nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		if errors.Is(err, http.ErrHandlerTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, latency, nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, latency, nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		var opErr *net.OpError
 		var dnsErr *net.DNSError
 		if errors.As(err, &opErr) || errors.As(err, &dnsErr) {
-			return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Message: schemas.ErrProviderNetworkError,
 					Error:   err,
 				},
 			}, latency)
 		}
-		return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, latency, nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderDoRequest,
 				Error:   err,
@@ -482,8 +482,8 @@ func (provider *BedrockProvider) completeAgentRuntimeRequest(ctx *schemas.Raksha
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, latency, providerResponseHeaders, providerUtils.SetErrorLatency(&schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, latency, providerResponseHeaders, providerUtils.SetErrorLatency(&schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: "error reading request",
 				Error:   err,
@@ -501,7 +501,7 @@ func (provider *BedrockProvider) completeAgentRuntimeRequest(ctx *schemas.Raksha
 // makeStreamingRequest creates a streaming request to Bedrock's API.
 // It formats the request, sends it to Bedrock, and returns the response.
 // Returns the response body and an error if the request fails.
-func (provider *BedrockProvider) makeStreamingRequest(ctx *schemas.RakshaContext, jsonData []byte, key schemas.Key, model string, action string) (*http.Response, *schemas.RakshaError) {
+func (provider *BedrockProvider) makeStreamingRequest(ctx *schemas.GatewayContext, jsonData []byte, key schemas.Key, model string, action string) (*http.Response, *schemas.GatewayError) {
 	// Parse region and path in one pass to avoid running the regex twice.
 	path, region := provider.getModelPathAndRegion(ctx, action, model, key)
 
@@ -509,7 +509,7 @@ func (provider *BedrockProvider) makeStreamingRequest(ctx *schemas.RakshaContext
 	requestURL := fmt.Sprintf("https://bedrock-runtime.%s.amazonaws.com/model/%s", region, path)
 	req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(jsonData))
 	if reqErr != nil {
-		return nil, providerUtils.NewRakshaOperationError("error creating request", reqErr)
+		return nil, providerUtils.NewGatewayOperationError("error creating request", reqErr)
 	}
 
 	// Set any extra headers from network config
@@ -542,8 +542,8 @@ func (provider *BedrockProvider) makeStreamingRequest(ctx *schemas.RakshaContext
 	latency := time.Since(startTime)
 	if respErr != nil {
 		if errors.Is(respErr, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -554,25 +554,25 @@ func (provider *BedrockProvider) makeStreamingRequest(ctx *schemas.RakshaContext
 		// Check for timeout first using net.Error before checking net.OpError
 		var netErr net.Error
 		if errors.As(respErr, &netErr) && netErr.Timeout() {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, respErr), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, respErr), latency)
 		}
 		if errors.Is(respErr, http.ErrHandlerTimeout) || errors.Is(respErr, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, respErr), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, respErr), latency)
 		}
 		// Check for DNS lookup and network errors after timeout checks
 		var opErr *net.OpError
 		var dnsErr *net.DNSError
 		if errors.As(respErr, &opErr) || errors.As(respErr, &dnsErr) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Message: schemas.ErrProviderNetworkError,
 					Error:   respErr,
 				},
 			}, latency)
 		}
-		return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderDoRequest,
 				Error:   respErr,
@@ -581,7 +581,7 @@ func (provider *BedrockProvider) makeStreamingRequest(ctx *schemas.RakshaContext
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
 
 	// Check for HTTP errors — use parseBedrockHTTPError to preserve upstream error details
 	if resp.StatusCode != http.StatusOK {
@@ -593,13 +593,13 @@ func (provider *BedrockProvider) makeStreamingRequest(ctx *schemas.RakshaContext
 	return resp, nil
 }
 
-// Returns a RakshaError if signing fails.
+// Returns a GatewayError if signing fails.
 func signAWSRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	req *http.Request,
 	keyCfg *schemas.BedrockKeyConfig,
 	region, service string,
-) *schemas.RakshaError {
+) *schemas.GatewayError {
 	var accessKey, secretKey schemas.SecretVar
 	var sessionToken, roleARN, externalID, sessionName *schemas.SecretVar
 
@@ -625,7 +625,7 @@ func signAWSRequest(
 	if req.Body != nil {
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
-			return providerUtils.NewRakshaOperationError("error reading request body", err)
+			return providerUtils.NewGatewayOperationError("error reading request body", err)
 		}
 		// Restore the body for subsequent reads
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -667,7 +667,7 @@ func signAWSRequest(
 		)
 	}
 	if err != nil {
-		return providerUtils.NewRakshaOperationError("failed to load aws config", err)
+		return providerUtils.NewGatewayOperationError("failed to load aws config", err)
 	}
 
 	if roleARN != nil && roleARN.GetValue() != "" {
@@ -675,7 +675,7 @@ func signAWSRequest(
 		if externalID != nil {
 			extID = externalID.GetValue()
 		}
-		sessName := "raksha-session"
+		sessName := "gateway-session"
 		if sessionName != nil && sessionName.GetValue() != "" {
 			sessName = sessionName.GetValue()
 		}
@@ -725,12 +725,12 @@ func signAWSRequest(
 	// Get credentials
 	creds, err := cfg.Credentials.Retrieve(ctx)
 	if err != nil {
-		return providerUtils.NewRakshaOperationError("failed to retrieve aws credentials", err)
+		return providerUtils.NewGatewayOperationError("failed to retrieve aws credentials", err)
 	}
 
 	// Sign the request with AWS Signature V4
 	if err := signer.SignHTTP(ctx, creds, req, bodyHash, service, region, time.Now()); err != nil {
-		return providerUtils.NewRakshaOperationError("failed to sign request", err)
+		return providerUtils.NewGatewayOperationError("failed to sign request", err)
 	}
 
 	return nil
@@ -739,13 +739,13 @@ func signAWSRequest(
 // listModelsByKey performs a list models request to Bedrock's API for a single key.
 // It retrieves all foundation models available in Amazon Bedrock for a specific key.
 // listMantleModels lists models from the Bedrock Mantle (OpenAI-compatible) /v1/models
-// endpoint, converted to a Raksha response with the same allow/blacklist/alias gating as
+// endpoint, converted to a Gateway response with the same allow/blacklist/alias gating as
 // the foundation-model path. The bare /v1/models path returns the full mantle catalog
 // (including the mantle-only gpt-5.x / gemma-4 models that ListFoundationModels omits).
 // The request is signed as it is sent (mantleSigV4Headers signs POST and can't be reused
 // for this GET). Best-effort: returns nil on any failure so the foundation-model list is
 // still returned.
-func (provider *BedrockProvider) listMantleModels(ctx *schemas.RakshaContext, key schemas.Key, region string, unfiltered bool) *schemas.RakshaListModelsResponse {
+func (provider *BedrockProvider) listMantleModels(ctx *schemas.GatewayContext, key schemas.Key, region string, unfiltered bool) *schemas.GatewayListModelsResponse {
 	mURL := mantleOpenAIURL(region, "", "models")
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mURL, nil)
 	if err != nil {
@@ -755,8 +755,8 @@ func (provider *BedrockProvider) listMantleModels(ctx *schemas.RakshaContext, ke
 	providerUtils.SetExtraHeadersHTTP(ctx, req, provider.networkConfig.ExtraHeaders, nil)
 	if key.Value.GetValue() != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", key.Value.GetValue()))
-	} else if rakshaErr := signAWSRequest(ctx, req, key.BedrockKeyConfig, region, bedrockMantleSigningService); rakshaErr != nil {
-		provider.logger.Warn("failed to sign mantle list-models request: %v", rakshaErr.Error.Message)
+	} else if gatewayErr := signAWSRequest(ctx, req, key.BedrockKeyConfig, region, bedrockMantleSigningService); gatewayErr != nil {
+		provider.logger.Warn("failed to sign mantle list-models request: %v", gatewayErr.Error.Message)
 		return nil
 	}
 
@@ -781,10 +781,10 @@ func (provider *BedrockProvider) listMantleModels(ctx *schemas.RakshaContext, ke
 		provider.logger.Warn("failed to parse mantle list-models response: %v", err)
 		return nil
 	}
-	return mantleResponse.ToRakshaListModelsResponse(provider.GetProviderKey(), key.Models, key.BlacklistedModels, key.Aliases, unfiltered)
+	return mantleResponse.ToGatewayListModelsResponse(provider.GetProviderKey(), key.Models, key.BlacklistedModels, key.Aliases, unfiltered)
 }
 
-func (provider *BedrockProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) listModelsByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 	config := key.BedrockKeyConfig
 	region := DefaultBedrockRegion
@@ -815,8 +815,8 @@ func (provider *BedrockProvider) listModelsByKey(ctx *schemas.RakshaContext, key
 	// Create the GET request without a body
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: "error creating request",
 				Error:   err,
@@ -845,8 +845,8 @@ func (provider *BedrockProvider) listModelsByKey(ctx *schemas.RakshaContext, key
 	latency := time.Since(startTime)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -857,25 +857,25 @@ func (provider *BedrockProvider) listModelsByKey(ctx *schemas.RakshaContext, key
 		// Check for timeout first using net.Error before checking net.OpError
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		if errors.Is(err, http.ErrHandlerTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		// Check for DNS lookup and network errors after timeout checks
 		var opErr *net.OpError
 		var dnsErr *net.DNSError
 		if errors.As(err, &opErr) || errors.As(err, &dnsErr) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Message: schemas.ErrProviderNetworkError,
 					Error:   err,
 				},
 			}, latency)
 		}
-		return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderDoRequest,
 				Error:   err,
@@ -887,8 +887,8 @@ func (provider *BedrockProvider) listModelsByKey(ctx *schemas.RakshaContext, key
 	responseBody, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
-		return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-			IsRakshaError: true,
+		return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+			IsGatewayError: true,
 			Error: &schemas.ErrorField{
 				Message: "error reading request",
 				Error:   err,
@@ -902,15 +902,15 @@ func (provider *BedrockProvider) listModelsByKey(ctx *schemas.RakshaContext, key
 
 	// Parse Bedrock-specific response
 	bedrockResponse := &BedrockListModelsResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, bedrockResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, bedrockResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert to Raksha response
-	response := bedrockResponse.ToRakshaListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+	// Convert to Gateway response
+	response := bedrockResponse.ToGatewayListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 	if response == nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to convert Bedrock model list response", nil)
+		return nil, providerUtils.NewGatewayOperationError("failed to convert Bedrock model list response", nil)
 	}
 
 	// Merge in the mantle catalog: ListFoundationModels omits the mantle-only models
@@ -947,7 +947,7 @@ func (provider *BedrockProvider) listModelsByKey(ctx *schemas.RakshaContext, key
 // ListModels performs a list models request to Bedrock's API.
 // It retrieves all foundation models available in Amazon Bedrock.
 // Requests are made concurrently for improved performance.
-func (provider *BedrockProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
@@ -961,103 +961,103 @@ func (provider *BedrockProvider) ListModels(ctx *schemas.RakshaContext, keys []s
 
 // TextCompletion performs a text completion request to Bedrock's API.
 // It formats the request, sends it to Bedrock, and processes the response.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *BedrockProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *BedrockProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.TextCompletionRequest); err != nil {
 		return nil, err
 	}
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToBedrockTextCompletionRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	path, _ := provider.getModelPathAndRegion(ctx, "invoke", request.Model, key)
 	body, latency, providerResponseHeaders, err := provider.completeRequest(ctx, jsonData, path, key, request.Model)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Handle model-specific response conversion
-	var rakshaResponse *schemas.RakshaTextCompletionResponse
+	var gatewayResponse *schemas.GatewayTextCompletionResponse
 	switch {
 	case schemas.IsAnthropicModelFamily(ctx, request.Model):
 		var response BedrockAnthropicTextResponse
 		if err := sonic.Unmarshal(body, &response); err != nil {
-			return nil, providerUtils.NewRakshaOperationError("error parsing anthropic response", err)
+			return nil, providerUtils.NewGatewayOperationError("error parsing anthropic response", err)
 		}
-		rakshaResponse = response.ToRakshaTextCompletionResponse()
+		gatewayResponse = response.ToGatewayTextCompletionResponse()
 
 	case schemas.IsMistralModelFamily(ctx, request.Model):
 		var response BedrockMistralTextResponse
 		if err := sonic.Unmarshal(body, &response); err != nil {
-			return nil, providerUtils.NewRakshaOperationError("error parsing mistral response", err)
+			return nil, providerUtils.NewGatewayOperationError("error parsing mistral response", err)
 		}
-		rakshaResponse = response.ToRakshaTextCompletionResponse()
+		gatewayResponse = response.ToGatewayTextCompletionResponse()
 
 	default:
 		return nil, providerUtils.NewConfigurationError(fmt.Sprintf("unsupported model type for text completion: %s", request.Model))
 	}
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 
 	// Parse raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponse interface{}
 		if err := sonic.Unmarshal(body, &rawResponse); err != nil {
-			return nil, providerUtils.NewRakshaOperationError("error parsing raw response", err)
+			return nil, providerUtils.NewGatewayOperationError("error parsing raw response", err)
 		}
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // TextCompletionStream performs a streaming text completion request to Bedrock's API.
 // It formats the request, sends it to Bedrock, and processes the response.
-// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
-func (provider *BedrockProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel of GatewayStreamChunk objects or an error if the request fails.
+func (provider *BedrockProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.TextCompletionStreamRequest); err != nil {
 		return nil, err
 	}
 
 	providerName := provider.GetProviderKey()
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToBedrockTextCompletionRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	startTime := time.Now()
-	resp, rakshaErr := provider.makeStreamingRequest(ctx, jsonData, key, request.Model, "invoke-with-response-stream")
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse)
+	resp, gatewayErr := provider.makeStreamingRequest(ctx, jsonData, key, request.Model, "invoke-with-response-stream")
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse)
 	}
 
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1102,13 +1102,13 @@ func (provider *BedrockProvider) TextCompletionStream(ctx *schemas.RakshaContext
 					// End of stream - this is normal
 					break
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				provider.logger.Warn("error decoding %s EventStream message: %v", providerName, err)
 				// Transport-level errors (stale/closed connection, unexpected EOF) are retryable.
-				// Use IsRakshaError:false so the retry gate in executeRequestWithRetries can retry.
+				// Use IsGatewayError:false so the retry gate in executeRequestWithRetries can retry.
 				if isStreamTransportError(err) {
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, &schemas.RakshaError{
-						IsRakshaError: false,
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, &schemas.GatewayError{
+						IsGatewayError: false,
 						Error: &schemas.ErrorField{
 							Message: schemas.ErrProviderNetworkError,
 							Error:   err,
@@ -1131,7 +1131,7 @@ func (provider *BedrockProvider) TextCompletionStream(ctx *schemas.RakshaContext
 							}
 						}
 						streamErr := newBedrockStreamException(string(providerName), excType, message.Payload)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, streamErr, responseChan, provider.logger, postHookSpanFinalizer)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, streamErr, responseChan, provider.logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -1146,16 +1146,16 @@ func (provider *BedrockProvider) TextCompletionStream(ctx *schemas.RakshaContext
 					return
 				}
 
-				// Create RakshaStreamChunk response containing the raw model-specific JSON chunk
-				textResponse := &schemas.RakshaTextCompletionResponse{
-					ExtraFields: schemas.RakshaResponseExtraFields{
+				// Create GatewayStreamChunk response containing the raw model-specific JSON chunk
+				textResponse := &schemas.GatewayTextCompletionResponse{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						Latency: time.Since(startTime).Milliseconds(),
 						// Pass the raw JSON string from the chunk bytes
 						RawResponse: string(chunkPayload.Bytes),
 					},
 				}
 
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(textResponse, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(textResponse, nil, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
 	}()
@@ -1166,8 +1166,8 @@ func (provider *BedrockProvider) TextCompletionStream(ctx *schemas.RakshaContext
 // ChatCompletion performs a chat completion request to Bedrock's API.
 // OpenAI-family and Gemma 4 models route via the Bedrock Mantle OpenAI-compatible endpoint.
 // All other models (including Anthropic/Claude) use the Bedrock Converse API.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *BedrockProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *BedrockProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
 	}
@@ -1177,24 +1177,24 @@ func (provider *BedrockProvider) ChatCompletion(ctx *schemas.RakshaContext, key 
 	}
 
 	// Use Bedrock Converse API for all other models
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToBedrockChatCompletionRequest(ctx, request)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	path, _ := provider.getModelPathAndRegion(ctx, "converse", request.Model, key)
 
 	// Create the signed request
-	responseBody, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, jsonData, path, key, request.Model)
+	responseBody, latency, providerResponseHeaders, gatewayErr := provider.completeRequest(ctx, jsonData, path, key, request.Model)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Parse Bedrock Converse API response
@@ -1203,39 +1203,39 @@ func (provider *BedrockProvider) ChatCompletion(ctx *schemas.RakshaContext, key 
 
 	// Parse the response using the new Bedrock type
 	if err := sonic.Unmarshal(responseBody, bedrockResponse); err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("failed to parse bedrock response", err), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("failed to parse bedrock response", err), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Convert using the new response converter
-	rakshaResponse, err := bedrockResponse.ToRakshaChatResponse(ctx, request.Model)
+	gatewayResponse, err := bedrockResponse.ToGatewayChatResponse(ctx, request.Model)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("failed to convert bedrock response", err), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("failed to convert bedrock response", err), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Override finish reason for structured output (Converse API only)
-	if _, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok {
-		if len(rakshaResponse.Choices) > 0 && rakshaResponse.Choices[0].FinishReason != nil {
-			if *rakshaResponse.Choices[0].FinishReason == string(schemas.RakshaFinishReasonToolCalls) {
-				rakshaResponse.Choices[0].FinishReason = schemas.Ptr(string(schemas.RakshaFinishReasonStop))
+	if _, ok := ctx.Value(schemas.GatewayContextKeyStructuredOutputToolName).(string); ok {
+		if len(gatewayResponse.Choices) > 0 && gatewayResponse.Choices[0].FinishReason != nil {
+			if *gatewayResponse.Choices[0].FinishReason == string(schemas.GatewayFinishReasonToolCalls) {
+				gatewayResponse.Choices[0].FinishReason = schemas.Ptr(string(schemas.GatewayFinishReasonStop))
 			}
 		}
 	}
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponse interface{}
 		if err := sonic.Unmarshal(responseBody, &rawResponse); err == nil {
-			rakshaResponse.ExtraFields.RawResponse = rawResponse
+			gatewayResponse.ExtraFields.RawResponse = rawResponse
 		}
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // normalizeCachedUsage folds the accumulated cached read/write token counts into
@@ -1243,14 +1243,14 @@ func (provider *BedrockProvider) ChatCompletion(ctx *schemas.RakshaContext, key 
 // prompt counter needs the fold. The accumulator must apply it before billing -
 // including on a mid-stream cancel/timeout. The += is not idempotent; callers
 // guard with a flag to apply it exactly once.
-func normalizeCachedUsage(usage *schemas.RakshaLLMUsage) {
+func normalizeCachedUsage(usage *schemas.GatewayLLMUsage) {
 	if usage == nil || usage.PromptTokensDetails == nil {
 		return
 	}
 	usage.PromptTokens += usage.PromptTokensDetails.CachedReadTokens + usage.PromptTokensDetails.CachedWriteTokens
 }
 
-func accumulateBedrockResponsesUsage(usage *schemas.ResponsesResponseUsage, billedUsage *schemas.RakshaLLMUsage, usageToProcess *BedrockTokenUsage) {
+func accumulateBedrockResponsesUsage(usage *schemas.ResponsesResponseUsage, billedUsage *schemas.GatewayLLMUsage, usageToProcess *BedrockTokenUsage) {
 	if usage == nil || usageToProcess == nil {
 		return
 	}
@@ -1327,8 +1327,8 @@ func accumulateBedrockResponsesUsage(usage *schemas.ResponsesResponseUsage, bill
 // ChatCompletionStream performs a streaming chat completion request to Bedrock's API.
 // OpenAI-family and Gemma 4 models route via the Bedrock Mantle OpenAI-compatible endpoint.
 // All other models (including Anthropic/Claude) use the Bedrock Converse streaming API.
-// Returns a channel for streaming RakshaStreamChunk objects or an error if the request fails.
-func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel for streaming GatewayStreamChunk objects or an error if the request fails.
+func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
 	}
@@ -1338,27 +1338,27 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 	}
 
 	// Use Bedrock Converse streaming API for all other models
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToBedrockChatCompletionRequest(ctx, request)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	startTime := time.Now()
 
-	resp, rakshaErr := provider.makeStreamingRequest(ctx, jsonData, key, request.Model, "converse-stream")
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse)
+	resp, gatewayErr := provider.makeStreamingRequest(ctx, jsonData, key, request.Model, "converse-stream")
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse)
 	}
 
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 	// Start streaming in a goroutine
@@ -1383,10 +1383,10 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 		defer stopCancellation()
 
 		// Process AWS Event Stream format
-		usage := &schemas.RakshaLLMUsage{}
+		usage := &schemas.GatewayLLMUsage{}
 		// Register the accumulating usage handle so a mid-stream
 		// cancel/timeout can bill for tokens the provider already processed.
-		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, usage)
+		ctx.SetValue(schemas.GatewayContextKeyStreamAccumulatedUsage, usage)
 
 		// Fold cached tokens into PromptTokens exactly once at stream end. The EOF
 		// path calls normalizeUsage() after the loop; on a mid-stream cancel/timeout
@@ -1420,7 +1420,7 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 		// Check for structured output mode - if set, we need to intercept tool calls
 		// and convert them to content instead of forwarding as tool calls
 		var structuredOutputToolName string
-		if toolName, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok {
+		if toolName, ok := ctx.Value(schemas.GatewayContextKeyStructuredOutputToolName).(string); ok {
 			structuredOutputToolName = toolName
 		}
 
@@ -1443,13 +1443,13 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 				if err == io.EOF {
 					break
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				provider.logger.Warn("Error decoding EventStream message: %v", err)
 				// Transport-level errors (stale/closed connection, unexpected EOF) are retryable.
-				// Use IsRakshaError:false so the retry gate in executeRequestWithRetries can retry.
+				// Use IsGatewayError:false so the retry gate in executeRequestWithRetries can retry.
 				if isStreamTransportError(err) {
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, &schemas.RakshaError{
-						IsRakshaError: false,
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, &schemas.GatewayError{
+						IsGatewayError: false,
 						Error: &schemas.ErrorField{
 							Message: schemas.ErrProviderNetworkError,
 							Error:   err,
@@ -1472,7 +1472,7 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 							}
 						}
 						streamErr := newBedrockStreamException("", excType, message.Payload)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, streamErr, responseChan, provider.logger, postHookSpanFinalizer)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, streamErr, responseChan, provider.logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -1530,12 +1530,12 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 				}
 
 				if streamEvent.StopReason != nil {
-					finishReason = schemas.Ptr(anthropic.ConvertAnthropicFinishReasonToRaksha(anthropic.AnthropicStopReason(*streamEvent.StopReason)))
+					finishReason = schemas.Ptr(anthropic.ConvertAnthropicFinishReasonToGateway(anthropic.AnthropicStopReason(*streamEvent.StopReason)))
 
 					// Override finish reason for structured output
 					// When structured output is used, tool_use stop reason should appear as "stop" to the client
-					if structuredOutputToolName != "" && *finishReason == string(schemas.RakshaFinishReasonToolCalls) {
-						finishReason = schemas.Ptr(string(schemas.RakshaFinishReasonStop))
+					if structuredOutputToolName != "" && *finishReason == string(schemas.GatewayFinishReasonToolCalls) {
+						finishReason = schemas.Ptr(string(schemas.GatewayFinishReasonStop))
 					}
 				}
 
@@ -1558,11 +1558,11 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 
 						// Convert tool use delta to content delta
 						content := streamEvent.Delta.ToolUse.Input
-						response := &schemas.RakshaChatResponse{
+						response := &schemas.GatewayChatResponse{
 							ID:     id,
 							Model:  request.Model,
 							Object: "chat.completion.chunk",
-							Choices: []schemas.RakshaResponseChoice{
+							Choices: []schemas.GatewayResponseChoice{
 								{
 									Index: 0,
 									ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1572,7 +1572,7 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 									},
 								},
 							},
-							ExtraFields: schemas.RakshaResponseExtraFields{
+							ExtraFields: schemas.GatewayResponseExtraFields{
 								ChunkIndex: chunkIndex,
 								Latency:    time.Since(lastChunkTime).Milliseconds(),
 							},
@@ -1584,7 +1584,7 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 							response.ExtraFields.RawResponse = string(message.Payload)
 						}
 
-						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 						continue
 					}
 
@@ -1598,16 +1598,16 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 					}
 				}
 
-				response, rakshaErr, _ := streamEvent.ToRakshaChatCompletionStream(streamState)
-				if rakshaErr != nil {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+				response, gatewayErr, _ := streamEvent.ToGatewayChatCompletionStream(streamState)
+				if gatewayErr != nil {
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				if response != nil {
 					response.ID = id
 					response.Model = request.Model
-					response.ExtraFields = schemas.RakshaResponseExtraFields{
+					response.ExtraFields = schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					}
@@ -1618,7 +1618,7 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 						response.ExtraFields.RawResponse = string(message.Payload)
 					}
 
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 				}
 			}
 		}
@@ -1626,14 +1626,14 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 		normalizeUsage()
 
 		// Send final chunk with accumulated usage
-		response := providerUtils.CreateRakshaChatCompletionChunkResponse(id, usage, finishReason, chunkIndex, request.Model, 0)
+		response := providerUtils.CreateGatewayChatCompletionChunkResponse(id, usage, finishReason, chunkIndex, request.Model, 0)
 		// Set raw request if enabled
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonData)
 		}
 		response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 	}()
 
 	return responseChan, nil
@@ -1642,8 +1642,8 @@ func (provider *BedrockProvider) ChatCompletionStream(ctx *schemas.RakshaContext
 // Responses performs a responses request to Bedrock's API.
 // OpenAI-family and Gemma 4 models route via the Bedrock Mantle OpenAI-compatible endpoint.
 // All other models (including Anthropic/Claude) use the Bedrock Converse API.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *BedrockProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *BedrockProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.ResponsesRequest); err != nil {
 		return nil, err
 	}
@@ -1653,24 +1653,24 @@ func (provider *BedrockProvider) Responses(ctx *schemas.RakshaContext, key schem
 	}
 
 	// Use Bedrock Converse API for all other models
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToBedrockResponsesRequest(ctx, request)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	path, _ := provider.getModelPathAndRegion(ctx, "converse", request.Model, key)
 
 	// Create the signed request
-	responseBody, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, jsonData, path, key, request.Model)
+	responseBody, latency, providerResponseHeaders, gatewayErr := provider.completeRequest(ctx, jsonData, path, key, request.Model)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Parse Bedrock Converse API response
@@ -1679,41 +1679,41 @@ func (provider *BedrockProvider) Responses(ctx *schemas.RakshaContext, key schem
 
 	// Parse the response using the new Bedrock type
 	if err := sonic.Unmarshal(responseBody, bedrockResponse); err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("failed to parse bedrock response", err), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("failed to parse bedrock response", err), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Convert using the new response converter
-	rakshaResponse, err := bedrockResponse.ToRakshaResponsesResponse(ctx)
+	gatewayResponse, err := bedrockResponse.ToGatewayResponsesResponse(ctx)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("failed to convert bedrock response", err), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("failed to convert bedrock response", err), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	rakshaResponse.Model = request.Model
+	gatewayResponse.Model = request.Model
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponse interface{}
 		if err := sonic.Unmarshal(responseBody, &rawResponse); err == nil {
-			rakshaResponse.ExtraFields.RawResponse = rawResponse
+			gatewayResponse.ExtraFields.RawResponse = rawResponse
 		}
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ResponsesStream performs a streaming chat completion request to Bedrock's API.
 // It formats the request, sends it to Bedrock, and processes the streaming response.
-// Returns a channel for streaming RakshaResponse objects or an error if the request fails.
-func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel for streaming GatewayResponse objects or an error if the request fails.
+func (provider *BedrockProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.ResponsesStreamRequest); err != nil {
 		return nil, err
 	}
@@ -1723,28 +1723,28 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 	}
 
 	// Use Bedrock Converse streaming API for all other models
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToBedrockResponsesRequest(ctx, request)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	startTime := time.Now()
 
-	resp, rakshaErr := provider.makeStreamingRequest(ctx, jsonData, key, request.Model, "converse-stream")
+	resp, gatewayErr := provider.makeStreamingRequest(ctx, jsonData, key, request.Model, "converse-stream")
 	latency := time.Since(startTime)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeadersFromHTTP(resp))
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1772,11 +1772,11 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 
 		// Process AWS Event Stream format
 		usage := &schemas.ResponsesResponseUsage{}
-		billedUsage := &schemas.RakshaLLMUsage{}
+		billedUsage := &schemas.GatewayLLMUsage{}
 		// Register the accumulating usage handle so a mid-stream cancel/timeout
 		// can bill for Bedrock Responses usage already reported by stream events
 		// before the stream was interrupted.
-		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, billedUsage)
+		ctx.SetValue(schemas.GatewayContextKeyStreamAccumulatedUsage, billedUsage)
 
 		usageNormalized := false
 		normalizeUsage := func() {
@@ -1804,7 +1804,7 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 		// Check for structured output mode - if set, we need to intercept tool calls
 		// and convert them to content instead of forwarding as tool calls
 		var structuredOutputToolName string
-		if toolName, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok {
+		if toolName, ok := ctx.Value(schemas.GatewayContextKeyStructuredOutputToolName).(string); ok {
 			structuredOutputToolName = toolName
 		}
 		var isAccumulatingStructuredOutput bool
@@ -1829,7 +1829,7 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 					// Converse API: finalize any open items at end of stream.
 					finalResponses := FinalizeBedrockStream(streamState, chunkIndex, usage, streamTrace)
 					for i, finalResponse := range finalResponses {
-						finalResponse.ExtraFields = schemas.RakshaResponseExtraFields{
+						finalResponse.ExtraFields = schemas.GatewayResponseExtraFields{
 							ChunkIndex: chunkIndex,
 							Latency:    time.Since(lastChunkTime).Milliseconds(),
 						}
@@ -1842,24 +1842,24 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 
 						if i == len(finalResponses)-1 {
 							// Set raw request if enabled
-							ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+							ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 							if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 								providerUtils.ParseAndSetRawRequest(&finalResponse.ExtraFields, jsonData)
 							}
 							finalResponse.ExtraFields.Latency = time.Since(startTime).Milliseconds()
 						}
 
-						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, finalResponse, nil, nil, nil), responseChan, postHookSpanFinalizer)
+						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, finalResponse, nil, nil, nil), responseChan, postHookSpanFinalizer)
 					}
 					break
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				provider.logger.Warn("Error decoding EventStream message: %v", err)
 				// Transport-level errors (stale/closed connection, unexpected EOF) are retryable.
-				// Use IsRakshaError:false so the retry gate in executeRequestWithRetries can retry.
+				// Use IsGatewayError:false so the retry gate in executeRequestWithRetries can retry.
 				if isStreamTransportError(err) {
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, &schemas.RakshaError{
-						IsRakshaError: false,
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, &schemas.GatewayError{
+						IsGatewayError: false,
 						Error: &schemas.ErrorField{
 							Message: schemas.ErrProviderNetworkError,
 							Error:   err,
@@ -1882,7 +1882,7 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 							}
 						}
 						streamErr := newBedrockStreamException("", excType, message.Payload)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, streamErr, responseChan, provider.logger, postHookSpanFinalizer)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, streamErr, responseChan, provider.logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -1922,11 +1922,11 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 					if streamEvent.Delta != nil && streamEvent.Delta.ToolUse != nil && isAccumulatingStructuredOutput {
 						// Convert tool use delta to text delta
 						content := streamEvent.Delta.ToolUse.Input
-						response := &schemas.RakshaResponsesStreamResponse{
+						response := &schemas.GatewayResponsesStreamResponse{
 							Type:           schemas.ResponsesStreamResponseTypeOutputTextDelta,
 							SequenceNumber: chunkIndex,
 							Delta:          &content,
-							ExtraFields: schemas.RakshaResponseExtraFields{
+							ExtraFields: schemas.GatewayResponseExtraFields{
 								ChunkIndex: chunkIndex,
 								Latency:    time.Since(lastChunkTime).Milliseconds(),
 							},
@@ -1938,7 +1938,7 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 							response.ExtraFields.RawResponse = string(message.Payload)
 						}
 
-						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 						continue
 					}
 
@@ -1955,15 +1955,15 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 					}
 				}
 
-				responses, rakshaErr, _ := streamEvent.ToRakshaResponsesStream(chunkIndex, streamState)
-				if rakshaErr != nil {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+				responses, gatewayErr, _ := streamEvent.ToGatewayResponsesStream(chunkIndex, streamState)
+				if gatewayErr != nil {
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				for _, response := range responses {
 					if response != nil {
-						response.ExtraFields = schemas.RakshaResponseExtraFields{
+						response.ExtraFields = schemas.GatewayResponseExtraFields{
 							ChunkIndex: chunkIndex,
 							Latency:    time.Since(lastChunkTime).Milliseconds(),
 						}
@@ -1974,7 +1974,7 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 							response.ExtraFields.RawResponse = string(message.Payload)
 						}
 
-						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 					}
 				}
 			}
@@ -1985,8 +1985,8 @@ func (provider *BedrockProvider) ResponsesStream(ctx *schemas.RakshaContext, pos
 }
 
 // Embedding generates embeddings for the given input text(s) using Amazon Bedrock.
-// Supports Titan and Cohere embedding models. Returns a RakshaResponse containing the embedding(s) and any error that occurred.
-func (provider *BedrockProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+// Supports Titan and Cohere embedding models. Returns a GatewayResponse containing the embedding(s) and any error that occurred.
+func (provider *BedrockProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.EmbeddingRequest); err != nil {
 		return nil, err
 	}
@@ -1999,7 +1999,7 @@ func (provider *BedrockProvider) Embedding(ctx *schemas.RakshaContext, key schem
 
 	// Convert request and execute based on model type
 	var rawResponse []byte
-	var rakshaError *schemas.RakshaError
+	var gatewayError *schemas.GatewayError
 	var latency time.Duration
 	var providerResponseHeaders map[string]string
 	var path string
@@ -2007,70 +2007,70 @@ func (provider *BedrockProvider) Embedding(ctx *schemas.RakshaContext, key schem
 
 	switch modelType {
 	case "titan":
-		jsonData, rakshaError = providerUtils.CheckContextAndGetRequestBody(
+		jsonData, gatewayError = providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
 				return ToBedrockTitanEmbeddingRequest(request)
 			})
-		if rakshaError != nil {
-			return nil, rakshaError
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		path, _ = provider.getModelPathAndRegion(ctx, "invoke", request.Model, key)
-		rawResponse, latency, providerResponseHeaders, rakshaError = provider.completeRequest(ctx, jsonData, path, key, request.Model)
+		rawResponse, latency, providerResponseHeaders, gatewayError = provider.completeRequest(ctx, jsonData, path, key, request.Model)
 
 	case "cohere":
-		jsonData, rakshaError = providerUtils.CheckContextAndGetRequestBody(
+		jsonData, gatewayError = providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
 				return ToBedrockCohereEmbeddingRequest(request)
 			})
-		if rakshaError != nil {
-			return nil, rakshaError
+		if gatewayError != nil {
+			return nil, gatewayError
 		}
 		path, _ = provider.getModelPathAndRegion(ctx, "invoke", request.Model, key)
-		rawResponse, latency, providerResponseHeaders, rakshaError = provider.completeRequest(ctx, jsonData, path, key, request.Model)
+		rawResponse, latency, providerResponseHeaders, gatewayError = provider.completeRequest(ctx, jsonData, path, key, request.Model)
 
 	default:
 		return nil, providerUtils.NewConfigurationError("unsupported embedding model type")
 	}
 
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaError != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaError, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayError != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayError, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	// Parse response based on model type
-	var rakshaResponse *schemas.RakshaEmbeddingResponse
+	var gatewayResponse *schemas.GatewayEmbeddingResponse
 	switch modelType {
 	case "titan":
 		var titanResp BedrockTitanEmbeddingResponse
 		if err := sonic.Unmarshal(rawResponse, &titanResp); err != nil {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("error parsing Titan embedding response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("error parsing Titan embedding response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
-		rakshaResponse = titanResp.ToRakshaEmbeddingResponse()
-		rakshaResponse.Model = request.Model
+		gatewayResponse = titanResp.ToGatewayEmbeddingResponse()
+		gatewayResponse.Model = request.Model
 
 	case "cohere":
 		var cohereResp BedrockCohereEmbeddingResponse
 		if err := sonic.Unmarshal(rawResponse, &cohereResp); err != nil {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("error parsing Cohere embedding response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("error parsing Cohere embedding response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
-		converted, convErr := cohereResp.ToRakshaEmbeddingResponse()
+		converted, convErr := cohereResp.ToGatewayEmbeddingResponse()
 		if convErr != nil {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("error parsing Cohere embedding response", convErr), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("error parsing Cohere embedding response", convErr), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
-		rakshaResponse = converted
-		rakshaResponse.Model = request.Model
+		gatewayResponse = converted
+		gatewayResponse.Model = request.Model
 		// For embeddings_by_type responses preserve the raw Bedrock payload so the
 		// invoke-endpoint converter can return all encoding variants verbatim, since
-		// the internal RakshaEmbeddingResponse only has float32 and string fields.
+		// the internal GatewayEmbeddingResponse only has float32 and string fields.
 		if cohereResp.ResponseType == "embeddings_by_type" {
 			var rawResponseData interface{}
 			if err := sonic.Unmarshal(rawResponse, &rawResponseData); err == nil {
-				rakshaResponse.ExtraFields.RawResponse = rawResponseData
+				gatewayResponse.ExtraFields.RawResponse = rawResponseData
 			}
 		}
 	}
@@ -2078,9 +2078,9 @@ func (provider *BedrockProvider) Embedding(ctx *schemas.RakshaContext, key schem
 	// Bedrock Cohere embed models omit token usage from the response body and instead
 	// return it in the X-Amzn-Bedrock-Input-Token-Count response header. Backfill Usage
 	// from that header when the body did not provide it. (#3917)
-	if rakshaResponse.Usage == nil {
+	if gatewayResponse.Usage == nil {
 		if inputTokens, ok := inputTokensFromHeaders(providerResponseHeaders); ok {
-			rakshaResponse.Usage = &schemas.RakshaLLMUsage{
+			gatewayResponse.Usage = &schemas.GatewayLLMUsage{
 				PromptTokens: inputTokens,
 				TotalTokens:  inputTokens,
 			}
@@ -2088,27 +2088,27 @@ func (provider *BedrockProvider) Embedding(ctx *schemas.RakshaContext, key schem
 	}
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponseData interface{}
 		if err := sonic.Unmarshal(rawResponse, &rawResponseData); err == nil {
-			rakshaResponse.ExtraFields.RawResponse = rawResponseData
+			gatewayResponse.ExtraFields.RawResponse = rawResponseData
 		}
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // Speech is not supported by the Bedrock provider.
-func (provider *BedrockProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechRequest, schemas.Bedrock)
 }
 
 // Rerank performs a rerank request using the Bedrock Agent Runtime /rerank API.
-func (provider *BedrockProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.RerankRequest); err != nil {
 		return nil, err
 	}
@@ -2117,97 +2117,97 @@ func (provider *BedrockProvider) Rerank(ctx *schemas.RakshaContext, key schemas.
 		return nil, providerUtils.NewConfigurationError(fmt.Sprintf("bedrock rerank requires an ARN model identifier; got %q", request.Model))
 	}
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToBedrockRerankRequest(request, request.Model)
 		},
 	)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	rawResponseBody, latency, providerResponseHeaders, rakshaErr := provider.completeAgentRuntimeRequest(ctx, jsonData, "/rerank", key)
+	rawResponseBody, latency, providerResponseHeaders, gatewayErr := provider.completeAgentRuntimeRequest(ctx, jsonData, "/rerank", key)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	response := &BedrockRerankResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(rawResponseBody, response, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, rawResponseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(rawResponseBody, response, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, rawResponseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	returnDocuments := request.Params != nil && request.Params.ReturnDocuments != nil && *request.Params.ReturnDocuments
-	rakshaResponse := response.ToRakshaRerankResponse(request.Documents, returnDocuments)
-	rakshaResponse.Model = request.Model
+	gatewayResponse := response.ToGatewayRerankResponse(request.Documents, returnDocuments)
+	gatewayResponse.Model = request.Model
 
 	// Bedrock returns rerank input token usage only in the X-Amzn-Bedrock-Input-Token-Count
 	// response header (it is absent from the body); backfill Usage from it. (#3917)
-	if rakshaResponse.Usage == nil {
+	if gatewayResponse.Usage == nil {
 		if inputTokens, ok := inputTokensFromHeaders(providerResponseHeaders); ok {
-			rakshaResponse.Usage = &schemas.RakshaLLMUsage{
+			gatewayResponse.Usage = &schemas.GatewayLLMUsage{
 				PromptTokens: inputTokens,
 				TotalTokens:  inputTokens,
 			}
 		}
 	}
 
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // OCR is not supported by the Bedrock provider.
-func (provider *BedrockProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // SpeechStream is not supported by the Bedrock provider.
-func (provider *BedrockProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *BedrockProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, schemas.Bedrock)
 }
 
 // Transcription is not supported by the Bedrock provider.
-func (provider *BedrockProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionRequest, schemas.Bedrock)
 }
 
 // TranscriptionStream is not supported by the Bedrock provider.
-func (provider *BedrockProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *BedrockProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, schemas.Bedrock)
 }
 
 // ImageGeneration generates images using Amazon Bedrock.
 // Supports Titan Image Generator v1, Nova Canvas v1, Titan Image Generator v2, and Stability AI models.
-// Returns a RakshaImageGenerationResponse containing the generated images and any error that occurred.
-func (provider *BedrockProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+// Returns a GatewayImageGenerationResponse containing the generated images and any error that occurred.
+func (provider *BedrockProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.ImageGenerationRequest); err != nil {
 		return nil, err
 	}
 
 	var rawResponse []byte
 	var jsonData []byte
-	var rakshaError *schemas.RakshaError
+	var gatewayError *schemas.GatewayError
 	var latency time.Duration
 	var providerResponseHeaders map[string]string
 	var path string
 
 	path, _ = provider.getModelPathAndRegion(ctx, "invoke", request.Model, key)
 
-	jsonData, rakshaError = providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayError = providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -2216,50 +2216,50 @@ func (provider *BedrockProvider) ImageGeneration(ctx *schemas.RakshaContext, key
 			}
 			return ToBedrockImageGenerationRequest(request)
 		})
-	if rakshaError != nil {
-		return nil, rakshaError
+	if gatewayError != nil {
+		return nil, gatewayError
 	}
-	rawResponse, latency, providerResponseHeaders, rakshaError = provider.completeRequest(ctx, jsonData, path, key, request.Model)
+	rawResponse, latency, providerResponseHeaders, gatewayError = provider.completeRequest(ctx, jsonData, path, key, request.Model)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaError != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaError, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayError != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayError, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Parse response based on model type
-	var rakshaResponse *schemas.RakshaImageGenerationResponse
+	var gatewayResponse *schemas.GatewayImageGenerationResponse
 	var imageResp BedrockImageGenerationResponse
 	if err := sonic.Unmarshal(rawResponse, &imageResp); err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("error parsing image generation response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("error parsing image generation response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	if imageResp.Error != "" {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(imageResp.Error, nil), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(imageResp.Error, nil), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	rakshaResponse = ToRakshaImageGenerationResponse(&imageResp)
-	rakshaResponse.Model = request.Model
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse = ToGatewayImageGenerationResponse(&imageResp)
+	gatewayResponse.Model = request.Model
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponseData interface{}
 		if err := sonic.Unmarshal(rawResponse, &rawResponseData); err == nil {
-			rakshaResponse.ExtraFields.RawResponse = rawResponseData
+			gatewayResponse.ExtraFields.RawResponse = rawResponseData
 		}
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ImageGenerationStream is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *BedrockProvider) ImageGenerationStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageGenerationRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationStreamRequest, schemas.Bedrock)
 }
 
@@ -2268,19 +2268,19 @@ func (provider *BedrockProvider) ImageGenerationStream(ctx *schemas.RakshaContex
 // INPAINTING, OUTPAINTING, BACKGROUND_REMOVAL), and Stability AI edit models (inpaint, outpaint,
 // recolor, search-replace, erase-object, remove-bg, control-sketch, control-structure, style-guide,
 // style-transfer, upscale-creative, upscale-conservative, upscale-fast).
-// Returns a RakshaImageGenerationResponse containing the edited images and any error that occurred.
-func (provider *BedrockProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+// Returns a GatewayImageGenerationResponse containing the edited images and any error that occurred.
+func (provider *BedrockProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.ImageEditRequest); err != nil {
 		return nil, err
 	}
 
 	var jsonData []byte
-	var rakshaError *schemas.RakshaError
+	var gatewayError *schemas.GatewayError
 
 	// Stability AI routing and task-type inference use the actual model ID.
 	path, _ := provider.getModelPathAndRegion(ctx, "invoke", request.Model, key)
 
-	jsonData, rakshaError = providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayError = providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
@@ -2289,149 +2289,149 @@ func (provider *BedrockProvider) ImageEdit(ctx *schemas.RakshaContext, key schem
 			}
 			return ToBedrockImageEditRequest(request)
 		})
-	if rakshaError != nil {
-		return nil, rakshaError
+	if gatewayError != nil {
+		return nil, gatewayError
 	}
 
 	// Make API request (same URL as image generation)
-	rawResponse, latency, providerResponseHeaders, rakshaError := provider.completeRequest(ctx, jsonData, path, key, request.Model)
+	rawResponse, latency, providerResponseHeaders, gatewayError := provider.completeRequest(ctx, jsonData, path, key, request.Model)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaError != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaError, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayError != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayError, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Parse response (reuse BedrockImageGenerationResponse)
 	var imageResp BedrockImageGenerationResponse
 	if err := sonic.Unmarshal(rawResponse, &imageResp); err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("error parsing image edit response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("error parsing image edit response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	if imageResp.Error != "" {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(imageResp.Error, nil), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(imageResp.Error, nil), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Convert response and set metadata
-	rakshaResponse := ToRakshaImageGenerationResponse(&imageResp)
-	rakshaResponse.Model = request.Model
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse := ToGatewayImageGenerationResponse(&imageResp)
+	gatewayResponse.Model = request.Model
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request/response if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponseData interface{}
 		if err := sonic.Unmarshal(rawResponse, &rawResponseData); err == nil {
-			rakshaResponse.ExtraFields.RawResponse = rawResponseData
+			gatewayResponse.ExtraFields.RawResponse = rawResponseData
 		}
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ImageEditStream is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *BedrockProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditStreamRequest, provider.GetProviderKey())
 }
 
 // ImageVariation generates image variations using Amazon Bedrock.
 // Supports Titan Image Generator v1, Nova Canvas v1, and Titan Image Generator v2.
-// Returns a RakshaImageGenerationResponse containing the generated image variations and any error that occurred.
-func (provider *BedrockProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+// Returns a GatewayImageGenerationResponse containing the generated image variations and any error that occurred.
+func (provider *BedrockProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.ImageVariationRequest); err != nil {
 		return nil, err
 	}
 
 	var jsonData []byte
-	var rakshaError *schemas.RakshaError
+	var gatewayError *schemas.GatewayError
 
-	jsonData, rakshaError = providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayError = providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToBedrockImageVariationRequest(request)
 		})
-	if rakshaError != nil {
-		return nil, rakshaError
+	if gatewayError != nil {
+		return nil, gatewayError
 	}
 
 	// Make API request (same URL as image generation)
 	path, _ := provider.getModelPathAndRegion(ctx, "invoke", request.Model, key)
-	rawResponse, latency, providerResponseHeaders, rakshaError := provider.completeRequest(ctx, jsonData, path, key, request.Model)
+	rawResponse, latency, providerResponseHeaders, gatewayError := provider.completeRequest(ctx, jsonData, path, key, request.Model)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaError != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaError, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayError != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayError, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	// Parse response (reuse BedrockImageGenerationResponse and ToRakshaImageGenerationResponse)
+	// Parse response (reuse BedrockImageGenerationResponse and ToGatewayImageGenerationResponse)
 	var imageResp BedrockImageGenerationResponse
 	if err := sonic.Unmarshal(rawResponse, &imageResp); err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("error parsing image variation response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("error parsing image variation response", err), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	if imageResp.Error != "" {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(imageResp.Error, nil), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(imageResp.Error, nil), jsonData, rawResponse, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Convert response and set metadata
-	rakshaResponse := ToRakshaImageGenerationResponse(&imageResp)
-	rakshaResponse.Model = request.Model
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse := ToGatewayImageGenerationResponse(&imageResp)
+	gatewayResponse.Model = request.Model
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request/response if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponseData interface{}
 		if err := sonic.Unmarshal(rawResponse, &rawResponseData); err == nil {
-			rakshaResponse.ExtraFields.RawResponse = rawResponseData
+			gatewayResponse.ExtraFields.RawResponse = rawResponseData
 		}
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // VideoGeneration is not supported by the Bedrock provider.
-func (provider *BedrockProvider) VideoGeneration(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) VideoGeneration(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoGenerationRequest, provider.GetProviderKey())
 }
 
 // VideoRetrieve is not supported by the Bedrock provider.
-func (provider *BedrockProvider) VideoRetrieve(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) VideoRetrieve(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRetrieveRequest, provider.GetProviderKey())
 }
 
 // VideoDownload is not supported by the Bedrock provider.
-func (provider *BedrockProvider) VideoDownload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) VideoDownload(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDownloadRequest, provider.GetProviderKey())
 }
 
 // VideoDelete is not supported by Bedrock provider.
-func (provider *BedrockProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) VideoDelete(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by Bedrock provider.
-func (provider *BedrockProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) VideoList(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by Bedrock provider.
-func (provider *BedrockProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) VideoRemix(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // FileUpload uploads a file to S3 for Bedrock batch processing.
-func (provider *BedrockProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) FileUpload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.FileUploadRequest); err != nil {
 		if err.Error != nil {
@@ -2461,7 +2461,7 @@ func (provider *BedrockProvider) FileUpload(ctx *schemas.RakshaContext, key sche
 
 	if s3Bucket == "" {
 		provider.logger.Error("s3_bucket is required for Bedrock file operations (provide in storage_config.s3 or extra_params)")
-		return nil, providerUtils.NewRakshaOperationError("s3_bucket is required for Bedrock file operations (provide in storage_config.s3 or extra_params)", nil)
+		return nil, providerUtils.NewGatewayOperationError("s3_bucket is required for Bedrock file operations (provide in storage_config.s3 or extra_params)", nil)
 	}
 
 	// Parse bucket name and optional prefix from s3Bucket (could be "bucket-name" or "s3://bucket-name/prefix/")
@@ -2495,7 +2495,7 @@ func (provider *BedrockProvider) FileUpload(ctx *schemas.RakshaContext, key sche
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, reqURL, bytes.NewReader(request.File))
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("error creating request", err)
+		return nil, providerUtils.NewGatewayOperationError("error creating request", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/octet-stream")
@@ -2513,8 +2513,8 @@ func (provider *BedrockProvider) FileUpload(ctx *schemas.RakshaContext, key sche
 	latency := time.Since(startTime)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -2522,7 +2522,7 @@ func (provider *BedrockProvider) FileUpload(ctx *schemas.RakshaContext, key sche
 				},
 			}
 		}
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err)
 	}
 	defer resp.Body.Close()
 
@@ -2535,7 +2535,7 @@ func (provider *BedrockProvider) FileUpload(ctx *schemas.RakshaContext, key sche
 	// Return S3 URI as the file ID
 	s3URI := fmt.Sprintf("s3://%s/%s", bucketName, s3Key)
 
-	return &schemas.RakshaFileUploadResponse{
+	return &schemas.GatewayFileUploadResponse{
 		ID:             s3URI,
 		Object:         "file",
 		Bytes:          int64(len(request.File)),
@@ -2545,7 +2545,7 @@ func (provider *BedrockProvider) FileUpload(ctx *schemas.RakshaContext, key sche
 		Status:         schemas.FileStatusProcessed,
 		StorageBackend: schemas.FileStorageS3,
 		StorageURI:     s3URI,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
@@ -2554,7 +2554,7 @@ func (provider *BedrockProvider) FileUpload(ctx *schemas.RakshaContext, key sche
 // FileList lists files in the S3 bucket used for Bedrock batch processing from all provided keys.
 // FileList lists S3 files using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *BedrockProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) FileList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.FileListRequest); err != nil {
 		return nil, err
 	}
@@ -2580,7 +2580,7 @@ func (provider *BedrockProvider) FileList(ctx *schemas.RakshaContext, keys []sch
 	}
 
 	if s3Bucket == "" {
-		return nil, providerUtils.NewRakshaOperationError("s3_bucket is required for Bedrock file operations (provide in storage_config.s3 or extra_params)", nil)
+		return nil, providerUtils.NewGatewayOperationError("s3_bucket is required for Bedrock file operations (provide in storage_config.s3 or extra_params)", nil)
 	}
 
 	bucketName, bucketPrefix := parseS3URI(s3Bucket)
@@ -2591,14 +2591,14 @@ func (provider *BedrockProvider) FileList(ctx *schemas.RakshaContext, keys []sch
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaFileListResponse{
+		return &schemas.GatewayFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -2628,12 +2628,12 @@ func (provider *BedrockProvider) FileList(ctx *schemas.RakshaContext, keys []sch
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("error creating request", err)
+		return nil, providerUtils.NewGatewayOperationError("error creating request", err)
 	}
 
 	// Sign request for S3
-	if rakshaErr := signAWSRequest(ctx, httpReq, key.BedrockKeyConfig, region, "s3"); rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr := signAWSRequest(ctx, httpReq, key.BedrockKeyConfig, region, "s3"); gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Execute request
@@ -2642,8 +2642,8 @@ func (provider *BedrockProvider) FileList(ctx *schemas.RakshaContext, keys []sch
 	latency := time.Since(startTime)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -2651,13 +2651,13 @@ func (provider *BedrockProvider) FileList(ctx *schemas.RakshaContext, keys []sch
 				},
 			}
 		}
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("error reading response", err)
+		return nil, providerUtils.NewGatewayOperationError("error reading response", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -2667,10 +2667,10 @@ func (provider *BedrockProvider) FileList(ctx *schemas.RakshaContext, keys []sch
 	// Parse S3 ListObjectsV2 XML response
 	var listResp S3ListObjectsResponse
 	if err := parseS3ListResponse(body, &listResp); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("error parsing S3 response", err)
+		return nil, providerUtils.NewGatewayOperationError("error parsing S3 response", err)
 	}
 
-	// Convert files to Raksha format
+	// Convert files to Gateway format
 	files := make([]schemas.FileObject, 0, len(listResp.Contents))
 	for _, obj := range listResp.Contents {
 		s3URI := fmt.Sprintf("s3://%s/%s", bucketName, obj.Key)
@@ -2693,39 +2693,39 @@ func (provider *BedrockProvider) FileList(ctx *schemas.RakshaContext, keys []sch
 	// S3 uses NextContinuationToken for pagination
 	nextCursor, hasMore := helper.BuildNextCursor(listResp.IsTruncated, listResp.NextContinuationToken)
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaFileListResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayFileListResponse{
 		Object:  "list",
 		Data:    files,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 	if nextCursor != "" {
-		rakshaResp.After = &nextCursor
+		gatewayResp.After = &nextCursor
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // FileRetrieve retrieves S3 object metadata for Bedrock batch processing by trying each key until found.
-func (provider *BedrockProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) FileRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.FileRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id (S3 URI) is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id (S3 URI) is required", nil)
 	}
 
 	// Parse S3 URI
 	bucketName, s3Key := parseS3URI(request.FileID)
 	if bucketName == "" || s3Key == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid S3 URI format, expected s3://bucket/key", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid S3 URI format, expected s3://bucket/key", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		region := DefaultBedrockRegion
 		if key.BedrockKeyConfig.Region != nil && key.BedrockKeyConfig.Region.GetValue() != "" {
@@ -2738,7 +2738,7 @@ func (provider *BedrockProvider) FileRetrieve(ctx *schemas.RakshaContext, keys [
 
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodHead, reqURL, nil)
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError("error creating request", err)
+			lastErr = providerUtils.NewGatewayOperationError("error creating request", err)
 			continue
 		}
 
@@ -2754,8 +2754,8 @@ func (provider *BedrockProvider) FileRetrieve(ctx *schemas.RakshaContext, keys [
 		latency := time.Since(startTime)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return nil, &schemas.RakshaError{
-					IsRakshaError: false,
+				return nil, &schemas.GatewayError{
+					IsGatewayError: false,
 					Error: &schemas.ErrorField{
 						Type:    schemas.Ptr(schemas.RequestCancelled),
 						Message: schemas.ErrRequestCancelled,
@@ -2763,7 +2763,7 @@ func (provider *BedrockProvider) FileRetrieve(ctx *schemas.RakshaContext, keys [
 					},
 				}
 			}
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err)
 			continue
 		}
 
@@ -2788,7 +2788,7 @@ func (provider *BedrockProvider) FileRetrieve(ctx *schemas.RakshaContext, keys [
 			}
 		}
 
-		return &schemas.RakshaFileRetrieveResponse{
+		return &schemas.GatewayFileRetrieveResponse{
 			ID:             request.FileID,
 			Object:         "file",
 			Bytes:          resp.ContentLength,
@@ -2798,7 +2798,7 @@ func (provider *BedrockProvider) FileRetrieve(ctx *schemas.RakshaContext, keys [
 			Status:         schemas.FileStatusProcessed,
 			StorageBackend: schemas.FileStorageS3,
 			StorageURI:     request.FileID,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
@@ -2808,22 +2808,22 @@ func (provider *BedrockProvider) FileRetrieve(ctx *schemas.RakshaContext, keys [
 }
 
 // FileDelete deletes an S3 object used for Bedrock batch processing by trying each key until successful.
-func (provider *BedrockProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) FileDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.FileDeleteRequest); err != nil {
 		return nil, err
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id (S3 URI) is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id (S3 URI) is required", nil)
 	}
 
 	// Parse S3 URI
 	bucketName, s3Key := parseS3URI(request.FileID)
 	if bucketName == "" || s3Key == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid S3 URI format, expected s3://bucket/key", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid S3 URI format, expected s3://bucket/key", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		region := DefaultBedrockRegion
 		if key.BedrockKeyConfig.Region != nil && key.BedrockKeyConfig.Region.GetValue() != "" {
@@ -2836,7 +2836,7 @@ func (provider *BedrockProvider) FileDelete(ctx *schemas.RakshaContext, keys []s
 
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, reqURL, nil)
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError("error creating request", err)
+			lastErr = providerUtils.NewGatewayOperationError("error creating request", err)
 			continue
 		}
 
@@ -2852,8 +2852,8 @@ func (provider *BedrockProvider) FileDelete(ctx *schemas.RakshaContext, keys []s
 		latency := time.Since(startTime)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return nil, &schemas.RakshaError{
-					IsRakshaError: false,
+				return nil, &schemas.GatewayError{
+					IsGatewayError: false,
 					Error: &schemas.ErrorField{
 						Type:    schemas.Ptr(schemas.RequestCancelled),
 						Message: schemas.ErrRequestCancelled,
@@ -2861,7 +2861,7 @@ func (provider *BedrockProvider) FileDelete(ctx *schemas.RakshaContext, keys []s
 					},
 				}
 			}
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err)
 			continue
 		}
 
@@ -2875,11 +2875,11 @@ func (provider *BedrockProvider) FileDelete(ctx *schemas.RakshaContext, keys []s
 
 		resp.Body.Close()
 
-		return &schemas.RakshaFileDeleteResponse{
+		return &schemas.GatewayFileDeleteResponse{
 			ID:      request.FileID,
 			Object:  "file",
 			Deleted: true,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
@@ -2889,22 +2889,22 @@ func (provider *BedrockProvider) FileDelete(ctx *schemas.RakshaContext, keys []s
 }
 
 // FileContent downloads S3 object content for Bedrock batch processing by trying each key until found.
-func (provider *BedrockProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) FileContent(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.FileContentRequest); err != nil {
 		return nil, err
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id (S3 URI) is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id (S3 URI) is required", nil)
 	}
 
 	// Parse S3 URI
 	bucketName, s3Key := parseS3URI(request.FileID)
 	if bucketName == "" || s3Key == "" {
-		return nil, providerUtils.NewRakshaOperationError("invalid S3 URI format, expected s3://bucket/key", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid S3 URI format, expected s3://bucket/key", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		region := DefaultBedrockRegion
 		if key.BedrockKeyConfig.Region != nil && key.BedrockKeyConfig.Region.GetValue() != "" {
@@ -2917,7 +2917,7 @@ func (provider *BedrockProvider) FileContent(ctx *schemas.RakshaContext, keys []
 
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError("error creating request", err)
+			lastErr = providerUtils.NewGatewayOperationError("error creating request", err)
 			continue
 		}
 
@@ -2933,8 +2933,8 @@ func (provider *BedrockProvider) FileContent(ctx *schemas.RakshaContext, keys []
 		latency := time.Since(startTime)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return nil, &schemas.RakshaError{
-					IsRakshaError: false,
+				return nil, &schemas.GatewayError{
+					IsGatewayError: false,
 					Error: &schemas.ErrorField{
 						Type:    schemas.Ptr(schemas.RequestCancelled),
 						Message: schemas.ErrRequestCancelled,
@@ -2942,7 +2942,7 @@ func (provider *BedrockProvider) FileContent(ctx *schemas.RakshaContext, keys []
 					},
 				}
 			}
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err)
 			continue
 		}
 
@@ -2956,7 +2956,7 @@ func (provider *BedrockProvider) FileContent(ctx *schemas.RakshaContext, keys []
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError("error reading S3 object content", err)
+			lastErr = providerUtils.NewGatewayOperationError("error reading S3 object content", err)
 			continue
 		}
 
@@ -2965,11 +2965,11 @@ func (provider *BedrockProvider) FileContent(ctx *schemas.RakshaContext, keys []
 			contentType = "application/octet-stream"
 		}
 
-		return &schemas.RakshaFileContentResponse{
+		return &schemas.GatewayFileContentResponse{
 			FileID:      request.FileID,
 			Content:     body,
 			ContentType: contentType,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
@@ -2979,7 +2979,7 @@ func (provider *BedrockProvider) FileContent(ctx *schemas.RakshaContext, keys []
 }
 
 // BatchCreate creates a new batch inference job on AWS Bedrock.
-func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) BatchCreate(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.BatchCreateRequest); err != nil {
 		provider.logger.Error("batch create is not allowed for Bedrock provider", "error", err)
 		return nil, err
@@ -3002,7 +3002,7 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 	// And if still we don't get role ARN
 	if roleArn == "" {
 		provider.logger.Error("role_arn is required for Bedrock batch API (provide in extra_params)")
-		return nil, providerUtils.NewRakshaOperationError("role_arn is required for Bedrock batch API (provide in extra_params)", nil)
+		return nil, providerUtils.NewGatewayOperationError("role_arn is required for Bedrock batch API (provide in extra_params)", nil)
 	}
 	// Get output S3 URI from extra params
 	outputS3Uri := ""
@@ -3013,16 +3013,16 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 	}
 	if outputS3Uri == "" {
 		provider.logger.Error("output_s3_uri is required for Bedrock batch API (provide in extra_params)")
-		return nil, providerUtils.NewRakshaOperationError("output_s3_uri is required for Bedrock batch API (provide in extra_params)", nil)
+		return nil, providerUtils.NewGatewayOperationError("output_s3_uri is required for Bedrock batch API (provide in extra_params)", nil)
 	}
 
 	if request.Model == nil {
 		provider.logger.Error("model is required for Bedrock batch API")
-		return nil, providerUtils.NewRakshaOperationError("model is required for Bedrock batch API", nil)
+		return nil, providerUtils.NewGatewayOperationError("model is required for Bedrock batch API", nil)
 	}
 
 	// Generate job name
-	jobName := fmt.Sprintf("raksha-batch-%d", time.Now().Unix())
+	jobName := fmt.Sprintf("gateway-batch-%d", time.Now().Unix())
 	if request.Metadata != nil {
 		if name, ok := request.Metadata["job_name"]; ok {
 			jobName = name
@@ -3048,7 +3048,7 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 		// Convert inline requests to Bedrock JSONL format
 		jsonlData, err := ConvertBedrockRequestsToJSONL(request.Requests, request.Model)
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to convert requests to JSONL", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to convert requests to JSONL", err)
 		}
 
 		// Generate S3 key for the input file
@@ -3059,7 +3059,7 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 		bucket, s3Key := parseS3URI(inputS3URI)
 
 		// Upload to S3 using Bedrock credentials
-		if rakshaErr := uploadToS3(
+		if gatewayErr := uploadToS3(
 			ctx,
 			key.BedrockKeyConfig.AccessKey.GetValue(),
 			key.BedrockKeyConfig.SecretKey.GetValue(),
@@ -3068,8 +3068,8 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 			bucket,
 			s3Key,
 			jsonlData,
-		); rakshaErr != nil {
-			return nil, rakshaErr
+		); gatewayErr != nil {
+			return nil, gatewayErr
 		}
 
 		inputFileID = inputS3URI
@@ -3078,7 +3078,7 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 	// Validate that we have an input file ID (either provided or uploaded)
 	if inputFileID == "" {
 		provider.logger.Error("either input_file_id (S3 URI) or requests array is required for Bedrock batch API")
-		return nil, providerUtils.NewRakshaOperationError("either input_file_id (S3 URI) or requests array is required for Bedrock batch API", nil)
+		return nil, providerUtils.NewGatewayOperationError("either input_file_id (S3 URI) or requests array is required for Bedrock batch API", nil)
 	}
 
 	// Build request
@@ -3109,7 +3109,7 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 
 	jsonData, err := providerUtils.MarshalSorted(bedrockReq)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 
 	sendBackRawRequest := provider.sendBackRawRequest
@@ -3124,7 +3124,7 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 	reqURL := fmt.Sprintf("https://bedrock.%s.amazonaws.com/model-invocation-job", region)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("error creating request", err), jsonData, nil, sendBackRawRequest, sendBackRawResponse)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("error creating request", err), jsonData, nil, sendBackRawRequest, sendBackRawResponse)
 	}
 
 	// Sign request
@@ -3138,8 +3138,8 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 	latency := time.Since(startTime)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -3147,13 +3147,13 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 				},
 			}, jsonData, nil, sendBackRawRequest, sendBackRawResponse)
 		}
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err), jsonData, nil, sendBackRawRequest, sendBackRawResponse)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError("error reading response", err), jsonData, nil, sendBackRawRequest, sendBackRawResponse)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError("error reading response", err), jsonData, nil, sendBackRawRequest, sendBackRawResponse)
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
@@ -3162,36 +3162,36 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 
 	var bedrockResp BedrockBatchJobResponse
 	if err := sonic.Unmarshal(body, &bedrockResp); err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonData, body, sendBackRawRequest, sendBackRawResponse)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonData, body, sendBackRawRequest, sendBackRawResponse)
 	}
 
 	// AWS CreateModelInvocationJob only returns jobArn, not status or other details.
 	// Retrieve the job to get full status details.
-	retrieveResp, rakshaErr := provider.BatchRetrieve(ctx, []schemas.Key{key}, &schemas.RakshaBatchRetrieveRequest{
+	retrieveResp, gatewayErr := provider.BatchRetrieve(ctx, []schemas.Key{key}, &schemas.GatewayBatchRetrieveRequest{
 		Provider: request.Provider,
 		BatchID:  bedrockResp.JobArn,
 	})
-	if rakshaErr != nil {
+	if gatewayErr != nil {
 		// Return basic response if retrieve fails
-		return &schemas.RakshaBatchCreateResponse{
+		return &schemas.GatewayBatchCreateResponse{
 			ID:          bedrockResp.JobArn,
 			Object:      "batch",
 			InputFileID: inputFileID,
 			Status:      schemas.BatchStatusValidating,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
 	}
 
 	// Use retrieved response for complete data
-	result := &schemas.RakshaBatchCreateResponse{
+	result := &schemas.GatewayBatchCreateResponse{
 		ID:          retrieveResp.ID,
 		Object:      "batch",
 		InputFileID: inputFileID,
 		Status:      retrieveResp.Status,
 		CreatedAt:   retrieveResp.CreatedAt,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -3205,7 +3205,7 @@ func (provider *BedrockProvider) BatchCreate(ctx *schemas.RakshaContext, key sch
 
 // BatchList lists batch inference jobs using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *BedrockProvider) BatchList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) BatchList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.BatchListRequest); err != nil {
 		return nil, err
 	}
@@ -3213,16 +3213,16 @@ func (provider *BedrockProvider) BatchList(ctx *schemas.RakshaContext, keys []sc
 	// Initialize serial pagination helper (Bedrock uses PageToken for pagination)
 	helper, err := providerUtils.NewSerialListHelper(keys, request.PageToken, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaBatchListResponse{
+		return &schemas.GatewayBatchListResponse{
 			Object:  "list",
-			Data:    []schemas.RakshaBatchRetrieveResponse{},
+			Data:    []schemas.GatewayBatchRetrieveResponse{},
 			HasMore: false,
 		}, nil
 	}
@@ -3249,12 +3249,12 @@ func (provider *BedrockProvider) BatchList(ctx *schemas.RakshaContext, keys []sc
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("error creating request", err)
+		return nil, providerUtils.NewGatewayOperationError("error creating request", err)
 	}
 
 	// Sign request
-	if rakshaErr := signAWSRequest(ctx, httpReq, key.BedrockKeyConfig, region, bedrockSigningService); rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr := signAWSRequest(ctx, httpReq, key.BedrockKeyConfig, region, bedrockSigningService); gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Execute request
@@ -3263,8 +3263,8 @@ func (provider *BedrockProvider) BatchList(ctx *schemas.RakshaContext, keys []sc
 	latency := time.Since(startTime)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return nil, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -3272,13 +3272,13 @@ func (provider *BedrockProvider) BatchList(ctx *schemas.RakshaContext, keys []sc
 				},
 			}
 		}
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("error reading response", err)
+		return nil, providerUtils.NewGatewayOperationError("error reading response", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -3287,11 +3287,11 @@ func (provider *BedrockProvider) BatchList(ctx *schemas.RakshaContext, keys []sc
 
 	var bedrockResp BedrockBatchJobListResponse
 	if err := sonic.Unmarshal(body, &bedrockResp); err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	// Convert batches to Raksha format
-	batches := make([]schemas.RakshaBatchRetrieveResponse, 0, len(bedrockResp.InvocationJobSummaries))
+	// Convert batches to Gateway format
+	batches := make([]schemas.GatewayBatchRetrieveResponse, 0, len(bedrockResp.InvocationJobSummaries))
 	for _, job := range bedrockResp.InvocationJobSummaries {
 		var createdAt int64
 		if job.SubmitTime != nil {
@@ -3307,10 +3307,10 @@ func (provider *BedrockProvider) BatchList(ctx *schemas.RakshaContext, keys []sc
 			metadata["model_id"] = job.ModelID
 		}
 
-		batches = append(batches, schemas.RakshaBatchRetrieveResponse{
+		batches = append(batches, schemas.GatewayBatchRetrieveResponse{
 			ID:        job.JobArn,
 			Object:    "batch",
-			Status:    ToRakshaBatchStatus(job.Status),
+			Status:    ToGatewayBatchStatus(job.Status),
 			CreatedAt: createdAt,
 			Metadata:  metadata,
 		})
@@ -3326,25 +3326,25 @@ func (provider *BedrockProvider) BatchList(ctx *schemas.RakshaContext, keys []sc
 	}
 	nextCursor, hasMore := helper.BuildNextCursor(apiHasMore, nativeNextToken)
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaBatchListResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayBatchListResponse{
 		Object:  "list",
 		Data:    batches,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 	if nextCursor != "" {
-		rakshaResp.NextCursor = &nextCursor
+		gatewayResp.NextCursor = &nextCursor
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // fetchBatchManifest fetches the manifest.json.out from S3 to get record counts.
 // Returns nil if manifest doesn't exist (job still in progress) or on error.
-func (provider *BedrockProvider) fetchBatchManifest(ctx *schemas.RakshaContext, key schemas.Key, region, outputS3Uri string) *BedrockBatchManifest {
+func (provider *BedrockProvider) fetchBatchManifest(ctx *schemas.GatewayContext, key schemas.Key, region, outputS3Uri string) *BedrockBatchManifest {
 	if outputS3Uri == "" {
 		return nil
 	}
@@ -3405,16 +3405,16 @@ func (provider *BedrockProvider) fetchBatchManifest(ctx *schemas.RakshaContext, 
 }
 
 // BatchRetrieve retrieves a specific batch inference job from AWS Bedrock by trying each key until found.
-func (provider *BedrockProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) BatchRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.BatchRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id (job ARN) is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id (job ARN) is required", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		region := DefaultBedrockRegion
 		if key.BedrockKeyConfig.Region != nil && key.BedrockKeyConfig.Region.GetValue() != "" {
@@ -3427,7 +3427,7 @@ func (provider *BedrockProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys 
 
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError("error creating request", err)
+			lastErr = providerUtils.NewGatewayOperationError("error creating request", err)
 			continue
 		}
 
@@ -3443,8 +3443,8 @@ func (provider *BedrockProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys 
 		latency := time.Since(startTime)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return nil, &schemas.RakshaError{
-					IsRakshaError: false,
+				return nil, &schemas.GatewayError{
+					IsGatewayError: false,
 					Error: &schemas.ErrorField{
 						Type:    schemas.Ptr(schemas.RequestCancelled),
 						Message: schemas.ErrRequestCancelled,
@@ -3452,14 +3452,14 @@ func (provider *BedrockProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys 
 					},
 				}
 			}
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err)
 			continue
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError("error reading response", err)
+			lastErr = providerUtils.NewGatewayOperationError("error reading response", err)
 			continue
 		}
 
@@ -3470,7 +3470,7 @@ func (provider *BedrockProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys 
 
 		var bedrockResp BedrockBatchJobResponse
 		if err := sonic.Unmarshal(body, &bedrockResp); err != nil {
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 			continue
 		}
 
@@ -3483,12 +3483,12 @@ func (provider *BedrockProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys 
 			metadata["model_id"] = bedrockResp.ModelID
 		}
 
-		result := &schemas.RakshaBatchRetrieveResponse{
+		result := &schemas.GatewayBatchRetrieveResponse{
 			ID:       bedrockResp.JobArn,
 			Object:   "batch",
-			Status:   ToRakshaBatchStatus(bedrockResp.Status),
+			Status:   ToGatewayBatchStatus(bedrockResp.Status),
 			Metadata: metadata,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}
@@ -3549,16 +3549,16 @@ func (provider *BedrockProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys 
 }
 
 // BatchCancel stops a batch inference job on AWS Bedrock by trying each key until successful.
-func (provider *BedrockProvider) BatchCancel(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) BatchCancel(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.BatchCancelRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id (job ARN) is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id (job ARN) is required", nil)
 	}
 
-	var lastErr *schemas.RakshaError
+	var lastErr *schemas.GatewayError
 	for _, key := range keys {
 		region := DefaultBedrockRegion
 		if key.BedrockKeyConfig.Region != nil && key.BedrockKeyConfig.Region.GetValue() != "" {
@@ -3571,7 +3571,7 @@ func (provider *BedrockProvider) BatchCancel(ctx *schemas.RakshaContext, keys []
 
 		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError("error creating request", err)
+			lastErr = providerUtils.NewGatewayOperationError("error creating request", err)
 			continue
 		}
 
@@ -3587,8 +3587,8 @@ func (provider *BedrockProvider) BatchCancel(ctx *schemas.RakshaContext, keys []
 		latency := time.Since(startTime)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
-				return nil, &schemas.RakshaError{
-					IsRakshaError: false,
+				return nil, &schemas.GatewayError{
+					IsGatewayError: false,
 					Error: &schemas.ErrorField{
 						Type:    schemas.Ptr(schemas.RequestCancelled),
 						Message: schemas.ErrRequestCancelled,
@@ -3596,14 +3596,14 @@ func (provider *BedrockProvider) BatchCancel(ctx *schemas.RakshaContext, keys []
 					},
 				}
 			}
-			lastErr = providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err)
+			lastErr = providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err)
 			continue
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			lastErr = providerUtils.NewRakshaOperationError("error reading response", err)
+			lastErr = providerUtils.NewGatewayOperationError("error reading response", err)
 			continue
 		}
 
@@ -3613,29 +3613,29 @@ func (provider *BedrockProvider) BatchCancel(ctx *schemas.RakshaContext, keys []
 		}
 
 		// After stopping, retrieve the job to get updated status
-		retrieveResp, rakshaErr := provider.BatchRetrieve(ctx, keys, &schemas.RakshaBatchRetrieveRequest{
+		retrieveResp, gatewayErr := provider.BatchRetrieve(ctx, keys, &schemas.GatewayBatchRetrieveRequest{
 			Provider: request.Provider,
 			BatchID:  request.BatchID,
 		})
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			// Return basic response if retrieve fails
 			// Compute total latency including stop + failed retrieve
 			totalLatency := time.Since(startTime)
-			return &schemas.RakshaBatchCancelResponse{
+			return &schemas.GatewayBatchCancelResponse{
 				ID:     request.BatchID,
 				Object: "batch",
 				Status: schemas.BatchStatusCancelling,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					Latency: totalLatency.Milliseconds(),
 				},
 			}, nil
 		}
 
-		return &schemas.RakshaBatchCancelResponse{
+		return &schemas.GatewayBatchCancelResponse{
 			ID:     retrieveResp.ID,
 			Object: "batch",
 			Status: retrieveResp.Status,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
@@ -3645,29 +3645,29 @@ func (provider *BedrockProvider) BatchCancel(ctx *schemas.RakshaContext, keys []
 }
 
 // BatchDelete is not supported by the Bedrock provider.
-func (provider *BedrockProvider) BatchDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) BatchDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults retrieves batch results from AWS Bedrock by trying each key until successful.
 // For Bedrock, results are stored in S3 at the output S3 URI prefix.
 // The output includes JSONL files with results (*.jsonl.out) and a manifest file.
-func (provider *BedrockProvider) BatchResults(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) BatchResults(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.BatchResultsRequest); err != nil {
 		return nil, err
 	}
 
 	// First, retrieve the batch to get the output S3 URI prefix (using all keys)
-	batchResp, rakshaErr := provider.BatchRetrieve(ctx, keys, &schemas.RakshaBatchRetrieveRequest{
+	batchResp, gatewayErr := provider.BatchRetrieve(ctx, keys, &schemas.GatewayBatchRetrieveRequest{
 		Provider: request.Provider,
 		BatchID:  request.BatchID,
 	})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if batchResp.OutputFileID == nil || *batchResp.OutputFileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch results not available: output S3 URI is empty (batch may not be completed)", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch results not available: output S3 URI is empty (batch may not be completed)", nil)
 	}
 
 	outputS3URI := *batchResp.OutputFileID
@@ -3675,12 +3675,12 @@ func (provider *BedrockProvider) BatchResults(ctx *schemas.RakshaContext, keys [
 	var totalLatency int64
 	// The output S3 URI is a prefix/folder. List files in that folder to find output JSONL files.
 	var (
-		listResp  *schemas.RakshaFileListResponse
+		listResp  *schemas.GatewayFileListResponse
 		pageToken *string
 		allFiles  []schemas.FileObject
 	)
 	for {
-		listResp, rakshaErr = provider.FileList(ctx, keys, &schemas.RakshaFileListRequest{
+		listResp, gatewayErr = provider.FileList(ctx, keys, &schemas.GatewayFileListRequest{
 			Provider: request.Provider,
 			StorageConfig: &schemas.FileStorageConfig{
 				S3: &schemas.S3StorageConfig{
@@ -3690,7 +3690,7 @@ func (provider *BedrockProvider) BatchResults(ctx *schemas.RakshaContext, keys [
 			Limit: 100,
 			After: pageToken,
 		})
-		if rakshaErr != nil {
+		if gatewayErr != nil {
 			break
 		}
 		totalLatency += listResp.ExtraFields.Latency
@@ -3700,24 +3700,24 @@ func (provider *BedrockProvider) BatchResults(ctx *schemas.RakshaContext, keys [
 		}
 		pageToken = listResp.After
 	}
-	if rakshaErr != nil {
+	if gatewayErr != nil {
 		// If listing fails, try direct download (in case outputS3URI is already a file path)
-		fileContentResp, directErr := provider.FileContent(ctx, keys, &schemas.RakshaFileContentRequest{
+		fileContentResp, directErr := provider.FileContent(ctx, keys, &schemas.GatewayFileContentRequest{
 			Provider: request.Provider,
 			FileID:   outputS3URI,
 		})
 		if directErr != nil {
-			return nil, providerUtils.NewRakshaOperationError(
+			return nil, providerUtils.NewGatewayOperationError(
 				fmt.Sprintf("failed to access batch results at %s: listing failed and direct access failed", outputS3URI),
 				nil)
 		}
 
 		// Direct download succeeded, parse the content
 		results, parseErrors := parseBatchResultsJSONL(fileContentResp.Content, provider)
-		batchResultsResp := &schemas.RakshaBatchResultsResponse{
+		batchResultsResp := &schemas.GatewayBatchResultsResponse{
 			BatchID: request.BatchID,
 			Results: results,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: fileContentResp.ExtraFields.Latency,
 			},
 		}
@@ -3731,7 +3731,7 @@ func (provider *BedrockProvider) BatchResults(ctx *schemas.RakshaContext, keys [
 	for _, file := range allFiles {
 		// Skip manifest files, only process JSONL output files
 		if strings.HasSuffix(file.ID, ".jsonl.out") || strings.HasSuffix(file.ID, ".jsonl") {
-			fileContentResp, fileErr := provider.FileContent(ctx, keys, &schemas.RakshaFileContentRequest{
+			fileContentResp, fileErr := provider.FileContent(ctx, keys, &schemas.GatewayFileContentRequest{
 				Provider: request.Provider,
 				FileID:   file.ID,
 			})
@@ -3747,10 +3747,10 @@ func (provider *BedrockProvider) BatchResults(ctx *schemas.RakshaContext, keys [
 		}
 	}
 
-	batchResultsResp := &schemas.RakshaBatchResultsResponse{
+	batchResultsResp := &schemas.GatewayBatchResultsResponse{
 		BatchID: request.BatchID,
 		Results: allResults,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: totalLatency,
 		},
 	}
@@ -3766,7 +3766,7 @@ func (provider *BedrockProvider) BatchResults(ctx *schemas.RakshaContext, keys [
 // once and returns both the request path and the AWS signing region.
 // Honors per-alias Region and BedrockAliasCfg.InferenceProfileARN overrides
 // via the resolved alias in ctx.
-func (provider *BedrockProvider) getModelPathAndRegion(ctx *schemas.RakshaContext, basePath, model string, key schemas.Key) (path, region string) {
+func (provider *BedrockProvider) getModelPathAndRegion(ctx *schemas.GatewayContext, basePath, model string, key schemas.Key) (path, region string) {
 	r, bareModel := parseBedrockRegionAndModel(model)
 	if r == "" {
 		if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.Region != nil {
@@ -3790,7 +3790,7 @@ func (provider *BedrockProvider) getModelPathAndRegion(ctx *schemas.RakshaContex
 	return p, r
 }
 
-func (provider *BedrockProvider) CountTokens(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) CountTokens(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Bedrock, provider.customProviderConfig, schemas.CountTokensRequest); err != nil {
 		return nil, err
 	}
@@ -3798,7 +3798,7 @@ func (provider *BedrockProvider) CountTokens(ctx *schemas.RakshaContext, key sch
 	// Convert to Bedrock Converse format using the existing responses converter
 	converseReq, convErr := ToBedrockResponsesRequest(ctx, request)
 	if convErr != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, convErr)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestMarshal, convErr)
 	}
 
 	// Wrap in the CountTokens request envelope
@@ -3807,49 +3807,49 @@ func (provider *BedrockProvider) CountTokens(ctx *schemas.RakshaContext, key sch
 
 	jsonData, err := providerUtils.MarshalSorted(countTokensReq)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestMarshal, err)
 	}
 
 	// Format the path with proper model identifier
 	path, _ := provider.getModelPathAndRegion(ctx, "count-tokens", request.Model, key)
 
 	// Send the request
-	responseBody, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, jsonData, path, key, request.Model)
+	responseBody, latency, providerResponseHeaders, gatewayErr := provider.completeRequest(ctx, jsonData, path, key, request.Model)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		if isCountTokensUnsupported(rakshaErr) {
+	if gatewayErr != nil {
+		if isCountTokensUnsupported(gatewayErr) {
 			estimated := estimateTokenCount(jsonData)
-			return &schemas.RakshaCountTokensResponse{
+			return &schemas.GatewayCountTokensResponse{
 				Model:       request.Model,
 				InputTokens: estimated,
 				TotalTokens: &estimated,
 				Object:      "response.input_tokens",
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					Latency:                 latency.Milliseconds(),
 					ProviderResponseHeaders: providerResponseHeaders,
 				},
 			}, nil
 		}
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Parse the response
 	bedrockResponse := &BedrockCountTokensResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(
 		responseBody,
 		bedrockResponse,
 		jsonData,
 		providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest),
 		providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse),
 	)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	// Convert to Raksha format
-	response := bedrockResponse.ToRakshaCountTokensResponse(request.Model)
+	// Convert to Gateway format
+	response := bedrockResponse.ToGatewayCountTokensResponse(request.Model)
 
 	response.ExtraFields.Latency = latency.Milliseconds()
 	response.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
@@ -3865,60 +3865,60 @@ func (provider *BedrockProvider) CountTokens(ctx *schemas.RakshaContext, key sch
 }
 
 // Compaction is not supported by the Bedrock provider.
-func (provider *BedrockProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ContainerCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ContainerList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ContainerRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ContainerDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ContainerFileCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ContainerFileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ContainerFileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ContainerFileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Bedrock provider.
-func (provider *BedrockProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) ContainerFileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 // Passthrough is not supported by the Bedrock provider.
-func (provider *BedrockProvider) Passthrough(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+func (provider *BedrockProvider) Passthrough(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughRequest, provider.GetProviderKey())
 }
 
-func (provider *BedrockProvider) PassthroughStream(_ *schemas.RakshaContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *BedrockProvider) PassthroughStream(_ *schemas.GatewayContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughStreamRequest, provider.GetProviderKey())
 }

@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 )
 
 // Tier boundaries for tiered token pricing. Matches the upstream datasheet
@@ -188,7 +188,7 @@ type LookupScopes struct {
 	Provider      string
 }
 
-// LookupScopesFromContext builds a LookupScopes from a RakshaContext. Reads
+// LookupScopesFromContext builds a LookupScopes from a GatewayContext. Reads
 // the governance virtual key ID (not the raw VK token) and the selected key
 // ID. provider should be the provider name string (e.g. "openai"); pass "" if
 // unavailable. Returns nil only when ctx is nil. An empty scopes value is
@@ -198,12 +198,12 @@ type LookupScopes struct {
 // NOT SAFE in a goroutine — reads from ctx which is cancelled when the
 // request ends. Call synchronously in PostHooks and pass the result by value
 // to anything that may outlive the request.
-func LookupScopesFromContext(ctx *schemas.RakshaContext, provider string) *LookupScopes {
+func LookupScopesFromContext(ctx *schemas.GatewayContext, provider string) *LookupScopes {
 	if ctx == nil {
 		return nil
 	}
-	virtualKeyID, _ := ctx.Value(schemas.RakshaContextKeyGovernanceVirtualKeyID).(string)
-	selectedKeyID, _ := ctx.Value(schemas.RakshaContextKeySelectedKeyID).(string)
+	virtualKeyID, _ := ctx.Value(schemas.GatewayContextKeyGovernanceVirtualKeyID).(string)
+	selectedKeyID, _ := ctx.Value(schemas.GatewayContextKeySelectedKeyID).(string)
 	return &LookupScopes{
 		VirtualKeyID:  virtualKeyID,
 		SelectedKeyID: selectedKeyID,
@@ -254,10 +254,10 @@ type serviceTier struct {
 	isFast     bool // true when usage.speed == "fast" (Anthropic fast mode)
 }
 
-// costInput holds the extracted usage data from a RakshaResponse,
+// costInput holds the extracted usage data from a GatewayResponse,
 // normalized for the pricing engine.
 type costInput struct {
-	usage               *schemas.RakshaLLMUsage
+	usage               *schemas.GatewayLLMUsage
 	audioTextInputChars int
 	audioSeconds        *int
 	audioTokenDetails   *schemas.TranscriptionUsageInputTokenDetails
@@ -323,7 +323,7 @@ func makeKey(model, provider, mode string) string {
 }
 
 // normalizeProvider folds upstream-datasheet provider name variants
-// (vertex_ai, google-vertex, etc.) onto raksha's canonical provider names.
+// (vertex_ai, google-vertex, etc.) onto gateway's canonical provider names.
 func normalizeProvider(p string) string {
 	switch {
 	case strings.Contains(p, "vertex_ai") || p == "google-vertex":

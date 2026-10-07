@@ -1,4 +1,4 @@
-// Package tracing provides distributed tracing infrastructure for Raksha
+// Package tracing provides distributed tracing infrastructure for Gateway
 package tracing
 
 import (

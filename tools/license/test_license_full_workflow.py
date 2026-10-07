@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive End-to-End Test Suite for Raksha Enterprise Guard License System.
+Comprehensive End-to-End Test Suite for Gateway Enterprise Guard License System.
 
 Tests all scenarios requested:
 1. Key Creation & Signing (2 seats, Ed25519)
@@ -29,7 +29,7 @@ from issue_license import issue_license
 from verify_license import verify_license_file
 
 class MockGuardFleetManager:
-    """Simulates Raksha BrowserAIManager license & seat quota enforcement logic."""
+    """Simulates Gateway BrowserAIManager license & seat quota enforcement logic."""
     def __init__(self, master_pubkey_bytes: bytes):
         self.pubkey = ed25519.Ed25519PublicKey.from_public_bytes(master_pubkey_bytes)
         self.active_license = None
@@ -114,7 +114,7 @@ class MockGuardFleetManager:
 
 def run_all_tests():
     print("=" * 70)
-    print(" RAKSHA ENTERPRISE LICENSE & GUARD SEAT QUOTA - FULL TEST SUITE")
+    print(" GATEWAY ENTERPRISE LICENSE & GUARD SEAT QUOTA - FULL TEST SUITE")
     print("=" * 70)
     
     # 1. Load Vendor Master Public Key
@@ -217,7 +217,7 @@ def run_all_tests():
     exp_json = json.dumps(exp_payload, sort_keys=True, separators=(",", ":")).encode()
     exp_sig = base64.b64encode(priv_key.sign(exp_json)).decode()
     exp_env = {
-        "format": "raksha_enterprise_license_v1",
+        "format": "gateway_enterprise_license_v1",
         "payload": exp_payload,
         "payload_b64": base64.b64encode(exp_json).decode(),
         "signature": exp_sig

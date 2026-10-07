@@ -3,7 +3,7 @@ package azure
 import (
 	"strings"
 
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // getAzureScopes returns the configured scopes or the default scope if none are valid.
@@ -27,7 +27,7 @@ func getAzureScopes(configuredScopes []string) []string {
 // resolveAnthropicVersion returns the anthropic-version header value for the
 // current attempt. Uses the AzureAliasCfg.AnthropicVersion override from the
 // resolved alias when present, otherwise the Azure default.
-func resolveAnthropicVersion(ctx *schemas.RakshaContext) string {
+func resolveAnthropicVersion(ctx *schemas.GatewayContext) string {
 	if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.AzureAliasCfg != nil && ra.Config.AzureAliasCfg.AnthropicVersion != nil && *ra.Config.AzureAliasCfg.AnthropicVersion != "" {
 		return *ra.Config.AzureAliasCfg.AnthropicVersion
 	}
@@ -41,7 +41,7 @@ func resolveAnthropicVersion(ctx *schemas.RakshaContext) string {
 // /openai/deployments/, AzureAPIVersionPreview for /openai/v1/responses);
 // callers pass the route's default so the override can take precedence
 // without losing the route-specific fallback.
-func resolveAPIVersion(ctx *schemas.RakshaContext, defaultVersion string) string {
+func resolveAPIVersion(ctx *schemas.GatewayContext, defaultVersion string) string {
 	if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.AzureAliasCfg != nil && ra.Config.AzureAliasCfg.APIVersion != nil && *ra.Config.AzureAliasCfg.APIVersion != "" {
 		return *ra.Config.AzureAliasCfg.APIVersion
 	}
@@ -54,7 +54,7 @@ func resolveAPIVersion(ctx *schemas.RakshaContext, defaultVersion string) string
 // Azure credential (ClientID/Secret/TenantID or API key) span deployments
 // hosted on different Azure resources (e.g. OpenAI on east-us, Anthropic on
 // west-us2).
-func resolveAzureEndpoint(ctx *schemas.RakshaContext, key schemas.Key) string {
+func resolveAzureEndpoint(ctx *schemas.GatewayContext, key schemas.Key) string {
 	if ra := schemas.GetResolvedAlias(ctx); ra != nil && ra.Config != nil && ra.Config.AzureAliasCfg != nil && ra.Config.AzureAliasCfg.Endpoint != nil {
 		if v := ra.Config.AzureAliasCfg.Endpoint.GetValue(); v != "" {
 			return v

@@ -30,10 +30,10 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/objectstore"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/objectstore"
 	"github.com/valyala/fasthttp"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -159,7 +159,7 @@ func NewSkillsServingHandler(store configstore.ConfigStore, objectStore objectst
 // RegisterRoutes registers public serving endpoints.
 // These routes are intentionally NOT wrapped with auth middlewares — marketplace
 // URLs cannot carry credentials securely.
-func (h *SkillsServingHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *SkillsServingHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	// Git-based marketplace routes only registered when git binary is available,
 	// since Claude Code and Codex require git clone support.
 	if h.gitAvailable {
@@ -188,7 +188,7 @@ func (h *SkillsServingHandler) RegisterRoutes(r *router.Router, middlewares ...s
 }
 
 // pluginNamePrefix is prepended to all skill names when exposed as marketplace plugins.
-const pluginNamePrefix = "raksha-"
+const pluginNamePrefix = "gateway-"
 
 // allSkillsPluginName is the name of the bundled "all skills" plugin.
 const allSkillsPluginName = pluginNamePrefix + "all-skills"
@@ -231,7 +231,7 @@ func (h *SkillsServingHandler) claudeCodeMarketplace(ctx *fasthttp.RequestCtx) {
 	if len(skills) > 0 {
 		plugins = append(plugins, map[string]any{
 			"name":        allSkillsPluginName,
-			"description": "All Raksha skills bundled in a single plugin.",
+			"description": "All Gateway skills bundled in a single plugin.",
 			"version":     allSkillsVersion,
 			"source": map[string]any{
 				"source": "url",
@@ -241,9 +241,9 @@ func (h *SkillsServingHandler) claudeCodeMarketplace(ctx *fasthttp.RequestCtx) {
 	}
 
 	result := map[string]any{
-		"name": "raksha-skills",
+		"name": "gateway-skills",
 		"owner": map[string]any{
-			"name": "Raksha Gateway",
+			"name": "Gateway",
 		},
 		"plugins": plugins,
 	}
@@ -302,7 +302,7 @@ func (h *SkillsServingHandler) buildCodexMarketplaceJSON(ctx *fasthttp.RequestCt
 	if len(skills) > 0 {
 		plugins = append(plugins, map[string]any{
 			"name":        allSkillsPluginName,
-			"description": "All Raksha skills bundled in a single plugin.",
+			"description": "All Gateway skills bundled in a single plugin.",
 			"version":     allSkillsVersion,
 			"source": map[string]any{
 				"source": "url",
@@ -317,9 +317,9 @@ func (h *SkillsServingHandler) buildCodexMarketplaceJSON(ctx *fasthttp.RequestCt
 	}
 
 	result := map[string]any{
-		"name": "raksha-skills",
+		"name": "gateway-skills",
 		"interface": map[string]any{
-			"displayName": "Raksha Skills",
+			"displayName": "Gateway Skills",
 		},
 		"plugins": plugins,
 	}
@@ -381,8 +381,8 @@ func buildGitRepo(spec *GitRepoSpec) (*memory.Storage, error) {
 	// git upload-pack fails with "not our ref".
 	_, err = w.Commit("serve "+spec.Label, &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  "Raksha Gateway",
-			Email: "raksha@getraksha.ai",
+			Name:  "Gateway",
+			Email: "gateway@getgateway.ai",
 			When:  time.Unix(0, 0),
 		},
 	})
@@ -481,7 +481,7 @@ func (h *SkillsServingHandler) assembleAllSkillsRepoSpec(ctx context.Context, ha
 	// Plugin manifest — reuse buildPluginManifest with a synthetic skill record
 	allSkillsSkill := &tables.TableSkill{
 		Name:          strings.TrimPrefix(allSkillsPluginName, pluginNamePrefix),
-		Description:   "All Raksha skills bundled in a single plugin.",
+		Description:   "All Gateway skills bundled in a single plugin.",
 		LatestVersion: version,
 	}
 	manifestDir := manifestDirName(harness)
@@ -554,8 +554,8 @@ func (h *SkillsServingHandler) registerGitRoutes(r *router.Router, harness strin
 }
 
 // servePluginGit handles git smart HTTP for per-plugin repos.
-// Plugin names in the URL are prefixed with "raksha-". The special name
-// "raksha-all-skills" serves a bundled repo containing every skill.
+// Plugin names in the URL are prefixed with "gateway-". The special name
+// "gateway-all-skills" serves a bundled repo containing every skill.
 func (h *SkillsServingHandler) servePluginGit(harness string) fasthttp.RequestHandler {
 	return func(ctx *fasthttp.RequestCtx) {
 		rawName := ""
@@ -581,7 +581,7 @@ func (h *SkillsServingHandler) servePluginGit(harness string) fasthttp.RequestHa
 			return
 		}
 
-		// Strip the "raksha-" prefix to look up the actual skill name.
+		// Strip the "gateway-" prefix to look up the actual skill name.
 		skillName := strings.TrimPrefix(rawName, pluginNamePrefix)
 		skill, err := h.store.GetSkillByName(ctx, skillName)
 		if err != nil {
@@ -735,7 +735,7 @@ func pktFlush() []byte {
 // exportToTempBareRepo exports an in-memory go-git storage to a temporary bare
 // git repository on disk, suitable for use with `git http-backend`.
 func exportToTempBareRepo(memStorage *memory.Storage) (string, error) {
-	tempDir, err := os.MkdirTemp("", "raksha-skill-*")
+	tempDir, err := os.MkdirTemp("", "gateway-skill-*")
 	if err != nil {
 		return "", fmt.Errorf("create temp dir: %w", err)
 	}

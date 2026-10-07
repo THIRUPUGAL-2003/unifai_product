@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunEnd2EndToolCallingTest executes the end-to-end tool calling test scenario
-func RunEnd2EndToolCallingTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunEnd2EndToolCallingTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.End2EndToolCalling {
 		t.Logf("End-to-end tool calling not supported for provider %s", testConfig.Provider)
 		return
@@ -57,24 +57,24 @@ func RunEnd2EndToolCallingTest(t *testing.T, client *raksha.Raksha, ctx context.
 		}
 
 		// Create operations for both APIs
-		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    []schemas.ChatMessage{chatUserMessage},
 				Params: &schemas.ChatParameters{
 					Tools:               []schemas.ChatTool{*chatTool},
-					MaxCompletionTokens: raksha.Ptr(500),
+					MaxCompletionTokens: gateway.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    []schemas.ResponsesMessage{responsesUserMessage},
@@ -175,28 +175,28 @@ func RunEnd2EndToolCallingTest(t *testing.T, client *raksha.Raksha, ctx context.
 		expectations2.ShouldNotContainWords = []string{"error", "failed", "cannot"} // Should not contain error terms
 
 		// Create operations for both APIs - Step 2
-		chatOperation2 := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation2 := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    chatConversationMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(500),
+					MaxCompletionTokens: gateway.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation2 := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation2 := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesConversationMessages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: raksha.Ptr(500),
+					MaxOutputTokens: gateway.Ptr(500),
 				},
 			}
 			return client.ResponsesRequest(bfCtx, responsesReq)

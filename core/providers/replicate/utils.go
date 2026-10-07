@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -24,19 +24,19 @@ func isTerminalStatus(status ReplicatePredictionStatus) bool {
 }
 
 // checkForErrorStatus returns an error if the prediction failed
-func checkForErrorStatus(prediction *ReplicatePredictionResponse) *schemas.RakshaError {
+func checkForErrorStatus(prediction *ReplicatePredictionResponse) *schemas.GatewayError {
 	if prediction.Status == ReplicatePredictionStatusFailed {
 		errorMsg := "prediction failed"
 		if prediction.Error != nil && *prediction.Error != "" {
 			errorMsg = *prediction.Error
 		}
-		return providerUtils.NewRakshaOperationError(
+		return providerUtils.NewGatewayOperationError(
 			"prediction failed",
 			fmt.Errorf("%s", errorMsg))
 	}
 
 	if prediction.Status == ReplicatePredictionStatusCanceled {
-		return providerUtils.NewRakshaOperationError(
+		return providerUtils.NewGatewayOperationError(
 			"prediction was canceled",
 			fmt.Errorf("prediction was canceled"))
 	}
@@ -85,11 +85,11 @@ func stripPreferHeader(extraHeaders map[string]string) map[string]string {
 // This is a reusable utility for any Replicate streaming endpoint.
 // It returns the response body stream (as io.Reader) and any error that occurred during connection.
 func listenToReplicateStreamURL(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	streamURL string,
 	key schemas.Key,
-) (io.Reader, *fasthttp.Response, *schemas.RakshaError) {
+) (io.Reader, *fasthttp.Response, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -115,8 +115,8 @@ func listenToReplicateStreamURL(
 	if err != nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -125,14 +125,14 @@ func listenToReplicateStreamURL(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
 	if ctx != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 	}
 
 	// Check for HTTP errors
@@ -179,7 +179,7 @@ func isVersionID(s string) bool {
 
 // buildPredictionURL builds the appropriate URL for creating a prediction
 // Returns the URL for the appropriate prediction endpoint.
-func buildPredictionURL(ctx *schemas.RakshaContext, baseURL, model string, customProviderConfig *schemas.CustomProviderConfig, requestType schemas.RequestType, useDeploymentsEndpoint bool) string {
+func buildPredictionURL(ctx *schemas.GatewayContext, baseURL, model string, customProviderConfig *schemas.CustomProviderConfig, requestType schemas.RequestType, useDeploymentsEndpoint bool) string {
 	var defaultPath string
 
 	if useDeploymentsEndpoint {

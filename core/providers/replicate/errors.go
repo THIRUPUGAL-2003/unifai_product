@@ -2,15 +2,15 @@ package replicate
 
 import (
 	"github.com/bytedance/sonic"
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // parseReplicateError parses Replicate API error response
-func parseReplicateError(body []byte, statusCode int) *schemas.RakshaError {
+func parseReplicateError(body []byte, statusCode int) *schemas.GatewayError {
 	var replicateErr ReplicateError
 	if err := sonic.Unmarshal(body, &replicateErr); err == nil && replicateErr.Detail != "" {
-		return &schemas.RakshaError{
-			IsRakshaError: false,
+		return &schemas.GatewayError{
+			IsGatewayError: false,
 			StatusCode:     &statusCode,
 			Error: &schemas.ErrorField{
 				Message: replicateErr.Detail,
@@ -19,8 +19,8 @@ func parseReplicateError(body []byte, statusCode int) *schemas.RakshaError {
 	}
 
 	// Fallback to generic error
-	return &schemas.RakshaError{
-		IsRakshaError: false,
+	return &schemas.GatewayError{
+		IsGatewayError: false,
 		StatusCode:     &statusCode,
 		Error: &schemas.ErrorField{
 			Message: string(body),

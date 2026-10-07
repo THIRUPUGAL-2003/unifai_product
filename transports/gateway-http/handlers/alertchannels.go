@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/framework/alerts"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/alerts"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/valyala/fasthttp"
 )
 
@@ -228,13 +228,13 @@ func sendAlertChannelTest(ctx *fasthttp.RequestCtx, store configstore.ConfigStor
 	event := alerts.Event{
 		Kind:     "test",
 		Severity: alerts.SeverityInfo,
-		Title:    "RAKSHA test alert",
+		Title:    "GATEWAY test alert",
 		Message:  fmt.Sprintf("Test alert from channel %q.", row.Name),
 		Time:     time.Now().UTC(),
 	}
 	err := deliverAlert(ctx, store, row, event)
 	if row.Type == "email" {
-		recordEmailAudit(store, ctx, alertConfigString(row.ParsedConfig, "address", "email", "to"), "RAKSHA test alert", err)
+		recordEmailAudit(store, ctx, alertConfigString(row.ParsedConfig, "address", "email", "to"), "GATEWAY test alert", err)
 	}
 	return err
 }
@@ -280,7 +280,7 @@ func deliverAlert(ctx context.Context, store configstore.ConfigStore, row *table
 		if to == "" {
 			return fmt.Errorf("no email address configured")
 		}
-		return sendSMTPEmail(ctx, store, to, "RAKSHA alert: "+e.Title, text+"\n")
+		return sendSMTPEmail(ctx, store, to, "GATEWAY alert: "+e.Title, text+"\n")
 	case "pagerduty":
 		key := alertConfigString(cfg, "routing_key", "integration_key")
 		if key == "" {
@@ -291,7 +291,7 @@ func deliverAlert(ctx context.Context, store configstore.ConfigStore, row *table
 			"event_action": "trigger",
 			"payload": map[string]any{
 				"summary":        e.Title + ": " + e.Message,
-				"source":         "raksha-gateway",
+				"source":         "gateway-gateway",
 				"severity":       pagerDutySeverity(e.Severity),
 				"custom_details": e.Fields,
 			},

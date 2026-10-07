@@ -11,12 +11,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunTranscriptionTest executes the transcription test scenario
-func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunTranscriptionTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Transcription {
 		t.Logf("Transcription not supported for provider %s", testConfig.Provider)
 		return
@@ -36,21 +36,21 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 				text:           TTSTestTextBasic,
 				voiceType:      "primary",
 				format:         GetProviderDefaultFormat(testConfig.Provider),
-				responseFormat: raksha.Ptr("json"),
+				responseFormat: gateway.Ptr("json"),
 			},
 			{
 				name:           "RoundTrip_Medium_MP3",
 				text:           TTSTestTextMedium,
 				voiceType:      "secondary",
 				format:         GetProviderDefaultFormat(testConfig.Provider),
-				responseFormat: raksha.Ptr("json"),
+				responseFormat: gateway.Ptr("json"),
 			},
 			{
 				name:           "RoundTrip_Technical_MP3",
 				text:           TTSTestTextTechnical,
 				voiceType:      "tertiary",
 				format:         GetProviderDefaultFormat(testConfig.Provider),
-				responseFormat: raksha.Ptr("json"),
+				responseFormat: gateway.Ptr("json"),
 			},
 		}
 
@@ -68,7 +68,7 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 					speechSynthesisModel = testConfig.ExternalTTSModel
 				}
 
-				var transcriptionRequest *schemas.RakshaTranscriptionRequest
+				var transcriptionRequest *schemas.GatewayTranscriptionRequest
 				if testConfig.Provider == schemas.HuggingFace && strings.HasPrefix(testConfig.TranscriptionModel, "fal-ai/") {
 
 					// For Fal-AI models on HuggingFace, we have to use mp3 but fal-ai speech models only return wav
@@ -80,15 +80,15 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 					if err != nil {
 						t.Fatalf("failed to read audio fixture %s: %v", filePath, err)
 					}
-					transcriptionRequest = &schemas.RakshaTranscriptionRequest{
+					transcriptionRequest = &schemas.GatewayTranscriptionRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.TranscriptionModel,
 						Input: &schemas.TranscriptionInput{
 							File: fileContent,
 						},
 						Params: &schemas.TranscriptionParameters{
-							Language:       raksha.Ptr("en"),
-							Format:         raksha.Ptr("mp3"),
+							Language:       gateway.Ptr("en"),
+							Format:         gateway.Ptr("mp3"),
 							ResponseFormat: tc.responseFormat,
 						},
 						Fallbacks: testConfig.TranscriptionFallbacks,
@@ -97,7 +97,7 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 
 					// Step 1: Generate TTS audio
 					voice := GetProviderVoice(speechSynthesisProvider, tc.voiceType)
-					ttsRequest := &schemas.RakshaSpeechRequest{
+					ttsRequest := &schemas.GatewaySpeechRequest{
 						Provider: speechSynthesisProvider,
 						Model:    speechSynthesisModel,
 						Input: &schemas.SpeechInput{
@@ -137,8 +137,8 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 						OnFinalFail: ttsRetryConfig.OnFinalFail,
 					}
 
-					ttsResponse, err := WithSpeechTestRetry(t, speechRetryConfig, ttsRetryContext, ttsExpectations, "Transcription_RoundTrip_TTS_"+tc.name, func() (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
-						bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+					ttsResponse, err := WithSpeechTestRetry(t, speechRetryConfig, ttsRetryContext, ttsExpectations, "Transcription_RoundTrip_TTS_"+tc.name, func() (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
+						bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 						return client.SpeechRequest(bfCtx, ttsRequest)
 					})
 					if err != nil {
@@ -162,14 +162,14 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 					t.Logf("Generated TTS audio for round-trip: %s (%d bytes)", audioFileName, len(ttsResponse.Audio))
 
 					// Step 2: Transcribe the generated audio
-					transcriptionRequest = &schemas.RakshaTranscriptionRequest{
+					transcriptionRequest = &schemas.GatewayTranscriptionRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.TranscriptionModel,
 						Input: &schemas.TranscriptionInput{
 							File: ttsResponse.Audio,
 						},
 						Params: &schemas.TranscriptionParameters{
-							Language:       raksha.Ptr("en"),
+							Language:       gateway.Ptr("en"),
 							Format:         schemas.Ptr(tc.format),
 							ResponseFormat: tc.responseFormat,
 						},
@@ -207,13 +207,13 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 					OnFinalFail: retryConfig.OnFinalFail,
 				}
 
-				transcriptionResponse, rakshaErr := WithTranscriptionTestRetry(t, transcriptionRetryConfig, retryContext, expectations, "Transcription_RoundTrip_"+tc.name, func() (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				transcriptionResponse, gatewayErr := WithTranscriptionTestRetry(t, transcriptionRetryConfig, retryContext, expectations, "Transcription_RoundTrip_"+tc.name, func() (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.TranscriptionRequest(bfCtx, transcriptionRequest)
 				})
 
-				if rakshaErr != nil {
-					t.Fatalf("❌ Transcription_RoundTrip_"+tc.name+" request failed after retries: %v", GetErrorMessage(rakshaErr))
+				if gatewayErr != nil {
+					t.Fatalf("❌ Transcription_RoundTrip_"+tc.name+" request failed after retries: %v", GetErrorMessage(gatewayErr))
 				}
 
 				// Validate round-trip transcription (complementary to main validation)
@@ -233,14 +233,14 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 				{
 					name:           "Numbers_And_Punctuation",
 					text:           "Testing numbers 1, 2, 3 and punctuation marks! Question?",
-					language:       raksha.Ptr("en"),
-					responseFormat: raksha.Ptr("json"),
+					language:       gateway.Ptr("en"),
+					responseFormat: gateway.Ptr("json"),
 				},
 				{
 					name:           "Technical_Terms",
 					text:           "API gateway processes HTTP requests with JSON payloads",
-					language:       raksha.Ptr("en"),
-					responseFormat: raksha.Ptr("json"),
+					language:       gateway.Ptr("en"),
+					responseFormat: gateway.Ptr("json"),
 				},
 			}
 
@@ -279,7 +279,7 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 						audioData, _ = GenerateTTSAudioForTest(ctx, t, client, speechSynthesisProvider, speechSynthesisModel, tc.text, "primary", audioFormat)
 					}
 					// Test transcription
-					request := &schemas.RakshaTranscriptionRequest{
+					request := &schemas.GatewayTranscriptionRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.TranscriptionModel,
 						Input: &schemas.TranscriptionInput{
@@ -316,8 +316,8 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 						OnFinalFail: customRetryConfig.OnFinalFail,
 					}
 
-					response, err := WithTranscriptionTestRetry(t, customTranscriptionRetryConfig, customRetryContext, customExpectations, "Transcription_Custom_"+tc.name, func() (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
-						bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+					response, err := WithTranscriptionTestRetry(t, customTranscriptionRetryConfig, customRetryContext, customExpectations, "Transcription_Custom_"+tc.name, func() (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
+						bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 						return client.TranscriptionRequest(bfCtx, request)
 					})
 					if err != nil {
@@ -342,7 +342,7 @@ func RunTranscriptionTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 }
 
 // RunTranscriptionAdvancedTest executes advanced transcription test scenarios
-func RunTranscriptionAdvancedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunTranscriptionAdvancedTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Transcription {
 		t.Logf("Transcription not supported for provider %s", testConfig.Provider)
 		return
@@ -389,7 +389,7 @@ func RunTranscriptionAdvancedTest(t *testing.T, client *raksha.Raksha, ctx conte
 					}
 
 					formatCopy := format
-					request := &schemas.RakshaTranscriptionRequest{
+					request := &schemas.GatewayTranscriptionRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.TranscriptionModel,
 						Input: &schemas.TranscriptionInput{
@@ -426,8 +426,8 @@ func RunTranscriptionAdvancedTest(t *testing.T, client *raksha.Raksha, ctx conte
 						OnFinalFail: formatRetryConfig.OnFinalFail,
 					}
 
-					response, err := WithTranscriptionTestRetry(t, formatTranscriptionRetryConfig, formatRetryContext, formatExpectations, "Transcription_Format_"+format, func() (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
-						bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+					response, err := WithTranscriptionTestRetry(t, formatTranscriptionRetryConfig, formatRetryContext, formatExpectations, "Transcription_Format_"+format, func() (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
+						bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 						return client.TranscriptionRequest(bfCtx, request)
 					})
 					if err != nil {
@@ -484,17 +484,17 @@ func RunTranscriptionAdvancedTest(t *testing.T, client *raksha.Raksha, ctx conte
 			}
 
 			// Test with custom parameters and temperature
-			request := &schemas.RakshaTranscriptionRequest{
+			request := &schemas.GatewayTranscriptionRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.TranscriptionModel,
 				Input: &schemas.TranscriptionInput{
 					File: audioData,
 				},
 				Params: &schemas.TranscriptionParameters{
-					Language:       raksha.Ptr("en"),
+					Language:       gateway.Ptr("en"),
 					Format:         &audioFormat,
-					Prompt:         raksha.Ptr("This audio contains technical terminology and proper nouns."),
-					ResponseFormat: raksha.Ptr("json"), // Use json instead of verbose_json for whisper-1
+					Prompt:         gateway.Ptr("This audio contains technical terminology and proper nouns."),
+					ResponseFormat: gateway.Ptr("json"), // Use json instead of verbose_json for whisper-1
 				},
 				Fallbacks: testConfig.TranscriptionFallbacks,
 			}
@@ -522,8 +522,8 @@ func RunTranscriptionAdvancedTest(t *testing.T, client *raksha.Raksha, ctx conte
 				OnFinalFail: advancedRetryConfig.OnFinalFail,
 			}
 
-			response, err := WithTranscriptionTestRetry(t, advancedTranscriptionRetryConfig, advancedRetryContext, advancedExpectations, "Transcription_Advanced_CustomParams", func() (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			response, err := WithTranscriptionTestRetry(t, advancedTranscriptionRetryConfig, advancedRetryContext, advancedExpectations, "Transcription_Advanced_CustomParams", func() (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.TranscriptionRequest(bfCtx, request)
 			})
 			if err != nil {
@@ -583,7 +583,7 @@ func RunTranscriptionAdvancedTest(t *testing.T, client *raksha.Raksha, ctx conte
 					}
 
 					langCopy := lang
-					request := &schemas.RakshaTranscriptionRequest{
+					request := &schemas.GatewayTranscriptionRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.TranscriptionModel,
 						Input: &schemas.TranscriptionInput{
@@ -620,8 +620,8 @@ func RunTranscriptionAdvancedTest(t *testing.T, client *raksha.Raksha, ctx conte
 						OnFinalFail: langRetryConfig.OnFinalFail,
 					}
 
-					response, err := WithTranscriptionTestRetry(t, langTranscriptionRetryConfig, langRetryContext, langExpectations, "Transcription_Language_"+lang, func() (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
-						bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+					response, err := WithTranscriptionTestRetry(t, langTranscriptionRetryConfig, langRetryContext, langExpectations, "Transcription_Language_"+lang, func() (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
+						bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 						return client.TranscriptionRequest(bfCtx, request)
 					})
 					if err != nil {
@@ -646,7 +646,7 @@ func RunTranscriptionAdvancedTest(t *testing.T, client *raksha.Raksha, ctx conte
 
 // validateTranscriptionRoundTrip performs round-trip validation for transcription responses
 // This is complementary to the main validation framework and focuses on transcription accuracy
-func validateTranscriptionRoundTrip(t *testing.T, response *schemas.RakshaTranscriptionResponse, originalText string, testName string, testConfig ComprehensiveTestConfig) {
+func validateTranscriptionRoundTrip(t *testing.T, response *schemas.GatewayTranscriptionResponse, originalText string, testName string, testConfig ComprehensiveTestConfig) {
 	if response == nil || response.Text == "" {
 		t.Fatal("Transcription response missing transcribed text")
 	}

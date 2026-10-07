@@ -78,13 +78,19 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 		}, 150);
 	};
 
-	const { data: providersData } = useGetProvidersQuery();
+	const { data: providersData, isError: providersFailed, error: providersError } = useGetProvidersQuery();
 	const [createModelConfig, { isLoading: isCreating }] = useCreateModelConfigMutation();
 	const [updateModelConfig, { isLoading: isUpdating }] = useUpdateModelConfigMutation();
 	const [getModels] = useLazyGetModelsQuery();
 	const isLoading = isCreating || isUpdating;
 
 	const availableProviders = providersData || [];
+
+	useEffect(() => {
+		if (providersFailed) {
+			toast.error(`Failed to load providers: ${getErrorMessage(providersError)}`);
+		}
+	}, [providersFailed, providersError]);
 
 	// Handle provider change - clear model if it doesn't exist for the new provider
 	const handleProviderChange = async (newProvider: string, currentModel: string, onChange: (value: string) => void) => {
@@ -98,7 +104,7 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 				limit: 1000,
 			}).unwrap();
 
-			const modelExists = response.models.some((model) => model.name === currentModel);
+			const modelExists = response.models?.some((model) => model.name === currentModel);
 			if (!modelExists) {
 				form.setValue("modelName", "", { shouldDirty: true });
 			}

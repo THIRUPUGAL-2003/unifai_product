@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 	"gorm.io/gorm"
 )
 
@@ -281,7 +281,7 @@ func fetchMCPLibrary(ctx context.Context, rawURL string) ([]MCPLibraryEntry, err
 			return nil, fmt.Errorf("MCP library file exceeds %d bytes", maxMCPLibraryBodyBytes)
 		}
 	} else {
-		if err := raksha.ValidateExternalURL(rawURL, true); err != nil {
+		if err := gateway.ValidateExternalURL(rawURL, true); err != nil {
 			return nil, fmt.Errorf("MCP library URL validation failed: %w", err)
 		}
 		client := &http.Client{Timeout: DefaultMCPLibraryTimeout}

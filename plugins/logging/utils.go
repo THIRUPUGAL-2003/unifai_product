@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/streaming"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/streaming"
 )
 
 // KeyPair represents an ID-Name pair for keys
@@ -500,7 +500,7 @@ func retryOnNotFound(ctx context.Context, operation func() error) error {
 }
 
 // extractInputHistory extracts input history from request input
-func (p *LoggerPlugin) extractInputHistory(request *schemas.RakshaRequest) ([]schemas.ChatMessage, []schemas.ResponsesMessage) {
+func (p *LoggerPlugin) extractInputHistory(request *schemas.GatewayRequest) ([]schemas.ChatMessage, []schemas.ResponsesMessage) {
 	if request.ChatRequest != nil {
 		return request.ChatRequest.Input, []schemas.ResponsesMessage{}
 	}
@@ -745,12 +745,12 @@ func convertToProcessedStreamResponse(result *schemas.StreamAccumulatorResult, r
 	return resp
 }
 
-func mergeRealtimeMetadata(metadata map[string]interface{}, ctx *schemas.RakshaContext) map[string]interface{} {
+func mergeRealtimeMetadata(metadata map[string]interface{}, ctx *schemas.GatewayContext) map[string]interface{} {
 	if ctx == nil {
 		return metadata
 	}
-	set := func(key string, ctxKey schemas.RakshaContextKey) {
-		if value := raksha.GetStringFromContext(ctx, ctxKey); value != "" {
+	set := func(key string, ctxKey schemas.GatewayContextKey) {
+		if value := gateway.GetStringFromContext(ctx, ctxKey); value != "" {
 			if metadata == nil {
 				metadata = make(map[string]interface{})
 			}
@@ -758,13 +758,13 @@ func mergeRealtimeMetadata(metadata map[string]interface{}, ctx *schemas.RakshaC
 		}
 	}
 
-	set("realtime_session_id", schemas.RakshaContextKeyRealtimeSessionID)
-	set("provider_session_id", schemas.RakshaContextKeyRealtimeProviderSessionID)
-	set("realtime_source", schemas.RakshaContextKeyRealtimeSource)
-	set("realtime_event_type", schemas.RakshaContextKeyRealtimeEventType)
-	set("realtime_transport", schemas.RakshaContextKeyRealtimeTransport)
-	set("realtime_voice", schemas.RakshaContextKeyRealtimeVoice)
-	if raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyRealtimeSessionID) != "" {
+	set("realtime_session_id", schemas.GatewayContextKeyRealtimeSessionID)
+	set("provider_session_id", schemas.GatewayContextKeyRealtimeProviderSessionID)
+	set("realtime_source", schemas.GatewayContextKeyRealtimeSource)
+	set("realtime_event_type", schemas.GatewayContextKeyRealtimeEventType)
+	set("realtime_transport", schemas.GatewayContextKeyRealtimeTransport)
+	set("realtime_voice", schemas.GatewayContextKeyRealtimeVoice)
+	if gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyRealtimeSessionID) != "" {
 		if metadata == nil {
 			metadata = make(map[string]interface{})
 		}

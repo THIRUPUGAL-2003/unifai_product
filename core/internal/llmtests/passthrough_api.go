@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/providers/anthropic"
-	"github.com/raksha/raksha/core/providers/gemini"
-	"github.com/raksha/raksha/core/providers/openai"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/providers/anthropic"
+	"github.com/gateway/gateway/core/providers/gemini"
+	"github.com/gateway/gateway/core/providers/openai"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // passthroughChatReq holds the provider-native path and JSON body for a
@@ -22,34 +22,34 @@ type passthroughChatReq struct {
 	query string
 }
 
-// basePassthroughChatRequest returns a minimal RakshaChatRequest suitable for
+// basePassthroughChatRequest returns a minimal GatewayChatRequest suitable for
 // conversion into a provider-native passthrough body.
-func basePassthroughChatRequest(model string) *schemas.RakshaChatRequest {
-	return &schemas.RakshaChatRequest{
+func basePassthroughChatRequest(model string) *schemas.GatewayChatRequest {
+	return &schemas.GatewayChatRequest{
 		Model: model,
 		Input: []schemas.ChatMessage{
 			CreateBasicChatMessage("Say hello in one word"),
 		},
 		Params: &schemas.ChatParameters{
-			MaxCompletionTokens: raksha.Ptr(300),
+			MaxCompletionTokens: gateway.Ptr(300),
 		},
 	}
 }
 
-// buildPassthroughChatReq converts a minimal RakshaChatRequest into the
+// buildPassthroughChatReq converts a minimal GatewayChatRequest into the
 // provider-native HTTP path and JSON body using each provider's own converter.
 //
 // Streaming is requested when stream is true.
 // Returns (req, true) for supported providers, (zero, false) to signal skip.
 func buildPassthroughChatReq(t *testing.T, provider schemas.ModelProvider, model string, stream bool) (passthroughChatReq, bool) {
 	bfReq := basePassthroughChatRequest(model)
-	ctx := schemas.NewRakshaContext(context.Background(), schemas.NoDeadline)
+	ctx := schemas.NewGatewayContext(context.Background(), schemas.NoDeadline)
 
 	switch provider {
 	case schemas.OpenAI:
 		nativeReq := openai.ToOpenAIChatRequest(ctx, bfReq)
 		if stream {
-			nativeReq.Stream = raksha.Ptr(true)
+			nativeReq.Stream = gateway.Ptr(true)
 		}
 		body, err := sonic.Marshal(nativeReq)
 		if err != nil {
@@ -60,7 +60,7 @@ func buildPassthroughChatReq(t *testing.T, provider schemas.ModelProvider, model
 	case schemas.Azure:
 		nativeReq := openai.ToOpenAIChatRequest(ctx, bfReq)
 		if stream {
-			nativeReq.Stream = raksha.Ptr(true)
+			nativeReq.Stream = gateway.Ptr(true)
 		}
 		body, err := sonic.Marshal(nativeReq)
 		if err != nil {
@@ -78,7 +78,7 @@ func buildPassthroughChatReq(t *testing.T, provider schemas.ModelProvider, model
 			return passthroughChatReq{}, false
 		}
 		if stream {
-			nativeReq.Stream = raksha.Ptr(true)
+			nativeReq.Stream = gateway.Ptr(true)
 		}
 		body, err := sonic.Marshal(nativeReq)
 		if err != nil {
@@ -124,7 +124,7 @@ func resolvePassthroughModel(cfg ComprehensiveTestConfig) string {
 	return cfg.ChatModel
 }
 
-// RunPassthroughAPITest exercises Raksha's raw HTTP passthrough API for the
+// RunPassthroughAPITest exercises Gateway's raw HTTP passthrough API for the
 // configured provider using two sub-tests:
 //
 //   - PassthroughAPI/NonStream – calls client.Passthrough and verifies a 2xx
@@ -134,7 +134,7 @@ func resolvePassthroughModel(cfg ComprehensiveTestConfig) string {
 //
 // The test is skipped when Scenarios.PassthroughAPI is false or the provider's
 // native request format is not yet covered by buildPassthroughChatReq.
-func RunPassthroughAPITest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunPassthroughAPITest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.PassthroughAPI {
 		t.Logf("PassthroughAPI not enabled for provider %s, skipping", testConfig.Provider)
 		return
@@ -157,9 +157,9 @@ func RunPassthroughAPITest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 				t.Skipf("PassthroughAPI/NonStream: no native request format defined for provider %s", testConfig.Provider)
 			}
 
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 
-			resp, rakshaErr := client.Passthrough(bfCtx, testConfig.Provider, &schemas.RakshaPassthroughRequest{
+			resp, gatewayErr := client.Passthrough(bfCtx, testConfig.Provider, &schemas.GatewayPassthroughRequest{
 				Method:   "POST",
 				Path:     req.path,
 				Body:     req.body,
@@ -170,8 +170,8 @@ func RunPassthroughAPITest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 				Model: model,
 			})
 
-			if rakshaErr != nil {
-				t.Fatalf("❌ Passthrough request failed: %s", GetErrorMessage(rakshaErr))
+			if gatewayErr != nil {
+				t.Fatalf("❌ Passthrough request failed: %s", GetErrorMessage(gatewayErr))
 			}
 			if resp == nil {
 				t.Fatal("❌ Passthrough response is nil")
@@ -207,9 +207,9 @@ func RunPassthroughAPITest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 				t.Skipf("PassthroughAPI/Stream: no native request format defined for provider %s", testConfig.Provider)
 			}
 
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 
-			ch, rakshaErr := client.PassthroughStream(bfCtx, testConfig.Provider, &schemas.RakshaPassthroughRequest{
+			ch, gatewayErr := client.PassthroughStream(bfCtx, testConfig.Provider, &schemas.GatewayPassthroughRequest{
 				Method:   "POST",
 				Path:     req.path,
 				Body:     req.body,
@@ -220,8 +220,8 @@ func RunPassthroughAPITest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 				Model: model,
 			})
 
-			if rakshaErr != nil {
-				t.Fatalf("❌ PassthroughStream failed: %s", GetErrorMessage(rakshaErr))
+			if gatewayErr != nil {
+				t.Fatalf("❌ PassthroughStream failed: %s", GetErrorMessage(gatewayErr))
 			}
 			if ch == nil {
 				t.Fatal("❌ PassthroughStream returned nil channel")
@@ -233,12 +233,12 @@ func RunPassthroughAPITest(t *testing.T, client *raksha.Raksha, ctx context.Cont
 				if chunk == nil {
 					continue
 				}
-				if chunk.RakshaError != nil {
-					t.Fatalf("❌ Stream chunk contained error: %s", GetErrorMessage(chunk.RakshaError))
+				if chunk.GatewayError != nil {
+					t.Fatalf("❌ Stream chunk contained error: %s", GetErrorMessage(chunk.GatewayError))
 				}
-				if chunk.RakshaPassthroughResponse != nil {
-					totalBytes += len(chunk.RakshaPassthroughResponse.Body)
-					if len(chunk.RakshaPassthroughResponse.Body) > 0 {
+				if chunk.GatewayPassthroughResponse != nil {
+					totalBytes += len(chunk.GatewayPassthroughResponse.Body)
+					if len(chunk.GatewayPassthroughResponse.Body) > 0 {
 						chunkCount++
 					}
 				}

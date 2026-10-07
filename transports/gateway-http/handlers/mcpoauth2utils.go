@@ -3,8 +3,8 @@ package handlers
 import (
 	"strings"
 
-	configtables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	configtables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 

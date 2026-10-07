@@ -1,4 +1,4 @@
-# Raksha Guard — one-click build entrypoints
+# Gateway Guard — one-click build entrypoints
 # Delegates to existing installer scripts (do not remove those).
 #
 # From repo root:
@@ -18,7 +18,7 @@ UNAME_S := $(shell uname -s 2>/dev/null || echo unknown)
 .PHONY: help sync-guard-config build-guard-windows build-guard-mac build-guard-mac-pkg build-guard-agent
 
 help: ## Show Guard build targets
-	@echo "Raksha Guard build"
+	@echo "Gateway Guard build"
 	@echo ""
 	@echo "  make sync-guard-config       Sync configs/docs from repo .env"
 	@echo "  make build-guard-windows     Windows: sync + EXE + Setup + ZIP (run on Windows)"
@@ -57,7 +57,7 @@ build-guard-mac: ## Full macOS .app + ZIP pipeline
 	@echo "==> build_macos.sh (includes sync)"
 	@cd "$(ROOT)" && ./installer/build_macos.sh
 
-build-guard-mac-pkg: ## macOS product .pkg (needs release/Raksha_Guard.app)
+build-guard-mac-pkg: ## macOS product .pkg (needs release/Gateway_Guard.app)
 	@if [ "$(UNAME_S)" != "Darwin" ]; then \
 		echo "ERROR: build-guard-mac-pkg must run on a Mac."; \
 		exit 1; \

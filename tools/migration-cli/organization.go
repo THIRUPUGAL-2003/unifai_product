@@ -5,17 +5,17 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/raksha/raksha/scripts/raksha-migration-cli/litellm"
+	"github.com/gateway/gateway/scripts/gateway-migration-cli/litellm"
 )
 
-// rateLimitResetWindow is the Raksha reset duration for migrated rate limits.
+// rateLimitResetWindow is the Gateway reset duration for migrated rate limits.
 // LiteLLM's tpm_limit / rpm_limit are defined per minute, so both the token and
-// request limits reset every minute in Raksha.
+// request limits reset every minute in Gateway.
 const rateLimitResetWindow = "1m"
 
-// defaultMaxBudgetPeriod is the Raksha reset window used when a LiteLLM budget
+// defaultMaxBudgetPeriod is the Gateway reset window used when a LiteLLM budget
 // has a spend cap but no budget_duration. LiteLLM allows a never-resetting
-// budget; Raksha requires a reset window, so a long default stands in for
+// budget; Gateway requires a reset window, so a long default stands in for
 // "effectively never".
 const defaultMaxBudgetPeriod = "10Y"
 
@@ -25,7 +25,7 @@ const defaultMaxBudgetPeriod = "10Y"
 // durations like "daily" have no leading digit and therefore do not match.
 var litellmDurationRe = regexp.MustCompile(`^(\d+)(mo|[smhdw])`)
 
-// LiteLLMOrganizationToRakshaCustomer transforms a LiteLLM organization into a Raksha
+// LiteLLMOrganizationToGatewayCustomer transforms a LiteLLM organization into a Gateway
 // create-customer request. The mapping is pure (no I/O) so each field can be
 // unit-tested in isolation.
 //
@@ -36,15 +36,15 @@ var litellmDurationRe = regexp.MustCompile(`^(\d+)(mo|[smhdw])`)
 //   - budget.tpm_limit          -> rate_limit.token_max_limit   (reset "1m")
 //   - budget.rpm_limit          -> rate_limit.request_max_limit (reset "1m")
 //
-// Models and allowed MCP servers are intentionally not migrated: a Raksha
+// Models and allowed MCP servers are intentionally not migrated: a Gateway
 // customer has no models, and MCP linkage is handled separately.
-func LiteLLMOrganizationToRakshaCustomer(org litellm.LiteLLMOrganization, cfg MigrationRunConfig) (*RakshaCreateCustomerRequest, error) {
+func LiteLLMOrganizationToGatewayCustomer(org litellm.LiteLLMOrganization, cfg MigrationRunConfig) (*GatewayCreateCustomerRequest, error) {
 	name := strings.TrimSpace(org.OrganizationAlias)
 	if name == "" {
 		return nil, fmt.Errorf("organization %q has no organization_alias; a customer name is required", org.OrganizationID)
 	}
 
-	req := &RakshaCreateCustomerRequest{Name: name}
+	req := &GatewayCreateCustomerRequest{Name: name}
 
 	if org.Budget != nil {
 		budget, err := toBudget(*org.Budget, cfg.MaxBudgetPeriod)
@@ -52,7 +52,7 @@ func LiteLLMOrganizationToRakshaCustomer(org litellm.LiteLLMOrganization, cfg Mi
 			return nil, fmt.Errorf("organization %q: %w", org.OrganizationID, err)
 		}
 		if budget != nil {
-			req.Budgets = []RakshaCreateBudgetRequest{*budget}
+			req.Budgets = []GatewayCreateBudgetRequest{*budget}
 		}
 		req.RateLimit = toRateLimit(*org.Budget)
 	}
@@ -60,21 +60,21 @@ func LiteLLMOrganizationToRakshaCustomer(org litellm.LiteLLMOrganization, cfg Mi
 	return req, nil
 }
 
-// toBudget maps the LiteLLM spend cap to a Raksha budget.
+// toBudget maps the LiteLLM spend cap to a Gateway budget.
 //
 //   - max_budget nil or <= 0 -> no budget (nil, nil); LiteLLM treats this as
-//     "no spend cap", and Raksha requires a positive max_limit.
+//     "no spend cap", and Gateway requires a positive max_limit.
 //   - max_budget > 0 with a missing/blank budget_duration -> maxBudgetPeriod;
-//     LiteLLM allows a never-reset budget but Raksha requires a window, so the
+//     LiteLLM allows a never-reset budget but Gateway requires a window, so the
 //     operator-supplied default stands in.
 //   - max_budget > 0 with an unparseable budget_duration -> error.
-func toBudget(b litellm.LiteLLMBudget, maxBudgetPeriod string) (*RakshaCreateBudgetRequest, error) {
+func toBudget(b litellm.LiteLLMBudget, maxBudgetPeriod string) (*GatewayCreateBudgetRequest, error) {
 	if b.MaxBudget == nil || *b.MaxBudget <= 0 {
 		return nil, nil
 	}
 
 	if b.BudgetDuration == nil || strings.TrimSpace(*b.BudgetDuration) == "" {
-		return &RakshaCreateBudgetRequest{MaxLimit: *b.MaxBudget, ResetDuration: maxBudgetPeriod}, nil
+		return &GatewayCreateBudgetRequest{MaxLimit: *b.MaxBudget, ResetDuration: maxBudgetPeriod}, nil
 	}
 
 	reset, err := convertBudgetDuration(*b.BudgetDuration)
@@ -82,14 +82,14 @@ func toBudget(b litellm.LiteLLMBudget, maxBudgetPeriod string) (*RakshaCreateBud
 		return nil, err
 	}
 
-	return &RakshaCreateBudgetRequest{MaxLimit: *b.MaxBudget, ResetDuration: reset}, nil
+	return &GatewayCreateBudgetRequest{MaxLimit: *b.MaxBudget, ResetDuration: reset}, nil
 }
 
-// toRateLimit maps tpm_limit / rpm_limit onto a Raksha rate limit. Each
+// toRateLimit maps tpm_limit / rpm_limit onto a Gateway rate limit. Each
 // dimension is independent: a non-positive or nil limit is treated as "no
 // limit" and omitted. Returns nil when neither dimension has a positive limit.
-func toRateLimit(b litellm.LiteLLMBudget) *RakshaCreateRateLimitRequest {
-	rl := &RakshaCreateRateLimitRequest{}
+func toRateLimit(b litellm.LiteLLMBudget) *GatewayCreateRateLimitRequest {
+	rl := &GatewayCreateRateLimitRequest{}
 	set := false
 
 	if b.TPMLimit != nil && *b.TPMLimit > 0 {
@@ -114,9 +114,9 @@ func toRateLimit(b litellm.LiteLLMBudget) *RakshaCreateRateLimitRequest {
 	return rl
 }
 
-// convertBudgetDuration translates a LiteLLM budget_duration into Raksha's
+// convertBudgetDuration translates a LiteLLM budget_duration into Gateway's
 // duration format. The only unit difference is months: LiteLLM uses "mo",
-// Raksha uses "M". All other units (s, m, h, d, w) are identical.
+// Gateway uses "M". All other units (s, m, h, d, w) are identical.
 func convertBudgetDuration(d string) (string, error) {
 	d = strings.TrimSpace(d)
 	m := litellmDurationRe.FindStringSubmatch(d)

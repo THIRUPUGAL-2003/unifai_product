@@ -1,4 +1,4 @@
-# Part of Raksha browser_ai_proxy — do not import directly.
+# Part of Gateway browser_ai_proxy — do not import directly.
 
 
 
@@ -32,7 +32,7 @@ def enforce_file_send_policy(
     """
     repeat_msg = file_send_block_matches(domain, raw_text or "")
     if repeat_msg:
-        print(f"[Raksha Proxy] FILE SEND BLOCKED (repeat after rule hit) | {host}")
+        print(f"[Gateway Proxy] FILE SEND BLOCKED (repeat after rule hit) | {host}")
         return True, repeat_msg, "", 0, False
 
     has_attach = (
@@ -159,7 +159,7 @@ def enforce_file_send_policy(
             msg = warn
             dedupe_key = f"upload-send-block-all-nocache|{hint}"
             if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
-                print(f"[Raksha Proxy] FILE/VOICE SEND BLOCKED (no cache, Block Upload ON) | {client_ip} -> {host}")
+                print(f"[Gateway Proxy] FILE/VOICE SEND BLOCKED (no cache, Block Upload ON) | {client_ip} -> {host}")
                 ok = post_upload_intercept(
                     platform=platform,
                     prompt=f"{tag} {hint} — Blocked (Block Upload)",
@@ -215,13 +215,13 @@ def enforce_file_send_policy(
                         if rule_action == "ALERT":
                             rule_action = "WARN"
                 except Exception as e:
-                    print(f"[Raksha Proxy] transcript/caption scan failed (allowed): {e}")
+                    print(f"[Gateway Proxy] transcript/caption scan failed (allowed): {e}")
             cap_done = bool(caption)
             if rule_hit and rule_action == "BLOCK":
                 msg = _security_reply_text(rule_name, "") or f"Blocked by Guard Rule ({rule_name})"
                 dedupe_key = f"upload-send-block-nocache|{rule_name}|{hint}"
                 if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
-                    print(f"[Raksha Proxy] FILE/VOICE SEND BLOCKED (transcript/caption) | {rule_name}")
+                    print(f"[Gateway Proxy] FILE/VOICE SEND BLOCKED (transcript/caption) | {rule_name}")
                     ok = post_upload_intercept(
                         platform=platform,
                         prompt=f"{tag} {hint} — Blocked ({rule_name})",
@@ -250,7 +250,7 @@ def enforce_file_send_policy(
                 )
                 return True, msg, "", 1, cap_done
             if rule_hit and rule_action == "REDACT":
-                notice = _warning_for_rule_name(rule_name) or "Raksha Guard redaction policy."
+                notice = _warning_for_rule_name(rule_name) or "Gateway Guard redaction policy."
                 dedupe_key = f"upload-send-redact-nocache|{rule_name}|{hint}"
                 if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
                     post_upload_intercept(
@@ -296,7 +296,7 @@ def enforce_file_send_policy(
         # Still log the file so Prompt Logs + rules are not silent.
         dedupe_key = f"upload-send-allow-nocache-empty|{hint}"
         if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
-            print(f"[Raksha Proxy] FILE/VOICE SEND (cache miss, no caption) | {hint} | {client_ip} -> {host}")
+            print(f"[Gateway Proxy] FILE/VOICE SEND (cache miss, no caption) | {hint} | {client_ip} -> {host}")
             ok = post_upload_intercept(
                 platform=platform,
                 prompt=f"{tag} {hint} — Allowed",
@@ -347,7 +347,7 @@ def enforce_file_send_policy(
             caption = ""
         if caption:
             print(
-                f"[Raksha Proxy] FILE CAPTION from composer | {domain} | "
+                f"[Gateway Proxy] FILE CAPTION from composer | {domain} | "
                 f"{caption[:80]!r}"
             )
     if not (caption or "").strip():
@@ -447,7 +447,7 @@ def enforce_file_send_policy(
     try:
         cached_list = wait_bind_real_upload_names(cached_list, raw_text or "", domain, retries=8, delay=0.20)
     except Exception as e:
-        print(f"[Raksha Proxy WARNING] FILE NAME wait-bind failed: {e}")
+        print(f"[Gateway Proxy WARNING] FILE NAME wait-bind failed: {e}")
 
     get_control_settings()
     block_all = controls_active("block_upload")
@@ -640,7 +640,7 @@ def enforce_file_send_policy(
                         r["rule_action"] = (act or "").upper()
                         r["scan_evaluated"] = True
             except Exception as e:
-                print(f"[Raksha Proxy] combined file bot scan failed (allowed): {e}")
+                print(f"[Gateway Proxy] combined file bot scan failed (allowed): {e}")
 
     cap_hit = False
     cap_name = ""
@@ -675,7 +675,7 @@ def enforce_file_send_policy(
                     if cap_action == "ALERT":
                         cap_action = "WARN"
             except Exception as e:
-                print(f"[Raksha Proxy] caption rule scan failed (allowed): {e}")
+                print(f"[Gateway Proxy] caption rule scan failed (allowed): {e}")
 
     any_file_blocked = any(
         r.get("rule_hit") and (r.get("rule_action") or "").upper() == "BLOCK"
@@ -806,7 +806,7 @@ def enforce_file_send_policy(
             continue
 
         print(
-            f"[Raksha Proxy] FILE SEND LOG | {client_ip} -> {host} | {row['file_label']} | "
+            f"[Gateway Proxy] FILE SEND LOG | {client_ip} -> {host} | {row['file_label']} | "
             f"verdict={file_status} (is_blocked={file_is_blocked}) | multi={idx + 1}/{n_files}"
         )
 
@@ -844,12 +844,12 @@ def enforce_file_send_policy(
                 if ok:
                     mark_duplicate_event(domain, _dedupe)
                 else:
-                    print(f"[Raksha Proxy WARNING] File log failed to post | {_label}")
+                    print(f"[Gateway Proxy WARNING] File log failed to post | {_label}")
             except Exception as e:
-                print(f"[Raksha Proxy WARNING] File log async failed | {_label}: {e}")
+                print(f"[Gateway Proxy WARNING] File log async failed | {_label}: {e}")
 
         # Do not block the chat Send on Prompt Log upload — fire-and-forget.
-        threading.Thread(target=_post_row, daemon=True, name="raksha-file-log").start()
+        threading.Thread(target=_post_row, daemon=True, name="gateway-file-log").start()
 
     if should_block:
         remember_file_send_block(
@@ -1143,19 +1143,19 @@ def post_upload_intercept(
                 if sample[:1] not in (b"{", b"["):
                     file_payload = raw_bytes
     except Exception as e:
-        print(f"[Raksha Proxy] upload payload prepare failed (log without file): {e}")
+        print(f"[Gateway Proxy] upload payload prepare failed (log without file): {e}")
         file_payload = b""
 
     max_attach = 20 * 1024 * 1024
     if len(file_payload) > max_attach:
         print(
-            f"[Raksha Proxy] upload file too large for temp View store "
+            f"[Gateway Proxy] upload file too large for temp View store "
             f"({len(file_payload)} bytes) — logging name+extract only"
         )
         file_payload = b""
 
     try:
-        boundary = f"----Raksha{int(time.time() * 1000)}"
+        boundary = f"----Gateway{int(time.time() * 1000)}"
         parts: list[bytes] = []
 
         def add_field(name: str, value: str) -> None:
@@ -1166,9 +1166,9 @@ def post_upload_intercept(
         add_field("platform", platform)
         add_field("prompt", prompt)
         add_field("client_ip", client_ip)
-        add_field("agent_id", RAKSHA_AGENT_ID or "")
-        add_field("agent_hostname", RAKSHA_AGENT_HOSTNAME or "")
-        add_field("agent_type", RAKSHA_AGENT_TYPE or "endpoint")
+        add_field("agent_id", GATEWAY_AGENT_ID or "")
+        add_field("agent_hostname", GATEWAY_AGENT_HOSTNAME or "")
+        add_field("agent_type", GATEWAY_AGENT_TYPE or "endpoint")
         add_field("file_name", file_label)
         add_field("content_type", file_ctype)
         add_field("metadata", json.dumps(metadata))
@@ -1185,7 +1185,7 @@ def post_upload_intercept(
         parts.append(f"--{boundary}--\r\n".encode("utf-8"))
         body = b"".join(parts)
         req = urllib.request.Request(
-            f"{RAKSHA_BACKEND_URL}/api/browser-ai/intercept-file",
+            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept-file",
             data=body,
             headers=_backend_headers({"Content-Type": f"multipart/form-data; boundary={boundary}"}),
             method="POST",
@@ -1196,7 +1196,7 @@ def post_upload_intercept(
             if 200 <= getattr(resp, "status", 200) < 300:
                 return True
     except Exception as e:
-        print(f"[Raksha Proxy WARNING] intercept-file failed, falling back to JSON: {e}")
+        print(f"[Gateway Proxy WARNING] intercept-file failed, falling back to JSON: {e}")
 
     try:
         payload_json = json.dumps({
@@ -1208,7 +1208,7 @@ def post_upload_intercept(
             "metadata": metadata,
         }).encode("utf-8")
         req = urllib.request.Request(
-            f"{RAKSHA_BACKEND_URL}/api/browser-ai/intercept",
+            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
             data=payload_json,
             headers=_backend_headers({"Content-Type": "application/json"}),
             method="POST",
@@ -1216,7 +1216,7 @@ def post_upload_intercept(
         with urllib.request.urlopen(req, timeout=4) as resp:
             return 200 <= getattr(resp, "status", 200) < 300
     except Exception as e:
-        print(f"[Raksha Proxy WARNING] upload intercept JSON failed: {e}")
+        print(f"[Gateway Proxy WARNING] upload intercept JSON failed: {e}")
         return False
 
 
@@ -1343,7 +1343,7 @@ def _extract_pdf_pymupdf_ocr(data: bytes, max_pages: int = 10) -> str:
             if (t or "").strip():
                 parts.append(t.strip())
     except Exception as e:
-        print(f"[Raksha Proxy] PDF page OCR failed (allowed): {e}")
+        print(f"[Gateway Proxy] PDF page OCR failed (allowed): {e}")
     finally:
         if doc is not None:
             try:
@@ -1383,7 +1383,7 @@ def _extract_pdf_text_smart(data: bytes) -> str:
         return regex_t[:200_000]
     ocr_t = _extract_pdf_ocr(data)
     if ocr_t.strip():
-        print(f"[Raksha Proxy] PDF OCR extracted {len(ocr_t.strip())} chars (scanned/low-text PDF)")
+        print(f"[Gateway Proxy] PDF OCR extracted {len(ocr_t.strip())} chars (scanned/low-text PDF)")
         return ocr_t[:200_000]
     return (text or regex_t or "")[:200_000]
 
@@ -1415,7 +1415,7 @@ def _extract_pdf_images(data: bytes, max_images: int = 10) -> list[str]:
                 if raw and len(raw) >= 64:
                     out.append(base64.b64encode(raw).decode("ascii"))
     except Exception as e:
-        print(f"[Raksha Proxy] pdf image extract failed (allowed): {e}")
+        print(f"[Gateway Proxy] pdf image extract failed (allowed): {e}")
     return out
 
 
@@ -1444,7 +1444,7 @@ def _extract_office_images(data: bytes, max_images: int = 10) -> list[str]:
                 if raw and len(raw) >= 64:
                     out.append(base64.b64encode(raw).decode("ascii"))
     except Exception as e:
-        print(f"[Raksha Proxy] office image extract failed (allowed): {e}")
+        print(f"[Gateway Proxy] office image extract failed (allowed): {e}")
     return out
 
 
@@ -1800,7 +1800,7 @@ def _extract_ole_office_text(data: bytes, content_type: str = "", file_name: str
                 return ""
         return _extract_binary_string_runs(data, min_chars=4)
     except Exception as e:
-        print(f"[Raksha Proxy] OLE office extract failed (allowed): {e}")
+        print(f"[Gateway Proxy] OLE office extract failed (allowed): {e}")
         return ""
 
 
@@ -1852,7 +1852,7 @@ def _extract_rtf_text(data: bytes) -> str:
         text = re.sub(r"\s+", " ", text).strip()
         return text[:200_000]
     except Exception as e:
-        print(f"[Raksha Proxy] RTF extract failed (allowed): {e}")
+        print(f"[Gateway Proxy] RTF extract failed (allowed): {e}")
         return ""
 
 

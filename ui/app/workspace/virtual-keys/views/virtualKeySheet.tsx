@@ -238,6 +238,7 @@ function ExpiryPickerField({ value, onChange }: ExpiryFieldProps) {
 
 export default function VirtualKeySheet({ virtualKey, teams, customers, defaultTeamId, onSave, onCancel }: VirtualKeySheetProps) {
 	const [isOpen, setIsOpen] = useState(true);
+	const [sheetSearch, setSheetSearch] = useState("");
 	const navigate = useNavigate();
 	const isEditing = !!virtualKey;
 
@@ -253,7 +254,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 	// Only direct links belong to the form; team/customer members reach the key through those.
 	const { directUsers, isManagedByProfile: isManagedByProfileHook } = useVirtualKeyUsage(virtualKey);
 	const isManagedByProfile = isEditing && isManagedByProfileHook;
-	const { data: sessionUsers = [] } = useGetSessionUsersQuery();
+	const { data: sessionUsers = [], isError: sessionUsersFailed, error: sessionUsersError } = useGetSessionUsersQuery();
 	// Team attachment: when creating from a team context (defaultTeamId provided), the entity
 	// assignment is pre-set and locked. When editing an existing VK the assignment can be changed.
 	const attachedTeamId = isEditing ? virtualKey?.team_id || "" : defaultTeamId || "";
@@ -406,6 +407,12 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 		}
 	}, [mcpClientsError]);
 
+	useEffect(() => {
+		if (sessionUsersFailed) {
+			toast.error(`Failed to load users: ${getErrorMessage(sessionUsersError)}`);
+		}
+	}, [sessionUsersFailed, sessionUsersError]);
+
 	// Sync direct users from hook when loaded for an existing virtual key if userIds empty
 	useEffect(() => {
 		if (directUsers.length > 0 && !form.formState.dirtyFields.userIds) {
@@ -455,7 +462,6 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 
 	// Provider configuration state
 	const [selectedProvider, setSelectedProvider] = useState<string>("");
-	const [sheetSearch, setSheetSearch] = useState("");
 
 	// MCP client configuration state
 	const [selectedMCPClient, setSelectedMCPClient] = useState<string>("");
@@ -1603,8 +1609,9 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 										{(() => {
 											const defaultMCPClients = mcpClientsData.filter(
 												(client) =>
-													client.config.allow_on_all_virtual_keys &&
-													!mcpConfigs.some((config) => config.mcp_client_name === client.config.name),
+													client.config?.allow_on_all_virtual_keys &&
+													client.config?.name &&
+													!mcpConfigs.some((config) => config.mcp_client_name === client.config?.name),
 											);
 											return defaultMCPClients.length > 0 ? (
 												<div className="text-muted-foreground rounded-md border p-3 text-xs">
@@ -1612,8 +1619,10 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 														<Info className="mt-0.5 h-3 w-3 shrink-0" />
 														<span>
 															The following MCP servers are available to this key by default with all tools enabled on that client:{" "}
-															<span className="text-foreground font-medium">{defaultMCPClients.map((c) => c.config.name).join(", ")}</span>.
-															Adding an explicit config for any of them below will override the all-tools default for this key.
+															<span className="text-foreground font-medium">
+																{defaultMCPClients.map((c) => c.config?.name).filter(Boolean).join(", ")}
+															</span>
+															. Adding an explicit config for any of them below will override the all-tools default for this key.
 														</span>
 													</div>
 												</div>
@@ -1634,22 +1643,23 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 														<SelectValue placeholder="Select an MCP client to add" />
 													</SelectTrigger>
 													<SelectContent>
-														{mcpClientsData.filter((client) => !mcpConfigs.some((config) => config.mcp_client_name === client.config.name))
-															.length > 0 ? (
+														{mcpClientsData.filter(
+															(client) => client.config?.name && !mcpConfigs.some((config) => config.mcp_client_name === client.config?.name),
+														).length > 0 ? (
 															mcpClientsData
 																.filter(
 																	(client) =>
-																		client.config.name && !mcpConfigs.some((config) => config.mcp_client_name === client.config.name),
+																		client.config?.name && !mcpConfigs.some((config) => config.mcp_client_name === client.config?.name),
 																)
 																.map((client, index) => {
 																	const client_tools = client.tools || [];
-																	const totalTools = client.config.tools_to_execute?.includes("*")
+																	const totalTools = client.config?.tools_to_execute?.includes("*")
 																		? client_tools.length
-																		: client_tools.filter((tool) => client.config.tools_to_execute?.includes(tool.name)).length;
+																		: client_tools.filter((tool) => client.config?.tools_to_execute?.includes(tool.name)).length;
 																	return (
-																		<SelectItem key={index} value={client.config.name}>
+																		<SelectItem key={index} value={client.config!.name}>
 																			<div className="flex items-center gap-2">
-																				{client.config.name}
+																				{client.config?.name}
 																				<span className="text-muted-foreground text-xs">
 																					({totalTools} {totalTools === 1 ? "enabled tool" : "enabled tools"})
 																				</span>
@@ -1678,7 +1688,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 													</TableHeader>
 													<TableBody>
 														{mcpConfigs.map((config, index) => {
-															const mcpClient = mcpClientsData?.find((client) => client.config.name === config.mcp_client_name);
+															const mcpClient = mcpClientsData?.find((client) => client.config?.name === config.mcp_client_name);
 
 															// Handle new wildcard semantics for client-level filtering
 															const clientToolsToExecute = mcpClient?.config?.tools_to_execute;

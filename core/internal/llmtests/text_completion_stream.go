@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunTextCompletionStreamTest executes the text completion streaming test scenario
-func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunTextCompletionStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.TextCompletionStream {
 		t.Logf("Text completion stream not supported for provider %s", testConfig.Provider)
 		return
@@ -37,12 +37,12 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 			model = testConfig.ChatModel
 		}
 
-		request := &schemas.RakshaTextCompletionRequest{
+		request := &schemas.GatewayTextCompletionRequest{
 			Provider: testConfig.Provider,
 			Model:    model,
 			Input:    input,
 			Params: &schemas.TextCompletionParameters{
-				MaxTokens: raksha.Ptr(150),
+				MaxTokens: gateway.Ptr(150),
 			},
 			Fallbacks: testConfig.TextCompletionFallbacks,
 		}
@@ -63,8 +63,8 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 		}
 
 		// Use proper streaming retry wrapper for the stream request
-		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.TextCompletionStreamRequest(bfCtx, request)
 		})
 
@@ -76,7 +76,7 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 
 		var fullContent strings.Builder
 		var responseCount int
-		var lastResponse *schemas.RakshaStreamChunk
+		var lastResponse *schemas.GatewayStreamChunk
 
 		// Create a timeout context for the stream reading
 		streamCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -97,27 +97,27 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 				if response == nil {
 					t.Fatal("Streaming response should not be nil")
 				}
-				lastResponse = DeepCopyRakshaStreamChunk(response)
+				lastResponse = DeepCopyGatewayStreamChunk(response)
 
 				// Basic validation of streaming response structure
-				if response.RakshaTextCompletionResponse != nil {
-					if response.RakshaTextCompletionResponse.ExtraFields.Provider != testConfig.Provider {
-						t.Logf("⚠️ Warning: Provider mismatch - expected %s, got %s", testConfig.Provider, response.RakshaTextCompletionResponse.ExtraFields.Provider)
+				if response.GatewayTextCompletionResponse != nil {
+					if response.GatewayTextCompletionResponse.ExtraFields.Provider != testConfig.Provider {
+						t.Logf("⚠️ Warning: Provider mismatch - expected %s, got %s", testConfig.Provider, response.GatewayTextCompletionResponse.ExtraFields.Provider)
 					}
-					if response.RakshaTextCompletionResponse.ID == "" {
+					if response.GatewayTextCompletionResponse.ID == "" {
 						t.Logf("⚠️ Warning: Response ID is empty")
 					}
 
 					// Log latency for each chunk (can be 0 for inter-chunks)
-					t.Logf("📊 Chunk %d latency: %d ms", responseCount+1, response.RakshaTextCompletionResponse.ExtraFields.Latency)
+					t.Logf("📊 Chunk %d latency: %d ms", responseCount+1, response.GatewayTextCompletionResponse.ExtraFields.Latency)
 
 					// Validate text completion response structure
-					if response.RakshaTextCompletionResponse.Choices == nil {
+					if response.GatewayTextCompletionResponse.Choices == nil {
 						t.Logf("⚠️ Warning: Choices should not be nil in text completion streaming")
 					}
 
 					// Process each choice in the response (similar to chat completion)
-					for _, choice := range response.RakshaTextCompletionResponse.Choices {
+					for _, choice := range response.GatewayTextCompletionResponse.Choices {
 						// For text completion, we expect either streaming deltas or text completion choices
 						if choice.TextCompletionResponseChoice != nil {
 							// Handle direct text completion response choice (converted by providers)
@@ -177,11 +177,11 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 		}
 
 		// Validate latency is present in the last chunk (total latency)
-		if lastResponse != nil && lastResponse.RakshaTextCompletionResponse != nil {
-			if lastResponse.RakshaTextCompletionResponse.ExtraFields.Latency <= 0 {
-				t.Fatalf("❌ Last streaming chunk missing latency information (got %d ms)", lastResponse.RakshaTextCompletionResponse.ExtraFields.Latency)
+		if lastResponse != nil && lastResponse.GatewayTextCompletionResponse != nil {
+			if lastResponse.GatewayTextCompletionResponse.ExtraFields.Latency <= 0 {
+				t.Fatalf("❌ Last streaming chunk missing latency information (got %d ms)", lastResponse.GatewayTextCompletionResponse.ExtraFields.Latency)
 			} else {
-				t.Logf("✅ Total streaming latency: %d ms", lastResponse.RakshaTextCompletionResponse.ExtraFields.Latency)
+				t.Logf("✅ Total streaming latency: %d ms", lastResponse.GatewayTextCompletionResponse.ExtraFields.Latency)
 			}
 		}
 
@@ -238,13 +238,13 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 					PromptStr: &testCase.prompt,
 				}
 
-				request := &schemas.RakshaTextCompletionRequest{
+				request := &schemas.GatewayTextCompletionRequest{
 					Provider: testConfig.Provider,
 					Model:    model,
 					Input:    input,
 					Params: &schemas.TextCompletionParameters{
-						MaxTokens:   raksha.Ptr(50),
-						Temperature: raksha.Ptr(0.7),
+						MaxTokens:   gateway.Ptr(50),
+						Temperature: gateway.Ptr(0.7),
 					},
 					Fallbacks: testConfig.TextCompletionFallbacks,
 				}
@@ -263,8 +263,8 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 					},
 				}
 
-				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.TextCompletionStreamRequest(bfCtx, request)
 				})
 
@@ -294,8 +294,8 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 						responseCount++
 
 						// Extract content from choices
-						if response.RakshaTextCompletionResponse != nil {
-							for _, choice := range response.RakshaTextCompletionResponse.Choices {
+						if response.GatewayTextCompletionResponse != nil {
+							for _, choice := range response.GatewayTextCompletionResponse.Choices {
 								if choice.TextCompletionResponseChoice != nil {
 									delta := choice.TextCompletionResponseChoice.Text
 									if delta != nil {
@@ -352,21 +352,21 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 		}{
 			{
 				name:        "HighCreativity",
-				temperature: raksha.Ptr(0.9),
-				maxTokens:   raksha.Ptr(100),
-				topP:        raksha.Ptr(0.9),
+				temperature: gateway.Ptr(0.9),
+				maxTokens:   gateway.Ptr(100),
+				topP:        gateway.Ptr(0.9),
 			},
 			{
 				name:        "LowCreativity",
-				temperature: raksha.Ptr(0.1),
-				maxTokens:   raksha.Ptr(50),
-				topP:        raksha.Ptr(0.5),
+				temperature: gateway.Ptr(0.1),
+				maxTokens:   gateway.Ptr(50),
+				topP:        gateway.Ptr(0.5),
 			},
 			{
 				name:        "Balanced",
-				temperature: raksha.Ptr(0.5),
-				maxTokens:   raksha.Ptr(75),
-				topP:        raksha.Ptr(0.8),
+				temperature: gateway.Ptr(0.5),
+				maxTokens:   gateway.Ptr(75),
+				topP:        gateway.Ptr(0.8),
 			},
 		}
 
@@ -380,7 +380,7 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 					PromptStr: &prompt,
 				}
 
-				request := &schemas.RakshaTextCompletionRequest{
+				request := &schemas.GatewayTextCompletionRequest{
 					Provider: testConfig.Provider,
 					Model:    model,
 					Input:    input,
@@ -406,8 +406,8 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 					},
 				}
 
-				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.TextCompletionStreamRequest(bfCtx, request)
 				})
 
@@ -454,10 +454,10 @@ func RunTextCompletionStreamTest(t *testing.T, client *raksha.Raksha, ctx contex
 }
 
 // createConsolidatedTextCompletionResponse creates a consolidated response for validation
-func createConsolidatedTextCompletionResponse(finalContent string, lastResponse *schemas.RakshaStreamChunk, provider schemas.ModelProvider) *schemas.RakshaTextCompletionResponse {
-	consolidatedResponse := &schemas.RakshaTextCompletionResponse{
+func createConsolidatedTextCompletionResponse(finalContent string, lastResponse *schemas.GatewayStreamChunk, provider schemas.ModelProvider) *schemas.GatewayTextCompletionResponse {
+	consolidatedResponse := &schemas.GatewayTextCompletionResponse{
 		Object: "text_completion",
-		Choices: []schemas.RakshaResponseChoice{
+		Choices: []schemas.GatewayResponseChoice{
 			{
 				Index: 0,
 				TextCompletionResponseChoice: &schemas.TextCompletionResponseChoice{
@@ -465,24 +465,24 @@ func createConsolidatedTextCompletionResponse(finalContent string, lastResponse 
 				},
 			},
 		},
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Provider:    provider,
 			RequestType: schemas.TextCompletionRequest,
 		},
 	}
 
 	// Copy usage and other metadata from last response if available
-	if lastResponse != nil && lastResponse.RakshaTextCompletionResponse != nil {
-		consolidatedResponse.Usage = lastResponse.RakshaTextCompletionResponse.Usage
-		consolidatedResponse.Model = lastResponse.RakshaTextCompletionResponse.Model
-		consolidatedResponse.ID = lastResponse.RakshaTextCompletionResponse.ID
+	if lastResponse != nil && lastResponse.GatewayTextCompletionResponse != nil {
+		consolidatedResponse.Usage = lastResponse.GatewayTextCompletionResponse.Usage
+		consolidatedResponse.Model = lastResponse.GatewayTextCompletionResponse.Model
+		consolidatedResponse.ID = lastResponse.GatewayTextCompletionResponse.ID
 
 		// Copy finish reason from last choice if available
-		if len(lastResponse.RakshaTextCompletionResponse.Choices) > 0 && lastResponse.RakshaTextCompletionResponse.Choices[0].FinishReason != nil {
-			consolidatedResponse.Choices[0].FinishReason = lastResponse.RakshaTextCompletionResponse.Choices[0].FinishReason
+		if len(lastResponse.GatewayTextCompletionResponse.Choices) > 0 && lastResponse.GatewayTextCompletionResponse.Choices[0].FinishReason != nil {
+			consolidatedResponse.Choices[0].FinishReason = lastResponse.GatewayTextCompletionResponse.Choices[0].FinishReason
 		}
 
-		consolidatedResponse.ExtraFields = lastResponse.RakshaTextCompletionResponse.ExtraFields
+		consolidatedResponse.ExtraFields = lastResponse.GatewayTextCompletionResponse.ExtraFields
 	}
 
 	return consolidatedResponse

@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/stretchr/testify/require"
 )
 
 // This test verifies that the web search tool is properly invoked and returns results
-func RunWebSearchToolTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -33,9 +33,9 @@ func RunWebSearchToolTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 			Type: schemas.ResponsesToolTypeWebSearch,
 			ResponsesToolWebSearch: &schemas.ResponsesToolWebSearch{
 				UserLocation: &schemas.ResponsesToolWebSearchUserLocation{
-					Type:    raksha.Ptr("approximate"),
-					Country: raksha.Ptr("US"),
-					City:    raksha.Ptr("New York"),
+					Type:    gateway.Ptr("approximate"),
+					Country: gateway.Ptr("US"),
+					City:    gateway.Ptr("New York"),
 				},
 			},
 		}
@@ -57,9 +57,9 @@ func RunWebSearchToolTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 		expectations := WebSearchExpectations()
 
 		// Create operation for Responses API
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
@@ -169,7 +169,7 @@ func WebSearchExpectations() ResponseExpectations {
 }
 
 // RunWebSearchToolStreamTest executes streaming web search test
-func RunWebSearchToolStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -189,22 +189,22 @@ func RunWebSearchToolStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 			Type: schemas.ResponsesToolTypeWebSearch,
 			ResponsesToolWebSearch: &schemas.ResponsesToolWebSearch{
 				UserLocation: &schemas.ResponsesToolWebSearchUserLocation{
-					Type:     raksha.Ptr("approximate"),
-					Country:  raksha.Ptr("US"),
-					City:     raksha.Ptr("San Francisco"),
-					Region:   raksha.Ptr("California"),
-					Timezone: raksha.Ptr("America/Los_Angeles"),
+					Type:     gateway.Ptr("approximate"),
+					Country:  gateway.Ptr("US"),
+					City:     gateway.Ptr("San Francisco"),
+					Region:   gateway.Ptr("California"),
+					Timezone: gateway.Ptr("America/Los_Angeles"),
 				},
 			},
 		}
 
-		request := &schemas.RakshaResponsesRequest{
+		request := &schemas.GatewayResponsesRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    responsesMessages,
 			Params: &schemas.ResponsesParameters{
 				Tools:           []schemas.ResponsesTool{*webSearchTool},
-				MaxOutputTokens: raksha.Ptr(1500),
+				MaxOutputTokens: gateway.Ptr(1500),
 			},
 			Fallbacks: testConfig.Fallbacks,
 		}
@@ -224,11 +224,11 @@ func RunWebSearchToolStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 		}
 
 		validationResult := WithResponsesStreamValidationRetry(t, retryConfig, retryContext,
-			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.ResponsesStreamRequest(bfCtx, request)
 			},
-			func(responseChannel chan *schemas.RakshaStreamChunk) ResponsesStreamValidationResult {
+			func(responseChannel chan *schemas.GatewayStreamChunk) ResponsesStreamValidationResult {
 				var hasWebSearchCall, hasMessageContent bool
 				var webSearchQuery string
 				var searchSources []schemas.ResponsesWebSearchToolCallActionSearchSource
@@ -251,21 +251,21 @@ func RunWebSearchToolStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 						chunkCount++
 
 						// Check streaming events for web_search_call and message content
-						if stream.RakshaResponsesStreamResponse != nil {
-							streamType := stream.RakshaResponsesStreamResponse.Type
+						if stream.GatewayResponsesStreamResponse != nil {
+							streamType := stream.GatewayResponsesStreamResponse.Type
 
 							// Check for output_item.added with web_search_call
 							if streamType == schemas.ResponsesStreamResponseTypeOutputItemAdded {
-								if stream.RakshaResponsesStreamResponse.Item != nil {
-									if stream.RakshaResponsesStreamResponse.Item.Type != nil &&
-										*stream.RakshaResponsesStreamResponse.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
+								if stream.GatewayResponsesStreamResponse.Item != nil {
+									if stream.GatewayResponsesStreamResponse.Item.Type != nil &&
+										*stream.GatewayResponsesStreamResponse.Item.Type == schemas.ResponsesMessageTypeWebSearchCall {
 										hasWebSearchCall = true
 										t.Logf("✅ Found web_search_call in streaming event: %s", streamType)
 
 										// Extract query and sources if available
-										if stream.RakshaResponsesStreamResponse.Item.ResponsesToolMessage != nil &&
-											stream.RakshaResponsesStreamResponse.Item.ResponsesToolMessage.Action != nil {
-											action := stream.RakshaResponsesStreamResponse.Item.ResponsesToolMessage.Action
+										if stream.GatewayResponsesStreamResponse.Item.ResponsesToolMessage != nil &&
+											stream.GatewayResponsesStreamResponse.Item.ResponsesToolMessage.Action != nil {
+											action := stream.GatewayResponsesStreamResponse.Item.ResponsesToolMessage.Action
 											if action.ResponsesWebSearchToolCallAction != nil {
 												if action.ResponsesWebSearchToolCallAction.Query != nil {
 													webSearchQuery = *action.ResponsesWebSearchToolCallAction.Query
@@ -288,9 +288,9 @@ func RunWebSearchToolStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 
 							// Check for message text content in streaming deltas
 							if streamType == schemas.ResponsesStreamResponseTypeOutputTextDelta {
-								if stream.RakshaResponsesStreamResponse.Delta != nil && *stream.RakshaResponsesStreamResponse.Delta != "" {
+								if stream.GatewayResponsesStreamResponse.Delta != nil && *stream.GatewayResponsesStreamResponse.Delta != "" {
 									hasMessageContent = true
-									t.Logf("✅ Found message text delta: %s", *stream.RakshaResponsesStreamResponse.Delta)
+									t.Logf("✅ Found message text delta: %s", *stream.GatewayResponsesStreamResponse.Delta)
 								}
 							}
 						}
@@ -333,7 +333,7 @@ func RunWebSearchToolStreamTest(t *testing.T, client *raksha.Raksha, ctx context
 }
 
 // RunWebSearchToolWithDomainsTest tests web search with domain filtering
-func RunWebSearchToolWithDomainsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolWithDomainsTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -379,15 +379,15 @@ func RunWebSearchToolWithDomainsTest(t *testing.T, client *raksha.Raksha, ctx co
 
 		expectations := WebSearchExpectations()
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools:           []schemas.ResponsesTool{*webSearchTool},
-					MaxOutputTokens: raksha.Ptr(1200),
+					MaxOutputTokens: gateway.Ptr(1200),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -434,7 +434,7 @@ func RunWebSearchToolWithDomainsTest(t *testing.T, client *raksha.Raksha, ctx co
 }
 
 // RunWebSearchToolContextSizesTest tests different search context sizes
-func RunWebSearchToolContextSizesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolContextSizesTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -483,15 +483,15 @@ func RunWebSearchToolContextSizesTest(t *testing.T, client *raksha.Raksha, ctx c
 
 				expectations := WebSearchExpectations()
 
-				responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-					bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-					responsesReq := &schemas.RakshaResponsesRequest{
+				responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+					bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+					responsesReq := &schemas.GatewayResponsesRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.ChatModel,
 						Input:    responsesMessages,
 						Params: &schemas.ResponsesParameters{
 							Tools:           []schemas.ResponsesTool{*webSearchTool},
-							MaxOutputTokens: raksha.Ptr(1500),
+							MaxOutputTokens: gateway.Ptr(1500),
 						},
 						Fallbacks: testConfig.Fallbacks,
 					}
@@ -540,7 +540,7 @@ func RunWebSearchToolContextSizesTest(t *testing.T, client *raksha.Raksha, ctx c
 }
 
 // RunWebSearchToolMultiTurnTest tests multi-turn conversation with web search
-func RunWebSearchToolMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolMultiTurnTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -577,15 +577,15 @@ func RunWebSearchToolMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx cont
 
 		expectations := WebSearchExpectations()
 
-		firstOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		firstOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    firstMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools:           []schemas.ResponsesTool{*webSearchTool},
-					MaxOutputTokens: raksha.Ptr(1500),
+					MaxOutputTokens: gateway.Ptr(1500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -632,15 +632,15 @@ func RunWebSearchToolMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx cont
 			},
 		}
 
-		secondOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		secondOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    secondMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools:           []schemas.ResponsesTool{*webSearchTool},
-					MaxOutputTokens: raksha.Ptr(1500),
+					MaxOutputTokens: gateway.Ptr(1500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -675,7 +675,7 @@ func RunWebSearchToolMultiTurnTest(t *testing.T, client *raksha.Raksha, ctx cont
 }
 
 // RunWebSearchToolMaxUsesTest tests Anthropic-specific max uses parameter
-func RunWebSearchToolMaxUsesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunWebSearchToolMaxUsesTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.WebSearchTool {
 		t.Logf("Web search tool not supported for provider %s", testConfig.Provider)
 		return
@@ -720,15 +720,15 @@ func RunWebSearchToolMaxUsesTest(t *testing.T, client *raksha.Raksha, ctx contex
 
 		expectations := WebSearchExpectations()
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
 					Tools:           []schemas.ResponsesTool{*webSearchTool},
-					MaxOutputTokens: raksha.Ptr(2000),
+					MaxOutputTokens: gateway.Ptr(2000),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}

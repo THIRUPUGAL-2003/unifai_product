@@ -34,7 +34,7 @@ function parseTranscriptionText(data: unknown): string {
 }
 
 /**
- * Transcribe audio via Raksha `/v1/audio/transcriptions` (Whisper-compatible).
+ * Transcribe audio via gateway `/v1/audio/transcriptions` (Whisper-compatible).
  * Tries a few common model ids until one succeeds.
  */
 export async function transcribeAudioFile(

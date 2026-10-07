@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/logstore"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/logstore"
 )
 
 const (
@@ -400,8 +400,8 @@ func buildStaleMCPToolLogEntry(pending *logstore.MCPToolLog) *logstore.MCPToolLo
 	entry.Result = ""
 	entry.ResultParsed = nil
 	entry.ErrorDetails = ""
-	entry.ErrorDetailsParsed = &schemas.RakshaError{
-		IsRakshaError: true,
+	entry.ErrorDetailsParsed = &schemas.GatewayError{
+		IsGatewayError: true,
 		Error: &schemas.ErrorField{
 			Message: "MCP tool execution did not complete before pending log TTL",
 		},

@@ -41,7 +41,7 @@ func TestEnterpriseLicenseVerification(t *testing.T) {
 	sig := ed25519.Sign(privKey, rawPayload)
 
 	env := EnterpriseLicenseEnvelope{
-		Format:     "raksha_enterprise_license_v1",
+		Format:     "gateway_enterprise_license_v1",
 		Payload:    payload,
 		PayloadB64: base64.StdEncoding.EncodeToString(rawPayload),
 		Signature:  base64.StdEncoding.EncodeToString(sig),
@@ -83,7 +83,7 @@ func TestEnterpriseLicenseVerification(t *testing.T) {
 	expRaw, _ := json.Marshal(expiredPayload)
 	expSig := ed25519.Sign(privKey, expRaw)
 	expEnv := EnterpriseLicenseEnvelope{
-		Format:     "raksha_enterprise_license_v1",
+		Format:     "gateway_enterprise_license_v1",
 		Payload:    expiredPayload,
 		PayloadB64: base64.StdEncoding.EncodeToString(expRaw),
 		Signature:  base64.StdEncoding.EncodeToString(expSig),
@@ -118,7 +118,7 @@ func TestSeatQuotaEnforcementLimit(t *testing.T) {
 	rawPayload, _ := json.Marshal(payload)
 	sig := ed25519.Sign(privKey, rawPayload)
 	env := EnterpriseLicenseEnvelope{
-		Format:     "raksha_enterprise_license_v1",
+		Format:     "gateway_enterprise_license_v1",
 		Payload:    payload,
 		PayloadB64: base64.StdEncoding.EncodeToString(rawPayload),
 		Signature:  base64.StdEncoding.EncodeToString(sig),

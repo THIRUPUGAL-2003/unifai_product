@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from mitmproxy.net import encoding as mitm_encoding
 
 _RESPONSE_LEARN_MAX = 2 * 1024 * 1024
-_RESPONSE_LEARN_META = "raksha_response_body"
+_RESPONSE_LEARN_META = "gateway_response_body"
 # Cheap byte pre-filter: skip the regex/JSON walk unless the reply can carry a filename.
 _RESPONSE_LEARN_HINTS = (
     b"file", b"attach", b"upload", b"original_name", b"originalname",
@@ -56,9 +56,9 @@ def _tee_response_body(flow: http.HTTPFlow):
 class BrowserAIInterceptor:
 
     def __init__(self):
-        print(f"[Raksha Proxy] Started. Backend: {RAKSHA_BACKEND_URL}")
+        print(f"[Gateway Proxy] Started. Backend: {GATEWAY_BACKEND_URL}")
         print(
-            "[Raksha Proxy] Config refresh: background every 1s "
+            "[Gateway Proxy] Config refresh: background every 1s "
             "(targets/rules/controls) — request path is memory-only (instant Block/Monitor)."
         )
         _ensure_background_config_refresh()
@@ -82,7 +82,7 @@ class BrowserAIInterceptor:
             self._apply_duplicate_http_prompt(flow, domain, platform, prompt, client_ip, raw_text)
             return
 
-        print(f"[Raksha Proxy] Intercepted prompt | {client_ip} -> {platform} ({domain}) | {prompt[:80]!r}")
+        print(f"[Gateway Proxy] Intercepted prompt | {client_ip} -> {platform} ({domain}) | {prompt[:80]!r}")
 
         allowed, rule_triggered, action, redacted_prompt, reply_text = evaluate_prompt_coalesced(
             platform=platform,
@@ -98,17 +98,17 @@ class BrowserAIInterceptor:
 
         if not allowed:
             if (action or "").lower() in ("bot answered", "replied"):
-                print(f"[Raksha Proxy] Reply Bot answered for {domain}")
+                print(f"[Gateway Proxy] Reply Bot answered for {domain}")
             else:
-                print(f"[Raksha Proxy] BLOCKED prompt to {domain} -> Rule: {rule_triggered}")
+                print(f"[Gateway Proxy] BLOCKED prompt to {domain} -> Rule: {rule_triggered}")
             make_blocked_response(flow, rule_triggered, host, reply_text=reply_text)
         elif action in ("Warned", "Redacted") and redacted_prompt and redacted_prompt != prompt:
-            print(f"[Raksha Proxy] WARNED prompt to {domain} -> Rule: {rule_triggered} (prompt+warning forwarded)")
+            print(f"[Gateway Proxy] WARNED prompt to {domain} -> Rule: {rule_triggered} (prompt+warning forwarded)")
             try:
                 if not inject_warned_into_request(flow, raw_text, prompt, redacted_prompt):
-                    print(f"[Raksha Proxy Warning] WARN inject miss | {domain} | could not rewrite body")
+                    print(f"[Gateway Proxy WARNING] WARN inject miss | {domain} | could not rewrite body")
             except Exception as e:
-                print(f"[Raksha Proxy Warning] Failed to inject warning into request: {e}")
+                print(f"[Gateway Proxy WARNING] Failed to inject warning into request: {e}")
 
     def _apply_duplicate_http_prompt(
         self,
@@ -133,7 +133,7 @@ class BrowserAIInterceptor:
             )
         allowed, rule_triggered, action, redacted_prompt, reply_text = decision
         if not allowed:
-            print(f"[Raksha Proxy] BLOCKED duplicate prompt to {domain} -> Rule: {rule_triggered}")
+            print(f"[Gateway Proxy] BLOCKED duplicate prompt to {domain} -> Rule: {rule_triggered}")
             make_blocked_response(flow, rule_triggered, host, reply_text=reply_text)
         elif action in ("Warned", "Redacted") and redacted_prompt and redacted_prompt != prompt:
             try:
@@ -182,11 +182,11 @@ class BrowserAIInterceptor:
                 new_content = inject_file_redact_notice(raw_text, redact_notice, caption)
                 if new_content:
                     flow.request.content = new_content.encode("utf-8")
-                    print(f"[Raksha Proxy] FILE REDACT notice injected | {domain}")
+                    print(f"[Gateway Proxy] FILE REDACT notice injected | {domain}")
                 else:
-                    print(f"[Raksha Proxy Warning] FILE REDACT inject miss | {domain}")
+                    print(f"[Gateway Proxy WARNING] FILE REDACT inject miss | {domain}")
             except Exception as e:
-                print(f"[Raksha Proxy Warning] FILE REDACT inject failed: {e}")
+                print(f"[Gateway Proxy WARNING] FILE REDACT inject failed: {e}")
         return False, n_processed, caption_consumed
 
     def _detect_search_browser(self, flow: http.HTTPFlow) -> str:
@@ -570,7 +570,7 @@ class BrowserAIInterceptor:
                     ssl_ctx.verify_mode = ssl.CERT_NONE
                     req_data = json.dumps(payload_dict).encode("utf-8")
                     r = urllib.request.Request(
-                        f"{RAKSHA_BACKEND_URL}/api/browser-ai/search-logs",
+                        f"{GATEWAY_BACKEND_URL}/api/browser-ai/search-logs",
                         data=req_data,
                         headers=_backend_headers({"Content-Type": "application/json"}),
                         method="POST",
@@ -578,20 +578,20 @@ class BrowserAIInterceptor:
                     with urllib.request.urlopen(r, context=ssl_ctx, timeout=8) as resp:
                         if getattr(resp, "status", 200) >= 400:
                             print(
-                                f"[Raksha Proxy Warning] search-log HTTP {resp.status} → {RAKSHA_BACKEND_URL}"
+                                f"[Gateway Proxy WARNING] search-log HTTP {resp.status} → {GATEWAY_BACKEND_URL}"
                             )
                 except Exception as e:
-                    print(f"[Raksha Proxy Warning] Failed to send search log to {RAKSHA_BACKEND_URL}: {e}")
+                    print(f"[Gateway Proxy WARNING] Failed to send search log to {GATEWAY_BACKEND_URL}: {e}")
 
             threading.Thread(target=_post, daemon=True).start()
             print(
-                f"[Raksha Proxy] SEARCH LOGGED | {engine} ({browser}"
+                f"[Gateway Proxy] SEARCH LOGGED | {engine} ({browser}"
                 f"{' - INCOGNITO' if is_incognito else ''}) | "
                 f"Query={searched_query!r} Click={clicked_url!r}"
             )
 
         except Exception as e:
-            print(f"[Raksha Proxy Warning] Search engine parse error: {e}")
+            print(f"[Gateway Proxy WARNING] Search engine parse error: {e}")
 
     # ── HTTP Request Interception ──────────────
 
@@ -652,7 +652,7 @@ class BrowserAIInterceptor:
                         file_id=file_ids[0] if file_ids else "",
                     )
                     print(
-                        f"[Raksha Proxy] FILE CACHED via noise CDN bind | upload_host={host} -> "
+                        f"[Gateway Proxy] FILE CACHED via noise CDN bind | upload_host={host} -> "
                         f"target={bind} | {fname_n or 'attachment'} | {len(raw_bytes_n)} bytes"
                     )
             return
@@ -665,7 +665,7 @@ class BrowserAIInterceptor:
         if blocked:
             client_ip = get_client_ip(flow)
             if not is_duplicate_event(b_domain, "site-block", ttl=BLOCK_DEDUPE_TTL):
-                print(f"[Raksha Proxy] SITE BLOCKED | {client_ip} -> {host} ({b_domain})")
+                print(f"[Gateway Proxy] SITE BLOCKED | {client_ip} -> {host} ({b_domain})")
                 # Fire-and-forget: do NOT block the mitmproxy event loop with a
                 # synchronous urlopen — backend latency stalls ALL proxy flows.
                 import json as _json
@@ -690,7 +690,7 @@ class BrowserAIInterceptor:
                 def _post_site_block(payload=_site_block_payload):
                     try:
                         req = urllib.request.Request(
-                            f"{RAKSHA_BACKEND_URL}/api/browser-ai/intercept",
+                            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
                             data=payload,
                             headers=_backend_headers({"Content-Type": "application/json"}),
                             method="POST",
@@ -795,7 +795,7 @@ class BrowserAIInterceptor:
                             file_id=file_ids[0] if file_ids else "",
                         )
                         print(
-                            f"[Raksha Proxy] FILE CACHED via Referer bind | upload_host={host} -> "
+                            f"[Gateway Proxy] FILE CACHED via Referer bind | upload_host={host} -> "
                             f"target={bind} | {fname_nt or 'attachment'} | {len(raw_bytes_nt)} bytes"
                         )
             return
@@ -926,7 +926,7 @@ class BrowserAIInterceptor:
                 file_id=file_ids[0] if file_ids else "",
             )
             print(
-                f"[Raksha Proxy] FILE CACHED (await Send — zero predict on upload) | {domain} | "
+                f"[Gateway Proxy] FILE CACHED (await Send — zero predict on upload) | {domain} | "
                 f"{fname or 'attachment'} | {len(raw_bytes)} bytes | "
                 f"{method} {host}{path.split('?', 1)[0][:90]}"
             )
@@ -953,7 +953,7 @@ class BrowserAIInterceptor:
                 return
             # Cache miss with attachment markers: fall through so prompt + rules still run.
             print(
-                f"[Raksha Proxy] File Send markers without cache | {domain} | "
+                f"[Gateway Proxy] File Send markers without cache | {domain} | "
                 "falling through to prompt evaluate (upload may have used another host)"
             )
 
@@ -995,7 +995,7 @@ class BrowserAIInterceptor:
         prompt = extract_prompt_universal(raw_bytes, content_type, host=host, url=flow.request.url)
         if not prompt or len(prompt.strip()) < 1:
             if len(raw_bytes) > 8:
-                print(f"[Raksha Proxy] No prompt extracted | {platform} ({domain}) path={path[:80]!r} bytes={len(raw_bytes)}")
+                print(f"[Gateway Proxy] No prompt extracted | {platform} ({domain}) path={path[:80]!r} bytes={len(raw_bytes)}")
             # Attachment-only send already logged above (real file markers only)
             if chat_carries_attachment(raw_text):
                 return
@@ -1063,10 +1063,10 @@ class BrowserAIInterceptor:
             return
 
         try:
-            print(f"[Raksha Proxy] Intercepted prompt | {client_ip} -> {platform} ({domain}) | {prompt[:80]!r}")
+            print(f"[Gateway Proxy] Intercepted prompt | {client_ip} -> {platform} ({domain}) | {prompt[:80]!r}")
         except UnicodeEncodeError:
             safe_p = prompt[:80].encode("ascii", "backslashreplace").decode("ascii")
-            print(f"[Raksha Proxy] Intercepted prompt | {client_ip} -> {platform} ({domain}) | {safe_p!r}")
+            print(f"[Gateway Proxy] Intercepted prompt | {client_ip} -> {platform} ({domain}) | {safe_p!r}")
         allowed, rule_triggered, action, redacted_prompt, reply_text = evaluate_prompt_coalesced(
             platform=platform,
             domain=domain,
@@ -1080,17 +1080,17 @@ class BrowserAIInterceptor:
 
         if not allowed:
             if (action or "").lower() in ("bot answered", "replied"):
-                print(f"[Raksha Proxy] Reply Bot answered for {domain}")
+                print(f"[Gateway Proxy] Reply Bot answered for {domain}")
             else:
-                print(f"[Raksha Proxy] BLOCKED prompt to {domain} -> Rule: {rule_triggered}")
+                print(f"[Gateway Proxy] BLOCKED prompt to {domain} -> Rule: {rule_triggered}")
             make_blocked_response(flow, rule_triggered, host, reply_text=reply_text)
         elif action in ("Warned", "Redacted") and redacted_prompt and redacted_prompt != prompt:
-            print(f"[Raksha Proxy] WARNED prompt to {domain} -> Rule: {rule_triggered} (prompt+warning forwarded)")
+            print(f"[Gateway Proxy] WARNED prompt to {domain} -> Rule: {rule_triggered} (prompt+warning forwarded)")
             try:
                 if not inject_warned_into_request(flow, raw_text, prompt, redacted_prompt):
-                    print(f"[Raksha Proxy Warning] WARN inject miss | {domain} | could not rewrite body")
+                    print(f"[Gateway Proxy WARNING] WARN inject miss | {domain} | could not rewrite body")
             except Exception as e:
-                print(f"[Raksha Proxy Warning] Failed to inject warning into request: {e}")
+                print(f"[Gateway Proxy WARNING] Failed to inject warning into request: {e}")
 
     def responseheaders(self, flow: http.HTTPFlow) -> None:
         """Stream every server reply straight to the browser.
@@ -1197,7 +1197,7 @@ class BrowserAIInterceptor:
         blocked, b_domain, b_platform = detect_site_block(host)
         if blocked:
             msg.kill()
-            print(f"[Raksha Proxy] SITE BLOCKED (websocket) -> {b_domain} ({b_platform})")
+            print(f"[Gateway Proxy] SITE BLOCKED (websocket) -> {b_domain} ({b_platform})")
             return
         is_target, domain, platform = detect_target(host)
         if not is_target:
@@ -1212,7 +1212,7 @@ class BrowserAIInterceptor:
             return
 
         ws_path = flow.request.path or ""
-        if "raksha-reply" in ws_path.lower() or _is_raksha_inject_frame(content):
+        if "gateway-reply" in ws_path.lower() or _is_gateway_inject_frame(content):
             return
         # History/settings batchexecute over WS — pass through before extract/inject.
         if "batchexecute" in ws_path.lower() and not is_batchexecute_chat_submit(ws_path, content):
@@ -1316,7 +1316,7 @@ class BrowserAIInterceptor:
                     return
                 ws_prompt = stable
 
-            print(f"[Raksha Proxy] WebSocket prompt | {client_ip} -> {platform} ({domain}) | {ws_prompt[:80]!r}")
+            print(f"[Gateway Proxy] WebSocket prompt | {client_ip} -> {platform} ({domain}) | {ws_prompt[:80]!r}")
             mark_duplicate_event(domain, ws_prompt)
             allowed, rule_triggered, action, redacted_prompt, reply_text = evaluate_prompt_coalesced(
                 platform=platform,
@@ -1424,7 +1424,7 @@ class BrowserAIInterceptor:
             return
 
         client_ip = get_client_ip(flow)
-        print(f"[Raksha Proxy] WebSocket prompt | {client_ip} -> {platform} ({domain}) | {prompt[:80]!r}")
+        print(f"[Gateway Proxy] WebSocket prompt | {client_ip} -> {platform} ({domain}) | {prompt[:80]!r}")
         allowed, rule_triggered, action, redacted_prompt, reply_text = evaluate_prompt_coalesced(
             platform=platform,
             domain=domain,
@@ -1438,15 +1438,15 @@ class BrowserAIInterceptor:
 
         if not allowed:
             if (action or "").lower() in ("bot answered", "replied"):
-                print(f"[Raksha Proxy] Reply Bot answered via WebSocket for {domain}")
+                print(f"[Gateway Proxy] Reply Bot answered via WebSocket for {domain}")
             else:
-                print(f"[Raksha Proxy] BLOCKED WebSocket to {domain} -> Rule: {rule_triggered or action}")
+                print(f"[Gateway Proxy] BLOCKED WebSocket to {domain} -> Rule: {rule_triggered or action}")
             block_msg = (reply_text or "").strip()
             # Drop outbound turn (site AI never sees it), inject reply for ANY target site.
             _drop_websocket_outbound(msg)
             inject_websocket_reply(flow, host, block_msg)
         elif action in ("Warned", "Redacted") and redacted_prompt and redacted_prompt != prompt:
-            print(f"[Raksha Proxy] WARNED WebSocket prompt to {domain} -> Rule: {rule_triggered}")
+            print(f"[Gateway Proxy] WARNED WebSocket prompt to {domain} -> Rule: {rule_triggered}")
             new_content = inject_warned_prompt(content, prompt, redacted_prompt)
             if new_content:
                 msg.text = new_content
@@ -1454,7 +1454,7 @@ class BrowserAIInterceptor:
 
 # Prompt checks can wait on the backend / AI Guard Bot for seconds. Run them off
 # mitmproxy's single event loop so only that one request waits, not every tab.
-_HOOK_POOL = ThreadPoolExecutor(max_workers=64, thread_name_prefix="raksha-hook")
+_HOOK_POOL = ThreadPoolExecutor(max_workers=64, thread_name_prefix="gateway-hook")
 
 
 def _off_event_loop(fn):

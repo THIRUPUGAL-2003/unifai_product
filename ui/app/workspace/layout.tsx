@@ -1,4 +1,5 @@
 import FullPageLoader from "@/components/fullPageLoader";
+import { WorkspaceErrorBoundary } from "@/components/workspaceErrorBoundary";
 import { useIsAuthEnabledQuery } from "@/lib/store";
 import {
 	fetchSessionAuth,
@@ -34,7 +35,13 @@ function WorkspaceOutlet() {
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const pathname = useLocation({ select: (l) => l.pathname });
 	const blocked = hasNoWorkspaceSections(authStatus) && !isPublicWorkspacePath(pathname);
-	return blocked ? <NoSectionsAssigned /> : <Outlet />;
+	return blocked ? (
+		<NoSectionsAssigned />
+	) : (
+		<WorkspaceErrorBoundary>
+			<Outlet />
+		</WorkspaceErrorBoundary>
+	);
 }
 
 function RouteComponent() {

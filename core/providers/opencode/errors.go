@@ -6,8 +6,8 @@ import (
 
 	"github.com/bytedance/sonic"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -26,15 +26,15 @@ type opencodeErrorInner struct {
 // parseOpencodeError parses Opencode-specific error responses.
 // Opencode uses {"type":"error","error":{"type":"...","message":"..."}} instead
 // of OpenAI's {"error":{"message":"...","type":"...","code":...}}.
-func parseOpencodeError(resp *fasthttp.Response) *schemas.RakshaError {
-	var rakshaErr schemas.RakshaError
+func parseOpencodeError(resp *fasthttp.Response) *schemas.GatewayError {
+	var gatewayErr schemas.GatewayError
 
 	// First, let the generic handler parse HTTP status and set base fields.
-	_ = providerUtils.HandleProviderAPIError(resp, &rakshaErr)
+	_ = providerUtils.HandleProviderAPIError(resp, &gatewayErr)
 
 	// Ensure Error is non-nil before accessing its fields.
-	if rakshaErr.Error == nil {
-		rakshaErr.Error = &schemas.ErrorField{}
+	if gatewayErr.Error == nil {
+		gatewayErr.Error = &schemas.ErrorField{}
 	}
 
 	// Then overlay Opencode-specific error details from the body.
@@ -42,22 +42,22 @@ func parseOpencodeError(resp *fasthttp.Response) *schemas.RakshaError {
 		var parsed opencodeErrorBody
 		if err := sonic.Unmarshal(body, &parsed); err == nil && parsed.Type == "error" {
 			if parsed.Error.Message != "" {
-				rakshaErr.Error.Message = parsed.Error.Message
+				gatewayErr.Error.Message = parsed.Error.Message
 			}
 			if parsed.Error.Type != "" {
-				rakshaErr.Error.Type = &parsed.Error.Type
+				gatewayErr.Error.Type = &parsed.Error.Type
 			}
 		}
 	}
 
 	// Ensure we always have a non-empty error message.
-	if strings.TrimSpace(rakshaErr.Error.Message) == "" {
-		if rakshaErr.StatusCode != nil {
-			rakshaErr.Error.Message = fmt.Sprintf("provider API error (status %d)", *rakshaErr.StatusCode)
+	if strings.TrimSpace(gatewayErr.Error.Message) == "" {
+		if gatewayErr.StatusCode != nil {
+			gatewayErr.Error.Message = fmt.Sprintf("provider API error (status %d)", *gatewayErr.StatusCode)
 		} else {
-			rakshaErr.Error.Message = "provider API error"
+			gatewayErr.Error.Message = "provider API error"
 		}
 	}
 
-	return &rakshaErr
+	return &gatewayErr
 }

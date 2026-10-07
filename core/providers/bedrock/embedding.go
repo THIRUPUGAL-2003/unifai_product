@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // bedrockInputTokenCountHeader is the HTTP response header Bedrock uses to report input
@@ -30,41 +30,41 @@ func inputTokensFromHeaders(headers map[string]string) (int, bool) {
 	return 0, false
 }
 
-// ToBedrockTitanEmbeddingRequest converts a Raksha embedding request to Bedrock Titan format
-func ToBedrockTitanEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (*BedrockTitanEmbeddingRequest, error) {
-	if rakshaReq == nil {
-		return nil, fmt.Errorf("raksha embedding request is nil")
+// ToBedrockTitanEmbeddingRequest converts a Gateway embedding request to Bedrock Titan format
+func ToBedrockTitanEmbeddingRequest(gatewayReq *schemas.GatewayEmbeddingRequest) (*BedrockTitanEmbeddingRequest, error) {
+	if gatewayReq == nil {
+		return nil, fmt.Errorf("gateway embedding request is nil")
 	}
 
 	// Validate that only single text input is provided for Titan models
-	if rakshaReq.Input.Text == nil && len(rakshaReq.Input.Texts) == 0 {
+	if gatewayReq.Input.Text == nil && len(gatewayReq.Input.Texts) == 0 {
 		return nil, fmt.Errorf("no input text provided for embedding")
 	}
 
 	titanReq := &BedrockTitanEmbeddingRequest{}
 
 	// Set input text
-	if rakshaReq.Input.Text != nil {
-		titanReq.InputText = *rakshaReq.Input.Text
-	} else if len(rakshaReq.Input.Texts) > 0 {
+	if gatewayReq.Input.Text != nil {
+		titanReq.InputText = *gatewayReq.Input.Text
+	} else if len(gatewayReq.Input.Texts) > 0 {
 		var embeddingText string
-		for _, text := range rakshaReq.Input.Texts {
+		for _, text := range gatewayReq.Input.Texts {
 			embeddingText += text + " \n"
 		}
 		titanReq.InputText = embeddingText
 	}
 
-	if rakshaReq.Params != nil {
-		titanReq.Dimensions = rakshaReq.Params.Dimensions
-		if normalize, ok := rakshaReq.Params.ExtraParams["normalize"]; ok {
+	if gatewayReq.Params != nil {
+		titanReq.Dimensions = gatewayReq.Params.Dimensions
+		if normalize, ok := gatewayReq.Params.ExtraParams["normalize"]; ok {
 			if b, ok := normalize.(bool); ok {
 				titanReq.Normalize = &b
 			}
 		}
 		// Forward remaining extra params (excluding normalize which is now a first-class field)
-		if len(rakshaReq.Params.ExtraParams) > 0 {
+		if len(gatewayReq.Params.ExtraParams) > 0 {
 			extra := make(map[string]interface{})
-			for k, v := range rakshaReq.Params.ExtraParams {
+			for k, v := range gatewayReq.Params.ExtraParams {
 				if k != "normalize" {
 					extra[k] = v
 				}
@@ -78,13 +78,13 @@ func ToBedrockTitanEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (
 	return titanReq, nil
 }
 
-// ToRakshaEmbeddingResponse converts a Bedrock Titan embedding response to Raksha format
-func (response *BedrockTitanEmbeddingResponse) ToRakshaEmbeddingResponse() *schemas.RakshaEmbeddingResponse {
+// ToGatewayEmbeddingResponse converts a Bedrock Titan embedding response to Gateway format
+func (response *BedrockTitanEmbeddingResponse) ToGatewayEmbeddingResponse() *schemas.GatewayEmbeddingResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaEmbeddingResponse{
+	gatewayResponse := &schemas.GatewayEmbeddingResponse{
 		Object: "list",
 		Data: []schemas.EmbeddingData{
 			{
@@ -95,37 +95,37 @@ func (response *BedrockTitanEmbeddingResponse) ToRakshaEmbeddingResponse() *sche
 				},
 			},
 		},
-		Usage: &schemas.RakshaLLMUsage{
+		Usage: &schemas.GatewayLLMUsage{
 			PromptTokens: response.InputTextTokenCount,
 			TotalTokens:  response.InputTextTokenCount,
 		},
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
-// ToBedrockCohereEmbeddingRequest converts a Raksha embedding request to Bedrock Cohere format.
+// ToBedrockCohereEmbeddingRequest converts a Gateway embedding request to Bedrock Cohere format.
 // Unlike the direct Cohere API, Bedrock does not accept a "model" field in the request body.
-func ToBedrockCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) (*BedrockCohereEmbeddingRequest, error) {
-	if rakshaReq == nil {
-		return nil, fmt.Errorf("raksha embedding request is nil")
+func ToBedrockCohereEmbeddingRequest(gatewayReq *schemas.GatewayEmbeddingRequest) (*BedrockCohereEmbeddingRequest, error) {
+	if gatewayReq == nil {
+		return nil, fmt.Errorf("gateway embedding request is nil")
 	}
-	if rakshaReq.Input == nil || (rakshaReq.Input.Text == nil && len(rakshaReq.Input.Texts) == 0) {
+	if gatewayReq.Input == nil || (gatewayReq.Input.Text == nil && len(gatewayReq.Input.Texts) == 0) {
 		return nil, fmt.Errorf("no input provided for embedding")
 	}
 
 	req := &BedrockCohereEmbeddingRequest{}
 
 	// Map texts
-	if rakshaReq.Input.Text != nil {
-		req.Texts = []string{*rakshaReq.Input.Text}
-	} else if len(rakshaReq.Input.Texts) > 0 {
-		req.Texts = rakshaReq.Input.Texts
+	if gatewayReq.Input.Text != nil {
+		req.Texts = []string{*gatewayReq.Input.Text}
+	} else if len(gatewayReq.Input.Texts) > 0 {
+		req.Texts = gatewayReq.Input.Texts
 	}
 
-	if rakshaReq.Params != nil {
-		extra := make(map[string]interface{}, len(rakshaReq.Params.ExtraParams))
-		for k, v := range rakshaReq.Params.ExtraParams {
+	if gatewayReq.Params != nil {
+		extra := make(map[string]interface{}, len(gatewayReq.Params.ExtraParams))
+		for k, v := range gatewayReq.Params.ExtraParams {
 			extra[k] = v
 		}
 
@@ -170,8 +170,8 @@ func ToBedrockCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) 
 				delete(extra, "max_tokens")
 			}
 		}
-		if rakshaReq.Params.Dimensions != nil {
-			req.OutputDimension = rakshaReq.Params.Dimensions
+		if gatewayReq.Params.Dimensions != nil {
+			req.OutputDimension = gatewayReq.Params.Dimensions
 		}
 		if len(extra) > 0 {
 			req.ExtraParams = extra
@@ -186,7 +186,7 @@ func ToBedrockCohereEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) 
 // (model_family / model_name / model_id / alias key) and falls back to the
 // substring detectors against the wire model — so an alias to an opaque
 // Bedrock deployment that's tagged with the right family routes correctly.
-func DetermineEmbeddingModelType(ctx *schemas.RakshaContext, model string) (string, error) {
+func DetermineEmbeddingModelType(ctx *schemas.GatewayContext, model string) (string, error) {
 	switch {
 	case schemas.IsTitanModelFamily(ctx, model):
 		return "titan", nil
@@ -197,16 +197,16 @@ func DetermineEmbeddingModelType(ctx *schemas.RakshaContext, model string) (stri
 	}
 }
 
-// ToRakshaEmbeddingResponse converts a BedrockCohereEmbeddingResponse to Raksha format.
+// ToGatewayEmbeddingResponse converts a BedrockCohereEmbeddingResponse to Gateway format.
 // Bedrock returns embeddings as a raw [][]float32 when response_type is "embeddings_floats"
 // (the default, when no embedding_types are requested), and as a typed object when
 // response_type is "embeddings_by_type".
-func (r *BedrockCohereEmbeddingResponse) ToRakshaEmbeddingResponse() (*schemas.RakshaEmbeddingResponse, error) {
+func (r *BedrockCohereEmbeddingResponse) ToGatewayEmbeddingResponse() (*schemas.GatewayEmbeddingResponse, error) {
 	if r == nil {
 		return nil, fmt.Errorf("nil Bedrock Cohere embedding response")
 	}
 
-	rakshaResponse := &schemas.RakshaEmbeddingResponse{Object: "list"}
+	gatewayResponse := &schemas.GatewayEmbeddingResponse{Object: "list"}
 
 	switch r.ResponseType {
 	case "embeddings_by_type":
@@ -228,7 +228,7 @@ func (r *BedrockCohereEmbeddingResponse) ToRakshaEmbeddingResponse() (*schemas.R
 				for j, v := range emb {
 					float64Emb[j] = float64(v)
 				}
-				rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
+				gatewayResponse.Data = append(gatewayResponse.Data, schemas.EmbeddingData{
 					Object:    "embedding",
 					Index:     i,
 					Embedding: schemas.EmbeddingStruct{EmbeddingArray: float64Emb},
@@ -238,7 +238,7 @@ func (r *BedrockCohereEmbeddingResponse) ToRakshaEmbeddingResponse() (*schemas.R
 		if typed.Base64 != nil {
 			for i, emb := range typed.Base64 {
 				e := emb
-				rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
+				gatewayResponse.Data = append(gatewayResponse.Data, schemas.EmbeddingData{
 					Object:    "embedding",
 					Index:     i,
 					Embedding: schemas.EmbeddingStruct{EmbeddingStr: &e},
@@ -246,28 +246,28 @@ func (r *BedrockCohereEmbeddingResponse) ToRakshaEmbeddingResponse() (*schemas.R
 			}
 		}
 		for i, emb := range typed.Int8 {
-			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
+			gatewayResponse.Data = append(gatewayResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingInt8Array: emb},
 			})
 		}
 		for i, emb := range typed.Binary {
-			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
+			gatewayResponse.Data = append(gatewayResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingInt8Array: emb},
 			})
 		}
 		for i, emb := range typed.Uint8 {
-			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
+			gatewayResponse.Data = append(gatewayResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingInt32Array: emb},
 			})
 		}
 		for i, emb := range typed.Ubinary {
-			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
+			gatewayResponse.Data = append(gatewayResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingInt32Array: emb},
@@ -285,7 +285,7 @@ func (r *BedrockCohereEmbeddingResponse) ToRakshaEmbeddingResponse() (*schemas.R
 			for j, v := range emb {
 				float64Emb[j] = float64(v)
 			}
-			rakshaResponse.Data = append(rakshaResponse.Data, schemas.EmbeddingData{
+			gatewayResponse.Data = append(gatewayResponse.Data, schemas.EmbeddingData{
 				Object:    "embedding",
 				Index:     i,
 				Embedding: schemas.EmbeddingStruct{EmbeddingArray: float64Emb},
@@ -293,5 +293,5 @@ func (r *BedrockCohereEmbeddingResponse) ToRakshaEmbeddingResponse() (*schemas.R
 		}
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }

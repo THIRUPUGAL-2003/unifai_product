@@ -3,10 +3,11 @@
  * Full-canvas read-only routing rules decision tree visualizer.
  */
 
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { RoutingTreeView } from "./views/routingTreeView";
 
 export const metadata = {
-	title: "Routing Tree | Raksha",
+	title: `Routing Tree | ${PRODUCT_NAME}`,
 	description: "Read-only decision tree visualization of routing rules",
 };
 

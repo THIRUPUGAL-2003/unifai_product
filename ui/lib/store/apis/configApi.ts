@@ -1,11 +1,11 @@
-import { RakshaConfig, GlobalProxyConfig, LatestReleaseResponse, VectorStoreConfigResponse } from "@/lib/types/config";
+import { GatewayConfig, GlobalProxyConfig, LatestReleaseResponse, VectorStoreConfigResponse } from "@/lib/types/config";
 import axios from "axios";
 import { baseApi } from "./baseApi";
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null && !Array.isArray(value);
 
-const applyMetadataPatch = (metadata: RakshaConfig["metadata"] | undefined, patch: Record<string, unknown>): Record<string, unknown> => {
+const applyMetadataPatch = (metadata: GatewayConfig["metadata"] | undefined, patch: Record<string, unknown>): Record<string, unknown> => {
 	const next = { ...(metadata ?? {}) };
 	Object.entries(patch).forEach(([key, value]) => {
 		if (value === null) {
@@ -21,7 +21,7 @@ const applyMetadataPatch = (metadata: RakshaConfig["metadata"] | undefined, patc
 export const configApi = baseApi.injectEndpoints({
 	endpoints: (builder) => ({
 		// Get core configuration
-		getCoreConfig: builder.query<RakshaConfig, { fromDB?: boolean }>({
+		getCoreConfig: builder.query<GatewayConfig, { fromDB?: boolean }>({
 			query: ({ fromDB = false } = {}) => ({
 				url: "/config",
 				params: { from_db: fromDB },
@@ -43,7 +43,7 @@ export const configApi = baseApi.injectEndpoints({
 			},
 		}),
 		// Update core configuration
-		updateCoreConfig: builder.mutation<null, RakshaConfig>({
+		updateCoreConfig: builder.mutation<null, GatewayConfig>({
 			query: (data) => ({
 				url: "/config",
 				method: "PUT",

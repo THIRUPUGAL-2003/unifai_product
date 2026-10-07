@@ -7,19 +7,19 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/client"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // MCPOpFunc is the closure each call site provides to RunWithPluginPipeline. It receives the
 // (possibly mutated) request that flowed through PreHooks and is responsible for
 // performing the wire call (including any internal retries) and building a
-// RakshaMCPResponse from the outcome. The plain Go error returned here is wrapped
-// into a RakshaError by the gate before being handed to PostMCPHooks.
-type MCPOpFunc func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error)
+// GatewayMCPResponse from the outcome. The plain Go error returned here is wrapped
+// into a GatewayError by the gate before being handed to PostMCPHooks.
+type MCPOpFunc func(preReq *schemas.GatewayMCPRequest) (*schemas.GatewayMCPResponse, error)
 
 // RunWithPluginPipeline wraps an MCP wire operation (connect / ping / list_tools / execute_tool)
 // with the plugin pipeline. It is the single source of truth for the MCP plugin gate
-// pattern — handleMCPToolExecution in core/raksha.go calls into this same function,
+// pattern — handleMCPToolExecution in core/gateway.go calls into this same function,
 // and the Starlark codemode sandbox calls into it via the ClientManager interface for
 // nested tool calls.
 //
@@ -34,24 +34,24 @@ type MCPOpFunc func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRespons
 // sub-request struct (Headers, ConnectionString, ChatAssistantMessageToolCall, etc.)
 // and using them for the actual wire call.
 //
-// Returns *RakshaError so callers can preserve rich error fields (AllowFallbacks,
+// Returns *GatewayError so callers can preserve rich error fields (AllowFallbacks,
 // MCPAuthRequired).
 func (m *MCPManager) RunWithPluginPipeline(
-	ctx *schemas.RakshaContext,
-	req *schemas.RakshaMCPRequest,
+	ctx *schemas.GatewayContext,
+	req *schemas.GatewayMCPRequest,
 	op MCPOpFunc,
-) (finalResponse *schemas.RakshaMCPResponse, finalError *schemas.RakshaError) {
+) (finalResponse *schemas.GatewayMCPResponse, finalError *schemas.GatewayError) {
 	// Ensure a request ID exists so plugin hooks have something to correlate on.
 	// Connect/ping/list_tools fire from background contexts that typically lack one.
 	if ctx != nil {
-		if _, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); !ok {
-			ctx.SetValue(schemas.RakshaContextKeyRequestID, uuid.New().String())
+		if _, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string); !ok {
+			ctx.SetValue(schemas.GatewayContextKeyRequestID, uuid.New().String())
 		}
 	}
 
 	// Wrap the whole gate (PreHook + op + PostHook) in an outer span so traces show one
 	// row per MCP op alongside the per-plugin spans the pipeline emits internally.
-	tracer, _ := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
+	tracer, _ := ctx.Value(schemas.GatewayContextKeyTracer).(schemas.Tracer)
 	var spanHandle schemas.SpanHandle
 	if tracer != nil {
 		spanName := fmt.Sprintf("mcp.%s", req.RequestType)
@@ -108,7 +108,7 @@ func (m *MCPManager) RunWithPluginPipeline(
 		}
 	}()
 
-	// MCP request type stamped on every wrapped RakshaError so downstream gates
+	// MCP request type stamped on every wrapped GatewayError so downstream gates
 	// (governance, logging) can discriminate execute-tool calls from ping/list_tools.
 	mcpReqType := schemas.MCPRequestType("")
 	if req != nil {
@@ -120,10 +120,10 @@ func (m *MCPManager) RunWithPluginPipeline(
 	if pipeline == nil {
 		resp, opErr := op(req)
 		if opErr != nil {
-			return resp, &schemas.RakshaError{
-				IsRakshaError: false,
+			return resp, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error:          &schemas.ErrorField{Message: opErr.Error()},
-				ExtraFields:    schemas.RakshaErrorExtraFields{MCPRequestType: mcpReqType},
+				ExtraFields:    schemas.GatewayErrorExtraFields{MCPRequestType: mcpReqType},
 			}
 		}
 		return resp, nil
@@ -175,10 +175,10 @@ func (m *MCPManager) RunWithPluginPipeline(
 	}
 
 	if preReq == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: "MCP request after plugin hooks cannot be nil"},
-			ExtraFields:    schemas.RakshaErrorExtraFields{MCPRequestType: mcpReqType},
+			ExtraFields:    schemas.GatewayErrorExtraFields{MCPRequestType: mcpReqType},
 		}
 	}
 
@@ -188,17 +188,17 @@ func (m *MCPManager) RunWithPluginPipeline(
 		resp.PopulateExtraFields(mcpReqType, clientName, toolName)
 	}
 
-	// Wrap opErr as RakshaError so PostHooks see a typed error.
-	var rakshaErr *schemas.RakshaError
+	// Wrap opErr as GatewayError so PostHooks see a typed error.
+	var gatewayErr *schemas.GatewayError
 	if opErr != nil {
-		rakshaErr = &schemas.RakshaError{
-			IsRakshaError: false,
+		gatewayErr = &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: opErr.Error()},
-			ExtraFields:    schemas.RakshaErrorExtraFields{MCPRequestType: mcpReqType},
+			ExtraFields:    schemas.GatewayErrorExtraFields{MCPRequestType: mcpReqType},
 		}
 	}
 
-	finalResp, finalErr := pipeline.RunMCPPostHooks(ctx, resp, rakshaErr, preCount)
+	finalResp, finalErr := pipeline.RunMCPPostHooks(ctx, resp, gatewayErr, preCount)
 	drainMCPPluginLogs(ctx)
 
 	if finalErr != nil {
@@ -213,21 +213,21 @@ func (m *MCPManager) RunWithPluginPipeline(
 //
 // that flowed through PreMCPConnectionHook plugins and performs the actual transport
 // + initialize work (with internal retries), returning a typed sub-response.
-type MCPConnectOpFunc func(preReq *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectResponse, error)
+type MCPConnectOpFunc func(preReq *schemas.GatewayMCPConnectRequest) (*schemas.GatewayMCPConnectResponse, error)
 
 // runConnectWithPluginPipeline is the typed Connect-specific counterpart to
 // runWithPluginPipeline. Connect ops bypass the envelope-based pipeline entirely:
 // plugins implement MCPConnectionPlugin (not MCPPlugin), the request/response types
 // are the typed sub-structs, and the dispatch never wraps anything in
-// RakshaMCPRequest/RakshaMCPResponse.
+// GatewayMCPRequest/GatewayMCPResponse.
 func (m *MCPManager) runConnectWithPluginPipeline(
-	ctx *schemas.RakshaContext,
-	req *schemas.RakshaMCPConnectRequest,
+	ctx *schemas.GatewayContext,
+	req *schemas.GatewayMCPConnectRequest,
 	op MCPConnectOpFunc,
-) (*schemas.RakshaMCPConnectResponse, *schemas.RakshaError) {
+) (*schemas.GatewayMCPConnectResponse, *schemas.GatewayError) {
 	if ctx != nil {
-		if _, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string); !ok {
-			ctx.SetValue(schemas.RakshaContextKeyRequestID, uuid.New().String())
+		if _, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string); !ok {
+			ctx.SetValue(schemas.GatewayContextKeyRequestID, uuid.New().String())
 		}
 	}
 
@@ -237,7 +237,7 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 	}
 
 	// Outer span so traces show one row per Connect op.
-	tracer, _ := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
+	tracer, _ := ctx.Value(schemas.GatewayContextKeyTracer).(schemas.Tracer)
 	var spanHandle schemas.SpanHandle
 	if tracer != nil {
 		spanName := "mcp.connect"
@@ -257,8 +257,8 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 	if pipeline == nil {
 		resp, opErr := op(req)
 		if opErr != nil {
-			return resp, &schemas.RakshaError{
-				IsRakshaError: false,
+			return resp, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error:          &schemas.ErrorField{Message: opErr.Error()},
 			}
 		}
@@ -296,8 +296,8 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 	}
 
 	if preReq == nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: "Connect request after plugin hooks cannot be nil"},
 		}
 	}
@@ -307,15 +307,15 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 		resp.PopulateExtraFields(clientName)
 	}
 
-	var rakshaErr *schemas.RakshaError
+	var gatewayErr *schemas.GatewayError
 	if opErr != nil {
-		rakshaErr = &schemas.RakshaError{
-			IsRakshaError: false,
+		gatewayErr = &schemas.GatewayError{
+			IsGatewayError: false,
 			Error:          &schemas.ErrorField{Message: opErr.Error()},
 		}
 	}
 
-	finalResp, finalErr := pipeline.RunMCPPostConnectionHooks(ctx, resp, rakshaErr, preCount)
+	finalResp, finalErr := pipeline.RunMCPPostConnectionHooks(ctx, resp, gatewayErr, preCount)
 	drainMCPPluginLogs(ctx)
 
 	if finalErr != nil {
@@ -324,17 +324,17 @@ func (m *MCPManager) runConnectWithPluginPipeline(
 	return finalResp, nil
 }
 
-// drainMCPPluginLogs mirrors raksha.drainAndAttachPluginLogs for the mcp package.
+// drainMCPPluginLogs mirrors gateway.drainAndAttachPluginLogs for the mcp package.
 // It attaches accumulated plugin log entries to the active trace, if any.
-func drainMCPPluginLogs(ctx *schemas.RakshaContext) {
+func drainMCPPluginLogs(ctx *schemas.GatewayContext) {
 	if ctx == nil {
 		return
 	}
-	tracer, _ := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
+	tracer, _ := ctx.Value(schemas.GatewayContextKeyTracer).(schemas.Tracer)
 	if tracer == nil {
 		return
 	}
-	traceID, _ := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
+	traceID, _ := ctx.Value(schemas.GatewayContextKeyTraceID).(string)
 	if traceID == "" {
 		return
 	}
@@ -355,40 +355,40 @@ func drainMCPPluginLogs(ctx *schemas.RakshaContext) {
 // A PreHook short-circuit with Error returns the error; the caller decides whether to
 // keep existing state.
 func (m *MCPManager) runListToolsWithHooks(ctx context.Context, conn *client.Client, clientName string) (map[string]schemas.ChatTool, map[string]string, error) {
-	req := &schemas.RakshaMCPRequest{
+	req := &schemas.GatewayMCPRequest{
 		RequestType:                schemas.MCPRequestTypeListTools,
 		ClientName:                 clientName,
-		RakshaMCPListToolsRequest: &schemas.RakshaMCPListToolsRequest{},
+		GatewayMCPListToolsRequest: &schemas.GatewayMCPListToolsRequest{},
 	}
-	gateCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+	gateCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 	start := time.Now()
 
-	resp, rakshaErr := m.RunWithPluginPipeline(gateCtx, req, func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error) {
+	resp, gatewayErr := m.RunWithPluginPipeline(gateCtx, req, func(preReq *schemas.GatewayMCPRequest) (*schemas.GatewayMCPResponse, error) {
 		// Use gateCtx (not the outer ctx) so values a PreMCPHook wrote during the
-		// gate — notably RakshaContextKeyMCPExtraHeaders — are visible to the wire
-		// call. RakshaContext.Value walks parent-ward only, so the outer ctx cannot
+		// gate — notably GatewayContextKeyMCPExtraHeaders — are visible to the wire
+		// call. GatewayContext.Value walks parent-ward only, so the outer ctx cannot
 		// see writes made to its gateCtx child.
 		detailed, opErr := retrieveExternalToolsDetailed(gateCtx, conn, clientName, m.logger)
 		if opErr != nil {
 			return nil, opErr
 		}
-		return &schemas.RakshaMCPResponse{
-			RakshaMCPListToolsResponse: &schemas.RakshaMCPListToolsResponse{
+		return &schemas.GatewayMCPResponse{
+			GatewayMCPListToolsResponse: &schemas.GatewayMCPListToolsResponse{
 				Tools:           detailed.tools,
 				ToolNameMapping: detailed.toolNameMapping,
 				RawToolCount:    detailed.rawCount,
 				SkippedTools:    detailed.skipped,
 			},
-			ExtraFields: schemas.RakshaMCPResponseExtraFields{
+			ExtraFields: schemas.GatewayMCPResponseExtraFields{
 				Latency: time.Since(start).Milliseconds(),
 			},
 		}, nil
 	})
 
-	if rakshaErr != nil {
-		return nil, nil, fmt.Errorf("failed to list tools: %s", rakshaErr.GetErrorString())
+	if gatewayErr != nil {
+		return nil, nil, fmt.Errorf("failed to list tools: %s", gatewayErr.GetErrorString())
 	}
-	if resp == nil || resp.RakshaMCPListToolsResponse == nil {
+	if resp == nil || resp.GatewayMCPListToolsResponse == nil {
 		// Defensive: response somehow lost its list_tools payload (e.g. PostHook nilled it).
 		// Surface empty maps rather than nil to mirror the underlying list_tools contract.
 		return make(map[string]schemas.ChatTool), make(map[string]string), nil
@@ -401,28 +401,28 @@ func (m *MCPManager) runListToolsWithHooks(ctx context.Context, conn *client.Cli
 // inspect the latency and outcome. Any error returned here is treated identically to a
 // real ping failure by the health-monitor state machine.
 func (chm *ClientHealthMonitor) runPingWithHooks(ctx context.Context, conn *client.Client, clientName string) error {
-	req := &schemas.RakshaMCPRequest{
+	req := &schemas.GatewayMCPRequest{
 		RequestType:           schemas.MCPRequestTypePing,
 		ClientName:            clientName,
-		RakshaMCPPingRequest: &schemas.RakshaMCPPingRequest{},
+		GatewayMCPPingRequest: &schemas.GatewayMCPPingRequest{},
 	}
-	gateCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+	gateCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 	start := time.Now()
-	_, rakshaErr := chm.manager.RunWithPluginPipeline(gateCtx, req, func(preReq *schemas.RakshaMCPRequest) (*schemas.RakshaMCPResponse, error) {
-		// Use gateCtx so a PreMCPHook's context writes (e.g. RakshaContextKeyMCPExtraHeaders)
+	_, gatewayErr := chm.manager.RunWithPluginPipeline(gateCtx, req, func(preReq *schemas.GatewayMCPRequest) (*schemas.GatewayMCPResponse, error) {
+		// Use gateCtx so a PreMCPHook's context writes (e.g. GatewayContextKeyMCPExtraHeaders)
 		// reach the transport headerFunc on this ping. See runListToolsWithHooks for details.
 		if pingErr := conn.Ping(gateCtx); pingErr != nil {
 			return nil, pingErr
 		}
-		return &schemas.RakshaMCPResponse{
-			RakshaMCPPingResponse: &schemas.RakshaMCPPingResponse{},
-			ExtraFields: schemas.RakshaMCPResponseExtraFields{
+		return &schemas.GatewayMCPResponse{
+			GatewayMCPPingResponse: &schemas.GatewayMCPPingResponse{},
+			ExtraFields: schemas.GatewayMCPResponseExtraFields{
 				Latency: time.Since(start).Milliseconds(),
 			},
 		}, nil
 	})
-	if rakshaErr != nil {
-		return fmt.Errorf("ping failed: %s", rakshaErr.GetErrorString())
+	if gatewayErr != nil {
+		return fmt.Errorf("ping failed: %s", gatewayErr.GetErrorString())
 	}
 	return nil
 }

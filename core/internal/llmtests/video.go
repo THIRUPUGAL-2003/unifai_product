@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 const (
@@ -18,7 +18,7 @@ const (
 	videoRetrieveMaxRetries = 6
 )
 
-func RunVideoGenerationTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunVideoGenerationTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.VideoGeneration {
 		t.Logf("Video generation not supported for provider %s", testConfig.Provider)
 		return
@@ -56,7 +56,7 @@ func RunVideoGenerationTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 	})
 }
 
-func RunVideoRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunVideoRetrieveTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.VideoRetrieve {
 		t.Logf("Video retrieve not supported for provider %s", testConfig.Provider)
 		return
@@ -95,7 +95,7 @@ func RunVideoRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 	})
 }
 
-func RunVideoRemixTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunVideoRemixTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.VideoRemix {
 		t.Logf("Video remix not supported for provider %s", testConfig.Provider)
 		return
@@ -127,14 +127,14 @@ func RunVideoRemixTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 			t.Fatalf("❌ Video did not complete before remix: status=%s, error=%s", completed.Status, completed.Error.Message)
 		}
 
-		remixReq := &schemas.RakshaVideoRemixRequest{
+		remixReq := &schemas.GatewayVideoRemixRequest{
 			Provider: testConfig.Provider,
 			ID:       created.ID,
 			Input: &schemas.VideoGenerationInput{
 				Prompt: videoRemixPrompt,
 			},
 		}
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		remixResp, remixErr := client.VideoRemixRequest(bfCtx, remixReq)
 		if remixErr != nil {
 			t.Fatalf("❌ Video remix failed: %s", GetErrorMessage(remixErr))
@@ -162,7 +162,7 @@ func RunVideoRemixTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 	})
 }
 
-func RunVideoDownloadTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunVideoDownloadTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.VideoDownload {
 		t.Logf("Video download not supported for provider %s", testConfig.Provider)
 		return
@@ -195,11 +195,11 @@ func RunVideoDownloadTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 			t.Fatalf("❌ Video did not complete successfully: status=%s, error=%s", completed.Status, completed.Error.Message)
 		}
 
-		downloadReq := &schemas.RakshaVideoDownloadRequest{
+		downloadReq := &schemas.GatewayVideoDownloadRequest{
 			Provider: testConfig.Provider,
 			ID:       created.ID,
 		}
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		downloadResp, downloadErr := client.VideoDownloadRequest(bfCtx, downloadReq)
 		if downloadErr != nil {
 			t.Fatalf("❌ Video download failed: %s", GetErrorMessage(downloadErr))
@@ -218,7 +218,7 @@ func RunVideoDownloadTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 	})
 }
 
-func RunVideoListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunVideoListTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.VideoList {
 		t.Logf("Video list not supported for provider %s", testConfig.Provider)
 		return
@@ -229,12 +229,12 @@ func RunVideoListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 
 		order := "desc"
 		limit := 5
-		req := &schemas.RakshaVideoListRequest{
+		req := &schemas.GatewayVideoListRequest{
 			Provider: testConfig.Provider,
-			Order:    raksha.Ptr(order),
-			Limit:    raksha.Ptr(limit),
+			Order:    gateway.Ptr(order),
+			Limit:    gateway.Ptr(limit),
 		}
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		resp, err := client.VideoListRequest(bfCtx, req)
 		if err != nil {
 			t.Fatalf("❌ Video list failed: %s", GetErrorMessage(err))
@@ -250,7 +250,7 @@ func RunVideoListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 	})
 }
 
-func RunVideoDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunVideoDeleteTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.VideoDelete {
 		t.Logf("Video delete not supported for provider %s", testConfig.Provider)
 		return
@@ -284,11 +284,11 @@ func RunVideoDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 			t.Fatalf("❌ Video is not in terminal state before delete: status=%s", terminalResp.Status)
 		}
 
-		deleteReq := &schemas.RakshaVideoDeleteRequest{
+		deleteReq := &schemas.GatewayVideoDeleteRequest{
 			Provider: testConfig.Provider,
 			ID:       created.ID,
 		}
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		deleteResp, deleteErr := client.VideoDeleteRequest(bfCtx, deleteReq)
 		if deleteErr != nil {
 			t.Fatalf("❌ Video delete failed: %s", GetErrorMessage(deleteErr))
@@ -307,7 +307,7 @@ func RunVideoDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 	})
 }
 
-func RunVideoUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunVideoUnsupportedTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if testConfig.Scenarios.VideoList || testConfig.Scenarios.VideoDelete || testConfig.Scenarios.VideoRemix {
 		return
 	}
@@ -315,16 +315,16 @@ func RunVideoUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Co
 	t.Run("VideoUnsupported", func(t *testing.T) {
 		ShouldRunParallel(t, testConfig, "VideoUnsupported")
 
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 
-		_, listErr := client.VideoListRequest(bfCtx, &schemas.RakshaVideoListRequest{
+		_, listErr := client.VideoListRequest(bfCtx, &schemas.GatewayVideoListRequest{
 			Provider: testConfig.Provider,
 		})
 		if !isUnsupportedOperationError(listErr) {
 			t.Fatalf("❌ Expected unsupported_operation for VideoList, got: %s", GetErrorMessage(listErr))
 		}
 
-		_, deleteErr := client.VideoDeleteRequest(bfCtx, &schemas.RakshaVideoDeleteRequest{
+		_, deleteErr := client.VideoDeleteRequest(bfCtx, &schemas.GatewayVideoDeleteRequest{
 			Provider: testConfig.Provider,
 			ID:       "video_test_id",
 		})
@@ -332,7 +332,7 @@ func RunVideoUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Co
 			t.Fatalf("❌ Expected unsupported_operation for VideoDelete, got: %s", GetErrorMessage(deleteErr))
 		}
 
-		_, remixErr := client.VideoRemixRequest(bfCtx, &schemas.RakshaVideoRemixRequest{
+		_, remixErr := client.VideoRemixRequest(bfCtx, &schemas.GatewayVideoRemixRequest{
 			Provider: testConfig.Provider,
 			ID:       "video_test_id",
 			Input:    &schemas.VideoGenerationInput{Prompt: "test remix prompt"},
@@ -345,30 +345,30 @@ func RunVideoUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Co
 	})
 }
 
-func createVideoJob(client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
-	req := &schemas.RakshaVideoGenerationRequest{
+func createVideoJob(client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
+	req := &schemas.GatewayVideoGenerationRequest{
 		Provider: testConfig.Provider,
 		Model:    testConfig.VideoGenerationModel,
 		Input: &schemas.VideoGenerationInput{
 			Prompt: videoTestPrompt,
 		},
 		Params: &schemas.VideoGenerationParameters{
-			Seconds: raksha.Ptr("4"),
+			Seconds: gateway.Ptr("4"),
 		},
 		Fallbacks: testConfig.Fallbacks,
 	}
-	bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+	bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 	return client.VideoGenerationRequest(bfCtx, req)
 }
 
-func retrieveVideoWithRetries(client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig, videoID string) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
-	var lastErr *schemas.RakshaError
+func retrieveVideoWithRetries(client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig, videoID string) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
+	var lastErr *schemas.GatewayError
 	for attempt := 0; attempt < videoRetrieveMaxRetries; attempt++ {
-		req := &schemas.RakshaVideoRetrieveRequest{
+		req := &schemas.GatewayVideoRetrieveRequest{
 			Provider: testConfig.Provider,
 			ID:       videoID,
 		}
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		resp, err := client.VideoRetrieveRequest(bfCtx, req)
 		if err == nil && resp != nil {
 			return resp, nil
@@ -379,8 +379,8 @@ func retrieveVideoWithRetries(client *raksha.Raksha, ctx context.Context, testCo
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	return nil, &schemas.RakshaError{
-		IsRakshaError: true,
+	return nil, &schemas.GatewayError{
+		IsGatewayError: true,
 		Error: &schemas.ErrorField{
 			Message: "video retrieve failed after retries",
 		},
@@ -388,22 +388,22 @@ func retrieveVideoWithRetries(client *raksha.Raksha, ctx context.Context, testCo
 }
 
 func waitForVideoCompletion(
-	client *raksha.Raksha,
+	client *gateway.Gateway,
 	ctx context.Context,
 	testConfig ComprehensiveTestConfig,
 	videoID string,
 	requireURL bool,
-) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	deadline := time.Now().Add(videoCompletionTimeout)
-	var lastResp *schemas.RakshaVideoGenerationResponse
-	var lastErr *schemas.RakshaError
+	var lastResp *schemas.GatewayVideoGenerationResponse
+	var lastErr *schemas.GatewayError
 
 	for time.Now().Before(deadline) {
-		req := &schemas.RakshaVideoRetrieveRequest{
+		req := &schemas.GatewayVideoRetrieveRequest{
 			Provider: testConfig.Provider,
 			ID:       videoID,
 		}
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		resp, err := client.VideoRetrieveRequest(bfCtx, req)
 		if err != nil {
 			lastErr = err
@@ -436,8 +436,8 @@ func waitForVideoCompletion(
 		return lastResp, nil
 	}
 
-	return nil, &schemas.RakshaError{
-		IsRakshaError: true,
+	return nil, &schemas.GatewayError{
+		IsGatewayError: true,
 		Error: &schemas.ErrorField{
 			Message: fmt.Sprintf("timed out waiting for video completion for id %s", videoID),
 		},
@@ -453,6 +453,6 @@ func isValidVideoStatus(status schemas.VideoStatus) bool {
 	}
 }
 
-func isUnsupportedOperationError(err *schemas.RakshaError) bool {
+func isUnsupportedOperationError(err *schemas.GatewayError) bool {
 	return err != nil && err.Error != nil && err.Error.Code != nil && *err.Error.Code == "unsupported_operation"
 }

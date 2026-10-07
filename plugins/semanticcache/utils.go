@@ -11,8 +11,8 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // directCacheNamespace is a fixed namespace UUID for generating deterministic
@@ -191,9 +191,9 @@ func flattenToFloat32Embedding(values [][]float64) []float32 {
 // set for the request: anything that should change the cache key when it
 // changes. The returned map is fed to hashMap to derive params_hash, which
 // then anchors both direct and semantic lookups.
-func (plugin *Plugin) buildRequestMetadataForCaching(state *cacheState, req *schemas.RakshaRequest) (map[string]interface{}, error) {
+func (plugin *Plugin) buildRequestMetadataForCaching(state *cacheState, req *schemas.GatewayRequest) (map[string]interface{}, error) {
 	metadata := map[string]interface{}{
-		"stream": raksha.IsStreamRequestType(req.RequestType),
+		"stream": gateway.IsStreamRequestType(req.RequestType),
 	}
 
 	if attachments := plugin.extractAttachmentsForCaching(state, req); len(attachments) > 0 {
@@ -262,7 +262,7 @@ func (plugin *Plugin) buildRequestMetadataForCaching(state *cacheState, req *sch
 // two messages with identical text but different images must not collide.
 // Honors ExcludeSystemPrompt via getInputForCaching. Returns nil for
 // request types without attachment-bearing content blocks.
-func (plugin *Plugin) extractAttachmentsForCaching(state *cacheState, req *schemas.RakshaRequest) []string {
+func (plugin *Plugin) extractAttachmentsForCaching(state *cacheState, req *schemas.GatewayRequest) []string {
 	switch req.RequestType {
 	case schemas.ChatCompletionRequest, schemas.ChatCompletionStreamRequest:
 		messages, ok := plugin.getInputForCaching(state, req).([]schemas.ChatMessage)
@@ -357,7 +357,7 @@ func extractResponsesMessageContent(msg schemas.ResponsesMessage) string {
 // Text serialization format (for cache consistency):
 //   - Chat API: "role: content"
 //   - Responses API: "role: msgType: content" (when msgType is present), "role: content" (when msgType is empty)
-func (plugin *Plugin) extractTextForEmbedding(state *cacheState, req *schemas.RakshaRequest) (string, error) {
+func (plugin *Plugin) extractTextForEmbedding(state *cacheState, req *schemas.GatewayRequest) (string, error) {
 	switch {
 	case req.TextCompletionRequest != nil:
 		if req.TextCompletionRequest.Input.PromptStr != nil {
@@ -436,7 +436,7 @@ func (plugin *Plugin) extractTextForEmbedding(state *cacheState, req *schemas.Ra
 
 // buildUnifiedMetadata builds the property map written alongside the cache
 // entry: the columns the vector store indexes for filtering (cache_key,
-// provider, model, params_hash, expires_at) plus the from_raksha marker
+// provider, model, params_hash, expires_at) plus the from_gateway marker
 // used by Cleanup and ClearCacheForKey to scope deletes. Caller still adds
 // the response payload (response or stream_chunks) before Add.
 func (plugin *Plugin) buildUnifiedMetadata(provider schemas.ModelProvider, model string, paramsHash string, cacheKey string, ttl time.Duration) map[string]interface{} {
@@ -444,7 +444,7 @@ func (plugin *Plugin) buildUnifiedMetadata(provider schemas.ModelProvider, model
 	unifiedMetadata["provider"] = string(provider)
 	unifiedMetadata["model"] = model
 	unifiedMetadata["cache_key"] = cacheKey
-	unifiedMetadata["from_raksha_semantic_cache_plugin"] = true
+	unifiedMetadata["from_gateway_semantic_cache_plugin"] = true
 	unifiedMetadata["expires_at"] = time.Now().Add(ttl).Unix()
 	if paramsHash != "" {
 		unifiedMetadata["params_hash"] = paramsHash
@@ -457,7 +457,7 @@ func (plugin *Plugin) buildUnifiedMetadata(provider schemas.ModelProvider, model
 // — safe because the calling goroutine owns it. The ttl parameter is
 // retained for symmetry with addStreamingResponse; the actual expiry is
 // already encoded in metadata["expires_at"] by buildUnifiedMetadata.
-func (plugin *Plugin) addNonStreamingResponse(ctx context.Context, responseID string, res *schemas.RakshaResponse, embedding []float32, metadata map[string]interface{}, ttl time.Duration) error {
+func (plugin *Plugin) addNonStreamingResponse(ctx context.Context, responseID string, res *schemas.GatewayResponse, embedding []float32, metadata map[string]interface{}, ttl time.Duration) error {
 	responseData, err := json.Marshal(res)
 	if err != nil {
 		return fmt.Errorf("failed to marshal response: %w", err)
@@ -475,10 +475,10 @@ func (plugin *Plugin) addNonStreamingResponse(ctx context.Context, responseID st
 
 // addStreamingResponse appends one chunk to the per-request accumulator and,
 // when the final chunk arrives, flushes the accumulated stream to the cache.
-// Errors never reach this function: PostLLMHook returns early on rakshaErr
+// Errors never reach this function: PostLLMHook returns early on gatewayErr
 // (errors are always delivered as the final chunk), so an errored stream
 // simply leaves its accumulator behind for the periodic reaper.
-func (plugin *Plugin) addStreamingResponse(ctx context.Context, requestID string, storageID string, res *schemas.RakshaResponse, embedding []float32, metadata map[string]interface{}, ttl time.Duration, isFinalChunk bool) error {
+func (plugin *Plugin) addStreamingResponse(ctx context.Context, requestID string, storageID string, res *schemas.GatewayResponse, embedding []float32, metadata map[string]interface{}, ttl time.Duration, isFinalChunk bool) error {
 	accumulator := plugin.getOrCreateStreamAccumulator(requestID, storageID, embedding, metadata, ttl)
 
 	chunk := &StreamChunk{
@@ -560,7 +560,7 @@ func (plugin *Plugin) parseStreamChunks(streamData interface{}) ([]string, error
 // embedding text extraction, and the history-threshold check reuse the same
 // slice instead of re-walking on each call. State may be nil (tests /
 // pre-state callers), in which case nothing is cached.
-func (plugin *Plugin) getInputForCaching(state *cacheState, req *schemas.RakshaRequest) interface{} {
+func (plugin *Plugin) getInputForCaching(state *cacheState, req *schemas.GatewayRequest) interface{} {
 	if state != nil && state.FilteredInput != nil {
 		return state.FilteredInput
 	}
@@ -632,7 +632,7 @@ func filterResponsesMessages(msgs []schemas.ResponsesMessage, excludeSystem bool
 // (the only field we normalize), sharing all other pointer fields with the
 // original. This avoids the per-call message-graph deep copy that
 // schemas.DeepCopy*Message would otherwise do.
-func (plugin *Plugin) getNormalizedInputForCaching(req *schemas.RakshaRequest) interface{} {
+func (plugin *Plugin) getNormalizedInputForCaching(req *schemas.GatewayRequest) interface{} {
 	excludeSystem := plugin.config.ExcludeSystemPrompt != nil && *plugin.config.ExcludeSystemPrompt
 	switch req.RequestType {
 	case schemas.TextCompletionRequest, schemas.TextCompletionStreamRequest:
@@ -986,7 +986,7 @@ func (plugin *Plugin) extractImageGenerationParametersToMetadata(params *schemas
 // histories are unlikely to repeat and unlikely to be semantically similar
 // to other requests, so caching them mostly bloats the store; PreLLMHook
 // uses this to skip caching such requests entirely.
-func (plugin *Plugin) isConversationHistoryThresholdExceeded(state *cacheState, req *schemas.RakshaRequest) bool {
+func (plugin *Plugin) isConversationHistoryThresholdExceeded(state *cacheState, req *schemas.GatewayRequest) bool {
 	switch {
 	case req.ChatRequest != nil:
 		input, ok := plugin.getInputForCaching(state, req).([]schemas.ChatMessage)

@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,14 +68,18 @@ function largePayloadConfigEqual(a: LargePayloadConfig, b: LargePayloadConfig): 
 export default function ClientSettingsView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
 	const [droppedRequests, setDroppedRequests] = useState<number>(0);
-	const { data: droppedRequestsData } = useGetDroppedRequestsQuery();
-	const { data: rakshaConfig, isLoading: isCoreConfigLoading } = useGetCoreConfigQuery({ fromDB: true });
-	const config = rakshaConfig?.client_config;
+	const { data: droppedRequestsData, error: droppedRequestsError } = useGetDroppedRequestsQuery();
+	const { data: gatewayConfig, isLoading: isCoreConfigLoading, error: coreConfigError } = useGetCoreConfigQuery({ fromDB: true });
+	const config = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading: isSavingCoreConfig }] = useUpdateCoreConfigMutation();
 	const [localConfig, setLocalConfig] = useState<CoreConfig>(DefaultCoreConfig);
 
 	// Large payload config state
-	const { data: serverLargePayloadConfig, isLoading: isLargePayloadConfigLoading } = useGetLargePayloadConfigQuery();
+	const {
+		data: serverLargePayloadConfig,
+		isLoading: isLargePayloadConfigLoading,
+		error: largePayloadError,
+	} = useGetLargePayloadConfigQuery();
 	const [updateLargePayloadConfig, { isLoading: isSavingLargePayload }] = useUpdateLargePayloadConfigMutation();
 	const [localLargePayloadConfig, setLocalLargePayloadConfig] = useState<LargePayloadConfig>(DefaultLargePayloadConfig);
 
@@ -173,7 +178,7 @@ export default function ClientSettingsView() {
 
 		// Save core config if changed
 		if (hasCoreConfigChanges) {
-			if (!rakshaConfig) {
+			if (!gatewayConfig) {
 				toast.error("Configuration not loaded. Please refresh and try again.");
 				return;
 			}
@@ -187,7 +192,7 @@ export default function ClientSettingsView() {
 			};
 
 			try {
-				await updateCoreConfig({ ...rakshaConfig!, client_config: cleanedConfig }).unwrap();
+				await updateCoreConfig({ ...gatewayConfig!, client_config: cleanedConfig }).unwrap();
 				coreConfigSaved = true;
 			} catch (error) {
 				toast.error(`Failed to save client config: ${getErrorMessage(error)}`);
@@ -212,7 +217,7 @@ export default function ClientSettingsView() {
 			}
 		}
 	}, [
-		rakshaConfig,
+		gatewayConfig,
 		hasSecurityHeaderError,
 		hasCoreConfigChanges,
 		hasLargePayloadChanges,
@@ -292,6 +297,16 @@ export default function ClientSettingsView() {
 				<p className="text-muted-foreground text-sm">Configure client behavior and request handling.</p>
 			</div>
 
+			{(coreConfigError || largePayloadError || droppedRequestsError) && (
+				<div className="border-destructive/50 bg-destructive/10 rounded-sm border p-4">
+					<p className="text-destructive text-sm font-medium">Failed to load client settings</p>
+					<p className="text-muted-foreground mt-1 text-sm">
+						{getErrorMessage(coreConfigError || largePayloadError || droppedRequestsError) ||
+							"An unexpected error occurred. Please try again."}
+					</p>
+				</div>
+			)}
+
 			<div className="space-y-4">
 				{/* Drop Excess Requests */}
 				<div className="flex items-center justify-between space-x-2">
@@ -300,7 +315,7 @@ export default function ClientSettingsView() {
 							Drop Excess Requests
 						</label>
 						<p className="text-muted-foreground text-sm">
-							If enabled, Raksha will drop requests that exceed pool capacity.{" "}
+							If enabled, {PRODUCT_NAME} will drop requests that exceed pool capacity.{" "}
 							{localConfig.drop_excess_requests && droppedRequests > 0 ? (
 								<span>
 									Have dropped <b>{droppedRequests} requests</b> since last restart.

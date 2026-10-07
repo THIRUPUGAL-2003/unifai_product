@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -40,10 +41,16 @@ export function BusinessUnitsView() {
 	const hasCreateAccess = useRbac(RbacResource.Teams, RbacOperation.Create);
 	const hasUpdateAccess = useRbac(RbacResource.Teams, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.Teams, RbacOperation.Delete);
-	const { data: unitData } = useGetBusinessUnitsQuery();
-	const { data: teamData } = useGetTeamsQuery();
-	const { data: customersData } = useGetCustomersQuery();
-	const { data: assignedData } = useGetBusinessUnitTeamsQuery(selected?.id ?? "", { skip: !selected });
+	const { data: unitData, isError: unitsFailed, error: unitsError } = useGetBusinessUnitsQuery();
+	const { data: teamData, isError: teamsFailed, error: teamsError } = useGetTeamsQuery();
+	const { data: customersData, isError: customersFailed, error: customersError } = useGetCustomersQuery();
+	const listQueryFailed = unitsFailed || teamsFailed || customersFailed;
+	const listQueryError = unitsError || teamsError || customersError;
+	const {
+		data: assignedData,
+		isError: assignedTeamsFailed,
+		error: assignedTeamsError,
+	} = useGetBusinessUnitTeamsQuery(selected?.id ?? "", { skip: !selected });
 	const [createUnit] = useCreateBusinessUnitMutation();
 	const [deleteUnit] = useDeleteBusinessUnitMutation();
 	const [assignTeam] = useAssignBusinessUnitTeamMutation();
@@ -127,6 +134,12 @@ export function BusinessUnitsView() {
 						New unit
 					</Button>
 				</div>
+				{listQueryFailed ? (
+					<QueryErrorBanner
+						testId="business-units-query-error"
+						message={getErrorMessage(listQueryError) || "Failed to load business units, teams, or customers."}
+					/>
+				) : null}
 				<Table>
 					<TableHeader>
 						<TableRow>
@@ -199,7 +212,12 @@ export function BusinessUnitsView() {
 							</Button>
 						</div>
 						<div className="space-y-2">
-							{assigned.length === 0 ? (
+							{assignedTeamsFailed ? (
+								<QueryErrorBanner
+									testId="business-unit-teams-query-error"
+									message={getErrorMessage(assignedTeamsError) || "Failed to load assigned teams."}
+								/>
+							) : assigned.length === 0 ? (
 								<p className="text-muted-foreground text-sm">No teams assigned yet.</p>
 							) : (
 								assigned.map((team) => (

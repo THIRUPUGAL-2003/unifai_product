@@ -1,3 +1,4 @@
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -88,7 +89,7 @@ const protocolOptions: {
 // emptyProfile returns a fresh profile with the same defaults a newly created collector uses.
 const emptyProfile = (): ProfileForm => ({
 	enabled: false,
-	service_name: "raksha",
+	service_name: "gateway",
 	collector_url: emptySecretVar(),
 	headers: {},
 	trace_type: "genai_extension",
@@ -113,7 +114,7 @@ const toProfileForm = (p?: StoredOtelProfile): ProfileForm => {
 	);
 	return {
 		enabled: p?.enabled ?? hasUrl,
-		service_name: p?.service_name ?? "raksha",
+		service_name: p?.service_name ?? "gateway",
 		collector_url: toSecretVarFormValue(p?.collector_url),
 		headers: toSecretVarMapFormValue(p?.headers),
 		trace_type: p?.trace_type ?? "genai_extension",
@@ -392,9 +393,9 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 						render={({ field }) => (
 							<FormItem className="w-full">
 								<FormLabel>Service Name</FormLabel>
-								<FormDescription>If kept empty, the service name will be set to "raksha"</FormDescription>
+								<FormDescription>If kept empty, the service name will be set to "gateway"</FormDescription>
 								<FormControl>
-									<Input placeholder="raksha" disabled={!hasOtelAccess} {...field} />
+									<Input placeholder="gateway" disabled={!hasOtelAccess} {...field} />
 								</FormControl>
 								<FormMessage />
 							</FormItem>
@@ -634,7 +635,7 @@ function OtelProfileSection({ form, control, index, hasOtelAccess, canRemove, op
 									<FormItem className="w-full">
 										<FormLabel>TLS CA Certificate Path</FormLabel>
 										<FormDescription>
-											File path to the CA certificate on the Raksha server. Leave empty to use system root CAs.
+											File path to the CA certificate on the {PRODUCT_NAME} server. Leave empty to use system root CAs.
 										</FormDescription>
 										<FormControl>
 											<Input placeholder="/path/to/ca.crt" disabled={!hasOtelAccess} {...field} />

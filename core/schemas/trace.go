@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the Raksha system.
+// Package schemas defines the core schemas and types used by the Gateway system.
 package schemas
 
 import (
@@ -31,7 +31,7 @@ const (
 	TraceAttrSessionID = "x-uf-session-id"
 	// TraceAttrDimensions holds the map[string]string of request dimensions
 	// parsed from x-uf-dim-* headers, keyed by bare dimension name.
-	TraceAttrDimensions = "raksha.dimensions"
+	TraceAttrDimensions = "gateway.dimensions"
 )
 
 // AddSpan adds a span to the trace in a thread-safe manner
@@ -264,7 +264,7 @@ const (
 	AttrN                = "gen_ai.request.n" // legacy: replaced by AttrChoiceCount
 	AttrChoiceCount      = "gen_ai.request.choice.count"
 	// AttrEmbeddingsDimensionCount is the OTel spec key for embedding dimensions
-	// (Raksha historically emitted AttrDimensions = gen_ai.request.dimensions).
+	// (Gateway historically emitted AttrDimensions = gen_ai.request.dimensions).
 	AttrEmbeddingsDimensionCount = "gen_ai.embeddings.dimension.count"
 	AttrSeed                     = "gen_ai.request.seed"
 	AttrSuffix                   = "gen_ai.request.suffix"
@@ -348,9 +348,9 @@ const (
 	AttrInputEmbedding = "gen_ai.input.embedding"
 	AttrOutputMessages = "gen_ai.output.messages"
 
-	// Raksha Context Attributes
-	// legacy: every key below sits under gen_ai.* but represents a Raksha-internal
-	// concept (governance / routing). The raksha.* mirrors are the canonical home
+	// Gateway Context Attributes
+	// legacy: every key below sits under gen_ai.* but represents a Gateway-internal
+	// concept (governance / routing). The gateway.* mirrors are the canonical home
 	// going forward; these will be dropped once dashboards migrate.
 	AttrRequestID       = "gen_ai.request_id"
 	AttrVirtualKeyID    = "gen_ai.virtual_key_id"
@@ -469,41 +469,41 @@ const (
 	AttrToolType          = "gen_ai.tool.type"
 
 	// =====================================================================
-	// Raksha-namespaced attributes (raksha.*)
+	// Gateway-namespaced attributes (gateway.*)
 	//
 	// Canonical home for everything that is NOT part of the OTel GenAI spec:
-	//   - Raksha-internal concepts (routing/governance, request id, retry counters)
-	//   - Raw Raksha short names that mirror canonicalized gen_ai.* values
+	//   - Gateway-internal concepts (routing/governance, request id, retry counters)
+	//   - Raw Gateway short names that mirror canonicalized gen_ai.* values
 	//   - Back-compat fallbacks for shape changes (e.g. comma-joined stop_sequences)
 	//
 	// The corresponding legacy gen_ai.* emissions are tagged "// legacy:" at their
 	// call sites and will be removed once dashboards migrate over.
 	// =====================================================================
-	AttrRakshaProviderName        = "raksha.provider.name"
-	AttrRakshaRequestID           = "raksha.request.id"
-	AttrRakshaVirtualKeyID        = "raksha.virtual_key.id"
-	AttrRakshaVirtualKeyName      = "raksha.virtual_key.name"
-	AttrRakshaSelectedKeyID       = "raksha.selected_key.id"
-	AttrRakshaSelectedKeyName     = "raksha.selected_key.name"
-	AttrRakshaRoutingRuleID       = "raksha.routing_rule.id"
-	AttrRakshaRoutingRuleName     = "raksha.routing_rule.name"
-	AttrRakshaTeamID              = "raksha.team.id"
-	AttrRakshaTeamName            = "raksha.team.name"
-	AttrRakshaCustomerID          = "raksha.customer.id"
-	AttrRakshaCustomerName        = "raksha.customer.name"
-	AttrRakshaBusinessUnitID      = "raksha.business_unit.id"
-	AttrRakshaBusinessUnitName    = "raksha.business_unit.name"
-	AttrRakshaTeamIDs             = "raksha.team.ids"
-	AttrRakshaTeamNames           = "raksha.team.names"
-	AttrRakshaCustomerIDs         = "raksha.customer.ids"
-	AttrRakshaCustomerNames       = "raksha.customer.names"
-	AttrRakshaBusinessUnitIDs     = "raksha.business_unit.ids"
-	AttrRakshaBusinessUnitNames   = "raksha.business_unit.names"
-	AttrRakshaUserID              = "raksha.user.id"
-	AttrRakshaUserName            = "raksha.user.name"
-	AttrRakshaRetries             = "raksha.retries"
-	AttrRakshaFallbackIndex       = "raksha.fallback_index"
-	AttrRakshaStopSequencesJoined = "raksha.request.stop_sequences"
+	AttrGatewayProviderName        = "gateway.provider.name"
+	AttrGatewayRequestID           = "gateway.request.id"
+	AttrGatewayVirtualKeyID        = "gateway.virtual_key.id"
+	AttrGatewayVirtualKeyName      = "gateway.virtual_key.name"
+	AttrGatewaySelectedKeyID       = "gateway.selected_key.id"
+	AttrGatewaySelectedKeyName     = "gateway.selected_key.name"
+	AttrGatewayRoutingRuleID       = "gateway.routing_rule.id"
+	AttrGatewayRoutingRuleName     = "gateway.routing_rule.name"
+	AttrGatewayTeamID              = "gateway.team.id"
+	AttrGatewayTeamName            = "gateway.team.name"
+	AttrGatewayCustomerID          = "gateway.customer.id"
+	AttrGatewayCustomerName        = "gateway.customer.name"
+	AttrGatewayBusinessUnitID      = "gateway.business_unit.id"
+	AttrGatewayBusinessUnitName    = "gateway.business_unit.name"
+	AttrGatewayTeamIDs             = "gateway.team.ids"
+	AttrGatewayTeamNames           = "gateway.team.names"
+	AttrGatewayCustomerIDs         = "gateway.customer.ids"
+	AttrGatewayCustomerNames       = "gateway.customer.names"
+	AttrGatewayBusinessUnitIDs     = "gateway.business_unit.ids"
+	AttrGatewayBusinessUnitNames   = "gateway.business_unit.names"
+	AttrGatewayUserID              = "gateway.user.id"
+	AttrGatewayUserName            = "gateway.user.name"
+	AttrGatewayRetries             = "gateway.retries"
+	AttrGatewayFallbackIndex       = "gateway.fallback_index"
+	AttrGatewayStopSequencesJoined = "gateway.request.stop_sequences"
 
 	// OTel general semconv (no gen_ai prefix). Emitted alongside the legacy
 	// gen_ai.error.type from PopulateErrorAttributes.
@@ -511,7 +511,7 @@ const (
 
 	// legacy: bare unprefixed keys retained for back-compat with existing dashboards.
 	// "request.type" is superseded by AttrOperationName; "retry.count" has no spec
-	// equivalent but stays under raksha.retries going forward.
+	// equivalent but stays under gateway.retries going forward.
 	AttrLegacyRequestType = "request.type"
 	AttrLegacyRetryCount  = "retry.count"
 

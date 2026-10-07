@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaSpeechRequest converts a GeminiGenerationRequest to a RakshaSpeechRequest
-func (request *GeminiGenerationRequest) ToRakshaSpeechRequest(ctx *schemas.RakshaContext) *schemas.RakshaSpeechRequest {
+// ToGatewaySpeechRequest converts a GeminiGenerationRequest to a GatewaySpeechRequest
+func (request *GeminiGenerationRequest) ToGatewaySpeechRequest(ctx *schemas.GatewayContext) *schemas.GatewaySpeechRequest {
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	rakshaReq := &schemas.RakshaSpeechRequest{
+	gatewayReq := &schemas.GatewaySpeechRequest{
 		Provider: provider,
 		Model:    model,
 	}
@@ -28,29 +28,29 @@ func (request *GeminiGenerationRequest) ToRakshaSpeechRequest(ctx *schemas.Raksh
 		}
 	}
 
-	rakshaReq.Input = &schemas.SpeechInput{
+	gatewayReq.Input = &schemas.SpeechInput{
 		Input: textInput,
 	}
 
 	// Convert generation config to parameters
 	if request.GenerationConfig.SpeechConfig != nil || len(request.GenerationConfig.ResponseModalities) > 0 {
-		rakshaReq.Params = &schemas.SpeechParameters{}
+		gatewayReq.Params = &schemas.SpeechParameters{}
 
 		// Extract voice config from speech config
 		if request.GenerationConfig.SpeechConfig != nil {
 			// Handle single-speaker voice config
 			if request.GenerationConfig.SpeechConfig.VoiceConfig != nil {
-				rakshaReq.Params.VoiceConfig = &schemas.SpeechVoiceInput{}
+				gatewayReq.Params.VoiceConfig = &schemas.SpeechVoiceInput{}
 
 				if request.GenerationConfig.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig != nil {
 					voiceName := request.GenerationConfig.SpeechConfig.VoiceConfig.PrebuiltVoiceConfig.VoiceName
-					rakshaReq.Params.VoiceConfig.Voice = &voiceName
+					gatewayReq.Params.VoiceConfig.Voice = &voiceName
 				}
 			} else if request.GenerationConfig.SpeechConfig.MultiSpeakerVoiceConfig != nil {
 				// Handle multi-speaker voice config
-				// Convert to Raksha's MultiVoiceConfig format
+				// Convert to Gateway's MultiVoiceConfig format
 				if len(request.GenerationConfig.SpeechConfig.MultiSpeakerVoiceConfig.SpeakerVoiceConfigs) > 0 {
-					rakshaReq.Params.VoiceConfig = &schemas.SpeechVoiceInput{}
+					gatewayReq.Params.VoiceConfig = &schemas.SpeechVoiceInput{}
 					multiVoiceConfig := make([]schemas.VoiceConfig, 0, len(request.GenerationConfig.SpeechConfig.MultiSpeakerVoiceConfig.SpeakerVoiceConfigs))
 
 					for _, speakerConfig := range request.GenerationConfig.SpeechConfig.MultiSpeakerVoiceConfig.SpeakerVoiceConfigs {
@@ -62,69 +62,69 @@ func (request *GeminiGenerationRequest) ToRakshaSpeechRequest(ctx *schemas.Raksh
 						}
 					}
 
-					rakshaReq.Params.VoiceConfig.MultiVoiceConfig = multiVoiceConfig
+					gatewayReq.Params.VoiceConfig.MultiVoiceConfig = multiVoiceConfig
 				}
 			}
 		}
 
 		// Store response modalities in extra params if needed
 		if len(request.GenerationConfig.ResponseModalities) > 0 {
-			if rakshaReq.Params.ExtraParams == nil {
-				rakshaReq.Params.ExtraParams = make(map[string]interface{})
+			if gatewayReq.Params.ExtraParams == nil {
+				gatewayReq.Params.ExtraParams = make(map[string]interface{})
 			}
 			modalities := make([]string, len(request.GenerationConfig.ResponseModalities))
 			for i, mod := range request.GenerationConfig.ResponseModalities {
 				modalities[i] = string(mod)
 			}
-			rakshaReq.Params.ExtraParams["response_modalities"] = modalities
+			gatewayReq.Params.ExtraParams["response_modalities"] = modalities
 		}
 	}
 
-	return rakshaReq
+	return gatewayReq
 }
 
-// ToGeminiSpeechRequest converts a RakshaSpeechRequest to a GeminiGenerationRequest
-func ToGeminiSpeechRequest(rakshaReq *schemas.RakshaSpeechRequest) (*GeminiGenerationRequest, error) {
-	if rakshaReq == nil {
-		return nil, fmt.Errorf("rakshaReq is nil")
+// ToGeminiSpeechRequest converts a GatewaySpeechRequest to a GeminiGenerationRequest
+func ToGeminiSpeechRequest(gatewayReq *schemas.GatewaySpeechRequest) (*GeminiGenerationRequest, error) {
+	if gatewayReq == nil {
+		return nil, fmt.Errorf("gatewayReq is nil")
 	}
 	// Here we confirm if the response_format is wav or empty string
 	// If its anything else, we will return an error
-	if rakshaReq.Params != nil && rakshaReq.Params.ResponseFormat != "" && rakshaReq.Params.ResponseFormat != "wav" {
-		return nil, fmt.Errorf("gemini does not support response_format: %s. Only wav or empty string is supported which defaults to wav", rakshaReq.Params.ResponseFormat)
+	if gatewayReq.Params != nil && gatewayReq.Params.ResponseFormat != "" && gatewayReq.Params.ResponseFormat != "wav" {
+		return nil, fmt.Errorf("gemini does not support response_format: %s. Only wav or empty string is supported which defaults to wav", gatewayReq.Params.ResponseFormat)
 	}
 	// Create the base Gemini generation request
 	geminiReq := &GeminiGenerationRequest{
-		Model: rakshaReq.Model,
+		Model: gatewayReq.Model,
 	}
 	// Convert parameters to generation config
 	geminiReq.GenerationConfig.ResponseModalities = []Modality{ModalityAudio}
 	// Convert speech input to Gemini format
-	if rakshaReq.Input != nil && rakshaReq.Input.Input != "" {
+	if gatewayReq.Input != nil && gatewayReq.Input.Input != "" {
 		geminiReq.Contents = []Content{
 			{
 				Parts: []*Part{
 					{
-						Text: rakshaReq.Input.Input,
+						Text: gatewayReq.Input.Input,
 					},
 				},
 			},
 		}
 		// Add speech config to generation config if voice config is provided
-		if rakshaReq.Params != nil && rakshaReq.Params.VoiceConfig != nil {
+		if gatewayReq.Params != nil && gatewayReq.Params.VoiceConfig != nil {
 			// Handle both single voice and multi-voice configurations
-			if rakshaReq.Params.VoiceConfig.Voice != nil || len(rakshaReq.Params.VoiceConfig.MultiVoiceConfig) > 0 {
-				addSpeechConfigToGenerationConfig(&geminiReq.GenerationConfig, rakshaReq.Params.VoiceConfig)
+			if gatewayReq.Params.VoiceConfig.Voice != nil || len(gatewayReq.Params.VoiceConfig.MultiVoiceConfig) > 0 {
+				addSpeechConfigToGenerationConfig(&geminiReq.GenerationConfig, gatewayReq.Params.VoiceConfig)
 			}
-			geminiReq.ExtraParams = rakshaReq.Params.ExtraParams
+			geminiReq.ExtraParams = gatewayReq.Params.ExtraParams
 		}
 	}
 	return geminiReq, nil
 }
 
-// ToRakshaSpeechResponse converts a GenerateContentResponse to a RakshaSpeechResponse
-func (response *GenerateContentResponse) ToRakshaSpeechResponse(ctx context.Context) (*schemas.RakshaSpeechResponse, error) {
-	rakshaResp := &schemas.RakshaSpeechResponse{}
+// ToGatewaySpeechResponse converts a GenerateContentResponse to a GatewaySpeechResponse
+func (response *GenerateContentResponse) ToGatewaySpeechResponse(ctx context.Context) (*schemas.GatewaySpeechResponse, error) {
+	gatewayResp := &schemas.GatewaySpeechResponse{}
 
 	// Process candidates to extract audio content
 	if len(response.Candidates) > 0 {
@@ -145,7 +145,7 @@ func (response *GenerateContentResponse) ToRakshaSpeechResponse(ctx context.Cont
 				}
 			}
 			if len(audioData) > 0 {
-				responseFormat := ctx.Value(RakshaContextKeyResponseFormat).(string)
+				responseFormat := ctx.Value(GatewayContextKeyResponseFormat).(string)
 				// Gemini returns PCM audio (s16le, 24000 Hz, mono)
 				// Convert to WAV for standard playable output format
 				if responseFormat == "wav" {
@@ -153,24 +153,24 @@ func (response *GenerateContentResponse) ToRakshaSpeechResponse(ctx context.Cont
 					if err != nil {
 						return nil, fmt.Errorf("failed to convert PCM to WAV: %v", err)
 					}
-					rakshaResp.Audio = wavData
+					gatewayResp.Audio = wavData
 				} else {
-					rakshaResp.Audio = audioData
+					gatewayResp.Audio = audioData
 				}
 			}
 
 			// Set usage information
 			if response.UsageMetadata != nil {
-				rakshaResp.Usage = convertGeminiUsageMetadataToSpeechUsage(response.UsageMetadata)
+				gatewayResp.Usage = convertGeminiUsageMetadataToSpeechUsage(response.UsageMetadata)
 			}
 		}
 	}
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
-// ToGeminiSpeechResponse converts a RakshaSpeechResponse to Gemini's GenerateContentResponse
-func ToGeminiSpeechResponse(rakshaResp *schemas.RakshaSpeechResponse) *GenerateContentResponse {
-	if rakshaResp == nil {
+// ToGeminiSpeechResponse converts a GatewaySpeechResponse to Gemini's GenerateContentResponse
+func ToGeminiSpeechResponse(gatewayResp *schemas.GatewaySpeechResponse) *GenerateContentResponse {
+	if gatewayResp == nil {
 		return nil
 	}
 
@@ -181,8 +181,8 @@ func ToGeminiSpeechResponse(rakshaResp *schemas.RakshaSpeechResponse) *GenerateC
 			Parts: []*Part{
 				{
 					InlineData: &Blob{
-						Data:     encodeBytesToBase64String(rakshaResp.Audio),
-						MIMEType: utils.DetectAudioMimeType(rakshaResp.Audio),
+						Data:     encodeBytesToBase64String(gatewayResp.Audio),
+						MIMEType: utils.DetectAudioMimeType(gatewayResp.Audio),
 					},
 				},
 			},
@@ -191,8 +191,8 @@ func ToGeminiSpeechResponse(rakshaResp *schemas.RakshaSpeechResponse) *GenerateC
 	}
 
 	// Set usage metadata if present
-	if rakshaResp.Usage != nil {
-		genaiResp.UsageMetadata = convertRakshaSpeechUsageToGeminiUsageMetadata(rakshaResp.Usage)
+	if gatewayResp.Usage != nil {
+		genaiResp.UsageMetadata = convertGatewaySpeechUsageToGeminiUsageMetadata(gatewayResp.Usage)
 	}
 
 	genaiResp.Candidates = []*Candidate{candidate}

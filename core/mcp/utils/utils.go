@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // FlattenHeaders converts an http.Header into a map[string]string suitable
@@ -23,7 +23,7 @@ func FlattenHeaders(h http.Header) map[string]string {
 	return out
 }
 
-// BuildMCPCallbackBaseURL extracts the base URL set on the RakshaContext by
+// BuildMCPCallbackBaseURL extracts the base URL set on the GatewayContext by
 // the HTTP middleware (e.g. "https://host"). Per-user OAuth and per-user
 // headers resolvers append their respective paths on top.
 //
@@ -33,8 +33,8 @@ func FlattenHeaders(h http.Header) map[string]string {
 // a future writer that forgets to trim would silently break every per-user
 // OAuth flow. Guarding once on the read side keeps that invariant local
 // to this function rather than spread across every potential writer.
-func BuildMCPCallbackBaseURL(ctx *schemas.RakshaContext) string {
-	if base, ok := ctx.Value(schemas.RakshaContextKeyMCPCallbackBaseURL).(string); ok && base != "" {
+func BuildMCPCallbackBaseURL(ctx *schemas.GatewayContext) string {
+	if base, ok := ctx.Value(schemas.GatewayContextKeyMCPCallbackBaseURL).(string); ok && base != "" {
 		return strings.TrimRight(base, "/")
 	}
 	return ""
@@ -43,7 +43,7 @@ func BuildMCPCallbackBaseURL(ctx *schemas.RakshaContext) string {
 // BuildOAuthRedirectURIFromContext returns the full OAuth callback URL
 // ("<base>/api/oauth/callback") needed by the per-user OAuth flow, or empty
 // if the base URL is unavailable.
-func BuildOAuthRedirectURIFromContext(ctx *schemas.RakshaContext) string {
+func BuildOAuthRedirectURIFromContext(ctx *schemas.GatewayContext) string {
 	base := BuildMCPCallbackBaseURL(ctx)
 	if base == "" {
 		return ""
@@ -165,7 +165,7 @@ func CanonicalizeHeaderMap(m map[string]string) map[string]string {
 }
 
 // ExtractFilteredExtras returns just the per-request "extra" headers carried
-// in the RakshaContext (RakshaContextKeyMCPExtraHeaders), scoped by the
+// in the GatewayContext (GatewayContextKeyMCPExtraHeaders), scoped by the
 // client's AllowedExtraHeaders. Static config headers are NOT included here —
 // those live on the upstream transport via StaticConfigHeaders and apply
 // automatically to every message it carries. This function exists for the
@@ -175,7 +175,7 @@ func ExtractFilteredExtras(ctx context.Context, config *schemas.MCPClientConfig)
 	if ctx == nil || config == nil {
 		return headers
 	}
-	extraHeaders, ok := ctx.Value(schemas.RakshaContextKeyMCPExtraHeaders).(map[string][]string)
+	extraHeaders, ok := ctx.Value(schemas.GatewayContextKeyMCPExtraHeaders).(map[string][]string)
 	if !ok {
 		return headers
 	}

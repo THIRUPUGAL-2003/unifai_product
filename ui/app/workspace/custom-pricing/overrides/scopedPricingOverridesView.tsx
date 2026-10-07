@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -228,9 +229,11 @@ export default function ScopedPricingOverridesView() {
 		if (offset < totalCount) return;
 		setOffset(totalCount === 0 ? 0 : Math.floor((totalCount - 1) / PAGE_SIZE) * PAGE_SIZE);
 	}, [totalCount, offset]);
-	const { data: providersData } = useGetProvidersQuery();
-	const { data: virtualKeysData } = useGetVirtualKeysQuery();
-	const { data: allKeysData = [] } = useGetAllKeysQuery();
+	const { data: providersData, isError: providersFailed, error: providersError } = useGetProvidersQuery();
+	const { data: virtualKeysData, isError: virtualKeysFailed, error: virtualKeysError } = useGetVirtualKeysQuery();
+	const { data: allKeysData = [], isError: allKeysFailed, error: allKeysError } = useGetAllKeysQuery();
+	const auxLookupFailed = providersFailed || virtualKeysFailed || allKeysFailed;
+	const auxLookupError = providersError || virtualKeysError || allKeysError;
 	const [deleteOverride, { isLoading: isDeleting }] = useDeletePricingOverrideMutation();
 
 	useEffect(() => {
@@ -345,6 +348,17 @@ export default function ScopedPricingOverridesView() {
 					<span className="hidden sm:inline">New Override</span>
 				</Button>
 			</div>
+
+			{auxLookupFailed ? (
+				<QueryErrorBanner
+					className="mb-4"
+					testId="pricing-overrides-aux-query-error"
+					message={
+						getErrorMessage(auxLookupError) ||
+						"Failed to load providers, virtual keys, or provider keys. Scope labels may be incomplete."
+					}
+				/>
+			) : null}
 
 			{/* Search + scope filters */}
 			<div className="mb-4 flex flex-wrap items-center gap-3">

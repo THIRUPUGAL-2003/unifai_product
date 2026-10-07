@@ -5,58 +5,58 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
-func parseVertexError(resp *fasthttp.Response) *schemas.RakshaError {
-	var openAIErr schemas.RakshaError
+func parseVertexError(resp *fasthttp.Response) *schemas.GatewayError {
+	var openAIErr schemas.GatewayError
 	var vertexErr []VertexError
 
 	decodedBody, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		rakshaErr := providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
-		return rakshaErr
+		gatewayErr := providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
+		return gatewayErr
 	}
 
 	// Check for empty response
 	trimmed := strings.TrimSpace(string(decodedBody))
 	if len(trimmed) == 0 {
-		rakshaErr := &schemas.RakshaError{
-			IsRakshaError: false,
+		gatewayErr := &schemas.GatewayError{
+			IsGatewayError: false,
 			StatusCode:     schemas.Ptr(resp.StatusCode()),
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseEmpty,
 			},
 		}
-		return rakshaErr
+		return gatewayErr
 	}
 
 	// Check for HTML error response before attempting JSON parsing
 	if providerUtils.IsHTMLResponse(resp, decodedBody) {
-		rakshaErr := &schemas.RakshaError{
-			IsRakshaError: false,
+		gatewayErr := &schemas.GatewayError{
+			IsGatewayError: false,
 			StatusCode:     schemas.Ptr(resp.StatusCode()),
 			Error: &schemas.ErrorField{
 				Message: schemas.ErrProviderResponseHTML,
 				Error:   errors.New(string(decodedBody)),
 			},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				RawResponse: string(decodedBody),
 			},
 		}
-		return rakshaErr
+		return gatewayErr
 	}
 
-	createError := func(message string) *schemas.RakshaError {
-		rakshaErr := providerUtils.NewProviderAPIError(message, nil, resp.StatusCode(), nil, nil)
+	createError := func(message string) *schemas.GatewayError {
+		gatewayErr := providerUtils.NewProviderAPIError(message, nil, resp.StatusCode(), nil, nil)
 		var rawResponse interface{}
 		if err := sonic.Unmarshal(decodedBody, &rawResponse); err != nil {
 			rawResponse = string(decodedBody)
 		}
-		rakshaErr.ExtraFields.RawResponse = rawResponse
-		return rakshaErr
+		gatewayErr.ExtraFields.RawResponse = rawResponse
+		return gatewayErr
 	}
 
 	if err := sonic.Unmarshal(decodedBody, &openAIErr); err != nil || openAIErr.Error == nil {
@@ -68,8 +68,8 @@ func parseVertexError(resp *fasthttp.Response) *schemas.RakshaError {
 				// Try VertexValidationError format (validation errors from Mistral endpoint)
 				var validationErr VertexValidationError
 				if err := sonic.Unmarshal(decodedBody, &validationErr); err != nil {
-					rakshaErr := providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
-					return rakshaErr
+					gatewayErr := providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
+					return gatewayErr
 				}
 				if len(validationErr.Detail) > 0 {
 					return createError(validationErr.Detail[0].Msg)

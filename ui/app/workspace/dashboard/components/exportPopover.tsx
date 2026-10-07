@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdownMenu";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { buildCSV, downloadCSV } from "@/lib/utils/csv";
 import { downloadDocTable, downloadExcelTable } from "@/lib/utils/tableExport";
 import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
@@ -95,7 +96,7 @@ export function ExportPopover({ onLoadData, onPdfExport, onPdfExportDone }: Expo
 				} else {
 					await downloadDocTable({
 						filename: "dashboard-export",
-						title: "Raksha Dashboard Export",
+						title: `${PRODUCT_NAME} Dashboard Export`,
 						subtitle: "Usage and ranking snapshot",
 						columns,
 						rows,

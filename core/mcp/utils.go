@@ -14,7 +14,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RetryConfig defines the retry behavior with exponential backoff
@@ -368,17 +368,17 @@ func retrieveExternalToolsDetailed(ctx context.Context, client *client.Client, c
 			continue
 		}
 
-		// Convert MCP tool schema to Raksha format
-		rakshaTool := convertMCPToolToRakshaSchema(&mcpTool, logger)
+		// Convert MCP tool schema to Gateway format
+		gatewayTool := convertMCPToolToGatewaySchema(&mcpTool, logger)
 		// Prefix tool name with client name to make it permanent (using '-' as separator)
 		// Keep the original tool name (don't sanitize) so we can call the MCP server correctly
 		prefixedToolName := fmt.Sprintf("%s-%s", clientName, mcpTool.Name)
 		// Update the tool's function name to match the prefixed name
-		if rakshaTool.Function != nil {
-			rakshaTool.Function.Name = prefixedToolName
+		if gatewayTool.Function != nil {
+			gatewayTool.Function.Name = prefixedToolName
 		}
 		// Store the tool with the prefixed name
-		tools[prefixedToolName] = rakshaTool
+		tools[prefixedToolName] = gatewayTool
 		// Store the mapping from sanitized name to original MCP name for later lookup during execution
 		sanitizedToolName := strings.ReplaceAll(mcpTool.Name, "-", "_")
 		toolNameMapping[sanitizedToolName] = mcpTool.Name
@@ -514,8 +514,8 @@ func shouldSkipToolForRequest(ctx context.Context, clientName, toolName string) 
 	return false // Tool is allowed (default when no filtering specified)
 }
 
-// convertMCPToolToRakshaSchema converts an MCP tool definition to Raksha format.
-func convertMCPToolToRakshaSchema(mcpTool *mcp.Tool, logger schemas.Logger) schemas.ChatTool {
+// convertMCPToolToGatewaySchema converts an MCP tool definition to Gateway format.
+func convertMCPToolToGatewaySchema(mcpTool *mcp.Tool, logger schemas.Logger) schemas.ChatTool {
 	var properties *schemas.OrderedMap
 	if len(mcpTool.InputSchema.Properties) > 0 {
 		// Fix array schemas on the source map before copying to OrderedMap
@@ -553,7 +553,7 @@ func convertMCPToolToRakshaSchema(mcpTool *mcp.Tool, logger schemas.Logger) sche
 	}
 
 	// Preserve MCP tool annotations if any are set.
-	// Clone bool pointers so Raksha's copy is independent of the upstream mcp.Tool lifetime.
+	// Clone bool pointers so Gateway's copy is independent of the upstream mcp.Tool lifetime.
 	var annotations *schemas.MCPToolAnnotations
 	a := mcpTool.Annotations
 	if a.Title != "" || a.ReadOnlyHint != nil || a.DestructiveHint != nil || a.IdempotentHint != nil || a.OpenWorldHint != nil {
@@ -845,7 +845,7 @@ func isToolCallAllowedForCodeMode(serverName, toolName string, allClientNames []
 }
 
 // hasToolCalls checks if a chat response contains tool calls that need to be executed
-func hasToolCallsForChatResponse(response *schemas.RakshaChatResponse) bool {
+func hasToolCallsForChatResponse(response *schemas.GatewayChatResponse) bool {
 	if response == nil || len(response.Choices) == 0 {
 		return false
 	}
@@ -872,7 +872,7 @@ func hasToolCallsForChatResponse(response *schemas.RakshaChatResponse) bool {
 	return false
 }
 
-func hasToolCallsForResponsesResponse(response *schemas.RakshaResponsesResponse) bool {
+func hasToolCallsForResponsesResponse(response *schemas.GatewayResponsesResponse) bool {
 	if response == nil || len(response.Output) == 0 {
 		return false
 	}

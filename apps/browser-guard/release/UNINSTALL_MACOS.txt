@@ -1,7 +1,7 @@
-Raksha Guard — macOS Uninstall (turn OFF)
+Gateway Guard — macOS Uninstall (turn OFF)
 ========================================
 
-1. Double-click Uninstall_Raksha_Guard.command (from the install ZIP or /Applications helpers).
+1. Double-click Uninstall_Gateway_Guard.command (from the install ZIP or /Applications helpers).
    - If blocked: Right-click → Open → Open
 2. Enter the company uninstall key (from Setup) or today's rotating daily Guard key (from Guard Agents menu).
 3. Wait for the success dialog — Guard stops, proxy/PAC cleared, app removed.
@@ -13,4 +13,4 @@ Admin remote uninstall from Browser AI also turns Guard OFF on the next heartbea
 (no employee key) — same as Windows.
 
 After uninstall, remove any leftover LaunchAgents if IT asks:
-  ~/Library/LaunchAgents/ (Raksha Guard entries)
+  ~/Library/LaunchAgents/ (Gateway Guard entries)

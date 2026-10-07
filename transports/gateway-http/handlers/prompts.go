@@ -13,10 +13,10 @@ import (
 
 	"github.com/fasthttp/router"
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -60,7 +60,7 @@ func (h *PromptsHandler) reloadCache(ctx context.Context) {
 }
 
 // RegisterRoutes registers the routes for the PromptsHandler
-func (h *PromptsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *PromptsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	// Folders
 	r.GET("/api/prompt-repo/folders", lib.ChainMiddlewares(h.getFolders, middlewares...))
 	r.GET("/api/prompt-repo/folders/{id}", lib.ChainMiddlewares(h.getFolderByID, middlewares...))
@@ -556,7 +556,7 @@ func (h *PromptsHandler) getPrompts(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	tokenVal := ctx.UserValue(schemas.RakshaContextKeySessionToken)
+	tokenVal := ctx.UserValue(schemas.GatewayContextKeySessionToken)
 	var isUserRole bool
 
 	if token, ok := tokenVal.(string); ok && token != "" {
@@ -660,7 +660,7 @@ func (h *PromptsHandler) createPrompt(ctx *fasthttp.RequestCtx) {
 	}
 
 	var creatorUsername string
-	tokenVal := ctx.UserValue(schemas.RakshaContextKeySessionToken)
+	tokenVal := ctx.UserValue(schemas.GatewayContextKeySessionToken)
 	if token, ok := tokenVal.(string); ok && token != "" {
 		if session, err := h.store.GetSession(ctx, token); err == nil && session != nil {
 			creatorUsername = session.Username
@@ -1046,7 +1046,7 @@ func sanitizeIDList(ids []string) []string {
 
 // checkPromptAccess verifies if the current session has access to the given prompt ID
 func (h *PromptsHandler) checkPromptAccess(ctx *fasthttp.RequestCtx, promptID string) bool {
-	tokenVal := ctx.UserValue(schemas.RakshaContextKeySessionToken)
+	tokenVal := ctx.UserValue(schemas.GatewayContextKeySessionToken)
 	token, ok := tokenVal.(string)
 	if !ok || token == "" {
 		return true
@@ -1374,7 +1374,7 @@ func (h *PromptsHandler) unassignPromptFromAllUsers(ctx context.Context, promptI
 // promptCallerIdentity returns a stable owner id + role for prompt session history.
 // Prefer governance_users.id; fall back to session username so env/admin logins still own rows.
 func (h *PromptsHandler) promptCallerIdentity(ctx *fasthttp.RequestCtx) (userID, role string) {
-	tokenVal := ctx.UserValue(schemas.RakshaContextKeySessionToken)
+	tokenVal := ctx.UserValue(schemas.GatewayContextKeySessionToken)
 	token, ok := tokenVal.(string)
 	if !ok || token == "" {
 		return "", ""

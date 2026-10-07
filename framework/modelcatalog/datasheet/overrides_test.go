@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 )
 
 type noopLogger struct{}
@@ -36,14 +36,14 @@ func TestExactModelPricingOverride(t *testing.T) {
 	}
 
 	// 1. Without override:
-	resp := &schemas.RakshaResponse{
-		ChatResponse: &schemas.RakshaChatResponse{
-			Usage: &schemas.RakshaLLMUsage{
+	resp := &schemas.GatewayResponse{
+		ChatResponse: &schemas.GatewayChatResponse{
+			Usage: &schemas.GatewayLLMUsage{
 				PromptTokens:     1000,
 				CompletionTokens: 500,
 				TotalTokens:      1500,
 			},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RoutingInfo: schemas.RoutingInfo{
 					Provider: "openai",
 					Model:    "gpt-4o",
@@ -128,10 +128,10 @@ func TestWildcardPricingOverride(t *testing.T) {
 	}
 
 	// Case A: deepseek-chat matches broad wildcard
-	respChat := &schemas.RakshaResponse{
-		ChatResponse: &schemas.RakshaChatResponse{
-			Usage: &schemas.RakshaLLMUsage{PromptTokens: 10000, CompletionTokens: 1000, TotalTokens: 11000},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+	respChat := &schemas.GatewayResponse{
+		ChatResponse: &schemas.GatewayChatResponse{
+			Usage: &schemas.GatewayLLMUsage{PromptTokens: 10000, CompletionTokens: 1000, TotalTokens: 11000},
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RoutingInfo: schemas.RoutingInfo{Provider: "deepseek", Model: "deepseek-chat"},
 				RequestType: schemas.ChatCompletionRequest,
 			},
@@ -144,10 +144,10 @@ func TestWildcardPricingOverride(t *testing.T) {
 	}
 
 	// Case B: deepseek-reasoner matches specific wildcard (longest prefix)
-	respReasoner := &schemas.RakshaResponse{
-		ChatResponse: &schemas.RakshaChatResponse{
-			Usage: &schemas.RakshaLLMUsage{PromptTokens: 10000, CompletionTokens: 1000, TotalTokens: 11000},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+	respReasoner := &schemas.GatewayResponse{
+		ChatResponse: &schemas.GatewayChatResponse{
+			Usage: &schemas.GatewayLLMUsage{PromptTokens: 10000, CompletionTokens: 1000, TotalTokens: 11000},
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RoutingInfo: schemas.RoutingInfo{Provider: "deepseek", Model: "deepseek-reasoner"},
 				RequestType: schemas.ChatCompletionRequest,
 			},
@@ -183,10 +183,10 @@ func TestCustomUnknownModelPricing(t *testing.T) {
 		t.Fatalf("Failed to upsert override for custom model: %v", err)
 	}
 
-	resp := &schemas.RakshaResponse{
-		ChatResponse: &schemas.RakshaChatResponse{
-			Usage: &schemas.RakshaLLMUsage{PromptTokens: 2000, CompletionTokens: 1000, TotalTokens: 3000},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+	resp := &schemas.GatewayResponse{
+		ChatResponse: &schemas.GatewayChatResponse{
+			Usage: &schemas.GatewayLLMUsage{PromptTokens: 2000, CompletionTokens: 1000, TotalTokens: 3000},
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RoutingInfo: schemas.RoutingInfo{Provider: "openai", Model: "my-company-internal-llm"},
 				RequestType: schemas.ChatCompletionRequest,
 			},
@@ -239,10 +239,10 @@ func TestScopedOverridePriority(t *testing.T) {
 		t.Fatalf("Failed to upsert scoped overrides: %v", err)
 	}
 
-	resp := &schemas.RakshaResponse{
-		ChatResponse: &schemas.RakshaChatResponse{
-			Usage: &schemas.RakshaLLMUsage{PromptTokens: 1000, CompletionTokens: 500, TotalTokens: 1500},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+	resp := &schemas.GatewayResponse{
+		ChatResponse: &schemas.GatewayChatResponse{
+			Usage: &schemas.GatewayLLMUsage{PromptTokens: 1000, CompletionTokens: 500, TotalTokens: 1500},
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RoutingInfo: schemas.RoutingInfo{Provider: "openai", Model: "gpt-4o"},
 				RequestType: schemas.ChatCompletionRequest,
 			},
@@ -290,9 +290,9 @@ func TestCachedTokensPricingOverride(t *testing.T) {
 	}
 
 	// 10,000 prompt tokens total: 8,000 cached read tokens + 2,000 regular tokens + 500 completion tokens
-	resp := &schemas.RakshaResponse{
-		ChatResponse: &schemas.RakshaChatResponse{
-			Usage: &schemas.RakshaLLMUsage{
+	resp := &schemas.GatewayResponse{
+		ChatResponse: &schemas.GatewayChatResponse{
+			Usage: &schemas.GatewayLLMUsage{
 				PromptTokens:     10000,
 				CompletionTokens: 500,
 				TotalTokens:      10500,
@@ -300,7 +300,7 @@ func TestCachedTokensPricingOverride(t *testing.T) {
 					CachedReadTokens: 8000,
 				},
 			},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RoutingInfo: schemas.RoutingInfo{Provider: "anthropic", Model: "claude-3-5-sonnet"},
 				RequestType: schemas.ChatCompletionRequest,
 			},
@@ -340,13 +340,13 @@ func TestEmbeddingPricingOverride(t *testing.T) {
 		t.Fatalf("Failed to upsert embedding override: %v", err)
 	}
 
-	resp := &schemas.RakshaResponse{
-		EmbeddingResponse: &schemas.RakshaEmbeddingResponse{
-			Usage: &schemas.RakshaLLMUsage{
+	resp := &schemas.GatewayResponse{
+		EmbeddingResponse: &schemas.GatewayEmbeddingResponse{
+			Usage: &schemas.GatewayLLMUsage{
 				PromptTokens: 50000,
 				TotalTokens:  50000,
 			},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RoutingInfo: schemas.RoutingInfo{Provider: "openai", Model: "text-embedding-3-small"},
 				RequestType: schemas.EmbeddingRequest,
 			},
@@ -386,14 +386,14 @@ func TestGovernanceBudgetLinkage(t *testing.T) {
 
 	// User request with 1000 input tokens, 500 output tokens
 	// Cost = (1000 * 0.000002) + (500 * 0.000008) = 0.002 + 0.004 = $0.006
-	resp := &schemas.RakshaResponse{
-		ChatResponse: &schemas.RakshaChatResponse{
-			Usage: &schemas.RakshaLLMUsage{
+	resp := &schemas.GatewayResponse{
+		ChatResponse: &schemas.GatewayChatResponse{
+			Usage: &schemas.GatewayLLMUsage{
 				PromptTokens:     1000,
 				CompletionTokens: 500,
 				TotalTokens:      1500,
 			},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				RoutingInfo: schemas.RoutingInfo{Provider: "openai", Model: "my-budget-model"},
 				RequestType: schemas.ChatCompletionRequest,
 			},

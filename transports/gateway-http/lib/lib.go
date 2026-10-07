@@ -4,7 +4,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -36,21 +36,21 @@ func HasDuplicates[T comparable](items []T) bool {
 // StreamLargeResponseBody extracts the large response reader from context and streams
 // it directly to the client. Sets status 200, content-type, and content-length headers.
 // Returns false if the reader is not available (caller should send an error response).
-func StreamLargeResponseBody(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext) bool {
-	if rakshaCtx == nil {
+func StreamLargeResponseBody(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext) bool {
+	if gatewayCtx == nil {
 		return false
 	}
-	reader, ok := rakshaCtx.Value(schemas.RakshaContextKeyLargeResponseReader).(io.ReadCloser)
+	reader, ok := gatewayCtx.Value(schemas.GatewayContextKeyLargeResponseReader).(io.ReadCloser)
 	if !ok || reader == nil {
 		return false
 	}
 
-	contentLength, _ := rakshaCtx.Value(schemas.RakshaContextKeyLargeResponseContentLength).(int)
-	contentType, _ := rakshaCtx.Value(schemas.RakshaContextKeyLargeResponseContentType).(string)
-	contentDisposition, _ := rakshaCtx.Value(schemas.RakshaContextKeyLargeResponseContentDisposition).(string)
+	contentLength, _ := gatewayCtx.Value(schemas.GatewayContextKeyLargeResponseContentLength).(int)
+	contentType, _ := gatewayCtx.Value(schemas.GatewayContextKeyLargeResponseContentType).(string)
+	contentDisposition, _ := gatewayCtx.Value(schemas.GatewayContextKeyLargeResponseContentDisposition).(string)
 
 	// Mirror large-response-mode to fasthttp UserValue so post-hook middleware
-	// (which only sees ctx.UserValue, not rakshaCtx) can skip body materialization.
+	// (which only sees ctx.UserValue, not gatewayCtx) can skip body materialization.
 	ctx.SetUserValue(FastHTTPUserValueLargeResponseMode, true)
 
 	ctx.SetStatusCode(fasthttp.StatusOK)

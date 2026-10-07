@@ -1,4 +1,4 @@
-# Part of Raksha browser_ai_proxy — do not import directly.
+# Part of Gateway browser_ai_proxy — do not import directly.
 
 
 def _run_async(coro):
@@ -96,7 +96,7 @@ def _extract_image_windows_ocr(data: bytes) -> str:
         text = _run_async(_windows_ocr_pil(img)) or ""
         return str(text).strip()[:200_000]
     except Exception as e:
-        print(f"[Raksha Proxy] Windows OCR unavailable: {e}")
+        print(f"[Gateway Proxy] Windows OCR unavailable: {e}")
         return ""
 
 
@@ -247,7 +247,7 @@ def _audio_to_wav_path(data: bytes, content_type: str = "", file_name: str = "")
     if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
         suffix = ".wav"
 
-    fd, path = tempfile.mkstemp(prefix="raksha_voice_", suffix=suffix)
+    fd, path = tempfile.mkstemp(prefix="gateway_voice_", suffix=suffix)
     try:
         os.write(fd, data)
     finally:
@@ -275,7 +275,7 @@ def _audio_to_wav_path(data: bytes, content_type: str = "", file_name: str = "")
                     pass
                 return wav_path
     except Exception as e:
-        print(f"[Raksha Proxy] ffmpeg voice convert skipped: {e}")
+        print(f"[Gateway Proxy] ffmpeg voice convert skipped: {e}")
 
     # Optional pydub (if installed + ffmpeg)
     try:
@@ -338,7 +338,7 @@ try {{
         if text and looks_like_user_prompt(text):
             return text[:200_000]
     except Exception as e:
-        print(f"[Raksha Proxy] Windows System.Speech STT failed: {e}")
+        print(f"[Gateway Proxy] Windows System.Speech STT failed: {e}")
     return ""
 
 
@@ -406,18 +406,18 @@ def _extract_audio_text(data: bytes, content_type: str = "", file_name: str = ""
         if wav:
             text = _windows_system_speech_stt(wav)
             if text:
-                print(f"[Raksha Proxy] Voice STT (Windows) | {len(text)} chars | {file_name or 'audio'}")
+                print(f"[Gateway Proxy] Voice STT (Windows) | {len(text)} chars | {file_name or 'audio'}")
                 return text
         text = _whisper_stt(path)
         if text:
-            print(f"[Raksha Proxy] Voice STT (Whisper) | {len(text)} chars | {file_name or 'audio'}")
+            print(f"[Gateway Proxy] Voice STT (Whisper) | {len(text)} chars | {file_name or 'audio'}")
             return text
         if wav is None and path.lower().endswith((".wav",)):
             text = _windows_system_speech_stt(path)
             if text:
                 return text
     except Exception as e:
-        print(f"[Raksha Proxy] Voice STT error: {e}")
+        print(f"[Gateway Proxy] Voice STT error: {e}")
     finally:
         if path:
             try:
@@ -585,12 +585,12 @@ def _try_file_extract_chain(
             if t:
                 if i > 0:
                     print(
-                        f"[Raksha Proxy] file extract fallback OK ({label}) | "
+                        f"[Gateway Proxy] file extract fallback OK ({label}) | "
                         f"{file_name or kind} | {len(t)} chars"
                     )
                 return t[:200_000]
         except Exception as e:
-            print(f"[Raksha Proxy] file extract try failed ({label}): {e}")
+            print(f"[Gateway Proxy] file extract try failed ({label}): {e}")
     return ""
 
 
@@ -682,13 +682,13 @@ def _extract_zip_archive_members_text(
                     chunks.append(piece)
                     total += len(piece)
     except Exception as e:
-        print(f"[Raksha Proxy] zip member extract failed (allowed): {e}")
+        print(f"[Gateway Proxy] zip member extract failed (allowed): {e}")
         return ""
     if not chunks:
         return ""
     out = "\n\n".join(chunks)
     print(
-        f"[Raksha Proxy] ZIP archive extract | members_text={len(chunks)} files~{n_files} | {len(out)} chars"
+        f"[Gateway Proxy] ZIP archive extract | members_text={len(chunks)} files~{n_files} | {len(out)} chars"
     )
     return out[:max_chars]
 
@@ -791,7 +791,7 @@ def _extract_tar_archive_members_text(
         return ""
     out = "\n\n".join(chunks)
     print(
-        f"[Raksha Proxy] TAR archive extract | members_text={len(chunks)} files~{n_files} | {len(out)} chars"
+        f"[Gateway Proxy] TAR archive extract | members_text={len(chunks)} files~{n_files} | {len(out)} chars"
     )
     return out[:max_chars]
 
@@ -932,14 +932,14 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
             ("plain-decode", lambda: _extract_plain_text_bytes(data)),
         ])
     except Exception as e:
-        print(f"[Raksha Proxy] file extract ({kind}) failed — allowed: {e}")
+        print(f"[Gateway Proxy] file extract ({kind}) failed — allowed: {e}")
         # Last-resort safe extract so regex still has a chance
         try:
             for label, fn_step in common_fallbacks:
                 try:
                     t = (fn_step() or "").strip()
                     if t:
-                        print(f"[Raksha Proxy] file extract emergency OK ({label}) | {fn or kind}")
+                        print(f"[Gateway Proxy] file extract emergency OK ({label}) | {fn or kind}")
                         return t[:200_000]
                 except Exception:
                     continue
@@ -1046,7 +1046,7 @@ def extract_upload_text_for_rules(
             out.append(p)
         return "\n\n".join(out)[:100_000]
     except Exception as e:
-        print(f"[Raksha Proxy] extract_upload_text_for_rules failed (allowed): {e}")
+        print(f"[Gateway Proxy] extract_upload_text_for_rules failed (allowed): {e}")
         return ""
 
 
@@ -1513,11 +1513,11 @@ def get_client_ip(flow: http.HTTPFlow) -> str:
 
 def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url: str, method: str, upload_images: list[str] | None = None, evaluation_only: bool = False, extracted_text: str = "") -> tuple[bool, str, str, str, str, str]:
     """
-    Send intercepted prompt to Raksha backend /api/browser-ai/intercept.
+    Send intercepted prompt to Gateway backend /api/browser-ai/intercept.
     Backend handles guard rule matching and returns allowed/blocked decision.
     Returns (allowed, rule_triggered, action, redacted_prompt, reply_text, eval_error)
     """
-    if not RAKSHA_BACKEND_URL:
+    if not GATEWAY_BACKEND_URL:
         return True, "", "Allowed", prompt, "", "backend url not configured"
     try:
         metadata = {
@@ -1542,7 +1542,7 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
         }).encode("utf-8")
 
         req = urllib.request.Request(
-            f"{RAKSHA_BACKEND_URL}/api/browser-ai/intercept",
+            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
             data=payload,
             headers=_backend_headers({"Content-Type": "application/json"}),
             method="POST"
@@ -1552,7 +1552,9 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
         # evaluation_only: prefer fast defaults for Send.
         try:
             default_to = "25" if evaluation_only and not upload_images else "35"
-            eval_timeout = float(os.getenv("RAKSHA_EVAL_TIMEOUT", default_to) or default_to)
+            eval_timeout = float(
+                os.getenv("GATEWAY_EVAL_TIMEOUT") or os.getenv("GATEWAY_EVAL_TIMEOUT", default_to) or default_to
+            )
         except Exception:
             eval_timeout = 25.0 if evaluation_only else 35.0
         eval_timeout = max(5.0, min(eval_timeout, 45.0 if evaluation_only else 95.0))
@@ -1572,10 +1574,10 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
                 if not eval_error and verdict == "eval_failed":
                     eval_error = (res_data.get("security_message") or "AI Guard Bot evaluation failed").strip()
                 if eval_error:
-                    print(f"[Raksha Proxy] AI Guard Bot eval failed | {eval_error}")
+                    print(f"[Gateway Proxy] AI Guard Bot eval failed | {eval_error}")
                 return allowed, rule_triggered, action, redacted_prompt, reply_text, eval_error
     except Exception as e:
-        print(f"[Raksha Proxy] send_to_backend failed: {e}")
+        print(f"[Gateway Proxy] send_to_backend failed: {e}")
 
     # Fallback: apply admin guard rules locally if backend is down
     rules = sorted(
@@ -1597,7 +1599,7 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
 
     # Backend / evaluator miss — regex already ran locally.
     # Default fail-CLOSED when AI Guard Bots are configured (do not silently allow).
-    # Opt-in fail-open only via RAKSHA_FAIL_OPEN=1.
+    # Opt-in fail-open only via GATEWAY_FAIL_OPEN=1.
     backend_miss = "backend unreachable or AI Guard Bot could not evaluate"
     if _fail_open():
         if not evaluation_only:
@@ -1609,7 +1611,7 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
             "AI Guard Bot Unavailable",
             "Blocked",
             prompt,
-            "Raksha Guard could not reach the AI security evaluator. Prompt blocked for safety.",
+            "Gateway Guard could not reach the AI security evaluator. Prompt blocked for safety.",
             backend_miss,
         )
     return (
@@ -1617,6 +1619,6 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
         "Backend Unreachable",
         "Blocked",
         prompt,
-        "Raksha Guard cannot reach the security backend. Prompt blocked for safety.",
+        "Gateway Guard cannot reach the security backend. Prompt blocked for safety.",
         backend_miss,
     )

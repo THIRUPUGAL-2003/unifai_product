@@ -1,24 +1,24 @@
-Raksha Guard — Hybrid deploy (laptop + network, ONE dashboard)
+Gateway Guard — Hybrid deploy (laptop + network, ONE dashboard)
 ==============================================================
 
 Goal
 ----
 Employee laptop Guard AND company network/server proxy both report to the
-SAME Raksha Browser AI UI (Prompt Logs + Guard Agents + same rules).
+SAME Gateway Browser AI UI (Prompt Logs + Guard Agents + same rules).
 No separate dashboard.
 
 Mode A — Laptop (endpoint)  [default]
 -------------------------------------
-  Install: release\Raksha_Guard_Setup.exe on each Windows PC
-  Install: release\Raksha_Guard_macOS.zip on each Mac (Install_Raksha_Guard.command)
+  Install: release\Gateway_Guard_Setup.exe on each Windows PC
+  Install: release\Gateway_Guard_macOS.zip on each Mac (Install_Gateway_Guard.command)
   Listens: 127.0.0.1:18103
   PAC: applied on that PC only
   agent_type: endpoint
 
 Mode B — Network / server proxy
 -------------------------------
-  Docker (same stack as Raksha — optional profile):
-    docker compose --profile network-proxy up -d raksha_browser_ai_proxy
+  Docker (same stack as Gateway — optional profile):
+    docker compose --profile network-proxy up -d gateway_browser_ai_proxy
 
   Or bare-metal Guard with config:
     "server_mode": true
@@ -26,17 +26,17 @@ Mode B — Network / server proxy
     "listen_host": "0.0.0.0"
     "proxy_addr": "proxy.company.local:8087"
     "pac_advertise_addr": "proxy.company.local:8087"
-    "backend_url": "https://your-raksha"
+    "backend_url": "https://your-gateway"
 
   Env equivalents:
-    RAKSHA_SERVER_MODE=1
-    RAKSHA_AGENT_TYPE=network
-    RAKSHA_LISTEN_HOST=0.0.0.0
-    RAKSHA_PAC_ADVERTISE_ADDR=proxy.company.local:8087
-    RAKSHA_AGENT_ID=network-proxy-1
+    GATEWAY_SERVER_MODE=1
+    GATEWAY_AGENT_TYPE=network
+    GATEWAY_LISTEN_HOST=0.0.0.0
+    GATEWAY_PAC_ADVERTISE_ADDR=proxy.company.local:8087
+    GATEWAY_AGENT_ID=network-proxy-1
 
   Point office browsers / GPO Auto-Proxy URL to:
-    https://<raksha-host>/api/browser-ai/pac?proxy=proxy.company.local:8087
+    https://<gateway-host>/api/browser-ai/pac?proxy=proxy.company.local:8087
 
   Distribute the mitmproxy CA to employee machines (HTTPS inspect).
 
@@ -48,11 +48,11 @@ ONE dashboard
   - Fleet defaults panel: stored in Postgres table browser_guard_fleet_config
   - Rules / Targets / Controls: shared for both modes
 
-Postgres tables (same DB as Raksha)
+Postgres tables (same DB as Gateway)
 -----------------------------------
   browser_guard_fleet_config  — company Guard defaults (agents pull on heartbeat)
   browser_ai_*                — logs, rules, targets, agents, settings
-  alert_channels              — webhook configs (AES when RAKSHA_ENCRYPTION_KEY set)
+  alert_channels              — webhook configs (AES when GATEWAY_ENCRYPTION_KEY set)
   Attachment bytes stay on disk; DB stores size/path/expires metadata
 
 Avoid double-MITM

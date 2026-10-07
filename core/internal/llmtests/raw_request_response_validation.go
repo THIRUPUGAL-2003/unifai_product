@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // validateRawFields checks raw request/response fields and integrates errors into the ValidationResult.
@@ -84,8 +84,8 @@ func truncateForError(b []byte) string {
 	return string(b[:maxLen]) + "... (truncated)"
 }
 
-// ValidateExtraFieldsRaw validates rawRequest and rawResponse on RakshaResponseExtraFields
-func ValidateExtraFieldsRaw(extraFields schemas.RakshaResponseExtraFields) []error {
+// ValidateExtraFieldsRaw validates rawRequest and rawResponse on GatewayResponseExtraFields
+func ValidateExtraFieldsRaw(extraFields schemas.GatewayResponseExtraFields) []error {
 	var errs []error
 	if err := ValidateRawField(extraFields.RawRequest, "RawRequest"); err != nil {
 		errs = append(errs, err)

@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // createMaskImageForAzureOpenAI creates a PNG mask image with transparent background for Azure and OpenAI
@@ -205,7 +205,7 @@ func decodeBase64ImageToBytes(base64Str string) ([]byte, error) {
 }
 
 // RunImageEditTest executes the end-to-end image edit test (non-streaming)
-func RunImageEditTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageEditTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if testConfig.ImageEditModel == "" {
 		t.Logf("Image edit not configured for provider %s", testConfig.Provider)
 		return
@@ -271,8 +271,8 @@ func RunImageEditTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 		}
 
 		// Test basic image edit (inpainting)
-		imageEditOperation := func() (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
-			request := &schemas.RakshaImageEditRequest{
+		imageEditOperation := func() (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
+			request := &schemas.GatewayImageEditRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ImageEditModel,
 				Input: &schemas.ImageEditInput{
@@ -284,23 +284,23 @@ func RunImageEditTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 					Prompt: "Add a beautiful sunset in the background",
 				},
 				Params: &schemas.ImageEditParameters{
-					Size: raksha.Ptr("1024x1024"),
-					N:    raksha.Ptr(1),
-					Type: raksha.Ptr("inpainting"),
+					Size: gateway.Ptr("1024x1024"),
+					N:    gateway.Ptr(1),
+					Type: gateway.Ptr("inpainting"),
 					Mask: maskBytes,
 				},
 				Fallbacks: testConfig.ImageEditFallbacks,
 			}
 
-			response, err := client.ImageEditRequest(schemas.NewRakshaContext(ctx, schemas.NoDeadline), request)
+			response, err := client.ImageEditRequest(schemas.NewGatewayContext(ctx, schemas.NoDeadline), request)
 			if err != nil {
 				return nil, err
 			}
 			if response != nil {
 				return response, nil
 			}
-			return nil, &schemas.RakshaError{
-				IsRakshaError: true,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: true,
 				Error: &schemas.ErrorField{
 					Message: "No image edit response returned",
 				},
@@ -379,7 +379,7 @@ func RunImageEditTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 }
 
 // RunImageEditStreamTest executes the end-to-end streaming image edit test
-func RunImageEditStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageEditStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ImageEditStream {
 		t.Logf("Image edit streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -432,7 +432,7 @@ func RunImageEditStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 			t.Fatalf("Failed to create mask image: %v", err)
 		}
 
-		request := &schemas.RakshaImageEditRequest{
+		request := &schemas.GatewayImageEditRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ImageEditModel,
 			Input: &schemas.ImageEditInput{
@@ -444,9 +444,9 @@ func RunImageEditStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 				Prompt: "Add a futuristic cityscape in the background",
 			},
 			Params: &schemas.ImageEditParameters{
-				Size:    raksha.Ptr("1024x1024"),
-				Quality: raksha.Ptr("low"),
-				Type:    raksha.Ptr("inpainting"),
+				Size:    gateway.Ptr("1024x1024"),
+				Quality: gateway.Ptr("low"),
+				Type:    gateway.Ptr("inpainting"),
 				Mask:    maskBytes,
 			},
 			Fallbacks: testConfig.ImageEditFallbacks,
@@ -458,10 +458,10 @@ func RunImageEditStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 			t,
 			retryConfig,
 			retryContext,
-			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				return client.ImageEditStreamRequest(schemas.NewRakshaContext(streamCtx, schemas.NoDeadline), request)
+			func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				return client.ImageEditStreamRequest(schemas.NewGatewayContext(streamCtx, schemas.NoDeadline), request)
 			},
-			func(responseChannel chan *schemas.RakshaStreamChunk) ImageGenerationStreamValidationResult {
+			func(responseChannel chan *schemas.GatewayStreamChunk) ImageGenerationStreamValidationResult {
 				// Validate stream content
 				var receivedData bool
 				var streamErrors []string
@@ -480,14 +480,14 @@ func RunImageEditStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 							continue
 						}
 
-						if response.RakshaError != nil {
-							streamErrors = append(streamErrors, fmt.Sprintf("Error in stream: %s", GetErrorMessage(response.RakshaError)))
+						if response.GatewayError != nil {
+							streamErrors = append(streamErrors, fmt.Sprintf("Error in stream: %s", GetErrorMessage(response.GatewayError)))
 							continue
 						}
 
-						if response.RakshaImageGenerationStreamResponse != nil {
+						if response.GatewayImageGenerationStreamResponse != nil {
 							receivedData = true
-							imgResp := response.RakshaImageGenerationStreamResponse
+							imgResp := response.GatewayImageGenerationStreamResponse
 
 							// Check for completion event (can be ImageGenerationEventTypeCompleted or ImageEditEventTypeCompleted)
 							if imgResp.Type == schemas.ImageGenerationEventTypeCompleted || imgResp.Type == schemas.ImageEditEventTypeCompleted {

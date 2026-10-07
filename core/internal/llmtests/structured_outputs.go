@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // Test schema with nullable enum and multi-type fields (the problematic cases that were fixed)
@@ -42,7 +42,7 @@ var structuredOutputSchema = map[string]interface{}{
 }
 
 // RunStructuredOutputChatTest tests structured outputs with Chat Completions API (non-streaming)
-func RunStructuredOutputChatTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunStructuredOutputChatTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.StructuredOutputs {
 		t.Logf("Structured outputs not supported for provider %s", testConfig.Provider)
 		return
@@ -65,7 +65,7 @@ func RunStructuredOutputChatTest(t *testing.T, client *raksha.Raksha, ctx contex
 	})
 }
 
-func testStructuredOutputChatWithValue(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig, expectValue bool) {
+func testStructuredOutputChatWithValue(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig, expectValue bool) {
 	var chatMessages []schemas.ChatMessage
 	if expectValue {
 		chatMessages = []schemas.ChatMessage{
@@ -100,22 +100,22 @@ func testStructuredOutputChatWithValue(t *testing.T, client *raksha.Raksha, ctx 
 		OnFinalFail: retryConfig.OnFinalFail,
 	}
 
-	chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+	chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 		// Add Anthropic beta header for structured outputs if model contains "claude"
-		reqCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		reqCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		if strings.Contains(strings.ToLower(testConfig.ChatModel), "claude") && testConfig.Provider != schemas.Vertex {
 			extraHeaders := map[string][]string{
 				"anthropic-beta": {"structured-outputs-2025-11-13"},
 			}
-			reqCtx.SetValue(schemas.RakshaContextKeyExtraHeaders, extraHeaders)
+			reqCtx.SetValue(schemas.GatewayContextKeyExtraHeaders, extraHeaders)
 		}
 
-		chatReq := &schemas.RakshaChatRequest{
+		chatReq := &schemas.GatewayChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    chatMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: raksha.Ptr(5000),
+				MaxCompletionTokens: gateway.Ptr(5000),
 				ResponseFormat: func() *interface{} {
 					var format interface{} = map[string]interface{}{
 						"type": "json_schema",
@@ -218,7 +218,7 @@ func testStructuredOutputChatWithValue(t *testing.T, client *raksha.Raksha, ctx 
 }
 
 // RunStructuredOutputChatStreamTest tests structured outputs with Chat Completions API (streaming)
-func RunStructuredOutputChatStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunStructuredOutputChatStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.StructuredOutputs || !testConfig.Scenarios.CompletionStream {
 		t.Logf("Structured outputs streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -235,20 +235,20 @@ func RunStructuredOutputChatStreamTest(t *testing.T, client *raksha.Raksha, ctx 
 		}
 
 		// Add Anthropic beta header for structured outputs if model contains "claude"
-		reqCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		reqCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		if strings.Contains(strings.ToLower(testConfig.ChatModel), "claude") && testConfig.Provider != schemas.Vertex {
 			extraHeaders := map[string][]string{
 				"anthropic-beta": {"structured-outputs-2025-11-13"},
 			}
-			reqCtx.SetValue(schemas.RakshaContextKeyExtraHeaders, extraHeaders)
+			reqCtx.SetValue(schemas.GatewayContextKeyExtraHeaders, extraHeaders)
 		}
 
-		request := &schemas.RakshaChatRequest{
+		request := &schemas.GatewayChatRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    chatMessages,
 			Params: &schemas.ChatParameters{
-				MaxCompletionTokens: raksha.Ptr(5000),
+				MaxCompletionTokens: gateway.Ptr(5000),
 				ResponseFormat: func() *interface{} {
 					var format interface{} = map[string]interface{}{
 						"type": "json_schema",
@@ -277,7 +277,7 @@ func RunStructuredOutputChatStreamTest(t *testing.T, client *raksha.Raksha, ctx 
 			},
 		}
 
-		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+		responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 			return client.ChatCompletionStreamRequest(reqCtx, request)
 		})
 
@@ -307,9 +307,9 @@ func RunStructuredOutputChatStreamTest(t *testing.T, client *raksha.Raksha, ctx 
 				}
 				responseCount++
 
-				if response.RakshaChatResponse != nil {
-					if len(response.RakshaChatResponse.Choices) > 0 {
-						choice := response.RakshaChatResponse.Choices[0]
+				if response.GatewayChatResponse != nil {
+					if len(response.GatewayChatResponse.Choices) > 0 {
+						choice := response.GatewayChatResponse.Choices[0]
 						if choice.Delta != nil && choice.Delta.Content != nil {
 							fullContent.WriteString(*choice.Delta.Content)
 						}
@@ -392,7 +392,7 @@ func RunStructuredOutputChatStreamTest(t *testing.T, client *raksha.Raksha, ctx 
 }
 
 // RunStructuredOutputResponsesTest tests structured outputs with Responses API (non-streaming)
-func RunStructuredOutputResponsesTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunStructuredOutputResponsesTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.StructuredOutputs {
 		t.Logf("Structured outputs not supported for provider %s", testConfig.Provider)
 		return
@@ -409,12 +409,12 @@ func RunStructuredOutputResponsesTest(t *testing.T, client *raksha.Raksha, ctx c
 		}
 
 		// Add Anthropic beta header for structured outputs if model contains "claude"
-		reqCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		reqCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		if strings.Contains(strings.ToLower(testConfig.ChatModel), "claude") && testConfig.Provider != schemas.Vertex {
 			extraHeaders := map[string][]string{
 				"anthropic-beta": {"structured-outputs-2025-11-13"},
 			}
-			reqCtx.SetValue(schemas.RakshaContextKeyExtraHeaders, extraHeaders)
+			reqCtx.SetValue(schemas.GatewayContextKeyExtraHeaders, extraHeaders)
 		}
 
 		retryConfig := GetTestRetryConfigForScenario("StructuredOutputResponses", testConfig)
@@ -439,20 +439,20 @@ func RunStructuredOutputResponsesTest(t *testing.T, client *raksha.Raksha, ctx c
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 			typeStr := "object"
 			props := structuredOutputSchema["properties"].(map[string]interface{})
 			additionalProps := structuredOutputSchema["additionalProperties"].(bool)
-			responsesReq := &schemas.RakshaResponsesRequest{
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.ChatModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: raksha.Ptr(5000),
+					MaxOutputTokens: gateway.Ptr(5000),
 					Text: &schemas.ResponsesTextConfig{
 						Format: &schemas.ResponsesTextConfigFormat{
 							Type: "json_schema",
-							Name: raksha.Ptr("decision_schema"),
+							Name: gateway.Ptr("decision_schema"),
 							JSONSchema: &schemas.ResponsesTextConfigFormatJSONSchema{
 								Type:       &typeStr,
 								Properties: &props,
@@ -541,7 +541,7 @@ func RunStructuredOutputResponsesTest(t *testing.T, client *raksha.Raksha, ctx c
 }
 
 // RunStructuredOutputResponsesStreamTest tests structured outputs with Responses API (streaming)
-func RunStructuredOutputResponsesStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunStructuredOutputResponsesStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.StructuredOutputs || !testConfig.Scenarios.CompletionStream {
 		t.Logf("Structured outputs streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -563,27 +563,27 @@ func RunStructuredOutputResponsesStreamTest(t *testing.T, client *raksha.Raksha,
 		}
 
 		// Add Anthropic beta header for structured outputs if model contains "claude"
-		reqCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		reqCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		if strings.Contains(strings.ToLower(testConfig.ChatModel), "claude") && testConfig.Provider != schemas.Vertex {
 			extraHeaders := map[string][]string{
 				"anthropic-beta": {"structured-outputs-2025-11-13"},
 			}
-			reqCtx.SetValue(schemas.RakshaContextKeyExtraHeaders, extraHeaders)
+			reqCtx.SetValue(schemas.GatewayContextKeyExtraHeaders, extraHeaders)
 		}
 
 		typeStr := "object"
 		props := structuredOutputSchema["properties"].(map[string]interface{})
 		additionalProps := structuredOutputSchema["additionalProperties"].(bool)
-		request := &schemas.RakshaResponsesRequest{
+		request := &schemas.GatewayResponsesRequest{
 			Provider: testConfig.Provider,
 			Model:    testConfig.ChatModel,
 			Input:    responsesMessages,
 			Params: &schemas.ResponsesParameters{
-				MaxOutputTokens: raksha.Ptr(5000),
+				MaxOutputTokens: gateway.Ptr(5000),
 				Text: &schemas.ResponsesTextConfig{
 					Format: &schemas.ResponsesTextConfigFormat{
 						Type: "json_schema",
-						Name: raksha.Ptr("decision_schema"),
+						Name: gateway.Ptr("decision_schema"),
 						JSONSchema: &schemas.ResponsesTextConfigFormatJSONSchema{
 							Type:       &typeStr,
 							Properties: &props,
@@ -613,10 +613,10 @@ func RunStructuredOutputResponsesStreamTest(t *testing.T, client *raksha.Raksha,
 
 		// Use validation retry wrapper
 		validationResult := WithResponsesStreamValidationRetry(t, retryConfig, retryContext,
-			func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+			func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 				return client.ResponsesStreamRequest(reqCtx, request)
 			},
-			func(responseChannel chan *schemas.RakshaStreamChunk) ResponsesStreamValidationResult {
+			func(responseChannel chan *schemas.GatewayStreamChunk) ResponsesStreamValidationResult {
 				var fullContent strings.Builder
 				var responseCount int
 				var functionCallEventCount int // Track function call events for Bedrock assertion
@@ -648,8 +648,8 @@ func RunStructuredOutputResponsesStreamTest(t *testing.T, client *raksha.Raksha,
 						}
 						responseCount++
 
-						if response.RakshaResponsesStreamResponse != nil {
-							streamResp := response.RakshaResponsesStreamResponse
+						if response.GatewayResponsesStreamResponse != nil {
+							streamResp := response.GatewayResponsesStreamResponse
 
 							// Track function call events for Bedrock assertion
 							if streamResp.Type == schemas.ResponsesStreamResponseTypeFunctionCallArgumentsDelta ||

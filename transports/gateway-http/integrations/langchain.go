@@ -1,9 +1,9 @@
 package integrations
 
 import (
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 )
 
 // LangChainRouter holds route registrations for LangChain endpoints.
@@ -14,8 +14,8 @@ type LangChainRouter struct {
 	*GenericRouter
 }
 
-// NewLangChainRouter creates a new LangChainRouter with the given raksha client.
-func NewLangChainRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *LangChainRouter {
+// NewLangChainRouter creates a new LangChainRouter with the given gateway client.
+func NewLangChainRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *LangChainRouter {
 	routes := []RouteConfig{}
 
 	// Add OpenAI routes to LangChain for OpenAI API compatibility

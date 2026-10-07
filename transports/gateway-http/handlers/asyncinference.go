@@ -5,10 +5,10 @@ import (
 	"strconv"
 
 	"github.com/fasthttp/router"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -16,7 +16,7 @@ import (
 
 // AsyncHandler handles async job HTTP endpoints.
 type AsyncHandler struct {
-	client       *raksha.Raksha
+	client       *gateway.Gateway
 	executor     *logstore.AsyncJobExecutor
 	handlerStore lib.HandlerStore
 	config       *lib.Config
@@ -43,7 +43,7 @@ func RegisterAsyncRequestTypeMiddleware(next fasthttp.RequestHandler) fasthttp.R
 	return func(ctx *fasthttp.RequestCtx) {
 		path := string(ctx.Path())
 		if requestType, ok := AsyncPathToTypeMapping[path]; ok {
-			ctx.SetUserValue(schemas.RakshaContextKeyHTTPRequestType, requestType)
+			ctx.SetUserValue(schemas.GatewayContextKeyHTTPRequestType, requestType)
 		}
 		next(ctx)
 	}
@@ -52,7 +52,7 @@ func RegisterAsyncRequestTypeMiddleware(next fasthttp.RequestHandler) fasthttp.R
 // NewAsyncHandler creates a new AsyncHandler.
 // If the async job executor is not available (e.g., LogsStore or governance plugin not configured),
 // the handler is created with a nil executor and RegisterRoutes will skip async route registration.
-func NewAsyncHandler(client *raksha.Raksha, config *lib.Config) *AsyncHandler {
+func NewAsyncHandler(client *gateway.Gateway, config *lib.Config) *AsyncHandler {
 	return &AsyncHandler{
 		client:       client,
 		executor:     config.GetAsyncJobExecutor(),
@@ -62,12 +62,12 @@ func NewAsyncHandler(client *raksha.Raksha, config *lib.Config) *AsyncHandler {
 }
 
 // RegisterRoutes registers async job endpoints.
-func (h *AsyncHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *AsyncHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	if h.executor == nil {
 		return // LogStore not configured, skip async routes
 	}
 
-	baseMiddlewares := append([]schemas.RakshaHTTPMiddleware{RegisterAsyncRequestTypeMiddleware}, middlewares...)
+	baseMiddlewares := append([]schemas.GatewayHTTPMiddleware{RegisterAsyncRequestTypeMiddleware}, middlewares...)
 
 	// Async submission endpoints (non-parameterized, request type set via AsyncPathToTypeMapping)
 	r.POST("/v1/async/completions", lib.ChainMiddlewares(h.asyncTextCompletion, baseMiddlewares...))
@@ -100,7 +100,7 @@ func (h *AsyncHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.R
 
 // asyncTextCompletion handles POST /v1/async/completions
 func (h *AsyncHandler) asyncTextCompletion(ctx *fasthttp.RequestCtx) {
-	req, rakshaTextReq, err := prepareTextCompletionRequest(ctx, h.config)
+	req, gatewayTextReq, err := prepareTextCompletionRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
@@ -111,8 +111,8 @@ func (h *AsyncHandler) asyncTextCompletion(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
@@ -121,10 +121,10 @@ func (h *AsyncHandler) asyncTextCompletion(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.TextCompletionRequest(bgCtx, rakshaTextReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.TextCompletionRequest(bgCtx, gatewayTextReq)
 		},
 		schemas.TextCompletionRequest,
 	)
@@ -137,7 +137,7 @@ func (h *AsyncHandler) asyncTextCompletion(ctx *fasthttp.RequestCtx) {
 
 // asyncChatCompletion handles POST /v1/async/chat/completions
 func (h *AsyncHandler) asyncChatCompletion(ctx *fasthttp.RequestCtx) {
-	req, rakshaChatReq, err := prepareChatCompletionRequest(ctx, h.config)
+	req, gatewayChatReq, err := prepareChatCompletionRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
@@ -148,8 +148,8 @@ func (h *AsyncHandler) asyncChatCompletion(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
@@ -158,10 +158,10 @@ func (h *AsyncHandler) asyncChatCompletion(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.ChatCompletionRequest(bgCtx, rakshaChatReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.ChatCompletionRequest(bgCtx, gatewayChatReq)
 		},
 		schemas.ChatCompletionRequest,
 	)
@@ -174,7 +174,7 @@ func (h *AsyncHandler) asyncChatCompletion(ctx *fasthttp.RequestCtx) {
 
 // asyncResponses handles POST /v1/async/responses
 func (h *AsyncHandler) asyncResponses(ctx *fasthttp.RequestCtx) {
-	req, rakshaResponsesReq, err := prepareResponsesRequest(ctx, h.config)
+	req, gatewayResponsesReq, err := prepareResponsesRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
@@ -185,8 +185,8 @@ func (h *AsyncHandler) asyncResponses(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
@@ -195,10 +195,10 @@ func (h *AsyncHandler) asyncResponses(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.ResponsesRequest(bgCtx, rakshaResponsesReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.ResponsesRequest(bgCtx, gatewayResponsesReq)
 		},
 		schemas.ResponsesRequest,
 	)
@@ -212,14 +212,14 @@ func (h *AsyncHandler) asyncResponses(ctx *fasthttp.RequestCtx) {
 
 // asyncEmbeddings handles POST /v1/async/embeddings
 func (h *AsyncHandler) asyncEmbeddings(ctx *fasthttp.RequestCtx) {
-	_, rakshaEmbeddingReq, err := prepareEmbeddingRequest(ctx, h.config)
+	_, gatewayEmbeddingReq, err := prepareEmbeddingRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
@@ -228,10 +228,10 @@ func (h *AsyncHandler) asyncEmbeddings(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.EmbeddingRequest(bgCtx, rakshaEmbeddingReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.EmbeddingRequest(bgCtx, gatewayEmbeddingReq)
 		},
 		schemas.EmbeddingRequest,
 	)
@@ -244,7 +244,7 @@ func (h *AsyncHandler) asyncEmbeddings(ctx *fasthttp.RequestCtx) {
 
 // asyncSpeech handles POST /v1/async/audio/speech
 func (h *AsyncHandler) asyncSpeech(ctx *fasthttp.RequestCtx) {
-	req, rakshaSpeechReq, err := prepareSpeechRequest(ctx, h.config)
+	req, gatewaySpeechReq, err := prepareSpeechRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
@@ -255,8 +255,8 @@ func (h *AsyncHandler) asyncSpeech(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
@@ -265,10 +265,10 @@ func (h *AsyncHandler) asyncSpeech(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.SpeechRequest(bgCtx, rakshaSpeechReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.SpeechRequest(bgCtx, gatewaySpeechReq)
 		},
 		schemas.SpeechRequest,
 	)
@@ -281,7 +281,7 @@ func (h *AsyncHandler) asyncSpeech(ctx *fasthttp.RequestCtx) {
 
 // asyncTranscription handles POST /v1/async/audio/transcriptions
 func (h *AsyncHandler) asyncTranscription(ctx *fasthttp.RequestCtx) {
-	rakshaTranscriptionReq, stream, err := prepareTranscriptionRequest(ctx, h.config)
+	gatewayTranscriptionReq, stream, err := prepareTranscriptionRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
@@ -292,8 +292,8 @@ func (h *AsyncHandler) asyncTranscription(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
@@ -302,10 +302,10 @@ func (h *AsyncHandler) asyncTranscription(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.TranscriptionRequest(bgCtx, rakshaTranscriptionReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.TranscriptionRequest(bgCtx, gatewayTranscriptionReq)
 		},
 		schemas.TranscriptionRequest,
 	)
@@ -318,19 +318,19 @@ func (h *AsyncHandler) asyncTranscription(ctx *fasthttp.RequestCtx) {
 
 // asyncImageGeneration handles POST /v1/async/images/generations
 func (h *AsyncHandler) asyncImageGeneration(ctx *fasthttp.RequestCtx) {
-	req, rakshaReq, err := prepareImageGenerationRequest(ctx, h.config)
+	req, gatewayReq, err := prepareImageGenerationRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	if req.RakshaParams.Stream != nil && *req.RakshaParams.Stream {
+	if req.GatewayParams.Stream != nil && *req.GatewayParams.Stream {
 		SendError(ctx, fasthttp.StatusBadRequest, "stream is not supported for async image generations")
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
@@ -339,10 +339,10 @@ func (h *AsyncHandler) asyncImageGeneration(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.ImageGenerationRequest(bgCtx, rakshaReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.ImageGenerationRequest(bgCtx, gatewayReq)
 		},
 		schemas.ImageGenerationRequest,
 	)
@@ -355,7 +355,7 @@ func (h *AsyncHandler) asyncImageGeneration(ctx *fasthttp.RequestCtx) {
 
 // asyncImageEdit handles POST /v1/async/images/edits
 func (h *AsyncHandler) asyncImageEdit(ctx *fasthttp.RequestCtx) {
-	req, rakshaReq, err := prepareImageEditRequest(ctx, h.config)
+	req, gatewayReq, err := prepareImageEditRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
@@ -366,8 +366,8 @@ func (h *AsyncHandler) asyncImageEdit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
@@ -376,10 +376,10 @@ func (h *AsyncHandler) asyncImageEdit(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.ImageEditRequest(bgCtx, rakshaReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.ImageEditRequest(bgCtx, gatewayReq)
 		},
 		schemas.ImageEditRequest,
 	)
@@ -392,14 +392,14 @@ func (h *AsyncHandler) asyncImageEdit(ctx *fasthttp.RequestCtx) {
 
 // asyncImageVariation handles POST /v1/async/images/variations
 func (h *AsyncHandler) asyncImageVariation(ctx *fasthttp.RequestCtx) {
-	rakshaReq, err := prepareImageVariationRequest(ctx, h.config)
+	gatewayReq, err := prepareImageVariationRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 		return
 	}
@@ -408,10 +408,10 @@ func (h *AsyncHandler) asyncImageVariation(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.ImageVariationRequest(bgCtx, rakshaReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.ImageVariationRequest(bgCtx, gatewayReq)
 		},
 		schemas.ImageVariationRequest,
 	)
@@ -424,14 +424,14 @@ func (h *AsyncHandler) asyncImageVariation(ctx *fasthttp.RequestCtx) {
 
 // asyncRerank handles POST /v1/async/rerank
 func (h *AsyncHandler) asyncRerank(ctx *fasthttp.RequestCtx) {
-	_, rakshaReq, err := prepareRerankRequest(ctx, h.config)
+	_, gatewayReq, err := prepareRerankRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to convert context")
 		return
 	}
@@ -440,10 +440,10 @@ func (h *AsyncHandler) asyncRerank(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.RerankRequest(bgCtx, rakshaReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.RerankRequest(bgCtx, gatewayReq)
 		},
 		schemas.RerankRequest,
 	)
@@ -456,14 +456,14 @@ func (h *AsyncHandler) asyncRerank(ctx *fasthttp.RequestCtx) {
 
 // asyncOCR handles POST /v1/async/ocr
 func (h *AsyncHandler) asyncOCR(ctx *fasthttp.RequestCtx) {
-	_, rakshaReq, err := prepareOCRRequest(ctx, h.config)
+	_, gatewayReq, err := prepareOCRRequest(ctx, h.config)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
 		return
 	}
 
-	rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+	if gatewayCtx == nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to convert context")
 		return
 	}
@@ -472,10 +472,10 @@ func (h *AsyncHandler) asyncOCR(ctx *fasthttp.RequestCtx) {
 	resultTTL := getResultTTLFromHeaderWithDefault(ctx, h.config.ClientConfig.AsyncJobResultTTL)
 
 	job, err := h.executor.SubmitJob(
-		rakshaCtx,
+		gatewayCtx,
 		resultTTL,
-		func(bgCtx *schemas.RakshaContext) (interface{}, *schemas.RakshaError) {
-			return h.client.OCRRequest(bgCtx, rakshaReq)
+		func(bgCtx *schemas.GatewayContext) (interface{}, *schemas.GatewayError) {
+			return h.client.OCRRequest(bgCtx, gatewayReq)
 		},
 		schemas.OCRRequest,
 	)
@@ -498,14 +498,14 @@ func (h *AsyncHandler) getJob(operationType schemas.RequestType) fasthttp.Reques
 		}
 
 		// Get the requesting user's VK for auth check
-		rakshaCtx, cancel := lib.ConvertToRakshaContext(ctx, h.handlerStore)
-		if rakshaCtx == nil {
+		gatewayCtx, cancel := lib.ConvertToGatewayContext(ctx, h.handlerStore)
+		if gatewayCtx == nil {
 			SendError(ctx, fasthttp.StatusBadRequest, "Failed to convert context")
 			return
 		}
 		defer cancel()
 
-		job, err := h.executor.RetrieveJob(rakshaCtx, jobID, getVirtualKeyFromContext(rakshaCtx), operationType)
+		job, err := h.executor.RetrieveJob(gatewayCtx, jobID, getVirtualKeyFromContext(gatewayCtx), operationType)
 		if err != nil {
 			SendError(ctx, fasthttp.StatusNotFound, err.Error())
 			return
@@ -527,8 +527,8 @@ func (h *AsyncHandler) getJob(operationType schemas.RequestType) fasthttp.Reques
 
 // getVirtualKeyFromContext extracts the virtual key value from context.
 // Returns nil if no VK is present (e.g., direct key mode or no governance).
-func getVirtualKeyFromContext(ctx *schemas.RakshaContext) *string {
-	vkValue := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyVirtualKey)
+func getVirtualKeyFromContext(ctx *schemas.GatewayContext) *string {
+	vkValue := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyVirtualKey)
 	if vkValue == "" {
 		return nil
 	}

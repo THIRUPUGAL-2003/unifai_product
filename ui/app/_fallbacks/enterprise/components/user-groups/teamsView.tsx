@@ -1,11 +1,12 @@
 import TeamsTable from "@/app/workspace/governance/views/teamsTable";
 import FullPageLoader from "@/components/fullPageLoader";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { useDebouncedValue } from "@/hooks/useDebounce";
 import { parseAsSafeString } from "@/lib/queryParamsParser";
 import { getErrorMessage, useGetCustomersQuery, useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { parseAsInteger, parseAsString, useQueryStates } from "nuqs";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const POLLING_INTERVAL = 5000;
@@ -27,28 +28,32 @@ export function TeamsView() {
 	);
 
 	const debouncedSearch = useDebouncedValue(urlState.search, 300);
+	const [pollMs, setPollMs] = useState(POLLING_INTERVAL);
 
 	const {
 		data: virtualKeysData,
 		error: vkError,
 		isLoading: vkLoading,
+		isError: vkIsError,
 	} = useGetVirtualKeysQuery(undefined, {
 		skip: !hasVirtualKeysAccess,
-		pollingInterval: POLLING_INTERVAL,
+		pollingInterval: pollMs,
 	});
 	const {
 		data: customersData,
 		error: customersError,
 		isLoading: customersLoading,
+		isError: customersIsError,
 	} = useGetCustomersQuery(undefined, {
 		skip: !hasCustomersAccess,
-		pollingInterval: POLLING_INTERVAL,
+		pollingInterval: pollMs,
 	});
 	const {
 		data: teamsData,
 		error: teamsError,
 		isLoading: teamsLoading,
 		isFetching,
+		isError: teamsIsError,
 	} = useGetTeamsQuery(
 		{
 			limit: PAGE_SIZE,
@@ -57,9 +62,15 @@ export function TeamsView() {
 		},
 		{
 			skip: !hasTeamsAccess,
-			pollingInterval: POLLING_INTERVAL,
+			pollingInterval: pollMs,
 		},
 	);
+
+	const pollBlocked =
+		(hasVirtualKeysAccess && vkIsError) || (hasCustomersAccess && customersIsError) || (hasTeamsAccess && teamsIsError);
+	useEffect(() => {
+		setPollMs(pollBlocked ? 0 : POLLING_INTERVAL);
+	}, [pollBlocked]);
 
 	const teamsTotal = teamsData?.total_count ?? 0;
 
@@ -93,6 +104,15 @@ export function TeamsView() {
 	}
 
 	return (
+		<div className="flex h-full min-h-0 w-full flex-col gap-3">
+			{vkIsError || customersIsError || teamsIsError ? (
+				<QueryErrorBanner
+					testId="enterprise-teams-query-error"
+					message={
+						getErrorMessage(teamsError || customersError || vkError) || "Failed to load teams governance data."
+					}
+				/>
+			) : null}
 		<TeamsTable
 			teams={teamsData?.teams || []}
 			totalCount={teamsData?.total_count || 0}
@@ -112,5 +132,6 @@ export function TeamsView() {
 			onDialogClose={() => setUrlState({ selected_team: null })}
 			isLoading={isFetching}
 		/>
+		</div>
 	);
 }

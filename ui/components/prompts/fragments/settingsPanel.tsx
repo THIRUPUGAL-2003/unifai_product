@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ComboboxSelect } from "@/components/ui/combobox";
 import ModelParameters from "@/components/ui/custom/modelParameters";
@@ -7,7 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { Input } from "@/components/ui/input";
-import { useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery } from "@/lib/store";
+import { getErrorMessage, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { useGetAllKeysQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { useListSkillsQuery } from "@/lib/store/apis/skillsApi";
 import { useGetMCPClientsQuery } from "@/lib/store/apis/mcpApi";
@@ -43,10 +44,20 @@ export function SettingsPanel() {
 		selectedPromptId,
 	} = usePromptContext();
 
-	const { data: authStatus } = useIsAuthEnabledQuery(undefined, { pollingInterval: 5000 });
+	const POLL_MS = 5000;
+	const [authPollMs, setAuthPollMs] = useState(POLL_MS);
+	const [vkPollMs, setVkPollMs] = useState(POLL_MS);
+	const { data: authStatus, error: authPollError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
 	const isMemberOnly = Boolean(authStatus?.role && authStatus.role !== "admin");
 
-	const { data: virtualKeysData } = useGetVirtualKeysQuery(undefined, { pollingInterval: 5000 });
+	const { data: virtualKeysData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery(undefined, { pollingInterval: vkPollMs });
+
+	useEffect(() => {
+		setAuthPollMs(authPollError ? 0 : POLL_MS);
+	}, [authPollError]);
+	useEffect(() => {
+		setVkPollMs(vkFailed ? 0 : POLL_MS);
+	}, [vkFailed]);
 
 	const onProviderChange = useCallback(
 		(p: string) => {
@@ -69,11 +80,14 @@ export function SettingsPanel() {
 		[setApiKeyId],
 	);
 	// Dynamic providers
-	const { data: providers, isLoading: isLoadingProviders } = useGetProvidersQuery();
+	const { data: providers, isLoading: isLoadingProviders, isError: providersFailed, error: providersError } = useGetProvidersQuery();
 	// Keys for the API Key selector (from /api/keys endpoint, provider-filtered)
-	const { data: allKeys, isSuccess: hasLoadedAllKeys } = useGetAllKeysQuery(undefined, { skip: isMemberOnly });
-	const { data: skillsData } = useListSkillsQuery({ limit: 100, offset: 0 });
-	const { data: mcpClientsData } = useGetMCPClientsQuery();
+	const { data: allKeys, isSuccess: hasLoadedAllKeys, isError: keysFailed, error: keysError } = useGetAllKeysQuery(undefined, {
+		skip: isMemberOnly,
+	});
+	const { data: skillsData, isError: skillsFailed, error: skillsError } = useListSkillsQuery({ limit: 100, offset: 0 });
+	const { data: mcpClientsData, isError: mcpFailed, error: mcpError } = useGetMCPClientsQuery();
+	const settingsQueryFailed = providersFailed || keysFailed || skillsFailed || mcpFailed || vkFailed || billingFailed;
 	const skillOptions = useMemo(
 		() => [
 			{ label: "None", value: "" },
@@ -108,10 +122,10 @@ export function SettingsPanel() {
 		if (!selectedVirtualKey) return [];
 		const vkId = selectedVirtualKey.id;
 		return (mcpClientsData?.clients ?? []).filter((client) => {
-			if (client.config.disabled) return false;
+			if (!client.config?.client_id || client.config.disabled) return false;
 			if (client.config.allow_on_all_virtual_keys) return true;
 			if (client.vk_configs?.some((vc) => vc.virtual_key_id === vkId)) return true;
-			if (selectedVirtualKey.mcp_configs?.some((mc) => mc.mcp_client?.name === client.config.name)) return true;
+			if (selectedVirtualKey.mcp_configs?.some((mc) => mc.mcp_client?.name === client.config?.name)) return true;
 			return false;
 		});
 	}, [mcpClientsData, selectedVirtualKey]);
@@ -168,7 +182,9 @@ export function SettingsPanel() {
 
 	// Auto-bind first assigned VK for members so usage hits the correct budget meter,
 	// skipping keys whose team or customer budget is used up.
-	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined, { skip: !isMemberOnly });
+	const { data: billingBlocks, isError: billingFailed, error: billingError } = useGetVirtualKeyBillingBlocksQuery(undefined, {
+		skip: !isMemberOnly,
+	});
 	useEffect(() => {
 		if (!isMemberOnly) return;
 		const assignable = providerVirtualKeys.filter((vk) => typeof vk.value === "string" && vk.value.startsWith("sk-uf-"));
@@ -243,6 +259,17 @@ export function SettingsPanel() {
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			<div className="flex min-h-0 flex-1 flex-col px-4 pt-2 pb-4">
+				{settingsQueryFailed ? (
+					<div className="mb-3">
+						<QueryErrorBanner
+							testId="prompts-settings-query-error"
+							message={
+								getErrorMessage(providersError || keysError || skillsError || mcpError || vkError || billingError) ||
+									"Failed to load prompt settings data."
+							}
+						/>
+					</div>
+				) : null}
 				<Accordion
 					type="single"
 					collapsible

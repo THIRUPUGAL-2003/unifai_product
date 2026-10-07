@@ -3,7 +3,7 @@ package mcp
 import (
 	"fmt"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // agentAPIAdapter defines the interface for API-specific operations in agent mode.
@@ -50,7 +50,7 @@ type agentAPIAdapter interface {
 	createNewRequest(conversation []interface{}) interface{}
 
 	// Make LLM call
-	makeLLMCall(ctx *schemas.RakshaContext, request interface{}) (interface{}, *schemas.RakshaError)
+	makeLLMCall(ctx *schemas.GatewayContext, request interface{}) (interface{}, *schemas.GatewayError)
 
 	// Create response with executed tools and non-auto-executable calls
 	createResponseWithExecutedTools(
@@ -60,18 +60,18 @@ type agentAPIAdapter interface {
 		nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
 	) interface{}
 
-	// extractUsage returns the token usage from a response as RakshaLLMUsage.
-	extractUsage(response interface{}) *schemas.RakshaLLMUsage
+	// extractUsage returns the token usage from a response as GatewayLLMUsage.
+	extractUsage(response interface{}) *schemas.GatewayLLMUsage
 
 	// applyUsage sets accumulated usage on the response in place.
-	applyUsage(response interface{}, usage *schemas.RakshaLLMUsage)
+	applyUsage(response interface{}, usage *schemas.GatewayLLMUsage)
 }
 
 // chatAPIAdapter implements agentAPIAdapter for Chat API
 type chatAPIAdapter struct {
-	originalReq     *schemas.RakshaChatRequest
-	initialResponse *schemas.RakshaChatResponse
-	makeReq         func(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError)
+	originalReq     *schemas.GatewayChatRequest
+	initialResponse *schemas.GatewayChatResponse
+	makeReq         func(ctx *schemas.GatewayContext, req *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError)
 }
 
 // responsesAPIAdapter implements agentAPIAdapter for Responses API.
@@ -80,18 +80,18 @@ type chatAPIAdapter struct {
 //
 // Key conversions performed:
 //   - extractToolCalls(): Converts ResponsesMessage tool calls to ChatAssistantMessageToolCall
-//     via RakshaResponsesResponse.ToRakshaChatResponse() and existing extraction logic
+//     via GatewayResponsesResponse.ToGatewayChatResponse() and existing extraction logic
 //   - addToolResults(): Converts ChatMessage tool results back to ResponsesMessage
 //     via ChatMessage.ToResponsesMessages() and ToResponsesToolMessage()
-//   - createNewRequest(): Builds a new RakshaResponsesRequest from converted conversation
+//   - createNewRequest(): Builds a new GatewayResponsesRequest from converted conversation
 //   - createResponseWithExecutedTools(): Creates a Responses response with results and pending tools
 //
 // This adapter enables full feature parity between Chat Completions and Responses APIs
 // for tool execution in agent mode.
 type responsesAPIAdapter struct {
-	originalReq     *schemas.RakshaResponsesRequest
-	initialResponse *schemas.RakshaResponsesResponse
-	makeReq         func(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError)
+	originalReq     *schemas.GatewayResponsesRequest
+	initialResponse *schemas.GatewayResponsesResponse
+	makeReq         func(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError)
 }
 
 // Chat API adapter implementations
@@ -114,17 +114,17 @@ func (c *chatAPIAdapter) getInitialResponse() interface{} {
 }
 
 func (c *chatAPIAdapter) hasToolCalls(response interface{}) bool {
-	chatResponse := response.(*schemas.RakshaChatResponse)
+	chatResponse := response.(*schemas.GatewayChatResponse)
 	return hasToolCallsForChatResponse(chatResponse)
 }
 
 func (c *chatAPIAdapter) extractToolCalls(response interface{}) []schemas.ChatAssistantMessageToolCall {
-	chatResponse := response.(*schemas.RakshaChatResponse)
+	chatResponse := response.(*schemas.GatewayChatResponse)
 	return extractToolCalls(chatResponse)
 }
 
 func (c *chatAPIAdapter) addAssistantMessage(conversation []interface{}, response interface{}) []interface{} {
-	chatResponse := response.(*schemas.RakshaChatResponse)
+	chatResponse := response.(*schemas.GatewayChatResponse)
 	for _, choice := range chatResponse.Choices {
 		if choice.ChatNonStreamResponseChoice != nil && choice.ChatNonStreamResponseChoice.Message != nil {
 			conversation = append(conversation, *choice.ChatNonStreamResponseChoice.Message)
@@ -152,7 +152,7 @@ func (c *chatAPIAdapter) createNewRequest(conversation []interface{}) interface{
 		}
 	}
 
-	return &schemas.RakshaChatRequest{
+	return &schemas.GatewayChatRequest{
 		Provider:  c.originalReq.Provider,
 		Model:     c.originalReq.Model,
 		Fallbacks: c.originalReq.Fallbacks,
@@ -161,8 +161,8 @@ func (c *chatAPIAdapter) createNewRequest(conversation []interface{}) interface{
 	}
 }
 
-func (c *chatAPIAdapter) makeLLMCall(ctx *schemas.RakshaContext, request interface{}) (interface{}, *schemas.RakshaError) {
-	chatRequest := request.(*schemas.RakshaChatRequest)
+func (c *chatAPIAdapter) makeLLMCall(ctx *schemas.GatewayContext, request interface{}) (interface{}, *schemas.GatewayError) {
+	chatRequest := request.(*schemas.GatewayChatRequest)
 	return c.makeReq(ctx, chatRequest)
 }
 
@@ -172,7 +172,7 @@ func (c *chatAPIAdapter) createResponseWithExecutedTools(
 	executedToolCalls []schemas.ChatAssistantMessageToolCall,
 	nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
 ) interface{} {
-	chatResponse := response.(*schemas.RakshaChatResponse)
+	chatResponse := response.(*schemas.GatewayChatResponse)
 	return createChatResponseWithExecutedToolsAndNonAutoExecutableCalls(
 		chatResponse,
 		executedToolResults,
@@ -181,12 +181,12 @@ func (c *chatAPIAdapter) createResponseWithExecutedTools(
 	)
 }
 
-func (c *chatAPIAdapter) extractUsage(response interface{}) *schemas.RakshaLLMUsage {
-	return response.(*schemas.RakshaChatResponse).Usage
+func (c *chatAPIAdapter) extractUsage(response interface{}) *schemas.GatewayLLMUsage {
+	return response.(*schemas.GatewayChatResponse).Usage
 }
 
-func (c *chatAPIAdapter) applyUsage(response interface{}, usage *schemas.RakshaLLMUsage) {
-	response.(*schemas.RakshaChatResponse).Usage = usage
+func (c *chatAPIAdapter) applyUsage(response interface{}, usage *schemas.GatewayLLMUsage) {
+	response.(*schemas.GatewayChatResponse).Usage = usage
 }
 
 // createChatResponseWithExecutedToolsAndNonAutoExecutableCalls creates a chat response
@@ -202,20 +202,20 @@ func (c *chatAPIAdapter) applyUsage(response interface{}, usage *schemas.RakshaL
 //   - nonAutoExecutableToolCalls: List of tool calls that require manual execution
 //
 // Returns:
-//   - *schemas.RakshaChatResponse: A new chat response with executed results and pending tool calls
+//   - *schemas.GatewayChatResponse: A new chat response with executed results and pending tool calls
 func createChatResponseWithExecutedToolsAndNonAutoExecutableCalls(
-	originalResponse *schemas.RakshaChatResponse,
+	originalResponse *schemas.GatewayChatResponse,
 	executedToolResults []*schemas.ChatMessage,
 	executedToolCalls []schemas.ChatAssistantMessageToolCall,
 	nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
-) *schemas.RakshaChatResponse {
+) *schemas.GatewayChatResponse {
 	// Start with a copy of the original response metadata
-	response := &schemas.RakshaChatResponse{
+	response := &schemas.GatewayChatResponse{
 		ID:                originalResponse.ID,
 		Object:            originalResponse.Object,
 		Created:           originalResponse.Created,
 		Model:             originalResponse.Model,
-		Choices:           make([]schemas.RakshaResponseChoice, 0),
+		Choices:           make([]schemas.GatewayResponseChoice, 0),
 		ServiceTier:       originalResponse.ServiceTier,
 		SystemFingerprint: originalResponse.SystemFingerprint,
 		Usage:             originalResponse.Usage,
@@ -299,7 +299,7 @@ func createChatResponseWithExecutedToolsAndNonAutoExecutableCalls(
 	finishReason := "stop"
 
 	// Create a single choice with the formatted content and non-auto-executable tool calls
-	response.Choices = append(response.Choices, schemas.RakshaResponseChoice{
+	response.Choices = append(response.Choices, schemas.GatewayResponseChoice{
 		Index:        0,
 		FinishReason: &finishReason,
 		ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -336,19 +336,19 @@ func (r *responsesAPIAdapter) getInitialResponse() interface{} {
 }
 
 func (r *responsesAPIAdapter) hasToolCalls(response interface{}) bool {
-	responsesResponse := response.(*schemas.RakshaResponsesResponse)
+	responsesResponse := response.(*schemas.GatewayResponsesResponse)
 	return hasToolCallsForResponsesResponse(responsesResponse)
 }
 
 func (r *responsesAPIAdapter) extractToolCalls(response interface{}) []schemas.ChatAssistantMessageToolCall {
-	responsesResponse := response.(*schemas.RakshaResponsesResponse)
+	responsesResponse := response.(*schemas.GatewayResponsesResponse)
 	// Convert to Chat format and extract tool calls using existing logic
-	chatResponse := responsesResponse.ToRakshaChatResponse()
+	chatResponse := responsesResponse.ToGatewayChatResponse()
 	return extractToolCalls(chatResponse)
 }
 
 func (r *responsesAPIAdapter) addAssistantMessage(conversation []interface{}, response interface{}) []interface{} {
-	responsesResponse := response.(*schemas.RakshaResponsesResponse)
+	responsesResponse := response.(*schemas.GatewayResponsesResponse)
 	for _, output := range responsesResponse.Output {
 		conversation = append(conversation, output)
 	}
@@ -373,7 +373,7 @@ func (r *responsesAPIAdapter) createNewRequest(conversation []interface{}) inter
 		responsesMessages = append(responsesMessages, msg.(schemas.ResponsesMessage))
 	}
 
-	return &schemas.RakshaResponsesRequest{
+	return &schemas.GatewayResponsesRequest{
 		Provider:  r.originalReq.Provider,
 		Model:     r.originalReq.Model,
 		Fallbacks: r.originalReq.Fallbacks,
@@ -382,8 +382,8 @@ func (r *responsesAPIAdapter) createNewRequest(conversation []interface{}) inter
 	}
 }
 
-func (r *responsesAPIAdapter) makeLLMCall(ctx *schemas.RakshaContext, request interface{}) (interface{}, *schemas.RakshaError) {
-	responsesRequest := request.(*schemas.RakshaResponsesRequest)
+func (r *responsesAPIAdapter) makeLLMCall(ctx *schemas.GatewayContext, request interface{}) (interface{}, *schemas.GatewayError) {
+	responsesRequest := request.(*schemas.GatewayResponsesRequest)
 	return r.makeReq(ctx, responsesRequest)
 }
 
@@ -393,7 +393,7 @@ func (r *responsesAPIAdapter) createResponseWithExecutedTools(
 	executedToolCalls []schemas.ChatAssistantMessageToolCall,
 	nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
 ) interface{} {
-	responsesResponse := response.(*schemas.RakshaResponsesResponse)
+	responsesResponse := response.(*schemas.GatewayResponsesResponse)
 
 	// Create response with executed tools directly on Responses schema
 	return createResponsesResponseWithExecutedToolsAndNonAutoExecutableCalls(
@@ -404,12 +404,12 @@ func (r *responsesAPIAdapter) createResponseWithExecutedTools(
 	)
 }
 
-func (r *responsesAPIAdapter) extractUsage(response interface{}) *schemas.RakshaLLMUsage {
-	return response.(*schemas.RakshaResponsesResponse).Usage.ToRakshaLLMUsage()
+func (r *responsesAPIAdapter) extractUsage(response interface{}) *schemas.GatewayLLMUsage {
+	return response.(*schemas.GatewayResponsesResponse).Usage.ToGatewayLLMUsage()
 }
 
-func (r *responsesAPIAdapter) applyUsage(response interface{}, usage *schemas.RakshaLLMUsage) {
-	response.(*schemas.RakshaResponsesResponse).Usage = usage.ToResponsesResponseUsage()
+func (r *responsesAPIAdapter) applyUsage(response interface{}, usage *schemas.GatewayLLMUsage) {
+	response.(*schemas.GatewayResponsesResponse).Usage = usage.ToResponsesResponseUsage()
 }
 
 // createResponsesResponseWithExecutedToolsAndNonAutoExecutableCalls creates a responses response
@@ -424,15 +424,15 @@ func (r *responsesAPIAdapter) applyUsage(response interface{}, usage *schemas.Ra
 //   - nonAutoExecutableToolCalls: List of tool calls that require manual execution
 //
 // Returns:
-//   - *schemas.RakshaResponsesResponse: A new responses response with executed results and pending tool calls
+//   - *schemas.GatewayResponsesResponse: A new responses response with executed results and pending tool calls
 func createResponsesResponseWithExecutedToolsAndNonAutoExecutableCalls(
-	originalResponse *schemas.RakshaResponsesResponse,
+	originalResponse *schemas.GatewayResponsesResponse,
 	executedToolResults []*schemas.ChatMessage,
 	executedToolCalls []schemas.ChatAssistantMessageToolCall,
 	nonAutoExecutableToolCalls []schemas.ChatAssistantMessageToolCall,
-) *schemas.RakshaResponsesResponse {
+) *schemas.GatewayResponsesResponse {
 	// Start with a copy of the original response, preserving all Response-specific fields
-	response := &schemas.RakshaResponsesResponse{
+	response := &schemas.GatewayResponsesResponse{
 		ID:                   originalResponse.ID,
 		Background:           originalResponse.Background,
 		Conversation:         originalResponse.Conversation,

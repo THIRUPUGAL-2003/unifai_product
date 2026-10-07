@@ -10,13 +10,13 @@ import (
 	"time"
 
 	ws "github.com/fasthttp/websocket"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunRealtimeTest dials the provider's native Realtime WebSocket endpoint,
 // sends a text-based conversation turn, and validates the session + response events.
-func RunRealtimeTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunRealtimeTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.Realtime {
 		t.Logf("Realtime not supported for provider %s", testConfig.Provider)
 		return
@@ -33,7 +33,7 @@ func RunRealtimeTest(t *testing.T, client *raksha.Raksha, ctx context.Context, t
 
 		provider := client.GetProviderByKey(testConfig.Provider)
 		if provider == nil {
-			t.Fatalf("provider %s not found in raksha client", testConfig.Provider)
+			t.Fatalf("provider %s not found in gateway client", testConfig.Provider)
 		}
 
 		rtProvider, ok := provider.(schemas.RealtimeProvider)
@@ -41,7 +41,7 @@ func RunRealtimeTest(t *testing.T, client *raksha.Raksha, ctx context.Context, t
 			t.Skipf("provider %s does not implement RealtimeProvider", testConfig.Provider)
 		}
 
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		defer bfCtx.Cancel()
 		key, err := client.SelectKeyForProviderRequestType(bfCtx, schemas.RealtimeRequest, testConfig.Provider, testConfig.RealtimeModel)
 		if err != nil {

@@ -1,4 +1,4 @@
-# UnifAI / Raksha Enterprise Database Configuration & Persistence Guide
+# UnifAI / Gateway Enterprise Database Configuration & Persistence Guide
 
 **Audience:** Database Administrators (DBA), DevOps Engineers, Platform Architects  
 **Scope:** PostgreSQL architecture, installation, user/database provisioning, `pg_hba.conf` security, SSL/TLS encryption, GORM schema management, table reference, PgBouncer pooling, `postgresql.conf` performance tuning, automated backup scripts, and disaster recovery.  
@@ -62,13 +62,13 @@ Execute the exact provisioning SQL commands matching project `.env.example`:
 CREATE USER agent_unify WITH ENCRYPTED PASSWORD 'change-me-strong-password';
 
 -- 2. Create production database with UTF-8 encoding
-CREATE DATABASE raksha_new WITH OWNER agent_unify ENCODING 'UTF8' LC_COLLATE 'en_US.UTF-8' LC_CTYPE 'en_US.UTF-8';
+CREATE DATABASE gateway_new WITH OWNER agent_unify ENCODING 'UTF8' LC_COLLATE 'en_US.UTF-8' LC_CTYPE 'en_US.UTF-8';
 
 -- 3. Connect to the newly created database
-\c raksha_new
+\c gateway_new
 
 -- 4. Grant schema and default privileges
-GRANT ALL PRIVILEGES ON DATABASE raksha_new TO agent_unify;
+GRANT ALL PRIVILEGES ON DATABASE gateway_new TO agent_unify;
 GRANT ALL ON SCHEMA public TO agent_unify;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO agent_unify;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO agent_unify;
@@ -100,14 +100,14 @@ local   all             postgres                                peer
 local   all             all                                     scram-sha-256
 
 # Localhost IPv4 loopback (when UnifAI runs on the same server)
-host    raksha_new      agent_unify     127.0.0.1/32            scram-sha-256
+host    gateway_new      agent_unify     127.0.0.1/32            scram-sha-256
 
 # Localhost IPv6 loopback
-host    raksha_new      agent_unify     ::1/128                 scram-sha-256
+host    gateway_new      agent_unify     ::1/128                 scram-sha-256
 
 # Docker Container Bridge Network (e.g. 172.16.0.0/12 or 10.0.0.0/8)
-host    raksha_new      agent_unify     172.16.0.0/12           scram-sha-256
-host    raksha_new      agent_unify     10.0.0.0/8              scram-sha-256
+host    gateway_new      agent_unify     172.16.0.0/12           scram-sha-256
+host    gateway_new      agent_unify     10.0.0.0/8              scram-sha-256
 
 # Reject all other unauthorized external traffic
 host    all             all             0.0.0.0/0               reject
@@ -167,7 +167,7 @@ In your `.env` file, configure:
 DB_TYPE=postgres
 DB_HOST=127.0.0.1
 DB_PORT=5432
-DB_NAME=raksha_new
+DB_NAME=gateway_new
 DB_USER=agent_unify
 DB_PASSWORD=change-me-strong-password
 DB_SSL_MODE=require
@@ -228,7 +228,7 @@ sudo apt install -y pgbouncer
 ### 7.2 Configuration (`/etc/pgbouncer/pgbouncer.ini`)
 ```ini
 [databases]
-raksha_new = host=127.0.0.1 port=5432 dbname=raksha_new
+gateway_new = host=127.0.0.1 port=5432 dbname=gateway_new
 
 [pgbouncer]
 logfile = /var/log/postgresql/pgbouncer.log
@@ -301,20 +301,20 @@ max_parallel_maintenance_workers = 4
 ### 9.1 On-Demand Backup Command
 ```bash
 # Custom compressed format backup (Recommended)
-pg_dump -h 127.0.0.1 -p 5432 -U agent_unify -Fc -b -v -f "raksha_new_$(date +%Y%m%d_%H%M%S).dump" raksha_new
+pg_dump -h 127.0.0.1 -p 5432 -U agent_unify -Fc -b -v -f "gateway_new_$(date +%Y%m%d_%H%M%S).dump" gateway_new
 ```
 
 ### 9.2 Automated Daily Backup Script (`/opt/unifai/scripts/db_backup.sh`)
 ```bash
 #!/bin/bash
 # ==============================================================================
-# UnifAI / Raksha PostgreSQL Production Daily Backup Script
+# UnifAI / Gateway PostgreSQL Production Daily Backup Script
 # ==============================================================================
 set -e
 
 BACKUP_DIR="/var/backups/unifai/db"
 DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="${BACKUP_DIR}/raksha_new_${DATE}.dump"
+BACKUP_FILE="${BACKUP_DIR}/gateway_new_${DATE}.dump"
 LOG_FILE="/var/log/unifai_db_backup.log"
 RETENTION_DAYS=30
 
@@ -323,7 +323,7 @@ mkdir -p "${BACKUP_DIR}"
 echo "[$(date)] Starting UnifAI PostgreSQL backup..." >> "${LOG_FILE}"
 
 export PGPASSWORD="change-me-strong-password"
-pg_dump -h 127.0.0.1 -p 5432 -U agent_unify -Fc -b -v raksha_new > "${BACKUP_FILE}" 2>> "${LOG_FILE}"
+pg_dump -h 127.0.0.1 -p 5432 -U agent_unify -Fc -b -v gateway_new > "${BACKUP_FILE}" 2>> "${LOG_FILE}"
 
 if [ $? -eq 0 ]; then
     SIZE=$(du -h "${BACKUP_FILE}" | cut -f1)
@@ -334,7 +334,7 @@ else
 fi
 
 # Retention policy: remove backups older than 30 days
-find "${BACKUP_DIR}" -name "raksha_new_*.dump" -type f -mtime +${RETENTION_DAYS} -delete
+find "${BACKUP_DIR}" -name "gateway_new_*.dump" -type f -mtime +${RETENTION_DAYS} -delete
 echo "[$(date)] Cleaned up backups older than ${RETENTION_DAYS} days." >> "${LOG_FILE}"
 ```
 
@@ -350,20 +350,20 @@ In the event of database corruption or hardware failover:
 
 ```bash
 # 1. Terminate all active application connections to the database
-sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'raksha_new' AND pid <> pg_backend_pid();"
+sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'gateway_new' AND pid <> pg_backend_pid();"
 
 # 2. Drop and recreate database
-sudo -u postgres psql -c "DROP DATABASE IF EXISTS raksha_new;"
-sudo -u postgres psql -c "CREATE DATABASE raksha_new WITH OWNER agent_unify ENCODING 'UTF8';"
+sudo -u postgres psql -c "DROP DATABASE IF EXISTS gateway_new;"
+sudo -u postgres psql -c "CREATE DATABASE gateway_new WITH OWNER agent_unify ENCODING 'UTF8';"
 
 # 3. Restore database schema, tables, and data using pg_restore
-sudo -u postgres pg_restore -d raksha_new -v -O -x "/var/backups/unifai/db/raksha_new_20261003_120000.dump"
+sudo -u postgres pg_restore -d gateway_new -v -O -x "/var/backups/unifai/db/gateway_new_20261003_120000.dump"
 
 # 4. Re-grant privileges to application user
-sudo -u postgres psql -d raksha_new -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO agent_unify; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO agent_unify;"
+sudo -u postgres psql -d gateway_new -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO agent_unify; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO agent_unify;"
 
 # 5. Verify restored tables and count
-sudo -u postgres psql -d raksha_new -c "\dt"
+sudo -u postgres psql -d gateway_new -c "\dt"
 ```
 
 ---

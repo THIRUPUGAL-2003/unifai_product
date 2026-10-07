@@ -1,6 +1,6 @@
 package perplexity
 
-import "github.com/raksha/raksha/core/schemas"
+import "github.com/gateway/gateway/core/schemas"
 
 // PerplexityChatRequest represents a Perplexity chat completion request
 type PerplexityChatRequest struct {
@@ -76,7 +76,7 @@ type MediaResponseOverrides struct {
 
 type PerplexityChatResponse struct {
 	ID            string                          `json:"id"`
-	Choices       []schemas.RakshaResponseChoice `json:"choices"`
+	Choices       []schemas.GatewayResponseChoice `json:"choices"`
 	Created       int                             `json:"created"` // The Unix timestamp (in seconds).
 	Model         string                          `json:"model"`
 	Object        string                          `json:"object"` // "chat.completion" or "chat.completion.chunk"
@@ -94,5 +94,5 @@ type Usage struct {
 	CitationTokens    *int                 `json:"citation_tokens,omitempty"`
 	NumSearchQueries  *int                 `json:"num_search_queries,omitempty"`
 	ReasoningTokens   *int                 `json:"reasoning_tokens,omitempty"`
-	Cost              *schemas.RakshaCost `json:"cost,omitempty"`
+	Cost              *schemas.GatewayCost `json:"cost,omitempty"`
 }

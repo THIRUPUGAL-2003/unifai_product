@@ -1,4 +1,4 @@
-// Package governance provides comprehensive governance plugin for Raksha
+// Package governance provides comprehensive governance plugin for Gateway
 package governance
 
 import (
@@ -14,23 +14,23 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/alerts"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/loadbalancer"
-	"github.com/raksha/raksha/framework/mcpcatalog"
-	"github.com/raksha/raksha/framework/mcptoolgroups"
-	"github.com/raksha/raksha/framework/modelcatalog"
-	"github.com/raksha/raksha/plugins/governance/complexity"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/alerts"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/loadbalancer"
+	"github.com/gateway/gateway/framework/mcpcatalog"
+	"github.com/gateway/gateway/framework/mcptoolgroups"
+	"github.com/gateway/gateway/framework/modelcatalog"
+	"github.com/gateway/gateway/plugins/governance/complexity"
 )
 
 // PluginName is the name of the governance plugin
 const PluginName = "governance"
 
 const (
-	governanceRejectedContextKey schemas.RakshaContextKey = "raksha-governance-rejected"
+	governanceRejectedContextKey schemas.GatewayContextKey = "gateway-governance-rejected"
 
 	VirtualKeyPrefix = "sk-uf-"
 
@@ -53,13 +53,13 @@ type InMemoryStore interface {
 
 type BaseGovernancePlugin interface {
 	GetName() string
-	EvaluateGovernanceRequest(ctx *schemas.RakshaContext, evaluationRequest *EvaluationRequest, requestType schemas.RequestType) (*EvaluationResult, *schemas.RakshaError)
-	HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error)
-	HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error
-	PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error)
-	PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error)
-	PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error)
-	PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error)
+	EvaluateGovernanceRequest(ctx *schemas.GatewayContext, evaluationRequest *EvaluationRequest, requestType schemas.RequestType) (*EvaluationResult, *schemas.GatewayError)
+	HTTPTransportPreHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error)
+	HTTPTransportPostHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error
+	PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error)
+	PostLLMHook(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error)
+	PreMCPHook(ctx *schemas.GatewayContext, req *schemas.GatewayMCPRequest) (*schemas.GatewayMCPRequest, *schemas.MCPPluginShortCircuit, error)
+	PostMCPHook(ctx *schemas.GatewayContext, resp *schemas.GatewayMCPResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayMCPResponse, *schemas.GatewayError, error)
 	Cleanup() error
 	GetGovernanceStore() GovernanceStore
 }
@@ -404,23 +404,23 @@ func (p *GovernancePlugin) UpdateEnforceAuthOnInference(enforceAuthOnInference b
 // All routing now flows through PreRequestHook: body-having requests via handleRequest,
 // large-payload requests via PreRequestHook reading LargePayloadMetadata, and realtime WS
 // upgrades via the realtime handler's explicit RunPreRequestHooks call.
-func (p *GovernancePlugin) HTTPTransportPreHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
+func (p *GovernancePlugin) HTTPTransportPreHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest) (*schemas.HTTPResponse, error) {
 	return nil, nil
 }
 
-// runPreRequestRouting wraps a model string in a synthetic RakshaRequest, runs the same
+// runPreRequestRouting wraps a model string in a synthetic GatewayRequest, runs the same
 // applyRoutingRules + loadBalanceProvider helpers used by the main PreRequestHook path, and
 // returns the resolved model (provider-prefixed when a provider was selected, plain model
 // otherwise). Used by PreRequestHook's large-payload branch where req.Model is empty because
 // the body wasn't parsed.
-func (p *GovernancePlugin) runPreRequestRouting(ctx *schemas.RakshaContext, virtualKey *configstoreTables.TableVirtualKey, hasRoutingRules bool, modelIn string, requestType schemas.RequestType) (string, error) {
+func (p *GovernancePlugin) runPreRequestRouting(ctx *schemas.GatewayContext, virtualKey *configstoreTables.TableVirtualKey, hasRoutingRules bool, modelIn string, requestType schemas.RequestType) (string, error) {
 	// Parse a provider-prefixed model string the same way the transport does for
 	// body-having requests, so an explicit prefix like "openai/gpt-4o" lands in
 	// ChatRequest.Provider and load balancing honors the caller's routing intent.
 	providerIn, parsedModel := schemas.ParseModelString(modelIn, "")
-	synthetic := &schemas.RakshaRequest{
+	synthetic := &schemas.GatewayRequest{
 		RequestType: requestType,
-		ChatRequest: &schemas.RakshaChatRequest{Provider: providerIn, Model: parsedModel},
+		ChatRequest: &schemas.GatewayChatRequest{Provider: providerIn, Model: parsedModel},
 	}
 
 	if hasRoutingRules {
@@ -462,19 +462,19 @@ func (p *GovernancePlugin) runPreRequestRouting(ctx *schemas.RakshaContext, virt
 
 // HTTPTransportPostHook intercepts requests after they are processed (governance decision point)
 // It modifies the response in-place and returns nil to continue
-func (p *GovernancePlugin) HTTPTransportPostHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
+func (p *GovernancePlugin) HTTPTransportPostHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, resp *schemas.HTTPResponse) error {
 	return nil
 }
 
 // HTTPTransportStreamChunkHook passes through streaming chunks unchanged
-func (p *GovernancePlugin) HTTPTransportStreamChunkHook(ctx *schemas.RakshaContext, req *schemas.HTTPRequest, chunk *schemas.RakshaStreamChunk) (*schemas.RakshaStreamChunk, error) {
+func (p *GovernancePlugin) HTTPTransportStreamChunkHook(ctx *schemas.GatewayContext, req *schemas.HTTPRequest, chunk *schemas.GatewayStreamChunk) (*schemas.GatewayStreamChunk, error) {
 	return chunk, nil
 }
 
 // loadBalanceProvider picks a weighted provider from the VK's configs for req.Model
 // and mutates req.Provider/req.Model with the refined provider/model. Also populates req.Fallbacks
 // from the remaining weighted providers if no fallbacks were configured by the caller.
-func (p *GovernancePlugin) loadBalanceProvider(ctx *schemas.RakshaContext, req *schemas.RakshaRequest, virtualKey *configstoreTables.TableVirtualKey) error {
+func (p *GovernancePlugin) loadBalanceProvider(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, virtualKey *configstoreTables.TableVirtualKey) error {
 	provider, modelStr, existingFallbacks := req.GetRequestFields()
 	if modelStr == "" {
 		return nil
@@ -629,11 +629,11 @@ func (p *GovernancePlugin) loadBalanceProvider(ctx *schemas.RakshaContext, req *
 	req.SetModel(refinedModel)
 
 	if keyID, ok := loadbalancer.Default.SelectProviderKey(string(selectedProvider), refinedModel); ok && keyID != "" {
-		ctx.SetValue(schemas.RakshaContextKeyRoutingPinnedAPIKeyID, keyID)
+		ctx.SetValue(schemas.GatewayContextKeyRoutingPinnedAPIKeyID, keyID)
 		ctx.AppendRoutingEngineLog(schemas.RoutingEngineGovernance, schemas.LogLevelInfo, fmt.Sprintf("Adaptive routing pinned API key %s for provider %s", keyID, selectedProvider))
 	}
 
-	schemas.AppendToContextList(ctx, schemas.RakshaContextKeyRoutingEnginesUsed, schemas.RoutingEngineGovernance)
+	schemas.AppendToContextList(ctx, schemas.GatewayContextKeyRoutingEnginesUsed, schemas.RoutingEngineGovernance)
 
 	if len(existingFallbacks) == 0 && len(weightedConfigs) > 1 {
 		fallbackConfigs := append([]configstoreTables.TableVirtualKeyProviderConfig(nil), weightedConfigs...)
@@ -689,7 +689,7 @@ func (p *GovernancePlugin) loadBalanceProvider(ctx *schemas.RakshaContext, req *
 
 // publishRoutingAllowlist records, for downstream routing layers, which of the VK's configured
 // providers permit modelStr according to the VK's own allowed_models / blocked_models. It is a
-// coarse provider gate (RakshaContextKeyRoutingAllowedProviders) layered on top of the model
+// coarse provider gate (GatewayContextKeyRoutingAllowedProviders) layered on top of the model
 // catalog checks those layers already run — its purpose is to stop a later routing layer (load
 // balancing, model-catalog resolution) from selecting a provider the VK forbids for this model,
 // even when governance itself couldn't pick one. An empty slice means "no provider is permitted"
@@ -698,7 +698,7 @@ func (p *GovernancePlugin) loadBalanceProvider(ctx *schemas.RakshaContext, req *
 // Provider prefixes on the request model are already split into req.Provider + bare model at the
 // HTTP layer (resolveModelAndProvider), so VK allowed_models / blocked_models are matched against
 // bare names and plain membership checks are sufficient here.
-func (p *GovernancePlugin) publishRoutingAllowlist(ctx *schemas.RakshaContext, virtualKey *configstoreTables.TableVirtualKey, modelStr string) {
+func (p *GovernancePlugin) publishRoutingAllowlist(ctx *schemas.GatewayContext, virtualKey *configstoreTables.TableVirtualKey, modelStr string) {
 	if virtualKey == nil {
 		return
 	}
@@ -710,14 +710,14 @@ func (p *GovernancePlugin) publishRoutingAllowlist(ctx *schemas.RakshaContext, v
 			allowed = append(allowed, schemas.ModelProvider(pc.Provider))
 		}
 	}
-	ctx.SetValue(schemas.RakshaContextKeyRoutingAllowedProviders, allowed)
+	ctx.SetValue(schemas.GatewayContextKeyRoutingAllowedProviders, allowed)
 }
 
 // applyRoutingRules evaluates routing rules against req and mutates
 // req.Provider/req.Model/req.Fallbacks when a rule matches. Returns the matched RoutingDecision
 // (nil if no rule matched). Integrations normalize req.Model (and Provider when applicable) before
-// the RakshaRequest reaches this point.
-func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.RakshaContext, req *schemas.RakshaRequest, virtualKey *configstoreTables.TableVirtualKey) (*RoutingDecision, error) {
+// the GatewayRequest reaches this point.
+func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, virtualKey *configstoreTables.TableVirtualKey) (*RoutingDecision, error) {
 	provider, model, _ := req.GetRequestFields()
 	if model == "" {
 		return nil, nil
@@ -726,8 +726,8 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.RakshaContext, req *sc
 	// Rules are written against the base type ("chat_completion"); streaming variants
 	// ("chat_completion_stream") must match the same rules.
 	requestType := strings.TrimSuffix(string(req.RequestType), "_stream")
-	headers, _ := ctx.Value(schemas.RakshaContextKeyRequestHeaders).(map[string]string)
-	queryParams, _ := ctx.Value(schemas.RakshaContextKeyRequestQuery).(map[string]string)
+	headers, _ := ctx.Value(schemas.GatewayContextKeyRequestHeaders).(map[string]string)
+	queryParams, _ := ctx.Value(schemas.GatewayContextKeyRequestQuery).(map[string]string)
 
 	// Set up lazy complexity computation; only runs if a rule references complexity_tier.
 	var computeComplexity func() *complexity.ComplexityResult
@@ -809,7 +809,7 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.RakshaContext, req *sc
 		req.SetModel(decision.Model)
 	}
 
-	schemas.AppendToContextList(ctx, schemas.RakshaContextKeyRoutingEnginesUsed, schemas.RoutingEngineRoutingRule)
+	schemas.AppendToContextList(ctx, schemas.GatewayContextKeyRoutingEnginesUsed, schemas.RoutingEngineRoutingRule)
 
 	// Add fallbacks if present; fill in the incoming model for fallbacks that omit it
 	if len(decision.Fallbacks) > 0 {
@@ -833,12 +833,12 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.RakshaContext, req *sc
 	}
 
 	// Pin specific API key by ID if the routing rule specifies one. This uses a dedicated,
-	// non-reserved context key (not RakshaContextKeyAPIKeyID): routing runs inside
+	// non-reserved context key (not GatewayContextKeyAPIKeyID): routing runs inside
 	// PreRequestHook, where core blocks writes to reserved key-selection keys, so a write to
 	// the caller-pin key would be silently dropped. Key selection reads this routing pin first
 	// and resolves it against the configured key pool.
 	if decision.KeyID != "" {
-		ctx.SetValue(schemas.RakshaContextKeyRoutingPinnedAPIKeyID, decision.KeyID)
+		ctx.SetValue(schemas.GatewayContextKeyRoutingPinnedAPIKeyID, decision.KeyID)
 	}
 
 	p.logger.Debug("[Governance] Applied routing decision: provider=%s, model=%s, keyID=%s, fallbacks=%v", decision.Provider, decision.Model, decision.KeyID, decision.Fallbacks)
@@ -907,7 +907,7 @@ func (p *GovernancePlugin) computeMCPIncludeToolsWith(virtualKey *configstoreTab
 // "client-*" wildcard is kept only when the key itself is unrestricted for that client,
 // otherwise it is replaced by the key's specific grants for that client (passing the wildcard
 // through would read downstream as "all tools of this client").
-func (p *GovernancePlugin) pruneMCPIncludeToolsFromContext(ctx *schemas.RakshaContext, virtualKey *configstoreTables.TableVirtualKey) bool {
+func (p *GovernancePlugin) pruneMCPIncludeToolsFromContext(ctx *schemas.GatewayContext, virtualKey *configstoreTables.TableVirtualKey) bool {
 	existing := ctx.Value(schemas.MCPContextKeyIncludeTools)
 	if existing == nil {
 		return false
@@ -964,35 +964,35 @@ func (p *GovernancePlugin) pruneMCPIncludeToolsFromContext(ctx *schemas.RakshaCo
 
 // filterMCPIncludeToolsByGroups applies MCP tool-group allowlists at stamp time
 // so chat injection matches execute-time IsToolAllowed checks.
-func (p *GovernancePlugin) filterMCPIncludeToolsByGroups(ctx *schemas.RakshaContext, virtualKey *configstoreTables.TableVirtualKey, tools []string) []string {
+func (p *GovernancePlugin) filterMCPIncludeToolsByGroups(ctx *schemas.GatewayContext, virtualKey *configstoreTables.TableVirtualKey, tools []string) []string {
 	if virtualKey == nil || len(tools) == 0 {
 		return tools
 	}
-	userID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
-	customerID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceScopedCustomerID)
+	userID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
+	customerID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceScopedCustomerID)
 	if customerID == "" {
-		customerID = raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerID)
+		customerID = gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceCustomerID)
 	}
 	return mcptoolgroups.Default.FilterTools(tools, mcptoolgroups.RequestContext{
 		VirtualKeyID: virtualKey.ID,
 		UserID:       userID,
-		TeamID:       raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamID),
+		TeamID:       gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamID),
 		CustomerID:   customerID,
 	})
 }
 
 // EvaluateGovernanceRequest is a common function that handles virtual key validation
-// and governance evaluation logic. It returns the evaluation result and a RakshaError
+// and governance evaluation logic. It returns the evaluation result and a GatewayError
 // if the request should be rejected, or nil if allowed.
 //
 // Parameters:
-//   - ctx: The Raksha context
+//   - ctx: The Gateway context
 //   - evaluationRequest: The evaluation request with VirtualKey, Provider, Model, and RequestID
 //
 // Returns:
 //   - *EvaluationResult: The governance evaluation result
-//   - *schemas.RakshaError: The error to return if request is not allowed, nil if allowed
-func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext, evaluationRequest *EvaluationRequest, requestType schemas.RequestType) (*EvaluationResult, *schemas.RakshaError) {
+//   - *schemas.GatewayError: The error to return if request is not allowed, nil if allowed
+func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.GatewayContext, evaluationRequest *EvaluationRequest, requestType schemas.RequestType) (*EvaluationResult, *schemas.GatewayError) {
 	// Check if authentication is mandatory (either VK or user auth)
 	// Checking if the virtual key is valid or not
 	isVirtualKeyValid := false
@@ -1002,7 +1002,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 			isVirtualKeyValid = true
 		} else {
 			// VK was provided but does not exist in the store — reject regardless of mandatory setting
-			return nil, &schemas.RakshaError{
+			return nil, &schemas.GatewayError{
 				Type:       new("virtual_key_not_found"),
 				StatusCode: new(401),
 				Error: &schemas.ErrorField{
@@ -1018,7 +1018,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 			message = "authentication is required. Provide a virtual key (x-uf-vk), API key, or user token."
 		}
 		p.cfgMutex.RUnlock()
-		return nil, &schemas.RakshaError{
+		return nil, &schemas.GatewayError{
 			Type:       new("virtual_key_required"),
 			StatusCode: new(401),
 			Error: &schemas.ErrorField{
@@ -1049,7 +1049,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 
 	// Read-only metadata calls (e.g. list models) set this flag to skip budget/rate-limit
 	// checks while still enforcing VK identity (existence, active status, provider/model filtering).
-	skipBudgetsAndRateLimits := raksha.GetBoolFromContext(ctx, schemas.RakshaContextKeySkipBudgetAndRateLimits)
+	skipBudgetsAndRateLimits := gateway.GetBoolFromContext(ctx, schemas.GatewayContextKeySkipBudgetAndRateLimits)
 
 	// Step 1: Evaluate virtual key (identity + VK-level budget/rate-limit hierarchy).
 	// Short-circuits with VirtualKeyBlocked / ProviderBlocked / ModelBlocked before
@@ -1072,7 +1072,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 			p.stampUserOrgMembership(ctx)
 		}
 		if evaluationRequest.UserID == "" {
-			evaluationRequest.UserID = raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
+			evaluationRequest.UserID = gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
 		}
 	}
 
@@ -1123,7 +1123,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 		p.stampUserFromVKAssignment(ctx, hierarchyVK)
 		userID := evaluationRequest.UserID
 		if userID == "" {
-			userID = raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
+			userID = gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
 		}
 		if userResult := p.resolver.EvaluateUserRequest(ctx, userID, evaluationRequest); userResult.Decision == DecisionBudgetExceeded {
 			result = userResult
@@ -1131,11 +1131,11 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 	}
 
 	// Check the actual MCP tools injected into the request against the VK MCPConfigs.
-	// RakshaContextKeyMCPAddedTools is populated by AddToolsToRequest (which runs before
+	// GatewayContextKeyMCPAddedTools is populated by AddToolsToRequest (which runs before
 	// PreLLMHook), so it contains the real expanded tool names (e.g. "youtube-search") rather
 	// than raw header patterns (e.g. "youtube-*"), giving us exact per-tool validation.
 	if result.Decision == DecisionAllow && result.VirtualKey != nil {
-		if addedTools, ok := ctx.Value(schemas.RakshaContextKeyMCPAddedTools).([]string); ok && len(addedTools) > 0 {
+		if addedTools, ok := ctx.Value(schemas.GatewayContextKeyMCPAddedTools).([]string); ok && len(addedTools) > 0 {
 			// Fetch once before the loop to avoid repeated lock acquisitions per tool.
 			var allowAllClients map[string]string
 			if p.inMemoryStore != nil {
@@ -1184,7 +1184,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 		return result, nil
 
 	case DecisionVirtualKeyNotFound, DecisionVirtualKeyBlocked, DecisionModelBlocked, DecisionProviderBlocked:
-		return result, &schemas.RakshaError{
+		return result, &schemas.GatewayError{
 			Type:       new(string(result.Decision)),
 			StatusCode: new(403),
 			Error: &schemas.ErrorField{
@@ -1194,7 +1194,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 
 	case DecisionRateLimited, DecisionTokenLimited, DecisionRequestLimited:
 		emitGovernanceAlert(alerts.KindRateLimited, alerts.SeverityWarning, "Rate limit reached", result)
-		return result, &schemas.RakshaError{
+		return result, &schemas.GatewayError{
 			Type:       new(string(result.Decision)),
 			StatusCode: new(429),
 			Error: &schemas.ErrorField{
@@ -1204,7 +1204,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 
 	case DecisionBudgetExceeded:
 		emitGovernanceAlert(alerts.KindBudgetExceeded, alerts.SeverityCritical, "Budget exhausted", result)
-		return result, &schemas.RakshaError{
+		return result, &schemas.GatewayError{
 			Type:       new(string(result.Decision)),
 			StatusCode: new(402),
 			Error: &schemas.ErrorField{
@@ -1213,7 +1213,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 		}
 
 	case DecisionMCPToolBlocked:
-		return result, &schemas.RakshaError{
+		return result, &schemas.GatewayError{
 			Type:       new(string(result.Decision)),
 			StatusCode: new(403),
 			Error: &schemas.ErrorField{
@@ -1223,7 +1223,7 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.RakshaContext,
 
 	default:
 		// Fallback to deny for unknown decisions
-		return result, &schemas.RakshaError{
+		return result, &schemas.GatewayError{
 			Type: new(string(result.Decision)),
 			Error: &schemas.ErrorField{
 				Message: "Governance decision error",
@@ -1314,14 +1314,14 @@ func (p *GovernancePlugin) isMCPToolAllowedByVKWith(vk *configstoreTables.TableV
 // constrained to same-protocol-family targets that the upstream provider can hydrate
 // from the rewritten metadata).
 //
-// Realtime + generic streaming bypass handleRequest (see core/raksha.go
+// Realtime + generic streaming bypass handleRequest (see core/gateway.go
 // RunRealtimeTurnPreHooks / RunStreamPreHooks) and are still handled at HTTPTransportPreHook.
-func (p *GovernancePlugin) PreRequestHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) error {
+func (p *GovernancePlugin) PreRequestHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) error {
 	if req.RequestType == schemas.PassthroughRequest || req.RequestType == schemas.PassthroughStreamRequest {
 		return nil
 	}
 
-	virtualKeyValue := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyVirtualKey)
+	virtualKeyValue := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyVirtualKey)
 	hasRoutingRules := p.store.HasRoutingRules(ctx)
 	p.syncCircuitBreakerPoliciesFromStore()
 	hasCircuitPolicies := circuitBreakerPoliciesActive()
@@ -1346,7 +1346,7 @@ func (p *GovernancePlugin) PreRequestHook(ctx *schemas.RakshaContext, req *schem
 	// streaming body rewriter (ApplyLargePayloadRequestBodyWithModelNormalization)
 	// reads metadata.Model when it rewrites the model field in the body prefix, so
 	// mutating it here is what propagates the routing decision to the upstream call.
-	if metadata, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadMetadata).(*schemas.LargePayloadMetadata); metadata != nil && metadata.Model != "" {
+	if metadata, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadMetadata).(*schemas.LargePayloadMetadata); metadata != nil && metadata.Model != "" {
 		newModel, err := p.runPreRequestRouting(ctx, virtualKey, hasRoutingRules, metadata.Model, req.RequestType)
 		if err != nil {
 			return err
@@ -1408,24 +1408,24 @@ func (p *GovernancePlugin) PreRequestHook(ctx *schemas.RakshaContext, req *schem
 
 // PreLLMHook intercepts requests before they are processed (governance decision point)
 // Parameters:
-//   - ctx: The Raksha context
-//   - req: The Raksha request to be processed
+//   - ctx: The Gateway context
+//   - req: The Gateway request to be processed
 //
 // Returns:
-//   - *schemas.RakshaRequest: The processed request
+//   - *schemas.GatewayRequest: The processed request
 //   - *schemas.LLMPluginShortCircuit: The plugin short circuit if the request is not allowed
 //   - error: Any error that occurred during processing
-func (p *GovernancePlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.RakshaRequest) (*schemas.RakshaRequest, *schemas.LLMPluginShortCircuit, error) {
+func (p *GovernancePlugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
 	// Validate required headers are present
 	if headerErr := p.validateRequiredHeaders(ctx); headerErr != nil {
 		return req, &schemas.LLMPluginShortCircuit{Error: headerErr}, nil
 	}
 
 	// Extract virtual key using utility functions
-	virtualKeyValue := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyVirtualKey)
+	virtualKeyValue := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyVirtualKey)
 
 	// Extract user ID for enterprise user-level governance
-	userID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
+	userID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
 	// Getting provider and mode from the request
 	provider, model, _ := req.GetRequestFields()
 	// Create request context for evaluation
@@ -1436,11 +1436,11 @@ func (p *GovernancePlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.R
 		UserID:     userID,
 	}
 	// Evaluate governance using common function
-	_, rakshaError := p.EvaluateGovernanceRequest(ctx, evaluationRequest, req.RequestType)
-	// Convert RakshaError to LLMPluginShortCircuit if needed
-	if rakshaError != nil {
+	_, gatewayError := p.EvaluateGovernanceRequest(ctx, evaluationRequest, req.RequestType)
+	// Convert GatewayError to LLMPluginShortCircuit if needed
+	if gatewayError != nil {
 		return req, &schemas.LLMPluginShortCircuit{
-			Error: rakshaError,
+			Error: gatewayError,
 		}, nil
 	}
 
@@ -1449,21 +1449,21 @@ func (p *GovernancePlugin) PreLLMHook(ctx *schemas.RakshaContext, req *schemas.R
 
 // PostLLMHook processes the response and updates usage tracking (business logic execution)
 // Parameters:
-//   - ctx: The Raksha context
-//   - result: The Raksha response to be processed
-//   - err: The Raksha error to be processed
+//   - ctx: The Gateway context
+//   - result: The Gateway response to be processed
+//   - err: The Gateway error to be processed
 //
 // Returns:
-//   - *schemas.RakshaResponse: The processed response
-//   - *schemas.RakshaError: The processed error
+//   - *schemas.GatewayResponse: The processed response
+//   - *schemas.GatewayError: The processed error
 //   - error: Any error that occurred during processing
-func (p *GovernancePlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, err *schemas.RakshaError) (*schemas.RakshaResponse, *schemas.RakshaError, error) {
+func (p *GovernancePlugin) PostLLMHook(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, err *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error) {
 	if _, ok := ctx.Value(governanceRejectedContextKey).(bool); ok {
 		return result, err, nil
 	}
 
 	// Extract request type, provider, and model
-	requestType, provider, requestedModel, _ := raksha.GetResponseFields(result, err)
+	requestType, provider, requestedModel, _ := gateway.GetResponseFields(result, err)
 
 	// Adaptive routing failure memory for prune / reroute toggles.
 	if provider != "" {
@@ -1475,20 +1475,20 @@ func (p *GovernancePlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 	}
 
 	// Extract governance information
-	virtualKey := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyVirtualKey)
-	requestID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyRequestID)
+	virtualKey := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyVirtualKey)
+	requestID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyRequestID)
 	// Extract user ID for enterprise user-level governance
-	userID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
+	userID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
 
 	if requestType == schemas.ListModelsRequest && result != nil && result.ListModelsResponse != nil && virtualKey != "" {
 		// filter models which are not supported on this virtual key
 		result.ListModelsResponse.Data = p.filterModelsForVirtualKey(ctx, result.ListModelsResponse.Data, virtualKey)
 	}
 
-	isFinalChunk := raksha.IsFinalChunk(ctx)
+	isFinalChunk := gateway.IsFinalChunk(ctx)
 
 	// Trip circuit breaker when a primary provider response carries configured header signals.
-	if !raksha.IsStreamRequestType(requestType) || isFinalChunk {
+	if !gateway.IsStreamRequestType(requestType) || isFinalChunk {
 		p.evaluateCircuitBreakerTrip(ctx, result, err)
 	}
 
@@ -1497,9 +1497,9 @@ func (p *GovernancePlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 
 	// Always process usage tracking. When both virtual key and user are present,
 	// track both scopes; callers that intentionally want user-only accounting can
-	// set RakshaContextKeySkipVirtualKeyUsageTracking.
+	// set GatewayContextKeySkipVirtualKeyUsageTracking.
 	effectiveVK := virtualKey
-	if raksha.GetBoolFromContext(ctx, schemas.RakshaContextKeySkipVirtualKeyUsageTracking) {
+	if gateway.GetBoolFromContext(ctx, schemas.GatewayContextKeySkipVirtualKeyUsageTracking) {
 		effectiveVK = ""
 	}
 	// If effectiveVK is empty, it will be passed as empty string to postHookWorker
@@ -1516,16 +1516,16 @@ func (p *GovernancePlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 		// attribute cost/tokens to the correct governance entities.
 		budgetIDs, rateLimitIDs := p.store.CollectApplicableGovernanceIDs(ctx, effectiveVK, userID, provider, requestedModel)
 		if len(budgetIDs) > 0 {
-			ctx.SetValue(schemas.RakshaContextKeyGovernanceBudgetIDs, budgetIDs)
+			ctx.SetValue(schemas.GatewayContextKeyGovernanceBudgetIDs, budgetIDs)
 		}
 		if len(rateLimitIDs) > 0 {
-			ctx.SetValue(schemas.RakshaContextKeyGovernanceRateLimitIDs, rateLimitIDs)
+			ctx.SetValue(schemas.GatewayContextKeyGovernanceRateLimitIDs, rateLimitIDs)
 		}
 
 		// Attempt number distinguishes physical provider calls within one
 		// logical request so each token-consuming attempt bills exactly once.
 		// Set by core on every retry iteration.
-		attemptNumber := raksha.GetIntFromContext(ctx, schemas.RakshaContextKeyNumberOfRetries)
+		attemptNumber := gateway.GetIntFromContext(ctx, schemas.GatewayContextKeyNumberOfRetries)
 		var attribution UsageUpdate
 		captureRequestAttribution(ctx, &attribution)
 
@@ -1549,14 +1549,14 @@ func (p *GovernancePlugin) PostLLMHook(ctx *schemas.RakshaContext, result *schem
 
 // PreMCPHook intercepts MCP tool execution requests before they are processed (governance decision point)
 // Parameters:
-//   - ctx: The Raksha context
-//   - req: The Raksha MCP request to be processed
+//   - ctx: The Gateway context
+//   - req: The Gateway MCP request to be processed
 //
 // Returns:
-//   - *schemas.RakshaMCPRequest: The processed request
+//   - *schemas.GatewayMCPRequest: The processed request
 //   - *schemas.MCPPluginShortCircuit: The plugin short circuit if the request is not allowed
 //   - error: Any error that occurred during processing
-func (p *GovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPRequest) (*schemas.RakshaMCPRequest, *schemas.MCPPluginShortCircuit, error) {
+func (p *GovernancePlugin) PreMCPHook(ctx *schemas.GatewayContext, req *schemas.GatewayMCPRequest) (*schemas.GatewayMCPRequest, *schemas.MCPPluginShortCircuit, error) {
 	toolName := req.GetToolName()
 
 	// Skip for non tool execution requests
@@ -1565,7 +1565,7 @@ func (p *GovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.R
 	}
 
 	// Skip governance for codemode tools
-	if raksha.IsCodemodeTool(toolName) {
+	if gateway.IsCodemodeTool(toolName) {
 		return req, nil, nil
 	}
 
@@ -1575,9 +1575,9 @@ func (p *GovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.R
 	}
 
 	// Extract governance headers and virtual key using utility functions
-	virtualKeyValue := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyVirtualKey)
+	virtualKeyValue := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyVirtualKey)
 	// Extract user ID for enterprise user-level governance
-	userID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
+	userID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
 
 	// Create request context for evaluation (MCP requests don't have provider/model)
 	evaluationRequest := &EvaluationRequest{
@@ -1586,12 +1586,12 @@ func (p *GovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.R
 	}
 
 	// Evaluate governance using common function
-	_, rakshaError := p.EvaluateGovernanceRequest(ctx, evaluationRequest, schemas.MCPToolExecutionRequest)
+	_, gatewayError := p.EvaluateGovernanceRequest(ctx, evaluationRequest, schemas.MCPToolExecutionRequest)
 
-	// Convert RakshaError to MCPPluginShortCircuit if needed
-	if rakshaError != nil {
+	// Convert GatewayError to MCPPluginShortCircuit if needed
+	if gatewayError != nil {
 		return req, &schemas.MCPPluginShortCircuit{
-			Error: rakshaError,
+			Error: gatewayError,
 		}, nil
 	}
 
@@ -1602,9 +1602,9 @@ func (p *GovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.R
 		if !ok || vk == nil {
 			// VK became invalid after initial check - fail closed for security
 			ctx.SetValue(governanceRejectedContextKey, true)
-			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.RakshaError{
-				Type:       raksha.Ptr(string(DecisionVirtualKeyNotFound)),
-				StatusCode: raksha.Ptr(403),
+			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.GatewayError{
+				Type:       gateway.Ptr(string(DecisionVirtualKeyNotFound)),
+				StatusCode: gateway.Ptr(403),
 				Error: &schemas.ErrorField{
 					Message: "Virtual key not found",
 				},
@@ -1612,9 +1612,9 @@ func (p *GovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.R
 		}
 		if !vk.IsActiveValue() {
 			ctx.SetValue(governanceRejectedContextKey, true)
-			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.RakshaError{
-				Type:       raksha.Ptr(string(DecisionVirtualKeyBlocked)),
-				StatusCode: raksha.Ptr(403),
+			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.GatewayError{
+				Type:       gateway.Ptr(string(DecisionVirtualKeyBlocked)),
+				StatusCode: gateway.Ptr(403),
 				Error: &schemas.ErrorField{
 					Message: "Virtual key is inactive",
 				},
@@ -1622,9 +1622,9 @@ func (p *GovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.R
 		}
 		if vk.IsExpiredAt(time.Now().UTC()) {
 			ctx.SetValue(governanceRejectedContextKey, true)
-			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.RakshaError{
-				Type:       raksha.Ptr(string(DecisionVirtualKeyBlocked)),
-				StatusCode: raksha.Ptr(403),
+			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.GatewayError{
+				Type:       gateway.Ptr(string(DecisionVirtualKeyBlocked)),
+				StatusCode: gateway.Ptr(403),
 				Error: &schemas.ErrorField{
 					Message: "Virtual key has expired",
 				},
@@ -1632,28 +1632,28 @@ func (p *GovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.R
 		}
 		if !p.isMCPToolAllowedByVK(vk, toolName) {
 			ctx.SetValue(governanceRejectedContextKey, true)
-			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.RakshaError{
-				Type:       raksha.Ptr(string(DecisionMCPToolBlocked)),
-				StatusCode: raksha.Ptr(403),
+			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.GatewayError{
+				Type:       gateway.Ptr(string(DecisionMCPToolBlocked)),
+				StatusCode: gateway.Ptr(403),
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("MCP tool '%s' is not allowed for virtual key '%s'", toolName, vk.Name),
 				},
 			}}, nil
 		}
-		customerID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceScopedCustomerID)
+		customerID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceScopedCustomerID)
 		if customerID == "" {
-			customerID = raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceCustomerID)
+			customerID = gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceCustomerID)
 		}
 		if !mcptoolgroups.Default.IsToolAllowed(toolName, mcptoolgroups.RequestContext{
 			VirtualKeyID: vk.ID,
 			UserID:       userID,
-			TeamID:       raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyGovernanceTeamID),
+			TeamID:       gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyGovernanceTeamID),
 			CustomerID:   customerID,
 		}) {
 			ctx.SetValue(governanceRejectedContextKey, true)
-			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.RakshaError{
-				Type:       raksha.Ptr(string(DecisionMCPToolBlocked)),
-				StatusCode: raksha.Ptr(403),
+			return req, &schemas.MCPPluginShortCircuit{Error: &schemas.GatewayError{
+				Type:       gateway.Ptr(string(DecisionMCPToolBlocked)),
+				StatusCode: gateway.Ptr(403),
 				Error: &schemas.ErrorField{
 					Message: fmt.Sprintf("MCP tool '%s' is blocked by workspace tool group policy", toolName),
 				},
@@ -1667,53 +1667,53 @@ func (p *GovernancePlugin) PreMCPHook(ctx *schemas.RakshaContext, req *schemas.R
 
 // PostMCPHook processes the MCP response and updates usage tracking (business logic execution)
 // Parameters:
-//   - ctx: The Raksha context
-//   - resp: The Raksha MCP response to be processed
-//   - rakshaErr: The Raksha error to be processed
+//   - ctx: The Gateway context
+//   - resp: The Gateway MCP response to be processed
+//   - gatewayErr: The Gateway error to be processed
 //
 // Returns:
-//   - *schemas.RakshaMCPResponse: The processed response
-//   - *schemas.RakshaError: The processed error
+//   - *schemas.GatewayMCPResponse: The processed response
+//   - *schemas.GatewayError: The processed error
 //   - error: Any error that occurred during processing
-func (p *GovernancePlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPResponse, *schemas.RakshaError, error) {
+func (p *GovernancePlugin) PostMCPHook(ctx *schemas.GatewayContext, resp *schemas.GatewayMCPResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayMCPResponse, *schemas.GatewayError, error) {
 	if _, ok := ctx.Value(governanceRejectedContextKey).(bool); ok {
-		return resp, rakshaErr, nil
+		return resp, gatewayErr, nil
 	}
 
 	// Skip non tool-execute envelopes. The MCP gate stamps MCPRequestType on both
-	// the success response (RakshaMCPResponse.ExtraFields) and the error
-	// (RakshaError.ExtraFields), so a single check covers both paths.
+	// the success response (GatewayMCPResponse.ExtraFields) and the error
+	// (GatewayError.ExtraFields), so a single check covers both paths.
 	mcpReqType := schemas.MCPRequestType("")
 	if resp != nil {
 		mcpReqType = resp.ExtraFields.MCPRequestType
-	} else if rakshaErr != nil {
-		mcpReqType = rakshaErr.ExtraFields.MCPRequestType
+	} else if gatewayErr != nil {
+		mcpReqType = gatewayErr.ExtraFields.MCPRequestType
 	}
 	if !mcpReqType.IsExecuteTool() {
-		return resp, rakshaErr, nil
+		return resp, gatewayErr, nil
 	}
 
 	// Extract governance information
-	virtualKey := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyVirtualKey)
-	requestID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyRequestID)
-	userID := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyUserID)
+	virtualKey := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyVirtualKey)
+	requestID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyRequestID)
+	userID := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID)
 
-	if raksha.GetBoolFromContext(ctx, schemas.RakshaContextKeySkipVirtualKeyUsageTracking) {
+	if gateway.GetBoolFromContext(ctx, schemas.GatewayContextKeySkipVirtualKeyUsageTracking) {
 		virtualKey = ""
 	}
 
 	// PreMCPHook enforces user budgets / rate limits too, so usage must be charged
 	// whenever either a virtual key or a user is attributed.
 	if virtualKey == "" && userID == "" {
-		return resp, rakshaErr, nil
+		return resp, gatewayErr, nil
 	}
 
 	// Determine if request was successful
-	success := (resp != nil && rakshaErr == nil)
+	success := (resp != nil && gatewayErr == nil)
 
 	// Skip usage tracking for codemode tools
-	if success && resp != nil && raksha.IsCodemodeTool(resp.ExtraFields.ToolName) {
-		return resp, rakshaErr, nil
+	if success && resp != nil && gateway.IsCodemodeTool(resp.ExtraFields.ToolName) {
+		return resp, gatewayErr, nil
 	}
 
 	// Calculate MCP tool cost from catalog if available
@@ -1757,10 +1757,10 @@ func (p *GovernancePlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas
 		p.tracker.UpdateUsage(p.ctx, usageUpdate)
 	}()
 
-	return resp, rakshaErr, nil
+	return resp, gatewayErr, nil
 }
 
-// PreMCPConnectionHook resolves the caller's identity onto the RakshaContext
+// PreMCPConnectionHook resolves the caller's identity onto the GatewayContext
 // before the connect-plugin gate releases control to the credential-store
 // resolver. This is the only point in the MCP connect lifecycle where we can
 // turn the raw x-uf-vk header into the resolved VK row ID — anything later
@@ -1777,8 +1777,8 @@ func (p *GovernancePlugin) PostMCPHook(ctx *schemas.RakshaContext, resp *schemas
 // rejection belongs on the tool-call path so the caller gets a stable
 // error format. An unknown VK here simply leaves the row ID empty, and the
 // resolver will surface the "requires an identity" error itself.
-func (p *GovernancePlugin) PreMCPConnectionHook(ctx *schemas.RakshaContext, req *schemas.RakshaMCPConnectRequest) (*schemas.RakshaMCPConnectRequest, *schemas.MCPConnectionShortCircuit, error) {
-	virtualKeyValue := raksha.GetStringFromContext(ctx, schemas.RakshaContextKeyVirtualKey)
+func (p *GovernancePlugin) PreMCPConnectionHook(ctx *schemas.GatewayContext, req *schemas.GatewayMCPConnectRequest) (*schemas.GatewayMCPConnectRequest, *schemas.MCPConnectionShortCircuit, error) {
+	virtualKeyValue := gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyVirtualKey)
 	if virtualKeyValue == "" {
 		return req, nil, nil
 	}
@@ -1789,8 +1789,8 @@ func (p *GovernancePlugin) PreMCPConnectionHook(ctx *schemas.RakshaContext, req 
 		// auth types this is a no-op (they don't read these keys).
 		return req, nil, nil
 	}
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyID, vk.ID)
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyName, vk.Name)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceVirtualKeyID, vk.ID)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceVirtualKeyName, vk.Name)
 	p.stampGovernanceCtx(ctx, vk)
 	return req, nil, nil
 }
@@ -1799,8 +1799,8 @@ func (p *GovernancePlugin) PreMCPConnectionHook(ctx *schemas.RakshaContext, req 
 // PreMCPConnectionHook performs is observation-only and has no post-connect
 // cleanup. Implementing this satisfies MCPConnectionPlugin so the typed
 // PreMCPConnectionHook is dispatched by the plugin pipeline.
-func (p *GovernancePlugin) PostMCPConnectionHook(ctx *schemas.RakshaContext, resp *schemas.RakshaMCPConnectResponse, rakshaErr *schemas.RakshaError) (*schemas.RakshaMCPConnectResponse, *schemas.RakshaError, error) {
-	return resp, rakshaErr, nil
+func (p *GovernancePlugin) PostMCPConnectionHook(ctx *schemas.GatewayContext, resp *schemas.GatewayMCPConnectResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayMCPConnectResponse, *schemas.GatewayError, error) {
+	return resp, gatewayErr, nil
 }
 
 // Cleanup shuts down all components gracefully
@@ -1823,7 +1823,7 @@ func (p *GovernancePlugin) Cleanup() error {
 // Handles both cases: with virtual key and without virtual key (empty string)
 // When virtualKey is empty, the tracker will only update provider-level and model-level usage
 // Parameters:
-//   - result: The Raksha response to be processed
+//   - result: The Gateway response to be processed
 //   - provider: The provider of the request
 //   - model: The model of the request
 //   - requestType: The type of the request
@@ -1836,13 +1836,13 @@ func (p *GovernancePlugin) Cleanup() error {
 //   - isFinalChunk: Whether the request is the final chunk
 //   - pricingScopes: Prebuilt pricing lookup scopes using governance VK ID (nil if not applicable)
 //   - attribution: Request attribution captured via captureRequestAttribution (may be nil)
-func (p *GovernancePlugin) postHookWorker(result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError, provider schemas.ModelProvider, model string, requestType schemas.RequestType, virtualKey, requestID, userID string, isFinalChunk bool, attemptNumber int, pricingScopes *modelcatalog.PricingLookupScopes, attribution *UsageUpdate) {
+func (p *GovernancePlugin) postHookWorker(result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError, provider schemas.ModelProvider, model string, requestType schemas.RequestType, virtualKey, requestID, userID string, isFinalChunk bool, attemptNumber int, pricingScopes *modelcatalog.PricingLookupScopes, attribution *UsageUpdate) {
 	// Determine if request was successful
 	success := (result != nil)
 	billedReason := "success"
 
 	// Streaming detection
-	isStreaming := raksha.IsStreamRequestType(requestType)
+	isStreaming := gateway.IsStreamRequestType(requestType)
 
 	if !isStreaming || (isStreaming && isFinalChunk) {
 		var cost float64
@@ -1851,10 +1851,10 @@ func (p *GovernancePlugin) postHookWorker(result *schemas.RakshaResponse, raksha
 		}
 		tokensUsed := 0
 		// The request failed/was cancelled but the provider still
-		// processed tokens (carried on RakshaError.ExtraFields.BilledUsage).
+		// processed tokens (carried on GatewayError.ExtraFields.BilledUsage).
 		// Bill those tokens — Anthropic charges us for them regardless.
-		if result == nil && rakshaErr != nil && rakshaErr.ExtraFields.BilledUsage != nil {
-			billedUsage := rakshaErr.ExtraFields.BilledUsage
+		if result == nil && gatewayErr != nil && gatewayErr.ExtraFields.BilledUsage != nil {
+			billedUsage := gatewayErr.ExtraFields.BilledUsage
 			tokensUsed = billedUsage.TotalTokens
 			billedReason = "partial_usage_on_error"
 			if p.modelCatalog != nil {

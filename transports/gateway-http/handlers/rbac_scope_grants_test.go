@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 )
 
 func TestRBACScopeGrants_SavedAndInheritedByMembers(t *testing.T) {

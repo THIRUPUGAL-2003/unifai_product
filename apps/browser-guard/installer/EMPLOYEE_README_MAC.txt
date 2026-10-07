@@ -1,4 +1,4 @@
-Raksha Guard — macOS Employee Install Guide
+Gateway Guard — macOS Employee Install Guide
 ==========================================
 
 Company server: (set SERVER_DOMAIN in .env — run sync_config_from_env.py)
@@ -6,14 +6,14 @@ Company server: (set SERVER_DOMAIN in .env — run sync_config_from_env.py)
 
 INSTALL (turn ON)
 -----------------
-Preferred: if IT gave you Raksha_Guard_*.pkg — double-click the .pkg and follow prompts.
+Preferred: if IT gave you Gateway_Guard_*.pkg — double-click the .pkg and follow prompts.
   Allow any Keychain/admin prompts so the Guard certificate is trusted.
 
 ZIP path:
 1. Remove or disable conflicting web content filters if present
    (System Settings → Network → VPN & Filters → Filters)
-2. Unzip Raksha_Guard_macOS.zip — keep ALL files in one folder (do not move the .app separately)
-3. Double-click Install_Raksha_Guard.command
+2. Unzip Gateway_Guard_macOS.zip — keep ALL files in one folder (do not move the .app separately)
+3. Double-click Install_Gateway_Guard.command
    - If macOS says it cannot be opened: Right-click → Open → Open
    - Or: System Settings → Privacy & Security → Open Anyway
 4. Fully quit Safari / Chrome / Edge / Firefox / Brave (Cmd+Q), then reopen
@@ -22,14 +22,14 @@ ZIP path:
 
 Health check: http://127.0.0.1:18195/
   → proxy_port must be OK (not FAIL).
-  → If FAIL: quit Guard (top-right menu bar icon), reopen /Applications/Raksha_Guard.app, wait 10s, refresh.
-Logs: ~/Library/Application Support/Raksha/Guard/raksha_guard.log
+  → If FAIL: quit Guard (top-right menu bar icon), reopen /Applications/Gateway_Guard.app, wait 10s, refresh.
+Logs: ~/Library/Application Support/Gateway/Guard/gateway_guard.log
 
 Full install guide: INSTALL_MACOS.txt (included in this ZIP)
 
 What it does
 ------------
-- Connects to the company Raksha backend for rules & target websites
+- Connects to the company Gateway backend for rules & target websites
 - Runs a local proxy on this Mac only (127.0.0.1:18103)
 - Sets system Auto Proxy URL (PAC) — same idea as Windows
 - Disables Chromium HTTP/3 (QUIC) via managed policies when possible
@@ -38,7 +38,7 @@ What it does
 
 TURN OFF / UNINSTALL
 --------------------
-1. Double-click Uninstall_Raksha_Guard.command (in this ZIP)
+1. Double-click Uninstall_Gateway_Guard.command (in this ZIP)
    - If blocked: Right-click → Open → Open
 2. Enter the company uninstall key from IT (Browser AI → Setup)
 3. Wait for the success dialog — Guard stops, proxy/PAC cleared, app removed

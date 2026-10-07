@@ -1,14 +1,14 @@
 package openai
 
 import (
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaEmbeddingRequest converts an OpenAI embedding request to Raksha format
-func (request *OpenAIEmbeddingRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaContext) *schemas.RakshaEmbeddingRequest {
+// ToGatewayEmbeddingRequest converts an OpenAI embedding request to Gateway format
+func (request *OpenAIEmbeddingRequest) ToGatewayEmbeddingRequest(ctx *schemas.GatewayContext) *schemas.GatewayEmbeddingRequest {
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	return &schemas.RakshaEmbeddingRequest{
+	return &schemas.GatewayEmbeddingRequest{
 		Provider:  provider,
 		Model:     model,
 		Input:     request.Input,
@@ -17,17 +17,17 @@ func (request *OpenAIEmbeddingRequest) ToRakshaEmbeddingRequest(ctx *schemas.Rak
 	}
 }
 
-// ToOpenAIEmbeddingRequest converts a Raksha embedding request to OpenAI format
-func ToOpenAIEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *OpenAIEmbeddingRequest {
-	if rakshaReq == nil {
+// ToOpenAIEmbeddingRequest converts a Gateway embedding request to OpenAI format
+func ToOpenAIEmbeddingRequest(gatewayReq *schemas.GatewayEmbeddingRequest) *OpenAIEmbeddingRequest {
+	if gatewayReq == nil {
 		return nil
 	}
 
-	params := rakshaReq.Params
+	params := gatewayReq.Params
 
 	openaiReq := &OpenAIEmbeddingRequest{
-		Model: rakshaReq.Model,
-		Input: rakshaReq.Input,
+		Model: gatewayReq.Model,
+		Input: gatewayReq.Input,
 	}
 
 	// Map parameters

@@ -1,4 +1,4 @@
-import { TRIAL_EXPIRY } from "@/lib/constants/config";
+import { PRODUCT_NAME, TRIAL_EXPIRY } from "@/lib/constants/config";
 import { cn } from "@/lib/utils";
 import { differenceInDays } from "date-fns";
 import { AlertTriangle } from "lucide-react";
@@ -12,7 +12,7 @@ export default function TrialExpiryBanner() {
 	const critical = !expired && daysRemaining <= 3;
 
 	const subject = expired ? "I need help with my expired enterprise trial" : "I need help extending my enterprise trial";
-	const supportHref = `mailto:support@Raksha.ai?subject=${encodeURIComponent(subject)}`;
+	const supportHref = `mailto:support@Gateway.ai?subject=${encodeURIComponent(subject)}`;
 
 	return (
 		<div
@@ -26,7 +26,7 @@ export default function TrialExpiryBanner() {
 			<AlertTriangle className="h-3.5 w-3.5" strokeWidth={2} />
 			{expired ? (
 				<span>
-					Your Raksha Enterprise Trial has expired.{" "}
+					Your {PRODUCT_NAME} Enterprise Trial has expired.{" "}
 					<a href={supportHref} className="font-semibold underline underline-offset-2">
 						Contact us
 					</a>{" "}
@@ -34,7 +34,7 @@ export default function TrialExpiryBanner() {
 				</span>
 			) : (
 				<span>
-					Your Raksha Enterprise Trial expires in {daysRemaining} {daysRemaining === 1 ? "day" : "days"}.{" "}
+					Your {PRODUCT_NAME} Enterprise Trial expires in {daysRemaining} {daysRemaining === 1 ? "day" : "days"}.{" "}
 					<a href={supportHref} className="font-semibold underline underline-offset-2">
 						Contact us
 					</a>{" "}

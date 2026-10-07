@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 const (
@@ -14,12 +14,12 @@ const (
 	maxModelFetchLimit     = 1000
 )
 
-func (response *HuggingFaceListModelsResponse) ToRakshaListModelsResponse(providerKey schemas.ModelProvider, inferenceProvider inferenceProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
+func (response *HuggingFaceListModelsResponse) ToGatewayListModelsResponse(providerKey schemas.ModelProvider, inferenceProvider inferenceProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.GatewayListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaListModelsResponse{
+	gatewayResponse := &schemas.GatewayListModelsResponse{
 		Data: make([]schemas.Model, 0, len(response.Models)),
 	}
 
@@ -32,7 +32,7 @@ func (response *HuggingFaceListModelsResponse) ToRakshaListModelsResponse(provid
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return rakshaResponse
+		return gatewayResponse
 	}
 
 	included := make(map[string]bool)
@@ -60,7 +60,7 @@ func (response *HuggingFaceListModelsResponse) ToRakshaListModelsResponse(provid
 			if result.AliasValue != "" {
 				newModel.Alias = schemas.Ptr(result.AliasValue)
 			}
-			rakshaResponse.Data = append(rakshaResponse.Data, newModel)
+			gatewayResponse.Data = append(gatewayResponse.Data, newModel)
 			included[strings.ToLower(result.ResolvedID)] = true
 		}
 	}
@@ -71,10 +71,10 @@ func (response *HuggingFaceListModelsResponse) ToRakshaListModelsResponse(provid
 		// Re-wrap the backfill ID to include the inferenceProvider segment
 		rawID := strings.TrimPrefix(m.ID, string(providerKey)+"/")
 		m.ID = fmt.Sprintf("%s/%s/%s", providerKey, inferenceProvider, rawID)
-		rakshaResponse.Data = append(rakshaResponse.Data, m)
+		gatewayResponse.Data = append(gatewayResponse.Data, m)
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
 func deriveSupportedMethods(pipeline string, tags []string) []string {

@@ -1,0 +1,19 @@
+apiVersion: v2
+name: gateway
+description: A Helm chart for deploying Gateway - AI Gateway with unified interface for multiple providers
+type: application
+version: 2.1.25
+appVersion: "1.5.12"
+keywords:
+  - ai
+  - gateway
+  - llm
+  - openai
+  - anthropic
+home: https://www.getmaxim.ai/gateway
+sources:
+  - https://github.com/gateway/gateway
+maintainers:
+  - name: Gateway Team
+    email: support@getgateway.ai
+icon: https://www.getgateway.ai/favicon.png

@@ -8,7 +8,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 type AgentModeExecutor struct {
@@ -30,18 +30,18 @@ type AgentModeExecutor struct {
 //   - clientManager: Client manager for accessing MCP clients and tools
 //
 // Returns:
-//   - *schemas.RakshaChatResponse: The final response after agent execution
-//   - *schemas.RakshaError: Any error that occurred during agent execution
+//   - *schemas.GatewayChatResponse: The final response after agent execution
+//   - *schemas.GatewayError: Any error that occurred during agent execution
 func (a *AgentModeExecutor) ExecuteAgentForChatRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	maxAgentDepth int,
-	originalReq *schemas.RakshaChatRequest,
-	initialResponse *schemas.RakshaChatResponse,
-	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError),
-	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string,
+	originalReq *schemas.GatewayChatRequest,
+	initialResponse *schemas.GatewayChatResponse,
+	makeReq func(ctx *schemas.GatewayContext, req *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError),
+	fetchNewRequestIDFunc func(ctx *schemas.GatewayContext) string,
 	executeToolFunc MCPToolExecutor,
 	clientManager ClientManager,
-) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	// Create adapter for Chat API
 	adapter := &chatAPIAdapter{
 		originalReq:     originalReq,
@@ -54,13 +54,13 @@ func (a *AgentModeExecutor) ExecuteAgentForChatRequest(
 		return nil, err
 	}
 
-	chatResponse, ok := result.(*schemas.RakshaChatResponse)
+	chatResponse, ok := result.(*schemas.GatewayChatResponse)
 	// Should never happen, but just in case
 	if !ok {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
-				Message: "Failed to convert result to schemas.RakshaChatResponse",
+				Message: "Failed to convert result to schemas.GatewayChatResponse",
 			},
 		}
 	}
@@ -83,18 +83,18 @@ func (a *AgentModeExecutor) ExecuteAgentForChatRequest(
 //   - clientManager: Client manager for accessing MCP clients and tools
 //
 // Returns:
-//   - *schemas.RakshaResponsesResponse: The final response after agent execution
-//   - *schemas.RakshaError: Any error that occurred during agent execution
+//   - *schemas.GatewayResponsesResponse: The final response after agent execution
+//   - *schemas.GatewayError: Any error that occurred during agent execution
 func (a *AgentModeExecutor) ExecuteAgentForResponsesRequest(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	maxAgentDepth int,
-	originalReq *schemas.RakshaResponsesRequest,
-	initialResponse *schemas.RakshaResponsesResponse,
-	makeReq func(ctx *schemas.RakshaContext, req *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError),
-	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string,
+	originalReq *schemas.GatewayResponsesRequest,
+	initialResponse *schemas.GatewayResponsesResponse,
+	makeReq func(ctx *schemas.GatewayContext, req *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError),
+	fetchNewRequestIDFunc func(ctx *schemas.GatewayContext) string,
 	executeToolFunc MCPToolExecutor,
 	clientManager ClientManager,
-) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	// Create adapter for Responses API
 	adapter := &responsesAPIAdapter{
 		originalReq:     originalReq,
@@ -107,13 +107,13 @@ func (a *AgentModeExecutor) ExecuteAgentForResponsesRequest(
 		return nil, err
 	}
 
-	responsesResponse, ok := result.(*schemas.RakshaResponsesResponse)
+	responsesResponse, ok := result.(*schemas.GatewayResponsesResponse)
 	// Should never happen, but just in case
 	if !ok {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
-				Message: "Failed to convert result to schemas.RakshaResponsesResponse",
+				Message: "Failed to convert result to schemas.GatewayResponsesResponse",
 			},
 		}
 	}
@@ -136,15 +136,15 @@ func (a *AgentModeExecutor) ExecuteAgentForResponsesRequest(
 //
 // Returns:
 //   - interface{}: The final response after agent execution (type depends on adapter)
-//   - *schemas.RakshaError: Any error that occurred during agent execution
+//   - *schemas.GatewayError: Any error that occurred during agent execution
 func (a *AgentModeExecutor) executeAgent(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	maxAgentDepth int,
 	adapter agentAPIAdapter,
-	fetchNewRequestIDFunc func(ctx *schemas.RakshaContext) string,
+	fetchNewRequestIDFunc func(ctx *schemas.GatewayContext) string,
 	executeToolFunc MCPToolExecutor,
 	clientManager ClientManager,
-) (interface{}, *schemas.RakshaError) {
+) (interface{}, *schemas.GatewayError) {
 	// Get initial response from adapter
 	currentResponse := adapter.getInitialResponse()
 
@@ -160,9 +160,9 @@ func (a *AgentModeExecutor) executeAgent(
 	// Accumulate token usage across all LLM calls in the agent loop
 	accumulatedUsage := adapter.extractUsage(currentResponse)
 
-	originalRequestID, ok := ctx.Value(schemas.RakshaContextKeyRequestID).(string)
+	originalRequestID, ok := ctx.Value(schemas.GatewayContextKeyRequestID).(string)
 	if ok {
-		ctx.SetValue(schemas.RakshaMCPAgentOriginalRequestID, originalRequestID)
+		ctx.SetValue(schemas.GatewayMCPAgentOriginalRequestID, originalRequestID)
 	}
 
 	for depth < maxAgentDepth {
@@ -293,11 +293,11 @@ func (a *AgentModeExecutor) executeAgent(
 					defer wg.Done()
 					// Create a derived context with a unique MCP log ID so that the logging
 					// plugin can create separate log entries for each parallel tool call.
-					toolCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-					toolCtx.SetValue(schemas.RakshaContextKeyMCPLogID, uuid.New().String())
+					toolCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+					toolCtx.SetValue(schemas.GatewayContextKeyMCPLogID, uuid.New().String())
 
 					// Create MCP request for this tool call
-					mcpRequest := &schemas.RakshaMCPRequest{
+					mcpRequest := &schemas.GatewayMCPRequest{
 						RequestType:                  schemas.MCPRequestTypeChatToolCall,
 						ChatAssistantMessageToolCall: &toolCall,
 					}
@@ -331,14 +331,14 @@ func (a *AgentModeExecutor) executeAgent(
 			if authRequiredErr != nil {
 				statusCode := 401
 				errType := "mcp_auth_required"
-				return nil, &schemas.RakshaError{
-					IsRakshaError: true,
+				return nil, &schemas.GatewayError{
+					IsGatewayError: true,
 					StatusCode:     &statusCode,
 					Error: &schemas.ErrorField{
 						Message: authRequiredErr.Message,
 						Type:    &errType,
 					},
-					ExtraFields: schemas.RakshaErrorExtraFields{
+					ExtraFields: schemas.GatewayErrorExtraFields{
 						MCPAuthRequired: authRequiredErr,
 					},
 				}
@@ -377,7 +377,7 @@ func (a *AgentModeExecutor) executeAgent(
 		if fetchNewRequestIDFunc != nil {
 			newID := fetchNewRequestIDFunc(ctx)
 			if newID != "" {
-				ctx.SetValue(schemas.RakshaContextKeyRequestID, newID)
+				ctx.SetValue(schemas.GatewayContextKeyRequestID, newID)
 			}
 		}
 
@@ -396,9 +396,9 @@ func (a *AgentModeExecutor) executeAgent(
 	return currentResponse, nil
 }
 
-// mergeUsage sums token counts and costs from two RakshaLLMUsage values.
+// mergeUsage sums token counts and costs from two GatewayLLMUsage values.
 // Detail sub-fields are summed when both are present; if only one is non-nil it is kept as-is.
-func mergeUsage(base, add *schemas.RakshaLLMUsage) *schemas.RakshaLLMUsage {
+func mergeUsage(base, add *schemas.GatewayLLMUsage) *schemas.GatewayLLMUsage {
 	if add == nil {
 		return base
 	}
@@ -406,7 +406,7 @@ func mergeUsage(base, add *schemas.RakshaLLMUsage) *schemas.RakshaLLMUsage {
 		return add
 	}
 
-	merged := &schemas.RakshaLLMUsage{
+	merged := &schemas.GatewayLLMUsage{
 		PromptTokens:     base.PromptTokens + add.PromptTokens,
 		CompletionTokens: base.CompletionTokens + add.CompletionTokens,
 		TotalTokens:      base.TotalTokens + add.TotalTokens,
@@ -491,12 +491,12 @@ func mergeUsage(base, add *schemas.RakshaLLMUsage) *schemas.RakshaLLMUsage {
 		bc := base.Cost
 		ac := add.Cost
 		if bc == nil {
-			bc = &schemas.RakshaCost{}
+			bc = &schemas.GatewayCost{}
 		}
 		if ac == nil {
-			ac = &schemas.RakshaCost{}
+			ac = &schemas.GatewayCost{}
 		}
-		merged.Cost = &schemas.RakshaCost{
+		merged.Cost = &schemas.GatewayCost{
 			InputTokensCost:     bc.InputTokensCost + ac.InputTokensCost,
 			OutputTokensCost:    bc.OutputTokensCost + ac.OutputTokensCost,
 			ReasoningTokensCost: bc.ReasoningTokensCost + ac.ReasoningTokensCost,
@@ -519,7 +519,7 @@ func mergeUsage(base, add *schemas.RakshaLLMUsage) *schemas.RakshaLLMUsage {
 //
 // Returns:
 //   - []schemas.ChatAssistantMessageToolCall: List of extracted tool calls, or nil if none found
-func extractToolCalls(response *schemas.RakshaChatResponse) []schemas.ChatAssistantMessageToolCall {
+func extractToolCalls(response *schemas.GatewayChatResponse) []schemas.ChatAssistantMessageToolCall {
 	if !hasToolCallsForChatResponse(response) {
 		return nil
 	}
@@ -582,7 +582,7 @@ func createToolResultMessage(toolCall schemas.ChatAssistantMessageToolCall, resu
 // Returns:
 //   - []string: List of all client names
 //   - map[string][]string: Map of client names to their auto-executable tool names (as they appear in code)
-func buildAllowedAutoExecutionTools(ctx *schemas.RakshaContext, clientManager ClientManager) ([]string, map[string][]string) {
+func buildAllowedAutoExecutionTools(ctx *schemas.GatewayContext, clientManager ClientManager) ([]string, map[string][]string) {
 	allowedTools := make(map[string][]string)
 	availableToolsPerClient := clientManager.GetToolPerClient(ctx)
 	allClientNames := []string{}

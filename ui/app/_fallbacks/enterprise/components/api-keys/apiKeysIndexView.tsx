@@ -1,23 +1,38 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { useGetCoreConfigQuery, useGetGovernanceHealthQuery, useGetVirtualKeysQuery } from "@/lib/store";
+import { getErrorMessage, useGetCoreConfigQuery, useGetGovernanceHealthQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { getExampleBaseUrl } from "@/lib/utils/port";
 import { Link } from "@tanstack/react-router";
 import { CheckCircle2, Copy, ExternalLink, InfoIcon, Key, Shield } from "lucide-react";
 import { useMemo } from "react";
 
 export default function APIKeysView() {
-	const { data: rakshaConfig, isLoading } = useGetCoreConfigQuery({ fromDB: true });
-	const { data: virtualKeysData, isLoading: loadingKeys } = useGetVirtualKeysQuery({ limit: 20 });
-	const { data: health, isFetching: testingHealth, refetch: testHealth } = useGetGovernanceHealthQuery();
+	const { data: gatewayConfig, isLoading, isError: configFailed, error: configError, refetch: refetchConfig } = useGetCoreConfigQuery({
+		fromDB: true,
+	});
+	const {
+		data: virtualKeysData,
+		isLoading: loadingKeys,
+		isError: keysFailed,
+		error: keysError,
+		refetch: refetchKeys,
+	} = useGetVirtualKeysQuery({ limit: 20 });
+	const {
+		data: health,
+		isFetching: testingHealth,
+		refetch: testHealth,
+		isError: healthFailed,
+		error: healthError,
+	} = useGetGovernanceHealthQuery();
 	const { copy: copyToClipboard } = useCopyToClipboard();
 
-	const isAuthConfigured = useMemo(() => rakshaConfig?.auth_config?.is_enabled, [rakshaConfig]);
-	const isInferenceAuthDisabled = !(rakshaConfig?.client_config?.enforce_auth_on_inference ?? false);
+	const isAuthConfigured = useMemo(() => gatewayConfig?.auth_config?.is_enabled, [gatewayConfig]);
+	const isInferenceAuthDisabled = !(gatewayConfig?.client_config?.enforce_auth_on_inference ?? false);
 	const baseUrl = getExampleBaseUrl() || (typeof window !== "undefined" ? window.location.origin : "");
 
 	const adminCurlExample = `# 1. Sign in once; the session cookie is stored in cookies.txt
@@ -40,6 +55,17 @@ curl --location '${baseUrl}/api/governance/virtual-keys' \\
 
 	if (isLoading) {
 		return <div className="text-muted-foreground p-6 text-sm">Loading API key settings…</div>;
+	}
+
+	if (configFailed) {
+		return (
+			<div className="mx-auto flex w-full max-w-5xl flex-col gap-3 p-6">
+				<QueryErrorBanner testId="api-keys-config-query-error" message={getErrorMessage(configError) || "Failed to load API key settings."} />
+				<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetchConfig()}>
+					Retry
+				</Button>
+			</div>
+		);
 	}
 
 	if (!isAuthConfigured) {
@@ -72,6 +98,20 @@ curl --location '${baseUrl}/api/governance/virtual-keys' \\
 					Session sign-in for dashboard / admin APIs, and Virtual Keys for inference / MCP access.
 				</p>
 			</div>
+
+			{keysFailed || healthFailed ? (
+				<div className="flex flex-col gap-2">
+					<QueryErrorBanner
+						testId="api-keys-helper-query-error"
+						message={getErrorMessage(keysError || healthError) || "Failed to load virtual keys or health check."}
+					/>
+					{keysFailed ? (
+						<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetchKeys()}>
+							Retry keys
+						</Button>
+					) : null}
+				</div>
+			) : null}
 
 			<Card>
 				<CardHeader>

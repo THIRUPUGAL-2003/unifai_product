@@ -12,11 +12,11 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
 	ws "github.com/fasthttp/websocket"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/integrations"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
-	ufws "github.com/raksha/raksha/transports/raksha-http/websocket"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/integrations"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
+	ufws "github.com/gateway/gateway/transports/gateway-http/websocket"
 	"github.com/valyala/fasthttp"
 )
 
@@ -28,10 +28,10 @@ type wsWriter interface {
 
 // WSResponsesHandler handles WebSocket connections for the Responses API WebSocket Mode.
 // Clients connect via `GET /v1/responses` with a WS upgrade and send `response.create` events.
-// Each event is routed through the standard Raksha inference pipeline (PreLLMHook, key selection,
+// Each event is routed through the standard Gateway inference pipeline (PreLLMHook, key selection,
 // provider call, PostLLMHook) via the HTTP bridge, with native WS upstream as an optimization.
 type WSResponsesHandler struct {
-	client       *raksha.Raksha
+	client       *gateway.Gateway
 	config       *lib.Config
 	handlerStore lib.HandlerStore
 	pool         *ufws.Pool
@@ -40,7 +40,7 @@ type WSResponsesHandler struct {
 }
 
 // NewWSResponsesHandler creates a new WebSocket Responses handler.
-func NewWSResponsesHandler(client *raksha.Raksha, config *lib.Config, pool *ufws.Pool) *WSResponsesHandler {
+func NewWSResponsesHandler(client *gateway.Gateway, config *lib.Config, pool *ufws.Pool) *WSResponsesHandler {
 	maxConns := config.WebSocketConfig.MaxConnections
 
 	return &WSResponsesHandler{
@@ -73,7 +73,7 @@ func (h *WSResponsesHandler) Close() {
 
 // RegisterRoutes registers the WebSocket Responses endpoint at the base path
 // and all OpenAI integration paths.
-func (h *WSResponsesHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *WSResponsesHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	handler := lib.ChainMiddlewares(h.handleUpgrade, middlewares...)
 	// Base path (outside integration prefix)
 	r.GET("/v1/responses", handler)
@@ -190,7 +190,7 @@ func (h *WSResponsesHandler) handleResponseCreate(session *ufws.Session, auth *a
 		event.Store = schemas.Ptr(true)
 	}
 
-	rakshaReq, err := h.convertEventToRequest(&event)
+	gatewayReq, err := h.convertEventToRequest(&event)
 	if err != nil {
 		writeWSError(session, 400, "invalid_request_error", err.Error())
 		return
@@ -199,38 +199,38 @@ func (h *WSResponsesHandler) handleResponseCreate(session *ufws.Session, auth *a
 	// Extract extra params (unknown fields) and forward them, matching the HTTP path behavior
 	extraParams, extractErr := extractExtraParams(message, wsResponsesKnownFields)
 	if extractErr == nil && len(extraParams) > 0 {
-		if rakshaReq.Params == nil {
-			rakshaReq.Params = &schemas.ResponsesParameters{}
+		if gatewayReq.Params == nil {
+			gatewayReq.Params = &schemas.ResponsesParameters{}
 		}
-		rakshaReq.Params.ExtraParams = extraParams
+		gatewayReq.Params.ExtraParams = extraParams
 	}
 
-	rakshaCtx, cancel := createRakshaContextFromAuth(h.handlerStore, auth)
-	if rakshaCtx == nil {
+	gatewayCtx, cancel := createGatewayContextFromAuth(h.handlerStore, auth)
+	if gatewayCtx == nil {
 		writeWSError(session, 500, "server_error", "failed to create request context")
 		return
 	}
-	if parentRequestID, _ := rakshaCtx.Value(schemas.RakshaContextKeyParentRequestID).(string); parentRequestID == "" {
-		rakshaCtx.SetValue(schemas.RakshaContextKeyParentRequestID, session.ID())
+	if parentRequestID, _ := gatewayCtx.Value(schemas.GatewayContextKeyParentRequestID).(string); parentRequestID == "" {
+		gatewayCtx.SetValue(schemas.GatewayContextKeyParentRequestID, session.ID())
 	}
 
 	// Rewrite the raw event for upstream: strip provider/ prefix from model,
-	// apply store override. The original bytes contain the raksha-format model
+	// apply store override. The original bytes contain the gateway-format model
 	// (e.g. "openai/gpt-5.5") which upstream providers don't understand.
-	upstreamEvent, rewriteErr := rewriteUpstreamEvent(message, rakshaReq.Model, event.Store)
+	upstreamEvent, rewriteErr := rewriteUpstreamEvent(message, gatewayReq.Model, event.Store)
 	if rewriteErr != nil {
 		logger.Warn("failed to rewrite upstream event: %v, using original", rewriteErr)
 		upstreamEvent = message
 	}
 
 	// Try native WS upstream first
-	if h.tryNativeWSUpstream(session, rakshaCtx, rakshaReq, upstreamEvent) {
+	if h.tryNativeWSUpstream(session, gatewayCtx, gatewayReq, upstreamEvent) {
 		cancel()
 		return
 	}
 
 	// Fall back to HTTP bridge
-	h.executeHTTPBridge(session, rakshaCtx, cancel, rakshaReq)
+	h.executeHTTPBridge(session, gatewayCtx, cancel, gatewayReq)
 }
 
 // tryNativeWSUpstream attempts to forward the event to a native WS upstream connection.
@@ -238,8 +238,8 @@ func (h *WSResponsesHandler) handleResponseCreate(session *ufws.Session, auth *a
 // Returns false if the provider doesn't support WS and we should fall back to HTTP bridge.
 func (h *WSResponsesHandler) tryNativeWSUpstream(
 	session *ufws.Session,
-	ctx *schemas.RakshaContext,
-	req *schemas.RakshaResponsesRequest,
+	ctx *schemas.GatewayContext,
+	req *schemas.GatewayResponsesRequest,
 	rawEvent []byte,
 ) bool {
 	provider := h.client.GetProviderByKey(req.Provider)
@@ -309,14 +309,14 @@ func (h *WSResponsesHandler) tryNativeWSUpstream(
 	}
 
 	// Run plugin pre-hooks before forwarding to upstream
-	rakshaReq := &schemas.RakshaRequest{
+	gatewayReq := &schemas.GatewayRequest{
 		RequestType:      schemas.WebSocketResponsesRequest,
 		ResponsesRequest: req,
 	}
 
-	hooks, preErr := h.client.RunStreamPreHooks(ctx, rakshaReq)
+	hooks, preErr := h.client.RunStreamPreHooks(ctx, gatewayReq)
 	if preErr != nil {
-		writeWSRakshaError(session, preErr)
+		writeWSGatewayError(session, preErr)
 		return true
 	}
 	defer hooks.Cleanup()
@@ -327,12 +327,12 @@ func (h *WSResponsesHandler) tryNativeWSUpstream(
 		return true
 	}
 
-	finalizeTerminalPostHooks := func(rakshaErr *schemas.RakshaError) {
-		if rakshaErr == nil {
+	finalizeTerminalPostHooks := func(gatewayErr *schemas.GatewayError) {
+		if gatewayErr == nil {
 			return
 		}
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-		if _, postErr := hooks.PostHookRunner(ctx, nil, rakshaErr); postErr != nil {
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+		if _, postErr := hooks.PostHookRunner(ctx, nil, gatewayErr); postErr != nil {
 			logger.Warn("failed to finalize WS post-hooks for %s: %v", req.Provider, postErr)
 		}
 	}
@@ -345,8 +345,8 @@ func (h *WSResponsesHandler) tryNativeWSUpstream(
 	}
 
 	// Retrieve tracer and traceID for chunk accumulation
-	tracer, _ := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
-	traceID, _ := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
+	tracer, _ := ctx.Value(schemas.GatewayContextKeyTracer).(schemas.Tracer)
+	traceID, _ := ctx.Value(schemas.GatewayContextKeyTraceID).(string)
 	streamIdleTimeout := resolveWSStreamIdleTimeout(h.config, req.Provider)
 
 	// Read response events from upstream and relay to client, running post-hooks per chunk
@@ -356,7 +356,7 @@ func (h *WSResponsesHandler) tryNativeWSUpstream(
 			// Fail closed: if we can't arm the idle timeout, don't risk hanging forever.
 			logger.Warn("failed to set upstream WS read deadline for %s: %v, treating as terminal", req.Provider, err)
 			closeUpstream()
-			finalizeTerminalPostHooks(newRakshaError(502, "upstream_connection_error", "failed to arm upstream read deadline"))
+			finalizeTerminalPostHooks(newGatewayError(502, "upstream_connection_error", "failed to arm upstream read deadline"))
 			writeWSError(session, 502, "upstream_connection_error", "upstream websocket connection error")
 			return true
 		}
@@ -366,7 +366,7 @@ func (h *WSResponsesHandler) tryNativeWSUpstream(
 			if isWSReadTimeout(readErr) {
 				logger.Warn("upstream WS idle timeout for %s after %s", req.Provider, streamIdleTimeout)
 				closeUpstream()
-				finalizeTerminalPostHooks(newRakshaError(504, "upstream_timeout", "upstream websocket stream timed out"))
+				finalizeTerminalPostHooks(newGatewayError(504, "upstream_timeout", "upstream websocket stream timed out"))
 				writeWSError(session, 504, "upstream_timeout", "upstream websocket stream timed out")
 				return true
 			}
@@ -376,7 +376,7 @@ func (h *WSResponsesHandler) tryNativeWSUpstream(
 			if !forwardedAny {
 				return false
 			}
-			finalizeTerminalPostHooks(newRakshaError(502, "upstream_connection_error", "upstream websocket stream interrupted"))
+			finalizeTerminalPostHooks(newGatewayError(502, "upstream_connection_error", "upstream websocket stream interrupted"))
 			writeWSError(session, 502, "upstream_connection_error", "upstream websocket stream interrupted")
 			return true
 		}
@@ -389,11 +389,11 @@ func (h *WSResponsesHandler) tryNativeWSUpstream(
 		isTerminal := streamResp != nil && isTerminalStreamType(streamResp.Type)
 
 		if isTerminal {
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 		}
 
 		if streamResp != nil {
-			resp := &schemas.RakshaResponse{ResponsesStreamResponse: streamResp}
+			resp := &schemas.GatewayResponse{ResponsesStreamResponse: streamResp}
 
 			if tracer != nil && traceID != "" {
 				tracer.AddStreamingChunk(traceID, resp)
@@ -402,7 +402,7 @@ func (h *WSResponsesHandler) tryNativeWSUpstream(
 			_, postErr := hooks.PostHookRunner(ctx, resp, nil)
 			if postErr != nil {
 				closeUpstream()
-				writeWSRakshaError(session, postErr)
+				writeWSGatewayError(session, postErr)
 				return true
 			}
 		}
@@ -413,7 +413,7 @@ func (h *WSResponsesHandler) tryNativeWSUpstream(
 			// When isTerminal && streamResp != nil, PostHookRunner already ran above (line 366),
 			// so calling finalizeTerminalPostHooks again would double-fire the end-of-stream signal.
 			if streamResp == nil || !isTerminal {
-				finalizeTerminalPostHooks(newRakshaError(499, "client_connection_error", "client websocket connection interrupted"))
+				finalizeTerminalPostHooks(newGatewayError(499, "client_connection_error", "client websocket connection interrupted"))
 			}
 			return true
 		}
@@ -470,8 +470,8 @@ func isResponsesEOFClose(err error) bool {
 	return closeErr.Code == ws.CloseAbnormalClosure || closeErr.Code == ws.CloseNoStatusReceived
 }
 
-func newRakshaError(statusCode int, errType, message string) *schemas.RakshaError {
-	return &schemas.RakshaError{
+func newGatewayError(statusCode int, errType, message string) *schemas.GatewayError {
+	return &schemas.GatewayError{
 		StatusCode: schemas.Ptr(statusCode),
 		Error: &schemas.ErrorField{
 			Type:    schemas.Ptr(errType),
@@ -481,7 +481,7 @@ func newRakshaError(statusCode int, errType, message string) *schemas.RakshaErro
 }
 
 // writeWSShortCircuitResponse writes a short-circuited plugin response as WS events.
-func writeWSShortCircuitResponse(session *ufws.Session, resp *schemas.RakshaResponse) {
+func writeWSShortCircuitResponse(session *ufws.Session, resp *schemas.GatewayResponse) {
 	if resp.ResponsesResponse != nil {
 		data, err := sonic.Marshal(resp.ResponsesResponse)
 		if err != nil {
@@ -502,11 +502,11 @@ func writeWSShortCircuitResponse(session *ufws.Session, resp *schemas.RakshaResp
 	}
 }
 
-// parseUpstreamWSEvent attempts to parse a raw upstream WS event into a RakshaResponsesStreamResponse.
+// parseUpstreamWSEvent attempts to parse a raw upstream WS event into a GatewayResponsesStreamResponse.
 // It populates ExtraFields so downstream plugins (logging, tracing) can identify the request type.
 // Returns nil if the data cannot be parsed (non-fatal, the raw bytes are still relayed).
-func parseUpstreamWSEvent(data []byte, provider schemas.ModelProvider, model string) *schemas.RakshaResponsesStreamResponse {
-	var streamResp schemas.RakshaResponsesStreamResponse
+func parseUpstreamWSEvent(data []byte, provider schemas.ModelProvider, model string) *schemas.GatewayResponsesStreamResponse {
+	var streamResp schemas.GatewayResponsesStreamResponse
 	if err := sonic.Unmarshal(data, &streamResp); err != nil {
 		return nil
 	}
@@ -548,8 +548,8 @@ func (h *WSResponsesHandler) trackResponseID(session *ufws.Session, data []byte)
 	}
 }
 
-// convertEventToRequest converts a WebSocket response.create event to a RakshaResponsesRequest.
-func (h *WSResponsesHandler) convertEventToRequest(event *schemas.WebSocketResponsesEvent) (*schemas.RakshaResponsesRequest, error) {
+// convertEventToRequest converts a WebSocket response.create event to a GatewayResponsesRequest.
+func (h *WSResponsesHandler) convertEventToRequest(event *schemas.WebSocketResponsesEvent) (*schemas.GatewayResponsesRequest, error) {
 	provider, modelName := schemas.ParseModelString(event.Model, schemas.OpenAI)
 	if provider == "" || modelName == "" {
 		return nil, errModelFormat
@@ -629,7 +629,7 @@ func (h *WSResponsesHandler) convertEventToRequest(event *schemas.WebSocketRespo
 		params.Truncation = &event.Truncation
 	}
 
-	return &schemas.RakshaResponsesRequest{
+	return &schemas.GatewayResponsesRequest{
 		Provider: schemas.ModelProvider(provider),
 		Model:    modelName,
 		Input:    input,
@@ -637,19 +637,19 @@ func (h *WSResponsesHandler) convertEventToRequest(event *schemas.WebSocketRespo
 	}, nil
 }
 
-// createRakshaContextFromAuth builds a RakshaContext from the auth headers captured during upgrade.
-func createRakshaContextFromAuth(handlerStore lib.HandlerStore, auth *authHeaders) (*schemas.RakshaContext, context.CancelFunc) {
-	ctx, cancel := schemas.NewRakshaContextWithCancel(context.Background())
+// createGatewayContextFromAuth builds a GatewayContext from the auth headers captured during upgrade.
+func createGatewayContextFromAuth(handlerStore lib.HandlerStore, auth *authHeaders) (*schemas.GatewayContext, context.CancelFunc) {
+	ctx, cancel := schemas.NewGatewayContextWithCancel(context.Background())
 	if auth == nil {
 		return ctx, cancel
 	}
 
 	if sessionID := lib.ParseSessionIDFromBaggage(auth.baggage); sessionID != "" {
-		ctx.SetValue(schemas.RakshaContextKeyParentRequestID, sessionID)
+		ctx.SetValue(schemas.GatewayContextKeyParentRequestID, sessionID)
 	}
 
 	if auth.virtualKey != "" {
-		ctx.SetValue(schemas.RakshaContextKeyVirtualKey, auth.virtualKey)
+		ctx.SetValue(schemas.GatewayContextKeyVirtualKey, auth.virtualKey)
 	}
 
 	// Handle Bearer token with sk-uf- prefix (virtual key via Authorization header)
@@ -657,18 +657,18 @@ func createRakshaContextFromAuth(handlerStore lib.HandlerStore, auth *authHeader
 		if strings.HasPrefix(auth.authorization, "Bearer ") {
 			token := strings.TrimPrefix(auth.authorization, "Bearer ")
 			if strings.HasPrefix(token, "sk-uf-") {
-				ctx.SetValue(schemas.RakshaContextKeyVirtualKey, token)
+				ctx.SetValue(schemas.GatewayContextKeyVirtualKey, token)
 			}
 		}
 	}
 	if auth.apiKey != "" {
 		if strings.HasPrefix(auth.apiKey, "sk-uf-") {
-			ctx.SetValue(schemas.RakshaContextKeyVirtualKey, auth.apiKey)
+			ctx.SetValue(schemas.GatewayContextKeyVirtualKey, auth.apiKey)
 		}
 	}
 	if auth.googAPIKey != "" {
 		if strings.HasPrefix(auth.googAPIKey, "sk-uf-") {
-			ctx.SetValue(schemas.RakshaContextKeyVirtualKey, auth.googAPIKey)
+			ctx.SetValue(schemas.GatewayContextKeyVirtualKey, auth.googAPIKey)
 		}
 	}
 
@@ -684,7 +684,7 @@ func createRakshaContextFromAuth(handlerStore lib.HandlerStore, auth *authHeader
 			case k == "x-uf-vk":
 				// Already handled above
 			case k == "x-uf-api-key":
-				ctx.SetValue(schemas.RakshaContextKeyAPIKeyName, v)
+				ctx.SetValue(schemas.GatewayContextKeyAPIKeyName, v)
 			case strings.HasPrefix(k, "x-uf-eh-"):
 				addForwardedHeader(extraHeaders, matcher, strings.TrimPrefix(k, "x-uf-eh-"), v)
 			case matcher != nil && matcher.HasAllowlist() && matcher.MatchesAllow(k):
@@ -695,7 +695,7 @@ func createRakshaContextFromAuth(handlerStore lib.HandlerStore, auth *authHeader
 		}
 	}
 	if len(extraHeaders) > 0 {
-		ctx.SetValue(schemas.RakshaContextKeyExtraHeaders, extraHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyExtraHeaders, extraHeaders)
 	}
 
 	return ctx, cancel
@@ -726,12 +726,12 @@ func isSecurityDeniedExtraHeader(name string) bool {
 	}
 }
 
-func mergeWebSocketHeaders(ctx *schemas.RakshaContext, providerHeaders map[string]string) http.Header {
+func mergeWebSocketHeaders(ctx *schemas.GatewayContext, providerHeaders map[string]string) http.Header {
 	merged := http.Header{}
 	for key, value := range providerHeaders {
 		merged.Set(key, value)
 	}
-	if extraHeaders, ok := ctx.Value(schemas.RakshaContextKeyExtraHeaders).(map[string][]string); ok {
+	if extraHeaders, ok := ctx.Value(schemas.GatewayContextKeyExtraHeaders).(map[string][]string); ok {
 		for key, values := range extraHeaders {
 			if len(values) == 0 || isSecurityDeniedExtraHeader(key) {
 				continue
@@ -745,8 +745,8 @@ func mergeWebSocketHeaders(ctx *schemas.RakshaContext, providerHeaders map[strin
 	return merged
 }
 
-func hasWebSocketForwardedHeaders(ctx *schemas.RakshaContext) bool {
-	extraHeaders, ok := ctx.Value(schemas.RakshaContextKeyExtraHeaders).(map[string][]string)
+func hasWebSocketForwardedHeaders(ctx *schemas.GatewayContext) bool {
+	extraHeaders, ok := ctx.Value(schemas.GatewayContextKeyExtraHeaders).(map[string][]string)
 	if !ok {
 		return false
 	}
@@ -761,9 +761,9 @@ func hasWebSocketForwardedHeaders(ctx *schemas.RakshaContext) bool {
 // executeHTTPBridge runs the response through the existing streaming inference pipeline.
 func (h *WSResponsesHandler) executeHTTPBridge(
 	session *ufws.Session,
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	cancel context.CancelFunc,
-	req *schemas.RakshaResponsesRequest,
+	req *schemas.GatewayResponsesRequest,
 ) {
 	defer cancel()
 	// Flush the trace after the stream completes so the log entry is persisted
@@ -771,9 +771,9 @@ func (h *WSResponsesHandler) executeHTTPBridge(
 	// but never flushed — logs won't appear in the dashboard.
 	defer completeTrace(ctx)
 
-	stream, rakshaErr := h.client.ResponsesStreamRequest(ctx, req)
-	if rakshaErr != nil {
-		writeWSRakshaError(session, rakshaErr)
+	stream, gatewayErr := h.client.ResponsesStreamRequest(ctx, req)
+	if gatewayErr != nil {
+		writeWSGatewayError(session, gatewayErr)
 		return
 	}
 
@@ -794,13 +794,13 @@ func (h *WSResponsesHandler) executeHTTPBridge(
 		}
 
 		// Track terminal responses for session chaining and close classification.
-		if chunk.RakshaResponsesStreamResponse != nil &&
-			isTerminalStreamType(chunk.RakshaResponsesStreamResponse.Type) {
+		if chunk.GatewayResponsesStreamResponse != nil &&
+			isTerminalStreamType(chunk.GatewayResponsesStreamResponse.Type) {
 			session.MarkResponsesTurnCompleted()
-			if chunk.RakshaResponsesStreamResponse.Response != nil &&
-				chunk.RakshaResponsesStreamResponse.Response.ID != nil &&
-				*chunk.RakshaResponsesStreamResponse.Response.ID != "" {
-				session.SetLastResponseID(*chunk.RakshaResponsesStreamResponse.Response.ID)
+			if chunk.GatewayResponsesStreamResponse.Response != nil &&
+				chunk.GatewayResponsesStreamResponse.Response.ID != nil &&
+				*chunk.GatewayResponsesStreamResponse.Response.ID != "" {
+				session.SetLastResponseID(*chunk.GatewayResponsesStreamResponse.Response.ID)
 			}
 		}
 	}
@@ -824,22 +824,22 @@ func writeWSError(w wsWriter, status int, code, message string) {
 	w.WriteMessage(ws.TextMessage, data)
 }
 
-// writeWSRakshaError converts a RakshaError to a WS error event.
-func writeWSRakshaError(w wsWriter, rakshaErr *schemas.RakshaError) {
+// writeWSGatewayError converts a GatewayError to a WS error event.
+func writeWSGatewayError(w wsWriter, gatewayErr *schemas.GatewayError) {
 	status := 500
-	if rakshaErr.StatusCode != nil && *rakshaErr.StatusCode > 0 {
-		status = *rakshaErr.StatusCode
+	if gatewayErr.StatusCode != nil && *gatewayErr.StatusCode > 0 {
+		status = *gatewayErr.StatusCode
 	}
 	code := "server_error"
 	msg := "internal server error"
-	if rakshaErr.Error != nil {
-		if rakshaErr.Error.Code != nil && *rakshaErr.Error.Code != "" {
-			code = *rakshaErr.Error.Code
-		} else if rakshaErr.Error.Type != nil && *rakshaErr.Error.Type != "" {
-			code = *rakshaErr.Error.Type
+	if gatewayErr.Error != nil {
+		if gatewayErr.Error.Code != nil && *gatewayErr.Error.Code != "" {
+			code = *gatewayErr.Error.Code
+		} else if gatewayErr.Error.Type != nil && *gatewayErr.Error.Type != "" {
+			code = *gatewayErr.Error.Type
 		}
-		if rakshaErr.Error.Message != "" {
-			msg = rakshaErr.Error.Message
+		if gatewayErr.Error.Message != "" {
+			msg = gatewayErr.Error.Message
 		}
 	}
 	writeWSError(w, status, code, msg)
@@ -895,15 +895,15 @@ func rewriteUpstreamEvent(rawEvent []byte, nativeModel string, store *bool) ([]b
 }
 
 // completeTrace flushes the trace so the log entry is persisted to the log store.
-func completeTrace(ctx *schemas.RakshaContext) {
+func completeTrace(ctx *schemas.GatewayContext) {
 	if ctx == nil {
 		return
 	}
-	tracer, ok := ctx.Value(schemas.RakshaContextKeyTracer).(schemas.Tracer)
+	tracer, ok := ctx.Value(schemas.GatewayContextKeyTracer).(schemas.Tracer)
 	if !ok || tracer == nil {
 		return
 	}
-	traceID, ok := ctx.Value(schemas.RakshaContextKeyTraceID).(string)
+	traceID, ok := ctx.Value(schemas.GatewayContextKeyTraceID).(string)
 	if !ok || traceID == "" {
 		return
 	}

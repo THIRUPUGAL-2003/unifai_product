@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/raksha/raksha/framework/logstore"
+	"github.com/gateway/gateway/framework/logstore"
 )
 
 // Dashboard "Turn Off" → laptop uninstaller must skip the key prompt; a manual

@@ -35,25 +35,25 @@ import (
 // 1. CORE API REQUEST/RESPONSE STRUCTURES
 // =============================================================================
 
-type RakshaResponsesRequest struct {
+type GatewayResponsesRequest struct {
 	Provider       ModelProvider        `json:"provider"`
 	Model          string               `json:"model"`
 	Input          []ResponsesMessage   `json:"input,omitempty"`
 	Params         *ResponsesParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback           `json:"fallbacks,omitempty"`
-	RawRequestBody []byte               `json:"-"` // set raksha-use-raw-request-body to true in ctx to use the raw request body. Raksha will directly send this to the downstream provider.
+	RawRequestBody []byte               `json:"-"` // set gateway-use-raw-request-body to true in ctx to use the raw request body. Gateway will directly send this to the downstream provider.
 }
 
-func (r *RakshaResponsesRequest) GetRawRequestBody() []byte {
+func (r *GatewayResponsesRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
-// RakshaResponsesRetrieveRequest retrieves a stored response by ID (OpenAI GET /v1/responses/{id}).
+// GatewayResponsesRetrieveRequest retrieves a stored response by ID (OpenAI GET /v1/responses/{id}).
 //
 // Multi-key note: when multiple API keys are configured for the same provider, pin
 // key selection (for example x-uf-api-key-id) on lifecycle calls so they hit the same
 // upstream account as the create that produced response_id.
-type RakshaResponsesRetrieveRequest struct {
+type GatewayResponsesRetrieveRequest struct {
 	Provider           ModelProvider `json:"provider"`
 	ResponseID         string        `json:"response_id"`
 	Include            []string      `json:"include,omitempty"`
@@ -63,48 +63,48 @@ type RakshaResponsesRetrieveRequest struct {
 }
 
 // GetRawRequestBody implements raw body passthrough when enabled on context.
-func (r *RakshaResponsesRetrieveRequest) GetRawRequestBody() []byte {
+func (r *GatewayResponsesRetrieveRequest) GetRawRequestBody() []byte {
 	if r == nil {
 		return nil
 	}
 	return r.RawRequestBody
 }
 
-// RakshaResponsesDeleteRequest deletes a stored response (OpenAI DELETE /v1/responses/{id}).
-// See RakshaResponsesRetrieveRequest for multi-key pinning guidance.
-type RakshaResponsesDeleteRequest struct {
+// GatewayResponsesDeleteRequest deletes a stored response (OpenAI DELETE /v1/responses/{id}).
+// See GatewayResponsesRetrieveRequest for multi-key pinning guidance.
+type GatewayResponsesDeleteRequest struct {
 	Provider       ModelProvider `json:"provider"`
 	ResponseID     string        `json:"response_id"`
 	RawRequestBody []byte        `json:"-"`
 }
 
 // GetRawRequestBody implements raw body passthrough when enabled on context.
-func (r *RakshaResponsesDeleteRequest) GetRawRequestBody() []byte {
+func (r *GatewayResponsesDeleteRequest) GetRawRequestBody() []byte {
 	if r == nil {
 		return nil
 	}
 	return r.RawRequestBody
 }
 
-// RakshaResponsesCancelRequest cancels an in-flight stored response (OpenAI POST /v1/responses/{id}/cancel).
-// See RakshaResponsesRetrieveRequest for multi-key pinning guidance.
-type RakshaResponsesCancelRequest struct {
+// GatewayResponsesCancelRequest cancels an in-flight stored response (OpenAI POST /v1/responses/{id}/cancel).
+// See GatewayResponsesRetrieveRequest for multi-key pinning guidance.
+type GatewayResponsesCancelRequest struct {
 	Provider       ModelProvider `json:"provider"`
 	ResponseID     string        `json:"response_id"`
 	RawRequestBody []byte        `json:"-"`
 }
 
 // GetRawRequestBody implements raw body passthrough when enabled on context.
-func (r *RakshaResponsesCancelRequest) GetRawRequestBody() []byte {
+func (r *GatewayResponsesCancelRequest) GetRawRequestBody() []byte {
 	if r == nil {
 		return nil
 	}
 	return r.RawRequestBody
 }
 
-// RakshaResponsesInputItemsRequest lists input items for a response (OpenAI GET /v1/responses/{id}/input_items).
-// See RakshaResponsesRetrieveRequest for multi-key pinning guidance.
-type RakshaResponsesInputItemsRequest struct {
+// GatewayResponsesInputItemsRequest lists input items for a response (OpenAI GET /v1/responses/{id}/input_items).
+// See GatewayResponsesRetrieveRequest for multi-key pinning guidance.
+type GatewayResponsesInputItemsRequest struct {
 	Provider       ModelProvider `json:"provider"`
 	ResponseID     string        `json:"response_id"`
 	After          string        `json:"after,omitempty"`
@@ -115,34 +115,34 @@ type RakshaResponsesInputItemsRequest struct {
 }
 
 // GetRawRequestBody implements raw body passthrough when enabled on context.
-func (r *RakshaResponsesInputItemsRequest) GetRawRequestBody() []byte {
+func (r *GatewayResponsesInputItemsRequest) GetRawRequestBody() []byte {
 	if r == nil {
 		return nil
 	}
 	return r.RawRequestBody
 }
 
-// RakshaResponsesDeleteResponse is the wire shape for a successful delete of a stored response.
-type RakshaResponsesDeleteResponse struct {
+// GatewayResponsesDeleteResponse is the wire shape for a successful delete of a stored response.
+type GatewayResponsesDeleteResponse struct {
 	ID          string                     `json:"id"`
 	Object      string                     `json:"object,omitempty"`
 	Deleted     bool                       `json:"deleted"`
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaResponsesInputItemsResponse is the list payload for response input items.
-type RakshaResponsesInputItemsResponse struct {
+// GatewayResponsesInputItemsResponse is the list payload for response input items.
+type GatewayResponsesInputItemsResponse struct {
 	Object      string                     `json:"object"`
 	Data        []ResponsesMessage         `json:"data"`
 	HasMore     bool                       `json:"has_more"`
 	FirstID     string                     `json:"first_id,omitempty"`
 	LastID      string                     `json:"last_id,omitempty"`
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-// RakshaCompactionRequest is the request for the context compaction endpoint (POST /v1/responses/compact).
-// It is a strict subset of RakshaResponsesRequest — tools, sampling params, and streaming are not supported.
-type RakshaCompactionRequest struct {
+// GatewayCompactionRequest is the request for the context compaction endpoint (POST /v1/responses/compact).
+// It is a strict subset of GatewayResponsesRequest — tools, sampling params, and streaming are not supported.
+type GatewayCompactionRequest struct {
 	Provider             ModelProvider          `json:"provider"`
 	Model                string                 `json:"model"`
 	Input                []ResponsesMessage     `json:"input,omitempty"`
@@ -150,33 +150,33 @@ type RakshaCompactionRequest struct {
 	PreviousResponseID   *string                `json:"previous_response_id,omitempty"`
 	PromptCacheKey       *string                `json:"prompt_cache_key,omitempty"`
 	PromptCacheRetention *string                `json:"prompt_cache_retention,omitempty"`
-	ServiceTier          *RakshaServiceTier    `json:"service_tier,omitempty"`
+	ServiceTier          *GatewayServiceTier    `json:"service_tier,omitempty"`
 	Fallbacks            []Fallback             `json:"fallbacks,omitempty"`
 	ExtraParams          map[string]interface{} `json:"-"`
 	RawRequestBody       []byte                 `json:"-"`
 }
 
-func (r *RakshaCompactionRequest) GetRawRequestBody() []byte {
+func (r *GatewayCompactionRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
-// RakshaCompactionResponse is the response from the context compaction endpoint.
+// GatewayCompactionResponse is the response from the context compaction endpoint.
 // object is always "response.compaction". output contains user messages plus one encrypted compaction item.
-type RakshaCompactionResponse struct {
+type GatewayCompactionResponse struct {
 	ID          *string                    `json:"id,omitempty"`
 	Object      string                     `json:"object"` // always "response.compaction"
 	Model       string                     `json:"model,omitempty"`
 	CreatedAt   int                        `json:"created_at"`
 	Output      []ResponsesMessage         `json:"output"`
 	Usage       *ResponsesResponseUsage    `json:"usage,omitempty"`
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-func (resp *RakshaCompactionResponse) WithDefaults() *RakshaCompactionResponse {
+func (resp *GatewayCompactionResponse) WithDefaults() *GatewayCompactionResponse {
 	if resp == nil {
 		return nil
 	}
-	result := &RakshaCompactionResponse{
+	result := &GatewayCompactionResponse{
 		ID:          resp.ID,
 		Object:      "response.compaction",
 		Model:       resp.Model,
@@ -203,7 +203,7 @@ type ResponsesResponseContainer struct {
 	ExpiresAt *string `json:"expires_at,omitempty"`
 }
 
-type RakshaResponsesResponse struct {
+type GatewayResponsesResponse struct {
 	ID     *string `json:"id,omitempty"` // used for internal conversions
 	Object string  `json:"object"`       // "response"
 
@@ -229,7 +229,7 @@ type RakshaResponsesResponse struct {
 	FrequencyPenalty     *float64                            `json:"frequency_penalty,omitempty"`
 	Reasoning            *ResponsesParametersReasoning       `json:"reasoning"`         // Configuration options for reasoning models
 	SafetyIdentifier     *string                             `json:"safety_identifier"` // Safety identifier
-	ServiceTier          *RakshaServiceTier                 `json:"service_tier"`
+	ServiceTier          *GatewayServiceTier                 `json:"service_tier"`
 	Speed                *string                             `json:"speed,omitempty"`       // "fast" | "standard" — speed actually served (Anthropic fast mode); drives fast-mode billing
 	Diagnostics          *CacheDiagnostics                   `json:"diagnostics,omitempty"` // Anthropic cache diagnostics (cache-diagnosis-2026-04-07); first prompt-cache prefix divergence point
 	Container            *ResponsesResponseContainer         `json:"container,omitempty"`   // Code-execution sandbox container (Anthropic surfaces it on the response / final streaming message_delta). The neutral per-call id also lives on ResponsesCodeInterpreterToolCall.ContainerID.
@@ -245,7 +245,7 @@ type RakshaResponsesResponse struct {
 	Tools                []ResponsesTool                     `json:"tools"`                 // Tools to use
 	Truncation           *string                             `json:"truncation,omitempty"`
 	Usage                *ResponsesResponseUsage             `json:"usage"`
-	ExtraFields          RakshaResponseExtraFields          `json:"extra_fields"`
+	ExtraFields          GatewayResponseExtraFields          `json:"extra_fields"`
 	ProviderExtraFields  map[string]interface{}              `json:"provider_extra_fields,omitempty"`
 
 	// Perplexity-specific fields
@@ -271,8 +271,8 @@ type CacheMissReason struct {
 }
 
 // UnmarshalJSON handles providers that return created_at/completed_at as floats (e.g. Bedrock mantle).
-func (r *RakshaResponsesResponse) UnmarshalJSON(data []byte) error {
-	type Alias RakshaResponsesResponse
+func (r *GatewayResponsesResponse) UnmarshalJSON(data []byte) error {
+	type Alias GatewayResponsesResponse
 	aux := &struct {
 		CreatedAt   float64  `json:"created_at"`
 		CompletedAt *float64 `json:"completed_at"`
@@ -292,7 +292,7 @@ func (r *RakshaResponsesResponse) UnmarshalJSON(data []byte) error {
 }
 
 // BackfillParams populates response fields from the request that are needed
-func (resp *RakshaResponsesResponse) BackfillParams(request *RakshaResponsesRequest) {
+func (resp *GatewayResponsesResponse) BackfillParams(request *GatewayResponsesRequest) {
 	if resp == nil || request == nil {
 		return
 	}
@@ -307,12 +307,12 @@ func (resp *RakshaResponsesResponse) BackfillParams(request *RakshaResponsesRequ
 	}
 }
 
-func (resp *RakshaResponsesResponse) WithDefaults() *RakshaResponsesResponse {
+func (resp *GatewayResponsesResponse) WithDefaults() *GatewayResponsesResponse {
 	if resp == nil {
 		return nil
 	}
 
-	result := &RakshaResponsesResponse{
+	result := &GatewayResponsesResponse{
 		ID:        resp.ID,
 		CreatedAt: resp.CreatedAt,
 		Model:     resp.Model,
@@ -357,7 +357,7 @@ func (resp *RakshaResponsesResponse) WithDefaults() *RakshaResponsesResponse {
 	// fidelity carry from the normalized output: code_interpreter_call is a real
 	// OpenAI type an OpenAI client drives, so the extra code_execution_* fields are
 	// a contract leak on provider-format converters (e.g. openai/v1/responses). The
-	// neutral view (code/container_id/outputs) is untouched, and the raw Raksha
+	// neutral view (code/container_id/outputs) is untouched, and the raw Gateway
 	// superset response keeps the carry. Done on copies so the source response (and
 	// the superset path that returns it raw) is not mutated. (Advisor has no OpenAI
 	// surface to leak onto, so its carry is left as-is.)
@@ -393,13 +393,13 @@ func (resp *RakshaResponsesResponse) WithDefaults() *RakshaResponsesResponse {
 
 	if resp.ServiceTier != nil {
 		switch *resp.ServiceTier {
-		case RakshaServiceTierAuto, RakshaServiceTierDefault, RakshaServiceTierFlex, RakshaServiceTierPriority:
+		case GatewayServiceTierAuto, GatewayServiceTierDefault, GatewayServiceTierFlex, GatewayServiceTierPriority:
 			result.ServiceTier = resp.ServiceTier
 		default:
-			result.ServiceTier = new(RakshaServiceTierAuto)
+			result.ServiceTier = new(GatewayServiceTierAuto)
 		}
 	} else {
-		result.ServiceTier = new(RakshaServiceTierAuto)
+		result.ServiceTier = new(GatewayServiceTierAuto)
 	}
 	result.Truncation = orDefault(resp.Truncation, "disabled")
 	result.ParallelToolCalls = orDefault(resp.ParallelToolCalls, true)
@@ -481,7 +481,7 @@ type ResponsesParameters struct {
 	PromptCacheRetention *string                       `json:"prompt_cache_retention,omitempty"`
 	Reasoning            *ResponsesParametersReasoning `json:"reasoning,omitempty"`         // Configuration options for reasoning models
 	SafetyIdentifier     *string                       `json:"safety_identifier,omitempty"` // Safety identifier
-	ServiceTier          *RakshaServiceTier           `json:"service_tier,omitempty"`
+	ServiceTier          *GatewayServiceTier           `json:"service_tier,omitempty"`
 	StreamOptions        *ResponsesStreamOptions       `json:"stream_options,omitempty"`
 	Store                *bool                         `json:"store,omitempty"`
 	Temperature          *float64                      `json:"temperature,omitempty"`
@@ -917,7 +917,7 @@ type ResponsesResponseUsage struct {
 	OutputTokens        int                            `json:"output_tokens"`         // Number of output tokens (completion tokens + reasoning tokens)
 	OutputTokensDetails *ResponsesResponseOutputTokens `json:"output_tokens_details"` // Detailed breakdown of output tokens	TotalTokens int `json:"total_tokens"` // Total number of tokens used
 	TotalTokens         int                            `json:"total_tokens"`          // Total number of tokens used
-	Cost                *RakshaCost                   `json:"cost,omitempty"`        // Only for the providers which support cost calculation
+	Cost                *GatewayCost                   `json:"cost,omitempty"`        // Only for the providers which support cost calculation
 	Iterations          []ResponsesResponseUsage       `json:"iterations,omitempty"`  // iterations field is sent by anthropic
 
 	// xAI-specific usage fields
@@ -1047,7 +1047,7 @@ const (
 	ResponsesMessageTypeRefusal              ResponsesMessageType = "refusal"
 	ResponsesMessageTypeCompaction           ResponsesMessageType = "compaction"
 	// Codex deferred-tool discovery (tool_search). OpenAI's Responses API
-	// supports these item types natively; Raksha preserves them verbatim
+	// supports these item types natively; Gateway preserves them verbatim
 	// because its typed schema doesn't model them (the call's `arguments` is a
 	// JSON object — unlike function_call's string — and the output carries a
 	// `tools` array). See ResponsesMessage's (Un)MarshalJSON.
@@ -1071,7 +1071,7 @@ type ResponsesMessage struct {
 	Content *ResponsesMessageContent  `json:"content,omitempty"`
 
 	// Author and Recipient are required on multi-agent collab_tool_call items.
-	// Preserved as raw JSON to survive raksha round-trip without schema coupling.
+	// Preserved as raw JSON to survive gateway round-trip without schema coupling.
 	Author    json.RawMessage `json:"author,omitempty"`
 	Recipient json.RawMessage `json:"recipient,omitempty"`
 
@@ -1085,7 +1085,7 @@ type ResponsesMessage struct {
 
 	// rawToolSearch preserves codex `tool_search_call` / `tool_search_output`
 	// items verbatim. OpenAI's Responses API accepts these natively, but
-	// Raksha's typed schema doesn't model them (the call's `arguments` is a
+	// Gateway's typed schema doesn't model them (the call's `arguments` is a
 	// JSON object — unlike function_call's string — and the output carries a
 	// `tools` array). Rather than fail to deserialize the whole input array or
 	// drop/mangle these items, we round-trip the original bytes unchanged.
@@ -1094,7 +1094,7 @@ type ResponsesMessage struct {
 }
 
 // isToolSearchItem reports whether t is a codex tool_search item type, which
-// Raksha preserves verbatim rather than modelling field-by-field.
+// Gateway preserves verbatim rather than modelling field-by-field.
 func isToolSearchItem(t string) bool {
 	return t == string(ResponsesMessageTypeToolSearchCall) ||
 		t == string(ResponsesMessageTypeToolSearchOutput)
@@ -1397,7 +1397,7 @@ type ResponsesCodeExecutionFileOutput struct {
 
 // ResponsesCodeExecutionCall carries the Anthropic code-execution fidelity that
 // the neutral ResponsesCodeInterpreterToolCall (code/container_id/outputs) cannot
-// represent, so an Anthropic -> Raksha -> Anthropic round trip can reconstruct
+// represent, so an Anthropic -> Gateway -> Anthropic round trip can reconstruct
 // the original server_tool_use + *_code_execution_tool_result blocks exactly.
 // Sibling to ResponsesAdvisorCall; Anthropic-only. The code string and container
 // id live on the neutral ResponsesCodeInterpreterToolCall.
@@ -3005,11 +3005,11 @@ const (
 	ResponsesStreamResponseTypeError ResponsesStreamResponseType = "error"
 )
 
-type RakshaResponsesStreamResponse struct {
+type GatewayResponsesStreamResponse struct {
 	Type           ResponsesStreamResponseType `json:"type"`
 	SequenceNumber int                         `json:"sequence_number"`
 
-	Response *RakshaResponsesResponse `json:"response,omitempty"`
+	Response *GatewayResponsesResponse `json:"response,omitempty"`
 
 	OutputIndex *int              `json:"output_index,omitempty"`
 	Item        *ResponsesMessage `json:"item"`
@@ -3048,7 +3048,7 @@ type RakshaResponsesStreamResponse struct {
 	Message *string                 `json:"message,omitempty"`
 	Param   *string                 `json:"param,omitempty"`
 
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 
 	// Perplexity-specific fields
 	SearchResults []SearchResult `json:"search_results,omitempty"`
@@ -3056,7 +3056,7 @@ type RakshaResponsesStreamResponse struct {
 	Citations     []string       `json:"citations,omitempty"`
 }
 
-func (resp *RakshaResponsesStreamResponse) WithDefaults() *RakshaResponsesStreamResponse {
+func (resp *GatewayResponsesStreamResponse) WithDefaults() *GatewayResponsesStreamResponse {
 	if resp == nil {
 		return nil
 	}
@@ -3066,7 +3066,7 @@ func (resp *RakshaResponsesStreamResponse) WithDefaults() *RakshaResponsesStream
 		return nil
 	}
 
-	result := &RakshaResponsesStreamResponse{
+	result := &GatewayResponsesStreamResponse{
 		Type:           resp.Type,
 		SequenceNumber: resp.SequenceNumber,
 	}
@@ -3085,7 +3085,7 @@ func (resp *RakshaResponsesStreamResponse) WithDefaults() *RakshaResponsesStream
 	// the non-streaming Output path: it must not leak onto the code_interpreter_call
 	// items of output_item.added / output_item.done on provider-format converters
 	// (e.g. openai/v1/responses). Done on a copy so the source item is not mutated
-	// (the raw Raksha superset stream keeps the carry).
+	// (the raw Gateway superset stream keeps the carry).
 	if result.Item != nil && result.Item.ResponsesToolMessage != nil &&
 		result.Item.ResponsesToolMessage.ResponsesCodeExecutionCall != nil {
 		itemCopy := *result.Item

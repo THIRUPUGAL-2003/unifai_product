@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunSpeechSynthesisStreamTest executes the streaming speech synthesis test scenario
-func RunSpeechSynthesisStreamTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunSpeechSynthesisStreamTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.SpeechSynthesisStream {
 		t.Logf("Speech synthesis streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -80,7 +80,7 @@ func RunSpeechSynthesisStreamTest(t *testing.T, client *raksha.Raksha, ctx conte
 				}
 
 				voice := tc.voice
-				request := &schemas.RakshaSpeechRequest{
+				request := &schemas.GatewaySpeechRequest{
 					Provider: testConfig.Provider,
 					Model:    testConfig.SpeechSynthesisModel,
 					Input: &schemas.SpeechInput{
@@ -117,8 +117,8 @@ func RunSpeechSynthesisStreamTest(t *testing.T, client *raksha.Raksha, ctx conte
 
 				
 
-				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-					requestCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+				responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+					requestCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 					return client.SpeechStreamRequest(requestCtx, request)
 				})
 
@@ -132,7 +132,7 @@ func RunSpeechSynthesisStreamTest(t *testing.T, client *raksha.Raksha, ctx conte
 
 				var totalBytes int
 				var chunkCount int
-				var lastResponse *schemas.RakshaStreamChunk
+				var lastResponse *schemas.GatewayStreamChunk
 				var streamErrors []string
 				var lastTokenLatency int64
 				var audioBuffer bytes.Buffer // Accumulate audio chunks for validation
@@ -145,51 +145,51 @@ func RunSpeechSynthesisStreamTest(t *testing.T, client *raksha.Raksha, ctx conte
 					}
 
 					// Check for errors in stream
-					if response.RakshaError != nil {
-						streamErrors = append(streamErrors, FormatErrorConcise(ParseRakshaError(response.RakshaError)))
+					if response.GatewayError != nil {
+						streamErrors = append(streamErrors, FormatErrorConcise(ParseGatewayError(response.GatewayError)))
 						continue
 					}
 
-					if response.RakshaSpeechStreamResponse != nil {
-						lastTokenLatency = response.RakshaSpeechStreamResponse.ExtraFields.Latency
+					if response.GatewaySpeechStreamResponse != nil {
+						lastTokenLatency = response.GatewaySpeechStreamResponse.ExtraFields.Latency
 					}
 
-					if response.RakshaSpeechStreamResponse == nil {
+					if response.GatewaySpeechStreamResponse == nil {
 						streamErrors = append(streamErrors, "Stream response missing speech stream payload")
 						continue
 					}
 
-					if response.RakshaSpeechStreamResponse.Audio == nil {
+					if response.GatewaySpeechStreamResponse.Audio == nil {
 						streamErrors = append(streamErrors, "Stream response missing audio data")
 						continue
 					}
 
 					// Log latency for each chunk (can be 0 for inter-chunks)
-					t.Logf("📊 Speech chunk %d latency: %d ms", chunkCount+1, response.RakshaSpeechStreamResponse.ExtraFields.Latency)
+					t.Logf("📊 Speech chunk %d latency: %d ms", chunkCount+1, response.GatewaySpeechStreamResponse.ExtraFields.Latency)
 
 					// Collect audio chunks
-					if response.RakshaSpeechStreamResponse.Audio != nil {
-						chunkSize := len(response.RakshaSpeechStreamResponse.Audio)
+					if response.GatewaySpeechStreamResponse.Audio != nil {
+						chunkSize := len(response.GatewaySpeechStreamResponse.Audio)
 						if chunkSize == 0 {
 							t.Logf("⚠️ Skipping zero-length audio chunk")
 							continue
 						}
 						// Accumulate audio data for codec validation
-						audioBuffer.Write(response.RakshaSpeechStreamResponse.Audio)
+						audioBuffer.Write(response.GatewaySpeechStreamResponse.Audio)
 						totalBytes += chunkSize
 						chunkCount++
 						t.Logf("✅ Received audio chunk %d: %d bytes", chunkCount, chunkSize)
 
 						// Validate chunk structure
-						if response.RakshaSpeechStreamResponse.Type != "" && (response.RakshaSpeechStreamResponse.Type != schemas.SpeechStreamResponseTypeDelta && response.RakshaSpeechStreamResponse.Type != schemas.SpeechStreamResponseTypeDone) {
-							t.Logf("⚠️ Unexpected object type in stream: %s", response.RakshaSpeechStreamResponse.Type)
+						if response.GatewaySpeechStreamResponse.Type != "" && (response.GatewaySpeechStreamResponse.Type != schemas.SpeechStreamResponseTypeDelta && response.GatewaySpeechStreamResponse.Type != schemas.SpeechStreamResponseTypeDone) {
+							t.Logf("⚠️ Unexpected object type in stream: %s", response.GatewaySpeechStreamResponse.Type)
 						}
-						if response.RakshaSpeechStreamResponse.ExtraFields.OriginalModelRequested != "" && response.RakshaSpeechStreamResponse.ExtraFields.OriginalModelRequested != testConfig.SpeechSynthesisModel {
-							t.Logf("⚠️ Unexpected model in stream: %s", response.RakshaSpeechStreamResponse.ExtraFields.OriginalModelRequested)
+						if response.GatewaySpeechStreamResponse.ExtraFields.OriginalModelRequested != "" && response.GatewaySpeechStreamResponse.ExtraFields.OriginalModelRequested != testConfig.SpeechSynthesisModel {
+							t.Logf("⚠️ Unexpected model in stream: %s", response.GatewaySpeechStreamResponse.ExtraFields.OriginalModelRequested)
 						}
 					}
 
-					lastResponse = DeepCopyRakshaStreamChunk(response)
+					lastResponse = DeepCopyGatewayStreamChunk(response)
 				}
 
 				// Enhanced validation of streaming results
@@ -250,7 +250,7 @@ func RunSpeechSynthesisStreamTest(t *testing.T, client *raksha.Raksha, ctx conte
 }
 
 // RunSpeechSynthesisStreamAdvancedTest executes advanced streaming speech synthesis test scenarios
-func RunSpeechSynthesisStreamAdvancedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunSpeechSynthesisStreamAdvancedTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.SpeechSynthesisStream {
 		t.Logf("Speech synthesis streaming not supported for provider %s", testConfig.Provider)
 		return
@@ -274,7 +274,7 @@ func RunSpeechSynthesisStreamAdvancedTest(t *testing.T, client *raksha.Raksha, c
 			}
 
 			voice := GetProviderVoice(testConfig.Provider, "tertiary")
-			request := &schemas.RakshaSpeechRequest{
+			request := &schemas.GatewaySpeechRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.SpeechSynthesisModel,
 				Input: &schemas.SpeechInput{
@@ -307,8 +307,8 @@ func RunSpeechSynthesisStreamAdvancedTest(t *testing.T, client *raksha.Raksha, c
 				},
 			}
 
-			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
-				requestCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			responseChannel, err := WithStreamRetry(t, retryConfig, retryContext, func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
+				requestCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 				return client.SpeechStreamRequest(requestCtx, request)
 			})
 
@@ -326,30 +326,30 @@ func RunSpeechSynthesisStreamAdvancedTest(t *testing.T, client *raksha.Raksha, c
 					continue
 				}
 
-				if response.RakshaError != nil {
-					streamErrors = append(streamErrors, FormatErrorConcise(ParseRakshaError(response.RakshaError)))
+				if response.GatewayError != nil {
+					streamErrors = append(streamErrors, FormatErrorConcise(ParseGatewayError(response.GatewayError)))
 					continue
 				}
 
-				if response.RakshaSpeechStreamResponse != nil {
-					lastTokenLatency = response.RakshaSpeechStreamResponse.ExtraFields.Latency
+				if response.GatewaySpeechStreamResponse != nil {
+					lastTokenLatency = response.GatewaySpeechStreamResponse.ExtraFields.Latency
 				}
 
-				if response.RakshaSpeechStreamResponse != nil && response.RakshaSpeechStreamResponse.Audio != nil {
-					chunkSize := len(response.RakshaSpeechStreamResponse.Audio)
+				if response.GatewaySpeechStreamResponse != nil && response.GatewaySpeechStreamResponse.Audio != nil {
+					chunkSize := len(response.GatewaySpeechStreamResponse.Audio)
 					if chunkSize == 0 {
 						t.Logf("⚠️ Skipping zero-length HD audio chunk")
 						continue
 					}
 					// Accumulate audio data for codec validation
-					audioBuffer.Write(response.RakshaSpeechStreamResponse.Audio)
+					audioBuffer.Write(response.GatewaySpeechStreamResponse.Audio)
 					totalBytes += chunkSize
 					chunkCount++
 					t.Logf("✅ HD chunk %d: %d bytes", chunkCount, chunkSize)
 				}
 
-				if response.RakshaSpeechStreamResponse != nil && response.RakshaSpeechStreamResponse.ExtraFields.OriginalModelRequested != "" && response.RakshaSpeechStreamResponse.ExtraFields.OriginalModelRequested != testConfig.SpeechSynthesisModel {
-					t.Logf("⚠️ Unexpected HD model: %s", response.RakshaSpeechStreamResponse.ExtraFields.OriginalModelRequested)
+				if response.GatewaySpeechStreamResponse != nil && response.GatewaySpeechStreamResponse.ExtraFields.OriginalModelRequested != "" && response.GatewaySpeechStreamResponse.ExtraFields.OriginalModelRequested != testConfig.SpeechSynthesisModel {
+					t.Logf("⚠️ Unexpected HD model: %s", response.GatewaySpeechStreamResponse.ExtraFields.OriginalModelRequested)
 				}
 			}
 
@@ -424,7 +424,7 @@ func RunSpeechSynthesisStreamAdvancedTest(t *testing.T, client *raksha.Raksha, c
 						t.Parallel()
 					}
 
-					request := &schemas.RakshaSpeechRequest{
+					request := &schemas.GatewaySpeechRequest{
 						Provider: testConfig.Provider,
 						Model:    testConfig.SpeechSynthesisModel,
 						Input: &schemas.SpeechInput{
@@ -459,12 +459,12 @@ func RunSpeechSynthesisStreamAdvancedTest(t *testing.T, client *raksha.Raksha, c
 						t,
 						retryConfig,
 						retryContext,
-						func() (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {							
+						func() (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {							
 							accumulatedAudio.Reset() // Reset buffer on retry
-							requestCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+							requestCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 							return client.SpeechStreamRequest(requestCtx, request)
 						},
-						func(responseChannel chan *schemas.RakshaStreamChunk) SpeechStreamValidationResult {
+						func(responseChannel chan *schemas.GatewayStreamChunk) SpeechStreamValidationResult {
 							// Validate stream content
 							var receivedData bool
 							var streamErrors []string
@@ -477,20 +477,20 @@ func RunSpeechSynthesisStreamAdvancedTest(t *testing.T, client *raksha.Raksha, c
 									continue
 								}
 
-								if response.RakshaError != nil {
-									streamErrors = append(streamErrors, fmt.Sprintf("Error in stream for voice %s: %s", voiceCopy, FormatErrorConcise(ParseRakshaError(response.RakshaError))))
+								if response.GatewayError != nil {
+									streamErrors = append(streamErrors, fmt.Sprintf("Error in stream for voice %s: %s", voiceCopy, FormatErrorConcise(ParseGatewayError(response.GatewayError))))
 									continue
 								}
 
-								if response.RakshaSpeechStreamResponse != nil {
-									lastTokenLatency = response.RakshaSpeechStreamResponse.ExtraFields.Latency
+								if response.GatewaySpeechStreamResponse != nil {
+									lastTokenLatency = response.GatewaySpeechStreamResponse.ExtraFields.Latency
 								}
 
-								if response.RakshaSpeechStreamResponse != nil && response.RakshaSpeechStreamResponse.Audio != nil && len(response.RakshaSpeechStreamResponse.Audio) > 0 {
+								if response.GatewaySpeechStreamResponse != nil && response.GatewaySpeechStreamResponse.Audio != nil && len(response.GatewaySpeechStreamResponse.Audio) > 0 {
 									receivedData = true
 									// Accumulate audio data for codec validation
-									accumulatedAudio.Write(response.RakshaSpeechStreamResponse.Audio)
-									t.Logf("✅ Received data for voice %s: %d bytes", voiceCopy, len(response.RakshaSpeechStreamResponse.Audio))
+									accumulatedAudio.Write(response.GatewaySpeechStreamResponse.Audio)
+									t.Logf("✅ Received data for voice %s: %d bytes", voiceCopy, len(response.GatewaySpeechStreamResponse.Audio))
 								}
 							}
 

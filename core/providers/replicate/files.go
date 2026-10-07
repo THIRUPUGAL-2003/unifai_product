@@ -3,14 +3,14 @@ package replicate
 import (
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // Replicate File API Converters
 
-// ToRakshaFileStatus converts Replicate file status to Raksha file status.
+// ToGatewayFileStatus converts Replicate file status to Gateway file status.
 // Replicate doesn't explicitly provide status, so we infer from the response.
-func ToRakshaFileStatus(fileResp *ReplicateFileResponse) schemas.FileStatus {
+func ToGatewayFileStatus(fileResp *ReplicateFileResponse) schemas.FileStatus {
 	// If file has all required fields and is accessible, it's processed
 	if fileResp.ID != "" && fileResp.Size > 0 {
 		return schemas.FileStatusProcessed
@@ -18,18 +18,18 @@ func ToRakshaFileStatus(fileResp *ReplicateFileResponse) schemas.FileStatus {
 	return schemas.FileStatusUploaded
 }
 
-// ToRakshaFileUploadResponse converts Replicate file response to Raksha file upload response.
-func (r *ReplicateFileResponse) ToRakshaFileUploadResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileUploadResponse {
-	resp := &schemas.RakshaFileUploadResponse{
+// ToGatewayFileUploadResponse converts Replicate file response to Gateway file upload response.
+func (r *ReplicateFileResponse) ToGatewayFileUploadResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayFileUploadResponse {
+	resp := &schemas.GatewayFileUploadResponse{
 		ID:             r.ID,
 		Object:         "file",
 		Bytes:          r.Size,
 		CreatedAt:      ParseReplicateTimestamp(r.CreatedAt),
 		Filename:       r.Name,
 		Purpose:        schemas.FilePurposeBatch, // Replicate uses files primarily for batch/general purposes
-		Status:         ToRakshaFileStatus(r),
+		Status:         ToGatewayFileStatus(r),
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:     latency.Milliseconds(),
 		},
 	}
@@ -53,18 +53,18 @@ func (r *ReplicateFileResponse) ToRakshaFileUploadResponse(providerName schemas.
 	return resp
 }
 
-// ToRakshaFileRetrieveResponse converts Replicate file response to Raksha file retrieve response.
-func (r *ReplicateFileResponse) ToRakshaFileRetrieveResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.RakshaFileRetrieveResponse {
-	resp := &schemas.RakshaFileRetrieveResponse{
+// ToGatewayFileRetrieveResponse converts Replicate file response to Gateway file retrieve response.
+func (r *ReplicateFileResponse) ToGatewayFileRetrieveResponse(providerName schemas.ModelProvider, latency time.Duration, sendBackRawRequest bool, sendBackRawResponse bool, rawRequest interface{}, rawResponse interface{}) *schemas.GatewayFileRetrieveResponse {
+	resp := &schemas.GatewayFileRetrieveResponse{
 		ID:             r.ID,
 		Object:         "file",
 		Bytes:          r.Size,
 		CreatedAt:      ParseReplicateTimestamp(r.CreatedAt),
 		Filename:       r.Name,
 		Purpose:        schemas.FilePurposeBatch,
-		Status:         ToRakshaFileStatus(r),
+		Status:         ToGatewayFileStatus(r),
 		StorageBackend: schemas.FileStorageAPI,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:     latency.Milliseconds(),
 		},
 	}

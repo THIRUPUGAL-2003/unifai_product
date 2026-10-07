@@ -3,7 +3,7 @@ package credstore
 import (
 	"net/http"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // noneResolver handles MCPAuthTypeNone — no credentials, no auth header.
@@ -12,7 +12,7 @@ import (
 // CredStore.RequestHeaders. ConnectionHeaders here is empty by design.
 type noneResolver struct{}
 
-func (r *noneResolver) ConnectionHeaders(_ *schemas.RakshaContext, _ *schemas.MCPClientConfig) (http.Header, error) {
+func (r *noneResolver) ConnectionHeaders(_ *schemas.GatewayContext, _ *schemas.MCPClientConfig) (http.Header, error) {
 	return http.Header{}, nil
 }
 

@@ -1,4 +1,4 @@
-// Package llmtests provides container API test utilities for the Raksha system.
+// Package llmtests provides container API test utilities for the Gateway system.
 package llmtests
 
 import (
@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // containerDeadline returns a 60-second absolute deadline from now.
@@ -18,7 +18,7 @@ func containerDeadline() time.Time {
 }
 
 // RunContainerCreateTest tests the container create functionality
-func RunContainerCreateTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerCreateTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ContainerCreate {
 		t.Logf("[SKIPPED] Container Create: Not supported by provider %s", testConfig.Provider)
 		return
@@ -27,12 +27,12 @@ func RunContainerCreateTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 	t.Run("ContainerCreate", func(t *testing.T) {
 		t.Logf("[RUNNING] Container Create test for provider: %s", testConfig.Provider)
 
-		request := &schemas.RakshaContainerCreateRequest{
+		request := &schemas.GatewayContainerCreateRequest{
 			Provider: testConfig.Provider,
-			Name:     "raksha-test-container",
+			Name:     "gateway-test-container",
 		}
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 		response, err := client.ContainerCreateRequest(bfCtx, request)
 
 		if err != nil {
@@ -55,7 +55,7 @@ func RunContainerCreateTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 		t.Logf("✅ Container Create test passed for provider: %s, container ID: %s", testConfig.Provider, response.ID)
 
 		// Clean up: delete the created container
-		deleteRequest := &schemas.RakshaContainerDeleteRequest{
+		deleteRequest := &schemas.GatewayContainerDeleteRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: response.ID,
 		}
@@ -67,7 +67,7 @@ func RunContainerCreateTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 }
 
 // RunContainerListTest tests the container list functionality
-func RunContainerListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerListTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ContainerList {
 		t.Logf("[SKIPPED] Container List: Not supported by provider %s", testConfig.Provider)
 		return
@@ -76,12 +76,12 @@ func RunContainerListTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 	t.Run("ContainerList", func(t *testing.T) {
 		t.Logf("[RUNNING] Container List test for provider: %s", testConfig.Provider)
 
-		request := &schemas.RakshaContainerListRequest{
+		request := &schemas.GatewayContainerListRequest{
 			Provider: testConfig.Provider,
 			Limit:    10,
 		}
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 		response, err := client.ContainerListRequest(bfCtx, request)
 
 		if err != nil {
@@ -102,7 +102,7 @@ func RunContainerListTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 }
 
 // RunContainerRetrieveTest tests the container retrieve functionality
-func RunContainerRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerRetrieveTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ContainerRetrieve {
 		t.Logf("[SKIPPED] Container Retrieve: Not supported by provider %s", testConfig.Provider)
 		return
@@ -112,12 +112,12 @@ func RunContainerRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.C
 		t.Logf("[RUNNING] Container Retrieve test for provider: %s", testConfig.Provider)
 
 		// First, create a container to retrieve
-		createRequest := &schemas.RakshaContainerCreateRequest{
+		createRequest := &schemas.GatewayContainerCreateRequest{
 			Provider: testConfig.Provider,
-			Name:     "raksha-test-container-retrieve",
+			Name:     "gateway-test-container-retrieve",
 		}
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 		createResponse, createErr := client.ContainerCreateRequest(bfCtx, createRequest)
 
 		if createErr != nil {
@@ -135,7 +135,7 @@ func RunContainerRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.C
 		containerID := createResponse.ID
 		defer func() {
 			// Clean up
-			deleteRequest := &schemas.RakshaContainerDeleteRequest{
+			deleteRequest := &schemas.GatewayContainerDeleteRequest{
 				Provider:    testConfig.Provider,
 				ContainerID: containerID,
 			}
@@ -143,7 +143,7 @@ func RunContainerRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.C
 		}()
 
 		// Now retrieve the container
-		retrieveRequest := &schemas.RakshaContainerRetrieveRequest{
+		retrieveRequest := &schemas.GatewayContainerRetrieveRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 		}
@@ -167,7 +167,7 @@ func RunContainerRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.C
 }
 
 // RunContainerDeleteTest tests the container delete functionality
-func RunContainerDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerDeleteTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ContainerDelete {
 		t.Logf("[SKIPPED] Container Delete: Not supported by provider %s", testConfig.Provider)
 		return
@@ -177,12 +177,12 @@ func RunContainerDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 		t.Logf("[RUNNING] Container Delete test for provider: %s", testConfig.Provider)
 
 		// First, create a container to delete
-		createRequest := &schemas.RakshaContainerCreateRequest{
+		createRequest := &schemas.GatewayContainerCreateRequest{
 			Provider: testConfig.Provider,
-			Name:     "raksha-test-container-delete",
+			Name:     "gateway-test-container-delete",
 		}
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 		createResponse, createErr := client.ContainerCreateRequest(bfCtx, createRequest)
 
 		if createErr != nil {
@@ -200,7 +200,7 @@ func RunContainerDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 		containerID := createResponse.ID
 
 		// Now delete the container
-		deleteRequest := &schemas.RakshaContainerDeleteRequest{
+		deleteRequest := &schemas.GatewayContainerDeleteRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 		}
@@ -224,7 +224,7 @@ func RunContainerDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 }
 
 // RunContainerUnsupportedTest tests that providers correctly return unsupported operation errors
-func RunContainerUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerUnsupportedTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	// Only run this test if none of the container operations are supported
 	if testConfig.Scenarios.ContainerCreate || testConfig.Scenarios.ContainerList ||
 		testConfig.Scenarios.ContainerRetrieve || testConfig.Scenarios.ContainerDelete {
@@ -235,10 +235,10 @@ func RunContainerUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx contex
 	t.Run("ContainerUnsupported", func(t *testing.T) {
 		t.Logf("[RUNNING] Container Unsupported test for provider: %s", testConfig.Provider)
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 
 		// Test ContainerCreate returns unsupported
-		createRequest := &schemas.RakshaContainerCreateRequest{
+		createRequest := &schemas.GatewayContainerCreateRequest{
 			Provider: testConfig.Provider,
 			Name:     "test-container",
 		}
@@ -261,7 +261,7 @@ func RunContainerUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx contex
 // =============================================================================
 
 // RunContainerFileCreateTest tests the container file create functionality
-func RunContainerFileCreateTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerFileCreateTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ContainerFileCreate {
 		t.Logf("[SKIPPED] Container File Create: Not supported by provider %s", testConfig.Provider)
 		return
@@ -270,12 +270,12 @@ func RunContainerFileCreateTest(t *testing.T, client *raksha.Raksha, ctx context
 	t.Run("ContainerFileCreate", func(t *testing.T) {
 		t.Logf("[RUNNING] Container File Create test for provider: %s", testConfig.Provider)
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 
 		// First, create a container to hold the file
-		containerRequest := &schemas.RakshaContainerCreateRequest{
+		containerRequest := &schemas.GatewayContainerCreateRequest{
 			Provider: testConfig.Provider,
-			Name:     "raksha-test-container-file-create",
+			Name:     "gateway-test-container-file-create",
 		}
 
 		containerResponse, containerErr := client.ContainerCreateRequest(bfCtx, containerRequest)
@@ -294,7 +294,7 @@ func RunContainerFileCreateTest(t *testing.T, client *raksha.Raksha, ctx context
 		containerID := containerResponse.ID
 		defer func() {
 			// Clean up container
-			deleteRequest := &schemas.RakshaContainerDeleteRequest{
+			deleteRequest := &schemas.GatewayContainerDeleteRequest{
 				Provider:    testConfig.Provider,
 				ContainerID: containerID,
 			}
@@ -302,10 +302,10 @@ func RunContainerFileCreateTest(t *testing.T, client *raksha.Raksha, ctx context
 		}()
 
 		// Create a file in the container
-		testContent := []byte("Hello, Raksha! This is a test file for container file operations.")
+		testContent := []byte("Hello, Gateway! This is a test file for container file operations.")
 		filePath := "/test-file.txt"
 
-		fileCreateRequest := &schemas.RakshaContainerFileCreateRequest{
+		fileCreateRequest := &schemas.GatewayContainerFileCreateRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 			File:        testContent,
@@ -337,7 +337,7 @@ func RunContainerFileCreateTest(t *testing.T, client *raksha.Raksha, ctx context
 		t.Logf("✅ Container File Create test passed for provider: %s, file ID: %s", testConfig.Provider, response.ID)
 
 		// Clean up file
-		fileDeleteRequest := &schemas.RakshaContainerFileDeleteRequest{
+		fileDeleteRequest := &schemas.GatewayContainerFileDeleteRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 			FileID:      response.ID,
@@ -347,7 +347,7 @@ func RunContainerFileCreateTest(t *testing.T, client *raksha.Raksha, ctx context
 }
 
 // RunContainerFileListTest tests the container file list functionality
-func RunContainerFileListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerFileListTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ContainerFileList {
 		t.Logf("[SKIPPED] Container File List: Not supported by provider %s", testConfig.Provider)
 		return
@@ -356,12 +356,12 @@ func RunContainerFileListTest(t *testing.T, client *raksha.Raksha, ctx context.C
 	t.Run("ContainerFileList", func(t *testing.T) {
 		t.Logf("[RUNNING] Container File List test for provider: %s", testConfig.Provider)
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 
 		// First, create a container
-		containerRequest := &schemas.RakshaContainerCreateRequest{
+		containerRequest := &schemas.GatewayContainerCreateRequest{
 			Provider: testConfig.Provider,
-			Name:     "raksha-test-container-file-list",
+			Name:     "gateway-test-container-file-list",
 		}
 
 		containerResponse, containerErr := client.ContainerCreateRequest(bfCtx, containerRequest)
@@ -380,7 +380,7 @@ func RunContainerFileListTest(t *testing.T, client *raksha.Raksha, ctx context.C
 		containerID := containerResponse.ID
 		defer func() {
 			// Clean up container
-			deleteRequest := &schemas.RakshaContainerDeleteRequest{
+			deleteRequest := &schemas.GatewayContainerDeleteRequest{
 				Provider:    testConfig.Provider,
 				ContainerID: containerID,
 			}
@@ -391,7 +391,7 @@ func RunContainerFileListTest(t *testing.T, client *raksha.Raksha, ctx context.C
 		testContent := []byte("Test content for file list")
 		filePath := "/test-file-list.txt"
 
-		fileCreateRequest := &schemas.RakshaContainerFileCreateRequest{
+		fileCreateRequest := &schemas.GatewayContainerFileCreateRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 			File:        testContent,
@@ -414,7 +414,7 @@ func RunContainerFileListTest(t *testing.T, client *raksha.Raksha, ctx context.C
 	fileID := fileCreateResponse.ID
 	defer func() {
 		// Clean up file
-		fileDeleteRequest := &schemas.RakshaContainerFileDeleteRequest{
+		fileDeleteRequest := &schemas.GatewayContainerFileDeleteRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 			FileID:      fileID,
@@ -423,7 +423,7 @@ func RunContainerFileListTest(t *testing.T, client *raksha.Raksha, ctx context.C
 	}()
 
 	// Now list files in the container
-		listRequest := &schemas.RakshaContainerFileListRequest{
+		listRequest := &schemas.GatewayContainerFileListRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 			Limit:       10,
@@ -452,7 +452,7 @@ func RunContainerFileListTest(t *testing.T, client *raksha.Raksha, ctx context.C
 }
 
 // RunContainerFileRetrieveTest tests the container file retrieve functionality
-func RunContainerFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerFileRetrieveTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ContainerFileRetrieve {
 		t.Logf("[SKIPPED] Container File Retrieve: Not supported by provider %s", testConfig.Provider)
 		return
@@ -461,12 +461,12 @@ func RunContainerFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx conte
 	t.Run("ContainerFileRetrieve", func(t *testing.T) {
 		t.Logf("[RUNNING] Container File Retrieve test for provider: %s", testConfig.Provider)
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 
 		// First, create a container
-		containerRequest := &schemas.RakshaContainerCreateRequest{
+		containerRequest := &schemas.GatewayContainerCreateRequest{
 			Provider: testConfig.Provider,
-			Name:     "raksha-test-container-file-retrieve",
+			Name:     "gateway-test-container-file-retrieve",
 		}
 
 		containerResponse, containerErr := client.ContainerCreateRequest(bfCtx, containerRequest)
@@ -485,7 +485,7 @@ func RunContainerFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx conte
 		containerID := containerResponse.ID
 		defer func() {
 			// Clean up container
-			deleteRequest := &schemas.RakshaContainerDeleteRequest{
+			deleteRequest := &schemas.GatewayContainerDeleteRequest{
 				Provider:    testConfig.Provider,
 				ContainerID: containerID,
 			}
@@ -496,7 +496,7 @@ func RunContainerFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx conte
 	testContent := []byte("Test content for file retrieve")
 	filePath := "/test-file-retrieve.txt"
 
-	fileCreateRequest := &schemas.RakshaContainerFileCreateRequest{
+	fileCreateRequest := &schemas.GatewayContainerFileCreateRequest{
 		Provider:    testConfig.Provider,
 		ContainerID: containerID,
 		File:        testContent,
@@ -519,7 +519,7 @@ func RunContainerFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx conte
 	fileID := fileCreateResponse.ID
 		defer func() {
 			// Clean up file
-			fileDeleteRequest := &schemas.RakshaContainerFileDeleteRequest{
+			fileDeleteRequest := &schemas.GatewayContainerFileDeleteRequest{
 				Provider:    testConfig.Provider,
 				ContainerID: containerID,
 				FileID:      fileID,
@@ -528,7 +528,7 @@ func RunContainerFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx conte
 		}()
 
 		// Now retrieve the file
-		retrieveRequest := &schemas.RakshaContainerFileRetrieveRequest{
+		retrieveRequest := &schemas.GatewayContainerFileRetrieveRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 			FileID:      fileID,
@@ -561,7 +561,7 @@ func RunContainerFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx conte
 }
 
 // RunContainerFileContentTest tests the container file content functionality
-func RunContainerFileContentTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerFileContentTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ContainerFileContent {
 		t.Logf("[SKIPPED] Container File Content: Not supported by provider %s", testConfig.Provider)
 		return
@@ -570,12 +570,12 @@ func RunContainerFileContentTest(t *testing.T, client *raksha.Raksha, ctx contex
 	t.Run("ContainerFileContent", func(t *testing.T) {
 		t.Logf("[RUNNING] Container File Content test for provider: %s", testConfig.Provider)
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 
 		// First, create a container
-		containerRequest := &schemas.RakshaContainerCreateRequest{
+		containerRequest := &schemas.GatewayContainerCreateRequest{
 			Provider: testConfig.Provider,
-			Name:     "raksha-test-container-file-content",
+			Name:     "gateway-test-container-file-content",
 		}
 
 		containerResponse, containerErr := client.ContainerCreateRequest(bfCtx, containerRequest)
@@ -594,7 +594,7 @@ func RunContainerFileContentTest(t *testing.T, client *raksha.Raksha, ctx contex
 		containerID := containerResponse.ID
 		defer func() {
 			// Clean up container
-			deleteRequest := &schemas.RakshaContainerDeleteRequest{
+			deleteRequest := &schemas.GatewayContainerDeleteRequest{
 				Provider:    testConfig.Provider,
 				ContainerID: containerID,
 			}
@@ -602,10 +602,10 @@ func RunContainerFileContentTest(t *testing.T, client *raksha.Raksha, ctx contex
 		}()
 
 	// Create a file in the container with known content
-	testContent := []byte("Hello, Raksha! This is test content for file content retrieval.")
+	testContent := []byte("Hello, Gateway! This is test content for file content retrieval.")
 	filePath := "/test-file-content.txt"
 
-	fileCreateRequest := &schemas.RakshaContainerFileCreateRequest{
+	fileCreateRequest := &schemas.GatewayContainerFileCreateRequest{
 		Provider:    testConfig.Provider,
 		ContainerID: containerID,
 		File:        testContent,
@@ -628,7 +628,7 @@ func RunContainerFileContentTest(t *testing.T, client *raksha.Raksha, ctx contex
 	fileID := fileCreateResponse.ID
 		defer func() {
 			// Clean up file
-			fileDeleteRequest := &schemas.RakshaContainerFileDeleteRequest{
+			fileDeleteRequest := &schemas.GatewayContainerFileDeleteRequest{
 				Provider:    testConfig.Provider,
 				ContainerID: containerID,
 				FileID:      fileID,
@@ -637,7 +637,7 @@ func RunContainerFileContentTest(t *testing.T, client *raksha.Raksha, ctx contex
 		}()
 
 		// Now retrieve the file content
-		contentRequest := &schemas.RakshaContainerFileContentRequest{
+		contentRequest := &schemas.GatewayContainerFileContentRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 			FileID:      fileID,
@@ -671,7 +671,7 @@ func RunContainerFileContentTest(t *testing.T, client *raksha.Raksha, ctx contex
 }
 
 // RunContainerFileDeleteTest tests the container file delete functionality
-func RunContainerFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerFileDeleteTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ContainerFileDelete {
 		t.Logf("[SKIPPED] Container File Delete: Not supported by provider %s", testConfig.Provider)
 		return
@@ -680,12 +680,12 @@ func RunContainerFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context
 	t.Run("ContainerFileDelete", func(t *testing.T) {
 		t.Logf("[RUNNING] Container File Delete test for provider: %s", testConfig.Provider)
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 
 		// First, create a container
-		containerRequest := &schemas.RakshaContainerCreateRequest{
+		containerRequest := &schemas.GatewayContainerCreateRequest{
 			Provider: testConfig.Provider,
-			Name:     "raksha-test-container-file-delete",
+			Name:     "gateway-test-container-file-delete",
 		}
 
 		containerResponse, containerErr := client.ContainerCreateRequest(bfCtx, containerRequest)
@@ -704,7 +704,7 @@ func RunContainerFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context
 		containerID := containerResponse.ID
 		defer func() {
 			// Clean up container
-			deleteRequest := &schemas.RakshaContainerDeleteRequest{
+			deleteRequest := &schemas.GatewayContainerDeleteRequest{
 				Provider:    testConfig.Provider,
 				ContainerID: containerID,
 			}
@@ -715,7 +715,7 @@ func RunContainerFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context
 	testContent := []byte("Test content for file delete")
 	filePath := "/test-file-delete.txt"
 
-	fileCreateRequest := &schemas.RakshaContainerFileCreateRequest{
+	fileCreateRequest := &schemas.GatewayContainerFileCreateRequest{
 		Provider:    testConfig.Provider,
 		ContainerID: containerID,
 		File:        testContent,
@@ -738,7 +738,7 @@ func RunContainerFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context
 	fileID := fileCreateResponse.ID
 
 	// Now delete the file
-		deleteRequest := &schemas.RakshaContainerFileDeleteRequest{
+		deleteRequest := &schemas.GatewayContainerFileDeleteRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: containerID,
 			FileID:      fileID,
@@ -767,7 +767,7 @@ func RunContainerFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context
 }
 
 // RunContainerFileUnsupportedTest tests that providers correctly return unsupported operation errors for container file operations
-func RunContainerFileUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunContainerFileUnsupportedTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	// Only run this test if none of the container file operations are supported
 	if testConfig.Scenarios.ContainerFileCreate || testConfig.Scenarios.ContainerFileList ||
 		testConfig.Scenarios.ContainerFileRetrieve || testConfig.Scenarios.ContainerFileContent ||
@@ -785,12 +785,12 @@ func RunContainerFileUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx co
 	t.Run("ContainerFileUnsupported", func(t *testing.T) {
 		t.Logf("[RUNNING] Container File Unsupported test for provider: %s", testConfig.Provider)
 
-		bfCtx := schemas.NewRakshaContext(ctx, containerDeadline())
+		bfCtx := schemas.NewGatewayContext(ctx, containerDeadline())
 
 		// Test ContainerFileCreate returns unsupported
 		testContent := []byte("Test content")
 		filePath := "/test.txt"
-		createRequest := &schemas.RakshaContainerFileCreateRequest{
+		createRequest := &schemas.GatewayContainerFileCreateRequest{
 			Provider:    testConfig.Provider,
 			ContainerID: "test-container-id",
 			File:        testContent,

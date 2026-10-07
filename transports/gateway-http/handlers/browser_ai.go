@@ -9,18 +9,18 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
 type BrowserAIHandler struct {
 	configStore configstore.ConfigStore
 	config      *lib.Config
-	client      *raksha.Raksha
+	client      *gateway.Gateway
 	manager     *logstore.BrowserAIManager
 
 	// Short TTL cache — 1000+ employees hammer GetRules on every AI-bot prompt.
@@ -29,7 +29,7 @@ type BrowserAIHandler struct {
 	rulesCacheAt time.Time
 }
 
-func NewBrowserAIHandler(configStore configstore.ConfigStore, config *lib.Config, client *raksha.Raksha) *BrowserAIHandler {
+func NewBrowserAIHandler(configStore configstore.ConfigStore, config *lib.Config, client *gateway.Gateway) *BrowserAIHandler {
 	manager := logstore.NewBrowserAIManager(nil)
 	h := &BrowserAIHandler{
 		configStore: configStore,
@@ -93,7 +93,7 @@ func (h *BrowserAIHandler) ensureDB(ctx *fasthttp.RequestCtx) {
 	}
 }
 
-func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/browser-ai/logs", lib.ChainMiddlewares(h.getLogs, middlewares...))
 	r.GET("/api/browser-ai/logs/stats", lib.ChainMiddlewares(h.getLogStats, middlewares...))
 	r.DELETE("/api/browser-ai/logs", lib.ChainMiddlewares(h.deleteLogs, middlewares...))
@@ -134,8 +134,11 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.GET("/api/browser-ai/setup/proxy-bundle.json", lib.ChainMiddlewares(h.getProxyBundleInfo, middlewares...))
 	r.GET("/api/browser-ai/setup/proxy-bundle.zip", lib.ChainMiddlewares(h.downloadProxyBundle, middlewares...))
 
-	r.GET("/api/browser-ai/setup/Raksha_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
-	r.HEAD("/api/browser-ai/setup/Raksha_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
+	r.GET("/api/browser-ai/setup/Gateway_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
+	r.HEAD("/api/browser-ai/setup/Gateway_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
+	// Legacy download URLs (older employee docs / bookmarks)
+	r.GET("/api/browser-ai/setup/Gateway_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
+	r.HEAD("/api/browser-ai/setup/Gateway_Guard_Setup.exe", lib.ChainMiddlewares(h.downloadSetupExe, middlewares...))
 
 	r.GET("/api/browser-ai/agents", lib.ChainMiddlewares(h.listAgents, middlewares...))
 	r.POST("/api/browser-ai/agents/heartbeat", lib.ChainMiddlewares(h.agentHeartbeat, middlewares...))

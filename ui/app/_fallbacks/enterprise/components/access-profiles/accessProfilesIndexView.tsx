@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ComboboxSelect } from "@/components/ui/combobox";
@@ -120,10 +121,20 @@ export default function AccessProfilesIndexView() {
 	const [editing, setEditing] = useState<AccessProfile | null>(null);
 	const [form, setForm] = useState<ProfileFormState>(emptyForm);
 
-	const { data, isLoading } = useGetAccessProfilesQuery({ search: search || undefined });
-	const { data: providersData = [] } = useGetProvidersQuery();
-	const { data: vkData, isLoading: isLoadingVK } = useGetVirtualKeysQuery({ limit: 200, offset: 0 });
-	const { data: mcpClientsData, isLoading: isLoadingMCP } = useGetMCPClientsQuery({ limit: 200, offset: 0 });
+	const { data, isLoading, isError: profilesFailed, error: profilesError, refetch: refetchProfiles } = useGetAccessProfilesQuery({
+		search: search || undefined,
+	});
+	const { data: providersData = [], isError: providersFailed, error: providersError } = useGetProvidersQuery();
+	const { data: vkData, isLoading: isLoadingVK, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery({
+		limit: 200,
+		offset: 0,
+	});
+	const {
+		data: mcpClientsData,
+		isLoading: isLoadingMCP,
+		isError: mcpFailed,
+		error: mcpError,
+	} = useGetMCPClientsQuery({ limit: 200, offset: 0 });
 	const virtualKeys = vkData?.virtual_keys || [];
 	const mcpClients = mcpClientsData?.clients || [];
 	const [createProfile] = useCreateAccessProfileMutation();
@@ -392,9 +403,24 @@ export default function AccessProfilesIndexView() {
 				</Button>
 			</div>
 			<Input className="max-w-sm" placeholder="Search profiles…" value={search} onChange={(e) => setSearch(e.target.value)} />
+			{profilesFailed || providersFailed || vkFailed || mcpFailed ? (
+				<div className="flex flex-col gap-2">
+					<QueryErrorBanner
+						testId="access-profiles-query-error"
+						message={
+							getErrorMessage(profilesError || providersError || vkError || mcpError) || "Failed to load access profiles."
+						}
+					/>
+					{profilesFailed ? (
+						<Button type="button" size="sm" variant="outline" className="w-fit" onClick={() => void refetchProfiles()}>
+							Retry
+						</Button>
+					) : null}
+				</div>
+			) : null}
 			{isLoading ? (
 				<p className="text-muted-foreground text-sm">Loading profiles…</p>
-			) : profiles.length === 0 ? (
+			) : profilesFailed ? null : profiles.length === 0 ? (
 				<div className="rounded-xl border border-dashed p-10 text-center">
 					<p className="font-medium">No access profiles</p>
 					<p className="text-muted-foreground mt-1 text-sm">

@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +25,7 @@ interface PromptSheetProps {
 export function PromptSheet({ open, onOpenChange, prompt, folderId, onSaved }: PromptSheetProps) {
 	const [createPrompt, { isLoading: isCreating }] = useCreatePromptMutation();
 	const [updatePrompt, { isLoading: isUpdating }] = useUpdatePromptMutation();
-	const { data: foldersData } = useGetFoldersQuery(undefined, { skip: !open });
+	const { data: foldersData, isError: foldersFailed, error: foldersError } = useGetFoldersQuery(undefined, { skip: !open });
 
 	const [selectedFolderId, setSelectedFolderId] = useState<string>("");
 
@@ -100,6 +101,12 @@ export function PromptSheet({ open, onOpenChange, prompt, folderId, onSaved }: P
 
 					<div className="flex grow flex-col gap-6">
 						<div className="grow space-y-4 px-8">
+							{foldersFailed ? (
+								<QueryErrorBanner
+									testId="prompt-sheet-folders-query-error"
+									message={getErrorMessage(foldersError) || "Failed to load folders."}
+								/>
+							) : null}
 							<div className="space-y-2">
 								<Label htmlFor="name">Name</Label>
 								<Input

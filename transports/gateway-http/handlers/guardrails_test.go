@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 

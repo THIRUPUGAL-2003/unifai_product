@@ -1,11 +1,11 @@
 package mistral
 
 import (
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-// ToMistralOCRRequest converts a Raksha OCR request to a Mistral OCR request.
-func ToMistralOCRRequest(req *schemas.RakshaOCRRequest) *MistralOCRRequest {
+// ToMistralOCRRequest converts a Gateway OCR request to a Mistral OCR request.
+func ToMistralOCRRequest(req *schemas.GatewayOCRRequest) *MistralOCRRequest {
 	if req == nil {
 		return nil
 	}
@@ -49,13 +49,13 @@ func ToMistralOCRRequest(req *schemas.RakshaOCRRequest) *MistralOCRRequest {
 	return mistralReq
 }
 
-// ToRakshaOCRResponse converts a Mistral OCR response to a Raksha OCR response.
-func (r *MistralOCRResponse) ToRakshaOCRResponse() *schemas.RakshaOCRResponse {
+// ToGatewayOCRResponse converts a Mistral OCR response to a Gateway OCR response.
+func (r *MistralOCRResponse) ToGatewayOCRResponse() *schemas.GatewayOCRResponse {
 	if r == nil {
 		return nil
 	}
 
-	resp := &schemas.RakshaOCRResponse{
+	resp := &schemas.GatewayOCRResponse{
 		Model:              r.Model,
 		DocumentAnnotation: r.DocumentAnnotation,
 	}

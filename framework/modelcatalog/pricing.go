@@ -3,9 +3,9 @@ package modelcatalog
 import (
 	"context"
 
-	"github.com/raksha/raksha/core/schemas"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/modelcatalog/datasheet"
+	"github.com/gateway/gateway/core/schemas"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/modelcatalog/datasheet"
 )
 
 // GetModelCapabilityEntryForModel returns capability metadata for a
@@ -37,15 +37,15 @@ func (mc *ModelCatalog) GetPricingEntryForModel(model string, provider schemas.M
 	return mc.datasheet.GetPricingEntryForModel(model, provider)
 }
 
-// CalculateCost computes the dollar cost for a Raksha response.
-func (mc *ModelCatalog) CalculateCost(result *schemas.RakshaResponse, scopes *PricingLookupScopes) float64 {
+// CalculateCost computes the dollar cost for a Gateway response.
+func (mc *ModelCatalog) CalculateCost(result *schemas.GatewayResponse, scopes *PricingLookupScopes) float64 {
 	return mc.datasheet.CalculateCost(result, (*datasheet.LookupScopes)(scopes))
 }
 
 // CalculateCostForUsage computes the dollar cost from a bare usage object when
-// no full RakshaResponse is available — used to bill partial usage carried on
-// a failed/cancelled request (RakshaError.ExtraFields.BilledUsage).
-func (mc *ModelCatalog) CalculateCostForUsage(usage *schemas.RakshaLLMUsage, provider schemas.ModelProvider, model string, requestType schemas.RequestType, scopes *PricingLookupScopes) float64 {
+// no full GatewayResponse is available — used to bill partial usage carried on
+// a failed/cancelled request (GatewayError.ExtraFields.BilledUsage).
+func (mc *ModelCatalog) CalculateCostForUsage(usage *schemas.GatewayLLMUsage, provider schemas.ModelProvider, model string, requestType schemas.RequestType, scopes *PricingLookupScopes) float64 {
 	return mc.datasheet.CalculateCostForUsage(usage, provider, model, requestType, (*datasheet.LookupScopes)(scopes))
 }
 

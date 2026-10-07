@@ -19,6 +19,8 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
+import { PRODUCT_NAME } from "@/lib/constants/config";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { getErrorMessage } from "@/lib/store";
 import { useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import {
@@ -32,7 +34,7 @@ import {
 import { CircuitBreakerPolicy } from "@enterprise/lib/types/workspace";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { ListFilter, PenLine, Plus, RotateCcw, Shield, Trash2 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 
@@ -94,7 +96,15 @@ export default function CircuitBreakerView() {
 	const [offset, setOffset] = useState(0);
 	const [limit, setLimit] = useState(10);
 	const { data: policyData, isLoading: loading, isError: isPolicyError, error: policyError, refetch } = useGetCircuitBreakerPoliciesQuery();
-	const { data: stateData } = useGetCircuitBreakerStateQuery(undefined, { pollingInterval: 8000 });
+	const [statePollMs, setStatePollMs] = useState(8000);
+	const {
+		data: stateData,
+		isError: isStateError,
+		error: stateError,
+	} = useGetCircuitBreakerStateQuery(undefined, { pollingInterval: statePollMs });
+	useEffect(() => {
+		setStatePollMs(isStateError ? 0 : 8000);
+	}, [isStateError]);
 	const [createPolicy, { isLoading: creating }] = useCreateCircuitBreakerPolicyMutation();
 	const [updatePolicy, { isLoading: updating }] = useUpdateCircuitBreakerPolicyMutation();
 	const [deletePolicy, { isLoading: isDeleting }] = useDeleteCircuitBreakerPolicyMutation();
@@ -102,7 +112,7 @@ export default function CircuitBreakerView() {
 	const policies = policyData?.policies || [];
 	const pagedPolicies = policies.slice(offset, offset + limit);
 	const states = stateData?.circuits || {};
-	const { data: providersData = [] } = useGetProvidersQuery();
+	const { data: providersData = [], isError: isProvidersError, error: providersError } = useGetProvidersQuery();
 
 	const availableProviders = useMemo(
 		() =>
@@ -265,6 +275,19 @@ export default function CircuitBreakerView() {
 					New policy
 				</Button>
 			</div>
+
+			{isProvidersError ? (
+				<QueryErrorBanner
+					testId="circuit-breaker-providers-error"
+					message={getErrorMessage(providersError) || "Failed to load providers for policy forms."}
+				/>
+			) : null}
+			{isStateError ? (
+				<QueryErrorBanner
+					testId="circuit-breaker-state-error"
+					message={getErrorMessage(stateError) || "Failed to load live circuit states (polling paused)."}
+				/>
+			) : null}
 
 			{loading ? (
 				<p className="text-muted-foreground text-sm">Loading policies…</p>
@@ -501,7 +524,7 @@ export default function CircuitBreakerView() {
 							)}
 
 							<p className="text-muted-foreground text-xs">
-								Raksha watches this header on the primary provider response. When it matches, traffic fails over to the fallback until cooldown
+								{PRODUCT_NAME} watches this header on the primary provider response. When it matches, traffic fails over to the fallback until cooldown
 								expires.
 							</p>
 						</div>

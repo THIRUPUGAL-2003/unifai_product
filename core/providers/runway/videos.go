@@ -6,35 +6,35 @@ import (
 	"strings"
 	"time"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-func ToRunwayVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequest) (*RunwayVideoGenerationRequest, error) {
+func ToRunwayVideoGenerationRequest(gatewayReq *schemas.GatewayVideoGenerationRequest) (*RunwayVideoGenerationRequest, error) {
 	// three types of video generation requests in runway api
 	// 1. image to video
 	// 2. text to video
 	// 3. video to video
-	if rakshaReq.Input == nil {
+	if gatewayReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
 	request := &RunwayVideoGenerationRequest{
-		Model: rakshaReq.Model,
+		Model: gatewayReq.Model,
 		Ratio: schemas.Ptr("1280:720"),
 	}
 
-	if isRunwayVeoModel(rakshaReq.Model) {
+	if isRunwayVeoModel(gatewayReq.Model) {
 		request.Duration = schemas.Ptr(4)
-	} else if isRunwayGenModel(rakshaReq.Model) {
+	} else if isRunwayGenModel(gatewayReq.Model) {
 		request.Duration = schemas.Ptr(2)
 	}
 
-	if rakshaReq.Input.Prompt != "" {
-		request.PromptText = &rakshaReq.Input.Prompt
+	if gatewayReq.Input.Prompt != "" {
+		request.PromptText = &gatewayReq.Input.Prompt
 	}
-	if rakshaReq.Input.InputReference != nil {
-		sanitizedURL, err := schemas.SanitizeImageURL(*rakshaReq.Input.InputReference)
+	if gatewayReq.Input.InputReference != nil {
+		sanitizedURL, err := schemas.SanitizeImageURL(*gatewayReq.Input.InputReference)
 		if err != nil {
 			return nil, fmt.Errorf("invalid input reference: %w", err)
 		}
@@ -43,43 +43,43 @@ func ToRunwayVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 		}
 	}
 
-	if rakshaReq.Params != nil {
-		if rakshaReq.Params.Seconds != nil {
-			seconds, err := strconv.Atoi(*rakshaReq.Params.Seconds)
+	if gatewayReq.Params != nil {
+		if gatewayReq.Params.Seconds != nil {
+			seconds, err := strconv.Atoi(*gatewayReq.Params.Seconds)
 			if err != nil {
 				return nil, fmt.Errorf("invalid seconds value: %w", err)
 			}
 			request.Duration = &seconds
 		}
 
-		if rakshaReq.Params.Size != "" {
+		if gatewayReq.Params.Size != "" {
 			// convert 1280x720 to 1280:720
-			request.Ratio = schemas.Ptr(strings.Replace(rakshaReq.Params.Size, "x", ":", 1))
+			request.Ratio = schemas.Ptr(strings.Replace(gatewayReq.Params.Size, "x", ":", 1))
 		}
 
-		if isRunwayVeoModel(rakshaReq.Model) {
-			if rakshaReq.Params.Audio != nil {
-				request.Audio = rakshaReq.Params.Audio
+		if isRunwayVeoModel(gatewayReq.Model) {
+			if gatewayReq.Params.Audio != nil {
+				request.Audio = gatewayReq.Params.Audio
 			}
 		}
 
-		if isRunwayGenModel(rakshaReq.Model) {
-			if rakshaReq.Params.Seed != nil {
-				request.Seed = rakshaReq.Params.Seed
+		if isRunwayGenModel(gatewayReq.Model) {
+			if gatewayReq.Params.Seed != nil {
+				request.Seed = gatewayReq.Params.Seed
 			}
 		}
 
-		if rakshaReq.Params.VideoURI != nil {
-			if !supportsVideoToVideo(rakshaReq.Model) {
-				return nil, fmt.Errorf("video_uri is not supported for model %s", rakshaReq.Model)
+		if gatewayReq.Params.VideoURI != nil {
+			if !supportsVideoToVideo(gatewayReq.Model) {
+				return nil, fmt.Errorf("video_uri is not supported for model %s", gatewayReq.Model)
 			}
-			request.VideoURI = rakshaReq.Params.VideoURI
+			request.VideoURI = gatewayReq.Params.VideoURI
 		}
 
-		if rakshaReq.Params.ExtraParams != nil {
-			request.ExtraParams = rakshaReq.Params.ExtraParams
+		if gatewayReq.Params.ExtraParams != nil {
+			request.ExtraParams = gatewayReq.Params.ExtraParams
 			// Handle references for video-to-video generation
-			if refsVal := rakshaReq.Params.ExtraParams["references"]; refsVal != nil {
+			if refsVal := gatewayReq.Params.ExtraParams["references"]; refsVal != nil {
 				if refs, ok := refsVal.([]Reference); ok && refs != nil {
 					request.References = refs
 					delete(request.ExtraParams, "references")
@@ -90,7 +90,7 @@ func ToRunwayVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 			}
 
 			// Handle reference images for video generation
-			if refImagesVal := rakshaReq.Params.ExtraParams["reference_images"]; refImagesVal != nil {
+			if refImagesVal := gatewayReq.Params.ExtraParams["reference_images"]; refImagesVal != nil {
 				if refImages, ok := refImagesVal.([]ReferenceImage); ok && refImages != nil {
 					delete(request.ExtraParams, "reference_images")
 					request.ReferenceImages = refImages
@@ -101,8 +101,8 @@ func ToRunwayVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 			}
 
 			// add content moderation
-			if isRunwayVeoModel(rakshaReq.Model) {
-				if cmVal := rakshaReq.Params.ExtraParams["content_moderation"]; cmVal != nil {
+			if isRunwayVeoModel(gatewayReq.Model) {
+				if cmVal := gatewayReq.Params.ExtraParams["content_moderation"]; cmVal != nil {
 					if cm, ok := cmVal.(*ContentModeration); ok && cm != nil {
 						delete(request.ExtraParams, "content_moderation")
 						request.ContentModeration = cm
@@ -118,19 +118,19 @@ func ToRunwayVideoGenerationRequest(rakshaReq *schemas.RakshaVideoGenerationRequ
 	return request, nil
 }
 
-// ToRakshaVideoGenerationResponse converts Runway task details to Raksha video generation response format.
-func ToRakshaVideoGenerationResponse(taskDetails *RunwayTaskDetailsResponse) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+// ToGatewayVideoGenerationResponse converts Runway task details to Gateway video generation response format.
+func ToGatewayVideoGenerationResponse(taskDetails *RunwayTaskDetailsResponse) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if taskDetails == nil {
-		return nil, providerUtils.NewRakshaOperationError("task details is nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("task details is nil", nil)
 	}
 
-	response := &schemas.RakshaVideoGenerationResponse{
+	response := &schemas.GatewayVideoGenerationResponse{
 		ID:        taskDetails.ID,
 		Object:    "video",
 		CreatedAt: time.Now().Unix(),
 	}
 
-	// Map Runway task status to Raksha video status
+	// Map Runway task status to Gateway video status
 	switch taskDetails.Status {
 	case RunwayTaskStatusPending, RunwayTaskStatusThrottled:
 		response.Status = schemas.VideoStatusQueued

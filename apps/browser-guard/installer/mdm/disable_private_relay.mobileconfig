@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Raksha Guard — MDM guidance profile (template).
+  Gateway Guard — MDM guidance profile (template).
   Import into Jamf / Intune / Kandji after replacing placeholders.
   Goal: discourage iCloud Private Relay on managed Macs so Safari follows system PAC.
 -->
@@ -13,13 +13,13 @@
       <key>PayloadType</key>
       <string>com.apple.applicationaccess</string>
       <key>PayloadIdentifier</key>
-      <string>com.raksha.guard.restrictions</string>
+      <string>com.gateway.guard.restrictions</string>
       <key>PayloadUUID</key>
       <string>A1B2C3D4-E5F6-7890-ABCD-EF1234567890</string>
       <key>PayloadVersion</key>
       <integer>1</integer>
       <key>PayloadDisplayName</key>
-      <string>Raksha Guard Safari Guidance</string>
+      <string>Gateway Guard Safari Guidance</string>
       <!-- Organizations typically enforce Private Relay off via Restrict iCloud Private Relay
            in their MDM console — map this template to that control. -->
       <key>allowCloudPrivateRelay</key>
@@ -27,9 +27,9 @@
     </dict>
   </array>
   <key>PayloadDisplayName</key>
-  <string>Raksha Guard — Disable Private Relay</string>
+  <string>Gateway Guard — Disable Private Relay</string>
   <key>PayloadIdentifier</key>
-  <string>com.raksha.guard.mdm.privaterelay</string>
+  <string>com.gateway.guard.mdm.privaterelay</string>
   <key>PayloadType</key>
   <string>Configuration</string>
   <key>PayloadUUID</key>

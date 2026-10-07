@@ -12,26 +12,26 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
+	gateway "github.com/gateway/gateway/core"
 
-	"github.com/raksha/raksha/core/providers/gemini"
-	"github.com/raksha/raksha/core/providers/vertex"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/gemini"
+	"github.com/gateway/gateway/core/providers/vertex"
+	"github.com/gateway/gateway/core/schemas"
 
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/tidwall/gjson"
 	"github.com/valyala/fasthttp"
 )
 
-const isGeminiEmbedContentRequestContextKey schemas.RakshaContextKey = "raksha-is-gemini-embed-content-request"
+const isGeminiEmbedContentRequestContextKey schemas.GatewayContextKey = "gateway-is-gemini-embed-content-request"
 
-const isGeminiVideoGenerationRequestContextKey schemas.RakshaContextKey = "raksha-is-gemini-video-generation-request"
+const isGeminiVideoGenerationRequestContextKey schemas.GatewayContextKey = "gateway-is-gemini-video-generation-request"
 
-const isGeminiBatchCreateRequestContextKey schemas.RakshaContextKey = "raksha-is-gemini-batch-create-request"
+const isGeminiBatchCreateRequestContextKey schemas.GatewayContextKey = "gateway-is-gemini-batch-create-request"
 
-const requestedGeminiModelMetadataContextKey schemas.RakshaContextKey = "raksha-requested-gemini-model-metadata"
+const requestedGeminiModelMetadataContextKey schemas.GatewayContextKey = "gateway-requested-gemini-model-metadata"
 
-const genAIRawRequestBodyContextKey schemas.RakshaContextKey = "raksha-genai-raw-request-body"
+const genAIRawRequestBodyContextKey schemas.GatewayContextKey = "gateway-genai-raw-request-body"
 
 // GenAIRouter holds route registrations for genai endpoints.
 type GenAIRouter struct {
@@ -52,20 +52,20 @@ func CreateGenAIRouteConfigs(pathPrefix string) []RouteConfig {
 			return schemas.VideoRetrieveRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaVideoRetrieveRequest{}
+			return &schemas.GatewayVideoRetrieveRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-			if videoRetrieveReq, ok := req.(*schemas.RakshaVideoRetrieveRequest); ok {
-				return &schemas.RakshaRequest{
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+			if videoRetrieveReq, ok := req.(*schemas.GatewayVideoRetrieveRequest); ok {
+				return &schemas.GatewayRequest{
 					VideoRetrieveRequest: videoRetrieveReq,
 				}, nil
 			}
 			return nil, errors.New("invalid video retrieve request type")
 		},
-		VideoGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaVideoGenerationResponse) (interface{}, error) {
+		VideoGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayVideoGenerationResponse) (interface{}, error) {
 			return gemini.ToGeminiVideoGenerationResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiVideoOperationFromPath,
@@ -81,48 +81,48 @@ func CreateGenAIRouteConfigs(pathPrefix string) []RouteConfig {
 			return requestType
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			if requestType, ok := ctx.Value(schemas.RakshaContextKeyHTTPRequestType).(schemas.RequestType); ok && requestType == schemas.EmbeddingRequest && ctx.Value(isGeminiEmbedContentRequestContextKey) != nil {
+			if requestType, ok := ctx.Value(schemas.GatewayContextKeyHTTPRequestType).(schemas.RequestType); ok && requestType == schemas.EmbeddingRequest && ctx.Value(isGeminiEmbedContentRequestContextKey) != nil {
 				return &gemini.GeminiEmbeddingRequest{}
 			}
-			if requestType, ok := ctx.Value(schemas.RakshaContextKeyHTTPRequestType).(schemas.RequestType); ok && requestType == schemas.VideoGenerationRequest && ctx.Value(isGeminiVideoGenerationRequestContextKey) != nil {
+			if requestType, ok := ctx.Value(schemas.GatewayContextKeyHTTPRequestType).(schemas.RequestType); ok && requestType == schemas.VideoGenerationRequest && ctx.Value(isGeminiVideoGenerationRequestContextKey) != nil {
 				return &gemini.GeminiVideoGenerationRequest{}
 			}
-			if requestType, ok := ctx.Value(schemas.RakshaContextKeyHTTPRequestType).(schemas.RequestType); ok && requestType == schemas.BatchCreateRequest && ctx.Value(isGeminiBatchCreateRequestContextKey) != nil {
+			if requestType, ok := ctx.Value(schemas.GatewayContextKeyHTTPRequestType).(schemas.RequestType); ok && requestType == schemas.BatchCreateRequest && ctx.Value(isGeminiBatchCreateRequestContextKey) != nil {
 				return &gemini.GeminiBatchCreateRequest{}
 			}
 			return &gemini.GeminiGenerationRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if geminiReq, ok := req.(*gemini.GeminiGenerationRequest); ok {
 				if geminiReq.IsCountTokens {
-					return &schemas.RakshaRequest{
-						CountTokensRequest: geminiReq.ToRakshaResponsesRequest(ctx),
+					return &schemas.GatewayRequest{
+						CountTokensRequest: geminiReq.ToGatewayResponsesRequest(ctx),
 					}, nil
 				} else if geminiReq.IsEmbedding {
-					return &schemas.RakshaRequest{
-						EmbeddingRequest: geminiReq.ToRakshaEmbeddingRequest(ctx),
+					return &schemas.GatewayRequest{
+						EmbeddingRequest: geminiReq.ToGatewayEmbeddingRequest(ctx),
 					}, nil
 				} else if geminiReq.IsSpeech {
-					return &schemas.RakshaRequest{
-						SpeechRequest: geminiReq.ToRakshaSpeechRequest(ctx),
+					return &schemas.GatewayRequest{
+						SpeechRequest: geminiReq.ToGatewaySpeechRequest(ctx),
 					}, nil
 				} else if geminiReq.IsTranscription {
-					transcriptionReq, err := geminiReq.ToRakshaTranscriptionRequest(ctx)
+					transcriptionReq, err := geminiReq.ToGatewayTranscriptionRequest(ctx)
 					if err != nil {
 						return nil, err
 					}
-					return &schemas.RakshaRequest{TranscriptionRequest: transcriptionReq}, nil
+					return &schemas.GatewayRequest{TranscriptionRequest: transcriptionReq}, nil
 				} else if geminiReq.IsImageGeneration {
-					return &schemas.RakshaRequest{
-						ImageGenerationRequest: geminiReq.ToRakshaImageGenerationRequest(ctx),
+					return &schemas.GatewayRequest{
+						ImageGenerationRequest: geminiReq.ToGatewayImageGenerationRequest(ctx),
 					}, nil
 				} else if geminiReq.IsImageEdit {
-					return &schemas.RakshaRequest{
-						ImageEditRequest: geminiReq.ToRakshaImageEditRequest(ctx),
+					return &schemas.GatewayRequest{
+						ImageEditRequest: geminiReq.ToGatewayImageEditRequest(ctx),
 					}, nil
 				} else {
-					return &schemas.RakshaRequest{
-						ResponsesRequest: geminiReq.ToRakshaResponsesRequest(ctx),
+					return &schemas.GatewayRequest{
+						ResponsesRequest: geminiReq.ToGatewayResponsesRequest(ctx),
 					}, nil
 				}
 			} else if geminiReq, ok := req.(*gemini.GeminiEmbeddingRequest); ok {
@@ -130,30 +130,30 @@ func CreateGenAIRouteConfigs(pathPrefix string) []RouteConfig {
 					Model:    geminiReq.Model,
 					Requests: []gemini.GeminiEmbeddingRequest{*geminiReq},
 				}
-				return &schemas.RakshaRequest{
-					EmbeddingRequest: req.ToRakshaEmbeddingRequest(ctx),
+				return &schemas.GatewayRequest{
+					EmbeddingRequest: req.ToGatewayEmbeddingRequest(ctx),
 				}, nil
 			} else if geminiReq, ok := req.(*gemini.GeminiVideoGenerationRequest); ok {
-				// convert to raksha video generation request
-				rakshaReq, err := geminiReq.ToRakshaVideoGenerationRequest(ctx)
+				// convert to gateway video generation request
+				gatewayReq, err := geminiReq.ToGatewayVideoGenerationRequest(ctx)
 				if err != nil {
 					return nil, err
 				}
-				return &schemas.RakshaRequest{
-					VideoGenerationRequest: rakshaReq,
+				return &schemas.GatewayRequest{
+					VideoGenerationRequest: gatewayReq,
 				}, nil
 			}
 			return nil, errors.New("invalid request type")
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if geminiReq, ok := req.(*gemini.GeminiBatchCreateRequest); ok {
 				// Get provider from context
-				provider, ok := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider, ok := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				if !ok {
 					provider = schemas.Gemini
 				}
 
-				// Convert Gemini batch request items directly to Raksha format
+				// Convert Gemini batch request items directly to Gateway format
 				var requests []schemas.BatchRequestItem
 				if geminiReq.Batch.InputConfig.Requests != nil && len(geminiReq.Batch.InputConfig.Requests.Requests) > 0 {
 					requests = make([]schemas.BatchRequestItem, len(geminiReq.Batch.InputConfig.Requests.Requests))
@@ -183,7 +183,7 @@ func CreateGenAIRouteConfigs(pathPrefix string) []RouteConfig {
 					}
 				}
 
-				rakshaBatchReq := &schemas.RakshaBatchCreateRequest{
+				gatewayBatchReq := &schemas.GatewayBatchCreateRequest{
 					Provider:       provider,
 					Model:          &geminiReq.Model,
 					Requests:       requests,
@@ -192,56 +192,56 @@ func CreateGenAIRouteConfigs(pathPrefix string) []RouteConfig {
 
 				// Handle file-based input
 				if geminiReq.Batch.InputConfig.FileName != "" {
-					rakshaBatchReq.InputFileID = geminiReq.Batch.InputConfig.FileName
+					gatewayBatchReq.InputFileID = geminiReq.Batch.InputConfig.FileName
 				}
 
 				return &BatchRequest{
 					Type:          schemas.BatchCreateRequest,
-					CreateRequest: rakshaBatchReq,
+					CreateRequest: gatewayBatchReq,
 				}, nil
 			}
 			return nil, errors.New("invalid batch create request type")
 		},
-		EmbeddingResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaEmbeddingResponse) (interface{}, error) {
+		EmbeddingResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayEmbeddingResponse) (interface{}, error) {
 			if ctx.Value(isGeminiEmbedContentRequestContextKey) != nil {
 				return gemini.ToGeminiEmbedContentResponse(resp), nil
 			}
 			return gemini.ToGeminiEmbeddingResponse(resp), nil
 		},
-		ResponsesResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
+		ResponsesResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesResponse) (interface{}, error) {
 			return gemini.ToGeminiResponsesResponse(resp), nil
 		},
-		SpeechResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaSpeechResponse) (interface{}, error) {
+		SpeechResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewaySpeechResponse) (interface{}, error) {
 			return gemini.ToGeminiSpeechResponse(resp), nil
 		},
-		TranscriptionResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTranscriptionResponse) (interface{}, error) {
+		TranscriptionResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTranscriptionResponse) (interface{}, error) {
 			return gemini.ToGeminiTranscriptionResponse(resp), nil
 		},
-		CountTokensResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCountTokensResponse) (interface{}, error) {
+		CountTokensResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCountTokensResponse) (interface{}, error) {
 			return gemini.ToGeminiCountTokensResponse(resp), nil
 		},
-		ImageGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationResponse) (interface{}, error) {
+		ImageGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationResponse) (interface{}, error) {
 			return gemini.ToGeminiImageGenerationResponse(ctx, resp)
 		},
-		VideoGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaVideoGenerationResponse) (interface{}, error) {
+		VideoGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayVideoGenerationResponse) (interface{}, error) {
 			return gemini.ToGeminiVideoGenerationResponse(resp), nil
 		},
-		BatchCreateResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCreateResponse) (interface{}, error) {
+		BatchCreateResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCreateResponse) (interface{}, error) {
 			return gemini.ToGeminiBatchJobResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		StreamConfig: &StreamConfig{
-			ResponsesStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
+			ResponsesStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
 				// Store state in context so it persists across chunks of the same stream
 				const stateKey = "gemini_stream_state"
-				var state *gemini.RakshaToGeminiStreamState
+				var state *gemini.GatewayToGeminiStreamState
 
 				if stateValue := ctx.Value(stateKey); stateValue != nil {
-					state = stateValue.(*gemini.RakshaToGeminiStreamState)
+					state = stateValue.(*gemini.GatewayToGeminiStreamState)
 				} else {
-					state = gemini.NewRakshaToGeminiStreamState()
+					state = gemini.NewGatewayToGeminiStreamState()
 					ctx.SetValue(stateKey, state)
 				}
 
@@ -251,7 +251,7 @@ func CreateGenAIRouteConfigs(pathPrefix string) []RouteConfig {
 				}
 				return "", geminiResponse, nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return gemini.ToGeminiError(err)
 			},
 		},
@@ -266,18 +266,18 @@ func CreateGenAIRouteConfigs(pathPrefix string) []RouteConfig {
 			return schemas.ListModelsRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaListModelsRequest{}
+			return &schemas.GatewayListModelsRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-			if listModelsReq, ok := req.(*schemas.RakshaListModelsRequest); ok {
-				return &schemas.RakshaRequest{
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+			if listModelsReq, ok := req.(*schemas.GatewayListModelsRequest); ok {
+				return &schemas.GatewayRequest{
 					ListModelsRequest: listModelsReq,
 				}, nil
 			}
 			return nil, errors.New("invalid request type")
 		},
 		ListModelsResponseConverter: convertGeminiModelMetadataResponse,
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiModelMetadataParams,
@@ -291,20 +291,20 @@ func CreateGenAIRouteConfigs(pathPrefix string) []RouteConfig {
 			return schemas.ListModelsRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaListModelsRequest{}
+			return &schemas.GatewayListModelsRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
-			if listModelsReq, ok := req.(*schemas.RakshaListModelsRequest); ok {
-				return &schemas.RakshaRequest{
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
+			if listModelsReq, ok := req.(*schemas.GatewayListModelsRequest); ok {
+				return &schemas.GatewayRequest{
 					ListModelsRequest: listModelsReq,
 				}, nil
 			}
 			return nil, errors.New("invalid request type")
 		},
-		ListModelsResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaListModelsResponse) (interface{}, error) {
+		ListModelsResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayListModelsResponse) (interface{}, error) {
 			return gemini.ToGeminiListModelsResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiListModelsParams,
@@ -349,8 +349,8 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 		},
 		// ShortCircuit handles step 1 for non-Gemini providers: it acknowledges
 		// the initiation by returning a synthetic upload URL and exits early so
-		// that no Raksha call is made.
-		ShortCircuit: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) (bool, error) {
+		// that no Gateway call is made.
+		ShortCircuit: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) (bool, error) {
 			r, ok := req.(*gemini.GeminiFileUploadHandlerReq)
 			if !ok || r.UploadID != "" {
 				return false, nil
@@ -371,7 +371,7 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 				MimeType:    r.MimeType,
 				Provider:    r.Provider,
 			}
-			if vk, ok := rakshaCtx.Value(schemas.RakshaContextKeyVirtualKey).(string); ok && vk != "" {
+			if vk, ok := gatewayCtx.Value(schemas.GatewayContextKeyVirtualKey).(string); ok && vk != "" {
 				session.VirtualKey = vk
 			}
 			if err := kvStore.SetWithTTL(uploadID, session, 1*time.Minute); err != nil {
@@ -392,8 +392,8 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 			return true, nil
 		},
 		// FileRequestConverter handles step 2: retrieves the saved session from
-		// the KV store and builds a full RakshaFileUploadRequest.
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
+		// the KV store and builds a full GatewayFileUploadRequest.
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
 			r, ok := req.(*gemini.GeminiFileUploadHandlerReq)
 			if !ok {
 				return nil, errors.New("invalid file upload request type")
@@ -421,8 +421,8 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 			// the upload_id is the credential), so restore the virtual key that
 			// initiated the upload. Headers presented on the chunk request win.
 			if session.VirtualKey != "" {
-				if vk, ok := ctx.Value(schemas.RakshaContextKeyVirtualKey).(string); !ok || vk == "" {
-					ctx.SetValue(schemas.RakshaContextKeyVirtualKey, session.VirtualKey)
+				if vk, ok := ctx.Value(schemas.GatewayContextKeyVirtualKey).(string); !ok || vk == "" {
+					ctx.SetValue(schemas.GatewayContextKeyVirtualKey, session.VirtualKey)
 				}
 			}
 
@@ -434,7 +434,7 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 
 			return &FileRequest{
 				Type: schemas.FileUploadRequest,
-				UploadRequest: &schemas.RakshaFileUploadRequest{
+				UploadRequest: &schemas.GatewayFileUploadRequest{
 					Provider:    session.Provider,
 					File:        r.FileData,
 					Filename:    filename,
@@ -443,13 +443,13 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 				},
 			}, nil
 		},
-		FileUploadResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileUploadResponse) (interface{}, error) {
+		FileUploadResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileUploadResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return gemini.ToGeminiFileUploadResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiFileUploadParams,
@@ -468,10 +468,10 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 			return schemas.FileListRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaFileListRequest{}
+			return &schemas.GatewayFileListRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
-			if listReq, ok := req.(*schemas.RakshaFileListRequest); ok {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
+			if listReq, ok := req.(*schemas.GatewayFileListRequest); ok {
 				return &FileRequest{
 					Type:        schemas.FileListRequest,
 					ListRequest: listReq,
@@ -479,13 +479,13 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 			}
 			return nil, errors.New("invalid file list request type")
 		},
-		FileListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileListResponse) (interface{}, error) {
+		FileListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileListResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return gemini.ToGeminiFileListResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiFileListQueryParams,
@@ -500,10 +500,10 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 			return schemas.FileRetrieveRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaFileRetrieveRequest{}
+			return &schemas.GatewayFileRetrieveRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
-			if retrieveReq, ok := req.(*schemas.RakshaFileRetrieveRequest); ok {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
+			if retrieveReq, ok := req.(*schemas.GatewayFileRetrieveRequest); ok {
 				return &FileRequest{
 					Type:            schemas.FileRetrieveRequest,
 					RetrieveRequest: retrieveReq,
@@ -511,13 +511,13 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 			}
 			return nil, errors.New("invalid file retrieve request type")
 		},
-		FileRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileRetrieveResponse) (interface{}, error) {
+		FileRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileRetrieveResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return gemini.ToGeminiFileRetrieveResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiFileIDFromPath,
@@ -532,10 +532,10 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 			return schemas.FileDeleteRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaFileDeleteRequest{}
+			return &schemas.GatewayFileDeleteRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
-			if deleteReq, ok := req.(*schemas.RakshaFileDeleteRequest); ok {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
+			if deleteReq, ok := req.(*schemas.GatewayFileDeleteRequest); ok {
 				return &FileRequest{
 					Type:          schemas.FileDeleteRequest,
 					DeleteRequest: deleteReq,
@@ -543,13 +543,13 @@ func CreateGenAIFileRouteConfigs(pathPrefix string, handlerStore lib.HandlerStor
 			}
 			return nil, errors.New("invalid file delete request type")
 		},
-		FileDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileDeleteResponse) (interface{}, error) {
+		FileDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileDeleteResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return map[string]interface{}{}, nil // Gemini returns empty response on delete
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiFileIDFromPath,
@@ -569,10 +569,10 @@ func CreateGenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 			return schemas.BatchListRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaBatchListRequest{}
+			return &schemas.GatewayBatchListRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-			if listReq, ok := req.(*schemas.RakshaBatchListRequest); ok {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+			if listReq, ok := req.(*schemas.GatewayBatchListRequest); ok {
 				return &BatchRequest{
 					Type:        schemas.BatchListRequest,
 					ListRequest: listReq,
@@ -580,13 +580,13 @@ func CreateGenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 			}
 			return nil, errors.New("invalid batch list request type")
 		},
-		BatchListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchListResponse) (interface{}, error) {
+		BatchListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchListResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return gemini.ToGeminiBatchListResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiFileListQueryParams,
@@ -600,10 +600,10 @@ func CreateGenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 			return schemas.BatchRetrieveRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaBatchRetrieveRequest{}
+			return &schemas.GatewayBatchRetrieveRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-			if retrieveReq, ok := req.(*schemas.RakshaBatchRetrieveRequest); ok {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+			if retrieveReq, ok := req.(*schemas.GatewayBatchRetrieveRequest); ok {
 				return &BatchRequest{
 					Type:            schemas.BatchRetrieveRequest,
 					RetrieveRequest: retrieveReq,
@@ -611,13 +611,13 @@ func CreateGenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 			}
 			return nil, errors.New("invalid batch retrieve request type")
 		},
-		BatchRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchRetrieveResponse) (interface{}, error) {
+		BatchRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchRetrieveResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return gemini.ToGeminiBatchRetrieveResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiBatchIDFromPath,
@@ -631,10 +631,10 @@ func CreateGenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 			return schemas.BatchCancelRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaBatchCancelRequest{}
+			return &schemas.GatewayBatchCancelRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-			if cancelReq, ok := req.(*schemas.RakshaBatchCancelRequest); ok {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+			if cancelReq, ok := req.(*schemas.GatewayBatchCancelRequest); ok {
 				return &BatchRequest{
 					Type:          schemas.BatchCancelRequest,
 					CancelRequest: cancelReq,
@@ -642,13 +642,13 @@ func CreateGenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 			}
 			return nil, errors.New("invalid batch cancel request type")
 		},
-		BatchCancelResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCancelResponse) (interface{}, error) {
+		BatchCancelResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCancelResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return map[string]interface{}{}, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiBatchIDFromPath,
@@ -662,10 +662,10 @@ func CreateGenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 			return schemas.BatchDeleteRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaBatchDeleteRequest{}
+			return &schemas.GatewayBatchDeleteRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-			if deleteReq, ok := req.(*schemas.RakshaBatchDeleteRequest); ok {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+			if deleteReq, ok := req.(*schemas.GatewayBatchDeleteRequest); ok {
 				return &BatchRequest{
 					Type:          schemas.BatchDeleteRequest,
 					DeleteRequest: deleteReq,
@@ -673,13 +673,13 @@ func CreateGenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 			}
 			return nil, errors.New("invalid batch delete request type")
 		},
-		BatchDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchDeleteResponse) (interface{}, error) {
+		BatchDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchDeleteResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Gemini && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return map[string]interface{}{}, nil // Gemini returns empty response on delete
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractGeminiBatchIDFromPath,
@@ -692,7 +692,7 @@ func CreateGenAIBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerSto
 // batchPredictionJobs API (as used by the aiplatform JobServiceClient). Unlike the Gemini
 // Developer batches surface, Vertex batch prediction is GCS-backed and addressed by the
 // regional resource path projects/{project}/locations/{location}/batchPredictionJobs.
-// Key/project selection happens in Raksha from the vertex key config, so the project and
+// Key/project selection happens in Gateway from the vertex key config, so the project and
 // location in the path are placeholders used only for routing the request shape.
 func CreateVertexBatchRouteConfigs(pathPrefix string) []RouteConfig {
 	var routes []RouteConfig
@@ -711,11 +711,11 @@ func CreateVertexBatchRouteConfigs(pathPrefix string) []RouteConfig {
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &vertex.VertexBatchPredictionJob{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if job, ok := req.(*vertex.VertexBatchPredictionJob); ok {
-				createReq := vertex.ToRakshaBatchCreateRequest(job)
+				createReq := vertex.ToGatewayBatchCreateRequest(job)
 				// Provider follows x-model-provider (Vertex by default), set in the PreCallback.
-				if provider, ok := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider); ok && provider != "" {
+				if provider, ok := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider); ok && provider != "" {
 					createReq.Provider = provider
 				}
 				// The native body is already a Vertex BatchPredictionJob; carry it verbatim
@@ -723,7 +723,7 @@ func CreateVertexBatchRouteConfigs(pathPrefix string) []RouteConfig {
 				// Only passthrough when routing to Vertex (the only provider for this body shape).
 				createReq.RawRequestBody = getGenAIRawRequestBody(ctx)
 				if createReq.Provider == schemas.Vertex && len(createReq.RawRequestBody) > 0 {
-					ctx.SetValue(schemas.RakshaContextKeyUseRawRequestBody, true)
+					ctx.SetValue(schemas.GatewayContextKeyUseRawRequestBody, true)
 				}
 				return &BatchRequest{
 					Type:          schemas.BatchCreateRequest,
@@ -732,20 +732,20 @@ func CreateVertexBatchRouteConfigs(pathPrefix string) []RouteConfig {
 			}
 			return nil, errors.New("invalid vertex batch create request type")
 		},
-		BatchCreateResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCreateResponse) (interface{}, error) {
+		BatchCreateResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCreateResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Vertex && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return vertex.ToVertexBatchCreateResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		// Resolve the provider from x-model-provider (Vertex by default) and capture the
 		// native body so the converter can override the provider and gate passthrough on Vertex.
-		PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-			rakshaCtx.SetValue(rakshaContextKeyProvider, getProviderFromHeader(ctx, schemas.Vertex))
-			setGenAIRawRequestBodyFromRequest(ctx, rakshaCtx)
+		PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+			gatewayCtx.SetValue(gatewayContextKeyProvider, getProviderFromHeader(ctx, schemas.Vertex))
+			setGenAIRawRequestBodyFromRequest(ctx, gatewayCtx)
 			return nil
 		},
 	})
@@ -759,21 +759,21 @@ func CreateVertexBatchRouteConfigs(pathPrefix string) []RouteConfig {
 			return schemas.BatchListRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaBatchListRequest{}
+			return &schemas.GatewayBatchListRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-			if listReq, ok := req.(*schemas.RakshaBatchListRequest); ok {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+			if listReq, ok := req.(*schemas.GatewayBatchListRequest); ok {
 				return &BatchRequest{Type: schemas.BatchListRequest, ListRequest: listReq}, nil
 			}
 			return nil, errors.New("invalid vertex batch list request type")
 		},
-		BatchListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchListResponse) (interface{}, error) {
+		BatchListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchListResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Vertex && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return vertex.ToVertexBatchListResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractVertexBatchPathParams,
@@ -788,21 +788,21 @@ func CreateVertexBatchRouteConfigs(pathPrefix string) []RouteConfig {
 			return schemas.BatchRetrieveRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaBatchRetrieveRequest{}
+			return &schemas.GatewayBatchRetrieveRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-			if retrieveReq, ok := req.(*schemas.RakshaBatchRetrieveRequest); ok {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+			if retrieveReq, ok := req.(*schemas.GatewayBatchRetrieveRequest); ok {
 				return &BatchRequest{Type: schemas.BatchRetrieveRequest, RetrieveRequest: retrieveReq}, nil
 			}
 			return nil, errors.New("invalid vertex batch retrieve request type")
 		},
-		BatchRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchRetrieveResponse) (interface{}, error) {
+		BatchRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchRetrieveResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Vertex && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			return vertex.ToVertexBatchRetrieveResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractVertexBatchPathParams,
@@ -817,22 +817,22 @@ func CreateVertexBatchRouteConfigs(pathPrefix string) []RouteConfig {
 			return schemas.BatchCancelRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaBatchCancelRequest{}
+			return &schemas.GatewayBatchCancelRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-			if cancelReq, ok := req.(*schemas.RakshaBatchCancelRequest); ok {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+			if cancelReq, ok := req.(*schemas.GatewayBatchCancelRequest); ok {
 				return &BatchRequest{Type: schemas.BatchCancelRequest, CancelRequest: cancelReq}, nil
 			}
 			return nil, errors.New("invalid vertex batch cancel request type")
 		},
-		BatchCancelResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCancelResponse) (interface{}, error) {
+		BatchCancelResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCancelResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Vertex && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			// Vertex batchPredictionJobs.cancel returns google.protobuf.Empty.
 			return map[string]interface{}{}, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractVertexBatchPathParams,
@@ -847,22 +847,22 @@ func CreateVertexBatchRouteConfigs(pathPrefix string) []RouteConfig {
 			return schemas.BatchDeleteRequest
 		},
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
-			return &schemas.RakshaBatchDeleteRequest{}
+			return &schemas.GatewayBatchDeleteRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
-			if deleteReq, ok := req.(*schemas.RakshaBatchDeleteRequest); ok {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
+			if deleteReq, ok := req.(*schemas.GatewayBatchDeleteRequest); ok {
 				return &BatchRequest{Type: schemas.BatchDeleteRequest, DeleteRequest: deleteReq}, nil
 			}
 			return nil, errors.New("invalid vertex batch delete request type")
 		},
-		BatchDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchDeleteResponse) (interface{}, error) {
+		BatchDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchDeleteResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Vertex && resp.ExtraFields.RawResponse != nil {
 				return resp.ExtraFields.RawResponse, nil
 			}
 			// Vertex batchPredictionJobs.delete returns a long-running Operation.
 			return map[string]interface{}{"done": true}, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 		PreCallback: extractVertexBatchPathParams,
@@ -874,7 +874,7 @@ func CreateVertexBatchRouteConfigs(pathPrefix string) []RouteConfig {
 // extractVertexBatchPathParams pins the provider to Vertex and extracts the bare batch_id
 // (stripping any :cancel action suffix) for the native Vertex batch routes. The job ID is
 // passed bare so the provider resolves project/region from its key config.
-func extractVertexBatchPathParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractVertexBatchPathParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	batchID, _ := ctx.UserValue("batch_id").(string)
 	batchID = strings.TrimSuffix(batchID, ":cancel")
 
@@ -882,7 +882,7 @@ func extractVertexBatchPathParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.R
 	provider := getProviderFromHeader(ctx, schemas.Vertex)
 
 	switch r := req.(type) {
-	case *schemas.RakshaBatchListRequest:
+	case *schemas.GatewayBatchListRequest:
 		r.Provider = provider
 		if pageSizeStr := string(ctx.QueryArgs().Peek("pageSize")); pageSizeStr != "" {
 			if pageSize, err := strconv.Atoi(pageSizeStr); err == nil {
@@ -892,19 +892,19 @@ func extractVertexBatchPathParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.R
 		if pageToken := string(ctx.QueryArgs().Peek("pageToken")); pageToken != "" {
 			r.After = &pageToken
 		}
-	case *schemas.RakshaBatchRetrieveRequest:
+	case *schemas.GatewayBatchRetrieveRequest:
 		if batchID == "" {
 			return errors.New("batch_id is required")
 		}
 		r.Provider = provider
 		r.BatchID = batchID
-	case *schemas.RakshaBatchCancelRequest:
+	case *schemas.GatewayBatchCancelRequest:
 		if batchID == "" {
 			return errors.New("batch_id is required")
 		}
 		r.Provider = provider
 		r.BatchID = batchID
-	case *schemas.RakshaBatchDeleteRequest:
+	case *schemas.GatewayBatchDeleteRequest:
 		if batchID == "" {
 			return errors.New("batch_id is required")
 		}
@@ -915,7 +915,7 @@ func extractVertexBatchPathParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.R
 }
 
 // extractGeminiBatchIDFromPath extracts batch_id from path parameters for Gemini
-func extractGeminiBatchIDFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractGeminiBatchIDFromPath(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	provider := getProviderFromHeader(ctx, schemas.Gemini)
 
 	batchID := ctx.UserValue("batch_id")
@@ -932,13 +932,13 @@ func extractGeminiBatchIDFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.R
 	batchIDStr = strings.TrimSuffix(batchIDStr, ":cancel")
 
 	switch r := req.(type) {
-	case *schemas.RakshaBatchCancelRequest:
+	case *schemas.GatewayBatchCancelRequest:
 		r.BatchID = batchIDStr
 		r.Provider = provider
-	case *schemas.RakshaBatchRetrieveRequest:
+	case *schemas.GatewayBatchRetrieveRequest:
 		r.BatchID = batchIDStr
 		r.Provider = provider
-	case *schemas.RakshaBatchDeleteRequest:
+	case *schemas.GatewayBatchDeleteRequest:
 		r.BatchID = batchIDStr
 		r.Provider = provider
 	}
@@ -947,10 +947,10 @@ func extractGeminiBatchIDFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.R
 }
 
 // extractGeminiFileListQueryParams extracts query parameters for Gemini file list requests
-func extractGeminiFileListQueryParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractGeminiFileListQueryParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	provider := getProviderFromHeader(ctx, schemas.Gemini)
 
-	if listReq, ok := req.(*schemas.RakshaFileListRequest); ok {
+	if listReq, ok := req.(*schemas.GatewayFileListRequest); ok {
 		listReq.Provider = provider
 
 		// Extract pageSize from query parameters
@@ -964,7 +964,7 @@ func extractGeminiFileListQueryParams(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 		if pageToken := string(ctx.QueryArgs().Peek("pageToken")); pageToken != "" {
 			listReq.After = &pageToken
 		}
-	} else if listReq, ok := req.(*schemas.RakshaBatchListRequest); ok {
+	} else if listReq, ok := req.(*schemas.GatewayBatchListRequest); ok {
 		listReq.Provider = provider
 
 		// Extract pageSize from query parameters
@@ -984,7 +984,7 @@ func extractGeminiFileListQueryParams(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 }
 
 // extractGeminiFileIDFromPath extracts file_id from path parameters for Gemini
-func extractGeminiFileIDFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractGeminiFileIDFromPath(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	provider := getProviderFromHeader(ctx, schemas.Gemini)
 
 	fileID := ctx.UserValue("file_id")
@@ -998,10 +998,10 @@ func extractGeminiFileIDFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.Ra
 	}
 
 	switch r := req.(type) {
-	case *schemas.RakshaFileRetrieveRequest:
+	case *schemas.GatewayFileRetrieveRequest:
 		r.FileID = fileIDStr
 		r.Provider = provider
-	case *schemas.RakshaFileDeleteRequest:
+	case *schemas.GatewayFileDeleteRequest:
 		r.FileID = fileIDStr
 		r.Provider = provider
 	}
@@ -1011,7 +1011,7 @@ func extractGeminiFileIDFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.Ra
 
 // extractGeminiFileUploadParams populates provider and MIME-type fields on the
 // upload handler request from HTTP headers.
-func extractGeminiFileUploadParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractGeminiFileUploadParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	provider := getProviderFromHeader(ctx, schemas.Gemini)
 
 	if r, ok := req.(*gemini.GeminiFileUploadHandlerReq); ok {
@@ -1035,15 +1035,15 @@ func createGenAIRerankRouteConfig(pathPrefix string) RouteConfig {
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &vertex.VertexRankRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if vertexReq, ok := req.(*vertex.VertexRankRequest); ok {
-				return &schemas.RakshaRequest{
-					RerankRequest: vertexReq.ToRakshaRerankRequest(ctx),
+				return &schemas.GatewayRequest{
+					RerankRequest: vertexReq.ToGatewayRerankRequest(ctx),
 				}, nil
 			}
 			return nil, errors.New("invalid rerank request type")
 		},
-		RerankResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaRerankResponse) (interface{}, error) {
+		RerankResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayRerankResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Vertex {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -1051,7 +1051,7 @@ func createGenAIRerankRouteConfig(pathPrefix string) RouteConfig {
 			}
 			return resp, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return gemini.ToGeminiError(err)
 		},
 	}
@@ -1078,7 +1078,7 @@ type GeminiCachedContentUpdateBody struct {
 }
 
 // extractGeminiCachedContentNameFromPath sets cached content name from URL path on retrieve/update/delete.
-func extractGeminiCachedContentNameFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractGeminiCachedContentNameFromPath(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	provider := getProviderFromHeader(ctx, schemas.Gemini)
 	nameVal := ctx.UserValue("cached_id")
 	if nameVal == nil {
@@ -1090,13 +1090,13 @@ func extractGeminiCachedContentNameFromPath(ctx *fasthttp.RequestCtx, rakshaCtx 
 	}
 
 	switch r := req.(type) {
-	case *schemas.RakshaCachedContentRetrieveRequest:
+	case *schemas.GatewayCachedContentRetrieveRequest:
 		r.Name = nameStr
 		r.Provider = provider
-	case *schemas.RakshaCachedContentUpdateRequest:
+	case *schemas.GatewayCachedContentUpdateRequest:
 		r.Name = nameStr
 		r.Provider = provider
-	case *schemas.RakshaCachedContentDeleteRequest:
+	case *schemas.GatewayCachedContentDeleteRequest:
 		r.Name = nameStr
 		r.Provider = provider
 	}
@@ -1106,18 +1106,18 @@ func extractGeminiCachedContentNameFromPath(ctx *fasthttp.RequestCtx, rakshaCtx 
 // setGeminiCachedContentCreateProvider resolves the provider from the
 // x-model-provider header (defaulting to Gemini) and stamps it on the typed
 // create request so Vertex callers route to the Vertex provider.
-func setGeminiCachedContentCreateProvider(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func setGeminiCachedContentCreateProvider(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	provider := getProviderFromHeader(ctx, schemas.Gemini)
-	if createReq, ok := req.(*schemas.RakshaCachedContentCreateRequest); ok {
+	if createReq, ok := req.(*schemas.GatewayCachedContentCreateRequest); ok {
 		createReq.Provider = provider
 	}
 	return nil
 }
 
 // extractGeminiCachedContentListQueryParams pulls pageSize/pageToken into the list request.
-func extractGeminiCachedContentListQueryParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractGeminiCachedContentListQueryParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	provider := getProviderFromHeader(ctx, schemas.Gemini)
-	if listReq, ok := req.(*schemas.RakshaCachedContentListRequest); ok {
+	if listReq, ok := req.(*schemas.GatewayCachedContentListRequest); ok {
 		listReq.Provider = provider
 		if pageSizeStr := string(ctx.QueryArgs().Peek("pageSize")); pageSizeStr != "" {
 			if pageSize, err := strconv.Atoi(pageSizeStr); err == nil {
@@ -1152,10 +1152,10 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 				return schemas.CachedContentCreateRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaCachedContentCreateRequest{}
+				return &schemas.GatewayCachedContentCreateRequest{}
 			},
 			RequestParser: func(ctx *fasthttp.RequestCtx, req interface{}) error {
-				createReq, ok := req.(*schemas.RakshaCachedContentCreateRequest)
+				createReq, ok := req.(*schemas.GatewayCachedContentCreateRequest)
 				if !ok {
 					return errors.New("invalid cached content create request type")
 				}
@@ -1187,8 +1187,8 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 				}
 				return nil
 			},
-			CachedContentRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*CachedContentRequest, error) {
-				createReq, ok := req.(*schemas.RakshaCachedContentCreateRequest)
+			CachedContentRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*CachedContentRequest, error) {
+				createReq, ok := req.(*schemas.GatewayCachedContentCreateRequest)
 				if !ok {
 					return nil, errors.New("invalid cached content create request type")
 				}
@@ -1197,14 +1197,14 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 					createReq.Provider = schemas.Gemini
 				}
 				if len(createReq.RawRequestBody) > 0 {
-					ctx.SetValue(schemas.RakshaContextKeyUseRawRequestBody, true)
+					ctx.SetValue(schemas.GatewayContextKeyUseRawRequestBody, true)
 				}
 				return &CachedContentRequest{Type: schemas.CachedContentCreateRequest, CreateRequest: createReq}, nil
 			},
-			CachedContentCreateResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCachedContentCreateResponse) (interface{}, error) {
+			CachedContentCreateResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCachedContentCreateResponse) (interface{}, error) {
 				return gemini.ToGeminiCachedContentCreateResponse(resp), nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return gemini.ToGeminiError(err)
 			},
 			PreCallback: setGeminiCachedContentCreateProvider,
@@ -1219,19 +1219,19 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 				return schemas.CachedContentListRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaCachedContentListRequest{}
+				return &schemas.GatewayCachedContentListRequest{}
 			},
-			CachedContentRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*CachedContentRequest, error) {
-				listReq, ok := req.(*schemas.RakshaCachedContentListRequest)
+			CachedContentRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*CachedContentRequest, error) {
+				listReq, ok := req.(*schemas.GatewayCachedContentListRequest)
 				if !ok {
 					return nil, errors.New("invalid cached content list request type")
 				}
 				return &CachedContentRequest{Type: schemas.CachedContentListRequest, ListRequest: listReq}, nil
 			},
-			CachedContentListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCachedContentListResponse) (interface{}, error) {
+			CachedContentListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCachedContentListResponse) (interface{}, error) {
 				return gemini.ToGeminiCachedContentListResponse(resp), nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return gemini.ToGeminiError(err)
 			},
 			PreCallback: extractGeminiCachedContentListQueryParams,
@@ -1246,19 +1246,19 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 				return schemas.CachedContentRetrieveRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaCachedContentRetrieveRequest{}
+				return &schemas.GatewayCachedContentRetrieveRequest{}
 			},
-			CachedContentRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*CachedContentRequest, error) {
-				retrieveReq, ok := req.(*schemas.RakshaCachedContentRetrieveRequest)
+			CachedContentRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*CachedContentRequest, error) {
+				retrieveReq, ok := req.(*schemas.GatewayCachedContentRetrieveRequest)
 				if !ok {
 					return nil, errors.New("invalid cached content retrieve request type")
 				}
 				return &CachedContentRequest{Type: schemas.CachedContentRetrieveRequest, RetrieveRequest: retrieveReq}, nil
 			},
-			CachedContentRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCachedContentRetrieveResponse) (interface{}, error) {
+			CachedContentRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCachedContentRetrieveResponse) (interface{}, error) {
 				return gemini.ToGeminiCachedContentRetrieveResponse(resp), nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return gemini.ToGeminiError(err)
 			},
 			PreCallback: extractGeminiCachedContentNameFromPath,
@@ -1273,10 +1273,10 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 				return schemas.CachedContentUpdateRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaCachedContentUpdateRequest{}
+				return &schemas.GatewayCachedContentUpdateRequest{}
 			},
 			RequestParser: func(ctx *fasthttp.RequestCtx, req interface{}) error {
-				updateReq, ok := req.(*schemas.RakshaCachedContentUpdateRequest)
+				updateReq, ok := req.(*schemas.GatewayCachedContentUpdateRequest)
 				if !ok {
 					return errors.New("invalid cached content update request type")
 				}
@@ -1298,8 +1298,8 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 				}
 				return nil
 			},
-			CachedContentRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*CachedContentRequest, error) {
-				updateReq, ok := req.(*schemas.RakshaCachedContentUpdateRequest)
+			CachedContentRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*CachedContentRequest, error) {
+				updateReq, ok := req.(*schemas.GatewayCachedContentUpdateRequest)
 				if !ok {
 					return nil, errors.New("invalid cached content update request type")
 				}
@@ -1308,14 +1308,14 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 					updateReq.Provider = schemas.Gemini
 				}
 				if len(updateReq.RawRequestBody) > 0 {
-					ctx.SetValue(schemas.RakshaContextKeyUseRawRequestBody, true)
+					ctx.SetValue(schemas.GatewayContextKeyUseRawRequestBody, true)
 				}
 				return &CachedContentRequest{Type: schemas.CachedContentUpdateRequest, UpdateRequest: updateReq}, nil
 			},
-			CachedContentUpdateResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCachedContentUpdateResponse) (interface{}, error) {
+			CachedContentUpdateResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCachedContentUpdateResponse) (interface{}, error) {
 				return gemini.ToGeminiCachedContentUpdateResponse(resp), nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return gemini.ToGeminiError(err)
 			},
 			PreCallback: extractGeminiCachedContentNameFromPath,
@@ -1330,19 +1330,19 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 				return schemas.CachedContentDeleteRequest
 			},
 			GetRequestTypeInstance: func(ctx context.Context) interface{} {
-				return &schemas.RakshaCachedContentDeleteRequest{}
+				return &schemas.GatewayCachedContentDeleteRequest{}
 			},
-			CachedContentRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*CachedContentRequest, error) {
-				deleteReq, ok := req.(*schemas.RakshaCachedContentDeleteRequest)
+			CachedContentRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*CachedContentRequest, error) {
+				deleteReq, ok := req.(*schemas.GatewayCachedContentDeleteRequest)
 				if !ok {
 					return nil, errors.New("invalid cached content delete request type")
 				}
 				return &CachedContentRequest{Type: schemas.CachedContentDeleteRequest, DeleteRequest: deleteReq}, nil
 			},
-			CachedContentDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCachedContentDeleteResponse) (interface{}, error) {
+			CachedContentDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCachedContentDeleteResponse) (interface{}, error) {
 				return gemini.ToGeminiCachedContentDeleteResponse(resp), nil
 			},
-			ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+			ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 				return gemini.ToGeminiError(err)
 			},
 			PreCallback: extractGeminiCachedContentNameFromPath,
@@ -1352,8 +1352,8 @@ func CreateGenAICachedContentRouteConfigs(pathPrefix string, handlerStore lib.Ha
 	return routes
 }
 
-// NewGenAIRouter creates a new GenAIRouter with the given raksha client.
-func NewGenAIRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *GenAIRouter {
+// NewGenAIRouter creates a new GenAIRouter with the given gateway client.
+func NewGenAIRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *GenAIRouter {
 	routes := CreateGenAIRouteConfigs("/genai")
 	routes = append(routes, CreateGenAIFileRouteConfigs("/genai", handlerStore)...)
 	routes = append(routes, CreateGenAIBatchRouteConfigs("/genai", handlerStore)...)
@@ -1375,8 +1375,8 @@ func getLargeRequestTypeDetectionThreshold(ctx *fasthttp.RequestCtx) int64 {
 	// and large-payload activation make the same decision.
 	// Example failure prevented: transport thinks "small" (parses body) while enterprise
 	// hook already treated it as "large" (stream), causing unnecessary body reads.
-	if sharedCtx, ok := ctx.UserValue(lib.FastHTTPUserValueRakshaContext).(*schemas.RakshaContext); ok && sharedCtx != nil {
-		if threshold, ok := sharedCtx.Value(schemas.RakshaContextKeyLargePayloadRequestThreshold).(int64); ok && threshold > 0 {
+	if sharedCtx, ok := ctx.UserValue(lib.FastHTTPUserValueGatewayContext).(*schemas.GatewayContext); ok && sharedCtx != nil {
+		if threshold, ok := sharedCtx.Value(schemas.GatewayContextKeyLargePayloadRequestThreshold).(int64); ok && threshold > 0 {
 			return threshold
 		}
 	}
@@ -1384,7 +1384,7 @@ func getLargeRequestTypeDetectionThreshold(ctx *fasthttp.RequestCtx) int64 {
 }
 
 // extractAndSetModelAndRequestType extracts model and request type from URL and request object and sets it in the request
-func extractAndSetModelAndRequestType(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func extractAndSetModelAndRequestType(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	model := ctx.UserValue("model")
 	if model == nil {
 		return fmt.Errorf("model parameter is required")
@@ -1392,7 +1392,7 @@ func extractAndSetModelAndRequestType(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 
 	provider := getProviderFromHeader(ctx, schemas.Gemini)
 	// set in context
-	rakshaCtx.SetValue(rakshaContextKeyProvider, provider)
+	gatewayCtx.SetValue(gatewayContextKeyProvider, provider)
 
 	modelStr := model.(string)
 
@@ -1444,7 +1444,7 @@ func extractAndSetModelAndRequestType(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 		(headerProvider == schemas.Gemini || prefixProvider == schemas.Gemini)
 
 	headers := extractHeadersFromRequest(ctx)
-	schemas.ExtractAndSetUserAgentFromHeaders(headers, rakshaCtx)
+	schemas.ExtractAndSetUserAgentFromHeaders(headers, gatewayCtx)
 
 	// Set the model and flags in the request
 	switch r := req.(type) {
@@ -1455,10 +1455,10 @@ func extractAndSetModelAndRequestType(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 		r.IsCountTokens = isCountTokens
 
 		// Check for large payload streaming mode (enterprise-only feature)
-		if isLargePayload, ok := rakshaCtx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+		if isLargePayload, ok := gatewayCtx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool); ok && isLargePayload {
 			// Large payload path: use pre-extracted metadata from context
 			// Metadata was extracted by the enterprise large payload hook and stored in context
-			metadata := resolveLargePayloadMetadata(rakshaCtx)
+			metadata := resolveLargePayloadMetadata(gatewayCtx)
 			if metadata != nil {
 				r.IsSpeech = slices.Contains(metadata.ResponseModalities, "AUDIO") || metadata.SpeechConfig
 				r.IsImageGeneration = isImagenPredict || slices.Contains(metadata.ResponseModalities, "IMAGE")
@@ -1482,8 +1482,8 @@ func extractAndSetModelAndRequestType(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 			r.IsImageEdit = isImageEditRequest(r)
 		}
 		if !r.IsEmbedding && explicitGemini {
-			setGenAIRawRequestBodyFromRequest(ctx, rakshaCtx)
-			rakshaCtx.SetValue(schemas.RakshaContextKeyUseRawRequestBody, true)
+			setGenAIRawRequestBodyFromRequest(ctx, gatewayCtx)
+			gatewayCtx.SetValue(schemas.GatewayContextKeyUseRawRequestBody, true)
 		}
 
 		return nil
@@ -1497,8 +1497,8 @@ func extractAndSetModelAndRequestType(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 			r.Model = modelStr
 		}
 		if explicitGemini {
-			setGenAIRawRequestBodyFromRequest(ctx, rakshaCtx)
-			rakshaCtx.SetValue(schemas.RakshaContextKeyUseRawRequestBody, true)
+			setGenAIRawRequestBodyFromRequest(ctx, gatewayCtx)
+			gatewayCtx.SetValue(schemas.GatewayContextKeyUseRawRequestBody, true)
 		}
 		return nil
 	case *gemini.GeminiBatchCreateRequest:
@@ -1506,8 +1506,8 @@ func extractAndSetModelAndRequestType(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 			r.Model = modelStr
 		}
 		if explicitGemini {
-			setGenAIRawRequestBodyFromRequest(ctx, rakshaCtx)
-			rakshaCtx.SetValue(schemas.RakshaContextKeyUseRawRequestBody, true)
+			setGenAIRawRequestBodyFromRequest(ctx, gatewayCtx)
+			gatewayCtx.SetValue(schemas.GatewayContextKeyUseRawRequestBody, true)
 		}
 		return nil
 	}
@@ -1515,9 +1515,9 @@ func extractAndSetModelAndRequestType(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 	return fmt.Errorf("invalid request type for GenAI")
 }
 
-func setGenAIRawRequestBodyFromRequest(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext) {
+func setGenAIRawRequestBodyFromRequest(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext) {
 	if body := ctx.Request.Body(); len(body) > 0 {
-		rakshaCtx.SetValue(genAIRawRequestBodyContextKey, copyBytes(body))
+		gatewayCtx.SetValue(genAIRawRequestBodyContextKey, copyBytes(body))
 	}
 }
 
@@ -1530,7 +1530,7 @@ func copyBytes(in []byte) []byte {
 	return out
 }
 
-func getGenAIRawRequestBody(ctx *schemas.RakshaContext) []byte {
+func getGenAIRawRequestBody(ctx *schemas.GatewayContext) []byte {
 	if ctx == nil {
 		return nil
 	}
@@ -1639,8 +1639,8 @@ func extractModelAndRequestType(ctx *fasthttp.RequestCtx) (string, schemas.Reque
 	}
 
 	// Large payload mode: request type is resolved from pre-extracted metadata only.
-	if sharedCtx, ok := ctx.UserValue(lib.FastHTTPUserValueRakshaContext).(*schemas.RakshaContext); ok && sharedCtx != nil {
-		if isLargePayload, ok := sharedCtx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+	if sharedCtx, ok := ctx.UserValue(lib.FastHTTPUserValueGatewayContext).(*schemas.GatewayContext); ok && sharedCtx != nil {
+		if isLargePayload, ok := sharedCtx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool); ok && isLargePayload {
 			// In large payload mode never fall back to full-body unmarshal for type detection.
 			// This keeps request classification O(prefetch) instead of O(full payload).
 			if metadata := resolveLargePayloadMetadata(sharedCtx); metadata != nil {
@@ -1807,8 +1807,8 @@ func isImageEditRequest(req *gemini.GeminiGenerationRequest) bool {
 }
 
 // extractGeminiListModelsParams extracts query parameters for list models request
-func extractGeminiListModelsParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-	if listModelsReq, ok := req.(*schemas.RakshaListModelsRequest); ok {
+func extractGeminiListModelsParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+	if listModelsReq, ok := req.(*schemas.GatewayListModelsRequest); ok {
 		// Extract pageSize from query parameters (Gemini uses pageSize instead of limit)
 		if pageSizeStr := string(ctx.QueryArgs().Peek("pageSize")); pageSizeStr != "" {
 			if pageSize, err := strconv.Atoi(pageSizeStr); err == nil {
@@ -1826,8 +1826,8 @@ func extractGeminiListModelsParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.
 	return errors.New("invalid request type for Gemini list models")
 }
 
-func extractGeminiModelMetadataParams(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-	listModelsReq, ok := req.(*schemas.RakshaListModelsRequest)
+func extractGeminiModelMetadataParams(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+	listModelsReq, ok := req.(*schemas.GatewayListModelsRequest)
 	if !ok {
 		return errors.New("invalid request type for Gemini model metadata")
 	}
@@ -1846,17 +1846,17 @@ func extractGeminiModelMetadataParams(ctx *fasthttp.RequestCtx, rakshaCtx *schem
 	}
 
 	modelStr = strings.TrimPrefix(modelStr, "models/")
-	rakshaCtx.SetValue(requestedGeminiModelMetadataContextKey, modelStr)
+	gatewayCtx.SetValue(requestedGeminiModelMetadataContextKey, modelStr)
 
 	if provider == schemas.Gemini {
 		// Use Gemini native metadata endpoint for direct model lookup.
-		rakshaCtx.SetValue(schemas.RakshaContextKeyURLPath, "/models/"+modelStr)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyURLPath, "/models/"+modelStr)
 	}
 
 	return nil
 }
 
-func convertGeminiModelMetadataResponse(ctx *schemas.RakshaContext, resp *schemas.RakshaListModelsResponse) (interface{}, error) {
+func convertGeminiModelMetadataResponse(ctx *schemas.GatewayContext, resp *schemas.GatewayListModelsResponse) (interface{}, error) {
 	geminiResp := gemini.ToGeminiListModelsResponse(resp)
 	if geminiResp == nil {
 		return nil, errors.New("gemini model metadata response is nil")
@@ -1879,8 +1879,8 @@ func convertGeminiModelMetadataResponse(ctx *schemas.RakshaContext, resp *schema
 }
 
 // extractGeminiVideoOperationFromPath extracts model and operation_id from path
-// and maps them to a Raksha video retrieve request.
-func extractGeminiVideoOperationFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+// and maps them to a Gateway video retrieve request.
+func extractGeminiVideoOperationFromPath(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 	model := ctx.UserValue("model")
 	if model == nil {
 		return errors.New("model is required")
@@ -1918,12 +1918,12 @@ func extractGeminiVideoOperationFromPath(ctx *fasthttp.RequestCtx, rakshaCtx *sc
 	}
 
 	switch r := req.(type) {
-	case *schemas.RakshaVideoRetrieveRequest:
+	case *schemas.GatewayVideoRetrieveRequest:
 		r.Provider = provider
 
 		if r.Provider == schemas.OpenAI || r.Provider == schemas.Azure {
 			// set a context flag to have video download request after video retrieve request when incoming request is coming from genai integration
-			rakshaCtx.SetValue(schemas.RakshaContextKeyVideoOutputRequested, true)
+			gatewayCtx.SetValue(schemas.GatewayContextKeyVideoOutputRequested, true)
 		}
 		// Gemini provider expects an operation resource path (without /v1beta prefix).
 		if provider == schemas.Gemini {

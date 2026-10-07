@@ -10,8 +10,8 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // GetExtraParams implements the RequestBodyWithExtraParams interface
@@ -222,7 +222,7 @@ func (r *BedrockInvokeRequest) IsCohereCommandRRequest() bool {
 }
 
 // ToBedrockConverseRequest converts the invoke request to BedrockConverseRequest
-// so we can reuse ToRakshaResponsesRequest() for messages-based requests.
+// so we can reuse ToGatewayResponsesRequest() for messages-based requests.
 func (r *BedrockInvokeRequest) ToBedrockConverseRequest() *BedrockConverseRequest {
 	converseReq := &BedrockConverseRequest{
 		ModelID:     r.ModelID,
@@ -335,9 +335,9 @@ func (r *BedrockInvokeRequest) ToBedrockConverseRequest() *BedrockConverseReques
 	return converseReq
 }
 
-// ToRakshaTextCompletionRequest handles ALL prompt-based families
+// ToGatewayTextCompletionRequest handles ALL prompt-based families
 // (Anthropic legacy, Mistral, Llama, Cohere Command, Cohere Command R).
-func (r *BedrockInvokeRequest) ToRakshaTextCompletionRequest(ctx *schemas.RakshaContext) *schemas.RakshaTextCompletionRequest {
+func (r *BedrockInvokeRequest) ToGatewayTextCompletionRequest(ctx *schemas.GatewayContext) *schemas.GatewayTextCompletionRequest {
 	// Normalize prompt: Cohere Command R uses "message" field, not "prompt"
 	prompt := r.Prompt
 	if prompt == "" && r.Message != "" {
@@ -360,7 +360,7 @@ func (r *BedrockInvokeRequest) ToRakshaTextCompletionRequest(ctx *schemas.Raksha
 		topK = r.CohereK
 	}
 
-	// Build a BedrockTextCompletionRequest and delegate to its ToRakshaTextCompletionRequest
+	// Build a BedrockTextCompletionRequest and delegate to its ToGatewayTextCompletionRequest
 	textReq := &BedrockTextCompletionRequest{
 		ModelID:           r.ModelID,
 		Prompt:            prompt,
@@ -377,18 +377,18 @@ func (r *BedrockInvokeRequest) ToRakshaTextCompletionRequest(ctx *schemas.Raksha
 		Stream:            r.Stream,
 		ExtraParams:       r.ExtraParams,
 	}
-	return textReq.ToRakshaTextCompletionRequest(ctx)
+	return textReq.ToGatewayTextCompletionRequest(ctx)
 }
 
-// ToRakshaEmbeddingRequest converts the invoke request to a RakshaEmbeddingRequest.
+// ToGatewayEmbeddingRequest converts the invoke request to a GatewayEmbeddingRequest.
 // Handles both Titan (inputText) and Cohere (texts) embedding formats.
-func (r *BedrockInvokeRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaContext) *schemas.RakshaEmbeddingRequest {
+func (r *BedrockInvokeRequest) ToGatewayEmbeddingRequest(ctx *schemas.GatewayContext) *schemas.GatewayEmbeddingRequest {
 	modelID := r.ModelID
 	if unescaped, err := url.PathUnescape(r.ModelID); err == nil {
 		modelID = unescaped
 	}
 	provider, model := schemas.ParseModelString(modelID, "")
-	req := &schemas.RakshaEmbeddingRequest{
+	req := &schemas.GatewayEmbeddingRequest{
 		Provider: provider,
 		Model:    model,
 	}
@@ -444,15 +444,15 @@ func (r *BedrockInvokeRequest) ToRakshaEmbeddingRequest(ctx *schemas.RakshaConte
 	return req
 }
 
-// ToRakshaImageGenerationRequest converts the invoke request to a RakshaImageGenerationRequest.
+// ToGatewayImageGenerationRequest converts the invoke request to a GatewayImageGenerationRequest.
 // Handles Titan/Nova Canvas (taskType=TEXT_IMAGE with textToImageParams) and Stability AI (flat prompt fields).
-func (r *BedrockInvokeRequest) ToRakshaImageGenerationRequest(ctx *schemas.RakshaContext) *schemas.RakshaImageGenerationRequest {
+func (r *BedrockInvokeRequest) ToGatewayImageGenerationRequest(ctx *schemas.GatewayContext) *schemas.GatewayImageGenerationRequest {
 	modelID := r.ModelID
 	if unescaped, err := url.PathUnescape(r.ModelID); err == nil {
 		modelID = unescaped
 	}
 	provider, model := schemas.ParseModelString(modelID, "")
-	req := &schemas.RakshaImageGenerationRequest{
+	req := &schemas.GatewayImageGenerationRequest{
 		Provider: provider,
 		Model:    model,
 	}
@@ -508,15 +508,15 @@ func (r *BedrockInvokeRequest) ToRakshaImageGenerationRequest(ctx *schemas.Raksh
 	return req
 }
 
-// ToRakshaImageEditRequest converts the invoke request to a RakshaImageEditRequest.
+// ToGatewayImageEditRequest converts the invoke request to a GatewayImageEditRequest.
 // Handles Titan/Nova Canvas (taskType in INPAINTING/OUTPAINTING/BACKGROUND_REMOVAL) and Stability AI (flat image/mask fields).
-func (r *BedrockInvokeRequest) ToRakshaImageEditRequest(ctx *schemas.RakshaContext) (*schemas.RakshaImageEditRequest, error) {
+func (r *BedrockInvokeRequest) ToGatewayImageEditRequest(ctx *schemas.GatewayContext) (*schemas.GatewayImageEditRequest, error) {
 	modelID := r.ModelID
 	if unescaped, err := url.PathUnescape(r.ModelID); err == nil {
 		modelID = unescaped
 	}
 	provider, model := schemas.ParseModelString(modelID, "")
-	req := &schemas.RakshaImageEditRequest{
+	req := &schemas.GatewayImageEditRequest{
 		Provider: provider,
 		Model:    model,
 	}
@@ -674,9 +674,9 @@ func (r *BedrockInvokeRequest) ToRakshaImageEditRequest(ctx *schemas.RakshaConte
 	return req, nil
 }
 
-// ToRakshaImageVariationRequest converts the invoke request to a RakshaImageVariationRequest.
+// ToGatewayImageVariationRequest converts the invoke request to a GatewayImageVariationRequest.
 // Reads from imageVariationParams (Titan/Nova Canvas format).
-func (r *BedrockInvokeRequest) ToRakshaImageVariationRequest(ctx *schemas.RakshaContext) (*schemas.RakshaImageVariationRequest, error) {
+func (r *BedrockInvokeRequest) ToGatewayImageVariationRequest(ctx *schemas.GatewayContext) (*schemas.GatewayImageVariationRequest, error) {
 	if r.ImageVariationParams == nil || len(r.ImageVariationParams.Images) == 0 {
 		return nil, fmt.Errorf("imageVariationParams.images is required for IMAGE_VARIATION")
 	}
@@ -691,7 +691,7 @@ func (r *BedrockInvokeRequest) ToRakshaImageVariationRequest(ctx *schemas.Raksha
 		modelID = unescaped
 	}
 	provider, model := schemas.ParseModelString(modelID, "")
-	req := &schemas.RakshaImageVariationRequest{
+	req := &schemas.GatewayImageVariationRequest{
 		Provider: provider,
 		Model:    model,
 		Input: &schemas.ImageVariationInput{
@@ -887,11 +887,11 @@ func convertAnthropicToolChoice(choice interface{}) *BedrockToolChoice {
 	return nil
 }
 
-// ToBedrockInvokeMessagesResponse converts a RakshaResponsesResponse to the model-family-specific
+// ToBedrockInvokeMessagesResponse converts a GatewayResponsesResponse to the model-family-specific
 // InvokeModel response format. Switches on model family to produce the correct JSON structure.
-func ToBedrockInvokeMessagesResponse(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
+func ToBedrockInvokeMessagesResponse(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesResponse) (interface{}, error) {
 	if resp == nil {
-		return nil, fmt.Errorf("raksha response is nil")
+		return nil, fmt.Errorf("gateway response is nil")
 	}
 
 	model := ""
@@ -920,9 +920,9 @@ func ToBedrockInvokeMessagesResponse(ctx *schemas.RakshaContext, resp *schemas.R
 	return toBedrockInvokeAnthropicResponse(resp, model), nil
 }
 
-func ToBedrockInvokeImagesResponse(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationResponse) (interface{}, error) {
+func ToBedrockInvokeImagesResponse(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationResponse) (interface{}, error) {
 	if resp == nil {
-		return nil, fmt.Errorf("raksha response is nil")
+		return nil, fmt.Errorf("gateway response is nil")
 	}
 
 	// If the provider stored the raw Bedrock response, return it verbatim (preserves seeds, finish_reasons, etc.)
@@ -944,7 +944,7 @@ func ToBedrockInvokeImagesResponse(ctx *schemas.RakshaContext, resp *schemas.Rak
 		return ToStabilityAIImageGenerationResponse(resp)
 	}
 
-	// Default: Titan Image Generator v1/v2, Nova Canvas — reconstruct from Raksha data
+	// Default: Titan Image Generator v1/v2, Nova Canvas — reconstruct from Gateway data
 	result := &BedrockImageGenerationResponse{}
 	for _, d := range resp.Data {
 		result.Images = append(result.Images, d.B64JSON)
@@ -952,13 +952,13 @@ func ToBedrockInvokeImagesResponse(ctx *schemas.RakshaContext, resp *schemas.Rak
 	return result, nil
 }
 
-// ToBedrockEmbeddingInvokeResponse converts a RakshaEmbeddingResponse back to the native
+// ToBedrockEmbeddingInvokeResponse converts a GatewayEmbeddingResponse back to the native
 // Bedrock invoke API response format.
 // Single-embedding (Titan) responses use: {"embedding": [...], "inputTextTokenCount": N}
 // Multi-embedding (Cohere) responses use:  {"embeddings": [[...],[...]], "response_type": "embeddings_floats"}
-func ToBedrockEmbeddingInvokeResponse(ctx *schemas.RakshaContext, resp *schemas.RakshaEmbeddingResponse) (interface{}, error) {
+func ToBedrockEmbeddingInvokeResponse(ctx *schemas.GatewayContext, resp *schemas.GatewayEmbeddingResponse) (interface{}, error) {
 	if resp == nil {
-		return nil, fmt.Errorf("raksha embedding response is nil")
+		return nil, fmt.Errorf("gateway embedding response is nil")
 	}
 
 	// If the provider stored the raw Bedrock response, return it verbatim
@@ -1015,8 +1015,8 @@ func ToBedrockEmbeddingInvokeResponse(ctx *schemas.RakshaContext, resp *schemas.
 	}, nil
 }
 
-// toBedrockInvokeAnthropicResponse converts RakshaResponsesResponse to Anthropic Messages API format.
-func toBedrockInvokeAnthropicResponse(resp *schemas.RakshaResponsesResponse, model string) *BedrockInvokeMessagesResponse {
+// toBedrockInvokeAnthropicResponse converts GatewayResponsesResponse to Anthropic Messages API format.
+func toBedrockInvokeAnthropicResponse(resp *schemas.GatewayResponsesResponse, model string) *BedrockInvokeMessagesResponse {
 	result := &BedrockInvokeMessagesResponse{
 		Type: "message",
 		Role: "assistant",
@@ -1110,8 +1110,8 @@ func toBedrockInvokeAnthropicResponse(resp *schemas.RakshaResponsesResponse, mod
 	return result
 }
 
-// toBedrockInvokeAI21Response converts RakshaResponsesResponse to AI21 Jamba format.
-func toBedrockInvokeAI21Response(resp *schemas.RakshaResponsesResponse) *BedrockInvokeAI21Response {
+// toBedrockInvokeAI21Response converts GatewayResponsesResponse to AI21 Jamba format.
+func toBedrockInvokeAI21Response(resp *schemas.GatewayResponsesResponse) *BedrockInvokeAI21Response {
 	result := &BedrockInvokeAI21Response{}
 
 	if resp.ID != nil {
@@ -1159,11 +1159,11 @@ func toBedrockInvokeAI21Response(resp *schemas.RakshaResponsesResponse) *Bedrock
 	return result
 }
 
-// ToBedrockInvokeMessagesStreamResponse converts a Raksha Responses stream event to
+// ToBedrockInvokeMessagesStreamResponse converts a Gateway Responses stream event to
 // a BedrockStreamEvent with InvokeModelRawChunk for the invoke-with-response-stream endpoint.
-func ToBedrockInvokeMessagesStreamResponse(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
+func ToBedrockInvokeMessagesStreamResponse(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
 	if resp == nil {
-		return "", nil, fmt.Errorf("raksha stream response is nil")
+		return "", nil, fmt.Errorf("gateway stream response is nil")
 	}
 
 	// Get model from the stream chunk's ExtraFields first (set on every chunk by the
@@ -1197,7 +1197,7 @@ func ToBedrockInvokeMessagesStreamResponse(ctx *schemas.RakshaContext, resp *sch
 	}
 
 	// For Anthropic models (and default): serialize as Anthropic Messages API SSE events,
-	// then wrap in InvokeModelRawChunks. Some Raksha events map to multiple Anthropic events
+	// then wrap in InvokeModelRawChunks. Some Gateway events map to multiple Anthropic events
 	// (e.g., Completed → message_delta + message_stop).
 	rawChunks, err := toAnthropicInvokeStreamBytes(resp)
 	if err != nil {
@@ -1214,11 +1214,11 @@ func ToBedrockInvokeMessagesStreamResponse(ctx *schemas.RakshaContext, resp *sch
 	return "", bedrockEvent, nil
 }
 
-// toAnthropicInvokeStreamBytes converts a Raksha stream event into raw bytes representing
+// toAnthropicInvokeStreamBytes converts a Gateway stream event into raw bytes representing
 // the Anthropic Messages API streaming event JSON, suitable for wrapping in InvokeModelRawChunks.
-// Returns a slice of byte slices since some Raksha events map to multiple Anthropic events
+// Returns a slice of byte slices since some Gateway events map to multiple Anthropic events
 // (e.g., Completed → message_delta + message_stop).
-func toAnthropicInvokeStreamBytes(resp *schemas.RakshaResponsesStreamResponse) ([][]byte, error) {
+func toAnthropicInvokeStreamBytes(resp *schemas.GatewayResponsesStreamResponse) ([][]byte, error) {
 	var event interface{}
 
 	switch resp.Type {

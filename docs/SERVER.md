@@ -63,7 +63,7 @@ place live secrets exist.
 | `SERVER_DOMAIN` | yes | Public base URL, e.g. `https://unifai.example.com`. Drives CORS origins, MCP external URL, Guard config and PAC URLs. Compose fails fast if unset |
 | `APP_PORT` | yes | Listening port |
 | `APP_HOST` | no | Bind address (compose uses `0.0.0.0`) |
-| `CONTAINER_NAME` | yes | Container/hostname used for inter-container calls (`raksha_tech`) |
+| `CONTAINER_NAME` | yes | Container/hostname used for inter-container calls (`gateway_tech`) |
 | `PROXY_PORT` | no | Docker network proxy port |
 | `DOCKER_NETWORK` | no | Bridge network name (default `unifai-network`) |
 | `OLLAMA_DOCKER_NETWORK` | no | External network containing the Ollama container (default `1panel-network`) |
@@ -163,7 +163,7 @@ cp .env.example .env
 ### 5.2 Build and start
 ```bash
 docker compose up -d --build          # builds the UI + Go binary from source
-docker compose logs -f raksha_tech    # watch startup (plugin status table, listener line)
+docker compose logs -f gateway_tech    # watch startup (plugin status table, listener line)
 ```
 
 The build is multi-stage (`deploy/docker/Dockerfile.local`):
@@ -186,10 +186,10 @@ external Ollama network (`1panel-network` by default — create it once if it do
 
 ### 5.4 Optional network proxy (office / GPO)
 ```bash
-docker compose --profile network-proxy up -d raksha_browser_ai_proxy
+docker compose --profile network-proxy up -d gateway_browser_ai_proxy
 ```
 This runs `mitmproxy/mitmproxy:latest` with `mitmdump -s /app/proxy/browser_ai_proxy.py -p $PROXY_PORT`
-and environment `UNIFAI_BACKEND_URL=http://raksha_tech:$APP_PORT`, `UNIFAI_SERVER_MODE=1`,
+and environment `UNIFAI_BACKEND_URL=http://gateway_tech:$APP_PORT`, `UNIFAI_SERVER_MODE=1`,
 `UNIFAI_AGENT_TYPE=network`, `UNIFAI_FAIL_OPEN=0`, `UNIFAI_GUARD_SECRET=…`.
 Point office PAC/GPO to:
 ```
@@ -320,7 +320,7 @@ Repackage/regenerate the chart index after value/template changes: `make helm-in
 ### 9.1 Start, stop, restart
 ```bash
 docker compose up -d --build          # build + start
-docker compose restart raksha_tech    # restart app only
+docker compose restart gateway_tech    # restart app only
 docker compose stop                   # stop all
 docker compose down                   # remove containers (data stays in ./data and the DB)
 docker compose ps                     # status
@@ -329,7 +329,7 @@ Graceful shutdown: the binary handles SIGINT/SIGTERM, closes realtime sessions, 
 client and storage engines with a 30 s timeout, and also drains the pprof server (90 s).
 
 ### 9.2 Logs
-* Container logs: `docker compose logs -f --tail=200 raksha_tech` (JSON by default; `LOG_STYLE=pretty`
+* Container logs: `docker compose logs -f --tail=200 gateway_tech` (JSON by default; `LOG_STYLE=pretty`
   for humans, `LOG_LEVEL=debug` when diagnosing).
 * Startup line to look for: `successfully started unifai, serving UI on http://0.0.0.0:<port>`, plus
   the plugin status table (`plugin status: <name> - <status>`).

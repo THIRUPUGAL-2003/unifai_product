@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/rbac"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/rbac"
 	"github.com/valyala/fasthttp"
 )
 

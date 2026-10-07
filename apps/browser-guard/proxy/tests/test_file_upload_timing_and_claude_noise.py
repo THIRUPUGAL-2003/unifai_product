@@ -112,7 +112,7 @@ class TestFileUploadTimingAndClaudeNoise(unittest.TestCase):
     def test_04_claude_document_dump_not_picked_as_chat_prompt(self):
         """Document body dumps must not be selected as chat prompts in Claude."""
         doc_dump = (
-            "Raksha Guard — Employee Install Guide\n\n"
+            "Gateway Guard — Employee Install Guide\n\n"
             "This document explains the steps to install Browser Guard.\n"
             "1. Download the installer\n"
             "2. Run the application\n"
@@ -137,7 +137,7 @@ class TestFileUploadTimingAndClaudeNoise(unittest.TestCase):
         """Attached filenames embedded in protobuf are correctly extracted."""
         # Simulate protobuf string extraction on a payload containing a filename
         fake_protobuf_body = (
-            b"\x0a\x13EMPLOYEE_README.txt\x12\x50Raksha Guard Employee Install Guide...\x1a\x09Summarize"
+            b"\x0a\x13EMPLOYEE_README.txt\x12\x50Gateway Guard Employee Install Guide...\x1a\x09Summarize"
         )
         raw_text = fake_protobuf_body.decode("utf-8", errors="ignore")
         names = pxy.extract_all_attachment_filenames_from_send(raw_text)

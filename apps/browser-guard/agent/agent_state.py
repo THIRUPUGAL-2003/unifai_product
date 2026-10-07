@@ -1,4 +1,4 @@
-"""Shared mutable runtime state for Raksha Guard PAC and health reporting."""
+"""Shared mutable runtime state for Gateway Guard PAC and health reporting."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-Raksha AI Domain Coverage Report
+Gateway AI Domain Coverage Report
 Generated: 2026-10-07 16:40:55.819601
 ==========================================================================================
 

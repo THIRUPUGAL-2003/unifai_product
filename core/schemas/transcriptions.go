@@ -1,19 +1,19 @@
 package schemas
 
-type RakshaTranscriptionRequest struct {
+type GatewayTranscriptionRequest struct {
 	Provider       ModelProvider            `json:"provider"`
 	Model          string                   `json:"model"`
 	Input          *TranscriptionInput      `json:"input,omitempty"`
 	Params         *TranscriptionParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback               `json:"fallbacks,omitempty"`
-	RawRequestBody []byte                   `json:"-"` // set raksha-use-raw-request-body to true in ctx to use the raw request body. Raksha will directly send this to the downstream provider.
+	RawRequestBody []byte                   `json:"-"` // set gateway-use-raw-request-body to true in ctx to use the raw request body. Gateway will directly send this to the downstream provider.
 }
 
-func (r *RakshaTranscriptionRequest) GetRawRequestBody() []byte {
+func (r *GatewayTranscriptionRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
-type RakshaTranscriptionResponse struct {
+type GatewayTranscriptionResponse struct {
 	Duration       *float64                   `json:"duration,omitempty"` // Duration in seconds
 	Language       *string                    `json:"language,omitempty"` // e.g., "english"
 	LogProbs       []TranscriptionLogProb     `json:"logprobs,omitempty"`
@@ -23,10 +23,10 @@ type RakshaTranscriptionResponse struct {
 	Usage          *TranscriptionUsage        `json:"usage,omitempty"`
 	Words          []TranscriptionWord        `json:"words,omitempty"`
 	ResponseFormat *string                    `json:"-"` // Set by provider for non-JSON formats (text, srt, vtt); used by integration response converters
-	ExtraFields    RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields    GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-func (r *RakshaTranscriptionResponse) BackfillParams(req *RakshaTranscriptionRequest) {
+func (r *GatewayTranscriptionResponse) BackfillParams(req *GatewayTranscriptionRequest) {
 	if r == nil || req == nil || req.Params == nil || req.Params.ResponseFormat == nil {
 		return
 	}
@@ -145,12 +145,12 @@ const (
 	TranscriptionStreamResponseTypeDone  TranscriptionStreamResponseType = "transcript.text.done"
 )
 
-// RakshaTranscriptionStreamResponse represents streaming specific fields only
-type RakshaTranscriptionStreamResponse struct {
+// GatewayTranscriptionStreamResponse represents streaming specific fields only
+type GatewayTranscriptionStreamResponse struct {
 	Delta       *string                         `json:"delta,omitempty"` // For delta events
 	LogProbs    []TranscriptionLogProb          `json:"logprobs,omitempty"`
 	Text        string                          `json:"text"`
 	Type        TranscriptionStreamResponseType `json:"type"`
 	Usage       *TranscriptionUsage             `json:"usage,omitempty"`
-	ExtraFields RakshaResponseExtraFields      `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields      `json:"extra_fields"`
 }

@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // RunImageBase64Test executes the image base64 test scenario using dual API testing framework
-func RunImageBase64Test(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunImageBase64Test(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ImageBase64 {
 		t.Logf("Image base64 not supported for provider %s", testConfig.Provider)
 		return
@@ -65,28 +65,28 @@ func RunImageBase64Test(t *testing.T, client *raksha.Raksha, ctx context.Context
 		}...) // Base64 processing failure indicators
 
 		// Create operations for both Chat Completions and Responses API
-		chatOperation := func() (*schemas.RakshaChatResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			chatReq := &schemas.RakshaChatRequest{
+		chatOperation := func() (*schemas.GatewayChatResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			chatReq := &schemas.GatewayChatRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.VisionModel,
 				Input:    chatMessages,
 				Params: &schemas.ChatParameters{
-					MaxCompletionTokens: raksha.Ptr(500),
+					MaxCompletionTokens: gateway.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
 			return client.ChatCompletionRequest(bfCtx, chatReq)
 		}
 
-		responsesOperation := func() (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-			responsesReq := &schemas.RakshaResponsesRequest{
+		responsesOperation := func() (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+			responsesReq := &schemas.GatewayResponsesRequest{
 				Provider: testConfig.Provider,
 				Model:    testConfig.VisionModel,
 				Input:    responsesMessages,
 				Params: &schemas.ResponsesParameters{
-					MaxOutputTokens: raksha.Ptr(500),
+					MaxOutputTokens: gateway.Ptr(500),
 				},
 				Fallbacks: testConfig.Fallbacks,
 			}
@@ -118,12 +118,12 @@ func RunImageBase64Test(t *testing.T, client *raksha.Raksha, ctx context.Context
 		}
 
 		// Additional validation for base64 lion image processing using universal content extraction
-		validateChatBase64ImageProcessing := func(response *schemas.RakshaChatResponse, apiName string) {
+		validateChatBase64ImageProcessing := func(response *schemas.GatewayChatResponse, apiName string) {
 			content := GetChatContent(response)
 			validateBase64ImageContent(t, content, apiName)
 		}
 
-		validateResponsesBase64ImageProcessing := func(response *schemas.RakshaResponsesResponse, apiName string) {
+		validateResponsesBase64ImageProcessing := func(response *schemas.GatewayResponsesResponse, apiName string) {
 			content := GetResponsesContent(response)
 			validateBase64ImageContent(t, content, apiName)
 		}

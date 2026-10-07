@@ -1,4 +1,4 @@
-// Package schemas defines the core schemas and types used by the Raksha system.
+// Package schemas defines the core schemas and types used by the Gateway system.
 package schemas
 
 import (
@@ -18,7 +18,7 @@ const (
 	DefaultBufferSize                 = 5000
 	DefaultConcurrency                = 1000
 	DefaultStreamBufferSize           = 256
-	DefaultStreamIdleTimeoutInSeconds = 120 // Idle timeout per stream chunk — if no data for this many seconds, raksha closes the connection
+	DefaultStreamIdleTimeoutInSeconds = 120 // Idle timeout per stream chunk — if no data for this many seconds, gateway closes the connection
 	DefaultMaxConnsPerHost            = 5000
 	MaxConnsPerHostUpperBound         = 10000
 	DefaultMaxIdleConnsPerHost        = 40
@@ -28,7 +28,7 @@ const (
 const (
 	ErrProviderRequestTimedOut      = "request timed out (default is 300 seconds). You can increase it by setting the default_request_timeout_in_seconds in the network_config or in UI - Providers > Provider Name > Network Config."
 	ErrRequestCancelled             = "request cancelled by caller"
-	ErrRequestBodyConversion        = "failed to convert raksha request to the expected provider request body"
+	ErrRequestBodyConversion        = "failed to convert gateway request to the expected provider request body"
 	ErrProviderRequestMarshal       = "failed to marshal request body to JSON"
 	ErrProviderCreateRequest        = "failed to create HTTP request to provider API"
 	ErrProviderDoRequest            = "failed to execute HTTP request to provider API"
@@ -510,7 +510,7 @@ func (ar *AllowedRequests) IsOperationAllowed(operation RequestType) bool {
 }
 
 type CustomProviderConfig struct {
-	CustomProviderKey    string                 `json:"-"`                                // Custom provider key, internally set by Raksha
+	CustomProviderKey    string                 `json:"-"`                                // Custom provider key, internally set by Gateway
 	IsKeyLess            bool                   `json:"is_key_less"`                      // Whether the custom provider requires a key (not allowed for Bedrock)
 	BaseProviderType     ModelProvider          `json:"base_provider_type"`               // Base provider type
 	AllowedRequests      *AllowedRequests       `json:"allowed_requests,omitempty"`       // Allowed requests for the custom provider
@@ -531,11 +531,11 @@ func (cpc *CustomProviderConfig) IsOperationAllowed(operation RequestType) bool 
 type ProviderConfig struct {
 	NetworkConfig            NetworkConfig            `json:"network_config"`              // Network configuration
 	ConcurrencyAndBufferSize ConcurrencyAndBufferSize `json:"concurrency_and_buffer_size"` // Concurrency settings
-	// Logger instance, can be provided by the user or raksha default logger is used if not provided
+	// Logger instance, can be provided by the user or gateway default logger is used if not provided
 	Logger                  Logger                `json:"-"`
 	ProxyConfig             *ProxyConfig          `json:"proxy_config,omitempty"`     // Proxy configuration
-	SendBackRawRequest      bool                  `json:"send_back_raw_request"`      // Send raw request back in the raksha response (default: false)
-	SendBackRawResponse     bool                  `json:"send_back_raw_response"`     // Send raw response back in the raksha response (default: false)
+	SendBackRawRequest      bool                  `json:"send_back_raw_request"`      // Send raw request back in the gateway response (default: false)
+	SendBackRawResponse     bool                  `json:"send_back_raw_response"`     // Send raw response back in the gateway response (default: false)
 	StoreRawRequestResponse bool                  `json:"store_raw_request_response"` // Capture raw request/response for internal logging only; strip from API responses returned to clients (default: false)
 	CustomProviderConfig    *CustomProviderConfig `json:"custom_provider_config,omitempty"`
 	OpenAIConfig            *OpenAIConfig         `json:"openai_config,omitempty"`
@@ -596,136 +596,136 @@ func (config *ProviderConfig) CheckAndSetDefaults() {
 	}
 }
 
-type PostHookRunner func(ctx *RakshaContext, result *RakshaResponse, err *RakshaError) (*RakshaResponse, *RakshaError)
+type PostHookRunner func(ctx *GatewayContext, result *GatewayResponse, err *GatewayError) (*GatewayResponse, *GatewayError)
 
 // Provider defines the interface for AI model providers.
 type Provider interface {
 	// GetProviderKey returns the provider's identifier
 	GetProviderKey() ModelProvider
 	// ListModels performs a list models request
-	ListModels(ctx *RakshaContext, keys []Key, request *RakshaListModelsRequest) (*RakshaListModelsResponse, *RakshaError)
+	ListModels(ctx *GatewayContext, keys []Key, request *GatewayListModelsRequest) (*GatewayListModelsResponse, *GatewayError)
 	// TextCompletion performs a text completion request
-	TextCompletion(ctx *RakshaContext, key Key, request *RakshaTextCompletionRequest) (*RakshaTextCompletionResponse, *RakshaError)
+	TextCompletion(ctx *GatewayContext, key Key, request *GatewayTextCompletionRequest) (*GatewayTextCompletionResponse, *GatewayError)
 	// TextCompletionStream performs a text completion stream request.
 	// postHookSpanFinalizer is invoked by the provider's stream goroutine on stream completion
 	// (or on its panic-recovery defer) to finalize aggregated post-hook spans and release the
 	// per-attempt plugin pipeline. Pass nil if the caller does not need finalization.
-	TextCompletionStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaTextCompletionRequest) (chan *RakshaStreamChunk, *RakshaError)
+	TextCompletionStream(ctx *GatewayContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *GatewayTextCompletionRequest) (chan *GatewayStreamChunk, *GatewayError)
 	// ChatCompletion performs a chat completion request
-	ChatCompletion(ctx *RakshaContext, key Key, request *RakshaChatRequest) (*RakshaChatResponse, *RakshaError)
+	ChatCompletion(ctx *GatewayContext, key Key, request *GatewayChatRequest) (*GatewayChatResponse, *GatewayError)
 	// ChatCompletionStream performs a chat completion stream request
-	ChatCompletionStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaChatRequest) (chan *RakshaStreamChunk, *RakshaError)
+	ChatCompletionStream(ctx *GatewayContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *GatewayChatRequest) (chan *GatewayStreamChunk, *GatewayError)
 	// Responses performs a completion request using the Responses API (uses chat completion request internally for non-openai providers)
-	Responses(ctx *RakshaContext, key Key, request *RakshaResponsesRequest) (*RakshaResponsesResponse, *RakshaError)
+	Responses(ctx *GatewayContext, key Key, request *GatewayResponsesRequest) (*GatewayResponsesResponse, *GatewayError)
 	// ResponsesStream performs a completion request using the Responses API stream (uses chat completion stream request internally for non-openai providers)
-	ResponsesStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaResponsesRequest) (chan *RakshaStreamChunk, *RakshaError)
+	ResponsesStream(ctx *GatewayContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *GatewayResponsesRequest) (chan *GatewayStreamChunk, *GatewayError)
 	// CountTokens performs a count tokens request
-	CountTokens(ctx *RakshaContext, key Key, request *RakshaResponsesRequest) (*RakshaCountTokensResponse, *RakshaError)
+	CountTokens(ctx *GatewayContext, key Key, request *GatewayResponsesRequest) (*GatewayCountTokensResponse, *GatewayError)
 	// Compaction compacts a conversation context window (OpenAI-only; other providers return unsupported)
-	Compaction(ctx *RakshaContext, key Key, request *RakshaCompactionRequest) (*RakshaCompactionResponse, *RakshaError)
+	Compaction(ctx *GatewayContext, key Key, request *GatewayCompactionRequest) (*GatewayCompactionResponse, *GatewayError)
 	// Embedding performs an embedding request
-	Embedding(ctx *RakshaContext, key Key, request *RakshaEmbeddingRequest) (*RakshaEmbeddingResponse, *RakshaError)
+	Embedding(ctx *GatewayContext, key Key, request *GatewayEmbeddingRequest) (*GatewayEmbeddingResponse, *GatewayError)
 	// Rerank performs a rerank request to reorder documents by relevance to a query
-	Rerank(ctx *RakshaContext, key Key, request *RakshaRerankRequest) (*RakshaRerankResponse, *RakshaError)
+	Rerank(ctx *GatewayContext, key Key, request *GatewayRerankRequest) (*GatewayRerankResponse, *GatewayError)
 	// OCR performs an optical character recognition request on a document
-	OCR(ctx *RakshaContext, key Key, request *RakshaOCRRequest) (*RakshaOCRResponse, *RakshaError)
+	OCR(ctx *GatewayContext, key Key, request *GatewayOCRRequest) (*GatewayOCRResponse, *GatewayError)
 	// Speech performs a text to speech request
-	Speech(ctx *RakshaContext, key Key, request *RakshaSpeechRequest) (*RakshaSpeechResponse, *RakshaError)
+	Speech(ctx *GatewayContext, key Key, request *GatewaySpeechRequest) (*GatewaySpeechResponse, *GatewayError)
 	// SpeechStream performs a text to speech stream request
-	SpeechStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaSpeechRequest) (chan *RakshaStreamChunk, *RakshaError)
+	SpeechStream(ctx *GatewayContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *GatewaySpeechRequest) (chan *GatewayStreamChunk, *GatewayError)
 	// Transcription performs a transcription request
-	Transcription(ctx *RakshaContext, key Key, request *RakshaTranscriptionRequest) (*RakshaTranscriptionResponse, *RakshaError)
+	Transcription(ctx *GatewayContext, key Key, request *GatewayTranscriptionRequest) (*GatewayTranscriptionResponse, *GatewayError)
 	// TranscriptionStream performs a transcription stream request
-	TranscriptionStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *RakshaTranscriptionRequest) (chan *RakshaStreamChunk, *RakshaError)
+	TranscriptionStream(ctx *GatewayContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, request *GatewayTranscriptionRequest) (chan *GatewayStreamChunk, *GatewayError)
 	// ImageGeneration performs an image generation request
-	ImageGeneration(ctx *RakshaContext, key Key, request *RakshaImageGenerationRequest) (
-		*RakshaImageGenerationResponse, *RakshaError)
+	ImageGeneration(ctx *GatewayContext, key Key, request *GatewayImageGenerationRequest) (
+		*GatewayImageGenerationResponse, *GatewayError)
 	// ImageGenerationStream performs an image generation stream request
-	ImageGenerationStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key,
-		request *RakshaImageGenerationRequest) (chan *RakshaStreamChunk, *RakshaError)
+	ImageGenerationStream(ctx *GatewayContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key,
+		request *GatewayImageGenerationRequest) (chan *GatewayStreamChunk, *GatewayError)
 	// ImageEdit performs an image edit request
-	ImageEdit(ctx *RakshaContext, key Key, request *RakshaImageEditRequest) (*RakshaImageGenerationResponse, *RakshaError)
+	ImageEdit(ctx *GatewayContext, key Key, request *GatewayImageEditRequest) (*GatewayImageGenerationResponse, *GatewayError)
 	// ImageEditStream performs an image edit stream request
-	ImageEditStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key,
-		request *RakshaImageEditRequest) (chan *RakshaStreamChunk, *RakshaError)
+	ImageEditStream(ctx *GatewayContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key,
+		request *GatewayImageEditRequest) (chan *GatewayStreamChunk, *GatewayError)
 	// ImageVariation performs an image variation request
-	ImageVariation(ctx *RakshaContext, key Key, request *RakshaImageVariationRequest) (*RakshaImageGenerationResponse, *RakshaError)
+	ImageVariation(ctx *GatewayContext, key Key, request *GatewayImageVariationRequest) (*GatewayImageGenerationResponse, *GatewayError)
 	// VideoGeneration performs a video generation request
-	VideoGeneration(ctx *RakshaContext, key Key, request *RakshaVideoGenerationRequest) (*RakshaVideoGenerationResponse, *RakshaError)
+	VideoGeneration(ctx *GatewayContext, key Key, request *GatewayVideoGenerationRequest) (*GatewayVideoGenerationResponse, *GatewayError)
 	// VideoRetrieve retrieves a video from the provider
-	VideoRetrieve(ctx *RakshaContext, key Key, request *RakshaVideoRetrieveRequest) (*RakshaVideoGenerationResponse, *RakshaError)
+	VideoRetrieve(ctx *GatewayContext, key Key, request *GatewayVideoRetrieveRequest) (*GatewayVideoGenerationResponse, *GatewayError)
 	// VideoDownload downloads a video from the provider
-	VideoDownload(ctx *RakshaContext, key Key, request *RakshaVideoDownloadRequest) (*RakshaVideoDownloadResponse, *RakshaError)
+	VideoDownload(ctx *GatewayContext, key Key, request *GatewayVideoDownloadRequest) (*GatewayVideoDownloadResponse, *GatewayError)
 	// VideoDelete deletes a video from the provider
-	VideoDelete(ctx *RakshaContext, key Key, request *RakshaVideoDeleteRequest) (*RakshaVideoDeleteResponse, *RakshaError)
+	VideoDelete(ctx *GatewayContext, key Key, request *GatewayVideoDeleteRequest) (*GatewayVideoDeleteResponse, *GatewayError)
 	// VideoList lists videos from the provider
-	VideoList(ctx *RakshaContext, key Key, request *RakshaVideoListRequest) (*RakshaVideoListResponse, *RakshaError)
+	VideoList(ctx *GatewayContext, key Key, request *GatewayVideoListRequest) (*GatewayVideoListResponse, *GatewayError)
 	// VideoRemix remixes a video from the provider
-	VideoRemix(ctx *RakshaContext, key Key, request *RakshaVideoRemixRequest) (*RakshaVideoGenerationResponse, *RakshaError)
+	VideoRemix(ctx *GatewayContext, key Key, request *GatewayVideoRemixRequest) (*GatewayVideoGenerationResponse, *GatewayError)
 	// BatchCreate creates a new batch job for asynchronous processing
-	BatchCreate(ctx *RakshaContext, key Key, request *RakshaBatchCreateRequest) (*RakshaBatchCreateResponse, *RakshaError)
+	BatchCreate(ctx *GatewayContext, key Key, request *GatewayBatchCreateRequest) (*GatewayBatchCreateResponse, *GatewayError)
 	// BatchList lists batch jobs
-	BatchList(ctx *RakshaContext, keys []Key, request *RakshaBatchListRequest) (*RakshaBatchListResponse, *RakshaError)
+	BatchList(ctx *GatewayContext, keys []Key, request *GatewayBatchListRequest) (*GatewayBatchListResponse, *GatewayError)
 	// BatchRetrieve retrieves a specific batch job
-	BatchRetrieve(ctx *RakshaContext, keys []Key, request *RakshaBatchRetrieveRequest) (*RakshaBatchRetrieveResponse, *RakshaError)
+	BatchRetrieve(ctx *GatewayContext, keys []Key, request *GatewayBatchRetrieveRequest) (*GatewayBatchRetrieveResponse, *GatewayError)
 	// BatchCancel cancels a batch job
-	BatchCancel(ctx *RakshaContext, keys []Key, request *RakshaBatchCancelRequest) (*RakshaBatchCancelResponse, *RakshaError)
+	BatchCancel(ctx *GatewayContext, keys []Key, request *GatewayBatchCancelRequest) (*GatewayBatchCancelResponse, *GatewayError)
 	// BatchDelete deletes a batch job
-	BatchDelete(ctx *RakshaContext, keys []Key, request *RakshaBatchDeleteRequest) (*RakshaBatchDeleteResponse, *RakshaError)
+	BatchDelete(ctx *GatewayContext, keys []Key, request *GatewayBatchDeleteRequest) (*GatewayBatchDeleteResponse, *GatewayError)
 	// BatchResults retrieves results from a completed batch job
-	BatchResults(ctx *RakshaContext, keys []Key, request *RakshaBatchResultsRequest) (*RakshaBatchResultsResponse, *RakshaError)
+	BatchResults(ctx *GatewayContext, keys []Key, request *GatewayBatchResultsRequest) (*GatewayBatchResultsResponse, *GatewayError)
 	// FileUpload uploads a file to the provider
-	FileUpload(ctx *RakshaContext, key Key, request *RakshaFileUploadRequest) (*RakshaFileUploadResponse, *RakshaError)
+	FileUpload(ctx *GatewayContext, key Key, request *GatewayFileUploadRequest) (*GatewayFileUploadResponse, *GatewayError)
 	// FileList lists files from the provider
-	FileList(ctx *RakshaContext, keys []Key, request *RakshaFileListRequest) (*RakshaFileListResponse, *RakshaError)
+	FileList(ctx *GatewayContext, keys []Key, request *GatewayFileListRequest) (*GatewayFileListResponse, *GatewayError)
 	// FileRetrieve retrieves file metadata from the provider
-	FileRetrieve(ctx *RakshaContext, keys []Key, request *RakshaFileRetrieveRequest) (*RakshaFileRetrieveResponse, *RakshaError)
+	FileRetrieve(ctx *GatewayContext, keys []Key, request *GatewayFileRetrieveRequest) (*GatewayFileRetrieveResponse, *GatewayError)
 	// FileDelete deletes a file from the provider
-	FileDelete(ctx *RakshaContext, keys []Key, request *RakshaFileDeleteRequest) (*RakshaFileDeleteResponse, *RakshaError)
+	FileDelete(ctx *GatewayContext, keys []Key, request *GatewayFileDeleteRequest) (*GatewayFileDeleteResponse, *GatewayError)
 	// FileContent downloads file content from the provider
-	FileContent(ctx *RakshaContext, keys []Key, request *RakshaFileContentRequest) (*RakshaFileContentResponse, *RakshaError)
+	FileContent(ctx *GatewayContext, keys []Key, request *GatewayFileContentRequest) (*GatewayFileContentResponse, *GatewayError)
 	// CachedContentCreate creates a new cached content (Gemini / Vertex AI named cache lifecycle)
-	CachedContentCreate(ctx *RakshaContext, key Key, request *RakshaCachedContentCreateRequest) (*RakshaCachedContentCreateResponse, *RakshaError)
+	CachedContentCreate(ctx *GatewayContext, key Key, request *GatewayCachedContentCreateRequest) (*GatewayCachedContentCreateResponse, *GatewayError)
 	// CachedContentList lists cached contents
-	CachedContentList(ctx *RakshaContext, keys []Key, request *RakshaCachedContentListRequest) (*RakshaCachedContentListResponse, *RakshaError)
+	CachedContentList(ctx *GatewayContext, keys []Key, request *GatewayCachedContentListRequest) (*GatewayCachedContentListResponse, *GatewayError)
 	// CachedContentRetrieve retrieves a single cached content by name
-	CachedContentRetrieve(ctx *RakshaContext, keys []Key, request *RakshaCachedContentRetrieveRequest) (*RakshaCachedContentRetrieveResponse, *RakshaError)
+	CachedContentRetrieve(ctx *GatewayContext, keys []Key, request *GatewayCachedContentRetrieveRequest) (*GatewayCachedContentRetrieveResponse, *GatewayError)
 	// CachedContentUpdate updates a cached content's expiration (TTL or expireTime)
-	CachedContentUpdate(ctx *RakshaContext, keys []Key, request *RakshaCachedContentUpdateRequest) (*RakshaCachedContentUpdateResponse, *RakshaError)
+	CachedContentUpdate(ctx *GatewayContext, keys []Key, request *GatewayCachedContentUpdateRequest) (*GatewayCachedContentUpdateResponse, *GatewayError)
 	// CachedContentDelete deletes a cached content by name
-	CachedContentDelete(ctx *RakshaContext, keys []Key, request *RakshaCachedContentDeleteRequest) (*RakshaCachedContentDeleteResponse, *RakshaError)
+	CachedContentDelete(ctx *GatewayContext, keys []Key, request *GatewayCachedContentDeleteRequest) (*GatewayCachedContentDeleteResponse, *GatewayError)
 	// ContainerCreate creates a new container
-	ContainerCreate(ctx *RakshaContext, key Key, request *RakshaContainerCreateRequest) (*RakshaContainerCreateResponse, *RakshaError)
+	ContainerCreate(ctx *GatewayContext, key Key, request *GatewayContainerCreateRequest) (*GatewayContainerCreateResponse, *GatewayError)
 	// ContainerList lists containers
-	ContainerList(ctx *RakshaContext, keys []Key, request *RakshaContainerListRequest) (*RakshaContainerListResponse, *RakshaError)
+	ContainerList(ctx *GatewayContext, keys []Key, request *GatewayContainerListRequest) (*GatewayContainerListResponse, *GatewayError)
 	// ContainerRetrieve retrieves a specific container
-	ContainerRetrieve(ctx *RakshaContext, keys []Key, request *RakshaContainerRetrieveRequest) (*RakshaContainerRetrieveResponse, *RakshaError)
+	ContainerRetrieve(ctx *GatewayContext, keys []Key, request *GatewayContainerRetrieveRequest) (*GatewayContainerRetrieveResponse, *GatewayError)
 	// ContainerDelete deletes a container
-	ContainerDelete(ctx *RakshaContext, keys []Key, request *RakshaContainerDeleteRequest) (*RakshaContainerDeleteResponse, *RakshaError)
+	ContainerDelete(ctx *GatewayContext, keys []Key, request *GatewayContainerDeleteRequest) (*GatewayContainerDeleteResponse, *GatewayError)
 	// ContainerFileCreate creates a file in a container
-	ContainerFileCreate(ctx *RakshaContext, key Key, request *RakshaContainerFileCreateRequest) (*RakshaContainerFileCreateResponse, *RakshaError)
+	ContainerFileCreate(ctx *GatewayContext, key Key, request *GatewayContainerFileCreateRequest) (*GatewayContainerFileCreateResponse, *GatewayError)
 	// ContainerFileList lists files in a container
-	ContainerFileList(ctx *RakshaContext, keys []Key, request *RakshaContainerFileListRequest) (*RakshaContainerFileListResponse, *RakshaError)
+	ContainerFileList(ctx *GatewayContext, keys []Key, request *GatewayContainerFileListRequest) (*GatewayContainerFileListResponse, *GatewayError)
 	// ContainerFileRetrieve retrieves a file from a container
-	ContainerFileRetrieve(ctx *RakshaContext, keys []Key, request *RakshaContainerFileRetrieveRequest) (*RakshaContainerFileRetrieveResponse, *RakshaError)
+	ContainerFileRetrieve(ctx *GatewayContext, keys []Key, request *GatewayContainerFileRetrieveRequest) (*GatewayContainerFileRetrieveResponse, *GatewayError)
 	// ContainerFileContent retrieves the content of a file from a container
-	ContainerFileContent(ctx *RakshaContext, keys []Key, request *RakshaContainerFileContentRequest) (*RakshaContainerFileContentResponse, *RakshaError)
+	ContainerFileContent(ctx *GatewayContext, keys []Key, request *GatewayContainerFileContentRequest) (*GatewayContainerFileContentResponse, *GatewayError)
 	// ContainerFileDelete deletes a file from a container
-	ContainerFileDelete(ctx *RakshaContext, keys []Key, request *RakshaContainerFileDeleteRequest) (*RakshaContainerFileDeleteResponse, *RakshaError)
+	ContainerFileDelete(ctx *GatewayContext, keys []Key, request *GatewayContainerFileDeleteRequest) (*GatewayContainerFileDeleteResponse, *GatewayError)
 	// Passthrough executes a non-streaming passthrough; body is fully buffered.
-	Passthrough(ctx *RakshaContext, key Key, req *RakshaPassthroughRequest) (*RakshaPassthroughResponse, *RakshaError)
-	// PassthroughStream executes a streaming passthrough, forwarding raw response bytes as RakshaStreamChunks.
-	PassthroughStream(ctx *RakshaContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, req *RakshaPassthroughRequest) (chan *RakshaStreamChunk, *RakshaError)
+	Passthrough(ctx *GatewayContext, key Key, req *GatewayPassthroughRequest) (*GatewayPassthroughResponse, *GatewayError)
+	// PassthroughStream executes a streaming passthrough, forwarding raw response bytes as GatewayStreamChunks.
+	PassthroughStream(ctx *GatewayContext, postHookRunner PostHookRunner, postHookSpanFinalizer func(context.Context), key Key, req *GatewayPassthroughRequest) (chan *GatewayStreamChunk, *GatewayError)
 }
 
 // ResponsesLifecycleProvider is an optional interface for OpenAI-style Responses API
 // secondary verbs (retrieve, delete, cancel, list input items). Checked via type assertion
 // in core dispatch; providers that do not implement it return unsupported_operation.
 type ResponsesLifecycleProvider interface {
-	ResponsesRetrieve(ctx *RakshaContext, key Key, req *RakshaResponsesRetrieveRequest) (*RakshaResponsesResponse, *RakshaError)
-	ResponsesDelete(ctx *RakshaContext, key Key, req *RakshaResponsesDeleteRequest) (*RakshaResponsesDeleteResponse, *RakshaError)
-	ResponsesCancel(ctx *RakshaContext, key Key, req *RakshaResponsesCancelRequest) (*RakshaResponsesResponse, *RakshaError)
-	ResponsesInputItems(ctx *RakshaContext, key Key, req *RakshaResponsesInputItemsRequest) (*RakshaResponsesInputItemsResponse, *RakshaError)
+	ResponsesRetrieve(ctx *GatewayContext, key Key, req *GatewayResponsesRetrieveRequest) (*GatewayResponsesResponse, *GatewayError)
+	ResponsesDelete(ctx *GatewayContext, key Key, req *GatewayResponsesDeleteRequest) (*GatewayResponsesDeleteResponse, *GatewayError)
+	ResponsesCancel(ctx *GatewayContext, key Key, req *GatewayResponsesCancelRequest) (*GatewayResponsesResponse, *GatewayError)
+	ResponsesInputItems(ctx *GatewayContext, key Key, req *GatewayResponsesInputItemsRequest) (*GatewayResponsesInputItemsResponse, *GatewayError)
 }
 
 // WebSocketCapableProvider is an optional interface that providers can implement

@@ -178,6 +178,7 @@ function FilterSection({
 	children,
 	defaultOpen = false,
 	loading = false,
+	error = false,
 	onOpenChange,
 	testId,
 }: {
@@ -185,6 +186,7 @@ function FilterSection({
 	children: React.ReactNode;
 	defaultOpen?: boolean;
 	loading?: boolean;
+	error?: boolean;
 	onOpenChange?: (open: boolean) => void;
 	testId?: string;
 }) {
@@ -209,7 +211,13 @@ function FilterSection({
 				<span>{title}</span>
 			</CollapsibleTrigger>
 			<CollapsibleContent className="pt-1">
-				<div className="divide-border divide-y overflow-hidden rounded-sm border">{loading ? <FilterSectionSkeleton /> : children}</div>
+				{error && !loading ? (
+					<div className="text-destructive border-destructive/30 bg-destructive/5 rounded-sm border px-2 py-1.5 text-[11px]">
+						Failed to load options
+					</div>
+				) : (
+					<div className="divide-border divide-y overflow-hidden rounded-sm border">{loading ? <FilterSectionSkeleton /> : children}</div>
+				)}
 			</CollapsibleContent>
 		</Collapsible>
 	);
@@ -387,6 +395,7 @@ function StopReasonFilter({ filters, onFiltersChange, defaultOpen }: FilterCompo
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["stop_reasons"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableStopReasons = filterData?.stop_reasons || [];
 	const items = useMemo(() => {
@@ -402,6 +411,7 @@ function StopReasonFilter({ filters, onFiltersChange, defaultOpen }: FilterCompo
 			title="Stop Reason"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="stop-reason-filter-toggle"
 		>
@@ -432,7 +442,7 @@ function ProvidersFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 	const hasActive = (filters.providers || []).length > 0;
 	const [opened, setOpened] = useState(defaultOpen || hasActive);
 	const searchInputRef = useAutoFocusOnOpen(opened);
-	const { data: providersData, isUninitialized, isLoading } = useGetProvidersQuery(undefined, { skip: !opened && !hasActive });
+	const { data: providersData, isUninitialized, isLoading, isError } = useGetProvidersQuery(undefined, { skip: !opened && !hasActive });
 	const availableProviders = providersData || [];
 
 	// Hide only if data was fetched (not loading) and came back empty, and the user hasn't opened the section
@@ -443,6 +453,7 @@ function ProvidersFilter({ filters, onFiltersChange, defaultOpen }: FilterCompon
 			title="Providers"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="providers-filter-toggle"
 		>
@@ -504,6 +515,7 @@ function ModelsFilter({ filters, onFiltersChange, defaultOpen }: FilterComponent
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["models"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableModels = filterData?.models || [];
 	const items = useMemo(() => {
@@ -519,6 +531,7 @@ function ModelsFilter({ filters, onFiltersChange, defaultOpen }: FilterComponent
 			title="Models"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="models-filter-toggle"
 		>
@@ -555,6 +568,7 @@ function AliasesFilter({ filters, onFiltersChange, defaultOpen }: FilterComponen
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["aliases"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableAliases = filterData?.aliases || [];
 	const items = useMemo(() => {
@@ -570,6 +584,7 @@ function AliasesFilter({ filters, onFiltersChange, defaultOpen }: FilterComponen
 			title="Aliases"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="aliases-filter-toggle"
 		>
@@ -606,6 +621,7 @@ function SelectedKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["selected_keys"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableSelectedKeys = filterData?.selected_keys || [];
 	const nameToIds = useMemo(() => groupByName(availableSelectedKeys), [availableSelectedKeys]);
@@ -633,6 +649,7 @@ function SelectedKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 			title="Selected Keys"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="selected-keys-filter-toggle"
 		>
@@ -664,6 +681,7 @@ function VirtualKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterComp
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["virtual_keys"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableVirtualKeys = filterData?.virtual_keys || [];
 	const nameToIds = useMemo(() => groupByName(availableVirtualKeys), [availableVirtualKeys]);
@@ -691,6 +709,7 @@ function VirtualKeysFilter({ filters, onFiltersChange, defaultOpen }: FilterComp
 			title="Virtual Keys"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="virtual-keys-filter-toggle"
 		>
@@ -722,6 +741,7 @@ function RoutingEnginesFilter({ filters, onFiltersChange, defaultOpen }: FilterC
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["routing_engines"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableRoutingEngines = filterData?.routing_engines || [];
 
@@ -732,6 +752,7 @@ function RoutingEnginesFilter({ filters, onFiltersChange, defaultOpen }: FilterC
 			title="Routing Engines"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="routing-engines-filter-toggle"
 		>
@@ -770,6 +791,7 @@ function RoutingRulesFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["routing_rules"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableRoutingRules = filterData?.routing_rules || [];
 	const nameToIds = useMemo(() => groupByName(availableRoutingRules), [availableRoutingRules]);
@@ -797,6 +819,7 @@ function RoutingRulesFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 			title="Routing Rules"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="routing-rules-filter-toggle"
 		>
@@ -851,6 +874,7 @@ function UserFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["users"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableUsers = filterData?.users || [];
 	const items = useMemo(() => {
@@ -866,6 +890,7 @@ function UserFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 			title="User"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="user-filter-toggle"
 		>
@@ -902,6 +927,7 @@ function TeamFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["teams"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableTeams = filterData?.teams || [];
 	const nameToIds = useMemo(() => groupByName(availableTeams), [availableTeams]);
@@ -929,6 +955,7 @@ function TeamFilter({ filters, onFiltersChange, defaultOpen }: FilterComponentPr
 			title="Teams"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="teams-filter-toggle"
 		>
@@ -960,6 +987,7 @@ function CustomerFilter({ filters, onFiltersChange, defaultOpen }: FilterCompone
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["customers"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableCustomers = filterData?.customers || [];
 	const nameToIds = useMemo(() => groupByName(availableCustomers), [availableCustomers]);
@@ -987,6 +1015,7 @@ function CustomerFilter({ filters, onFiltersChange, defaultOpen }: FilterCompone
 			title="Customers"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="customers-filter-toggle"
 		>
@@ -1019,6 +1048,7 @@ function BusinessUnitFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["business_units"], q: searchQuery || undefined }, { skip: !opened && !hasActive });
 	const availableBusinessUnits = filterData?.business_units || [];
 	const nameToIds = useMemo(() => groupByName(availableBusinessUnits), [availableBusinessUnits]);
@@ -1046,6 +1076,7 @@ function BusinessUnitFilter({ filters, onFiltersChange, defaultOpen }: FilterCom
 			title="Business Units"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="business-units-filter-toggle"
 		>
@@ -1132,6 +1163,7 @@ function MetadataFilters({ filters, onFiltersChange, defaultOpen }: FilterCompon
 		isUninitialized,
 		isLoading,
 		isFetching,
+		isError,
 	} = useGetAvailableFilterDataQuery({ dimensions: ["metadata_keys"], q: debouncedQuery || undefined }, { skip: !opened && !hasActive });
 	const availableMetadataKeys = filterData?.metadata_keys || {};
 	const [customInputs, setCustomInputs] = useState<Record<string, string>>({});
@@ -1160,6 +1192,7 @@ function MetadataFilters({ filters, onFiltersChange, defaultOpen }: FilterCompon
 			title="Metadata"
 			defaultOpen={defaultOpen || hasActive}
 			loading={isLoading}
+			error={isError}
 			onOpenChange={setOpened}
 			testId="metadata-filter-toggle"
 		>

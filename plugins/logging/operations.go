@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/modelcatalog"
-	"github.com/raksha/raksha/framework/streaming"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/modelcatalog"
+	"github.com/gateway/gateway/framework/streaming"
 )
 
 const realtimeMissingTranscriptText = "[Audio transcription unavailable]"
@@ -24,7 +24,7 @@ const (
 	logStatusWarning    = "warning"
 )
 
-func logStatusForError(err *schemas.RakshaError) string {
+func logStatusForError(err *schemas.GatewayError) string {
 	if isCancelledLogError(err) {
 		return logStatusCancelled
 	}
@@ -34,7 +34,7 @@ func logStatusForError(err *schemas.RakshaError) string {
 	return logStatusError
 }
 
-func isRateLimitLogError(err *schemas.RakshaError) bool {
+func isRateLimitLogError(err *schemas.GatewayError) bool {
 	if err == nil {
 		return false
 	}
@@ -56,7 +56,7 @@ func isRateLimitLogError(err *schemas.RakshaError) bool {
 	return false
 }
 
-func isCancelledLogError(err *schemas.RakshaError) bool {
+func isCancelledLogError(err *schemas.GatewayError) bool {
 	if err == nil {
 		return false
 	}
@@ -76,7 +76,7 @@ func isCancelledLogError(err *schemas.RakshaError) bool {
 	}
 }
 
-func isContextTimeoutLogError(err *schemas.RakshaError) bool {
+func isContextTimeoutLogError(err *schemas.GatewayError) bool {
 	if err == nil || err.Error == nil {
 		return false
 	}
@@ -136,7 +136,7 @@ func applySerializedLogUpdates(
 	updates map[string]interface{},
 	entry *logstore.Log,
 	data *UpdateLogData,
-	cacheDebug *schemas.RakshaCacheDebug,
+	cacheDebug *schemas.GatewayCacheDebug,
 	contentLoggingEnabled bool,
 ) {
 	if data.ChatOutput != nil && contentLoggingEnabled {
@@ -216,7 +216,7 @@ func (p *LoggerPlugin) updateLogEntry(
 	routingRuleID string,
 	routingRuleName string,
 	numberOfRetries int,
-	cacheDebug *schemas.RakshaCacheDebug,
+	cacheDebug *schemas.GatewayCacheDebug,
 	routingEngineLogs string,
 	data *UpdateLogData,
 	contentLoggingEnabled bool,
@@ -345,7 +345,7 @@ func (p *LoggerPlugin) updateLogEntry(
 	}
 
 	if data.ErrorDetails != nil {
-		shouldStoreRaw, _ := ctx.Value(schemas.RakshaContextKeyShouldStoreRawInLogs).(bool)
+		shouldStoreRaw, _ := ctx.Value(schemas.GatewayContextKeyShouldStoreRawInLogs).(bool)
 		tempEntry.ErrorDetailsParsed = sanitizeErrorForLogging(data.ErrorDetails, contentLoggingEnabled, shouldStoreRaw)
 		needsSerialization = true
 	}
@@ -503,7 +503,7 @@ func (p *LoggerPlugin) applyStreamingOutputToEntry(entry *logstore.Log, streamRe
 
 // isPassthroughErrorResponse returns true when the result is a passthrough
 // response with a provider-reported HTTP error status (4xx or 5xx).
-func isPassthroughErrorResponse(result *schemas.RakshaResponse) bool {
+func isPassthroughErrorResponse(result *schemas.GatewayResponse) bool {
 	return result != nil &&
 		result.PassthroughResponse != nil &&
 		result.PassthroughResponse.StatusCode >= 400
@@ -511,25 +511,25 @@ func isPassthroughErrorResponse(result *schemas.RakshaResponse) bool {
 
 // applyNonStreamingOutputToEntry applies non-streaming response data to a log entry.
 // shouldStoreRaw gates whether raw request/response bytes are written to the entry.
-func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, result *schemas.RakshaResponse, shouldStoreRaw bool, contentLoggingEnabled bool) {
+func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, result *schemas.GatewayResponse, shouldStoreRaw bool, contentLoggingEnabled bool) {
 	if result == nil {
 		return
 	}
 	// Token usage
-	var usage *schemas.RakshaLLMUsage
+	var usage *schemas.GatewayLLMUsage
 	switch {
 	case result.TextCompletionResponse != nil && result.TextCompletionResponse.Usage != nil:
 		usage = result.TextCompletionResponse.Usage
 	case result.ChatResponse != nil && result.ChatResponse.Usage != nil:
 		usage = result.ChatResponse.Usage
 	case result.ResponsesResponse != nil && result.ResponsesResponse.Usage != nil:
-		usage = result.ResponsesResponse.Usage.ToRakshaLLMUsage()
+		usage = result.ResponsesResponse.Usage.ToGatewayLLMUsage()
 	case result.CompactionResponse != nil && result.CompactionResponse.Usage != nil:
-		usage = result.CompactionResponse.Usage.ToRakshaLLMUsage()
+		usage = result.CompactionResponse.Usage.ToGatewayLLMUsage()
 	case result.EmbeddingResponse != nil && result.EmbeddingResponse.Usage != nil:
 		usage = result.EmbeddingResponse.Usage
 	case result.TranscriptionResponse != nil && result.TranscriptionResponse.Usage != nil:
-		usage = &schemas.RakshaLLMUsage{}
+		usage = &schemas.GatewayLLMUsage{}
 		if result.TranscriptionResponse.Usage.InputTokens != nil {
 			usage.PromptTokens = *result.TranscriptionResponse.Usage.InputTokens
 		}
@@ -542,7 +542,7 @@ func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, resul
 			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 		}
 	case result.ImageGenerationResponse != nil && result.ImageGenerationResponse.Usage != nil:
-		usage = &schemas.RakshaLLMUsage{}
+		usage = &schemas.GatewayLLMUsage{}
 		usage.PromptTokens = result.ImageGenerationResponse.Usage.InputTokens
 		usage.CompletionTokens = result.ImageGenerationResponse.Usage.OutputTokens
 		if result.ImageGenerationResponse.Usage.TotalTokens > 0 {
@@ -655,7 +655,7 @@ func (p *LoggerPlugin) applyNonStreamingOutputToEntry(entry *logstore.Log, resul
 	}
 }
 
-func (p *LoggerPlugin) applyRealtimeOutputToEntry(entry *logstore.Log, result *schemas.RakshaResponse, shouldStoreRaw bool, contentLoggingEnabled bool) {
+func (p *LoggerPlugin) applyRealtimeOutputToEntry(entry *logstore.Log, result *schemas.GatewayResponse, shouldStoreRaw bool, contentLoggingEnabled bool) {
 	if result == nil || result.ResponsesResponse == nil {
 		return
 	}
@@ -666,11 +666,11 @@ func (p *LoggerPlugin) applyRealtimeOutputToEntry(entry *logstore.Log, result *s
 	}
 
 	if usage := result.ResponsesResponse.Usage; usage != nil {
-		rakshaUsage := usage.ToRakshaLLMUsage()
-		entry.TokenUsageParsed = rakshaUsage
-		entry.PromptTokens = rakshaUsage.PromptTokens
-		entry.CompletionTokens = rakshaUsage.CompletionTokens
-		entry.TotalTokens = rakshaUsage.TotalTokens
+		gatewayUsage := usage.ToGatewayLLMUsage()
+		entry.TokenUsageParsed = gatewayUsage
+		entry.PromptTokens = gatewayUsage.PromptTokens
+		entry.CompletionTokens = gatewayUsage.CompletionTokens
+		entry.TotalTokens = gatewayUsage.TotalTokens
 	}
 
 	if contentLoggingEnabled {
@@ -843,7 +843,7 @@ func realtimeInputHistoryToolCallID(message schemas.ChatMessage) string {
 	return *message.ChatToolMessage.ToolCallID
 }
 
-func extractRealtimeTranscript(event *schemas.RakshaRealtimeEvent) string {
+func extractRealtimeTranscript(event *schemas.GatewayRealtimeEvent) string {
 	if event == nil || event.ExtraParams == nil {
 		return realtimeMissingTranscriptText
 	}
@@ -1439,14 +1439,14 @@ func (p *LoggerPlugin) calculateCostForLog(logEntry *logstore.Log) (float64, err
 		return 0, fmt.Errorf("object type is empty for log %s", logEntry.ID)
 	}
 
-	// Build a minimal RakshaResponse matching the request type so that
+	// Build a minimal GatewayResponse matching the request type so that
 	// extractCostInput routes usage into the correct field for each compute function.
 	originalModelRequested := logEntry.Model
 	if logEntry.Alias != nil && *logEntry.Alias != "" {
 		originalModelRequested = *logEntry.Alias
 	}
 
-	extraFields := schemas.RakshaResponseExtraFields{
+	extraFields := schemas.GatewayResponseExtraFields{
 		RequestType:            requestType,
 		Provider:               schemas.ModelProvider(logEntry.Provider),
 		OriginalModelRequested: originalModelRequested,
@@ -1456,7 +1456,7 @@ func (p *LoggerPlugin) calculateCostForLog(logEntry *logstore.Log) (float64, err
 
 	resp := buildResponseForRequestType(requestType, usage, extraFields)
 
-	// Patch modality-specific output fields that are not captured in RakshaLLMUsage
+	// Patch modality-specific output fields that are not captured in GatewayLLMUsage
 	// but are required for accurate cost calculation.
 
 	// Transcription: restore Seconds (duration billing) and InputTokenDetails
@@ -1501,39 +1501,39 @@ func (p *LoggerPlugin) calculateCostForLog(logEntry *logstore.Log) (float64, err
 	return p.pricingManager.CalculateCost(resp, &scopes), nil
 }
 
-// buildResponseForRequestType wraps RakshaLLMUsage into the correct response
+// buildResponseForRequestType wraps GatewayLLMUsage into the correct response
 // field so that CalculateCost's extractCostInput routes it properly.
-func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas.RakshaLLMUsage, extra schemas.RakshaResponseExtraFields) *schemas.RakshaResponse {
+func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas.GatewayLLMUsage, extra schemas.GatewayResponseExtraFields) *schemas.GatewayResponse {
 	switch requestType {
 	case schemas.TextCompletionRequest, schemas.TextCompletionStreamRequest:
-		return &schemas.RakshaResponse{
-			TextCompletionResponse: &schemas.RakshaTextCompletionResponse{
+		return &schemas.GatewayResponse{
+			TextCompletionResponse: &schemas.GatewayTextCompletionResponse{
 				Usage:       usage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.EmbeddingRequest:
-		return &schemas.RakshaResponse{
-			EmbeddingResponse: &schemas.RakshaEmbeddingResponse{
+		return &schemas.GatewayResponse{
+			EmbeddingResponse: &schemas.GatewayEmbeddingResponse{
 				Usage:       usage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.RerankRequest:
-		return &schemas.RakshaResponse{
-			RerankResponse: &schemas.RakshaRerankResponse{
+		return &schemas.GatewayResponse{
+			RerankResponse: &schemas.GatewayRerankResponse{
 				Usage:       usage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.OCRRequest:
-		return &schemas.RakshaResponse{
-			OCRResponse: &schemas.RakshaOCRResponse{
+		return &schemas.GatewayResponse{
+			OCRResponse: &schemas.GatewayOCRResponse{
 				ExtraFields: extra,
 			},
 		}
 	case schemas.ResponsesRequest, schemas.ResponsesStreamRequest:
-		// Convert RakshaLLMUsage back to ResponsesResponseUsage, preserving token
+		// Convert GatewayLLMUsage back to ResponsesResponseUsage, preserving token
 		// detail breakdowns so CalculateCost can apply cache and search-query pricing.
 		var respUsage *schemas.ResponsesResponseUsage
 		if usage != nil {
@@ -1565,8 +1565,8 @@ func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas
 				}
 			}
 		}
-		return &schemas.RakshaResponse{
-			ResponsesResponse: &schemas.RakshaResponsesResponse{
+		return &schemas.GatewayResponse{
+			ResponsesResponse: &schemas.GatewayResponsesResponse{
 				Usage:       respUsage,
 				ExtraFields: extra,
 			},
@@ -1580,8 +1580,8 @@ func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas
 				TotalTokens:  usage.TotalTokens,
 			}
 		}
-		return &schemas.RakshaResponse{
-			SpeechResponse: &schemas.RakshaSpeechResponse{
+		return &schemas.GatewayResponse{
+			SpeechResponse: &schemas.GatewaySpeechResponse{
 				Usage:       speechUsage,
 				ExtraFields: extra,
 			},
@@ -1595,15 +1595,15 @@ func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas
 				TotalTokens:  &usage.TotalTokens,
 			}
 		}
-		return &schemas.RakshaResponse{
-			TranscriptionResponse: &schemas.RakshaTranscriptionResponse{
+		return &schemas.GatewayResponse{
+			TranscriptionResponse: &schemas.GatewayTranscriptionResponse{
 				Usage:       txUsage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.ImageGenerationRequest, schemas.ImageGenerationStreamRequest,
 		schemas.ImageEditRequest, schemas.ImageEditStreamRequest, schemas.ImageVariationRequest:
-		// Log entries only store RakshaLLMUsage; convert to ImageUsage for proper routing
+		// Log entries only store GatewayLLMUsage; convert to ImageUsage for proper routing
 		var imgUsage *schemas.ImageUsage
 		if usage != nil {
 			imgUsage = &schemas.ImageUsage{
@@ -1612,24 +1612,24 @@ func buildResponseForRequestType(requestType schemas.RequestType, usage *schemas
 				TotalTokens:  usage.TotalTokens,
 			}
 		}
-		return &schemas.RakshaResponse{
-			ImageGenerationResponse: &schemas.RakshaImageGenerationResponse{
+		return &schemas.GatewayResponse{
+			ImageGenerationResponse: &schemas.GatewayImageGenerationResponse{
 				Usage:       imgUsage,
 				ExtraFields: extra,
 			},
 		}
 	case schemas.VideoGenerationRequest, schemas.VideoRemixRequest:
-		// Seconds is not stored in RakshaLLMUsage; the caller must patch it in from
+		// Seconds is not stored in GatewayLLMUsage; the caller must patch it in from
 		// the stored VideoGenerationOutputParsed after this function returns.
-		return &schemas.RakshaResponse{
-			VideoGenerationResponse: &schemas.RakshaVideoGenerationResponse{
+		return &schemas.GatewayResponse{
+			VideoGenerationResponse: &schemas.GatewayVideoGenerationResponse{
 				ExtraFields: extra,
 			},
 		}
 	default:
 		// Default to chat response for unknown or chat request types
-		return &schemas.RakshaResponse{
-			ChatResponse: &schemas.RakshaChatResponse{
+		return &schemas.GatewayResponse{
+			ChatResponse: &schemas.GatewayChatResponse{
 				Usage:       usage,
 				ExtraFields: extra,
 			},

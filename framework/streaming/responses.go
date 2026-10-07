@@ -8,19 +8,19 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/modelcatalog"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/modelcatalog"
 )
 
-// deepCopyResponsesStreamResponse creates a deep copy of RakshaResponsesStreamResponse
+// deepCopyResponsesStreamResponse creates a deep copy of GatewayResponsesStreamResponse
 // to prevent shared data mutation between different plugin accumulators
-func deepCopyResponsesStreamResponse(original *schemas.RakshaResponsesStreamResponse) *schemas.RakshaResponsesStreamResponse {
+func deepCopyResponsesStreamResponse(original *schemas.GatewayResponsesStreamResponse) *schemas.GatewayResponsesStreamResponse {
 	if original == nil {
 		return nil
 	}
 
-	copy := &schemas.RakshaResponsesStreamResponse{
+	copy := &schemas.GatewayResponsesStreamResponse{
 		Type:           original.Type,
 		SequenceNumber: original.SequenceNumber,
 		ExtraFields:    original.ExtraFields, // ExtraFields can be safely shared as they're typically read-only
@@ -28,7 +28,7 @@ func deepCopyResponsesStreamResponse(original *schemas.RakshaResponsesStreamResp
 
 	// Deep copy Response if present
 	if original.Response != nil {
-		copy.Response = &schemas.RakshaResponsesResponse{}
+		copy.Response = &schemas.GatewayResponsesResponse{}
 		*copy.Response = *original.Response // Shallow copy the struct
 
 		// Deep copy the Output slice if present
@@ -827,7 +827,7 @@ func createNewMessage() schemas.ResponsesMessage {
 }
 
 // processAccumulatedResponsesStreamingChunks processes all accumulated responses streaming chunks in order
-func (a *Accumulator) processAccumulatedResponsesStreamingChunks(requestID string, respErr *schemas.RakshaError, isFinalChunk bool) (*AccumulatedData, error) {
+func (a *Accumulator) processAccumulatedResponsesStreamingChunks(requestID string, respErr *schemas.GatewayError, isFinalChunk bool) (*AccumulatedData, error) {
 	accumulator := a.getOrCreateStreamAccumulator(requestID)
 	// Lock the accumulator
 	accumulator.mu.Lock()
@@ -922,7 +922,7 @@ func (a *Accumulator) processAccumulatedResponsesStreamingChunks(requestID strin
 }
 
 // processResponsesStreamingResponse processes a responses streaming response
-func (a *Accumulator) processResponsesStreamingResponse(ctx *schemas.RakshaContext, result *schemas.RakshaResponse, rakshaErr *schemas.RakshaError) (*ProcessedStreamResponse, error) {
+func (a *Accumulator) processResponsesStreamingResponse(ctx *schemas.GatewayContext, result *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*ProcessedStreamResponse, error) {
 	a.logger.Debug("[streaming] processing responses streaming response")
 
 	// Extract accumulator ID from context
@@ -931,18 +931,18 @@ func (a *Accumulator) processResponsesStreamingResponse(ctx *schemas.RakshaConte
 		return nil, fmt.Errorf("accumulator-id not found in context or is empty")
 	}
 
-	_, provider, requestedModel, resolvedModel := raksha.GetResponseFields(result, rakshaErr)
+	_, provider, requestedModel, resolvedModel := gateway.GetResponseFields(result, gatewayErr)
 
-	isFinalChunk := raksha.IsFinalChunk(ctx)
+	isFinalChunk := gateway.IsFinalChunk(ctx)
 	chunk := a.getResponsesStreamChunk()
 	chunk.Timestamp = time.Now()
-	chunk.ErrorDetails = rakshaErr
+	chunk.ErrorDetails = gatewayErr
 
-	if rakshaErr != nil {
-		chunk.FinishReason = raksha.Ptr("error")
-		if rakshaErr.ExtraFields.RawResponse != nil {
-			if rawBytes, marshalErr := sonic.Marshal(rakshaErr.ExtraFields.RawResponse); marshalErr == nil {
-				chunk.RawResponse = raksha.Ptr(string(rawBytes))
+	if gatewayErr != nil {
+		chunk.FinishReason = gateway.Ptr("error")
+		if gatewayErr.ExtraFields.RawResponse != nil {
+			if rawBytes, marshalErr := sonic.Marshal(gatewayErr.ExtraFields.RawResponse); marshalErr == nil {
+				chunk.RawResponse = gateway.Ptr(string(rawBytes))
 			}
 		}
 		// Assign a stable trailing index; reuse on duplicate plugin calls so dedup fires correctly.
@@ -958,20 +958,20 @@ func (a *Accumulator) processResponsesStreamingResponse(ctx *schemas.RakshaConte
 		accumulator.mu.Unlock()
 	} else if result != nil && result.ResponsesStreamResponse != nil {
 		if result.ResponsesStreamResponse.ExtraFields.RawResponse != nil {
-			chunk.RawResponse = raksha.Ptr(fmt.Sprintf("%v", result.ResponsesStreamResponse.ExtraFields.RawResponse))
+			chunk.RawResponse = gateway.Ptr(fmt.Sprintf("%v", result.ResponsesStreamResponse.ExtraFields.RawResponse))
 		}
 		// Store a deep copy of the stream response to prevent shared data mutation between plugins
 		chunk.StreamResponse = deepCopyResponsesStreamResponse(result.ResponsesStreamResponse)
 		// Extract token usage from stream response if available
 		if result.ResponsesStreamResponse.Response != nil &&
 			result.ResponsesStreamResponse.Response.Usage != nil {
-			chunk.TokenUsage = result.ResponsesStreamResponse.Response.Usage.ToRakshaLLMUsage()
+			chunk.TokenUsage = result.ResponsesStreamResponse.Response.Usage.ToGatewayLLMUsage()
 		}
 		chunk.ChunkIndex = result.ResponsesStreamResponse.ExtraFields.ChunkIndex
 		if isFinalChunk {
 			if a.pricingManager != nil {
 				cost := a.pricingManager.CalculateCost(result, modelcatalog.PricingLookupScopesFromContext(ctx, string(result.GetExtraFields().Provider)))
-				chunk.Cost = raksha.Ptr(cost)
+				chunk.Cost = gateway.Ptr(cost)
 			}
 			chunk.SemanticCacheDebug = result.GetExtraFields().CacheDebug
 		}
@@ -994,7 +994,7 @@ func (a *Accumulator) processResponsesStreamingResponse(ctx *schemas.RakshaConte
 
 		// Always process and return data on final chunk
 		// Multiple plugins can call this - the processing is idempotent
-		data, processErr := a.processAccumulatedResponsesStreamingChunks(requestID, rakshaErr, isFinalChunk)
+		data, processErr := a.processAccumulatedResponsesStreamingChunks(requestID, gatewayErr, isFinalChunk)
 		if processErr != nil {
 			a.logger.Error("failed to process accumulated responses chunks for request %s: %v", requestID, processErr)
 			return nil, processErr
@@ -1011,7 +1011,7 @@ func (a *Accumulator) processResponsesStreamingResponse(ctx *schemas.RakshaConte
 			Provider:       provider,
 			RequestedModel: requestedModel,
 			ResolvedModel:  resolvedModel,
-			RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
+			RoutingInfo:    gateway.GetResponseRoutingInfo(result, gatewayErr),
 			Data:           data,
 			RawRequest:     &rawRequest,
 		}, nil
@@ -1023,7 +1023,7 @@ func (a *Accumulator) processResponsesStreamingResponse(ctx *schemas.RakshaConte
 		Provider:       provider,
 		RequestedModel: requestedModel,
 		ResolvedModel:  resolvedModel,
-		RoutingInfo:    raksha.GetResponseRoutingInfo(result, rakshaErr),
+		RoutingInfo:    gateway.GetResponseRoutingInfo(result, gatewayErr),
 		Data:           nil,
 	}, nil
 }

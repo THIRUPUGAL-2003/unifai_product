@@ -1,5 +1,5 @@
 """
-Raksha Guard — Silent Auto-Updater
+Gateway Guard — Silent Auto-Updater
 ===================================
 Guard startup + every heartbeat cycle-ல server version check பண்ணும்.
 New version இருந்தா → background-ல download → silent install → Guard restart.
@@ -21,7 +21,7 @@ import urllib.request
 import urllib.error
 from typing import Optional
 
-from agent_config import AGENT_VERSION, RAKSHA_BACKEND_URL, RAKSHA_GUARD_SECRET
+from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL, GATEWAY_GUARD_SECRET
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 _WIN_DL_URL = "{backend}/api/browser-ai/setup/download-windows.zip"
@@ -38,17 +38,17 @@ _last_nudge: float = 0.0
 
 
 def _auth_headers() -> dict[str, str]:
-    headers = {"User-Agent": f"Raksha-Guard/{AGENT_VERSION}"}
-    secret = (RAKSHA_GUARD_SECRET or "").strip()
+    headers = {"User-Agent": f"Gateway-Guard/{AGENT_VERSION}"}
+    secret = (GATEWAY_GUARD_SECRET or "").strip()
     if secret:
-        headers["X-Raksha-Guard-Key"] = secret
+        headers["X-Gateway-Guard-Key"] = secret
     return headers
 
 
 def _download_url() -> str:
     if _IS_WIN:
-        return _WIN_DL_URL.format(backend=RAKSHA_BACKEND_URL)
-    return _MAC_DL_URL.format(backend=RAKSHA_BACKEND_URL)
+        return _WIN_DL_URL.format(backend=GATEWAY_BACKEND_URL)
+    return _MAC_DL_URL.format(backend=GATEWAY_BACKEND_URL)
 
 
 def _get_server_version() -> Optional[str]:
@@ -59,11 +59,11 @@ def _get_server_version() -> Optional[str]:
         for k, v in _auth_headers().items():
             req.add_header(k, v)
         with urllib.request.urlopen(req, timeout=10) as resp:
-            version = resp.headers.get("X-Raksha-Guard-Version", "").strip()
+            version = resp.headers.get("X-Gateway-Guard-Version", "").strip()
             if version:
                 return version
     except Exception as e:
-        print(f"[Raksha Guard AutoUpdate] HEAD check failed ({e}), trying GET fallback...")
+        print(f"[Gateway Guard AutoUpdate] HEAD check failed ({e}), trying GET fallback...")
 
     try:
         req = urllib.request.Request(url, method="GET")
@@ -71,10 +71,10 @@ def _get_server_version() -> Optional[str]:
             req.add_header(k, v)
         req.add_header("Range", "bytes=0-0")
         with urllib.request.urlopen(req, timeout=10) as resp:
-            version = resp.headers.get("X-Raksha-Guard-Version", "").strip()
+            version = resp.headers.get("X-Gateway-Guard-Version", "").strip()
             return version if version else None
     except Exception as e:
-        print(f"[Raksha Guard AutoUpdate] GET fallback failed: {e}")
+        print(f"[Gateway Guard AutoUpdate] GET fallback failed: {e}")
         return None
 
 
@@ -104,15 +104,15 @@ def _download_and_install_windows(server_version: str) -> bool:
     """Download latest Windows ZIP, extract Setup EXE, silent install, restart Guard."""
     import zipfile
 
-    dl_url = _WIN_DL_URL.format(backend=RAKSHA_BACKEND_URL)
-    tmp_zip = os.path.join(tempfile.gettempdir(), "raksha_guard_autoupdate.zip")
-    tmp_exe = os.path.join(tempfile.gettempdir(), "raksha_guard_autoupdate_setup.exe")
+    dl_url = _WIN_DL_URL.format(backend=GATEWAY_BACKEND_URL)
+    tmp_zip = os.path.join(tempfile.gettempdir(), "gateway_guard_autoupdate.zip")
+    tmp_exe = os.path.join(tempfile.gettempdir(), "gateway_guard_autoupdate_setup.exe")
 
-    print(f"[Raksha Guard AutoUpdate] Downloading {dl_url}")
+    print(f"[Gateway Guard AutoUpdate] Downloading {dl_url}")
     try:
         _download_file(dl_url, tmp_zip)
     except Exception as e:
-        print(f"[Raksha Guard AutoUpdate] Download failed: {e}")
+        print(f"[Gateway Guard AutoUpdate] Download failed: {e}")
         return False
 
     try:
@@ -122,12 +122,12 @@ def _download_and_install_windows(server_version: str) -> bool:
             if not setup:
                 setup = next((n for n in names if n.lower().endswith(".exe")), None)
             if not setup:
-                print("[Raksha Guard AutoUpdate] No EXE found in ZIP")
+                print("[Gateway Guard AutoUpdate] No EXE found in ZIP")
                 return False
             with z.open(setup) as src, open(tmp_exe, "wb") as dst:
                 dst.write(src.read())
     except Exception as e:
-        print(f"[Raksha Guard AutoUpdate] Extract failed: {e}")
+        print(f"[Gateway Guard AutoUpdate] Extract failed: {e}")
         return False
     finally:
         try:
@@ -135,13 +135,13 @@ def _download_and_install_windows(server_version: str) -> bool:
         except Exception:
             pass
 
-    print(f"[Raksha Guard AutoUpdate] Installing v{server_version} silently...")
+    print(f"[Gateway Guard AutoUpdate] Installing v{server_version} silently...")
     try:
         local = os.environ.get("LOCALAPPDATA", "")
         pf = os.environ.get("ProgramFiles", r"C:\Program Files")
         candidates = [
-            os.path.join(local, "Programs", "Raksha", "Guard", "Raksha_Guard.exe") if local else "",
-            os.path.join(pf, "Raksha", "Guard", "Raksha_Guard.exe"),
+            os.path.join(local, "Programs", "Gateway", "Guard", "Gateway_Guard.exe") if local else "",
+            os.path.join(pf, "Gateway", "Guard", "Gateway_Guard.exe"),
         ]
         guard_exe = next((p for p in candidates if p and os.path.isfile(p)), candidates[0] or "")
         # The installer relaunches Guard too; both must not inherit this onefile's _MEI dir.
@@ -168,18 +168,18 @@ def _download_and_install_windows(server_version: str) -> bool:
             env=fresh_env,
             creationflags=creation_flags,
         )
-        print("[Raksha Guard AutoUpdate] Install launched. Guard will restart.")
+        print("[Gateway Guard AutoUpdate] Install launched. Guard will restart.")
         time.sleep(5)
         os._exit(0)
     except Exception as e:
-        print(f"[Raksha Guard AutoUpdate] Install launch failed: {e}")
+        print(f"[Gateway Guard AutoUpdate] Install launch failed: {e}")
         return False
 
 
 def _mac_install_dest() -> str:
     """Prefer replacing the already-installed location."""
-    home_app = os.path.expanduser("~/Applications/Raksha_Guard.app")
-    sys_app = "/Applications/Raksha_Guard.app"
+    home_app = os.path.expanduser("~/Applications/Gateway_Guard.app")
+    sys_app = "/Applications/Gateway_Guard.app"
     if os.path.isdir(home_app):
         return home_app
     if os.path.isdir(sys_app):
@@ -195,7 +195,7 @@ def _mac_install_dest() -> str:
 def _mac_stop_guard() -> None:
     try:
         subprocess.run(
-            ["pkill", "-f", "Raksha_Guard"],
+            ["pkill", "-f", "Gateway_Guard"],
             check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -210,17 +210,17 @@ def _download_and_install_mac(server_version: str) -> bool:
     import zipfile
     import shutil
 
-    dl_url = _MAC_DL_URL.format(backend=RAKSHA_BACKEND_URL)
-    tmp_zip = os.path.join(tempfile.gettempdir(), "raksha_guard_autoupdate_mac.zip")
+    dl_url = _MAC_DL_URL.format(backend=GATEWAY_BACKEND_URL)
+    tmp_zip = os.path.join(tempfile.gettempdir(), "gateway_guard_autoupdate_mac.zip")
 
-    print(f"[Raksha Guard AutoUpdate] Downloading macOS package {dl_url}")
+    print(f"[Gateway Guard AutoUpdate] Downloading macOS package {dl_url}")
     try:
         _download_file(dl_url, tmp_zip)
     except Exception as e:
-        print(f"[Raksha Guard AutoUpdate] Download failed: {e}")
+        print(f"[Gateway Guard AutoUpdate] Download failed: {e}")
         return False
 
-    tmp_dir = os.path.join(tempfile.gettempdir(), "raksha_guard_autoupdate_mac")
+    tmp_dir = os.path.join(tempfile.gettempdir(), "gateway_guard_autoupdate_mac")
     try:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         os.makedirs(tmp_dir, exist_ok=True)
@@ -228,12 +228,12 @@ def _download_and_install_mac(server_version: str) -> bool:
             for info in z.infolist():
                 name = info.filename.replace("\\", "/")
                 if name.startswith("/") or ".." in name.split("/"):
-                    print(f"[Raksha Guard AutoUpdate] Skipping unsafe zip path: {info.filename}")
+                    print(f"[Gateway Guard AutoUpdate] Skipping unsafe zip path: {info.filename}")
                     continue
                 dest = os.path.realpath(os.path.join(tmp_dir, name))
                 root_real = os.path.realpath(tmp_dir)
                 if not dest.startswith(root_real + os.sep) and dest != root_real:
-                    print(f"[Raksha Guard AutoUpdate] Skipping zip-slip path: {info.filename}")
+                    print(f"[Gateway Guard AutoUpdate] Skipping zip-slip path: {info.filename}")
                     continue
                 if info.is_dir():
                     os.makedirs(dest, exist_ok=True)
@@ -242,7 +242,7 @@ def _download_and_install_mac(server_version: str) -> bool:
                     with z.open(info) as src, open(dest, "wb") as out:
                         out.write(src.read())
     except Exception as e:
-        print(f"[Raksha Guard AutoUpdate] Extract failed: {e}")
+        print(f"[Gateway Guard AutoUpdate] Extract failed: {e}")
         return False
     finally:
         try:
@@ -253,7 +253,7 @@ def _download_and_install_mac(server_version: str) -> bool:
     app_path = None
     for root, dirs, _ in os.walk(tmp_dir):
         for d in dirs:
-            if d == "Raksha_Guard.app" or d.endswith(".app"):
+            if d == "Gateway_Guard.app" or d.endswith(".app"):
                 app_path = os.path.join(root, d)
                 break
         if app_path:
@@ -263,7 +263,7 @@ def _download_and_install_mac(server_version: str) -> bool:
         install_cmd = None
         for root, _, files in os.walk(tmp_dir):
             for f in files:
-                if f == "Install_Raksha_Guard.command":
+                if f == "Install_Gateway_Guard.command":
                     install_cmd = os.path.join(root, f)
                     break
             if install_cmd:
@@ -272,13 +272,13 @@ def _download_and_install_mac(server_version: str) -> bool:
             _mac_stop_guard()
             os.chmod(install_cmd, 0o755)
             subprocess.Popen(["bash", install_cmd])
-            print("[Raksha Guard AutoUpdate] Install script launched. Guard will restart.")
+            print("[Gateway Guard AutoUpdate] Install script launched. Guard will restart.")
             time.sleep(5)
             os._exit(0)
-        print("[Raksha Guard AutoUpdate] No .app or install script found")
+        print("[Gateway Guard AutoUpdate] No .app or install script found")
         return False
 
-    print(f"[Raksha Guard AutoUpdate] Installing .app from {app_path}")
+    print(f"[Gateway Guard AutoUpdate] Installing .app from {app_path}")
     try:
         _mac_stop_guard()
         dest = _mac_install_dest()
@@ -311,11 +311,11 @@ def _download_and_install_mac(server_version: str) -> bool:
 
         shutil.rmtree(tmp_dir, ignore_errors=True)
         subprocess.Popen(["open", dest])
-        print(f"[Raksha Guard AutoUpdate] v{server_version} installed → restarting.")
+        print(f"[Gateway Guard AutoUpdate] v{server_version} installed → restarting.")
         time.sleep(3)
         os._exit(0)
     except Exception as e:
-        print(f"[Raksha Guard AutoUpdate] Install failed: {e}")
+        print(f"[Gateway Guard AutoUpdate] Install failed: {e}")
         return False
 
 
@@ -329,7 +329,7 @@ def nudge_update_check(server_version: str) -> None:
         return
     _last_nudge = now
     _last_check = 0.0
-    print(f"[Raksha Guard AutoUpdate] Server published v{server_version} — checking now")
+    print(f"[Gateway Guard AutoUpdate] Server published v{server_version} — checking now")
 
 
 def check_and_update_if_needed() -> None:
@@ -344,7 +344,7 @@ def check_and_update_if_needed() -> None:
         return
     _last_check = now
 
-    if not RAKSHA_BACKEND_URL:
+    if not GATEWAY_BACKEND_URL:
         return
     if not _IS_WIN and not _IS_MAC:
         return
@@ -357,19 +357,19 @@ def check_and_update_if_needed() -> None:
             if not server_ver:
                 return
             if not _versions_differ(AGENT_VERSION, server_ver):
-                print(f"[Raksha Guard AutoUpdate] Up to date (v{AGENT_VERSION})")
+                print(f"[Gateway Guard AutoUpdate] Up to date (v{AGENT_VERSION})")
                 return
 
-            print(f"[Raksha Guard AutoUpdate] New version available: v{AGENT_VERSION} → v{server_ver}")
+            print(f"[Gateway Guard AutoUpdate] New version available: v{AGENT_VERSION} → v{server_ver}")
             if _IS_WIN:
                 _download_and_install_windows(server_ver)
             elif _IS_MAC:
                 _download_and_install_mac(server_ver)
             else:
-                print("[Raksha Guard AutoUpdate] Unsupported OS for auto-update")
+                print("[Gateway Guard AutoUpdate] Unsupported OS for auto-update")
         except Exception as e:
-            print(f"[Raksha Guard AutoUpdate] Unexpected error: {e}")
+            print(f"[Gateway Guard AutoUpdate] Unexpected error: {e}")
         finally:
             _update_lock.release()
 
-    threading.Thread(target=_run, name="raksha-autoupdate", daemon=True).start()
+    threading.Thread(target=_run, name="gateway-autoupdate", daemon=True).start()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pre-build tool: Encrypts Raksha proxy parts into a secure AES-256-GCM bundle.
+"""Pre-build tool: Encrypts Gateway proxy parts into a secure AES-256-GCM bundle.
 
 This runs automatically before PyInstaller / Inno Setup builds to ensure
 ZERO plain text Python code is shipped to client endpoints.
@@ -11,8 +11,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PARTS_DIR = ROOT / "proxy" / "raksha_proxy_parts"
-OUTPUT_ENC = PARTS_DIR / "raksha_proxy_parts.enc"
+PARTS_DIR = ROOT / "proxy" / "gateway_proxy_parts"
+OUTPUT_ENC = PARTS_DIR / "gateway_proxy_parts.enc"
 
 sys.path.insert(0, str(PARTS_DIR))
 import bundle_crypto
@@ -20,7 +20,7 @@ import bundle_crypto
 
 def main() -> int:
     print("=" * 60)
-    print(" Raksha Guard — Encrypting Proxy Engine Bundle")
+    print(" Gateway Guard — Encrypting Proxy Engine Bundle")
     print("=" * 60)
     if not PARTS_DIR.is_dir():
         print(f"ERROR: Missing {PARTS_DIR}", file=sys.stderr)

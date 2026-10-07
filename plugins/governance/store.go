@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/google/cel-go/cel"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/modelcatalog"
-	"github.com/raksha/raksha/framework/routing"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/modelcatalog"
+	"github.com/gateway/gateway/framework/routing"
 	"gorm.io/gorm"
 )
 
@@ -2882,17 +2882,17 @@ func (gs *LocalGovernanceStore) collectRateLimitsFromHierarchy(ctx context.Conte
 // Plugin-private context keys carrying request attribution.
 const (
 	// governanceUserTeamIDsContextKey holds the requesting user's team memberships ([]string).
-	governanceUserTeamIDsContextKey schemas.RakshaContextKey = "raksha-governance-user-team-ids"
+	governanceUserTeamIDsContextKey schemas.GatewayContextKey = "gateway-governance-user-team-ids"
 )
 
 func extractUserIDFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	if uid, ok := ctx.Value(schemas.RakshaContextKeyUserID).(string); ok && uid != "" {
+	if uid, ok := ctx.Value(schemas.GatewayContextKeyUserID).(string); ok && uid != "" {
 		return uid
 	}
-	if uid, ok := ctx.Value(string(schemas.RakshaContextKeyUserID)).(string); ok && uid != "" {
+	if uid, ok := ctx.Value(string(schemas.GatewayContextKeyUserID)).(string); ok && uid != "" {
 		return uid
 	}
 	if uid, ok := ctx.Value("user_id").(string); ok && uid != "" {
@@ -3019,7 +3019,7 @@ func (gs *LocalGovernanceStore) billedTeam(ctx context.Context, vk *configstoreT
 // customer budgets meter customer-assigned keys only.
 func (gs *LocalGovernanceStore) billedCustomerIDs(ctx context.Context, vk *configstoreTables.TableVirtualKey, teamID string) []string {
 	if ctx != nil {
-		if scoped, _ := ctx.Value(schemas.RakshaContextKeyGovernanceScopedCustomerID).(string); scoped != "" {
+		if scoped, _ := ctx.Value(schemas.GatewayContextKeyGovernanceScopedCustomerID).(string); scoped != "" {
 			return []string{scoped}
 		}
 	}
@@ -4001,7 +4001,7 @@ func (gs *LocalGovernanceStore) CreateUserGovernanceInMemory(ctx context.Context
 }
 
 func (gs *LocalGovernanceStore) CreateUserNameInMemory(ctx context.Context, userID string, userName string) {
-	// Optional display cache — logging uses RakshaContextKeyUserName from session.
+	// Optional display cache — logging uses GatewayContextKeyUserName from session.
 }
 
 // UpdateUserGovernanceInMemory updates user governance data in the in-memory store.
@@ -4124,7 +4124,7 @@ func (gs *LocalGovernanceStore) reloadBusinessUnitTeamIndex(ctx context.Context)
 }
 
 // stampBusinessUnitsForTeam copies BU id/name onto ctx for observability rankings.
-func (gs *LocalGovernanceStore) stampBusinessUnitsForTeam(ctx *schemas.RakshaContext, teamID string) {
+func (gs *LocalGovernanceStore) stampBusinessUnitsForTeam(ctx *schemas.GatewayContext, teamID string) {
 	if teamID == "" {
 		return
 	}
@@ -4132,7 +4132,7 @@ func (gs *LocalGovernanceStore) stampBusinessUnitsForTeam(ctx *schemas.RakshaCon
 }
 
 // stampBusinessUnitsForTeams unions BUs across the given teams and stamps scalar + array keys.
-func (gs *LocalGovernanceStore) stampBusinessUnitsForTeams(ctx *schemas.RakshaContext, teamIDs []string) {
+func (gs *LocalGovernanceStore) stampBusinessUnitsForTeams(ctx *schemas.GatewayContext, teamIDs []string) {
 	if ctx == nil || len(teamIDs) == 0 {
 		return
 	}
@@ -4159,10 +4159,10 @@ func (gs *LocalGovernanceStore) stampBusinessUnitsForTeams(ctx *schemas.RakshaCo
 	if len(ids) == 0 {
 		return
 	}
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceBusinessUnitID, ids[0])
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceBusinessUnitName, names[0])
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceBusinessUnitIDs, ids)
-	ctx.SetValue(schemas.RakshaContextKeyGovernanceBusinessUnitNames, names)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceBusinessUnitID, ids[0])
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceBusinessUnitName, names[0])
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceBusinessUnitIDs, ids)
+	ctx.SetValue(schemas.GatewayContextKeyGovernanceBusinessUnitNames, names)
 }
 
 // UpdateModelConfigInMemory adds or updates a model config in the in-memory store (lock-free)

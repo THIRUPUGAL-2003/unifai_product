@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/providers/bedrock"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/providers/bedrock"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -23,9 +23,9 @@ type BedrockRouter struct {
 // S3 context keys for storing request parameters
 
 const (
-	s3ContextKeyBucket  = schemas.RakshaContextKey("s3_bucket")
-	s3ContextKeyPrefix  = schemas.RakshaContextKey("s3_prefix")
-	s3ContextKeyMaxKeys = schemas.RakshaContextKey("s3_max_keys")
+	s3ContextKeyBucket  = schemas.GatewayContextKey("s3_bucket")
+	s3ContextKeyPrefix  = schemas.GatewayContextKey("s3_prefix")
+	s3ContextKeyMaxKeys = schemas.GatewayContextKey("s3_max_keys")
 )
 
 // createBedrockConverseRouteConfig creates a route configuration for the Bedrock Converse API endpoint
@@ -41,22 +41,22 @@ func createBedrockConverseRouteConfig(pathPrefix string, handlerStore lib.Handle
 		GetHTTPRequestType: func(ctx *fasthttp.RequestCtx) schemas.RequestType {
 			return schemas.ResponsesRequest
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if bedrockReq, ok := req.(*bedrock.BedrockConverseRequest); ok {
-				rakshaReq, err := bedrockReq.ToRakshaResponsesRequest(ctx)
+				gatewayReq, err := bedrockReq.ToGatewayResponsesRequest(ctx)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert bedrock request: %w", err)
 				}
-				return &schemas.RakshaRequest{
-					ResponsesRequest: rakshaReq,
+				return &schemas.GatewayRequest{
+					ResponsesRequest: gatewayReq,
 				}, nil
 			}
 			return nil, errors.New("invalid request type")
 		},
-		ResponsesResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
+		ResponsesResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesResponse) (interface{}, error) {
 			return bedrock.ToBedrockConverseResponse(resp)
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
 		PreCallback: bedrockPreCallback(handlerStore),
@@ -76,26 +76,26 @@ func createBedrockConverseStreamRouteConfig(pathPrefix string, handlerStore lib.
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockConverseRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if bedrockReq, ok := req.(*bedrock.BedrockConverseRequest); ok {
 				// Mark as streaming request
 				bedrockReq.Stream = true
-				rakshaReq, err := bedrockReq.ToRakshaResponsesRequest(ctx)
+				gatewayReq, err := bedrockReq.ToGatewayResponsesRequest(ctx)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert bedrock request: %w", err)
 				}
-				return &schemas.RakshaRequest{
-					ResponsesRequest: rakshaReq,
+				return &schemas.GatewayRequest{
+					ResponsesRequest: gatewayReq,
 				}, nil
 			}
 			return nil, errors.New("invalid request type")
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
 		StreamConfig: &StreamConfig{
 			ErrorConverter: bedrockStreamErrorConverter,
-			ResponsesStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
+			ResponsesStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
 				bedrockEvent, err := bedrock.ToBedrockConverseStreamResponse(resp)
 				if err != nil {
 					return "", nil, err
@@ -127,9 +127,9 @@ func createBedrockInvokeWithResponseStreamRouteConfig(pathPrefix string, handler
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockInvokeRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if invokeReq, ok := req.(*bedrock.BedrockInvokeRequest); ok {
-				requestType, _ := ctx.Value(schemas.RakshaContextKeyHTTPRequestType).(schemas.RequestType)
+				requestType, _ := ctx.Value(schemas.GatewayContextKeyHTTPRequestType).(schemas.RequestType)
 				switch requestType {
 				case schemas.EmbeddingRequest, schemas.ImageGenerationRequest, schemas.ImageEditRequest, schemas.ImageVariationRequest:
 					return nil, fmt.Errorf("request type %v is not supported on invoke-with-response-stream", requestType)
@@ -138,25 +138,25 @@ func createBedrockInvokeWithResponseStreamRouteConfig(pathPrefix string, handler
 				if requestType == schemas.ResponsesRequest {
 					// Messages-based → Responses path (streaming)
 					converseReq := invokeReq.ToBedrockConverseRequest()
-					responsesReq, err := converseReq.ToRakshaResponsesRequest(ctx)
+					responsesReq, err := converseReq.ToGatewayResponsesRequest(ctx)
 					if err != nil {
 						return nil, fmt.Errorf("failed to convert invoke messages stream request: %w", err)
 					}
-					return &schemas.RakshaRequest{ResponsesRequest: responsesReq}, nil
+					return &schemas.GatewayRequest{ResponsesRequest: responsesReq}, nil
 				}
 				// Prompt-based → Text Completion path (streaming)
-				return &schemas.RakshaRequest{
-					TextCompletionRequest: invokeReq.ToRakshaTextCompletionRequest(ctx),
+				return &schemas.GatewayRequest{
+					TextCompletionRequest: invokeReq.ToGatewayTextCompletionRequest(ctx),
 				}, nil
 			}
 			return nil, errors.New("invalid request type")
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
 		StreamConfig: &StreamConfig{
 			ErrorConverter: bedrockStreamErrorConverter,
-			TextStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTextCompletionResponse) (string, interface{}, error) {
+			TextStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTextCompletionResponse) (string, interface{}, error) {
 				if resp == nil {
 					return "", nil, nil
 				}
@@ -172,7 +172,7 @@ func createBedrockInvokeWithResponseStreamRouteConfig(pathPrefix string, handler
 				}
 				return "", nil, nil
 			},
-			ResponsesStreamResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesStreamResponse) (string, interface{}, error) {
+			ResponsesStreamResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesStreamResponse) (string, interface{}, error) {
 				return bedrock.ToBedrockInvokeMessagesStreamResponse(ctx, resp)
 			},
 		},
@@ -180,7 +180,7 @@ func createBedrockInvokeWithResponseStreamRouteConfig(pathPrefix string, handler
 	}
 }
 
-func bedrockStreamErrorConverter(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+func bedrockStreamErrorConverter(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 	errorPayload := bedrock.ToBedrockError(err)
 	return newBedrockEventStreamException(errorPayload.Type, errorPayload.Message)
 }
@@ -207,67 +207,67 @@ func createBedrockInvokeRouteConfig(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockInvokeRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			invokeReq, ok := req.(*bedrock.BedrockInvokeRequest)
 			if !ok {
 				return nil, errors.New("invalid request type")
 			}
 
-			requestType, _ := ctx.Value(schemas.RakshaContextKeyHTTPRequestType).(schemas.RequestType)
+			requestType, _ := ctx.Value(schemas.GatewayContextKeyHTTPRequestType).(schemas.RequestType)
 			switch requestType {
 			case schemas.EmbeddingRequest:
-				return &schemas.RakshaRequest{
-					EmbeddingRequest: invokeReq.ToRakshaEmbeddingRequest(ctx),
+				return &schemas.GatewayRequest{
+					EmbeddingRequest: invokeReq.ToGatewayEmbeddingRequest(ctx),
 				}, nil
 
 			case schemas.ImageGenerationRequest:
-				return &schemas.RakshaRequest{
-					ImageGenerationRequest: invokeReq.ToRakshaImageGenerationRequest(ctx),
+				return &schemas.GatewayRequest{
+					ImageGenerationRequest: invokeReq.ToGatewayImageGenerationRequest(ctx),
 				}, nil
 
 			case schemas.ImageEditRequest:
-				editReq, err := invokeReq.ToRakshaImageEditRequest(ctx)
+				editReq, err := invokeReq.ToGatewayImageEditRequest(ctx)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert invoke image edit request: %w", err)
 				}
-				return &schemas.RakshaRequest{ImageEditRequest: editReq}, nil
+				return &schemas.GatewayRequest{ImageEditRequest: editReq}, nil
 
 			case schemas.ImageVariationRequest:
-				varReq, err := invokeReq.ToRakshaImageVariationRequest(ctx)
+				varReq, err := invokeReq.ToGatewayImageVariationRequest(ctx)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert invoke image variation request: %w", err)
 				}
-				return &schemas.RakshaRequest{ImageVariationRequest: varReq}, nil
+				return &schemas.GatewayRequest{ImageVariationRequest: varReq}, nil
 
 			case schemas.ResponsesRequest:
 				// Messages-based (Anthropic Messages, Nova, AI21) -> Responses path
 				converseReq := invokeReq.ToBedrockConverseRequest()
-				responsesReq, err := converseReq.ToRakshaResponsesRequest(ctx)
+				responsesReq, err := converseReq.ToGatewayResponsesRequest(ctx)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert invoke messages request: %w", err)
 				}
-				return &schemas.RakshaRequest{ResponsesRequest: responsesReq}, nil
+				return &schemas.GatewayRequest{ResponsesRequest: responsesReq}, nil
 
 			default:
 				// TextCompletionRequest and any unrecognised type forwarded to text completion path
-				return &schemas.RakshaRequest{
-					TextCompletionRequest: invokeReq.ToRakshaTextCompletionRequest(ctx),
+				return &schemas.GatewayRequest{
+					TextCompletionRequest: invokeReq.ToGatewayTextCompletionRequest(ctx),
 				}, nil
 			}
 		},
-		TextResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaTextCompletionResponse) (interface{}, error) {
+		TextResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayTextCompletionResponse) (interface{}, error) {
 			return bedrock.ToBedrockTextCompletionResponse(resp), nil
 		},
-		ResponsesResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaResponsesResponse) (interface{}, error) {
+		ResponsesResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayResponsesResponse) (interface{}, error) {
 			return bedrock.ToBedrockInvokeMessagesResponse(ctx, resp)
 		},
-		EmbeddingResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaEmbeddingResponse) (interface{}, error) {
+		EmbeddingResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayEmbeddingResponse) (interface{}, error) {
 			return bedrock.ToBedrockEmbeddingInvokeResponse(ctx, resp)
 		},
-		ImageGenerationResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaImageGenerationResponse) (interface{}, error) {
+		ImageGenerationResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayImageGenerationResponse) (interface{}, error) {
 			return bedrock.ToBedrockInvokeImagesResponse(ctx, resp)
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
 		PreCallback: bedrockPreCallback(handlerStore),
@@ -287,15 +287,15 @@ func createBedrockRerankRouteConfig(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockRerankRequest{}
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if bedrockReq, ok := req.(*bedrock.BedrockRerankRequest); ok {
-				return &schemas.RakshaRequest{
-					RerankRequest: bedrockReq.ToRakshaRerankRequest(ctx),
+				return &schemas.GatewayRequest{
+					RerankRequest: bedrockReq.ToGatewayRerankRequest(ctx),
 				}, nil
 			}
 			return nil, errors.New("invalid rerank request type")
 		},
-		RerankResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaRerankResponse) (interface{}, error) {
+		RerankResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayRerankResponse) (interface{}, error) {
 			if resp.ExtraFields.Provider == schemas.Bedrock {
 				if resp.ExtraFields.RawResponse != nil {
 					return resp.ExtraFields.RawResponse, nil
@@ -303,7 +303,7 @@ func createBedrockRerankRouteConfig(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return resp, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
 		PreCallback: bedrockBatchPreCallback(handlerStore),
@@ -323,25 +323,25 @@ func createBedrockCountTokensRouteConfig(pathPrefix string, handlerStore lib.Han
 		GetHTTPRequestType: func(ctx *fasthttp.RequestCtx) schemas.RequestType {
 			return schemas.CountTokensRequest
 		},
-		RequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*schemas.RakshaRequest, error) {
+		RequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*schemas.GatewayRequest, error) {
 			if countTokensReq, ok := req.(*bedrock.BedrockCountTokensRequest); ok {
 				if countTokensReq.Input.Converse == nil {
 					return nil, errors.New("input.converse is required for count-tokens")
 				}
-				rakshaReq, err := countTokensReq.Input.Converse.ToRakshaResponsesRequest(ctx)
+				gatewayReq, err := countTokensReq.Input.Converse.ToGatewayResponsesRequest(ctx)
 				if err != nil {
 					return nil, fmt.Errorf("failed to convert bedrock count tokens request: %w", err)
 				}
-				return &schemas.RakshaRequest{
-					CountTokensRequest: rakshaReq,
+				return &schemas.GatewayRequest{
+					CountTokensRequest: gatewayReq,
 				}, nil
 			}
 			return nil, errors.New("invalid request type for Bedrock count tokens")
 		},
-		CountTokensResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaCountTokensResponse) (interface{}, error) {
+		CountTokensResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayCountTokensResponse) (interface{}, error) {
 			return bedrock.ToBedrockCountTokensResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
 		PreCallback: bedrockPreCallback(handlerStore),
@@ -375,14 +375,14 @@ func createBedrockBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockBatchJobRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if bedrockReq, ok := req.(*bedrock.BedrockBatchJobRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 
-				// Convert Bedrock batch request to Raksha format
+				// Convert Bedrock batch request to Gateway format
 				// For Bedrock: use S3 URIs directly
 				// For other providers: S3 URIs are not applicable, use file_id from tags
-				createReq := &schemas.RakshaBatchCreateRequest{
+				createReq := &schemas.GatewayBatchCreateRequest{
 					Provider: provider,
 					Model:    bedrockReq.ModelID,
 					Metadata: make(map[string]string),
@@ -443,7 +443,7 @@ func createBedrockBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return nil, errors.New("invalid batch create request type")
 		},
-		BatchCreateResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCreateResponse) (interface{}, error) {
+		BatchCreateResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCreateResponse) (interface{}, error) {
 			// Only return raw response for native Bedrock calls
 			// For cross-provider routing, always convert to Bedrock format
 			if resp.ExtraFields.RawResponse != nil && resp.ExtraFields.Provider == schemas.Bedrock {
@@ -451,18 +451,18 @@ func createBedrockBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return bedrock.ToBedrockBatchJobResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
-		PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+		PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 			// Extract provider from header for cross-provider routing
 			provider := string(ctx.Request.Header.Peek("x-model-provider"))
 			if provider != "" {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 			} else {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.Bedrock)
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.Bedrock)
 			}
-			return bedrockBatchPreCallback(handlerStore)(ctx, rakshaCtx, req)
+			return bedrockBatchPreCallback(handlerStore)(ctx, gatewayCtx, req)
 		},
 	})
 
@@ -477,18 +477,18 @@ func createBedrockBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockBatchListRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if bedrockReq, ok := req.(*bedrock.BedrockBatchListRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
-				rakshaReq := bedrock.ToRakshaBatchListRequest(bedrockReq, provider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
+				gatewayReq := bedrock.ToGatewayBatchListRequest(bedrockReq, provider)
 				return &BatchRequest{
 					Type:        schemas.BatchListRequest,
-					ListRequest: rakshaReq,
+					ListRequest: gatewayReq,
 				}, nil
 			}
 			return nil, errors.New("invalid batch list request type")
 		},
-		BatchListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchListResponse) (interface{}, error) {
+		BatchListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchListResponse) (interface{}, error) {
 			// Only return raw response for native Bedrock calls
 			// For cross-provider routing, always convert to Bedrock format
 			if resp.ExtraFields.RawResponse != nil && resp.ExtraFields.Provider == schemas.Bedrock {
@@ -496,18 +496,18 @@ func createBedrockBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return bedrock.ToBedrockBatchJobListResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
-		PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+		PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 			// Extract provider from header for cross-provider routing
 			provider := string(ctx.Request.Header.Peek("x-model-provider"))
 			if provider != "" {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 			} else {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.Bedrock)
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.Bedrock)
 			}
-			return extractBedrockBatchListQueryParams(handlerStore)(ctx, rakshaCtx, req)
+			return extractBedrockBatchListQueryParams(handlerStore)(ctx, gatewayCtx, req)
 		},
 	})
 
@@ -522,18 +522,18 @@ func createBedrockBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockBatchRetrieveRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if bedrockReq, ok := req.(*bedrock.BedrockBatchRetrieveRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
-				rakshaReq := bedrock.ToRakshaBatchRetrieveRequest(bedrockReq, provider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
+				gatewayReq := bedrock.ToGatewayBatchRetrieveRequest(bedrockReq, provider)
 				return &BatchRequest{
 					Type:            schemas.BatchRetrieveRequest,
-					RetrieveRequest: rakshaReq,
+					RetrieveRequest: gatewayReq,
 				}, nil
 			}
 			return nil, errors.New("invalid batch retrieve request type")
 		},
-		BatchRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchRetrieveResponse) (interface{}, error) {
+		BatchRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchRetrieveResponse) (interface{}, error) {
 			// Only return raw response for native Bedrock calls
 			// For cross-provider routing, always convert to Bedrock format
 			if resp.ExtraFields.RawResponse != nil && resp.ExtraFields.Provider == schemas.Bedrock {
@@ -541,18 +541,18 @@ func createBedrockBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return bedrock.ToBedrockBatchJobRetrieveResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
-		PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+		PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 			// Extract provider from header for cross-provider routing
 			provider := string(ctx.Request.Header.Peek("x-model-provider"))
 			if provider != "" {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 			} else {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.Bedrock)
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.Bedrock)
 			}
-			return extractBedrockJobArnFromPath(handlerStore)(ctx, rakshaCtx, req)
+			return extractBedrockJobArnFromPath(handlerStore)(ctx, gatewayCtx, req)
 		},
 	})
 
@@ -567,18 +567,18 @@ func createBedrockBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockBatchCancelRequest{}
 		},
-		BatchRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*BatchRequest, error) {
+		BatchRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*BatchRequest, error) {
 			if bedrockReq, ok := req.(*bedrock.BedrockBatchCancelRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
-				rakshaReq := bedrock.ToRakshaBatchCancelRequest(bedrockReq, provider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
+				gatewayReq := bedrock.ToGatewayBatchCancelRequest(bedrockReq, provider)
 				return &BatchRequest{
 					Type:          schemas.BatchCancelRequest,
-					CancelRequest: rakshaReq,
+					CancelRequest: gatewayReq,
 				}, nil
 			}
 			return nil, errors.New("invalid batch cancel request type")
 		},
-		BatchCancelResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaBatchCancelResponse) (interface{}, error) {
+		BatchCancelResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayBatchCancelResponse) (interface{}, error) {
 			// Only return raw response for native Bedrock calls
 			// For cross-provider routing, always convert to Bedrock format
 			if resp.ExtraFields.RawResponse != nil && resp.ExtraFields.Provider == schemas.Bedrock {
@@ -586,35 +586,35 @@ func createBedrockBatchRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return bedrock.ToBedrockBatchCancelResponse(resp), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToBedrockError(err)
 		},
-		PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+		PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 			// Extract provider from header for cross-provider routing
 			provider := string(ctx.Request.Header.Peek("x-model-provider"))
 			if provider != "" {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 			} else {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.Bedrock)
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.Bedrock)
 			}
-			return extractBedrockJobArnFromPath(handlerStore)(ctx, rakshaCtx, req)
+			return extractBedrockJobArnFromPath(handlerStore)(ctx, gatewayCtx, req)
 		},
 	})
 	return routes
 }
 
 // bedrockBatchPreCallback returns a pre-callback for Bedrock batch create requests.
-func bedrockBatchPreCallback(handlerStore lib.HandlerStore) func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func bedrockBatchPreCallback(handlerStore lib.HandlerStore) func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		return nil
 	}
 }
 
 // extractBedrockBatchListQueryParams extracts query parameters for Bedrock batch list requests
 func extractBedrockBatchListQueryParams(handlerStore lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		// Handle authentication
-		if err := bedrockBatchPreCallback(handlerStore)(ctx, rakshaCtx, req); err != nil {
+		if err := bedrockBatchPreCallback(handlerStore)(ctx, gatewayCtx, req); err != nil {
 			return err
 		}
 
@@ -664,9 +664,9 @@ func parseS3URI(uri string) (bucket, key string) {
 
 // extractBedrockJobArnFromPath extracts job_arn from path parameters for Bedrock
 func extractBedrockJobArnFromPath(handlerStore lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		// Handle authentication
-		if err := bedrockBatchPreCallback(handlerStore)(ctx, rakshaCtx, req); err != nil {
+		if err := bedrockBatchPreCallback(handlerStore)(ctx, gatewayCtx, req); err != nil {
 			return err
 		}
 
@@ -687,7 +687,7 @@ func extractBedrockJobArnFromPath(handlerStore lib.HandlerStore) PreRequestCallb
 		}
 
 		// Now if the provider is not Bedrock, we need to convert the job ARN to the format expected by the provider
-		if (*rakshaCtx).Value(rakshaContextKeyProvider).(schemas.ModelProvider) != schemas.Bedrock {
+		if (*gatewayCtx).Value(gatewayContextKeyProvider).(schemas.ModelProvider) != schemas.Bedrock {
 			decodedJobArn = strings.Replace(decodedJobArn, "arn:aws:bedrock:us-east-1:444444444444:batch:", "", 1)
 		}
 
@@ -702,8 +702,8 @@ func extractBedrockJobArnFromPath(handlerStore lib.HandlerStore) PreRequestCallb
 	}
 }
 
-// NewBedrockRouter creates a new BedrockRouter with the given raksha client
-func NewBedrockRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logger schemas.Logger) *BedrockRouter {
+// NewBedrockRouter creates a new BedrockRouter with the given gateway client
+func NewBedrockRouter(client *gateway.Gateway, handlerStore lib.HandlerStore, logger schemas.Logger) *BedrockRouter {
 	routes := CreateBedrockRouteConfigs("/bedrock", handlerStore)
 	routes = append(routes, createBedrockBatchRouteConfigs("/bedrock", handlerStore)...)
 	routes = append(routes, createBedrockFilesRouteConfigs("/bedrock/files", handlerStore)...)
@@ -714,7 +714,7 @@ func NewBedrockRouter(client *raksha.Raksha, handlerStore lib.HandlerStore, logg
 }
 
 // createBedrockFilesRouteConfigs creates S3-compatible routes for Bedrock file operations.
-// This allows boto3's S3 client to work directly against Raksha using endpoint_url.
+// This allows boto3's S3 client to work directly against Gateway using endpoint_url.
 // Routes: /bedrock/s3/{bucket}/{key...}
 func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerStore) []RouteConfig {
 	var routes []RouteConfig
@@ -731,9 +731,9 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			return &bedrock.BedrockFileUploadRequest{}
 		},
 		RequestParser: parseS3PutObjectRequest,
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
 			if uploadReq, ok := req.(*bedrock.BedrockFileUploadRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				prefix := ""
 				if uploadReq.Key != "" {
 					keyComponents := strings.Split(uploadReq.Key, "/")
@@ -741,7 +741,7 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 				}
 				return &FileRequest{
 					Type: schemas.FileUploadRequest,
-					UploadRequest: &schemas.RakshaFileUploadRequest{
+					UploadRequest: &schemas.GatewayFileUploadRequest{
 						Provider: provider,
 						File:     uploadReq.Body,
 						Filename: uploadReq.Filename,
@@ -757,19 +757,19 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return nil, errors.New("invalid file upload request type")
 		},
-		FileUploadResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileUploadResponse) (interface{}, error) {
+		FileUploadResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileUploadResponse) (interface{}, error) {
 			// S3 PutObject returns empty body with ETag header
 			return nil, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToS3ErrorXML("InternalError", err.Error.Message, "", "")
 		},
-		PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+		PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 			provider := string(ctx.Request.Header.Peek("x-model-provider"))
 			if provider != "" {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 			} else {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.Bedrock)
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.Bedrock)
 			}
 			return nil
 		},
@@ -787,12 +787,12 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockFileContentRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
 			if contentReq, ok := req.(*bedrock.BedrockFileContentRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				return &FileRequest{
 					Type: schemas.FileContentRequest,
-					ContentRequest: &schemas.RakshaFileContentRequest{
+					ContentRequest: &schemas.GatewayFileContentRequest{
 						Provider: provider,
 						FileID:   contentReq.S3Uri,
 					},
@@ -800,11 +800,11 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return nil, errors.New("invalid file content request type")
 		},
-		FileContentResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileContentResponse) (interface{}, error) {
+		FileContentResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileContentResponse) (interface{}, error) {
 			// Return raw content
 			return resp.Content, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToS3ErrorXML("NoSuchKey", err.Error.Message, "", "")
 		},
 		PreCallback:  extractS3BucketKeyFromPath(handlerStore, "content"),
@@ -822,12 +822,12 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockFileRetrieveRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
 			if retrieveReq, ok := req.(*bedrock.BedrockFileRetrieveRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				return &FileRequest{
 					Type: schemas.FileRetrieveRequest,
-					RetrieveRequest: &schemas.RakshaFileRetrieveRequest{
+					RetrieveRequest: &schemas.GatewayFileRetrieveRequest{
 						Provider: provider,
 						FileID:   retrieveReq.ETag,
 						StorageConfig: &schemas.FileStorageConfig{
@@ -841,21 +841,21 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return nil, errors.New("invalid file retrieve request type")
 		},
-		FileRetrieveResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileRetrieveResponse) (interface{}, error) {
+		FileRetrieveResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileRetrieveResponse) (interface{}, error) {
 			// HEAD returns empty body, headers set in PostCallback
 			return nil, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return nil // HEAD returns no body on error
 		},
-		PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+		PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 			provider := string(ctx.Request.Header.Peek("x-model-provider"))
 			if provider != "" {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 			} else {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.Bedrock)
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.Bedrock)
 			}
-			return extractS3BucketKeyFromPath(handlerStore, "retrieve")(ctx, rakshaCtx, req)
+			return extractS3BucketKeyFromPath(handlerStore, "retrieve")(ctx, gatewayCtx, req)
 		},
 		PostCallback: s3HeadObjectPostCallback,
 	})
@@ -871,12 +871,12 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockFileDeleteRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
 			if deleteReq, ok := req.(*bedrock.BedrockFileDeleteRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				return &FileRequest{
 					Type: schemas.FileDeleteRequest,
-					DeleteRequest: &schemas.RakshaFileDeleteRequest{
+					DeleteRequest: &schemas.GatewayFileDeleteRequest{
 						Provider: provider,
 						FileID:   deleteReq.ETag,
 						StorageConfig: &schemas.FileStorageConfig{
@@ -890,21 +890,21 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return nil, errors.New("invalid file delete request type")
 		},
-		FileDeleteResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileDeleteResponse) (interface{}, error) {
+		FileDeleteResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileDeleteResponse) (interface{}, error) {
 			// S3 DeleteObject returns empty body
 			return nil, nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToS3ErrorXML("InternalError", err.Error.Message, "", "")
 		},
-		PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+		PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 			provider := string(ctx.Request.Header.Peek("x-model-provider"))
 			if provider != "" {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 			} else {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.Bedrock)
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.Bedrock)
 			}
-			return extractS3BucketKeyFromPath(handlerStore, "delete")(ctx, rakshaCtx, req)
+			return extractS3BucketKeyFromPath(handlerStore, "delete")(ctx, gatewayCtx, req)
 		},
 		PostCallback: s3DeleteObjectPostCallback,
 	})
@@ -920,12 +920,12 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 		GetRequestTypeInstance: func(ctx context.Context) interface{} {
 			return &bedrock.BedrockFileListRequest{}
 		},
-		FileRequestConverter: func(ctx *schemas.RakshaContext, req interface{}) (*FileRequest, error) {
+		FileRequestConverter: func(ctx *schemas.GatewayContext, req interface{}) (*FileRequest, error) {
 			if listReq, ok := req.(*bedrock.BedrockFileListRequest); ok {
-				provider := ctx.Value(rakshaContextKeyProvider).(schemas.ModelProvider)
+				provider := ctx.Value(gatewayContextKeyProvider).(schemas.ModelProvider)
 				return &FileRequest{
 					Type: schemas.FileListRequest,
-					ListRequest: &schemas.RakshaFileListRequest{
+					ListRequest: &schemas.GatewayFileListRequest{
 						Provider: provider,
 						StorageConfig: &schemas.FileStorageConfig{
 							S3: &schemas.S3StorageConfig{
@@ -938,14 +938,14 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return nil, errors.New("invalid file list request type")
 		},
-		FileListResponseConverter: func(ctx *schemas.RakshaContext, resp *schemas.RakshaFileListResponse) (interface{}, error) {
+		FileListResponseConverter: func(ctx *schemas.GatewayContext, resp *schemas.GatewayFileListResponse) (interface{}, error) {
 			// Use raw S3 XML response directly if available (passthrough from core provider)
 			if resp.ExtraFields.RawResponse != nil {
 				if rawBytes, ok := resp.ExtraFields.RawResponse.([]byte); ok {
 					return rawBytes, nil
 				}
 			}
-			// Fallback: reconstruct XML from Raksha response
+			// Fallback: reconstruct XML from Gateway response
 			bucket := ""
 			prefix := ""
 			maxKeys := 1000
@@ -960,17 +960,17 @@ func createBedrockFilesRouteConfigs(pathPrefix string, handlerStore lib.HandlerS
 			}
 			return bedrock.ToS3ListObjectsV2XML(resp, bucket, prefix, maxKeys), nil
 		},
-		ErrorConverter: func(ctx *schemas.RakshaContext, err *schemas.RakshaError) interface{} {
+		ErrorConverter: func(ctx *schemas.GatewayContext, err *schemas.GatewayError) interface{} {
 			return bedrock.ToS3ErrorXML("InternalError", err.Error.Message, "", "")
 		},
-		PreCallback: func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+		PreCallback: func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 			provider := string(ctx.Request.Header.Peek("x-model-provider"))
 			if provider != "" {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 			} else {
-				rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.Bedrock)
+				gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.Bedrock)
 			}
-			return extractS3ListObjectsV2Params(handlerStore)(ctx, rakshaCtx, req)
+			return extractS3ListObjectsV2Params(handlerStore)(ctx, gatewayCtx, req)
 		},
 		PostCallback: s3ListObjectsV2PostCallback,
 	})
@@ -1017,9 +1017,9 @@ func parseS3PutObjectRequest(ctx *fasthttp.RequestCtx, req interface{}) error {
 
 // extractS3BucketKeyFromPath extracts bucket and key from path for S3 operations
 func extractS3BucketKeyFromPath(handlerStore lib.HandlerStore, opType string) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		// Handle authentication first
-		if err := bedrockBatchPreCallback(handlerStore)(ctx, rakshaCtx, req); err != nil {
+		if err := bedrockBatchPreCallback(handlerStore)(ctx, gatewayCtx, req); err != nil {
 			return err
 		}
 
@@ -1032,9 +1032,9 @@ func extractS3BucketKeyFromPath(handlerStore lib.HandlerStore, opType string) Pr
 
 		provider := string(ctx.Request.Header.Peek("x-model-provider"))
 		if provider != "" {
-			rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.ModelProvider(provider))
+			gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.ModelProvider(provider))
 		} else {
-			rakshaCtx.SetValue(rakshaContextKeyProvider, schemas.Bedrock)
+			gatewayCtx.SetValue(gatewayContextKeyProvider, schemas.Bedrock)
 		}
 
 		bucketStr := bucket.(string)
@@ -1072,9 +1072,9 @@ func extractS3BucketKeyFromPath(handlerStore lib.HandlerStore, opType string) Pr
 
 // extractS3ListObjectsV2Params extracts query params for S3 ListObjectsV2
 func extractS3ListObjectsV2Params(handlerStore lib.HandlerStore) PreRequestCallback {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		// Handle authentication first
-		if err := bedrockBatchPreCallback(handlerStore)(ctx, rakshaCtx, req); err != nil {
+		if err := bedrockBatchPreCallback(handlerStore)(ctx, gatewayCtx, req); err != nil {
 			return err
 		}
 
@@ -1097,9 +1097,9 @@ func extractS3ListObjectsV2Params(handlerStore lib.HandlerStore) PreRequestCallb
 		}
 
 		// Store in context for response formatting
-		rakshaCtx.SetValue(s3ContextKeyBucket, bucketStr)
-		rakshaCtx.SetValue(s3ContextKeyPrefix, prefix)
-		rakshaCtx.SetValue(s3ContextKeyMaxKeys, maxKeys)
+		gatewayCtx.SetValue(s3ContextKeyBucket, bucketStr)
+		gatewayCtx.SetValue(s3ContextKeyPrefix, prefix)
+		gatewayCtx.SetValue(s3ContextKeyMaxKeys, maxKeys)
 
 		if listReq, ok := req.(*bedrock.BedrockFileListRequest); ok {
 			listReq.MaxKeys = maxKeys
@@ -1116,8 +1116,8 @@ func extractS3ListObjectsV2Params(handlerStore lib.HandlerStore) PreRequestCallb
 // s3PutObjectPostCallback sets response headers for S3 PutObject
 func s3PutObjectPostCallback(ctx *fasthttp.RequestCtx, req interface{}, resp interface{}) error {
 	ctx.Response.Header.Set("Content-Type", "application/xml")
-	ctx.Response.Header.Set("x-amz-request-id", "raksha")
-	if uploadResp, ok := resp.(*schemas.RakshaFileUploadResponse); ok && uploadResp != nil {
+	ctx.Response.Header.Set("x-amz-request-id", "gateway")
+	if uploadResp, ok := resp.(*schemas.GatewayFileUploadResponse); ok && uploadResp != nil {
 		ctx.Response.Header.Set("ETag", fmt.Sprintf("\"%s\"", uploadResp.ID))
 	}
 	ctx.SetStatusCode(200)
@@ -1126,10 +1126,10 @@ func s3PutObjectPostCallback(ctx *fasthttp.RequestCtx, req interface{}, resp int
 
 // s3GetObjectPostCallback sets response headers for S3 GetObject
 func s3GetObjectPostCallback(ctx *fasthttp.RequestCtx, req interface{}, resp interface{}) error {
-	if contentResp, ok := resp.(*schemas.RakshaFileContentResponse); ok && contentResp != nil {
+	if contentResp, ok := resp.(*schemas.GatewayFileContentResponse); ok && contentResp != nil {
 		ctx.Response.Header.Set("Content-Type", contentResp.ContentType)
 		ctx.Response.Header.Set("Content-Length", strconv.Itoa(len(contentResp.Content)))
-		ctx.Response.Header.Set("x-amz-request-id", "raksha")
+		ctx.Response.Header.Set("x-amz-request-id", "gateway")
 		if contentResp.FileID != "" {
 			ctx.Response.Header.Set("ETag", fmt.Sprintf("\"%s\"", contentResp.FileID))
 		}
@@ -1139,10 +1139,10 @@ func s3GetObjectPostCallback(ctx *fasthttp.RequestCtx, req interface{}, resp int
 
 // s3HeadObjectPostCallback sets response headers for S3 HeadObject
 func s3HeadObjectPostCallback(ctx *fasthttp.RequestCtx, req interface{}, resp interface{}) error {
-	if retrieveResp, ok := resp.(*schemas.RakshaFileRetrieveResponse); ok && retrieveResp != nil {
+	if retrieveResp, ok := resp.(*schemas.GatewayFileRetrieveResponse); ok && retrieveResp != nil {
 		ctx.Response.Header.Set("Content-Type", "application/octet-stream")
 		ctx.Response.Header.Set("Content-Length", strconv.FormatInt(retrieveResp.Bytes, 10))
-		ctx.Response.Header.Set("x-amz-request-id", "raksha")
+		ctx.Response.Header.Set("x-amz-request-id", "gateway")
 		ctx.Response.Header.Set("ETag", fmt.Sprintf("\"%s\"", retrieveResp.ID))
 	}
 	ctx.SetStatusCode(200)
@@ -1151,7 +1151,7 @@ func s3HeadObjectPostCallback(ctx *fasthttp.RequestCtx, req interface{}, resp in
 
 // s3DeleteObjectPostCallback sets response headers for S3 DeleteObject
 func s3DeleteObjectPostCallback(ctx *fasthttp.RequestCtx, req interface{}, resp interface{}) error {
-	ctx.Response.Header.Set("x-amz-request-id", "raksha")
+	ctx.Response.Header.Set("x-amz-request-id", "gateway")
 	ctx.SetStatusCode(204)
 	return nil
 }
@@ -1159,13 +1159,13 @@ func s3DeleteObjectPostCallback(ctx *fasthttp.RequestCtx, req interface{}, resp 
 // s3ListObjectsV2PostCallback sets response headers for S3 ListObjectsV2
 func s3ListObjectsV2PostCallback(ctx *fasthttp.RequestCtx, req interface{}, resp interface{}) error {
 	ctx.Response.Header.Set("Content-Type", "application/xml")
-	ctx.Response.Header.Set("x-amz-request-id", "raksha")
+	ctx.Response.Header.Set("x-amz-request-id", "gateway")
 	return nil
 }
 
 // bedrockPreCallback returns a pre-callback that extracts model ID and handles direct authentication
-func bedrockPreCallback(_ lib.HandlerStore) func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
-	return func(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext, req interface{}) error {
+func bedrockPreCallback(_ lib.HandlerStore) func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
+	return func(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext, req interface{}) error {
 		// Extract modelId from path parameter
 		modelIDVal := ctx.UserValue("modelId")
 		if modelIDVal == nil {

@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaImageGenerationRequest converts a Gemini generation request to a Raksha image generation request
-func (request *GeminiGenerationRequest) ToRakshaImageGenerationRequest(ctx *schemas.RakshaContext) *schemas.RakshaImageGenerationRequest {
+// ToGatewayImageGenerationRequest converts a Gemini generation request to a Gateway image generation request
+func (request *GeminiGenerationRequest) ToGatewayImageGenerationRequest(ctx *schemas.GatewayContext) *schemas.GatewayImageGenerationRequest {
 	if request == nil {
 		return nil
 	}
@@ -22,7 +22,7 @@ func (request *GeminiGenerationRequest) ToRakshaImageGenerationRequest(ctx *sche
 	// This allows cross-provider routing through the GenAI endpoint
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	rakshaReq := &schemas.RakshaImageGenerationRequest{
+	gatewayReq := &schemas.GatewayImageGenerationRequest{
 		Provider: provider,
 		Model:    model,
 		Input:    &schemas.ImageGenerationInput{},
@@ -30,53 +30,53 @@ func (request *GeminiGenerationRequest) ToRakshaImageGenerationRequest(ctx *sche
 	}
 
 	fallbacks := schemas.ParseFallbacks(request.Fallbacks)
-	rakshaReq.Fallbacks = fallbacks
+	gatewayReq.Fallbacks = fallbacks
 
 	// First, try to extract prompt from Imagen format (instances)
 	if len(request.Instances) > 0 && request.Instances[0].Prompt != "" {
-		rakshaReq.Input.Prompt = request.Instances[0].Prompt
+		gatewayReq.Input.Prompt = request.Instances[0].Prompt
 
 		// Extract Imagen parameters
 		if request.Parameters != nil {
 			if request.Parameters.SampleCount != nil {
-				rakshaReq.Params.N = request.Parameters.SampleCount
+				gatewayReq.Params.N = request.Parameters.SampleCount
 			}
 			// Convert Imagen size format to standard format
 			if request.Parameters.SampleImageSize != nil || request.Parameters.AspectRatio != nil {
 				size := convertImagenFormatToSize(request.Parameters.SampleImageSize, request.Parameters.AspectRatio)
 				if size != "" && strings.ToLower(size) != "auto" {
-					rakshaReq.Params.Size = &size
+					gatewayReq.Params.Size = &size
 				}
 			}
 
-			// Map additional parameters to ExtraParams if not in Raksha schema
-			if rakshaReq.Params.ExtraParams == nil {
-				rakshaReq.Params.ExtraParams = make(map[string]interface{})
+			// Map additional parameters to ExtraParams if not in Gateway schema
+			if gatewayReq.Params.ExtraParams == nil {
+				gatewayReq.Params.ExtraParams = make(map[string]interface{})
 			}
 
 			if request.Parameters.PersonGeneration != nil {
-				rakshaReq.Params.ExtraParams["personGeneration"] = *request.Parameters.PersonGeneration
+				gatewayReq.Params.ExtraParams["personGeneration"] = *request.Parameters.PersonGeneration
 			}
 			if request.Parameters.Seed != nil {
-				rakshaReq.Params.Seed = request.Parameters.Seed
+				gatewayReq.Params.Seed = request.Parameters.Seed
 			}
 			if request.Parameters.NegativePrompt != nil {
-				rakshaReq.Params.NegativePrompt = request.Parameters.NegativePrompt
+				gatewayReq.Params.NegativePrompt = request.Parameters.NegativePrompt
 			}
 			if request.Parameters.Language != nil {
-				rakshaReq.Params.ExtraParams["language"] = *request.Parameters.Language
+				gatewayReq.Params.ExtraParams["language"] = *request.Parameters.Language
 			}
 			if request.Parameters.EnhancePrompt != nil {
-				rakshaReq.Params.ExtraParams["enhancePrompt"] = *request.Parameters.EnhancePrompt
+				gatewayReq.Params.ExtraParams["enhancePrompt"] = *request.Parameters.EnhancePrompt
 			}
 			if request.Parameters.AddWatermark != nil {
-				rakshaReq.Params.ExtraParams["addWatermark"] = *request.Parameters.AddWatermark
+				gatewayReq.Params.ExtraParams["addWatermark"] = *request.Parameters.AddWatermark
 			}
 			if len(request.Parameters.SafetySettings) > 0 {
-				rakshaReq.Params.ExtraParams["safetySettings"] = request.Parameters.SafetySettings
+				gatewayReq.Params.ExtraParams["safetySettings"] = request.Parameters.SafetySettings
 			}
 		}
-		return rakshaReq
+		return gatewayReq
 	}
 
 	// Fall back to standard Gemini format (contents)
@@ -84,11 +84,11 @@ func (request *GeminiGenerationRequest) ToRakshaImageGenerationRequest(ctx *sche
 		for _, content := range request.Contents {
 			for _, part := range content.Parts {
 				if part != nil && part.Text != "" {
-					rakshaReq.Input.Prompt = part.Text
+					gatewayReq.Input.Prompt = part.Text
 					break
 				}
 			}
-			if rakshaReq.Input.Prompt != "" {
+			if gatewayReq.Input.Prompt != "" {
 				break
 			}
 		}
@@ -99,15 +99,15 @@ func (request *GeminiGenerationRequest) ToRakshaImageGenerationRequest(ctx *sche
 		if strings.TrimSpace(ic.ImageSize) != "" || strings.TrimSpace(ic.AspectRatio) != "" {
 			size := convertImagenFormatToSize(&ic.ImageSize, &ic.AspectRatio)
 			if size != "" {
-				rakshaReq.Params.Size = &size
+				gatewayReq.Params.Size = &size
 			}
 		}
 	}
 
-	return rakshaReq
+	return gatewayReq
 }
 
-func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.RakshaContext) *schemas.RakshaImageEditRequest {
+func (request *GeminiGenerationRequest) ToGatewayImageEditRequest(ctx *schemas.GatewayContext) *schemas.GatewayImageEditRequest {
 	if request == nil {
 		return nil
 	}
@@ -116,7 +116,7 @@ func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.Ra
 	// This allows cross-provider routing through the GenAI endpoint
 	provider, model := schemas.ParseModelString(request.Model, "")
 
-	rakshaReq := &schemas.RakshaImageEditRequest{
+	gatewayReq := &schemas.GatewayImageEditRequest{
 		Provider: provider,
 		Model:    model,
 		Input:    &schemas.ImageEditInput{},
@@ -124,16 +124,16 @@ func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.Ra
 	}
 
 	fallbacks := schemas.ParseFallbacks(request.Fallbacks)
-	rakshaReq.Fallbacks = fallbacks
+	gatewayReq.Fallbacks = fallbacks
 
 	// Initialize ExtraParams if not present
-	if rakshaReq.Params.ExtraParams == nil {
-		rakshaReq.Params.ExtraParams = make(map[string]interface{})
+	if gatewayReq.Params.ExtraParams == nil {
+		gatewayReq.Params.ExtraParams = make(map[string]interface{})
 	}
 
 	// First, try to extract prompt from Imagen format (instances)
 	if len(request.Instances) > 0 && request.Instances[0].Prompt != "" {
-		rakshaReq.Input.Prompt = request.Instances[0].Prompt
+		gatewayReq.Input.Prompt = request.Instances[0].Prompt
 
 		// Extract all images from ReferenceImages using a loop
 		var images []schemas.ImageInput
@@ -178,35 +178,35 @@ func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.Ra
 
 		// Set mask if present
 		if len(mask) > 0 {
-			rakshaReq.Params.Mask = mask
+			gatewayReq.Params.Mask = mask
 		}
 
 		// Store mask configuration in ExtraParams
 		if maskMode != "" {
-			rakshaReq.Params.ExtraParams["maskMode"] = maskMode
+			gatewayReq.Params.ExtraParams["maskMode"] = maskMode
 		}
 		if dilation != nil {
-			rakshaReq.Params.ExtraParams["dilation"] = *dilation
+			gatewayReq.Params.ExtraParams["dilation"] = *dilation
 		}
 		if len(maskClasses) > 0 {
-			rakshaReq.Params.ExtraParams["maskClasses"] = maskClasses
+			gatewayReq.Params.ExtraParams["maskClasses"] = maskClasses
 		}
 
 		if len(images) == 0 {
 			return nil // No valid images found
 		}
-		rakshaReq.Input.Images = images
+		gatewayReq.Input.Images = images
 
 		// Extract Imagen parameters
 		if request.Parameters != nil {
 			if request.Parameters.SampleCount != nil {
-				rakshaReq.Params.N = request.Parameters.SampleCount
+				gatewayReq.Params.N = request.Parameters.SampleCount
 			}
 			// Convert Imagen size format to standard format
 			if request.Parameters.SampleImageSize != nil || request.Parameters.AspectRatio != nil {
 				size := convertImagenFormatToSize(request.Parameters.SampleImageSize, request.Parameters.AspectRatio)
 				if size != "" && strings.ToLower(size) != "auto" {
-					rakshaReq.Params.Size = &size
+					gatewayReq.Params.Size = &size
 				}
 			}
 
@@ -215,11 +215,11 @@ func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.Ra
 				if request.Parameters.OutputOptions.MimeType != nil {
 					outputFormat := convertMimeTypeToExtension(*request.Parameters.OutputOptions.MimeType)
 					if outputFormat != "" {
-						rakshaReq.Params.OutputFormat = &outputFormat
+						gatewayReq.Params.OutputFormat = &outputFormat
 					}
 				}
 				if request.Parameters.OutputOptions.CompressionQuality != nil {
-					rakshaReq.Params.OutputCompression = request.Parameters.OutputOptions.CompressionQuality
+					gatewayReq.Params.OutputCompression = request.Parameters.OutputOptions.CompressionQuality
 				}
 			}
 
@@ -227,49 +227,49 @@ func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.Ra
 			if request.Parameters.EditMode != nil {
 				editType := mapImagenEditModeToType(*request.Parameters.EditMode)
 				if editType != "" {
-					rakshaReq.Params.Type = &editType
+					gatewayReq.Params.Type = &editType
 				}
 			}
 
 			if request.Parameters.Seed != nil {
-				rakshaReq.Params.Seed = request.Parameters.Seed
+				gatewayReq.Params.Seed = request.Parameters.Seed
 			}
 			if request.Parameters.NegativePrompt != nil {
-				rakshaReq.Params.NegativePrompt = request.Parameters.NegativePrompt
+				gatewayReq.Params.NegativePrompt = request.Parameters.NegativePrompt
 			}
 
 			if request.Parameters.PersonGeneration != nil {
-				rakshaReq.Params.ExtraParams["personGeneration"] = *request.Parameters.PersonGeneration
+				gatewayReq.Params.ExtraParams["personGeneration"] = *request.Parameters.PersonGeneration
 			}
 			if request.Parameters.Language != nil {
-				rakshaReq.Params.ExtraParams["language"] = *request.Parameters.Language
+				gatewayReq.Params.ExtraParams["language"] = *request.Parameters.Language
 			}
 			if request.Parameters.EnhancePrompt != nil {
-				rakshaReq.Params.ExtraParams["enhancePrompt"] = *request.Parameters.EnhancePrompt
+				gatewayReq.Params.ExtraParams["enhancePrompt"] = *request.Parameters.EnhancePrompt
 			}
 			if request.Parameters.AddWatermark != nil {
-				rakshaReq.Params.ExtraParams["addWatermark"] = *request.Parameters.AddWatermark
+				gatewayReq.Params.ExtraParams["addWatermark"] = *request.Parameters.AddWatermark
 			}
 			if len(request.Parameters.SafetySettings) > 0 {
-				rakshaReq.Params.ExtraParams["safetySettings"] = request.Parameters.SafetySettings
+				gatewayReq.Params.ExtraParams["safetySettings"] = request.Parameters.SafetySettings
 			}
 			if request.Parameters.GuidanceScale != nil {
-				rakshaReq.Params.ExtraParams["guidanceScale"] = *request.Parameters.GuidanceScale
+				gatewayReq.Params.ExtraParams["guidanceScale"] = *request.Parameters.GuidanceScale
 			}
 			if request.Parameters.BaseSteps != nil {
-				rakshaReq.Params.ExtraParams["baseSteps"] = *request.Parameters.BaseSteps
+				gatewayReq.Params.ExtraParams["baseSteps"] = *request.Parameters.BaseSteps
 			}
 			if request.Parameters.IncludeRaiReason != nil {
-				rakshaReq.Params.ExtraParams["includeRaiReason"] = *request.Parameters.IncludeRaiReason
+				gatewayReq.Params.ExtraParams["includeRaiReason"] = *request.Parameters.IncludeRaiReason
 			}
 			if request.Parameters.IncludeSafetyAttributes != nil {
-				rakshaReq.Params.ExtraParams["includeSafetyAttributes"] = *request.Parameters.IncludeSafetyAttributes
+				gatewayReq.Params.ExtraParams["includeSafetyAttributes"] = *request.Parameters.IncludeSafetyAttributes
 			}
 			if request.Parameters.StorageUri != nil {
-				rakshaReq.Params.ExtraParams["storageUri"] = *request.Parameters.StorageUri
+				gatewayReq.Params.ExtraParams["storageUri"] = *request.Parameters.StorageUri
 			}
 		}
-		return rakshaReq
+		return gatewayReq
 	}
 
 	// Fall back to standard Gemini format (contents)
@@ -279,7 +279,7 @@ func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.Ra
 			for _, part := range content.Parts {
 				if part != nil {
 					if part.Text != "" {
-						rakshaReq.Input.Prompt = part.Text
+						gatewayReq.Input.Prompt = part.Text
 					}
 					// Extract images from InlineData
 					if part.InlineData != nil && part.InlineData.Data != "" {
@@ -294,7 +294,7 @@ func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.Ra
 			}
 		}
 		if len(images) > 0 {
-			rakshaReq.Input.Images = images
+			gatewayReq.Input.Images = images
 		}
 	}
 
@@ -303,12 +303,12 @@ func (request *GeminiGenerationRequest) ToRakshaImageEditRequest(ctx *schemas.Ra
 		if strings.TrimSpace(ic.ImageSize) != "" || strings.TrimSpace(ic.AspectRatio) != "" {
 			size := convertImagenFormatToSize(&ic.ImageSize, &ic.AspectRatio)
 			if size != "" {
-				rakshaReq.Params.Size = &size
+				gatewayReq.Params.Size = &size
 			}
 		}
 	}
 
-	return rakshaReq
+	return gatewayReq
 }
 
 // convertImagenFormatToSize converts Imagen sampleImageSize and aspectRatio to standard WxH format
@@ -348,8 +348,8 @@ func convertImagenFormatToSize(sampleImageSize *string, aspectRatio *string) str
 	return strconv.Itoa(baseSize) + "x" + strconv.Itoa(baseSize)
 }
 
-func (response *GenerateContentResponse) ToRakshaImageGenerationResponse() (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
-	rakshaResp := &schemas.RakshaImageGenerationResponse{
+func (response *GenerateContentResponse) ToGatewayImageGenerationResponse() (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
+	gatewayResp := &schemas.GatewayImageGenerationResponse{
 		ID:    response.ResponseID,
 		Model: response.ModelVersion,
 		Data:  []schemas.ImageData{},
@@ -379,18 +379,18 @@ func (response *GenerateContentResponse) ToRakshaImageGenerationResponse() (*sch
 			}
 
 			// Set usage information with modality details
-			rakshaResp.Usage = convertGeminiUsageMetadataToImageUsage(response.UsageMetadata)
+			gatewayResp.Usage = convertGeminiUsageMetadataToImageUsage(response.UsageMetadata)
 			// Only assign imageData when it has elements
 			if len(imageData) > 0 {
-				rakshaResp.Data = imageData
+				gatewayResp.Data = imageData
 				// Only set ImageGenerationResponseParameters when metadata exists
 				if len(imageMetadata) > 0 {
-					rakshaResp.ImageGenerationResponseParameters = &imageMetadata[0]
+					gatewayResp.ImageGenerationResponseParameters = &imageMetadata[0]
 				}
 			}
 		} else {
-			return nil, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Message: candidate.FinishMessage,
 					Code:    schemas.Ptr(string(candidate.FinishReason)),
@@ -398,59 +398,59 @@ func (response *GenerateContentResponse) ToRakshaImageGenerationResponse() (*sch
 			}
 		}
 	} else {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: "No candidates found in response",
 			},
 		}
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
-func ToGeminiImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) *GeminiGenerationRequest {
-	if rakshaReq == nil {
+func ToGeminiImageGenerationRequest(gatewayReq *schemas.GatewayImageGenerationRequest) *GeminiGenerationRequest {
+	if gatewayReq == nil {
 		return nil
 	}
 
-	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
+	gatewayReq.Model = NormalizeModelName(gatewayReq.Model)
 
 	// Create the base Gemini generation request
 	geminiReq := &GeminiGenerationRequest{
-		Model: rakshaReq.Model,
+		Model: gatewayReq.Model,
 	}
-	geminiReq.ExtraParams = rakshaReq.Params.ExtraParams
+	geminiReq.ExtraParams = gatewayReq.Params.ExtraParams
 
 	// Set response modalities to indicate this is an image generation request
 	geminiReq.GenerationConfig.ResponseModalities = []Modality{ModalityImage}
 
 	// Convert parameters to generation config
-	if rakshaReq.Params != nil {
+	if gatewayReq.Params != nil {
 
 		// Prefer explicit aspect_ratio; fall back to deriving aspect ratio + resolution from size.
 		imageConfig := &GeminiImageConfig{}
-		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
-			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*rakshaReq.Params.Size)
+		if gatewayReq.Params.Size != nil && strings.ToLower(*gatewayReq.Params.Size) != "auto" {
+			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*gatewayReq.Params.Size)
 			imageConfig.AspectRatio = aspectRatio
 			imageConfig.ImageSize = imageSize
 		}
-		if rakshaReq.Params.AspectRatio != nil && *rakshaReq.Params.AspectRatio != "" {
-			imageConfig.AspectRatio = *rakshaReq.Params.AspectRatio
+		if gatewayReq.Params.AspectRatio != nil && *gatewayReq.Params.AspectRatio != "" {
+			imageConfig.AspectRatio = *gatewayReq.Params.AspectRatio
 		}
 		if imageConfig.AspectRatio != "" || imageConfig.ImageSize != "" {
 			geminiReq.GenerationConfig.ImageConfig = imageConfig
 		}
 
 		// Handle extra parameters
-		if rakshaReq.Params.ExtraParams != nil {
+		if gatewayReq.Params.ExtraParams != nil {
 			// Safety settings - support both camelCase (canonical) and snake_case (legacy) keys
-			if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safetySettings"); ok {
+			if safetySettings, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "safetySettings"); ok {
 				delete(geminiReq.ExtraParams, "safetySettings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
 				}
-			} else if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safety_settings"); ok {
+			} else if safetySettings, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "safety_settings"); ok {
 				delete(geminiReq.ExtraParams, "safety_settings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
@@ -458,16 +458,16 @@ func ToGeminiImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequ
 			}
 
 			// Cached content - support both camelCase (canonical) and snake_case (legacy) keys
-			if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cachedContent"]); ok {
+			if cachedContent, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["cachedContent"]); ok {
 				delete(geminiReq.ExtraParams, "cachedContent")
 				geminiReq.CachedContent = cachedContent
-			} else if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cached_content"]); ok {
+			} else if cachedContent, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["cached_content"]); ok {
 				delete(geminiReq.ExtraParams, "cached_content")
 				geminiReq.CachedContent = cachedContent
 			}
 
 			// Labels
-			if labels, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "labels"); ok {
+			if labels, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "labels"); ok {
 				switch m := labels.(type) {
 				case map[string]string:
 					delete(geminiReq.ExtraParams, "labels")
@@ -488,14 +488,14 @@ func ToGeminiImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequ
 		}
 	}
 
-	if rakshaReq.Input == nil {
+	if gatewayReq.Input == nil {
 		return nil
 	}
 
 	// Create parts for image gen request
 	parts := []*Part{
 		{
-			Text: rakshaReq.Input.Prompt,
+			Text: gatewayReq.Input.Prompt,
 		},
 	}
 
@@ -507,21 +507,21 @@ func ToGeminiImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequ
 	}
 
 	// Note: Gemini image generation always returns a single image, so we do not propagate
-	// rakshaReq.Params.N to GenerationConfig.CandidateCount. The N parameter is silently dropped.
+	// gatewayReq.Params.N to GenerationConfig.CandidateCount. The N parameter is silently dropped.
 
 	return geminiReq
 }
 
-// ToImagenImageGenerationRequest converts a Raksha Image Request to Imagen format
-func ToImagenImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) *GeminiImagenRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil {
+// ToImagenImageGenerationRequest converts a Gateway Image Request to Imagen format
+func ToImagenImageGenerationRequest(gatewayReq *schemas.GatewayImageGenerationRequest) *GeminiImagenRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil {
 		return nil
 	}
 
-	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
+	gatewayReq.Model = NormalizeModelName(gatewayReq.Model)
 
 	// Create instances array with prompt
-	prompt := rakshaReq.Input.Prompt
+	prompt := gatewayReq.Input.Prompt
 	instances := []ImagenInstance{
 		{
 			Prompt: prompt,
@@ -533,14 +533,14 @@ func ToImagenImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequ
 		Parameters: GeminiImagenParameters{},
 	}
 
-	if rakshaReq.Params != nil {
-		if rakshaReq.Params.N != nil {
-			req.Parameters.SampleCount = rakshaReq.Params.N
+	if gatewayReq.Params != nil {
+		if gatewayReq.Params.N != nil {
+			req.Parameters.SampleCount = gatewayReq.Params.N
 		}
 
 		// Handle size conversion
-		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
-			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*rakshaReq.Params.Size)
+		if gatewayReq.Params.Size != nil && strings.ToLower(*gatewayReq.Params.Size) != "auto" {
+			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*gatewayReq.Params.Size)
 			if imageSize != "" {
 				req.Parameters.SampleImageSize = &imageSize
 			}
@@ -550,14 +550,14 @@ func ToImagenImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequ
 		}
 
 		// Explicit aspect_ratio overrides the size-derived ratio.
-		if rakshaReq.Params.AspectRatio != nil && *rakshaReq.Params.AspectRatio != "" {
-			req.Parameters.AspectRatio = rakshaReq.Params.AspectRatio
+		if gatewayReq.Params.AspectRatio != nil && *gatewayReq.Params.AspectRatio != "" {
+			req.Parameters.AspectRatio = gatewayReq.Params.AspectRatio
 		}
 
 		// Handle output format conversion to mimeType
 		outputFormat := ""
-		if rakshaReq.Params.OutputFormat != nil {
-			outputFormat = *rakshaReq.Params.OutputFormat
+		if gatewayReq.Params.OutputFormat != nil {
+			outputFormat = *gatewayReq.Params.OutputFormat
 		}
 
 		if outputFormat != "" {
@@ -570,49 +570,49 @@ func ToImagenImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequ
 			}
 		}
 
-		if rakshaReq.Params.Seed != nil {
-			req.Parameters.Seed = rakshaReq.Params.Seed
+		if gatewayReq.Params.Seed != nil {
+			req.Parameters.Seed = gatewayReq.Params.Seed
 		}
-		if rakshaReq.Params.NegativePrompt != nil {
-			req.Parameters.NegativePrompt = rakshaReq.Params.NegativePrompt
+		if gatewayReq.Params.NegativePrompt != nil {
+			req.Parameters.NegativePrompt = gatewayReq.Params.NegativePrompt
 		}
 
 		// Handle extra parameters for Imagen-specific fields
-		if rakshaReq.Params.ExtraParams != nil {
-			req.ExtraParams = rakshaReq.Params.ExtraParams
-			if addWatermark, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["addWatermark"]); ok {
+		if gatewayReq.Params.ExtraParams != nil {
+			req.ExtraParams = gatewayReq.Params.ExtraParams
+			if addWatermark, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["addWatermark"]); ok {
 				delete(req.ExtraParams, "addWatermark")
 				req.Parameters.AddWatermark = addWatermark
 			}
-			if sampleImageSize, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["sampleImageSize"]); ok {
+			if sampleImageSize, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["sampleImageSize"]); ok {
 				delete(req.ExtraParams, "sampleImageSize")
 				req.Parameters.SampleImageSize = &sampleImageSize
 			}
 
-			if aspectRatio, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["aspectRatio"]); ok {
+			if aspectRatio, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["aspectRatio"]); ok {
 				delete(req.ExtraParams, "aspectRatio")
 				req.Parameters.AspectRatio = &aspectRatio
 			}
 
-			if personGeneration, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["personGeneration"]); ok {
+			if personGeneration, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["personGeneration"]); ok {
 				delete(req.ExtraParams, "personGeneration")
 				req.Parameters.PersonGeneration = &personGeneration
 			}
 
 			// Map language from ExtraParams
-			if language, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["language"]); ok {
+			if language, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["language"]); ok {
 				delete(req.ExtraParams, "language")
 				req.Parameters.Language = &language
 			}
 
 			// Map enhancePrompt from ExtraParams
-			if enhancePrompt, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["enhancePrompt"]); ok {
+			if enhancePrompt, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["enhancePrompt"]); ok {
 				delete(req.ExtraParams, "enhancePrompt")
 				req.Parameters.EnhancePrompt = enhancePrompt
 			}
 
 			// Map safetySettings from ExtraParams
-			if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safetySettings"); ok {
+			if safetySettings, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "safetySettings"); ok {
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					delete(req.ExtraParams, "safetySettings")
 					req.Parameters.SafetySettings = settings
@@ -653,7 +653,7 @@ func convertMimeTypeToExtension(mimeType string) string {
 	}
 }
 
-// convertOutputFormatToMimeType converts Raksha output_format to Imagen mimeType
+// convertOutputFormatToMimeType converts Gateway output_format to Imagen mimeType
 // Maps "png" -> "image/png", "jpg"/"jpeg" -> "image/jpeg", "webp" -> "image/webp"
 // Returns empty string for unsupported formats
 func convertOutputFormatToMimeType(outputFormat string) string {
@@ -670,19 +670,19 @@ func convertOutputFormatToMimeType(outputFormat string) string {
 	}
 }
 
-// ToRakshaImageGenerationResponse converts an Imagen response to Raksha format
-func (response *GeminiImagenResponse) ToRakshaImageGenerationResponse() *schemas.RakshaImageGenerationResponse {
+// ToGatewayImageGenerationResponse converts an Imagen response to Gateway format
+func (response *GeminiImagenResponse) ToGatewayImageGenerationResponse() *schemas.GatewayImageGenerationResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResp := &schemas.RakshaImageGenerationResponse{
+	gatewayResp := &schemas.GatewayImageGenerationResponse{
 		Data: make([]schemas.ImageData, len(response.Predictions)),
 	}
 
 	// Convert each prediction to ImageData
 	for i, prediction := range response.Predictions {
-		rakshaResp.Data[i] = schemas.ImageData{
+		gatewayResp.Data[i] = schemas.ImageData{
 			B64JSON: prediction.BytesBase64Encoded,
 			Index:   i,
 		}
@@ -691,35 +691,35 @@ func (response *GeminiImagenResponse) ToRakshaImageGenerationResponse() *schemas
 		if prediction.MimeType != "" && i == 0 {
 			// Convert MIME type to file extension for OutputFormat
 			outputFormat := convertMimeTypeToExtension(prediction.MimeType)
-			rakshaResp.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{
+			gatewayResp.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{
 				OutputFormat: outputFormat,
 			}
 		}
 	}
 
-	return rakshaResp
+	return gatewayResp
 }
 
-// ToGeminiImageGenerationResponse converts a RakshaImageGenerationResponse back to Gemini format
-func ToGeminiImageGenerationResponse(ctx context.Context, rakshaResp *schemas.RakshaImageGenerationResponse) (*GenerateContentResponse, error) {
-	if rakshaResp == nil {
+// ToGeminiImageGenerationResponse converts a GatewayImageGenerationResponse back to Gemini format
+func ToGeminiImageGenerationResponse(ctx context.Context, gatewayResp *schemas.GatewayImageGenerationResponse) (*GenerateContentResponse, error) {
+	if gatewayResp == nil {
 		return nil, nil
 	}
 
 	geminiResp := &GenerateContentResponse{
-		ResponseID:   rakshaResp.ID,
-		ModelVersion: rakshaResp.Model,
+		ResponseID:   gatewayResp.ID,
+		ModelVersion: gatewayResp.Model,
 	}
 
 	// Convert image data to candidate parts
-	if len(rakshaResp.Data) > 0 {
-		parts := make([]*Part, 0, len(rakshaResp.Data))
-		for i := range rakshaResp.Data {
-			imageData := &rakshaResp.Data[i]
+	if len(gatewayResp.Data) > 0 {
+		parts := make([]*Part, 0, len(gatewayResp.Data))
+		for i := range gatewayResp.Data {
+			imageData := &gatewayResp.Data[i]
 			// Determine MIME type - convert file extension back to MIME type
 			mimeType := "image/png" // default
-			if rakshaResp.ImageGenerationResponseParameters != nil && rakshaResp.ImageGenerationResponseParameters.OutputFormat != "" {
-				mimeType = convertOutputFormatToMimeType(rakshaResp.ImageGenerationResponseParameters.OutputFormat)
+			if gatewayResp.ImageGenerationResponseParameters != nil && gatewayResp.ImageGenerationResponseParameters.OutputFormat != "" {
+				mimeType = convertOutputFormatToMimeType(gatewayResp.ImageGenerationResponseParameters.OutputFormat)
 				if mimeType == "" {
 					// Fallback: if conversion fails, assume PNG
 					mimeType = "image/png"
@@ -754,32 +754,32 @@ func ToGeminiImageGenerationResponse(ctx context.Context, rakshaResp *schemas.Ra
 	}
 
 	// Convert usage metadata with modality details
-	geminiResp.UsageMetadata = convertRakshaImageUsageToGeminiUsageMetadata(rakshaResp.Usage)
+	geminiResp.UsageMetadata = convertGatewayImageUsageToGeminiUsageMetadata(gatewayResp.Usage)
 
 	return geminiResp, nil
 }
 
-func ToGeminiImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *GeminiGenerationRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil || len(rakshaReq.Input.Images) == 0 {
+func ToGeminiImageEditRequest(gatewayReq *schemas.GatewayImageEditRequest) *GeminiGenerationRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil || len(gatewayReq.Input.Images) == 0 {
 		return nil
 	}
 
-	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
+	gatewayReq.Model = NormalizeModelName(gatewayReq.Model)
 
 	// Create the base Gemini generation request
 	geminiReq := &GeminiGenerationRequest{
-		Model: rakshaReq.Model,
+		Model: gatewayReq.Model,
 	}
 	// Set response modalities to indicate this is an image generation request
 	geminiReq.GenerationConfig.ResponseModalities = []Modality{ModalityImage}
 
 	// Convert parameters to generation config
-	if rakshaReq.Params != nil {
-		geminiReq.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		geminiReq.ExtraParams = gatewayReq.Params.ExtraParams
 
 		// Derive aspect ratio + resolution from size (edit params carry no typed aspect_ratio).
-		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
-			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*rakshaReq.Params.Size)
+		if gatewayReq.Params.Size != nil && strings.ToLower(*gatewayReq.Params.Size) != "auto" {
+			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*gatewayReq.Params.Size)
 			if aspectRatio != "" || imageSize != "" {
 				geminiReq.GenerationConfig.ImageConfig = &GeminiImageConfig{
 					ImageSize:   imageSize,
@@ -789,14 +789,14 @@ func ToGeminiImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *Gemini
 		}
 
 		// Handle extra parameters
-		if rakshaReq.Params.ExtraParams != nil {
+		if gatewayReq.Params.ExtraParams != nil {
 			// Safety settings - support both camelCase (canonical) and snake_case (legacy) keys
-			if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safetySettings"); ok {
+			if safetySettings, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "safetySettings"); ok {
 				delete(geminiReq.ExtraParams, "safetySettings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
 				}
-			} else if safetySettings, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "safety_settings"); ok {
+			} else if safetySettings, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "safety_settings"); ok {
 				delete(geminiReq.ExtraParams, "safety_settings")
 				if settings, ok := SafeExtractSafetySettings(safetySettings); ok {
 					geminiReq.SafetySettings = settings
@@ -804,16 +804,16 @@ func ToGeminiImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *Gemini
 			}
 
 			// Cached content - support both camelCase (canonical) and snake_case (legacy) keys
-			if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cachedContent"]); ok {
+			if cachedContent, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["cachedContent"]); ok {
 				delete(geminiReq.ExtraParams, "cachedContent")
 				geminiReq.CachedContent = cachedContent
-			} else if cachedContent, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["cached_content"]); ok {
+			} else if cachedContent, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["cached_content"]); ok {
 				delete(geminiReq.ExtraParams, "cached_content")
 				geminiReq.CachedContent = cachedContent
 			}
 
 			// Labels
-			if labels, ok := schemas.SafeExtractFromMap(rakshaReq.Params.ExtraParams, "labels"); ok {
+			if labels, ok := schemas.SafeExtractFromMap(gatewayReq.Params.ExtraParams, "labels"); ok {
 				switch m := labels.(type) {
 				case map[string]string:
 					delete(geminiReq.ExtraParams, "labels")
@@ -834,18 +834,18 @@ func ToGeminiImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *Gemini
 		}
 	}
 
-	if rakshaReq.Input == nil {
+	if gatewayReq.Input == nil {
 		return nil
 	}
 
 	// Create parts for image gen request
 	parts := []*Part{
 		{
-			Text: rakshaReq.Input.Prompt,
+			Text: gatewayReq.Input.Prompt,
 		},
 	}
 
-	for _, image := range rakshaReq.Input.Images {
+	for _, image := range gatewayReq.Input.Images {
 		// Detect MIME type from image bytes
 		mimeType := http.DetectContentType(image.Image)
 		// Fallback to PNG if detection fails
@@ -910,7 +910,7 @@ func extractIntArray(v interface{}) []int {
 	return nil
 }
 
-// mapTypeToImagenEditMode maps Raksha image edit type to Imagen editMode
+// mapTypeToImagenEditMode maps Gateway image edit type to Imagen editMode
 // Supported edit modes:
 //   - "inpainting" -> EDIT_MODE_INPAINT_INSERTION: Add objects from a given prompt
 //   - "outpainting" -> EDIT_MODE_OUTPAINT: Extend image beyond its borders
@@ -931,7 +931,7 @@ func mapTypeToImagenEditMode(editType string) string {
 	}
 }
 
-// mapImagenEditModeToType maps Imagen editMode to Raksha image edit type
+// mapImagenEditModeToType maps Imagen editMode to Gateway image edit type
 // This is the reverse mapping of mapTypeToImagenEditMode
 func mapImagenEditModeToType(editMode string) string {
 	switch strings.ToUpper(editMode) {
@@ -948,7 +948,7 @@ func mapImagenEditModeToType(editMode string) string {
 	}
 }
 
-// ToImagenImageEditRequest converts a RakshaImageEditRequest to Imagen edit format
+// ToImagenImageEditRequest converts a GatewayImageEditRequest to Imagen edit format
 // Mask modes (via ExtraParams["maskMode"]):
 //   - MASK_MODE_USER_PROVIDED: Use the mask from Params.Mask (default if mask is provided)
 //   - MASK_MODE_BACKGROUND: Auto-generated mask from background segmentation
@@ -965,12 +965,12 @@ func mapImagenEditModeToType(editMode string) string {
 //
 // Mask classes (via ExtraParams["maskClasses"]):
 //   - Optional list of integers. Mask classes for MASK_MODE_SEMANTIC mode
-func ToImagenImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *GeminiImagenRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil || len(rakshaReq.Input.Images) == 0 {
+func ToImagenImageEditRequest(gatewayReq *schemas.GatewayImageEditRequest) *GeminiImagenRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil || len(gatewayReq.Input.Images) == 0 {
 		return nil
 	}
 
-	rakshaReq.Model = NormalizeModelName(rakshaReq.Model)
+	gatewayReq.Model = NormalizeModelName(gatewayReq.Model)
 
 	req := &GeminiImagenRequest{
 		Parameters: GeminiImagenParameters{},
@@ -979,7 +979,7 @@ func ToImagenImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *Gemini
 	var refImages []ImagenReferenceImage
 	refID := 1
 
-	for _, img := range rakshaReq.Input.Images {
+	for _, img := range gatewayReq.Input.Images {
 		refImages = append(refImages, ImagenReferenceImage{
 			ReferenceType: "REFERENCE_TYPE_RAW",
 			ReferenceID:   refID,
@@ -991,28 +991,28 @@ func ToImagenImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *Gemini
 	}
 
 	// Handle mask configuration
-	if rakshaReq.Params != nil {
+	if gatewayReq.Params != nil {
 		var maskMode string
 		var hasMaskData bool
 		var dilation *float64
 		var maskClasses []int
-		req.ExtraParams = rakshaReq.Params.ExtraParams
+		req.ExtraParams = gatewayReq.Params.ExtraParams
 		// Check if user provided a mask
-		if len(rakshaReq.Params.Mask) > 0 {
+		if len(gatewayReq.Params.Mask) > 0 {
 			hasMaskData = true
 			maskMode = "MASK_MODE_USER_PROVIDED" // Default when mask is provided
 		}
 
 		// Extract optional parameters from ExtraParams
-		if rakshaReq.Params.ExtraParams != nil {
+		if gatewayReq.Params.ExtraParams != nil {
 			// Allow override or specification of mask mode
-			if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["maskMode"]); ok {
+			if v, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["maskMode"]); ok {
 				delete(req.ExtraParams, "maskMode")
 				maskMode = v
 			}
 
 			// Extract dilation (range [0, 1])
-			if v, ok := schemas.SafeExtractFloat64Pointer(rakshaReq.Params.ExtraParams["dilation"]); ok {
+			if v, ok := schemas.SafeExtractFloat64Pointer(gatewayReq.Params.ExtraParams["dilation"]); ok {
 				// Validate dilation is in valid range
 				if *v >= 0 && *v <= 1 {
 					delete(req.ExtraParams, "dilation")
@@ -1021,7 +1021,7 @@ func ToImagenImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *Gemini
 			}
 
 			// Extract maskClasses (for MASK_MODE_SEMANTIC)
-			if v, ok := rakshaReq.Params.ExtraParams["maskClasses"]; ok {
+			if v, ok := gatewayReq.Params.ExtraParams["maskClasses"]; ok {
 				delete(req.ExtraParams, "maskClasses")
 				maskClasses = extractIntArray(v)
 			}
@@ -1042,7 +1042,7 @@ func ToImagenImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *Gemini
 			// Only include mask data if provided
 			if hasMaskData {
 				maskRef.ReferenceImage = ImagenReferenceData{
-					BytesBase64Encoded: base64.StdEncoding.EncodeToString(rakshaReq.Params.Mask),
+					BytesBase64Encoded: base64.StdEncoding.EncodeToString(gatewayReq.Params.Mask),
 				}
 			}
 
@@ -1052,18 +1052,18 @@ func ToImagenImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *Gemini
 
 	req.Instances = append(req.Instances, ImagenInstance{
 		ReferenceImages: refImages,
-		Prompt:          rakshaReq.Input.Prompt,
+		Prompt:          gatewayReq.Input.Prompt,
 	})
 
 	// Set parameters
-	if rakshaReq.Params != nil {
-		if rakshaReq.Params.N != nil {
-			req.Parameters.SampleCount = rakshaReq.Params.N
+	if gatewayReq.Params != nil {
+		if gatewayReq.Params.N != nil {
+			req.Parameters.SampleCount = gatewayReq.Params.N
 		}
 
 		// Derive aspect ratio + resolution from size (edit params carry no typed aspect_ratio).
-		if rakshaReq.Params.Size != nil && strings.ToLower(*rakshaReq.Params.Size) != "auto" {
-			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*rakshaReq.Params.Size)
+		if gatewayReq.Params.Size != nil && strings.ToLower(*gatewayReq.Params.Size) != "auto" {
+			aspectRatio, imageSize := utils.ConvertSizeToAspectRatioAndResolution(*gatewayReq.Params.Size)
 			if imageSize != "" {
 				req.Parameters.SampleImageSize = &imageSize
 			}
@@ -1072,76 +1072,76 @@ func ToImagenImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) *Gemini
 			}
 		}
 
-		if rakshaReq.Params.OutputFormat != nil {
-			mimeType := convertOutputFormatToMimeType(*rakshaReq.Params.OutputFormat)
+		if gatewayReq.Params.OutputFormat != nil {
+			mimeType := convertOutputFormatToMimeType(*gatewayReq.Params.OutputFormat)
 			if mimeType != "" {
 				req.Parameters.OutputOptions = &ImagenOutputOptions{MimeType: &mimeType}
 			}
 		}
-		if rakshaReq.Params.OutputCompression != nil {
+		if gatewayReq.Params.OutputCompression != nil {
 			if req.Parameters.OutputOptions == nil {
 				req.Parameters.OutputOptions = &ImagenOutputOptions{}
 			}
-			req.Parameters.OutputOptions.CompressionQuality = rakshaReq.Params.OutputCompression
+			req.Parameters.OutputOptions.CompressionQuality = gatewayReq.Params.OutputCompression
 		}
 
-		// Map Raksha type to Imagen editMode
-		if rakshaReq.Params.Type != nil {
-			editMode := mapTypeToImagenEditMode(*rakshaReq.Params.Type)
+		// Map Gateway type to Imagen editMode
+		if gatewayReq.Params.Type != nil {
+			editMode := mapTypeToImagenEditMode(*gatewayReq.Params.Type)
 			if editMode != "" {
 				req.Parameters.EditMode = &editMode
 			}
 		}
 
-		if rakshaReq.Params.NegativePrompt != nil {
-			req.Parameters.NegativePrompt = rakshaReq.Params.NegativePrompt
+		if gatewayReq.Params.NegativePrompt != nil {
+			req.Parameters.NegativePrompt = gatewayReq.Params.NegativePrompt
 		}
 
-		if rakshaReq.Params.Seed != nil {
-			req.Parameters.Seed = rakshaReq.Params.Seed
+		if gatewayReq.Params.Seed != nil {
+			req.Parameters.Seed = gatewayReq.Params.Seed
 		}
 
-		if rakshaReq.Params.ExtraParams != nil {
+		if gatewayReq.Params.ExtraParams != nil {
 			// Only use editMode from ExtraParams if Type was not set
-			if rakshaReq.Params.Type == nil {
-				if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["editMode"]); ok {
+			if gatewayReq.Params.Type == nil {
+				if v, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["editMode"]); ok {
 					delete(req.ExtraParams, "editMode")
 					req.Parameters.EditMode = &v
 				}
 			}
-			if v, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["guidanceScale"]); ok {
+			if v, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["guidanceScale"]); ok {
 				delete(req.ExtraParams, "guidanceScale")
 				req.Parameters.GuidanceScale = v
 			}
-			if v, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["baseSteps"]); ok {
+			if v, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["baseSteps"]); ok {
 				delete(req.ExtraParams, "baseSteps")
 				req.Parameters.BaseSteps = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["addWatermark"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["addWatermark"]); ok {
 				delete(req.ExtraParams, "addWatermark")
 				req.Parameters.AddWatermark = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["includeRaiReason"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["includeRaiReason"]); ok {
 				delete(req.ExtraParams, "includeRaiReason")
 				req.Parameters.IncludeRaiReason = v
 			}
-			if v, ok := schemas.SafeExtractBoolPointer(rakshaReq.Params.ExtraParams["includeSafetyAttributes"]); ok {
+			if v, ok := schemas.SafeExtractBoolPointer(gatewayReq.Params.ExtraParams["includeSafetyAttributes"]); ok {
 				delete(req.ExtraParams, "includeSafetyAttributes")
 				req.Parameters.IncludeSafetyAttributes = v
 			}
-			if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["personGeneration"]); ok {
+			if v, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["personGeneration"]); ok {
 				delete(req.ExtraParams, "personGeneration")
 				req.Parameters.PersonGeneration = &v
 			}
-			if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["language"]); ok {
+			if v, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["language"]); ok {
 				delete(req.ExtraParams, "language")
 				req.Parameters.Language = &v
 			}
-			if v, ok := schemas.SafeExtractString(rakshaReq.Params.ExtraParams["storageUri"]); ok {
+			if v, ok := schemas.SafeExtractString(gatewayReq.Params.ExtraParams["storageUri"]); ok {
 				delete(req.ExtraParams, "storageUri")
 				req.Parameters.StorageUri = &v
 			}
-			if v, ok := SafeExtractSafetySettings(rakshaReq.Params.ExtraParams["safetySettings"]); ok {
+			if v, ok := SafeExtractSafetySettings(gatewayReq.Params.ExtraParams["safetySettings"]); ok {
 				delete(req.ExtraParams, "safetySettings")
 				req.Parameters.SafetySettings = v
 			}

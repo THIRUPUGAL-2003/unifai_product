@@ -20,11 +20,11 @@ import (
 	"github.com/fasthttp/router"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	configtables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/temptoken"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	configtables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/temptoken"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -51,7 +51,7 @@ func NewOAuth2IssuanceHandler(store *lib.Config, tempTokens *temptoken.Service, 
 }
 
 // RegisterRoutes wires the three OAuth2 issuance routes.
-func (h *OAuth2IssuanceHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *OAuth2IssuanceHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	// These routes are public — no auth middleware applied.
 	r.POST("/oauth2/register", h.handleRegister)
 	r.GET("/oauth2/authorize", h.handleAuthorize)

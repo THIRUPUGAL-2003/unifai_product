@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2019-09/schema",
-  "$id": "https://www.getraksha.ai/schema",
-  "title": "Raksha Configuration Schema",
-  "description": "Schema for Raksha HTTP transport configuration",
+  "$id": "https://www.getgateway.ai/schema",
+  "title": "Gateway Configuration Schema",
+  "description": "Schema for Gateway HTTP transport configuration",
   "type": "object",
   "properties": {
     "$schema": {
       "type": "string",
-      "description": "The schema version. This should be set to \"https://www.getraksha.ai/schema\"",
-      "const": "https://www.getraksha.ai/schema"
+      "description": "The schema version. This should be set to \"https://www.getgateway.ai/schema\"",
+      "const": "https://www.getgateway.ai/schema"
     },
     "server": {
       "type": "object",
@@ -43,11 +43,11 @@
     },
     "encryption_key": {
       "type": "string",
-      "description": "You can set the value as env.<ENV_VAR_NAME> to use an environment variable. We also read encryption key from RAKSHA_ENCRYPTION_KEY environment variable. Note: once set, the encryption key cannot be changed unless you clean up the database. Accepts any string; a secure 32-byte AES-256 key will be derived using Argon2id KDF. If not provided, data will be saved in plain text. Recommended: use a passphrase of at least 16 bytes for better security"
+      "description": "You can set the value as env.<ENV_VAR_NAME> to use an environment variable. We also read encryption key from GATEWAY_ENCRYPTION_KEY environment variable. Note: once set, the encryption key cannot be changed unless you clean up the database. Accepts any string; a secure 32-byte AES-256 key will be derived using Argon2id KDF. If not provided, data will be saved in plain text. Recommended: use a passphrase of at least 16 bytes for better security"
     },
     "env_label": {
       "type": "string",
-      "description": "Short label (max 10 characters) displayed in the management UI sidebar to identify the environment (e.g. \"staging\", \"prod\"). Overrides the RAKSHA_ENV_LABEL environment variable when both are set.",
+      "description": "Short label (max 10 characters) displayed in the management UI sidebar to identify the environment (e.g. \"staging\", \"prod\"). Overrides the GATEWAY_ENV_LABEL environment variable when both are set.",
       "maxLength": 10
     },
     "auth_config": {
@@ -263,7 +263,7 @@
         },
         "mcp_enable_temp_token_auth": {
           "type": "boolean",
-          "description": "When true, Raksha mints and accepts scoped temp tokens for MCP per-user OAuth and per-user-headers auth pages so anonymous browser visitors can complete the flow without a dashboard session. User-mode flows are never minted regardless of this setting \u2014 they always require SSO login.",
+          "description": "When true, Gateway mints and accepts scoped temp tokens for MCP per-user OAuth and per-user-headers auth pages so anonymous browser visitors can complete the flow without a dashboard session. User-mode flows are never minted regardless of this setting \u2014 they always require SSO login.",
           "default": false
         },
         "routing_chain_max_depth": {
@@ -304,7 +304,7 @@
               "additionalProperties": false
             }
           ],
-          "description": "Public base URL Raksha uses as the redirect_uri when acting as an OAuth client to upstream MCP servers (Notion, Jira, etc.). Set when Raksha's callback endpoint is reached via a different URL than its server-side metadata. Supports env var syntax: \"env.MY_VAR\"."
+          "description": "Public base URL Gateway uses as the redirect_uri when acting as an OAuth client to upstream MCP servers (Notion, Jira, etc.). Set when Gateway's callback endpoint is reached via a different URL than its server-side metadata. Supports env var syntax: \"env.MY_VAR\"."
         },
         "mcp_server_auth_mode": {
           "type": "string",
@@ -313,7 +313,7 @@
             "both",
             "oauth"
           ],
-          "description": "How /mcp authenticates inbound MCP clients. 'headers' (default): VK/api-key/session headers only, discovery disabled. 'both': accepts header credentials and Raksha-issued JWTs, discovery enabled. 'oauth': Raksha JWTs only \u2014 WARNING: disables VK/header MCP access."
+          "description": "How /mcp authenticates inbound MCP clients. 'headers' (default): VK/api-key/session headers only, discovery disabled. 'both': accepts header credentials and Gateway-issued JWTs, discovery enabled. 'oauth': Gateway JWTs only \u2014 WARNING: disables VK/header MCP access."
         },
         "oauth2_server_config": {
           "type": "object",
@@ -1183,11 +1183,11 @@
               },
               "send_back_raw_request": {
                 "type": "boolean",
-                "description": "Include raw request in RakshaResponse"
+                "description": "Include raw request in GatewayResponse"
               },
               "send_back_raw_response": {
                 "type": "boolean",
-                "description": "Include raw response in RakshaResponse"
+                "description": "Include raw response in GatewayResponse"
               },
               "store_raw_request_response": {
                 "type": "boolean",
@@ -1492,7 +1492,7 @@
             },
             "prefix": {
               "type": "string",
-              "description": "Path prefix applied to every secret (default: raksha)"
+              "description": "Path prefix applied to every secret (default: gateway)"
             },
             "access_mode": {
               "type": "string",
@@ -2045,8 +2045,8 @@
             },
             "prefix": {
               "type": "string",
-              "description": "Key prefix for stored objects (default: raksha)",
-              "default": "raksha"
+              "description": "Key prefix for stored objects (default: gateway)",
+              "default": "gateway"
             },
             "compress": {
               "type": "boolean",
@@ -2370,7 +2370,7 @@
                         "job_name": {
                           "type": "string",
                           "description": "Job label for pushed metrics",
-                          "default": "raksha"
+                          "default": "gateway"
                         },
                         "instance_id": {
                           "type": "string",
@@ -2722,7 +2722,7 @@
                     "service_name": {
                       "type": "string",
                       "description": "Name of the service to report to Datadog",
-                      "default": "raksha"
+                      "default": "gateway"
                     },
                     "ml_app": {
                       "type": "string",
@@ -2869,7 +2869,7 @@
                     "dataset_id": {
                       "type": "string",
                       "description": "BigQuery dataset name",
-                      "default": "raksha_traces"
+                      "default": "gateway_traces"
                     },
                     "table_id": {
                       "type": "string",
@@ -3309,7 +3309,7 @@
         "service_name": {
           "type": "string",
           "description": "Service name to be used for tracing",
-          "default": "raksha"
+          "default": "gateway"
         },
         "collector_url": {
           "$ref": "#/$defs/otel_endpoint",
@@ -3872,7 +3872,7 @@
         },
         "mcp_library_url": {
           "type": "string",
-          "description": "URL to a custom MCP server catalog. Leave empty to use the default Raksha catalog.",
+          "description": "URL to a custom MCP server catalog. Leave empty to use the default Gateway catalog.",
           "optional": true,
           "format": "uri"
         },
@@ -4468,7 +4468,7 @@
                 },
                 "api_version": {
                   "type": "string",
-                  "description": "Deprecated: Raksha now uses the Azure OpenAI v1 API which does not require an api-version parameter."
+                  "description": "Deprecated: Gateway now uses the Azure OpenAI v1 API which does not require an api-version parameter."
                 }
               },
               "required": [
@@ -4560,11 +4560,11 @@
         },
         "send_back_raw_request": {
           "type": "boolean",
-          "description": "Include raw request in RakshaResponse (default: false)"
+          "description": "Include raw request in GatewayResponse (default: false)"
         },
         "send_back_raw_response": {
           "type": "boolean",
-          "description": "Include raw response in RakshaResponse (default: false)"
+          "description": "Include raw response in GatewayResponse (default: false)"
         },
         "store_raw_request_response": {
           "type": "boolean",
@@ -4601,11 +4601,11 @@
         },
         "send_back_raw_request": {
           "type": "boolean",
-          "description": "Include raw request in RakshaResponse (default: false)"
+          "description": "Include raw request in GatewayResponse (default: false)"
         },
         "send_back_raw_response": {
           "type": "boolean",
-          "description": "Include raw response in RakshaResponse (default: false)"
+          "description": "Include raw response in GatewayResponse (default: false)"
         },
         "store_raw_request_response": {
           "type": "boolean",
@@ -4642,11 +4642,11 @@
         },
         "send_back_raw_request": {
           "type": "boolean",
-          "description": "Include raw request in RakshaResponse (default: false)"
+          "description": "Include raw request in GatewayResponse (default: false)"
         },
         "send_back_raw_response": {
           "type": "boolean",
-          "description": "Include raw response in RakshaResponse (default: false)"
+          "description": "Include raw response in GatewayResponse (default: false)"
         },
         "store_raw_request_response": {
           "type": "boolean",
@@ -4683,11 +4683,11 @@
         },
         "send_back_raw_request": {
           "type": "boolean",
-          "description": "Include raw request in RakshaResponse (default: false)"
+          "description": "Include raw request in GatewayResponse (default: false)"
         },
         "send_back_raw_response": {
           "type": "boolean",
-          "description": "Include raw response in RakshaResponse (default: false)"
+          "description": "Include raw response in GatewayResponse (default: false)"
         },
         "store_raw_request_response": {
           "type": "boolean",
@@ -4724,11 +4724,11 @@
         },
         "send_back_raw_request": {
           "type": "boolean",
-          "description": "Include raw request in RakshaResponse (default: false)"
+          "description": "Include raw request in GatewayResponse (default: false)"
         },
         "send_back_raw_response": {
           "type": "boolean",
-          "description": "Include raw response in RakshaResponse (default: false)"
+          "description": "Include raw response in GatewayResponse (default: false)"
         },
         "store_raw_request_response": {
           "type": "boolean",
@@ -4765,11 +4765,11 @@
         },
         "send_back_raw_request": {
           "type": "boolean",
-          "description": "Include raw request in RakshaResponse (default: false)"
+          "description": "Include raw request in GatewayResponse (default: false)"
         },
         "send_back_raw_response": {
           "type": "boolean",
-          "description": "Include raw response in RakshaResponse (default: false)"
+          "description": "Include raw response in GatewayResponse (default: false)"
         },
         "store_raw_request_response": {
           "type": "boolean",
@@ -4806,11 +4806,11 @@
         },
         "send_back_raw_request": {
           "type": "boolean",
-          "description": "Include raw request in RakshaResponse (default: false)"
+          "description": "Include raw request in GatewayResponse (default: false)"
         },
         "send_back_raw_response": {
           "type": "boolean",
-          "description": "Include raw response in RakshaResponse (default: false)"
+          "description": "Include raw response in GatewayResponse (default: false)"
         },
         "store_raw_request_response": {
           "type": "boolean",
@@ -4847,11 +4847,11 @@
         },
         "send_back_raw_request": {
           "type": "boolean",
-          "description": "Include raw request in RakshaResponse (default: false)"
+          "description": "Include raw request in GatewayResponse (default: false)"
         },
         "send_back_raw_response": {
           "type": "boolean",
-          "description": "Include raw response in RakshaResponse (default: false)"
+          "description": "Include raw response in GatewayResponse (default: false)"
         },
         "store_raw_request_response": {
           "type": "boolean",
@@ -4885,11 +4885,11 @@
         },
         "send_back_raw_request": {
           "type": "boolean",
-          "description": "Include raw request in RakshaResponse (default: false)"
+          "description": "Include raw request in GatewayResponse (default: false)"
         },
         "send_back_raw_response": {
           "type": "boolean",
-          "description": "Include raw response in RakshaResponse (default: false)"
+          "description": "Include raw response in GatewayResponse (default: false)"
         },
         "store_raw_request_response": {
           "type": "boolean",
@@ -5973,11 +5973,11 @@
         },
         "realm": {
           "type": "string",
-          "description": "Keycloak realm name (e.g., 'raksha-prod')"
+          "description": "Keycloak realm name (e.g., 'gateway-prod')"
         },
         "clientId": {
           "type": "string",
-          "description": "Keycloak client ID for the confidential client used by Raksha"
+          "description": "Keycloak client ID for the confidential client used by Gateway"
         },
         "clientSecret": {
           "type": "string",
@@ -7138,7 +7138,7 @@
           },
           "role": {
             "type": "string",
-            "description": "Raksha role to assign on match"
+            "description": "Gateway role to assign on match"
           }
         },
         "required": [
@@ -7165,7 +7165,7 @@
           },
           "team": {
             "type": "string",
-            "description": "Raksha team slug to assign. In case of '*' value, leave this empty"
+            "description": "Gateway team slug to assign. In case of '*' value, leave this empty"
           }
         },
         "required": [
@@ -7191,7 +7191,7 @@
           },
           "business_unit": {
             "type": "string",
-            "description": "Raksha business unit slug to assign. In case of '*' value, leave this empty"
+            "description": "Gateway business unit slug to assign. In case of '*' value, leave this empty"
           }
         },
         "required": [

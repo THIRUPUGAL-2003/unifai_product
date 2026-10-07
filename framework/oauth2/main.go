@@ -17,11 +17,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/temptoken"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/temptoken"
 )
 
 const (
@@ -52,7 +52,7 @@ type OAuth2Provider struct {
 // NewOAuth2Provider creates a new OAuth provider instance
 func NewOAuth2Provider(configStore configstore.ConfigStore, logger schemas.Logger) *OAuth2Provider {
 	if logger == nil {
-		logger = raksha.NewDefaultLogger(schemas.LogLevelInfo)
+		logger = gateway.NewDefaultLogger(schemas.LogLevelInfo)
 	}
 	SetLogger(logger)
 	return &OAuth2Provider{
@@ -208,13 +208,13 @@ func (p *OAuth2Provider) RefreshAccessToken(ctx context.Context, oauthConfigID s
 	token.ExpiresAt = nil
 	if newTokenResponse.ExpiresIn > 0 {
 		exp := now.Add(time.Duration(newTokenResponse.ExpiresIn) * time.Second)
-		token.ExpiresAt = raksha.Ptr(exp)
+		token.ExpiresAt = gateway.Ptr(exp)
 	}
 	token.AccessToken = strings.TrimSpace(newTokenResponse.AccessToken)
 	if newTokenResponse.RefreshToken != "" {
 		token.RefreshToken = strings.TrimSpace(newTokenResponse.RefreshToken)
 	}
-	token.LastRefreshedAt = raksha.Ptr(now)
+	token.LastRefreshedAt = gateway.Ptr(now)
 
 	if err := p.configStore.UpdateOauthToken(ctx, token); err != nil {
 		return fmt.Errorf("failed to update token: %w", err)
@@ -506,7 +506,7 @@ func (p *OAuth2Provider) InitiateOAuthFlow(ctx context.Context, config *schemas.
 
 		// Prepare registration request
 		regReq := &DynamicClientRegistrationRequest{
-			ClientName:              "Raksha MCP Gateway",
+			ClientName:              "Gateway MCP Gateway",
 			RedirectURIs:            []string{config.RedirectURI},
 			GrantTypes:              []string{"authorization_code", "refresh_token"},
 			ResponseTypes:           []string{"code"},
@@ -656,7 +656,7 @@ func (p *OAuth2Provider) CompleteOAuthFlow(ctx context.Context, state, code stri
 	var expiresAt *time.Time
 	if tokenResponse.ExpiresIn > 0 {
 		exp := time.Now().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
-		expiresAt = raksha.Ptr(exp)
+		expiresAt = gateway.Ptr(exp)
 	}
 	tokenRecord := &tables.TableOauthToken{
 		ID:           tokenID,
@@ -980,21 +980,21 @@ func (p *OAuth2Provider) InitiateUserOAuthFlow(ctx context.Context, oauthConfigI
 	)
 	switch flowMode {
 	case schemas.MCPAuthModeUser:
-		v, _ := ctx.Value(schemas.RakshaContextKeyUserID).(string)
+		v, _ := ctx.Value(schemas.GatewayContextKeyUserID).(string)
 		if v == "" {
 			return nil, "", fmt.Errorf("user-mode flow requires a user identity in context")
 		}
 		uid = &v
 		lookupID = v
 	case schemas.MCPAuthModeVK:
-		v, _ := ctx.Value(schemas.RakshaContextKeyGovernanceVirtualKeyID).(string)
+		v, _ := ctx.Value(schemas.GatewayContextKeyGovernanceVirtualKeyID).(string)
 		if v == "" {
 			return nil, "", fmt.Errorf("vk-mode flow requires a resolved virtual key in context")
 		}
 		vkId = &v
 		lookupID = v
 	case schemas.MCPAuthModeSession:
-		v, _ := ctx.Value(schemas.RakshaContextKeyMCPSessionID).(string)
+		v, _ := ctx.Value(schemas.GatewayContextKeyMCPSessionID).(string)
 		if v == "" {
 			return nil, "", fmt.Errorf("session-mode flow requires x-uf-mcp-session-id in context")
 		}
@@ -1076,7 +1076,7 @@ func (p *OAuth2Provider) InitiateUserOAuthFlow(ctx context.Context, oauthConfigI
 	// endpoint using the stored CSRF state + PKCE verifier — we don't pin it
 	// here so the row stays the single source of truth for those fields.
 	//
-	// Derive the Raksha base URL from the OAuth callback redirect URI passed
+	// Derive the Gateway base URL from the OAuth callback redirect URI passed
 	// in by the caller — it always has the shape "{base}/api/oauth/callback".
 	// Flow ID rides as a query param to match the flat-route convention used
 	// elsewhere in the dashboard UI.
@@ -1220,7 +1220,7 @@ func (p *OAuth2Provider) CompleteUserOAuthFlow(ctx context.Context, state string
 	var expiresAt *time.Time
 	if tokenResponse.ExpiresIn > 0 {
 		exp := time.Now().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
-		expiresAt = raksha.Ptr(exp)
+		expiresAt = gateway.Ptr(exp)
 	}
 	tokenRecord := &tables.TableOauthUserToken{
 		ID:            uuid.New().String(),
@@ -1363,13 +1363,13 @@ func (p *OAuth2Provider) RefreshUserAccessToken(ctx context.Context, tokenID str
 	token.ExpiresAt = nil
 	if newTokenResponse.ExpiresIn > 0 {
 		exp := now.Add(time.Duration(newTokenResponse.ExpiresIn) * time.Second)
-		token.ExpiresAt = raksha.Ptr(exp)
+		token.ExpiresAt = gateway.Ptr(exp)
 	}
 	token.AccessToken = strings.TrimSpace(newTokenResponse.AccessToken)
 	if newTokenResponse.RefreshToken != "" {
 		token.RefreshToken = strings.TrimSpace(newTokenResponse.RefreshToken)
 	}
-	token.LastRefreshedAt = raksha.Ptr(now)
+	token.LastRefreshedAt = gateway.Ptr(now)
 
 	if err := p.configStore.UpdateOauthUserToken(ctx, token); err != nil {
 		return fmt.Errorf("failed to update per-user token after refresh: %w", err)

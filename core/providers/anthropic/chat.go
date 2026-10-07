@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // convertFunctionToolToAnthropic turns an OpenAI-style function tool
@@ -175,7 +175,7 @@ func convertServerToolToAnthropic(tool schemas.ChatTool, model string) (Anthropi
 	default:
 		// Unknown type — pass through Type + Name and let Anthropic reject
 		// if it's truly invalid. This keeps forward-compat for new tool
-		// versions that aren't yet known to Raksha.
+		// versions that aren't yet known to Gateway.
 	}
 	return anthropicTool, true
 }
@@ -227,15 +227,15 @@ func convertMCPToolsetConfigMap(m map[string]*schemas.ChatMCPToolsetConfig) map[
 	return out
 }
 
-// ToAnthropicChatRequest converts a Raksha request to Anthropic format
-// This is the reverse of ConvertChatRequestToRaksha for provider-side usage
-func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest) (*AnthropicMessageRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil {
-		return nil, fmt.Errorf("raksha request is nil or input is nil")
+// ToAnthropicChatRequest converts a Gateway request to Anthropic format
+// This is the reverse of ConvertChatRequestToGateway for provider-side usage
+func ToAnthropicChatRequest(ctx *schemas.GatewayContext, gatewayReq *schemas.GatewayChatRequest) (*AnthropicMessageRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil {
+		return nil, fmt.Errorf("gateway request is nil or input is nil")
 	}
 
-	messages := rakshaReq.Input
-	if ctx.Value(schemas.RakshaContextKeySupportsAssistantPrefill) == false {
+	messages := gatewayReq.Input
+	if ctx.Value(schemas.GatewayContextKeySupportsAssistantPrefill) == false {
 		trimmed := len(messages)
 		for trimmed > 0 && messages[trimmed-1].Role == schemas.ChatMessageRoleAssistant {
 			trimmed--
@@ -244,18 +244,18 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 	}
 
 	anthropicReq := &AnthropicMessageRequest{
-		Model:     rakshaReq.Model,
-		MaxTokens: providerUtils.GetMaxOutputTokensOrDefault(rakshaReq.Model, AnthropicDefaultMaxTokens),
+		Model:     gatewayReq.Model,
+		MaxTokens: providerUtils.GetMaxOutputTokensOrDefault(gatewayReq.Model, AnthropicDefaultMaxTokens),
 	}
 
 	// capModel is the canonical model string used only for capability/version
-	capModel := schemas.ResolveCanonicalModel(ctx, rakshaReq.Model)
+	capModel := schemas.ResolveCanonicalModel(ctx, gatewayReq.Model)
 
 	// Convert parameters
-	if rakshaReq.Params != nil {
-		anthropicReq.ExtraParams = rakshaReq.Params.ExtraParams
-		if rakshaReq.Params.MaxCompletionTokens != nil {
-			anthropicReq.MaxTokens = *rakshaReq.Params.MaxCompletionTokens
+	if gatewayReq.Params != nil {
+		anthropicReq.ExtraParams = gatewayReq.Params.ExtraParams
+		if gatewayReq.Params.MaxCompletionTokens != nil {
+			anthropicReq.MaxTokens = *gatewayReq.Params.MaxCompletionTokens
 		}
 
 		// Opus 4.7+ and the Fable/Mythos family reject temperature, top_p, and
@@ -263,21 +263,21 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		if !IsAdaptiveOnlyThinkingModel(capModel) {
 			// Anthropic doesn't allow both temperature and top_p to be specified.
 			// If both are present, prefer temperature (more commonly used).
-			if rakshaReq.Params.Temperature != nil {
-				anthropicReq.Temperature = rakshaReq.Params.Temperature
-			} else if rakshaReq.Params.TopP != nil {
-				anthropicReq.TopP = rakshaReq.Params.TopP
+			if gatewayReq.Params.Temperature != nil {
+				anthropicReq.Temperature = gatewayReq.Params.Temperature
+			} else if gatewayReq.Params.TopP != nil {
+				anthropicReq.TopP = gatewayReq.Params.TopP
 			}
 		}
-		anthropicReq.StopSequences = rakshaReq.Params.Stop
+		anthropicReq.StopSequences = gatewayReq.Params.Stop
 
 		// TopK — prefer the promoted neutral field; fall back to ExtraParams.
 		// Opus 4.7+ and the Fable/Mythos family reject top_k with a 400 error.
-		if rakshaReq.Params.TopK != nil {
+		if gatewayReq.Params.TopK != nil {
 			if !IsAdaptiveOnlyThinkingModel(capModel) {
-				anthropicReq.TopK = rakshaReq.Params.TopK
+				anthropicReq.TopK = gatewayReq.Params.TopK
 			}
-		} else if topK, ok := schemas.SafeExtractIntPointer(rakshaReq.Params.ExtraParams["top_k"]); ok {
+		} else if topK, ok := schemas.SafeExtractIntPointer(gatewayReq.Params.ExtraParams["top_k"]); ok {
 			delete(anthropicReq.ExtraParams, "top_k")
 			if !IsAdaptiveOnlyThinkingModel(capModel) {
 				anthropicReq.TopK = topK
@@ -285,17 +285,17 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		}
 
 		// Speed — prefer neutral field, then ExtraParams.
-		if rakshaReq.Params.Speed != nil {
-			anthropicReq.Speed = rakshaReq.Params.Speed
-		} else if speed, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["speed"]); ok {
+		if gatewayReq.Params.Speed != nil {
+			anthropicReq.Speed = gatewayReq.Params.Speed
+		} else if speed, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["speed"]); ok {
 			delete(anthropicReq.ExtraParams, "speed")
 			anthropicReq.Speed = speed
 		}
 
 		// InferenceGeo — prefer neutral field, then ExtraParams.
-		if rakshaReq.Params.InferenceGeo != nil {
-			anthropicReq.InferenceGeo = rakshaReq.Params.InferenceGeo
-		} else if inferenceGeo, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["inference_geo"]); ok {
+		if gatewayReq.Params.InferenceGeo != nil {
+			anthropicReq.InferenceGeo = gatewayReq.Params.InferenceGeo
+		} else if inferenceGeo, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["inference_geo"]); ok {
 			delete(anthropicReq.ExtraParams, "inference_geo")
 			anthropicReq.InferenceGeo = inferenceGeo
 		}
@@ -305,13 +305,13 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		// (legacy map-valued or typed-pointer paths) if the raw is empty.
 		// Surface decode errors on the typed path so callers get immediate
 		// feedback on malformed config instead of a silent drop.
-		if len(rakshaReq.Params.ContextManagement) > 0 {
+		if len(gatewayReq.Params.ContextManagement) > 0 {
 			var cm ContextManagement
-			if err := sonic.Unmarshal(rakshaReq.Params.ContextManagement, &cm); err != nil {
+			if err := sonic.Unmarshal(gatewayReq.Params.ContextManagement, &cm); err != nil {
 				return nil, fmt.Errorf("context_management: failed to parse: %w", err)
 			}
 			anthropicReq.ContextManagement = &cm
-		} else if cmVal := rakshaReq.Params.ExtraParams["context_management"]; cmVal != nil {
+		} else if cmVal := gatewayReq.Params.ExtraParams["context_management"]; cmVal != nil {
 			if cm, ok := cmVal.(*ContextManagement); ok && cm != nil {
 				delete(anthropicReq.ExtraParams, "context_management")
 				anthropicReq.ContextManagement = cm
@@ -326,17 +326,17 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 
 		// Container — map the neutral ChatContainer union onto the Anthropic
 		// AnthropicContainer union. Both follow the string-or-object pattern.
-		if rakshaReq.Params.Container != nil {
+		if gatewayReq.Params.Container != nil {
 			c := &AnthropicContainer{}
-			if rakshaReq.Params.Container.ContainerStr != nil {
-				c.ContainerStr = rakshaReq.Params.Container.ContainerStr
-			} else if rakshaReq.Params.Container.ContainerObject != nil {
+			if gatewayReq.Params.Container.ContainerStr != nil {
+				c.ContainerStr = gatewayReq.Params.Container.ContainerStr
+			} else if gatewayReq.Params.Container.ContainerObject != nil {
 				obj := &AnthropicContainerObject{
-					ID: rakshaReq.Params.Container.ContainerObject.ID,
+					ID: gatewayReq.Params.Container.ContainerObject.ID,
 				}
-				if len(rakshaReq.Params.Container.ContainerObject.Skills) > 0 {
-					obj.Skills = make([]AnthropicContainerSkill, len(rakshaReq.Params.Container.ContainerObject.Skills))
-					for i, sk := range rakshaReq.Params.Container.ContainerObject.Skills {
+				if len(gatewayReq.Params.Container.ContainerObject.Skills) > 0 {
+					obj.Skills = make([]AnthropicContainerSkill, len(gatewayReq.Params.Container.ContainerObject.Skills))
+					for i, sk := range gatewayReq.Params.Container.ContainerObject.Skills {
 						obj.Skills[i] = AnthropicContainerSkill{
 							SkillID: sk.SkillID,
 							Type:    sk.Type,
@@ -350,15 +350,15 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		}
 
 		// Top-level CacheControl on the request.
-		if rakshaReq.Params.CacheControl != nil {
-			anthropicReq.CacheControl = rakshaReq.Params.CacheControl
+		if gatewayReq.Params.CacheControl != nil {
+			anthropicReq.CacheControl = gatewayReq.Params.CacheControl
 		}
 
 		// Diagnostics — cache diagnostics opt-in (Anthropic API only). Promote
 		// the raw/typed form from ExtraParams onto the typed field so it is
 		// always serialized (parity with cache_control), not gated behind the
 		// ExtraParams passthrough flag.
-		if dVal := rakshaReq.Params.ExtraParams["diagnostics"]; dVal != nil {
+		if dVal := gatewayReq.Params.ExtraParams["diagnostics"]; dVal != nil {
 			parsed := false
 			switch v := dVal.(type) {
 			case *AnthropicDiagnostics:
@@ -384,11 +384,11 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		// TaskBudget — maps onto output_config.task_budget. If an OutputConfig
 		// already exists (e.g. from structured outputs), attach the budget to
 		// it; otherwise create one.
-		if rakshaReq.Params.TaskBudget != nil {
+		if gatewayReq.Params.TaskBudget != nil {
 			tb := &AnthropicTaskBudget{
-				Type:      rakshaReq.Params.TaskBudget.Type,
-				Total:     rakshaReq.Params.TaskBudget.Total,
-				Remaining: rakshaReq.Params.TaskBudget.Remaining,
+				Type:      gatewayReq.Params.TaskBudget.Type,
+				Total:     gatewayReq.Params.TaskBudget.Total,
+				Remaining: gatewayReq.Params.TaskBudget.Remaining,
 			}
 			if anthropicReq.OutputConfig == nil {
 				anthropicReq.OutputConfig = &AnthropicOutputConfig{}
@@ -397,9 +397,9 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		}
 
 		// MCPServers — mirror the neutral ChatMCPServer[] to AnthropicMCPServerV2[].
-		if len(rakshaReq.Params.MCPServers) > 0 {
-			servers := make([]AnthropicMCPServerV2, len(rakshaReq.Params.MCPServers))
-			for i, s := range rakshaReq.Params.MCPServers {
+		if len(gatewayReq.Params.MCPServers) > 0 {
+			servers := make([]AnthropicMCPServerV2, len(gatewayReq.Params.MCPServers))
+			for i, s := range gatewayReq.Params.MCPServers {
 				servers[i] = AnthropicMCPServerV2{
 					Type:               s.Type,
 					URL:                s.URL,
@@ -409,18 +409,18 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 			}
 			anthropicReq.MCPServers = servers
 		}
-		if rakshaReq.Params.ResponseFormat != nil {
+		if gatewayReq.Params.ResponseFormat != nil {
 			// Vertex and Bedrock Mantle don't accept native structured outputs
 			// (output_config.format), so convert to a tool instead.
-			if rakshaReq.Provider == schemas.Vertex || rakshaReq.Provider == schemas.BedrockMantle {
-				responseFormatTool := convertChatResponseFormatToTool(ctx, rakshaReq.Params)
+			if gatewayReq.Provider == schemas.Vertex || gatewayReq.Provider == schemas.BedrockMantle {
+				responseFormatTool := convertChatResponseFormatToTool(ctx, gatewayReq.Params)
 				if responseFormatTool != nil {
 					anthropicReq.Tools = append(anthropicReq.Tools, *responseFormatTool)
 					// Anthropic rejects forced tool_choice when extended thinking is active.
 					// Skip forcing tool_choice in that case; the model may still call the tool.
-					thinkingEnabled := rakshaReq.Params.Reasoning != nil &&
-						(rakshaReq.Params.Reasoning.MaxTokens != nil ||
-							(rakshaReq.Params.Reasoning.Effort != nil && *rakshaReq.Params.Reasoning.Effort != "none"))
+					thinkingEnabled := gatewayReq.Params.Reasoning != nil &&
+						(gatewayReq.Params.Reasoning.MaxTokens != nil ||
+							(gatewayReq.Params.Reasoning.Effort != nil && *gatewayReq.Params.Reasoning.Effort != "none"))
 					if !thinkingEnabled {
 						anthropicReq.ToolChoice = &AnthropicToolChoice{
 							Type: "tool",
@@ -430,7 +430,7 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 				}
 			} else {
 				// Use GA structured outputs (output_config.format) instead of beta (output_format)
-				outputFormat := convertChatResponseFormatToAnthropicOutputFormat(rakshaReq.Params.ResponseFormat)
+				outputFormat := convertChatResponseFormatToAnthropicOutputFormat(gatewayReq.Params.ResponseFormat)
 				if outputFormat != nil {
 					anthropicReq.OutputConfig = &AnthropicOutputConfig{
 						Format: outputFormat,
@@ -446,7 +446,7 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		//       new path handled by convertServerToolToAnthropic.
 		//   (3) Custom tool (tool.Custom != nil) — not currently forwarded
 		//       to Anthropic; skipped.
-		if rakshaReq.Params.Tools != nil {
+		if gatewayReq.Params.Tools != nil {
 			// Strip server tools the target provider doesn't support per
 			// ProviderFeatures (e.g. web_search on Vertex's non-supporting
 			// model variants, or MCP on Bedrock when this converter is used
@@ -454,7 +454,7 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 			// kept. The dropped set is discarded — "silent strip + continue"
 			// policy per user direction. See Bedrock's convertToolConfig for
 			// the direct-Bedrock-path equivalent.
-			filtered, _ := ValidateChatToolsForProvider(rakshaReq.Params.Tools, rakshaReq.Provider)
+			filtered, _ := ValidateChatToolsForProvider(gatewayReq.Params.Tools, gatewayReq.Provider)
 			tools := make([]AnthropicTool, 0, len(filtered))
 			for _, tool := range filtered {
 				if tool.Function != nil {
@@ -474,10 +474,10 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		}
 
 		// Convert tool choice
-		if rakshaReq.Params.ToolChoice != nil {
+		if gatewayReq.Params.ToolChoice != nil {
 			toolChoice := &AnthropicToolChoice{}
-			if rakshaReq.Params.ToolChoice.ChatToolChoiceStr != nil {
-				switch schemas.ChatToolChoiceType(*rakshaReq.Params.ToolChoice.ChatToolChoiceStr) {
+			if gatewayReq.Params.ToolChoice.ChatToolChoiceStr != nil {
+				switch schemas.ChatToolChoiceType(*gatewayReq.Params.ToolChoice.ChatToolChoiceStr) {
 				case schemas.ChatToolChoiceTypeAny:
 					toolChoice.Type = "any"
 				case schemas.ChatToolChoiceTypeRequired:
@@ -487,12 +487,12 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 				default:
 					toolChoice.Type = "auto"
 				}
-			} else if rakshaReq.Params.ToolChoice.ChatToolChoiceStruct != nil {
-				switch rakshaReq.Params.ToolChoice.ChatToolChoiceStruct.Type {
+			} else if gatewayReq.Params.ToolChoice.ChatToolChoiceStruct != nil {
+				switch gatewayReq.Params.ToolChoice.ChatToolChoiceStruct.Type {
 				case schemas.ChatToolChoiceTypeFunction:
 					toolChoice.Type = "tool"
-					if rakshaReq.Params.ToolChoice.ChatToolChoiceStruct.Function != nil {
-						toolChoice.Name = rakshaReq.Params.ToolChoice.ChatToolChoiceStruct.Function.Name
+					if gatewayReq.Params.ToolChoice.ChatToolChoiceStruct.Function != nil {
+						toolChoice.Name = gatewayReq.Params.ToolChoice.ChatToolChoiceStruct.Function.Name
 					}
 				case schemas.ChatToolChoiceTypeAllowedTools:
 					toolChoice.Type = "any"
@@ -506,14 +506,14 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		}
 
 		// Convert reasoning
-		if rakshaReq.Params.Reasoning != nil {
-			if rakshaReq.Params.Reasoning.MaxTokens != nil {
+		if gatewayReq.Params.Reasoning != nil {
+			if gatewayReq.Params.Reasoning.MaxTokens != nil {
 				if IsAdaptiveOnlyThinkingModel(capModel) {
 					// Opus 4.7+ and Fable/Mythos: budget_tokens removed; adaptive thinking is the only thinking-on mode.
 					anthropicReq.Thinking = &AnthropicThinking{Type: "adaptive"}
 				} else {
-					budgetTokens := *rakshaReq.Params.Reasoning.MaxTokens
-					if *rakshaReq.Params.Reasoning.MaxTokens == -1 {
+					budgetTokens := *gatewayReq.Params.Reasoning.MaxTokens
+					if *gatewayReq.Params.Reasoning.MaxTokens == -1 {
 						// anthropic does not support dynamic reasoning budget like gemini
 						// setting it to default max tokens
 						budgetTokens = MinimumReasoningMaxTokens
@@ -526,8 +526,8 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 						BudgetTokens: schemas.Ptr(budgetTokens),
 					}
 				}
-			} else if rakshaReq.Params.Reasoning.Effort != nil && *rakshaReq.Params.Reasoning.Effort != "none" {
-				effort := MapRakshaEffortToAnthropic(*rakshaReq.Params.Reasoning.Effort)
+			} else if gatewayReq.Params.Reasoning.Effort != nil && *gatewayReq.Params.Reasoning.Effort != "none" {
+				effort := MapGatewayEffortToAnthropic(*gatewayReq.Params.Reasoning.Effort)
 				if SupportsAdaptiveThinking(capModel) {
 					// Opus 4.6+ and Opus 4.7+: adaptive thinking + native effort
 					anthropicReq.Thinking = &AnthropicThinking{Type: "adaptive"}
@@ -545,7 +545,7 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 					}
 				} else {
 					// Older models: budget_tokens only
-					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*rakshaReq.Params.Reasoning.Effort, MinimumReasoningMaxTokens, anthropicReq.MaxTokens)
+					budgetTokens, err := providerUtils.GetBudgetTokensFromReasoningEffort(*gatewayReq.Params.Reasoning.Effort, MinimumReasoningMaxTokens, anthropicReq.MaxTokens)
 					if err != nil {
 						return nil, err
 					}
@@ -574,8 +574,8 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 			// default; default to "summarized" so the text is visible unless
 			// the caller explicitly requests "omitted".
 			if anthropicReq.Thinking != nil && anthropicReq.Thinking.Type != "disabled" {
-				if rakshaReq.Params.Reasoning.Display != nil {
-					anthropicReq.Thinking.Display = rakshaReq.Params.Reasoning.Display
+				if gatewayReq.Params.Reasoning.Display != nil {
+					anthropicReq.Thinking.Display = gatewayReq.Params.Reasoning.Display
 				} else if IsAdaptiveOnlyThinkingModel(capModel) {
 					anthropicReq.Thinking.Display = schemas.Ptr("summarized")
 				}
@@ -583,8 +583,8 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 		}
 
 		// Convert service tier
-		if rakshaReq.Params.ServiceTier != nil {
-			mapped := MapRakshaServiceTierToAnthropicRequest(*rakshaReq.Params.ServiceTier)
+		if gatewayReq.Params.ServiceTier != nil {
+			mapped := MapGatewayServiceTierToAnthropicRequest(*gatewayReq.Params.ServiceTier)
 			anthropicReq.ServiceTier = &mapped
 		}
 	}
@@ -597,7 +597,7 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 	// system message and is emitted as role:"system" in the messages array
 	// (Anthropic API + Opus 4.8+ only).
 	seenConversation := false
-	midConvSystemSupported := SupportsMidConversationSystem(rakshaReq.Provider, capModel)
+	midConvSystemSupported := SupportsMidConversationSystem(gatewayReq.Provider, capModel)
 
 	i := 0
 	for i < len(messages) {
@@ -827,19 +827,19 @@ func ToAnthropicChatRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.Raksh
 	// Strip request- and tool-level fields the target Anthropic-family
 	// provider does not support. Fail-closed tool validation stays in
 	// ValidateToolsForProvider; this is strip-silently for additive fields.
-	stripUnsupportedAnthropicFields(anthropicReq, rakshaReq.Provider, capModel)
+	stripUnsupportedAnthropicFields(anthropicReq, gatewayReq.Provider, capModel)
 
 	return anthropicReq, nil
 }
 
-// ToRakshaChatResponse converts an Anthropic message response to Raksha format
-func (response *AnthropicMessageResponse) ToRakshaChatResponse(ctx *schemas.RakshaContext) *schemas.RakshaChatResponse {
+// ToGatewayChatResponse converts an Anthropic message response to Gateway format
+func (response *AnthropicMessageResponse) ToGatewayChatResponse(ctx *schemas.GatewayContext) *schemas.GatewayChatResponse {
 	if response == nil {
 		return nil
 	}
 
-	// Initialize Raksha response
-	rakshaResponse := &schemas.RakshaChatResponse{
+	// Initialize Gateway response
+	gatewayResponse := &schemas.GatewayChatResponse{
 		ID:      response.ID,
 		Model:   response.Model,
 		Created: int(time.Now().Unix()),
@@ -848,7 +848,7 @@ func (response *AnthropicMessageResponse) ToRakshaChatResponse(ctx *schemas.Raks
 	// Check if we have a structured output tool
 	var structuredOutputToolName string
 	if ctx != nil {
-		if toolName, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok {
+		if toolName, ok := ctx.Value(schemas.GatewayContextKeyStructuredOutputToolName).(string); ok {
 			structuredOutputToolName = toolName
 		}
 	}
@@ -918,7 +918,7 @@ func (response *AnthropicMessageResponse) ToRakshaChatResponse(ctx *schemas.Raks
 			case AnthropicContentBlockTypeThinking:
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index:     len(reasoningDetails),
-					Type:      schemas.RakshaReasoningDetailsTypeText,
+					Type:      schemas.GatewayReasoningDetailsTypeText,
 					Text:      c.Thinking,
 					Signature: c.Signature,
 				})
@@ -969,7 +969,7 @@ func (response *AnthropicMessageResponse) ToRakshaChatResponse(ctx *schemas.Raks
 	}
 
 	// Create choice
-	choice := schemas.RakshaResponseChoice{
+	choice := schemas.GatewayResponseChoice{
 		Index: 0,
 		ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
 			Message:    &message,
@@ -977,12 +977,12 @@ func (response *AnthropicMessageResponse) ToRakshaChatResponse(ctx *schemas.Raks
 		},
 		FinishReason: func() *string {
 			if response.StopReason != "" {
-				mapped := ConvertAnthropicFinishReasonToRaksha(response.StopReason)
+				mapped := ConvertAnthropicFinishReasonToGateway(response.StopReason)
 				// When the structured output tool was folded back into text content, the
 				// stop reason should be "stop", not "tool_calls".
 				if usedStructuredOutputTool && len(toolCalls) == 0 &&
-					mapped == string(schemas.RakshaFinishReasonToolCalls) {
-					mapped = string(schemas.RakshaFinishReasonStop)
+					mapped == string(schemas.GatewayFinishReasonToolCalls) {
+					mapped = string(schemas.GatewayFinishReasonStop)
 				}
 				return &mapped
 			}
@@ -990,7 +990,7 @@ func (response *AnthropicMessageResponse) ToRakshaChatResponse(ctx *schemas.Raks
 		}(),
 	}
 
-	rakshaResponse.Choices = []schemas.RakshaResponseChoice{choice}
+	gatewayResponse.Choices = []schemas.GatewayResponseChoice{choice}
 
 	// Convert usage information
 	if response.Usage != nil {
@@ -1004,92 +1004,92 @@ func (response *AnthropicMessageResponse) ToRakshaChatResponse(ctx *schemas.Raks
 				CachedWriteTokens1h: response.Usage.CacheCreation.Ephemeral1hInputTokens,
 			}
 		}
-		rakshaResponse.Usage = &schemas.RakshaLLMUsage{
+		gatewayResponse.Usage = &schemas.GatewayLLMUsage{
 			PromptTokens:        response.Usage.InputTokens + response.Usage.CacheReadInputTokens + response.Usage.CacheCreationInputTokens,
 			PromptTokensDetails: promptTokensDetails,
 			CompletionTokens:    response.Usage.OutputTokens,
 		}
-		rakshaResponse.Usage.TotalTokens = rakshaResponse.Usage.PromptTokens + rakshaResponse.Usage.CompletionTokens
+		gatewayResponse.Usage.TotalTokens = gatewayResponse.Usage.PromptTokens + gatewayResponse.Usage.CompletionTokens
 		// Forward service tier from usage to response
 		if response.Usage.ServiceTier != nil {
-			mapped := MapAnthropicServiceTierToRaksha(*response.Usage.ServiceTier)
-			rakshaResponse.ServiceTier = &mapped
+			mapped := MapAnthropicServiceTierToGateway(*response.Usage.ServiceTier)
+			gatewayResponse.ServiceTier = &mapped
 		}
 		// Forward the speed actually served (fast mode) — drives fast-mode billing.
 		if response.Usage.Speed != nil {
-			rakshaResponse.Speed = response.Usage.Speed
+			gatewayResponse.Speed = response.Usage.Speed
 		}
 	}
 
 	// Forward cache diagnostics (cache-diagnosis-2026-04-07) — top-level on the
 	// message, not under usage.
 	if response.Diagnostics != nil {
-		rakshaResponse.Diagnostics = response.Diagnostics
+		gatewayResponse.Diagnostics = response.Diagnostics
 	}
 
-	return rakshaResponse
+	return gatewayResponse
 }
 
-// ToAnthropicChatResponse converts a Raksha response to Anthropic format
-func ToAnthropicChatResponse(rakshaResp *schemas.RakshaChatResponse) *AnthropicMessageResponse {
-	if rakshaResp == nil {
+// ToAnthropicChatResponse converts a Gateway response to Anthropic format
+func ToAnthropicChatResponse(gatewayResp *schemas.GatewayChatResponse) *AnthropicMessageResponse {
+	if gatewayResp == nil {
 		return nil
 	}
 
 	anthropicResp := &AnthropicMessageResponse{
-		ID:    rakshaResp.ID,
+		ID:    gatewayResp.ID,
 		Type:  "message",
 		Role:  string(schemas.ChatMessageRoleAssistant),
-		Model: rakshaResp.Model,
+		Model: gatewayResp.Model,
 	}
 
 	// Convert usage information
-	if rakshaResp.Usage != nil {
+	if gatewayResp.Usage != nil {
 		anthropicResp.Usage = &AnthropicUsage{
-			InputTokens:  rakshaResp.Usage.PromptTokens,
-			OutputTokens: rakshaResp.Usage.CompletionTokens,
+			InputTokens:  gatewayResp.Usage.PromptTokens,
+			OutputTokens: gatewayResp.Usage.CompletionTokens,
 		}
 
 		// Cache read/write are now segregated via PromptTokensDetails. We map CachedReadTokens ->
 		// CacheReadInputTokens and CachedWriteTokens -> CacheCreationInputTokens, subtracting each
 		// from InputTokens so the non-cached input count is correct.
-		if rakshaResp.Usage.PromptTokensDetails != nil && rakshaResp.Usage.PromptTokensDetails.CachedReadTokens > 0 {
-			anthropicResp.Usage.CacheReadInputTokens = rakshaResp.Usage.PromptTokensDetails.CachedReadTokens
-			anthropicResp.Usage.InputTokens = anthropicResp.Usage.InputTokens - rakshaResp.Usage.PromptTokensDetails.CachedReadTokens
+		if gatewayResp.Usage.PromptTokensDetails != nil && gatewayResp.Usage.PromptTokensDetails.CachedReadTokens > 0 {
+			anthropicResp.Usage.CacheReadInputTokens = gatewayResp.Usage.PromptTokensDetails.CachedReadTokens
+			anthropicResp.Usage.InputTokens = anthropicResp.Usage.InputTokens - gatewayResp.Usage.PromptTokensDetails.CachedReadTokens
 		}
-		if rakshaResp.Usage.PromptTokensDetails != nil && rakshaResp.Usage.PromptTokensDetails.CachedWriteTokens > 0 {
-			anthropicResp.Usage.CacheCreationInputTokens = rakshaResp.Usage.PromptTokensDetails.CachedWriteTokens
-			anthropicResp.Usage.InputTokens = anthropicResp.Usage.InputTokens - rakshaResp.Usage.PromptTokensDetails.CachedWriteTokens
+		if gatewayResp.Usage.PromptTokensDetails != nil && gatewayResp.Usage.PromptTokensDetails.CachedWriteTokens > 0 {
+			anthropicResp.Usage.CacheCreationInputTokens = gatewayResp.Usage.PromptTokensDetails.CachedWriteTokens
+			anthropicResp.Usage.InputTokens = anthropicResp.Usage.InputTokens - gatewayResp.Usage.PromptTokensDetails.CachedWriteTokens
 		}
-		if rakshaResp.Usage.PromptTokensDetails != nil && rakshaResp.Usage.PromptTokensDetails.CachedWriteTokenDetails != nil {
+		if gatewayResp.Usage.PromptTokensDetails != nil && gatewayResp.Usage.PromptTokensDetails.CachedWriteTokenDetails != nil {
 			anthropicResp.Usage.CacheCreation = AnthropicUsageCacheCreation{
-				Ephemeral5mInputTokens: rakshaResp.Usage.PromptTokensDetails.CachedWriteTokenDetails.CachedWriteTokens5m,
-				Ephemeral1hInputTokens: rakshaResp.Usage.PromptTokensDetails.CachedWriteTokenDetails.CachedWriteTokens1h,
+				Ephemeral5mInputTokens: gatewayResp.Usage.PromptTokensDetails.CachedWriteTokenDetails.CachedWriteTokens5m,
+				Ephemeral1hInputTokens: gatewayResp.Usage.PromptTokensDetails.CachedWriteTokenDetails.CachedWriteTokens1h,
 			}
 		}
 		// Forward service tier
-		if rakshaResp.ServiceTier != nil {
-			mapped := MapRakshaServiceTierToAnthropicResponse(*rakshaResp.ServiceTier)
+		if gatewayResp.ServiceTier != nil {
+			mapped := MapGatewayServiceTierToAnthropicResponse(*gatewayResp.ServiceTier)
 			anthropicResp.Usage.ServiceTier = &mapped
 		}
 		// Forward the speed actually served (fast mode)
-		if rakshaResp.Speed != nil {
-			anthropicResp.Usage.Speed = rakshaResp.Speed
+		if gatewayResp.Speed != nil {
+			anthropicResp.Usage.Speed = gatewayResp.Speed
 		}
 	}
 
 	// Forward cache diagnostics (cache-diagnosis-2026-04-07) — top-level, not under usage.
-	if rakshaResp.Diagnostics != nil {
-		anthropicResp.Diagnostics = rakshaResp.Diagnostics
+	if gatewayResp.Diagnostics != nil {
+		anthropicResp.Diagnostics = gatewayResp.Diagnostics
 	}
 
 	// Convert choices to content
 	var content []AnthropicContentBlock
-	if len(rakshaResp.Choices) > 0 {
-		choice := rakshaResp.Choices[0] // Anthropic typically returns one choice
+	if len(gatewayResp.Choices) > 0 {
+		choice := gatewayResp.Choices[0] // Anthropic typically returns one choice
 
 		if choice.FinishReason != nil {
-			anthropicResp.StopReason = ConvertRakshaFinishReasonToAnthropic(*choice.FinishReason)
+			anthropicResp.StopReason = ConvertGatewayFinishReasonToAnthropic(*choice.FinishReason)
 		}
 		if choice.ChatNonStreamResponseChoice != nil && choice.StopString != nil {
 			anthropicResp.StopSequence = choice.StopString
@@ -1098,7 +1098,7 @@ func ToAnthropicChatResponse(rakshaResp *schemas.RakshaChatResponse) *AnthropicM
 		// Add reasoning content
 		if choice.ChatNonStreamResponseChoice != nil && choice.Message != nil && choice.Message.ChatAssistantMessage != nil && choice.Message.ChatAssistantMessage.ReasoningDetails != nil {
 			for _, reasoningDetail := range choice.Message.ChatAssistantMessage.ReasoningDetails {
-				if reasoningDetail.Type == schemas.RakshaReasoningDetailsTypeText && reasoningDetail.Text != nil &&
+				if reasoningDetail.Type == schemas.GatewayReasoningDetailsTypeText && reasoningDetail.Text != nil &&
 					((reasoningDetail.Text != nil && *reasoningDetail.Text != "") ||
 						(reasoningDetail.Signature != nil && *reasoningDetail.Signature != "")) {
 					content = append(content, AnthropicContentBlock{
@@ -1182,8 +1182,8 @@ func NewAnthropicStreamState() *AnthropicStreamState {
 	}
 }
 
-// ToRakshaChatCompletionStream converts an Anthropic stream event to a Raksha Chat Completion Stream response
-func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.RakshaContext, structuredOutputToolName string, state *AnthropicStreamState) (*schemas.RakshaChatResponse, *schemas.RakshaError, bool) {
+// ToGatewayChatCompletionStream converts an Anthropic stream event to a Gateway Chat Completion Stream response
+func (chunk *AnthropicStreamEvent) ToGatewayChatCompletionStream(ctx *schemas.GatewayContext, structuredOutputToolName string, state *AnthropicStreamState) (*schemas.GatewayChatResponse, *schemas.GatewayError, bool) {
 	if state == nil {
 		state = NewAnthropicStreamState()
 	}
@@ -1198,9 +1198,9 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 	case AnthropicStreamEventTypeMessageStart:
 		if chunk.Message != nil && chunk.Message.Role != "" {
 			role := chunk.Message.Role
-			streamResponse := &schemas.RakshaChatResponse{
+			streamResponse := &schemas.GatewayChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.RakshaResponseChoice{
+				Choices: []schemas.GatewayResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1237,9 +1237,9 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 			state.nextToolCallIndex++
 
 			// Create streaming response with tool call metadata
-			streamResponse := &schemas.RakshaChatResponse{
+			streamResponse := &schemas.GatewayChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.RakshaResponseChoice{
+				Choices: []schemas.GatewayResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1273,9 +1273,9 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 			case AnthropicStreamDeltaTypeText:
 				if chunk.Delta.Text != nil && *chunk.Delta.Text != "" {
 					// Create streaming response for this delta
-					streamResponse := &schemas.RakshaChatResponse{
+					streamResponse := &schemas.GatewayChatResponse{
 						Object: "chat.completion.chunk",
-						Choices: []schemas.RakshaResponseChoice{
+						Choices: []schemas.GatewayResponseChoice{
 							{
 								Index: 0,
 								ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1310,9 +1310,9 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 
 					// Continuation chunks must omit function.type; only the initial
 					// setup chunk declares it (strict OpenAI parsers reject re-declaration).
-					streamResponse := &schemas.RakshaChatResponse{
+					streamResponse := &schemas.GatewayChatResponse{
 						Object: "chat.completion.chunk",
-						Choices: []schemas.RakshaResponseChoice{
+						Choices: []schemas.GatewayResponseChoice{
 							{
 								Index: 0,
 								ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1339,9 +1339,9 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 				if chunk.Delta.Thinking != nil && *chunk.Delta.Thinking != "" {
 					thinkingText := *chunk.Delta.Thinking
 					// Create streaming response for thinking delta
-					streamResponse := &schemas.RakshaChatResponse{
+					streamResponse := &schemas.GatewayChatResponse{
 						Object: "chat.completion.chunk",
-						Choices: []schemas.RakshaResponseChoice{
+						Choices: []schemas.GatewayResponseChoice{
 							{
 								Index: 0,
 								ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1350,7 +1350,7 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 										ReasoningDetails: []schemas.ChatReasoningDetails{
 											{
 												Index: 0,
-												Type:  schemas.RakshaReasoningDetailsTypeText,
+												Type:  schemas.GatewayReasoningDetailsTypeText,
 												Text:  schemas.Ptr(thinkingText),
 											},
 										},
@@ -1366,9 +1366,9 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 			case AnthropicStreamDeltaTypeSignature:
 				if chunk.Delta.Signature != nil && *chunk.Delta.Signature != "" {
 					// Create streaming response for signature delta
-					streamResponse := &schemas.RakshaChatResponse{
+					streamResponse := &schemas.GatewayChatResponse{
 						Object: "chat.completion.chunk",
-						Choices: []schemas.RakshaResponseChoice{
+						Choices: []schemas.GatewayResponseChoice{
 							{
 								Index: 0,
 								ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1376,7 +1376,7 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 										ReasoningDetails: []schemas.ChatReasoningDetails{
 											{
 												Index:     0,
-												Type:      schemas.RakshaReasoningDetailsTypeText,
+												Type:      schemas.GatewayReasoningDetailsTypeText,
 												Signature: chunk.Delta.Signature,
 											},
 										},
@@ -1404,9 +1404,9 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 			delete(state.contentBlockToToolCallIdx, *chunk.Index)
 			delete(state.sawArgsDelta, *chunk.Index)
 			if needsFlush {
-				return &schemas.RakshaChatResponse{
+				return &schemas.GatewayChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.RakshaResponseChoice{
+					Choices: []schemas.GatewayResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -1438,32 +1438,32 @@ func (chunk *AnthropicStreamEvent) ToRakshaChatCompletionStream(ctx *schemas.Rak
 	case AnthropicStreamEventTypeError:
 		if chunk.Error != nil {
 			// Send error through channel before closing
-			rakshaErr := &schemas.RakshaError{
-				IsRakshaError: false,
+			gatewayErr := &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    &chunk.Error.Type,
 					Message: chunk.Error.Message,
 				},
 			}
 
-			return nil, rakshaErr, true
+			return nil, gatewayErr, true
 		}
 	}
 
 	return nil, nil, false
 }
 
-// ToAnthropicChatStreamResponse converts a Raksha streaming response to Anthropic SSE string format
-func ToAnthropicChatStreamResponse(rakshaResp *schemas.RakshaChatResponse) string {
-	if rakshaResp == nil {
+// ToAnthropicChatStreamResponse converts a Gateway streaming response to Anthropic SSE string format
+func ToAnthropicChatStreamResponse(gatewayResp *schemas.GatewayChatResponse) string {
+	if gatewayResp == nil {
 		return ""
 	}
 
 	streamResp := &AnthropicStreamEvent{}
 
 	// Handle different streaming event types based on the response content
-	if len(rakshaResp.Choices) > 0 {
-		choice := rakshaResp.Choices[0] // Anthropic typically returns one choice
+	if len(gatewayResp.Choices) > 0 {
+		choice := gatewayResp.Choices[0] // Anthropic typically returns one choice
 
 		// Handle streaming responses
 		if choice.ChatStreamResponseChoice != nil && choice.ChatStreamResponseChoice.Delta != nil {
@@ -1517,7 +1517,7 @@ func ToAnthropicChatStreamResponse(rakshaResp *schemas.RakshaChatResponse) strin
 				}
 			} else if choice.FinishReason != nil && *choice.FinishReason != "" {
 				// Handle finish reason - map back to Anthropic format
-				stopReason := ConvertRakshaFinishReasonToAnthropic(*choice.FinishReason)
+				stopReason := ConvertGatewayFinishReasonToAnthropic(*choice.FinishReason)
 				streamResp.Type = "message_delta"
 				streamResp.Delta = &AnthropicStreamDelta{
 					Type:       "message_delta",
@@ -1531,10 +1531,10 @@ func ToAnthropicChatStreamResponse(rakshaResp *schemas.RakshaChatResponse) strin
 
 			// Create message start event
 			streamMessage := &AnthropicMessageResponse{
-				ID:    rakshaResp.ID,
+				ID:    gatewayResp.ID,
 				Type:  "message",
 				Role:  string(choice.ChatNonStreamResponseChoice.Message.Role),
-				Model: rakshaResp.Model,
+				Model: gatewayResp.Model,
 			}
 
 			// Convert content
@@ -1548,33 +1548,33 @@ func ToAnthropicChatStreamResponse(rakshaResp *schemas.RakshaChatResponse) strin
 
 			streamMessage.Content = content
 			// Cache diagnostics arrives on message_start (cache-diagnosis-2026-04-07).
-			if rakshaResp.Diagnostics != nil {
-				streamMessage.Diagnostics = rakshaResp.Diagnostics
+			if gatewayResp.Diagnostics != nil {
+				streamMessage.Diagnostics = gatewayResp.Diagnostics
 			}
 			streamResp.Message = streamMessage
 		}
 	}
 
 	// Handle usage information
-	if rakshaResp.Usage != nil {
+	if gatewayResp.Usage != nil {
 		if streamResp.Type == "" {
 			streamResp.Type = "message_delta"
 		}
 		streamResp.Usage = &AnthropicUsage{
-			InputTokens:  rakshaResp.Usage.PromptTokens,
-			OutputTokens: rakshaResp.Usage.CompletionTokens,
+			InputTokens:  gatewayResp.Usage.PromptTokens,
+			OutputTokens: gatewayResp.Usage.CompletionTokens,
 		}
 	}
 
 	// Set common fields
-	if rakshaResp.ID != "" {
-		streamResp.ID = &rakshaResp.ID
+	if gatewayResp.ID != "" {
+		streamResp.ID = &gatewayResp.ID
 	}
-	if rakshaResp.Model != "" {
+	if gatewayResp.Model != "" {
 		if streamResp.Message == nil {
 			streamResp.Message = &AnthropicMessageResponse{}
 		}
-		streamResp.Message.Model = rakshaResp.Model
+		streamResp.Message.Model = gatewayResp.Model
 	}
 
 	// Default to empty content_block_delta if no specific type was set
@@ -1597,9 +1597,9 @@ func ToAnthropicChatStreamResponse(rakshaResp *schemas.RakshaChatResponse) strin
 	return fmt.Sprintf("event: %s\ndata: %s\n\n", streamResp.Type, jsonData)
 }
 
-// ToAnthropicChatStreamError converts a RakshaError to Anthropic streaming error in SSE format
-func ToAnthropicChatStreamError(rakshaErr *schemas.RakshaError) string {
-	errorResp := ToAnthropicChatCompletionError(rakshaErr)
+// ToAnthropicChatStreamError converts a GatewayError to Anthropic streaming error in SSE format
+func ToAnthropicChatStreamError(gatewayErr *schemas.GatewayError) string {
+	errorResp := ToAnthropicChatCompletionError(gatewayErr)
 	if errorResp == nil {
 		return ""
 	}

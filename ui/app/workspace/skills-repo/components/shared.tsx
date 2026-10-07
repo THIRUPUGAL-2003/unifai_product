@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tree, type BaseNodeData, type TreeNode } from "@/components/ui/treeView";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { SkillFileEntry } from "@/lib/types/skills";
 import { cn } from "@/lib/utils";
 import { getApiBaseUrl } from "@/lib/utils/port";
@@ -465,7 +466,7 @@ export function SkillMarkdown({
 				<DialogContent>
 					<DialogHeader>
 						<DialogTitle>Open external link?</DialogTitle>
-						<DialogDescription>This link opens outside Raksha in a new browser tab.</DialogDescription>
+						<DialogDescription>This link opens outside {PRODUCT_NAME} in a new browser tab.</DialogDescription>
 					</DialogHeader>
 					<div className="bg-muted/40 rounded-sm border px-3 py-2">
 						<p className="truncate text-sm font-medium">{externalLink?.label}</p>

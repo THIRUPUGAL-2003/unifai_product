@@ -3,20 +3,20 @@ package bedrock
 import (
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 const estimatedBytesPerToken = 4
 
-// ToRakshaCountTokensResponse converts a Bedrock count tokens response to Raksha format
-func (resp *BedrockCountTokensResponse) ToRakshaCountTokensResponse(model string) *schemas.RakshaCountTokensResponse {
+// ToGatewayCountTokensResponse converts a Bedrock count tokens response to Gateway format
+func (resp *BedrockCountTokensResponse) ToGatewayCountTokensResponse(model string) *schemas.GatewayCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
 
 	totalTokens := resp.InputTokens
 
-	return &schemas.RakshaCountTokensResponse{
+	return &schemas.GatewayCountTokensResponse{
 		Model:       model,
 		InputTokens: resp.InputTokens,
 		TotalTokens: &totalTokens,
@@ -24,8 +24,8 @@ func (resp *BedrockCountTokensResponse) ToRakshaCountTokensResponse(model string
 	}
 }
 
-// ToBedrockCountTokensResponse converts a Raksha count tokens response to Bedrock native format
-func ToBedrockCountTokensResponse(resp *schemas.RakshaCountTokensResponse) *BedrockCountTokensResponse {
+// ToBedrockCountTokensResponse converts a Gateway count tokens response to Bedrock native format
+func ToBedrockCountTokensResponse(resp *schemas.GatewayCountTokensResponse) *BedrockCountTokensResponse {
 	if resp == nil {
 		return nil
 	}
@@ -35,9 +35,9 @@ func ToBedrockCountTokensResponse(resp *schemas.RakshaCountTokensResponse) *Bedr
 	}
 }
 
-// isCountTokensUnsupported checks whether a RakshaError indicates that the
+// isCountTokensUnsupported checks whether a GatewayError indicates that the
 // Bedrock model does not support the count-tokens operation.
-func isCountTokensUnsupported(err *schemas.RakshaError) bool {
+func isCountTokensUnsupported(err *schemas.GatewayError) bool {
 	if err == nil || err.Error == nil {
 		return false
 	}

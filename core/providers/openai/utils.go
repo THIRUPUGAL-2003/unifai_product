@@ -3,25 +3,25 @@ package openai
 import (
 	"strings"
 
-	"github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// CustomResponseHandler is a function that produces a Raksha response from a Raksha request.
-// T is the concrete Raksha response type (e.g. RakshaEmbeddingResponse, RakshaTextCompletionResponse, RakshaChatResponse, RakshaResponsesResponse, RakshaImageGenerationResponse, RakshaTranscriptionResponse).
-type responseHandler[T any] func(responseBody []byte, response *T, requestBody []byte, sendBackRawRequest bool, sendBackRawResponse bool) (rawRequest interface{}, rawResponse interface{}, rakshaErr *schemas.RakshaError)
+// CustomResponseHandler is a function that produces a Gateway response from a Gateway request.
+// T is the concrete Gateway response type (e.g. GatewayEmbeddingResponse, GatewayTextCompletionResponse, GatewayChatResponse, GatewayResponsesResponse, GatewayImageGenerationResponse, GatewayTranscriptionResponse).
+type responseHandler[T any] func(responseBody []byte, response *T, requestBody []byte, sendBackRawRequest bool, sendBackRawResponse bool) (rawRequest interface{}, rawResponse interface{}, gatewayErr *schemas.GatewayError)
 
-func ConvertOpenAIMessagesToRakshaMessages(messages []OpenAIMessage) []schemas.ChatMessage {
-	rakshaMessages := make([]schemas.ChatMessage, len(messages))
+func ConvertOpenAIMessagesToGatewayMessages(messages []OpenAIMessage) []schemas.ChatMessage {
+	gatewayMessages := make([]schemas.ChatMessage, len(messages))
 	for i, message := range messages {
-		rakshaMessages[i] = schemas.ChatMessage{
+		gatewayMessages[i] = schemas.ChatMessage{
 			Name:            message.Name,
 			Role:            message.Role,
 			Content:         message.Content,
 			ChatToolMessage: message.ChatToolMessage,
 		}
 		if message.OpenAIChatAssistantMessage != nil {
-			rakshaMessages[i].ChatAssistantMessage = &schemas.ChatAssistantMessage{
+			gatewayMessages[i].ChatAssistantMessage = &schemas.ChatAssistantMessage{
 				Refusal:     message.OpenAIChatAssistantMessage.Refusal,
 				Reasoning:   message.OpenAIChatAssistantMessage.Reasoning,
 				Annotations: message.OpenAIChatAssistantMessage.Annotations,
@@ -29,10 +29,10 @@ func ConvertOpenAIMessagesToRakshaMessages(messages []OpenAIMessage) []schemas.C
 			}
 		}
 	}
-	return rakshaMessages
+	return gatewayMessages
 }
 
-func ConvertRakshaMessagesToOpenAIMessages(messages []schemas.ChatMessage) []OpenAIMessage {
+func ConvertGatewayMessagesToOpenAIMessages(messages []schemas.ChatMessage) []OpenAIMessage {
 	openaiMessages := make([]OpenAIMessage, len(messages))
 	for i, message := range messages {
 		openaiMessages[i] = OpenAIMessage{

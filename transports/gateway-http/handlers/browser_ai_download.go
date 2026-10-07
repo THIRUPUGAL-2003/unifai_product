@@ -12,46 +12,66 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/framework/logstore"
+	"github.com/gateway/gateway/framework/logstore"
 	"github.com/valyala/fasthttp"
 )
 
 func browserAISetupCandidates() map[string][]string {
 	return map[string][]string{
-		"Raksha_Guard_Setup.exe": {
-			filepath.Join("apps", "browser-guard", "release", "Raksha_Guard_Setup.exe"),
-			filepath.Join("release", "Raksha_Guard_Setup.exe"),
-			"/app/release/Raksha_Guard_Setup.exe",
-			"/app/apps/browser-guard/release/Raksha_Guard_Setup.exe",
+		"Gateway_Guard_Setup.exe": {
+			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard_Setup.exe"),
+			filepath.Join("release", "Gateway_Guard_Setup.exe"),
+			"/app/release/Gateway_Guard_Setup.exe",
+			"/app/apps/browser-guard/release/Gateway_Guard_Setup.exe",
+			// Legacy filenames still on some fleet hosts
+			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard_Setup.exe"),
+			filepath.Join("release", "Gateway_Guard_Setup.exe"),
+			"/app/release/Gateway_Guard_Setup.exe",
 		},
 		// Portable EXE (latest PyInstaller build) — preferred when newer than Setup.exe.
-		"Raksha_Guard.exe": {
-			filepath.Join("apps", "browser-guard", "release", "Raksha_Guard.exe"),
-			filepath.Join("apps", "browser-guard", "dist", "Raksha_Guard.exe"),
-			filepath.Join("release", "Raksha_Guard.exe"),
-			"/app/release/Raksha_Guard.exe",
-			"/app/apps/browser-guard/release/Raksha_Guard.exe",
+		"Gateway_Guard.exe": {
+			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard.exe"),
+			filepath.Join("apps", "browser-guard", "dist", "Gateway_Guard.exe"),
+			filepath.Join("release", "Gateway_Guard.exe"),
+			"/app/release/Gateway_Guard.exe",
+			"/app/apps/browser-guard/release/Gateway_Guard.exe",
+			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard.exe"),
+			filepath.Join("apps", "browser-guard", "dist", "Gateway_Guard.exe"),
+			filepath.Join("release", "Gateway_Guard.exe"),
+			"/app/release/Gateway_Guard.exe",
 		},
 		// macOS employee package (PyInstaller .app + install/uninstall scripts).
-		"Raksha_Guard_macOS.zip": {
-			filepath.Join("apps", "browser-guard", "release", "Raksha_Guard_macOS.zip"),
-			filepath.Join("release", "Raksha_Guard_macOS.zip"),
-			"/app/release/Raksha_Guard_macOS.zip",
-			"/app/apps/browser-guard/release/Raksha_Guard_macOS.zip",
+		"Gateway_Guard_macOS.zip": {
+			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard_macOS.zip"),
+			filepath.Join("release", "Gateway_Guard_macOS.zip"),
+			"/app/release/Gateway_Guard_macOS.zip",
+			"/app/apps/browser-guard/release/Gateway_Guard_macOS.zip",
+			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard_macOS.zip"),
+			filepath.Join("release", "Gateway_Guard_macOS.zip"),
+			"/app/release/Gateway_Guard_macOS.zip",
 		},
 		// macOS product installer package (.pkg setup wizard)
-		"Raksha_Guard_Setup.pkg": {
-			filepath.Join("apps", "browser-guard", "release", "Raksha_Guard_Setup.pkg"),
-			filepath.Join("release", "Raksha_Guard_Setup.pkg"),
-			"/app/release/Raksha_Guard_Setup.pkg",
-			"/app/apps/browser-guard/release/Raksha_Guard_Setup.pkg",
+		"Gateway_Guard_Setup.pkg": {
+			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard_Setup.pkg"),
+			filepath.Join("release", "Gateway_Guard_Setup.pkg"),
+			"/app/release/Gateway_Guard_Setup.pkg",
+			"/app/apps/browser-guard/release/Gateway_Guard_Setup.pkg",
+			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard_Setup.pkg"),
+			filepath.Join("release", "Gateway_Guard_Setup.pkg"),
+			"/app/release/Gateway_Guard_Setup.pkg",
 		},
-		"raksha_guard_config.json": {
-			filepath.Join("apps", "browser-guard", "release", "raksha_guard_config.json"),
-			filepath.Join("apps", "browser-guard", "config", "raksha_guard_config.json"),
-			filepath.Join("release", "raksha_guard_config.json"),
-			"/app/release/raksha_guard_config.json",
-			"/app/apps/browser-guard/release/raksha_guard_config.json",
+		"gateway_guard_config.json": {
+			filepath.Join("apps", "browser-guard", "release", "gateway_guard_config.json"),
+			filepath.Join("apps", "browser-guard", "config", "gateway_guard_config.json"),
+			filepath.Join("release", "gateway_guard_config.json"),
+			"/app/release/gateway_guard_config.json",
+			"/app/apps/browser-guard/release/gateway_guard_config.json",
+			filepath.Join("apps", "browser-guard", "release", "gateway_guard_config.json"),
+			filepath.Join("apps", "browser-guard", "config", "gateway_guard_config.json"),
+			filepath.Join("release", "gateway_guard_config.json"),
+			"/app/release/gateway_guard_config.json",
+			"/app/gateway_guard_config.json",
+			"/app/gateway_guard_config.json",
 		},
 		"INSTALL_WINDOWS.txt": {
 			filepath.Join("apps", "browser-guard", "release", "INSTALL_WINDOWS.txt"),
@@ -78,19 +98,19 @@ func browserAISetupCandidates() map[string][]string {
 			"/app/release/EMPLOYEE_README_MAC.txt",
 			"/app/apps/browser-guard/release/EMPLOYEE_README_MAC.txt",
 		},
-		"Install_Raksha_Guard.command": {
-			filepath.Join("apps", "browser-guard", "release", "Install_Raksha_Guard.command"),
-			filepath.Join("apps", "browser-guard", "installer", "Install_Raksha_Guard.command"),
-			filepath.Join("release", "Install_Raksha_Guard.command"),
-			"/app/release/Install_Raksha_Guard.command",
-			"/app/apps/browser-guard/release/Install_Raksha_Guard.command",
+		"Install_Gateway_Guard.command": {
+			filepath.Join("apps", "browser-guard", "release", "Install_Gateway_Guard.command"),
+			filepath.Join("apps", "browser-guard", "installer", "Install_Gateway_Guard.command"),
+			filepath.Join("release", "Install_Gateway_Guard.command"),
+			"/app/release/Install_Gateway_Guard.command",
+			"/app/apps/browser-guard/release/Install_Gateway_Guard.command",
 		},
-		"Uninstall_Raksha_Guard.command": {
-			filepath.Join("apps", "browser-guard", "release", "Uninstall_Raksha_Guard.command"),
-			filepath.Join("apps", "browser-guard", "installer", "Uninstall_Raksha_Guard.command"),
-			filepath.Join("release", "Uninstall_Raksha_Guard.command"),
-			"/app/release/Uninstall_Raksha_Guard.command",
-			"/app/apps/browser-guard/release/Uninstall_Raksha_Guard.command",
+		"Uninstall_Gateway_Guard.command": {
+			filepath.Join("apps", "browser-guard", "release", "Uninstall_Gateway_Guard.command"),
+			filepath.Join("apps", "browser-guard", "installer", "Uninstall_Gateway_Guard.command"),
+			filepath.Join("release", "Uninstall_Gateway_Guard.command"),
+			"/app/release/Uninstall_Gateway_Guard.command",
+			"/app/apps/browser-guard/release/Uninstall_Gateway_Guard.command",
 		},
 		"VERSION.txt": {
 			filepath.Join("apps", "browser-guard", "release", "VERSION.txt"),
@@ -98,36 +118,36 @@ func browserAISetupCandidates() map[string][]string {
 			"/app/release/VERSION.txt",
 			"/app/apps/browser-guard/release/VERSION.txt",
 		},
-		"Update_Raksha_Guard.ps1": {
-			filepath.Join("apps", "browser-guard", "release", "Update_Raksha_Guard.ps1"),
-			filepath.Join("release", "Update_Raksha_Guard.ps1"),
-			"/app/release/Update_Raksha_Guard.ps1",
-			"/app/apps/browser-guard/release/Update_Raksha_Guard.ps1",
+		"Update_Gateway_Guard.ps1": {
+			filepath.Join("apps", "browser-guard", "release", "Update_Gateway_Guard.ps1"),
+			filepath.Join("release", "Update_Gateway_Guard.ps1"),
+			"/app/release/Update_Gateway_Guard.ps1",
+			"/app/apps/browser-guard/release/Update_Gateway_Guard.ps1",
 		},
-		"Uninstall_Raksha_Guard.bat": {
-			filepath.Join("apps", "browser-guard", "release", "Uninstall_Raksha_Guard.bat"),
-			filepath.Join("apps", "browser-guard", "installer", "Uninstall_Raksha_Guard.bat"),
-			filepath.Join("release", "Uninstall_Raksha_Guard.bat"),
-			"/app/release/Uninstall_Raksha_Guard.bat",
-			"/app/apps/browser-guard/release/Uninstall_Raksha_Guard.bat",
+		"Uninstall_Gateway_Guard.bat": {
+			filepath.Join("apps", "browser-guard", "release", "Uninstall_Gateway_Guard.bat"),
+			filepath.Join("apps", "browser-guard", "installer", "Uninstall_Gateway_Guard.bat"),
+			filepath.Join("release", "Uninstall_Gateway_Guard.bat"),
+			"/app/release/Uninstall_Gateway_Guard.bat",
+			"/app/apps/browser-guard/release/Uninstall_Gateway_Guard.bat",
 		},
-		"Update_Raksha_Guard_macOS.command": {
-			filepath.Join("apps", "browser-guard", "release", "Update_Raksha_Guard_macOS.command"),
-			filepath.Join("release", "Update_Raksha_Guard_macOS.command"),
-			"/app/release/Update_Raksha_Guard_macOS.command",
-			"/app/apps/browser-guard/release/Update_Raksha_Guard_macOS.command",
+		"Update_Gateway_Guard_macOS.command": {
+			filepath.Join("apps", "browser-guard", "release", "Update_Gateway_Guard_macOS.command"),
+			filepath.Join("release", "Update_Gateway_Guard_macOS.command"),
+			"/app/release/Update_Gateway_Guard_macOS.command",
+			"/app/apps/browser-guard/release/Update_Gateway_Guard_macOS.command",
 		},
 	}
 }
 
 // macZipHelperScripts are top-level helpers every macOS download must carry; they are
-// added from release/ when an older Raksha_Guard_macOS.zip was built without them.
-var macZipHelperScripts = []string{"Update_Raksha_Guard_macOS.command"}
+// added from release/ when an older Gateway_Guard_macOS.zip was built without them.
+var macZipHelperScripts = []string{"Update_Gateway_Guard_macOS.command"}
 
 // writeMacZipWithHelpers re-streams the macOS package without recompressing it, restores
 // the executable bit that Windows-built ZIPs (Compress-Archive) drop on .command files and
 // the .app binary, and appends any missing helper scripts from release/. A non-nil config
-// replaces the top-level raksha_guard_config.json that the install script copies into place.
+// replaces the top-level gateway_guard_config.json that the install script copies into place.
 func writeMacZipWithHelpers(w io.Writer, zipPath string, config []byte) error {
 	zr, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -243,7 +263,7 @@ func readGuardReleaseVersion() string {
 	// Fallback: parse AGENT_VERSION / AGENT_VERSION_BAKED from source when VERSION.txt missing.
 	for _, agentPy := range []string{
 		filepath.Join("apps", "browser-guard", "agent", "agent_config.py"),
-		filepath.Join("apps", "browser-guard", "agent", "raksha_agent.py"),
+		filepath.Join("apps", "browser-guard", "agent", "gateway_agent.py"),
 	} {
 		data, err := os.ReadFile(agentPy)
 		if err != nil {
@@ -270,8 +290,8 @@ func readGuardReleaseVersion() string {
 // must advertise the .app plist version so fleets do not enter an infinite update loop.
 func readGuardMacReleaseVersion() string {
 	for _, p := range []string{
-		filepath.Join("apps", "browser-guard", "release", "Raksha_Guard.app", "Contents", "Info.plist"),
-		filepath.Join("release", "Raksha_Guard.app", "Contents", "Info.plist"),
+		filepath.Join("apps", "browser-guard", "release", "Gateway_Guard.app", "Contents", "Info.plist"),
+		filepath.Join("release", "Gateway_Guard.app", "Contents", "Info.plist"),
 	} {
 		data, err := os.ReadFile(p)
 		if err != nil {
@@ -295,8 +315,8 @@ func readGuardMacReleaseVersion() string {
 	}
 	// Sidecar written by package_macos.ps1
 	for _, p := range []string{
-		filepath.Join("apps", "browser-guard", "release", "Raksha_Guard.app", "Contents", "Resources", "VERSION.txt"),
-		filepath.Join("release", "Raksha_Guard.app", "Contents", "Resources", "VERSION.txt"),
+		filepath.Join("apps", "browser-guard", "release", "Gateway_Guard.app", "Contents", "Resources", "VERSION.txt"),
+		filepath.Join("release", "Gateway_Guard.app", "Contents", "Resources", "VERSION.txt"),
 	} {
 		data, err := os.ReadFile(p)
 		if err != nil {
@@ -343,14 +363,14 @@ func guardPackageInfo() map[string]any {
 		"macos_ready":   false,
 		"can_rebuild":   guardRebuildAvailable(),
 	}
-	if p, ok := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_Setup.exe"]); ok {
+	if p, ok := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_Setup.exe"]); ok {
 		info["windows_ready"] = true
 		info["windows_built_at"] = fileModTime(p)
-	} else if p, ok := findFirstExisting(browserAISetupCandidates()["Raksha_Guard.exe"]); ok {
+	} else if p, ok := findFirstExisting(browserAISetupCandidates()["Gateway_Guard.exe"]); ok {
 		info["windows_ready"] = true
 		info["windows_built_at"] = fileModTime(p)
 	}
-	if p, ok := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_macOS.zip"]); ok {
+	if p, ok := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_macOS.zip"]); ok {
 		info["macos_ready"] = true
 		info["macos_built_at"] = fileModTime(p)
 	}
@@ -404,21 +424,21 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_Setup.exe"])
-	exePath, exeOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard.exe"])
-	macZipPath, macZipOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_macOS.zip"])
+	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_Setup.exe"])
+	exePath, exeOK := findFirstExisting(browserAISetupCandidates()["Gateway_Guard.exe"])
+	macZipPath, macZipOK := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_macOS.zip"])
 	winVer := readGuardReleaseVersion()
 	macVer := readGuardMacReleaseVersion()
 
 	// 1. MAC DEDICATED DOWNLOAD
 	if platform == "mac" || platform == "macos" || platform == "darwin" {
 		if !macZipOK {
-			SendError(ctx, fasthttp.StatusNotFound, "No macOS Guard installer on server — upload Raksha_Guard_macOS.zip to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
+			SendError(ctx, fasthttp.StatusNotFound, "No macOS Guard installer on server — upload Gateway_Guard_macOS.zip to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
 			return
 		}
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/zip")
-		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Raksha_Guard_macOS.zip"`)
+		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Gateway_Guard_macOS.zip"`)
 		if macVer != "" {
 			setGuardVersionHeaders(ctx, macVer)
 		}
@@ -432,26 +452,26 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	// 2. WINDOWS DEDICATED DOWNLOAD
 	if platform == "windows" || platform == "win" {
 		if !setupOK && !exeOK {
-			SendError(ctx, fasthttp.StatusNotFound, "No Windows Guard installer on server — upload Raksha_Guard_Setup.exe or Raksha_Guard.exe to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
+			SendError(ctx, fasthttp.StatusNotFound, "No Windows Guard installer on server — upload Gateway_Guard_Setup.exe or Gateway_Guard.exe to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
 			return
 		}
 		// Always ship BOTH when present: Setup (Inno install) + portable EXE.
 		// INSTALL_WINDOWS.txt tells employees to prefer newer EXE if Setup is older.
 		var winAssets []zipAsset
 		if setupOK {
-			winAssets = append(winAssets, zipAsset{name: "Raksha_Guard_Setup.exe", path: setupPath})
+			winAssets = append(winAssets, zipAsset{name: "Gateway_Guard_Setup.exe", path: setupPath})
 		}
 		if exeOK {
-			winAssets = append(winAssets, zipAsset{name: "Raksha_Guard.exe", path: exePath})
+			winAssets = append(winAssets, zipAsset{name: "Gateway_Guard.exe", path: exePath})
 		}
-		for _, name := range []string{"INSTALL_WINDOWS.txt", "VERSION.txt", "raksha_guard_config.json", "Update_Raksha_Guard.ps1"} {
+		for _, name := range []string{"INSTALL_WINDOWS.txt", "VERSION.txt", "gateway_guard_config.json", "Update_Gateway_Guard.ps1"} {
 			if p, ok := findFirstExisting(browserAISetupCandidates()[name]); ok {
 				winAssets = append(winAssets, zipAsset{name: name, path: p})
 			}
 		}
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/zip")
-		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Raksha_Guard_Windows.zip"`)
+		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Gateway_Guard_Windows.zip"`)
 		if winVer != "" {
 			setGuardVersionHeaders(ctx, winVer)
 		}
@@ -488,25 +508,25 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 
 	var assets []zipAsset
 	if setupOK {
-		assets = append(assets, zipAsset{name: "Raksha_Guard_Setup.exe", path: setupPath})
+		assets = append(assets, zipAsset{name: "Gateway_Guard_Setup.exe", path: setupPath})
 	}
 	if exeOK {
-		assets = append(assets, zipAsset{name: "Raksha_Guard.exe", path: exePath})
+		assets = append(assets, zipAsset{name: "Gateway_Guard.exe", path: exePath})
 	}
 	if macZipOK {
-		assets = append(assets, zipAsset{name: "Raksha_Guard_macOS.zip", path: macZipPath})
+		assets = append(assets, zipAsset{name: "Gateway_Guard_macOS.zip", path: macZipPath})
 	}
 	for _, name := range []string{
 		"INSTALL_WINDOWS.txt",
 		"INSTALL_MACOS.txt",
 		"UNINSTALL_MACOS.txt",
 		"EMPLOYEE_README_MAC.txt",
-		"Install_Raksha_Guard.command",
-		"Uninstall_Raksha_Guard.command",
-		"Update_Raksha_Guard_macOS.command",
-		"Update_Raksha_Guard.ps1",
+		"Install_Gateway_Guard.command",
+		"Uninstall_Gateway_Guard.command",
+		"Update_Gateway_Guard_macOS.command",
+		"Update_Gateway_Guard.ps1",
 		"VERSION.txt",
-		"raksha_guard_config.json",
+		"gateway_guard_config.json",
 	} {
 		if path, ok := findFirstExisting(browserAISetupCandidates()[name]); ok {
 			assets = append(assets, zipAsset{name: name, path: path})
@@ -516,7 +536,7 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	hasWindows := setupOK || exeOK
 	hasMac := macZipOK
 	if !hasWindows && !hasMac {
-		SendError(ctx, fasthttp.StatusNotFound, "No Guard installer on server — add Raksha_Guard.exe / Raksha_Guard_Setup.exe and/or Raksha_Guard_macOS.zip under apps/browser-guard/release/")
+		SendError(ctx, fasthttp.StatusNotFound, "No Guard installer on server — add Gateway_Guard.exe / Gateway_Guard_Setup.exe and/or Gateway_Guard_macOS.zip under apps/browser-guard/release/")
 		return
 	}
 	if len(assets) == 0 {
@@ -526,7 +546,7 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/zip")
-	ctx.Response.Header.Set("Content-Disposition", `attachment; filename="raksha-browser-ai-setup.zip"`)
+	ctx.Response.Header.Set("Content-Disposition", `attachment; filename="gateway-browser-ai-setup.zip"`)
 	if winVer != "" {
 		setGuardVersionHeaders(ctx, winVer)
 	}
@@ -642,10 +662,10 @@ func (h *BrowserAIHandler) rebuildSetupPackages(ctx *fasthttp.RequestCtx) {
 	started := time.Now()
 
 	_, winOK := findFirstExisting(append(
-		browserAISetupCandidates()["Raksha_Guard_Setup.exe"],
-		browserAISetupCandidates()["Raksha_Guard.exe"]...,
+		browserAISetupCandidates()["Gateway_Guard_Setup.exe"],
+		browserAISetupCandidates()["Gateway_Guard.exe"]...,
 	))
-	_, macOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_macOS.zip"])
+	_, macOK := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_macOS.zip"])
 
 	publishScript, scriptOK := findFirstExisting([]string{
 		filepath.Join("apps", "browser-guard", "scripts", "publish_fleet_packages.py"),
@@ -737,14 +757,14 @@ func (h *BrowserAIHandler) rebuildSetupPackages(ctx *fasthttp.RequestCtx) {
 	macVer := readGuardMacReleaseVersion()
 	serverDomain := os.Getenv("SERVER_DOMAIN")
 	if serverDomain == "" {
-		serverDomain = os.Getenv("RAKSHA_BACKEND_URL")
+		serverDomain = gatewayEnv("BACKEND_URL")
 	}
 
 	_, winOK = findFirstExisting(append(
-		browserAISetupCandidates()["Raksha_Guard_Setup.exe"],
-		browserAISetupCandidates()["Raksha_Guard.exe"]...,
+		browserAISetupCandidates()["Gateway_Guard_Setup.exe"],
+		browserAISetupCandidates()["Gateway_Guard.exe"]...,
 	))
-	_, macOK = findFirstExisting(browserAISetupCandidates()["Raksha_Guard_macOS.zip"])
+	_, macOK = findFirstExisting(browserAISetupCandidates()["Gateway_Guard_macOS.zip"])
 	bundle, bundleMsg := publishProxyBundleSummary()
 
 	resp := map[string]any{
@@ -771,14 +791,14 @@ func (h *BrowserAIHandler) rebuildSetupPackages(ctx *fasthttp.RequestCtx) {
 }
 
 func (h *BrowserAIHandler) downloadSetupExe(ctx *fasthttp.RequestCtx) {
-	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()["Raksha_Guard_Setup.exe"])
+	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_Setup.exe"])
 	if !setupOK {
-		setupPath, setupOK = findFirstExisting(browserAISetupCandidates()["Raksha_Guard.exe"])
+		setupPath, setupOK = findFirstExisting(browserAISetupCandidates()["Gateway_Guard.exe"])
 	}
 	if !setupOK {
 		SendError(ctx, fasthttp.StatusNotFound, "Windows Guard installer (.exe) not found on server")
 		return
 	}
-	ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Raksha_Guard_Setup.exe"`)
+	ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Gateway_Guard_Setup.exe"`)
 	ctx.SendFile(setupPath)
 }

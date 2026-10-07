@@ -6,10 +6,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/cluster"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/loadbalancer"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/cluster"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/loadbalancer"
 	"github.com/valyala/fasthttp"
 )
 

@@ -3,7 +3,7 @@ package runway
 import (
 	"strings"
 
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // getRunwayEndpoint determines which Runway API endpoint to use based on the request parameters.
@@ -11,7 +11,7 @@ import (
 // - /v1/text_to_video: when only text prompt is provided
 // - /v1/video_to_video: when video URI is provided
 // - /v1/image_to_video: when image input reference is provided
-func getRunwayEndpoint(req *schemas.RakshaVideoGenerationRequest) string {
+func getRunwayEndpoint(req *schemas.GatewayVideoGenerationRequest) string {
 	if req.Params != nil && req.Params.VideoURI != nil && *req.Params.VideoURI != "" {
 		return "/v1/video_to_video"
 	}

@@ -8,9 +8,9 @@ import (
 	"sync"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/raksha/raksha/core/schemas"
-	configtables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	configtables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -36,7 +36,7 @@ func mcpJWTPublicKey(signingKey *configtables.OAuth2SigningKey) (*rsa.PublicKey,
 	return pubKey, nil
 }
 
-// jwtMCPClaims are the custom claims embedded in Raksha-issued /mcp JWTs.
+// jwtMCPClaims are the custom claims embedded in Gateway-issued /mcp JWTs.
 type jwtMCPClaims struct {
 	jwt.RegisteredClaims
 	BfMode string `json:"uf_mode"` // user | vk | session
@@ -64,7 +64,7 @@ func extractBearerJWT(ctx *fasthttp.RequestCtx) string {
 	return token
 }
 
-// verifyMCPJWT parses and verifies a Raksha-issued JWT for the /mcp endpoint.
+// verifyMCPJWT parses and verifies a Gateway-issued JWT for the /mcp endpoint.
 // It validates the RS256 signature using the supplied signing key, checks the
 // audience matches the canonical /mcp resource URL (RFC 8707), and returns
 // the verified claims. The caller provides the signing key (typically from a
@@ -125,28 +125,28 @@ func verifyMCPJWT(ctx *fasthttp.RequestCtx, rawToken string, store *lib.Config, 
 // mirroring what header auth sets today so everything downstream (governance,
 // per-user upstream OAuth, tool-group filtering) works unchanged.
 //
-// uf_mode=user    → RakshaContextKeyUserID
-// uf_mode=vk      → RakshaContextKeyVirtualKey (governance derives the VK row ID from it)
-// uf_mode=session → RakshaContextKeyMCPSessionID
-func injectJWTContext(rakshaCtx *schemas.RakshaContext, claims *jwtMCPClaims, vk *configtables.TableVirtualKey) error {
+// uf_mode=user    → GatewayContextKeyUserID
+// uf_mode=vk      → GatewayContextKeyVirtualKey (governance derives the VK row ID from it)
+// uf_mode=session → GatewayContextKeyMCPSessionID
+func injectJWTContext(gatewayCtx *schemas.GatewayContext, claims *jwtMCPClaims, vk *configtables.TableVirtualKey) error {
 	sub := claims.Subject
 	if sub == "" {
 		return fmt.Errorf("JWT missing sub claim")
 	}
 	switch schemas.MCPAuthMode(claims.BfMode) {
 	case schemas.MCPAuthModeUser:
-		rakshaCtx.SetValue(schemas.RakshaContextKeyUserID, sub)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyUserID, sub)
 	case schemas.MCPAuthModeVK:
 		if vk == nil {
 			return fmt.Errorf("VK not provided for vk-mode JWT injection")
 		}
 		// Set the VK value only. Governance's PreMCPConnectionHook resolves it to
-		// the VK row ID (RakshaContextKeyGovernanceVirtualKeyID) on the connect
+		// the VK row ID (GatewayContextKeyGovernanceVirtualKeyID) on the connect
 		// path before the per-user credential resolver needs it — the same way the
 		// x-uf-vk header path does, which never stamps the row ID at ingress either.
-		rakshaCtx.SetValue(schemas.RakshaContextKeyVirtualKey, vk.Value.GetValue())
+		gatewayCtx.SetValue(schemas.GatewayContextKeyVirtualKey, vk.Value.GetValue())
 	case schemas.MCPAuthModeSession:
-		rakshaCtx.SetValue(schemas.RakshaContextKeyMCPSessionID, sub)
+		gatewayCtx.SetValue(schemas.GatewayContextKeyMCPSessionID, sub)
 	default:
 		return fmt.Errorf("unknown uf_mode %q in JWT", claims.BfMode)
 	}

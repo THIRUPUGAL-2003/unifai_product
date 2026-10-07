@@ -4,15 +4,15 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // ExtractAnthropicPassthroughUsage extracts usage from a passthrough response payload. path is
 // the stripped request path; body is a single SSE data event (streaming) or the full response
 // body (non-streaming). Streaming /messages usage is assembled per-event by
 // AnthropicPassthroughStreamUsage, so here /messages only ever sees a plain JSON body.
-func ExtractAnthropicPassthroughUsage(path string, _, body []byte) *schemas.RakshaPassthroughUsage {
+func ExtractAnthropicPassthroughUsage(path string, _, body []byte) *schemas.GatewayPassthroughUsage {
 	if idx := strings.IndexByte(path, '?'); idx >= 0 {
 		path = path[:idx]
 	}
@@ -31,8 +31,8 @@ func HasAnthropicPassthroughUsage(event []byte) bool {
 		providerUtils.GetJSONField(event, "message.usage").Exists()
 }
 
-// buildAnthropicPassthroughUsage converts AnthropicUsage directly into RakshaPassthroughUsage.
-func buildAnthropicPassthroughUsage(au *AnthropicUsage) *schemas.RakshaPassthroughUsage {
+// buildAnthropicPassthroughUsage converts AnthropicUsage directly into GatewayPassthroughUsage.
+func buildAnthropicPassthroughUsage(au *AnthropicUsage) *schemas.GatewayPassthroughUsage {
 	if au == nil {
 		return nil
 	}
@@ -42,7 +42,7 @@ func buildAnthropicPassthroughUsage(au *AnthropicUsage) *schemas.RakshaPassthrou
 		return nil
 	}
 
-	usage := &schemas.RakshaLLMUsage{
+	usage := &schemas.GatewayLLMUsage{
 		PromptTokens:     totalInput,
 		CompletionTokens: au.OutputTokens,
 		TotalTokens:      total,
@@ -69,9 +69,9 @@ func buildAnthropicPassthroughUsage(au *AnthropicUsage) *schemas.RakshaPassthrou
 		}
 	}
 
-	u := &schemas.RakshaPassthroughUsage{LLMUsage: usage}
+	u := &schemas.GatewayPassthroughUsage{LLMUsage: usage}
 	if au.ServiceTier != nil {
-		t := MapAnthropicServiceTierToRaksha(*au.ServiceTier)
+		t := MapAnthropicServiceTierToGateway(*au.ServiceTier)
 		u.ServiceTier = &t
 	}
 	if au.Speed != nil {
@@ -92,7 +92,7 @@ type AnthropicPassthroughStreamUsage struct {
 
 // ObserveEvent merges one framed SSE data payload's usage into the running total and returns
 // the running usage (nil until any usage-bearing event is seen).
-func (a *AnthropicPassthroughStreamUsage) ObserveEvent(event []byte) *schemas.RakshaPassthroughUsage {
+func (a *AnthropicPassthroughStreamUsage) ObserveEvent(event []byte) *schemas.GatewayPassthroughUsage {
 	var evt AnthropicStreamEvent
 	if err := sonic.Unmarshal(event, &evt); err != nil {
 		return a.usage()
@@ -145,7 +145,7 @@ func (a *AnthropicPassthroughStreamUsage) ObserveEvent(event []byte) *schemas.Ra
 	return a.usage()
 }
 
-func (a *AnthropicPassthroughStreamUsage) usage() *schemas.RakshaPassthroughUsage {
+func (a *AnthropicPassthroughStreamUsage) usage() *schemas.GatewayPassthroughUsage {
 	if !a.seen {
 		return nil
 	}
@@ -155,7 +155,7 @@ func (a *AnthropicPassthroughStreamUsage) usage() *schemas.RakshaPassthroughUsag
 // extractAnthropicMessagesUsage parses usage from a /v1/messages response body. Streaming usage
 // is assembled per-event by AnthropicPassthroughStreamUsage, so this only sees a plain JSON
 // (non-streaming) body, which carries the full usage block at the top level.
-func extractAnthropicMessagesUsage(body []byte) *schemas.RakshaPassthroughUsage {
+func extractAnthropicMessagesUsage(body []byte) *schemas.GatewayPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -167,7 +167,7 @@ func extractAnthropicMessagesUsage(body []byte) *schemas.RakshaPassthroughUsage 
 }
 
 // extractAnthropicCompleteUsage handles the legacy /v1/complete endpoint.
-func extractAnthropicCompleteUsage(body []byte) *schemas.RakshaPassthroughUsage {
+func extractAnthropicCompleteUsage(body []byte) *schemas.GatewayPassthroughUsage {
 	if len(body) == 0 {
 		return nil
 	}
@@ -184,8 +184,8 @@ func extractAnthropicCompleteUsage(body []byte) *schemas.RakshaPassthroughUsage 
 	if total == 0 {
 		return nil
 	}
-	return &schemas.RakshaPassthroughUsage{
-		LLMUsage: &schemas.RakshaLLMUsage{
+	return &schemas.GatewayPassthroughUsage{
+		LLMUsage: &schemas.GatewayLLMUsage{
 			PromptTokens:     resp.Usage.InputTokens,
 			CompletionTokens: resp.Usage.OutputTokens,
 			TotalTokens:      total,

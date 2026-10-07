@@ -8,15 +8,15 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/framework/logstore"
+	"github.com/gateway/gateway/framework/logstore"
 	"github.com/valyala/fasthttp"
 )
 
 // getProxyPAC serves a PAC built only from monitored Target Websites (no hardcoded defaults).
-// Product / VAPT: ignore client ?proxy= unless RAKSHA_PAC_ALLOW_QUERY_PROXY=1 (fleet/env only by default).
+// Product / VAPT: ignore client ?proxy= unless GATEWAY_PAC_ALLOW_QUERY_PROXY=1 (fleet/env only by default).
 func (h *BrowserAIHandler) getProxyPAC(ctx *fasthttp.RequestCtx) {
 	h.ensureDB(ctx)
-	allowQuery := strings.TrimSpace(os.Getenv("RAKSHA_PAC_ALLOW_QUERY_PROXY"))
+	allowQuery := strings.TrimSpace(gatewayEnv("PAC_ALLOW_QUERY_PROXY"))
 	allowQueryOn := allowQuery == "1" || strings.EqualFold(allowQuery, "true") || strings.EqualFold(allowQuery, "yes")
 
 	queryProxy := strings.TrimSpace(string(ctx.QueryArgs().Peek("proxy")))
@@ -38,7 +38,7 @@ func (h *BrowserAIHandler) getProxyPAC(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	if strings.TrimSpace(proxyAddr) == "" {
-		if v := strings.TrimSpace(os.Getenv("RAKSHA_PROXY_ADDR")); v != "" {
+		if v := strings.TrimSpace(gatewayEnv("PROXY_ADDR")); v != "" {
 			proxyAddr = v
 		} else if port := strings.TrimSpace(os.Getenv("PROXY_PORT")); port != "" {
 			proxyAddr = "127.0.0.1:" + port

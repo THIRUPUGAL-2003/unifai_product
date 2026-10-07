@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/postgresconn"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/postgresconn"
 	"gorm.io/gorm"
 )
 
@@ -71,7 +71,7 @@ func newPostgresConfigStore(ctx context.Context, config *PostgresConfig, logger 
 	d := &RDBConfigStore{logger: logger}
 	d.db.Store(db)
 
-	// migrateOnFreshFn: downstream consumers (e.g. raksha-enterprise) run
+	// migrateOnFreshFn: downstream consumers (e.g. gateway-enterprise) run
 	// their migrations via this hook on a throwaway pool that closes after fn.
 	d.migrateOnFreshFn = func(ctx context.Context, fn func(context.Context, *gorm.DB) error) error {
 		tempDB, err := postgresconn.Open(migrationDSN, config, newGormLogger(logger))

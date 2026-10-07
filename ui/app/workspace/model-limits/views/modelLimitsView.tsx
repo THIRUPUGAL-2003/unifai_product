@@ -23,7 +23,8 @@ export default function ModelLimitsView() {
 		setOffset(0);
 	}, [debouncedSearch, scope, provider]);
 
-	const { data: providers } = useGetProvidersQuery();
+	const { data: providers, isError: providersFailed, error: providersError } = useGetProvidersQuery();
+	const [configsPollMs, setConfigsPollMs] = useState(POLLING_INTERVAL);
 
 	const {
 		data: modelConfigsData,
@@ -42,9 +43,13 @@ export default function ModelLimitsView() {
 		},
 		{
 			skip: !hasGovernanceAccess,
-			pollingInterval: POLLING_INTERVAL,
+			pollingInterval: configsPollMs,
 		},
 	);
+
+	useEffect(() => {
+		setConfigsPollMs(isModelConfigsError || providersFailed ? 0 : POLLING_INTERVAL);
+	}, [isModelConfigsError, providersFailed]);
 
 	const totalCount = modelConfigsData?.total_count ?? 0;
 
@@ -60,6 +65,19 @@ export default function ModelLimitsView() {
 			toast.error(`Failed to load model configs: ${getErrorMessage(modelConfigsError)}`);
 		}
 	}, [modelConfigsError]);
+
+	useEffect(() => {
+		if (providersFailed) {
+			toast.error(`Failed to load providers: ${getErrorMessage(providersError)}`);
+		}
+	}, [providersFailed, providersError]);
+
+	const queryFailed = isModelConfigsError || providersFailed;
+	const queryErrorMessage = modelConfigsError
+		? getErrorMessage(modelConfigsError)
+		: providersFailed
+			? getErrorMessage(providersError)
+			: undefined;
 
 	return (
 		<ModelLimitsTable
@@ -77,8 +95,8 @@ export default function ModelLimitsView() {
 			limit={PAGE_SIZE}
 			onOffsetChange={setOffset}
 			isLoading={isModelConfigsLoading || (!modelConfigsData && isModelConfigsFetching)}
-			isError={isModelConfigsError}
-			errorMessage={modelConfigsError ? getErrorMessage(modelConfigsError) : undefined}
+			isError={queryFailed}
+			errorMessage={queryErrorMessage}
 			onRetry={() => refetch()}
 		/>
 	);

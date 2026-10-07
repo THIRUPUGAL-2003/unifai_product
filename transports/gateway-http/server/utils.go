@@ -8,13 +8,13 @@ import (
 	"runtime"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// GetDefaultConfigDir returns the OS-specific default configuration directory for Raksha.
+// GetDefaultConfigDir returns the OS-specific default configuration directory for Gateway.
 // This follows standard conventions:
-// - Linux/macOS: ~/.config/raksha
-// - Windows: %APPDATA%\raksha
+// - Linux/macOS: ~/.config/gateway
+// - Windows: %APPDATA%\gateway
 // - If appDir is provided (non-empty), it returns that instead
 func GetDefaultConfigDir(appDir string) string {
 	// If appDir is provided, use it directly
@@ -26,32 +26,32 @@ func GetDefaultConfigDir(appDir string) string {
 	var configDir string
 	switch runtime.GOOS {
 	case "windows":
-		// Windows: %APPDATA%\raksha
+		// Windows: %APPDATA%\gateway
 		if appData := os.Getenv("APPDATA"); appData != "" {
-			configDir = filepath.Join(appData, "raksha")
+			configDir = filepath.Join(appData, "gateway")
 		} else {
 			// Fallback to user home directory
 			if homeDir, err := os.UserHomeDir(); err == nil {
-				configDir = filepath.Join(homeDir, "AppData", "Roaming", "raksha")
+				configDir = filepath.Join(homeDir, "AppData", "Roaming", "gateway")
 			}
 		}
 	default:
-		// Linux, macOS and other Unix-like systems: ~/.config/raksha
+		// Linux, macOS and other Unix-like systems: ~/.config/gateway
 		if homeDir, err := os.UserHomeDir(); err == nil {
-			configDir = filepath.Join(homeDir, ".config", "raksha")
+			configDir = filepath.Join(homeDir, ".config", "gateway")
 		}
 	}
 
 	// If we couldn't determine the config directory, fall back to current directory
 	if configDir == "" {
-		configDir = "./raksha-data"
+		configDir = "./gateway-data"
 	}
 
 	return configDir
 }
 
 // registerPluginWithStatus instantiates, registers, and updates status for a plugin (used by builtin plugins)
-func (s *RakshaHTTPServer) registerPluginWithStatus(ctx context.Context, name string, path *string, config any, failOnError bool) error {
+func (s *GatewayHTTPServer) registerPluginWithStatus(ctx context.Context, name string, path *string, config any, failOnError bool) error {
 	plugin, err := InstantiatePlugin(ctx, name, path, config, s.Config)
 	if err != nil {
 		logger.Error("failed to initialize %s plugin: %v", name, err)
@@ -82,7 +82,7 @@ func (s *RakshaHTTPServer) registerPluginWithStatus(ctx context.Context, name st
 }
 
 // CollectObservabilityPlugins gathers all loaded plugins that implement ObservabilityPlugin interface
-func (s *RakshaHTTPServer) CollectObservabilityPlugins() []schemas.ObservabilityPlugin {
+func (s *GatewayHTTPServer) CollectObservabilityPlugins() []schemas.ObservabilityPlugin {
 	var observabilityPlugins []schemas.ObservabilityPlugin
 
 	// Check LLM plugins
@@ -134,7 +134,7 @@ func MarshalPluginConfig[T any](source any) (*T, error) {
 // updateKeyStatus updates the model discovery status for keys or providers based on key statuses.
 // For keyed providers: updates individual key status
 // For keyless providers: updates provider-level status
-func (s *RakshaHTTPServer) updateKeyStatus(
+func (s *GatewayHTTPServer) updateKeyStatus(
 	ctx context.Context,
 	keyStatuses []schemas.KeyStatus,
 ) {

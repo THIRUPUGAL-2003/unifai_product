@@ -47,27 +47,32 @@ export function MCPServerSelector({
 }: MCPServerSelectorProps) {
 	// Create options from MCP clients using meta for complex data
 	const allServerOptions = useMemo((): Option<ServerOptionMeta>[] => {
-		return mcpClients.map((client) => ({
-			label: client.config.name,
-			value: client.config.client_id,
-			meta: {
-				clientId: client.config.client_id,
-				name: client.config.name,
-				connectionType: client.config.connection_type,
-				toolCount: client.tools?.length || 0,
-				state: client.state,
-			},
-		}));
+		return mcpClients
+			.filter((client) => !!client?.config?.client_id)
+			.map((client) => {
+				const clientId = client.config!.client_id;
+				return {
+					label: client.config?.name || clientId,
+					value: clientId,
+					meta: {
+						clientId,
+						name: client.config?.name || clientId,
+						connectionType: client.config?.connection_type,
+						toolCount: client.tools?.length || 0,
+						state: client.state,
+					},
+				};
+			});
 	}, [mcpClients]);
 
 	// Get full server info for selected servers
 	const selectedServersWithInfo = useMemo(() => {
 		return value.map((serverId) => {
-			const client = mcpClients.find((c) => c.config.client_id === serverId);
+			const client = mcpClients.find((c) => c.config?.client_id === serverId);
 			return {
 				clientId: serverId,
-				name: client?.config.name || serverId,
-				connectionType: client?.config.connection_type,
+				name: client?.config?.name || serverId,
+				connectionType: client?.config?.connection_type,
 				toolCount: client?.tools?.length || 0,
 				state: client?.state,
 			};

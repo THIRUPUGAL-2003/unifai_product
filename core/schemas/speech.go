@@ -5,29 +5,29 @@ import (
 	"unicode/utf8"
 )
 
-type RakshaSpeechRequest struct {
+type GatewaySpeechRequest struct {
 	Provider       ModelProvider     `json:"provider"`
 	Model          string            `json:"model"`
 	Input          *SpeechInput      `json:"input,omitempty"`
 	Params         *SpeechParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback        `json:"fallbacks,omitempty"`
-	RawRequestBody []byte            `json:"-"` // set raksha-use-raw-request-body to true in ctx to use the raw request body. Raksha will directly send this to the downstream provider.
+	RawRequestBody []byte            `json:"-"` // set gateway-use-raw-request-body to true in ctx to use the raw request body. Gateway will directly send this to the downstream provider.
 }
 
-func (r *RakshaSpeechRequest) GetRawRequestBody() []byte {
+func (r *GatewaySpeechRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
-type RakshaSpeechResponse struct {
+type GatewaySpeechResponse struct {
 	Audio               []byte                     `json:"audio"`
 	Usage               *SpeechUsage               `json:"usage"`
 	Alignment           *SpeechAlignment           `json:"alignment,omitempty"`            // Character-level timing information
 	NormalizedAlignment *SpeechAlignment           `json:"normalized_alignment,omitempty"` // Character-level timing information for normalized text
 	AudioBase64         *string                    `json:"audio_base64,omitempty"`         // Base64-encoded audio (when timestamps are requested)
-	ExtraFields         RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields         GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-func (r *RakshaSpeechResponse) BackfillParams(request *RakshaSpeechRequest) {
+func (r *GatewaySpeechResponse) BackfillParams(request *GatewaySpeechRequest) {
 	if r == nil || request == nil || request.Input == nil {
 		return
 	}
@@ -139,14 +139,14 @@ const (
 	SpeechStreamResponseTypeDone  SpeechStreamResponseType = "speech.audio.done"
 )
 
-type RakshaSpeechStreamResponse struct {
+type GatewaySpeechStreamResponse struct {
 	Type        SpeechStreamResponseType   `json:"type"`
 	Audio       []byte                     `json:"audio"`
 	Usage       *SpeechUsage               `json:"usage"`
-	ExtraFields RakshaResponseExtraFields `json:"extra_fields"`
+	ExtraFields GatewayResponseExtraFields `json:"extra_fields"`
 }
 
-func (r *RakshaSpeechStreamResponse) BackfillParams(request *RakshaSpeechRequest) {
+func (r *GatewaySpeechStreamResponse) BackfillParams(request *GatewaySpeechRequest) {
 	if r == nil || request == nil || request.Input == nil {
 		return
 	}

@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-// ToRunwareImageGenerationRequest converts a Raksha image generation request to a Runware
+// ToRunwareImageGenerationRequest converts a Gateway image generation request to a Runware
 // imageInference task. A "seedImage" supplied via extra params (a Runware image UUID, a public
 // URL, or a base64/data-URI string) turns the request into an image-to-image generation.
-func ToRunwareImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationRequest) (*RunwareInferenceRequest, error) {
-	if rakshaReq.Input == nil {
+func ToRunwareImageGenerationRequest(gatewayReq *schemas.GatewayImageGenerationRequest) (*RunwareInferenceRequest, error) {
+	if gatewayReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
 
@@ -20,14 +20,14 @@ func ToRunwareImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationReq
 	request := &RunwareInferenceRequest{
 		TaskType:       taskTypeImageInference,
 		TaskUUID:       uuid.New().String(),
-		Model:          rakshaReq.Model,
-		PositivePrompt: &rakshaReq.Input.Prompt,
+		Model:          gatewayReq.Model,
+		PositivePrompt: &gatewayReq.Input.Prompt,
 		Width:          &width,
 		Height:         &height,
 	}
 
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		if params.Size != nil && *params.Size != "" {
 			*request.Width, *request.Height = parseRunwareSize(*params.Size)
@@ -52,14 +52,14 @@ func ToRunwareImageGenerationRequest(rakshaReq *schemas.RakshaImageGenerationReq
 	return request, nil
 }
 
-// ToRunwareImageEditRequest converts a Raksha image edit request to a Runware imageInference task.
+// ToRunwareImageEditRequest converts a Gateway image edit request to a Runware imageInference task.
 // The first input image is the seed image; an optional mask enables inpainting. Outpainting,
 // strength, maskMargin and other operation-specific fields flow through via extra params.
-func ToRunwareImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*RunwareInferenceRequest, error) {
-	if rakshaReq.Input == nil {
+func ToRunwareImageEditRequest(gatewayReq *schemas.GatewayImageEditRequest) (*RunwareInferenceRequest, error) {
+	if gatewayReq.Input == nil {
 		return nil, fmt.Errorf("input is required")
 	}
-	if len(rakshaReq.Input.Images) == 0 || len(rakshaReq.Input.Images[0].Image) == 0 {
+	if len(gatewayReq.Input.Images) == 0 || len(gatewayReq.Input.Images[0].Image) == 0 {
 		return nil, fmt.Errorf("at least one input image is required")
 	}
 
@@ -67,18 +67,18 @@ func ToRunwareImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*Runw
 	request := &RunwareInferenceRequest{
 		TaskType:       taskTypeImageInference,
 		TaskUUID:       uuid.New().String(),
-		Model:          rakshaReq.Model,
-		PositivePrompt: &rakshaReq.Input.Prompt,
+		Model:          gatewayReq.Model,
+		PositivePrompt: &gatewayReq.Input.Prompt,
 		Width:          &width,
 		Height:         &height,
 	}
 
 	// Seed image: the base image being edited (raw bytes -> base64 data URI).
-	seedImage := providerUtils.FileBytesToBase64DataURL(rakshaReq.Input.Images[0].Image)
+	seedImage := providerUtils.FileBytesToBase64DataURL(gatewayReq.Input.Images[0].Image)
 	request.SeedImage = &seedImage
 
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		if params.Size != nil && *params.Size != "" {
 			*request.Width, *request.Height = parseRunwareSize(*params.Size)
@@ -102,21 +102,21 @@ func ToRunwareImageEditRequest(rakshaReq *schemas.RakshaImageEditRequest) (*Runw
 	return request, nil
 }
 
-// ToRakshaImageGenerationResponse converts a Runware response envelope to a Raksha image response.
-func ToRakshaImageGenerationResponse(resp *RunwareResponse) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+// ToGatewayImageGenerationResponse converts a Runware response envelope to a Gateway image response.
+func ToGatewayImageGenerationResponse(resp *RunwareResponse) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if resp == nil {
-		return nil, providerUtils.NewRakshaOperationError("runware response is nil", nil)
+		return nil, providerUtils.NewGatewayOperationError("runware response is nil", nil)
 	}
 
 	// Surface task-level failures returned alongside (or instead of) data.
 	if len(resp.Data) == 0 {
 		if msg := firstRunwareErrorMessage(resp.Errors); msg != "" {
-			return nil, providerUtils.NewRakshaOperationError(msg, nil)
+			return nil, providerUtils.NewGatewayOperationError(msg, nil)
 		}
-		return nil, providerUtils.NewRakshaOperationError("runware returned no images", nil)
+		return nil, providerUtils.NewGatewayOperationError("runware returned no images", nil)
 	}
 
-	rakshaResp := &schemas.RakshaImageGenerationResponse{
+	gatewayResp := &schemas.GatewayImageGenerationResponse{
 		ID:   resp.Data[0].TaskUUID,
 		Data: []schemas.ImageData{},
 	}
@@ -132,15 +132,15 @@ func ToRakshaImageGenerationResponse(resp *RunwareResponse) (*schemas.RakshaImag
 		case img.ImageDataURI != "":
 			data.URL = img.ImageDataURI
 		}
-		rakshaResp.Data = append(rakshaResp.Data, data)
+		gatewayResp.Data = append(gatewayResp.Data, data)
 		if img.Seed != nil {
 			seeds = append(seeds, *img.Seed)
 		}
 	}
 
 	if len(seeds) > 0 {
-		rakshaResp.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{Seeds: seeds}
+		gatewayResp.ImageGenerationResponseParameters = &schemas.ImageGenerationResponseParameters{Seeds: seeds}
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }

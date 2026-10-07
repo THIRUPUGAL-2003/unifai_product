@@ -24,7 +24,7 @@ import urllib.parse
 from pathlib import Path
 
 PROXY_DIR = Path(__file__).resolve().parents[1]
-PARTS_DIR = PROXY_DIR / "raksha_proxy_parts"
+PARTS_DIR = PROXY_DIR / "gateway_proxy_parts"
 PARTS = [
     "config_caches_rules.py",
     "helpers_prompts.py",

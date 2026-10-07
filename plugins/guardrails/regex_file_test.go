@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 func strPtr(s string) *string { return &s }
@@ -44,7 +44,7 @@ func TestRegexProviderBlocksSecretInsideTextFile(t *testing.T) {
 		{Type: schemas.ChatContentBlockTypeText, Text: strPtr("see file")},
 		{Type: schemas.ChatContentBlockTypeFile, File: &schemas.ChatInputFile{FileData: &data, Filename: strPtr("s.txt")}},
 	}}}
-	req := &schemas.RakshaRequest{ChatRequest: &schemas.RakshaChatRequest{Input: []schemas.ChatMessage{msg}}}
+	req := &schemas.GatewayRequest{ChatRequest: &schemas.GatewayChatRequest{Input: []schemas.ChatMessage{msg}}}
 	if err := p.ValidateInput(nil, req); err == nil {
 		t.Fatal("expected SSN inside attached text file to be blocked")
 	}
@@ -62,17 +62,17 @@ func TestRegexProviderCoversResponsesRequestsAndOutput(t *testing.T) {
 			{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: strPtr(text)},
 		}}}}
 	}
-	if err := p.ValidateInput(nil, &schemas.RakshaRequest{ResponsesRequest: &schemas.RakshaResponsesRequest{Input: block("ssn 123-45-6789")}}); err == nil {
+	if err := p.ValidateInput(nil, &schemas.GatewayRequest{ResponsesRequest: &schemas.GatewayResponsesRequest{Input: block("ssn 123-45-6789")}}); err == nil {
 		t.Fatal("expected SSN in Responses/Anthropic input to be blocked")
 	}
 	instr := "my ssn is 123-45-6789"
-	if err := p.ValidateInput(nil, &schemas.RakshaRequest{ResponsesRequest: &schemas.RakshaResponsesRequest{Params: &schemas.ResponsesParameters{Instructions: &instr}}}); err == nil {
+	if err := p.ValidateInput(nil, &schemas.GatewayRequest{ResponsesRequest: &schemas.GatewayResponsesRequest{Params: &schemas.ResponsesParameters{Instructions: &instr}}}); err == nil {
 		t.Fatal("expected SSN in Responses instructions to be blocked")
 	}
-	if err := p.ValidateInput(nil, &schemas.RakshaRequest{ResponsesRequest: &schemas.RakshaResponsesRequest{Input: block("hello")}}); err != nil {
+	if err := p.ValidateInput(nil, &schemas.GatewayRequest{ResponsesRequest: &schemas.GatewayResponsesRequest{Input: block("hello")}}); err != nil {
 		t.Fatalf("clean Responses input blocked: %v", err)
 	}
-	resp := &schemas.RakshaResponse{ResponsesResponse: &schemas.RakshaResponsesResponse{Output: block("here: 123-45-6789")}}
+	resp := &schemas.GatewayResponse{ResponsesResponse: &schemas.GatewayResponsesResponse{Output: block("here: 123-45-6789")}}
 	if err := p.ValidateOutput(nil, nil, resp); err == nil {
 		t.Fatal("expected SSN in Responses output to be blocked")
 	}

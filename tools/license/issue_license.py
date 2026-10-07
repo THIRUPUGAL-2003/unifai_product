@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Enterprise On-Premise License Generator for Raksha / UnifAI.
+Enterprise On-Premise License Generator for Gateway / UnifAI.
 Signs license parameters using the Vendor Master Private Key (Ed25519).
 
 Default Issuer: YesPanchi Group of Companies
-Default Product: Raksha - Real-time AI Knowledge Screening & Hazard Audit
+Default Product: Gateway - Real-time AI Knowledge Screening & Hazard Audit
 
 Usage:
     python tools/license/issue_license.py --client "ABC Corporation" --seats 100 --expiry "2027-10-07"
@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 
 DEFAULT_ISSUER = "YesPanchi Group of Companies"
-DEFAULT_PRODUCT = "Raksha - Real-time AI Knowledge Screening & Hazard Audit"
+DEFAULT_PRODUCT = "Gateway - Real-time AI Knowledge Screening & Hazard Audit"
 
 def issue_license(
     client_name: str,
@@ -94,7 +94,7 @@ def issue_license(
     payload_b64 = base64.b64encode(canonical_json).decode("utf-8")
 
     license_envelope = {
-        "format": "raksha_enterprise_license_v1",
+        "format": "gateway_enterprise_license_v1",
         "payload": payload_data,
         "payload_b64": payload_b64,
         "signature": signature_b64

@@ -1,24 +1,24 @@
 package vertex
 
 import (
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToVertexEmbeddingRequest converts a Raksha embedding request to Vertex AI format
-func ToVertexEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *VertexEmbeddingRequest {
-	if rakshaReq == nil || rakshaReq.Input == nil || (rakshaReq.Input.Text == nil && rakshaReq.Input.Texts == nil) {
+// ToVertexEmbeddingRequest converts a Gateway embedding request to Vertex AI format
+func ToVertexEmbeddingRequest(gatewayReq *schemas.GatewayEmbeddingRequest) *VertexEmbeddingRequest {
+	if gatewayReq == nil || gatewayReq.Input == nil || (gatewayReq.Input.Text == nil && gatewayReq.Input.Texts == nil) {
 		return nil
 	}
 	// Create the request
 	vertexReq := &VertexEmbeddingRequest{}
-	if rakshaReq.Params != nil {
-		vertexReq.ExtraParams = rakshaReq.Params.ExtraParams
+	if gatewayReq.Params != nil {
+		vertexReq.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 	var texts []string
-	if rakshaReq.Input.Text != nil {
-		texts = []string{*rakshaReq.Input.Text}
+	if gatewayReq.Input.Text != nil {
+		texts = []string{*gatewayReq.Input.Text}
 	} else {
-		texts = rakshaReq.Input.Texts
+		texts = gatewayReq.Input.Texts
 	}
 
 	// Create instances for each text
@@ -29,12 +29,12 @@ func ToVertexEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Vertex
 		}
 
 		// Add optional task_type and title from params
-		if rakshaReq.Params != nil {
-			if taskTypeStr, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["task_type"]); ok {
+		if gatewayReq.Params != nil {
+			if taskTypeStr, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["task_type"]); ok {
 				delete(vertexReq.ExtraParams, "task_type")
 				instance.TaskType = taskTypeStr
 			}
-			if title, ok := schemas.SafeExtractStringPointer(rakshaReq.Params.ExtraParams["title"]); ok {
+			if title, ok := schemas.SafeExtractStringPointer(gatewayReq.Params.ExtraParams["title"]); ok {
 				delete(vertexReq.ExtraParams, "title")
 				instance.Title = title
 			}
@@ -44,13 +44,13 @@ func ToVertexEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Vertex
 	}
 	vertexReq.Instances = instances
 	// Add parameters if present
-	if rakshaReq.Params != nil {
+	if gatewayReq.Params != nil {
 		parameters := &VertexEmbeddingParameters{}
 
 		// Set autoTruncate (defaults to true)
 		autoTruncate := true
-		if rakshaReq.Params.ExtraParams != nil {
-			if autoTruncateVal, ok := schemas.SafeExtractBool(rakshaReq.Params.ExtraParams["autoTruncate"]); ok {
+		if gatewayReq.Params.ExtraParams != nil {
+			if autoTruncateVal, ok := schemas.SafeExtractBool(gatewayReq.Params.ExtraParams["autoTruncate"]); ok {
 				delete(vertexReq.ExtraParams, "autoTruncate")
 				autoTruncate = autoTruncateVal
 			}
@@ -58,9 +58,9 @@ func ToVertexEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Vertex
 		parameters.AutoTruncate = &autoTruncate
 
 		// Add outputDimensionality if specified
-		if rakshaReq.Params.Dimensions != nil {
+		if gatewayReq.Params.Dimensions != nil {
 			delete(vertexReq.ExtraParams, "dimensions")
-			parameters.OutputDimensionality = rakshaReq.Params.Dimensions
+			parameters.OutputDimensionality = gatewayReq.Params.Dimensions
 		}
 
 		vertexReq.Parameters = parameters
@@ -69,15 +69,15 @@ func ToVertexEmbeddingRequest(rakshaReq *schemas.RakshaEmbeddingRequest) *Vertex
 	return vertexReq
 }
 
-// ToRakshaEmbeddingResponse converts a Vertex AI embedding response to Raksha format
-func (response *VertexEmbeddingResponse) ToRakshaEmbeddingResponse() *schemas.RakshaEmbeddingResponse {
+// ToGatewayEmbeddingResponse converts a Vertex AI embedding response to Gateway format
+func (response *VertexEmbeddingResponse) ToGatewayEmbeddingResponse() *schemas.GatewayEmbeddingResponse {
 	if response == nil || len(response.Predictions) == 0 {
 		return nil
 	}
 
-	// Convert predictions to Raksha embeddings
+	// Convert predictions to Gateway embeddings
 	embeddings := make([]schemas.EmbeddingData, 0, len(response.Predictions))
-	var usage *schemas.RakshaLLMUsage
+	var usage *schemas.GatewayLLMUsage
 
 	for i, prediction := range response.Predictions {
 		if prediction.Embeddings == nil || len(prediction.Embeddings.Values) == 0 {
@@ -96,7 +96,7 @@ func (response *VertexEmbeddingResponse) ToRakshaEmbeddingResponse() *schemas.Ra
 		// Extract statistics if available
 		if prediction.Embeddings.Statistics != nil {
 			if usage == nil {
-				usage = &schemas.RakshaLLMUsage{}
+				usage = &schemas.GatewayLLMUsage{}
 			}
 			usage.TotalTokens += prediction.Embeddings.Statistics.TokenCount
 			usage.PromptTokens += prediction.Embeddings.Statistics.TokenCount
@@ -105,11 +105,11 @@ func (response *VertexEmbeddingResponse) ToRakshaEmbeddingResponse() *schemas.Ra
 		embeddings = append(embeddings, embedding)
 	}
 
-	return &schemas.RakshaEmbeddingResponse{
+	return &schemas.GatewayEmbeddingResponse{
 		Object: "list",
 		Data:   embeddings,
 		Usage:  usage,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 		},
 	}
 }

@@ -15,16 +15,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/rbac"
-	"github.com/raksha/raksha/framework/temptoken"
-	"github.com/raksha/raksha/framework/tracing"
-	"github.com/raksha/raksha/plugins/governance"
-	"github.com/raksha/raksha/transports/raksha-http/integrations"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/rbac"
+	"github.com/gateway/gateway/framework/temptoken"
+	"github.com/gateway/gateway/framework/tracing"
+	"github.com/gateway/gateway/plugins/governance"
+	"github.com/gateway/gateway/transports/gateway-http/integrations"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -33,7 +33,7 @@ var realtimeTransportPaths = buildRealtimeTransportPathSet()
 
 // SecurityHeadersMiddleware sets security-related HTTP headers on every response.
 // This should wrap the outermost handler so all responses (API, UI, errors) include these headers.
-func SecurityHeadersMiddleware() schemas.RakshaHTTPMiddleware {
+func SecurityHeadersMiddleware() schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
 			ctx.Response.Header.Set("X-Frame-Options", "DENY")
@@ -54,7 +54,7 @@ func SecurityHeadersMiddleware() schemas.RakshaHTTPMiddleware {
 // headers, or "" if none are present. X-Forwarded-For may be a comma-separated list
 // (client, proxy1, proxy2); the leftmost entry is the original client.
 //
-// These headers are caller-controlled and unauthenticated unless Raksha sits behind
+// These headers are caller-controlled and unauthenticated unless Gateway sits behind
 // a trusted proxy that overwrites them. The value is logged as http.forwarded_for —
 // separate from the authoritative http.remote_addr (the real TCP peer) — so a forged
 // header cannot mask the true peer in the access log.
@@ -117,7 +117,7 @@ func (c *CorsMiddleware) UpdateConfig(config *lib.Config) {
 }
 
 // CorsMiddleware handles CORS headers for localhost and configured allowed origins
-func (c *CorsMiddleware) Middleware() schemas.RakshaHTTPMiddleware {
+func (c *CorsMiddleware) Middleware() schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
 			// Snapshot the config once per request so a concurrent UpdateConfig swap
@@ -150,7 +150,7 @@ func (c *CorsMiddleware) Middleware() schemas.RakshaHTTPMiddleware {
 					if forwarded := clientForwardedIP(ctx); forwarded != "" {
 						logBuilder = logBuilder.Str("http.forwarded_for", forwarded)
 					}
-					if traceID, ok := ctx.UserValue(schemas.RakshaContextKeyTraceID).(string); ok && traceID != "" {
+					if traceID, ok := ctx.UserValue(schemas.GatewayContextKeyTraceID).(string); ok && traceID != "" {
 						logBuilder = logBuilder.Str("trace_id", traceID)
 					}
 					if cfg.dumpErrorsInConsoleLogs {
@@ -240,7 +240,7 @@ func (c *CorsMiddleware) Middleware() schemas.RakshaHTTPMiddleware {
 //     matching the response-side pattern in core/providers/utils.
 //   - Small (CL ≤ threshold): buffered decompression via io.ReadAll + SetBodyRaw,
 //     with decompression bomb protection via MaxRequestBodySizeMB.
-func RequestDecompressionMiddleware(config *lib.Config) schemas.RakshaHTTPMiddleware {
+func RequestDecompressionMiddleware(config *lib.Config) schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
 			if len(ctx.Request.Header.ContentEncoding()) == 0 {
@@ -401,7 +401,7 @@ func newDecompressReader(r io.Reader, encoding string) (io.Reader, func(), error
 // TransportInterceptorMiddleware runs all plugin HTTP transport interceptors.
 // It converts the fasthttp request to a serializable HTTPRequest, runs all plugin interceptors,
 // and applies any modifications back to the fasthttp context.
-func TransportInterceptorMiddleware(config *lib.Config) schemas.RakshaHTTPMiddleware {
+func TransportInterceptorMiddleware(config *lib.Config) schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
 			plugins := config.GetLoadedHTTPTransportPlugins()
@@ -409,8 +409,8 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.RakshaHTTPMiddle
 				next(ctx)
 				return
 			}
-			// Get or create RakshaContext from fasthttp context
-			rakshaCtx := getRakshaContextFromFastHTTP(ctx)
+			// Get or create GatewayContext from fasthttp context
+			gatewayCtx := getGatewayContextFromFastHTTP(ctx)
 			// Acquire pooled request
 			req := schemas.AcquireHTTPRequest()
 			defer schemas.ReleaseHTTPRequest(req)
@@ -418,13 +418,13 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.RakshaHTTPMiddle
 			// Run plugin interceptors
 			for _, plugin := range plugins {
 				pluginName := plugin.GetName()
-				pluginCtx := rakshaCtx.WithPluginScope(&pluginName)
+				pluginCtx := gatewayCtx.WithPluginScope(&pluginName)
 				resp, err := plugin.HTTPTransportPreHook(pluginCtx, req)
 				pluginCtx.ReleasePluginScope()
 				if err != nil {
 					// Short-circuit with error — drain plugin logs before returning
-					if logs := rakshaCtx.DrainPluginLogs(); len(logs) > 0 {
-						ctx.SetUserValue(schemas.RakshaContextKeyTransportPluginLogs, logs)
+					if logs := gatewayCtx.DrainPluginLogs(); len(logs) > 0 {
+						ctx.SetUserValue(schemas.GatewayContextKeyTransportPluginLogs, logs)
 					}
 					ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 					ctx.SetBodyString(err.Error())
@@ -432,8 +432,8 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.RakshaHTTPMiddle
 				}
 				if resp != nil {
 					// Short-circuit with response — drain plugin logs before returning
-					if logs := rakshaCtx.DrainPluginLogs(); len(logs) > 0 {
-						ctx.SetUserValue(schemas.RakshaContextKeyTransportPluginLogs, logs)
+					if logs := gatewayCtx.DrainPluginLogs(); len(logs) > 0 {
+						ctx.SetUserValue(schemas.GatewayContextKeyTransportPluginLogs, logs)
 					}
 					applyHTTPResponseToCtx(ctx, resp)
 					return
@@ -441,13 +441,13 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.RakshaHTTPMiddle
 				// If we got here, the plugin may have modified req in-place
 			}
 			// Drain pre-hook plugin logs and store on fasthttp context for trace attachment
-			if preHookLogs := rakshaCtx.DrainPluginLogs(); len(preHookLogs) > 0 {
-				ctx.SetUserValue(schemas.RakshaContextKeyTransportPluginLogs, preHookLogs)
+			if preHookLogs := gatewayCtx.DrainPluginLogs(); len(preHookLogs) > 0 {
+				ctx.SetUserValue(schemas.GatewayContextKeyTransportPluginLogs, preHookLogs)
 			}
 			// Apply modifications back to fasthttp context
 			applyHTTPRequestToCtx(ctx, req)
 			// Adding user values
-			for key, value := range rakshaCtx.GetUserValues() {
+			for key, value := range gatewayCtx.GetUserValues() {
 				ctx.SetUserValue(key, value)
 			}
 			next(ctx)
@@ -460,11 +460,11 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.RakshaHTTPMiddle
 			// IMPORTANT: The callback must NOT access ctx — fasthttp recycles RequestCtx
 			// after the response body stream completes. All needed data is eagerly captured
 			// here (while ctx is still valid) and passed through the closure.
-			if deferred, ok := ctx.UserValue(schemas.RakshaContextKeyDeferTraceCompletion).(bool); ok && deferred {
+			if deferred, ok := ctx.UserValue(schemas.GatewayContextKeyDeferTraceCompletion).(bool); ok && deferred {
 				// Verify the completer slot exists before allocating pooled snapshots.
 				// The streaming handler pre-allocates this *atomic.Value; if absent,
 				// skip work to avoid leaking pooled HTTPRequest/HTTPResponse objects.
-				slot, ok := ctx.UserValue(schemas.RakshaContextKeyTransportPostHookCompleter).(*atomic.Value)
+				slot, ok := ctx.UserValue(schemas.GatewayContextKeyTransportPostHookCompleter).(*atomic.Value)
 				if !ok {
 					return
 				}
@@ -474,14 +474,14 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.RakshaHTTPMiddle
 				capturedResp := lib.BuildHTTPResponseFromFastHTTP(ctx)
 				// Snapshot pre-hook transport plugin logs already accumulated on ctx.
 				var preHookLogs []schemas.PluginLogEntry
-				if logs, ok := ctx.UserValue(schemas.RakshaContextKeyTransportPluginLogs).([]schemas.PluginLogEntry); ok {
+				if logs, ok := ctx.UserValue(schemas.GatewayContextKeyTransportPluginLogs).([]schemas.PluginLogEntry); ok {
 					preHookLogs = logs
 				}
 
 				completer := func() ([]schemas.PluginLogEntry, error) {
 					defer schemas.ReleaseHTTPRequest(capturedReq)
 					defer schemas.ReleaseHTTPResponse(capturedResp)
-					postHookLogs, err := runTransportPostHooksCaptured(capturedReq, capturedResp, plugins, rakshaCtx)
+					postHookLogs, err := runTransportPostHooksCaptured(capturedReq, capturedResp, plugins, gatewayCtx)
 					allLogs := preHookLogs
 					if len(postHookLogs) > 0 {
 						allLogs = append(allLogs, postHookLogs...)
@@ -496,7 +496,7 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.RakshaHTTPMiddle
 				return
 			}
 
-			_ = runTransportPostHooks(ctx, plugins, rakshaCtx, true)
+			_ = runTransportPostHooks(ctx, plugins, gatewayCtx, true)
 		}
 	}
 }
@@ -506,12 +506,12 @@ func TransportInterceptorMiddleware(config *lib.Config) schemas.RakshaHTTPMiddle
 // Used for both non-streaming (inline) and streaming (deferred callback) paths.
 //
 // Transport-level plugin logs are stored in fasthttp UserValues (keyed by
-// RakshaContextKeyTransportPluginLogs) rather than directly on RakshaContext,
+// GatewayContextKeyTransportPluginLogs) rather than directly on GatewayContext,
 // because transport hooks operate at the fasthttp layer before/after the core
-// RakshaContext lifecycle. These logs are merged into the trace by the
+// GatewayContext lifecycle. These logs are merged into the trace by the
 // TracingMiddleware at trace completion, alongside core-level plugin logs
-// which travel through RakshaContext → Trace → AttachPluginLogs.
-func runTransportPostHooks(ctx *fasthttp.RequestCtx, plugins []schemas.HTTPTransportPlugin, rakshaCtx *schemas.RakshaContext, applyResponse bool) error {
+// which travel through GatewayContext → Trace → AttachPluginLogs.
+func runTransportPostHooks(ctx *fasthttp.RequestCtx, plugins []schemas.HTTPTransportPlugin, gatewayCtx *schemas.GatewayContext, applyResponse bool) error {
 	shouldApplyShortCircuit := applyResponse
 	httpResp := schemas.AcquireHTTPResponse()
 	defer schemas.ReleaseHTTPResponse(httpResp)
@@ -526,17 +526,17 @@ func runTransportPostHooks(ctx *fasthttp.RequestCtx, plugins []schemas.HTTPTrans
 	for i := len(plugins) - 1; i >= 0; i-- {
 		plugin := plugins[i]
 		pluginName := plugin.GetName()
-		pluginCtx := rakshaCtx.WithPluginScope(&pluginName)
+		pluginCtx := gatewayCtx.WithPluginScope(&pluginName)
 		err := plugin.HTTPTransportPostHook(pluginCtx, req, httpResp)
 		pluginCtx.ReleasePluginScope()
 		if err != nil {
 			logger.Warn("error in HTTPTransportPostHook for plugin %s: %s", pluginName, err.Error())
 			// Drain plugin logs before returning on error
-			if postHookLogs := rakshaCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
-				if existing, ok := ctx.UserValue(schemas.RakshaContextKeyTransportPluginLogs).([]schemas.PluginLogEntry); ok {
-					ctx.SetUserValue(schemas.RakshaContextKeyTransportPluginLogs, append(existing, postHookLogs...))
+			if postHookLogs := gatewayCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
+				if existing, ok := ctx.UserValue(schemas.GatewayContextKeyTransportPluginLogs).([]schemas.PluginLogEntry); ok {
+					ctx.SetUserValue(schemas.GatewayContextKeyTransportPluginLogs, append(existing, postHookLogs...))
 				} else {
-					ctx.SetUserValue(schemas.RakshaContextKeyTransportPluginLogs, postHookLogs)
+					ctx.SetUserValue(schemas.GatewayContextKeyTransportPluginLogs, postHookLogs)
 				}
 			}
 			if shouldApplyShortCircuit {
@@ -546,11 +546,11 @@ func runTransportPostHooks(ctx *fasthttp.RequestCtx, plugins []schemas.HTTPTrans
 		}
 	}
 	// Drain post-hook plugin logs and merge with pre-hook logs
-	if postHookLogs := rakshaCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
-		if existing, ok := ctx.UserValue(schemas.RakshaContextKeyTransportPluginLogs).([]schemas.PluginLogEntry); ok {
-			ctx.SetUserValue(schemas.RakshaContextKeyTransportPluginLogs, append(existing, postHookLogs...))
+	if postHookLogs := gatewayCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
+		if existing, ok := ctx.UserValue(schemas.GatewayContextKeyTransportPluginLogs).([]schemas.PluginLogEntry); ok {
+			ctx.SetUserValue(schemas.GatewayContextKeyTransportPluginLogs, append(existing, postHookLogs...))
 		} else {
-			ctx.SetUserValue(schemas.RakshaContextKeyTransportPluginLogs, postHookLogs)
+			ctx.SetUserValue(schemas.GatewayContextKeyTransportPluginLogs, postHookLogs)
 		}
 	}
 	if shouldApplyShortCircuit {
@@ -564,7 +564,7 @@ func runTransportPostHooks(ctx *fasthttp.RequestCtx, plugins []schemas.HTTPTrans
 // a fasthttp RequestCtx, which may have been recycled by the time this runs in a
 // streaming goroutine. Returns accumulated plugin logs (instead of writing them to
 // ctx.UserValue) so the caller can forward them to the trace completer.
-func runTransportPostHooksCaptured(capturedReq *schemas.HTTPRequest, capturedResp *schemas.HTTPResponse, plugins []schemas.HTTPTransportPlugin, rakshaCtx *schemas.RakshaContext) ([]schemas.PluginLogEntry, error) {
+func runTransportPostHooksCaptured(capturedReq *schemas.HTTPRequest, capturedResp *schemas.HTTPResponse, plugins []schemas.HTTPTransportPlugin, gatewayCtx *schemas.GatewayContext) ([]schemas.PluginLogEntry, error) {
 	// Clone into fresh pooled objects so plugins can mutate without affecting the snapshots.
 	req := schemas.AcquireHTTPRequest()
 	defer schemas.ReleaseHTTPRequest(req)
@@ -593,27 +593,27 @@ func runTransportPostHooksCaptured(capturedReq *schemas.HTTPRequest, capturedRes
 	for i := len(plugins) - 1; i >= 0; i-- {
 		plugin := plugins[i]
 		pluginName := plugin.GetName()
-		pluginCtx := rakshaCtx.WithPluginScope(&pluginName)
+		pluginCtx := gatewayCtx.WithPluginScope(&pluginName)
 		err := plugin.HTTPTransportPostHook(pluginCtx, req, httpResp)
 		pluginCtx.ReleasePluginScope()
 		if err != nil {
 			logger.Warn("error in HTTPTransportPostHook for plugin %s: %s", pluginName, err.Error())
-			if postHookLogs := rakshaCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
+			if postHookLogs := gatewayCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
 				allLogs = append(allLogs, postHookLogs...)
 			}
 			return allLogs, fmt.Errorf("transport post-hook plugin %s: %w", pluginName, err)
 		}
 	}
 	// Drain post-hook plugin logs
-	if postHookLogs := rakshaCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
+	if postHookLogs := gatewayCtx.DrainPluginLogs(); len(postHookLogs) > 0 {
 		allLogs = append(allLogs, postHookLogs...)
 	}
 	return allLogs, nil
 }
 
-// getRakshaContextFromFastHTTP gets or creates a RakshaContext from fasthttp context.
-func getRakshaContextFromFastHTTP(ctx *fasthttp.RequestCtx) *schemas.RakshaContext {
-	return schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+// getGatewayContextFromFastHTTP gets or creates a GatewayContext from fasthttp context.
+func getGatewayContextFromFastHTTP(ctx *fasthttp.RequestCtx) *schemas.GatewayContext {
+	return schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 }
 
 // fasthttpToHTTPRequest populates a pooled HTTPRequest from fasthttp context.
@@ -641,9 +641,9 @@ func fasthttpToHTTPRequest(ctx *fasthttp.RequestCtx, req *schemas.HTTPRequest) {
 		if !keyIsString || !valueIsString {
 			return
 		}
-		// Skip internal Raksha system keys and tracing keys
-		if strings.HasPrefix(keyStr, "raksha-") ||
-			keyStr == "RakshaContextKeyRequestID" ||
+		// Skip internal Gateway system keys and tracing keys
+		if strings.HasPrefix(keyStr, "gateway-") ||
+			keyStr == "GatewayContextKeyRequestID" ||
 			keyStr == "trace_id" ||
 			keyStr == "span_id" {
 			return
@@ -655,7 +655,7 @@ func fasthttpToHTTPRequest(ctx *fasthttp.RequestCtx, req *schemas.HTTPRequest) {
 	// Skip body copy for large payloads.
 	// Check threshold first (set by RequestThresholdMiddleware before this middleware runs)
 	// because the large-payload-mode flag is only set later inside the handler hook.
-	if threshold, ok := ctx.UserValue(schemas.RakshaContextKeyLargePayloadRequestThreshold).(int64); ok && threshold > 0 {
+	if threshold, ok := ctx.UserValue(schemas.GatewayContextKeyLargePayloadRequestThreshold).(int64); ok && threshold > 0 {
 		cl := int64(ctx.Request.Header.ContentLength())
 		// Skip body copy when CL exceeds threshold OR CL is unknown (streaming/
 		// chunked, e.g. after streaming decompression deletes the header).
@@ -663,7 +663,7 @@ func fasthttpToHTTPRequest(ctx *fasthttp.RequestCtx, req *schemas.HTTPRequest) {
 			return
 		}
 	}
-	if isLargePayload, ok := ctx.UserValue(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+	if isLargePayload, ok := ctx.UserValue(schemas.GatewayContextKeyLargePayloadMode).(bool); ok && isLargePayload {
 		return
 	}
 	body := ctx.Request.Body()
@@ -715,19 +715,19 @@ func fasthttpResponseToHTTPResponse(ctx *fasthttp.RequestCtx, resp *schemas.HTTP
 	// Skip response body copy for streaming (SSE) responses — the body is an active
 	// io.Reader consumed by fasthttp's writeBodyChunked. Calling Body() would race
 	// with the chunked writer (Body() drains and closes the bodyStream).
-	if deferred, ok := ctx.UserValue(schemas.RakshaContextKeyDeferTraceCompletion).(bool); ok && deferred {
+	if deferred, ok := ctx.UserValue(schemas.GatewayContextKeyDeferTraceCompletion).(bool); ok && deferred {
 		return
 	}
 	// Skip response body copy when large payload/response mode is active — the response is
 	// streamed directly to the client and materializing it here would spike memory.
-	if isLargePayload, ok := ctx.UserValue(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+	if isLargePayload, ok := ctx.UserValue(schemas.GatewayContextKeyLargePayloadMode).(bool); ok && isLargePayload {
 		return
 	}
 	if isLargeResponse, ok := ctx.UserValue(lib.FastHTTPUserValueLargeResponseMode).(bool); ok && isLargeResponse {
 		return
 	}
 	// Also skip if response Content-Length exceeds the configured response threshold.
-	if threshold, ok := ctx.UserValue(schemas.RakshaContextKeyLargeResponseThreshold).(int64); ok && threshold > 0 {
+	if threshold, ok := ctx.UserValue(schemas.GatewayContextKeyLargeResponseThreshold).(int64); ok && threshold > 0 {
 		if int64(ctx.Response.Header.ContentLength()) > threshold {
 			return
 		}
@@ -781,7 +781,7 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 	}
 	token := string(ctx.Request.Header.Cookie("token"))
 	if token == "" {
-		if existing, ok := ctx.UserValue(schemas.RakshaContextKeySessionToken).(string); ok {
+		if existing, ok := ctx.UserValue(schemas.GatewayContextKeySessionToken).(string); ok {
 			token = existing
 		}
 	}
@@ -792,7 +792,7 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 	if err != nil || session == nil || session.ExpiresAt.Before(time.Now()) {
 		return ""
 	}
-	ctx.SetUserValue(schemas.RakshaContextKeySessionToken, token)
+	ctx.SetUserValue(schemas.GatewayContextKeySessionToken, token)
 
 	dbUser, err := m.store.GetUserByUsername(context.Background(), session.Username)
 	if err != nil || dbUser == nil {
@@ -800,7 +800,7 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 		// admin whose session is still alive must not.
 		if isWorkspaceAdminRole(session.Role) && m.isBootstrapAdmin(session.Username) {
 			if session.Username != "" {
-				ctx.SetUserValue(schemas.RakshaContextKeyUserName, session.Username)
+				ctx.SetUserValue(schemas.GatewayContextKeyUserName, session.Username)
 			}
 			return ""
 		}
@@ -810,10 +810,10 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 		return "Your account is not active. Contact your admin."
 	}
 	if dbUser.ID != "" {
-		ctx.SetUserValue(schemas.RakshaContextKeyUserID, dbUser.ID)
+		ctx.SetUserValue(schemas.GatewayContextKeyUserID, dbUser.ID)
 	}
 	if session.Username != "" {
-		ctx.SetUserValue(schemas.RakshaContextKeyUserName, session.Username)
+		ctx.SetUserValue(schemas.GatewayContextKeyUserName, session.Username)
 	}
 
 	// Admins may pick any VK / Auto from the playground — do not force-bind.
@@ -912,7 +912,7 @@ func (m *AuthMiddleware) enforceCommittedPromptModelForMember(ctx *fasthttp.Requ
 	}
 	token := string(ctx.Request.Header.Cookie("token"))
 	if token == "" {
-		if existing, ok := ctx.UserValue(schemas.RakshaContextKeySessionToken).(string); ok {
+		if existing, ok := ctx.UserValue(schemas.GatewayContextKeySessionToken).(string); ok {
 			token = existing
 		}
 	}
@@ -1188,7 +1188,7 @@ func (m *AuthMiddleware) UpdateTempTokenAuthEnabled(enabled bool) {
 
 // tryTempTokenOrUnauthorized is the last-resort auth path: a request that
 // failed every conventional credential check (no Authorization header, no
-// valid cookie) is given one more chance to present an X-Raksha-Temp-Token
+// valid cookie) is given one more chance to present an X-Gateway-Temp-Token
 // header that authorizes the specific (method, path) being requested. On
 // success the validated scope and resource_id are attached to ctx for
 // handler-side defense-in-depth checks, and the next handler runs. On
@@ -1205,12 +1205,15 @@ func (m *AuthMiddleware) tryTempTokenOrUnauthorized(ctx *fasthttp.RequestCtx, ne
 // tryTempTokenOr runs next when a valid scoped temp token is present, otherwise sends status/msg.
 func (m *AuthMiddleware) tryTempTokenOr(ctx *fasthttp.RequestCtx, next fasthttp.RequestHandler, status int, msg string) {
 	if m.tempTokensService != nil && m.tempTokensEnabled.Load() {
-		token := string(ctx.Request.Header.Peek("X-Raksha-Temp-Token"))
+		token := string(ctx.Request.Header.Peek("X-Gateway-Temp-Token"))
+		if strings.TrimSpace(token) == "" {
+			token = string(ctx.Request.Header.Peek("X-Gateway-Temp-Token")) // legacy clients
+		}
 		if token != "" {
 			validated, err := m.tempTokensService.Validate(ctx, token, string(ctx.Method()), string(ctx.Path()))
 			if err == nil && validated != nil {
-				ctx.SetUserValue(schemas.RakshaContextKeyTempTokenScope, validated.Scope)
-				ctx.SetUserValue(schemas.RakshaContextKeyTempTokenResourceID, validated.ResourceID)
+				ctx.SetUserValue(schemas.GatewayContextKeyTempTokenScope, validated.Scope)
+				ctx.SetUserValue(schemas.GatewayContextKeyTempTokenResourceID, validated.ResourceID)
 				next(ctx)
 				return
 			}
@@ -1224,7 +1227,7 @@ func (m *AuthMiddleware) tryTempTokenOr(ctx *fasthttp.RequestCtx, next fasthttp.
 // stamps user_id and, if the member has an assigned Virtual Key, auto-binds it
 // so Prompt Repo usage hits the correct VK → Team → Customer budget chain.
 // Members with a session but no assigned VK may still run via Auto / provider keys.
-func (m *AuthMiddleware) InferenceMiddleware() schemas.RakshaHTTPMiddleware {
+func (m *AuthMiddleware) InferenceMiddleware() schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
 			if errMsg := m.enrichInferenceFromDashboardSession(ctx); errMsg != "" {
@@ -1248,7 +1251,7 @@ func (m *AuthMiddleware) InferenceMiddleware() schemas.RakshaHTTPMiddleware {
 // Basic auth (admin username/password) is intentionally rejected on dashboard
 // API routes — it bypassed session revoke/logout and put long-lived credentials
 // on every request. Inference uses virtual keys via InferenceMiddleware.
-func (m *AuthMiddleware) APIMiddleware() schemas.RakshaHTTPMiddleware {
+func (m *AuthMiddleware) APIMiddleware() schemas.GatewayHTTPMiddleware {
 	systemWhitelistedRoutes := []string{
 		"/api/session/is-auth-enabled",
 		"/api/session/login",
@@ -1333,7 +1336,7 @@ func isPublicBrowserAIRoute(method, path string) bool {
 	}
 }
 
-// isGuardKeyBrowserAIRoute is reachable with a valid X-Raksha-Guard-Key (or session auth).
+// isGuardKeyBrowserAIRoute is reachable with a valid X-Gateway-Guard-Key (or session auth).
 func isGuardKeyBrowserAIRoute(method, path string) bool {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	switch path {
@@ -1356,7 +1359,7 @@ func isGuardKeyBrowserAIRoute(method, path string) bool {
 }
 
 // middleware is the core authentication middleware that checks if the request should be authenticated or not.
-func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, string) bool) schemas.RakshaHTTPMiddleware {
+func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, string) bool) schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
 			// We will first check if its API key auth
@@ -1371,7 +1374,7 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 					SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
 					return
 				}
-				ctx.SetUserValue(schemas.RakshaContextKeySessionToken, "")
+				ctx.SetUserValue(schemas.GatewayContextKeySessionToken, "")
 				// Mark as local admin so downstream RBAC bypasses cleanly when
 				// auth is fully disabled on loopback / ALLOW_OPEN_AUTH bootstrap.
 				ctx.SetUserValue(schemas.IsLocalAdminContextKey, true)
@@ -1398,7 +1401,7 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 					return
 				}
 				if guardSecretRequired() && secret == "" {
-					SendError(ctx, fasthttp.StatusServiceUnavailable, "Guard agent secret not configured — set RAKSHA_GUARD_SECRET in .env")
+					SendError(ctx, fasthttp.StatusServiceUnavailable, "Guard agent secret not configured — set GATEWAY_GUARD_SECRET in .env")
 					return
 				}
 				// No/invalid Guard key → require admin session below
@@ -1424,7 +1427,7 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 						if ticket != "" && m.wsTicketStore != nil {
 							sessionToken := m.wsTicketStore.Consume(ticket)
 							if sessionToken != "" && validateSession(ctx, m.store, sessionToken) {
-								ctx.SetUserValue(schemas.RakshaContextKeySessionToken, sessionToken)
+								ctx.SetUserValue(schemas.GatewayContextKeySessionToken, sessionToken)
 								markLocalAdminIfSessionAdmin(ctx, m.store, sessionToken)
 								next(ctx)
 								return
@@ -1435,7 +1438,7 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 						// Cookie-based WS auth only (legacy ?token= query auth removed — token leak risk).
 						cookieToken := string(ctx.Request.Header.Cookie("token"))
 						if cookieToken != "" && validateSession(ctx, m.store, cookieToken) {
-							ctx.SetUserValue(schemas.RakshaContextKeySessionToken, cookieToken)
+							ctx.SetUserValue(schemas.GatewayContextKeySessionToken, cookieToken)
 							markLocalAdminIfSessionAdmin(ctx, m.store, cookieToken)
 							next(ctx)
 							return
@@ -1450,7 +1453,7 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 				if cookieToken != "" {
 					switch checkSession(ctx, m.store, cookieToken) {
 					case sessionOK:
-						ctx.SetUserValue(schemas.RakshaContextKeySessionToken, cookieToken)
+						ctx.SetUserValue(schemas.GatewayContextKeySessionToken, cookieToken)
 						markLocalAdminIfSessionAdmin(ctx, m.store, cookieToken)
 						next(ctx)
 						return
@@ -1491,7 +1494,7 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 					SendError(ctx, fasthttp.StatusForbidden, "Forbidden: your role does not have access to this resource")
 					return
 				}
-				ctx.SetUserValue(schemas.RakshaContextKeySessionToken, token)
+				ctx.SetUserValue(schemas.GatewayContextKeySessionToken, token)
 				markLocalAdminIfSessionAdmin(ctx, m.store, token)
 				next(ctx)
 				return
@@ -1516,8 +1519,8 @@ type TracingMiddleware struct {
 }
 
 // collectDimensionHeaders gathers x-uf-dim-* request headers into a map keyed by
-// the bare dimension name. TracingMiddleware runs before ConvertToRakshaContext,
-// so it reads the headers directly rather than RakshaContextKeyDimensions.
+// the bare dimension name. TracingMiddleware runs before ConvertToGatewayContext,
+// so it reads the headers directly rather than GatewayContextKeyDimensions.
 func collectDimensionHeaders(ctx *fasthttp.RequestCtx) map[string]string {
 	if ctx == nil {
 		return nil
@@ -1558,7 +1561,7 @@ func (m *TracingMiddleware) SetTracer(tracer *tracing.Tracer) {
 }
 
 // Middleware returns the middleware function that creates distributed traces for requests and forwards completed traces
-func (m *TracingMiddleware) Middleware() schemas.RakshaHTTPMiddleware {
+func (m *TracingMiddleware) Middleware() schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
 			// Pin the tracer for the lifetime of this request so that a concurrent
@@ -1592,18 +1595,18 @@ func (m *TracingMiddleware) Middleware() schemas.RakshaHTTPMiddleware {
 				tracer.SetTraceAttribute(traceID, schemas.TraceAttrSessionID, sessionID)
 			}
 			// Only trace ID goes into context (lightweight, no bloat)
-			ctx.SetUserValue(schemas.RakshaContextKeyTraceID, traceID)
+			ctx.SetUserValue(schemas.GatewayContextKeyTraceID, traceID)
 			// Extract parent span ID from W3C traceparent header (if present)
 			// This is the 16-char span ID from the upstream service that should be
 			// set as the ParentID of our root span for proper trace linking in Datadog/etc.
 			parentSpanID := tracing.ExtractTraceParentSpanID(&ctx.Request.Header)
 			if parentSpanID != "" {
-				ctx.SetUserValue(schemas.RakshaContextKeyParentSpanID, parentSpanID)
+				ctx.SetUserValue(schemas.GatewayContextKeyParentSpanID, parentSpanID)
 			}
 			// Store a trace completion callback for streaming handlers to use.
 			// Accepts transport plugin logs as a parameter so it never reads from
 			// ctx.UserValue — ctx may be recycled by the time this runs in a goroutine.
-			ctx.SetUserValue(schemas.RakshaContextKeyTraceCompleter, func(transportLogs []schemas.PluginLogEntry) {
+			ctx.SetUserValue(schemas.GatewayContextKeyTraceCompleter, func(transportLogs []schemas.PluginLogEntry) {
 				if len(transportLogs) > 0 {
 					tracer.AttachPluginLogs(traceID, transportLogs)
 				}
@@ -1641,8 +1644,8 @@ func (m *TracingMiddleware) Middleware() schemas.RakshaHTTPMiddleware {
 				tracer.SetAttribute(rootSpan, "http.url", string(ctx.RequestURI()))
 				tracer.SetAttribute(rootSpan, "http.user_agent", string(ctx.Request.Header.UserAgent()))
 				// Set root span ID in context for child span creation
-				if spanID, ok := spanCtx.Value(schemas.RakshaContextKeySpanID).(string); ok {
-					ctx.SetUserValue(schemas.RakshaContextKeySpanID, spanID)
+				if spanID, ok := spanCtx.Value(schemas.GatewayContextKeySpanID).(string); ok {
+					ctx.SetUserValue(schemas.GatewayContextKeySpanID, spanID)
 				}
 			}
 			// Capture request headers onto the trace when a connector has opted in.
@@ -1656,7 +1659,7 @@ func (m *TracingMiddleware) Middleware() schemas.RakshaHTTPMiddleware {
 				tracer.SetTraceRequestHeaders(traceID, headers)
 			}
 			defer func() {
-				deferred, _ := ctx.UserValue(schemas.RakshaContextKeyDeferTraceCompletion).(bool)
+				deferred, _ := ctx.UserValue(schemas.GatewayContextKeyDeferTraceCompletion).(bool)
 				// Record response status on the root span
 				if rootSpan != nil {
 					tracer.SetAttribute(rootSpan, "http.status_code", ctx.Response.StatusCode())
@@ -1680,7 +1683,7 @@ func (m *TracingMiddleware) Middleware() schemas.RakshaHTTPMiddleware {
 					return
 				}
 				// Attach transport plugin logs to trace before completion
-				if transportLogs, ok := ctx.UserValue(schemas.RakshaContextKeyTransportPluginLogs).([]schemas.PluginLogEntry); ok && len(transportLogs) > 0 {
+				if transportLogs, ok := ctx.UserValue(schemas.GatewayContextKeyTransportPluginLogs).([]schemas.PluginLogEntry); ok && len(transportLogs) > 0 {
 					tracer.AttachPluginLogs(traceID, transportLogs)
 				}
 				// After response written - async flush

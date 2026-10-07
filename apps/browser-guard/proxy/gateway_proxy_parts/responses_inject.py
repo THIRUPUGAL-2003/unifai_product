@@ -1,4 +1,4 @@
-# Part of Raksha browser_ai_proxy — loaded via browser_ai_proxy.py into one shared namespace.
+# Part of Gateway browser_ai_proxy — loaded via browser_ai_proxy.py into one shared namespace.
 # Do not import this file directly.
 import asyncio
 
@@ -14,8 +14,8 @@ def _security_reply_text(rule_triggered: str, warning_message: str = "") -> str:
         return w
     name = (rule_triggered or "").strip()
     if name:
-        return f"Blocked by Raksha Guard ({name})."
-    return "This request was blocked by Raksha Guard."
+        return f"Blocked by Gateway Guard ({name})."
+    return "This request was blocked by Gateway Guard."
 
 
 def _block_ui_dedupe_key(host: str, msg: str) -> tuple[str, str]:
@@ -44,8 +44,8 @@ def _silent_block_response(flow: http.HTTPFlow, common_headers: dict, *, path: s
     if _is_anthropic_messages_api_shape(path_l, raw_body or ""):
         silent = (
             'event: message_start\n'
-            'data: {"type":"message_start","message":{"id":"msg_raksha_block_dup","type":"message",'
-            '"role":"assistant","content":[],"model":"raksha-guard","stop_reason":null}}\n\n'
+            'data: {"type":"message_start","message":{"id":"msg_gateway_block_dup","type":"message",'
+            '"role":"assistant","content":[],"model":"gateway-guard","stop_reason":null}}\n\n'
             'event: message_delta\n'
             'data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},'
             '"usage":{"output_tokens":0}}\n\n'
@@ -75,7 +75,7 @@ def _silent_block_response(flow: http.HTTPFlow, common_headers: dict, *, path: s
         return
     flow.response = http.Response.make(
         200,
-        b'{"id":"raksha-block-dup","object":"chat.completion","choices":[]}',
+        b'{"id":"gateway-block-dup","object":"chat.completion","choices":[]}',
         {**common_headers, "Content-Type": "application/json; charset=utf-8"},
     )
 
@@ -101,7 +101,7 @@ def inject_file_redact_notice(raw_text: str, notice: str, user_caption: str = ""
         return None
     caption = (user_caption or "").strip()
     if caption:
-        return inject_warned_prompt(raw_text, caption, _redacted_forward(caption, notice.replace("[RAKSHA REDACTED]", "").strip()))
+        return inject_warned_prompt(raw_text, caption, _redacted_forward(caption, notice.replace("[GATEWAY REDACTED]", "").strip()))
     if notice in raw_text:
         return raw_text
     escaped = json.dumps(notice)[1:-1]
@@ -117,7 +117,7 @@ def inject_file_redact_notice(raw_text: str, notice: str, user_caption: str = ""
 def _ws_frames_event_send(reply: str) -> list[bytes]:
     frames = [
         json.dumps({"event": "received"}, ensure_ascii=False).encode("utf-8"),
-        json.dumps({"event": "startMessage", "messageId": "raksha-reply"}, ensure_ascii=False).encode("utf-8"),
+        json.dumps({"event": "startMessage", "messageId": "gateway-reply"}, ensure_ascii=False).encode("utf-8"),
     ]
     step = 400
     for i in range(0, len(reply), step):
@@ -132,19 +132,19 @@ def _ws_frames_openai(reply: str) -> list[bytes]:
     """ChatGPT / OpenAI-compatible / DeepSeek / many chat UIs."""
     return [
         json.dumps({
-            "id": "raksha-reply",
+            "id": "gateway-reply",
             "object": "chat.completion.chunk",
             "choices": [{"index": 0, "delta": {"role": "assistant", "content": reply}, "finish_reason": None}],
         }, ensure_ascii=False).encode("utf-8"),
         json.dumps({
-            "id": "raksha-reply",
+            "id": "gateway-reply",
             "object": "chat.completion.chunk",
             "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
         }, ensure_ascii=False).encode("utf-8"),
         b"[DONE]",
         json.dumps({
             "message": {
-                "id": "raksha-reply",
+                "id": "gateway-reply",
                 "author": {"role": "assistant"},
                 "content": {"content_type": "text", "parts": [reply]},
                 "status": "finished_successfully",
@@ -306,7 +306,7 @@ def inject_websocket_reply(flow: http.HTTPFlow, host: str, reply_text: str) -> N
     try:
         from mitmproxy import ctx
     except Exception as e:
-        print(f"[Raksha Proxy Warning] WS inject unavailable: {e}")
+        print(f"[Gateway Proxy WARNING] WS inject unavailable: {e}")
         return
 
     host_l = (host or "").lower()
@@ -329,9 +329,9 @@ def inject_websocket_reply(flow: http.HTTPFlow, host: str, reply_text: str) -> N
                 ctx.master.commands.call("inject.websocket", flow, True, frame, True)
                 ok += 1
             except Exception as e:
-                print(f"[Raksha Proxy Warning] WS inject frame failed: {e}")
+                print(f"[Gateway Proxy WARNING] WS inject frame failed: {e}")
                 break
-        print(f"[Raksha Proxy] Injected WebSocket reply -> {host_l} ({ok}/{len(frames)} frames)")
+        print(f"[Gateway Proxy] Injected WebSocket reply -> {host_l} ({ok}/{len(frames)} frames)")
 
     _run_on_event_loop(_send)
 
@@ -351,9 +351,9 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
     accept = (flow.request.headers.get("Accept", "") or "").lower()
     msg = (reply_text or "").strip()
     if not msg:
-        msg = "This request was blocked by Raksha Guard."
+        msg = "This request was blocked by Gateway Guard."
     if "evaluation failed" in msg.lower():
-        msg = "This request was blocked by Raksha Guard."
+        msg = "This request was blocked by Gateway Guard."
     msg_json = json.dumps(msg)
     msg_escaped = (
         msg.replace("\\", "\\\\")
@@ -386,7 +386,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             _silent_block_response(
                 flow, common_headers, path=path, raw_body=raw_body, accept=accept,
             )
-            print(f"[Raksha Proxy] BLOCK UI deduped (silent) | {dedupe_domain} | {msg[:80]!r}")
+            print(f"[Gateway Proxy] BLOCK UI deduped (silent) | {dedupe_domain} | {msg[:80]!r}")
             return
         mark_duplicate_event(dedupe_domain, dedupe_key)
 
@@ -396,7 +396,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         upload_err_obj = {
             "error": {
                 "message": msg,
-                "type": "raksha_guard_blocked",
+                "type": "gateway_guard_blocked",
                 "code": "upload_blocked",
                 "rule": rule_triggered,
             },
@@ -487,8 +487,8 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
     if _is_anthropic_messages_api_shape(path, raw_body):
         anthropic_sse = (
             'event: message_start\n'
-            'data: {"type":"message_start","message":{"id":"msg_raksha_block","type":"message",'
-            '"role":"assistant","content":[],"model":"raksha-guard","stop_reason":null}}\n\n'
+            'data: {"type":"message_start","message":{"id":"msg_gateway_block","type":"message",'
+            '"role":"assistant","content":[],"model":"gateway-guard","stop_reason":null}}\n\n'
             'event: content_block_start\n'
             'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n'
             'event: content_block_delta\n'
@@ -557,7 +557,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             "messages": [{"text": msg, "author": "bot", "role": "assistant", "content": msg}],
             "text": msg,
             "error": None,
-            "raksha_blocked": True,
+            "gateway_blocked": True,
         }, ensure_ascii=False)
         body = event_send_sse if "event-stream" in accept or "stream" in path else event_send_json
         ctype = (
@@ -609,7 +609,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             )
         envelopes.extend([
             ["di", 34],
-            ["af.httprm", 34, "-raksha-", 1],
+            ["af.httprm", 34, "-gateway-", 1],
         ])
 
         batchexecute_body = ")]}'\n" + json.dumps(envelopes, ensure_ascii=False) + "\n"
@@ -633,11 +633,11 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
     )
     if wants_stream or "completion" in path:
         openai_sse = (
-            'data: {"id":"raksha-reply","object":"chat.completion.chunk","choices":'
+            'data: {"id":"gateway-reply","object":"chat.completion.chunk","choices":'
             '[{"index":0,"delta":{"role":"assistant","content":'
             f"{msg_json}"
             '},"finish_reason":null}]}\n\n'
-            'data: {"id":"raksha-reply","object":"chat.completion.chunk","choices":'
+            'data: {"id":"gateway-reply","object":"chat.completion.chunk","choices":'
             '[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
             "data: [DONE]\n\n"
         )
@@ -652,7 +652,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
     # Many UIs (Abacus, Poe, custom chat apps) ignore plain OpenAI JSON and keep spinning.
     # Emit a multi-shape body + SSE twin so at least one field the SPA reads shows the block message.
     multi = {
-        "id": "raksha-security-block",
+        "id": "gateway-security-block",
         "object": "chat.completion",
         "choices": [{
             "index": 0,
@@ -662,7 +662,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             "finish_reason": "stop",
         }],
         "message": {
-            "id": "raksha-security-block",
+            "id": "gateway-security-block",
             "role": "assistant",
             "author": {"role": "assistant"},
             "content": msg,
@@ -684,7 +684,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         },
         "data": {"message": msg, "text": msg, "content": msg, "answer": msg},
         "error": None,
-        "raksha": {
+        "gateway": {
             "blocked": True,
             "rule": rule_triggered,
             "message": msg,

@@ -25,6 +25,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getActiveTempToken } from "@/lib/store/apis/tempToken";
 import {
 	getErrorMessage,
@@ -175,7 +176,7 @@ function OAuthAuthView() {
 					</>
 				) : (
 					<>
-						You'll be redirected to the provider to sign in and grant access. Raksha stores the resulting credential against the binding
+						You&apos;ll be redirected to the provider to sign in and grant access. {PRODUCT_NAME} stores the resulting credential against the binding
 						below so this request and future ones can proceed automatically.
 					</>
 				)}
@@ -228,7 +229,7 @@ function HeadersAuthView({ flowId }: { flowId: string }) {
 				</div>
 				<h1 className="text-xl font-semibold tracking-tight">Headers saved</h1>
 				<p className="text-muted-foreground mt-2 text-sm">
-					Raksha verified the connection and stored your credentials. You can close this tab and retry the original action.
+					{PRODUCT_NAME} verified the connection and stored your credentials. You can close this tab and retry the original action.
 				</p>
 				<div className="mt-6 flex gap-3">
 					<SessionsTabLink />

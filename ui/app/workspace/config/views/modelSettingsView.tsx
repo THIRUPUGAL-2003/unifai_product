@@ -18,9 +18,9 @@ interface ModelSettingsFormData {
 
 export default function ModelSettingsView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const frameworkConfig = rakshaConfig?.framework_config;
-	const clientConfig = rakshaConfig?.client_config;
+	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const frameworkConfig = gatewayConfig?.framework_config;
+	const clientConfig = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [forcePricingSync, { isLoading: isForceSyncing }] = useForcePricingSyncMutation();
 
@@ -42,7 +42,7 @@ export default function ModelSettingsView() {
 	const formValues = watch();
 
 	useEffect(() => {
-		if (!rakshaConfig || isDirty) return;
+		if (!gatewayConfig || isDirty) return;
 		reset({
 			pricing_datasheet_url: frameworkConfig?.pricing_url || "",
 			pricing_sync_interval_hours: Math.round((frameworkConfig?.pricing_sync_interval ?? 0) / 3600) || 24,
@@ -59,7 +59,7 @@ export default function ModelSettingsView() {
 	]);
 
 	const hasChanges = useMemo(() => {
-		if (!rakshaConfig || !isDirty) return false;
+		if (!gatewayConfig || !isDirty) return false;
 		const serverUrl = frameworkConfig?.pricing_url || "";
 		const serverInterval = Math.round((frameworkConfig?.pricing_sync_interval ?? 0) / 3600);
 		const serverModelParamsUrl = frameworkConfig?.model_parameters_url || "";
@@ -70,15 +70,15 @@ export default function ModelSettingsView() {
 			formValues.model_parameters_url !== serverModelParamsUrl ||
 			formValues.routing_chain_max_depth !== serverDepth
 		);
-	}, [rakshaConfig, frameworkConfig, clientConfig, formValues, isDirty]);
+	}, [gatewayConfig, frameworkConfig, clientConfig, formValues, isDirty]);
 
 	const onSubmit = async (data: ModelSettingsFormData) => {
 		try {
 			await updateCoreConfig({
-				...rakshaConfig!,
+				...gatewayConfig!,
 				framework_config: {
 					...frameworkConfig,
-					id: rakshaConfig?.framework_config.id || 0,
+					id: gatewayConfig?.framework_config?.id || 0,
 					pricing_url: data.pricing_datasheet_url,
 					pricing_sync_interval: data.pricing_sync_interval_hours * 3600,
 					model_parameters_url: data.model_parameters_url,

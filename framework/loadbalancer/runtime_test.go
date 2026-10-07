@@ -3,7 +3,7 @@ package loadbalancer
 import (
 	"testing"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 func TestSelectProviderKeySkipsKeysThatCannotServeModel(t *testing.T) {

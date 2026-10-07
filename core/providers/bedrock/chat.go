@@ -7,25 +7,25 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToBedrockChatCompletionRequest converts a Raksha request to Bedrock Converse API format
-func ToBedrockChatCompletionRequest(ctx *schemas.RakshaContext, rakshaReq *schemas.RakshaChatRequest) (*BedrockConverseRequest, error) {
-	if rakshaReq == nil {
-		return nil, fmt.Errorf("raksha request is nil")
+// ToBedrockChatCompletionRequest converts a Gateway request to Bedrock Converse API format
+func ToBedrockChatCompletionRequest(ctx *schemas.GatewayContext, gatewayReq *schemas.GatewayChatRequest) (*BedrockConverseRequest, error) {
+	if gatewayReq == nil {
+		return nil, fmt.Errorf("gateway request is nil")
 	}
 
-	if rakshaReq.Input == nil {
+	if gatewayReq.Input == nil {
 		return nil, fmt.Errorf("only chat completion requests are supported for Bedrock Converse API")
 	}
 
 	bedrockReq := &BedrockConverseRequest{
-		ModelID: rakshaReq.Model,
+		ModelID: gatewayReq.Model,
 	}
 
-	input := rakshaReq.Input
-	if schemas.IsAnthropicModelFamily(ctx, rakshaReq.Model) && ctx.Value(schemas.RakshaContextKeySupportsAssistantPrefill) == false {
+	input := gatewayReq.Input
+	if schemas.IsAnthropicModelFamily(ctx, gatewayReq.Model) && ctx.Value(schemas.GatewayContextKeySupportsAssistantPrefill) == false {
 		trimmed := len(input)
 		for trimmed > 0 && input[trimmed-1].Role == schemas.ChatMessageRoleAssistant {
 			trimmed--
@@ -46,7 +46,7 @@ func ToBedrockChatCompletionRequest(ctx *schemas.RakshaContext, rakshaReq *schem
 	// Trim trailing whitespace from the last assistant message text blocks
 	// (only for Anthropic models which use text-based prefill)
 	lastMsgIndex := len(bedrockReq.Messages) - 1
-	if schemas.IsAnthropicModelFamily(ctx, rakshaReq.Model) && lastMsgIndex >= 0 && bedrockReq.Messages[lastMsgIndex].Role == BedrockMessageRoleAssistant {
+	if schemas.IsAnthropicModelFamily(ctx, gatewayReq.Model) && lastMsgIndex >= 0 && bedrockReq.Messages[lastMsgIndex].Role == BedrockMessageRoleAssistant {
 		blocks := bedrockReq.Messages[lastMsgIndex].Content
 		for j := len(blocks) - 1; j >= 0; j-- {
 			if blocks[j].Text != nil {
@@ -57,15 +57,15 @@ func ToBedrockChatCompletionRequest(ctx *schemas.RakshaContext, rakshaReq *schem
 	}
 
 	// Convert parameters and configurations
-	if err := convertChatParameters(ctx, rakshaReq, bedrockReq); err != nil {
+	if err := convertChatParameters(ctx, gatewayReq, bedrockReq); err != nil {
 		return nil, fmt.Errorf("failed to convert chat parameters: %w", err)
 	}
 
 	// Ensure tool config is present when needed
-	ensureChatToolConfigForConversation(ctx, rakshaReq, bedrockReq)
+	ensureChatToolConfigForConversation(ctx, gatewayReq, bedrockReq)
 
 	// capModel is the canonical model used for capability gating (resolves aliases).
-	capModel := schemas.ResolveCanonicalModel(ctx, rakshaReq.Model)
+	capModel := schemas.ResolveCanonicalModel(ctx, gatewayReq.Model)
 	if !schemas.BedrockModelSupportsCachePoints(capModel) {
 		stripCachePointsFromBedrockRequest(bedrockReq)
 	} else if !schemas.BedrockModelSupportsExtendedCacheTTL(capModel) {
@@ -75,8 +75,8 @@ func ToBedrockChatCompletionRequest(ctx *schemas.RakshaContext, rakshaReq *schem
 	return bedrockReq, nil
 }
 
-// ToRakshaChatResponse converts a Bedrock Converse API response to Raksha format
-func (response *BedrockConverseResponse) ToRakshaChatResponse(ctx context.Context, model string) (*schemas.RakshaChatResponse, error) {
+// ToGatewayChatResponse converts a Bedrock Converse API response to Gateway format
+func (response *BedrockConverseResponse) ToGatewayChatResponse(ctx context.Context, model string) (*schemas.GatewayChatResponse, error) {
 	if response == nil {
 		return nil, fmt.Errorf("bedrock response is nil")
 	}
@@ -102,7 +102,7 @@ func (response *BedrockConverseResponse) ToRakshaChatResponse(ctx context.Contex
 
 			if contentBlock.ToolUse != nil {
 				// Check if this is the structured output tool
-				if structuredOutputToolName, ok := ctx.Value(schemas.RakshaContextKeyStructuredOutputToolName).(string); ok && contentBlock.ToolUse.Name == structuredOutputToolName {
+				if structuredOutputToolName, ok := ctx.Value(schemas.GatewayContextKeyStructuredOutputToolName).(string); ok && contentBlock.ToolUse.Name == structuredOutputToolName {
 					// This is structured output - set contentStr and skip adding to toolCalls
 					if contentBlock.ToolUse.Input != nil {
 						jsonStr := string(contentBlock.ToolUse.Input)
@@ -141,7 +141,7 @@ func (response *BedrockConverseResponse) ToRakshaChatResponse(ctx context.Contex
 				}
 				reasoningDetails = append(reasoningDetails, schemas.ChatReasoningDetails{
 					Index:     len(reasoningDetails),
-					Type:      schemas.RakshaReasoningDetailsTypeText,
+					Type:      schemas.GatewayReasoningDetailsTypeText,
 					Text:      contentBlock.ReasoningContent.ReasoningText.Text,
 					Signature: contentBlock.ReasoningContent.ReasoningText.Signature,
 				})
@@ -233,7 +233,7 @@ func (response *BedrockConverseResponse) ToRakshaChatResponse(ctx context.Contex
 	}
 
 	// Create the response choice
-	choices := []schemas.RakshaResponseChoice{
+	choices := []schemas.GatewayResponseChoice{
 		{
 			Index: 0,
 			ChatNonStreamResponseChoice: &schemas.ChatNonStreamResponseChoice{
@@ -246,17 +246,17 @@ func (response *BedrockConverseResponse) ToRakshaChatResponse(ctx context.Contex
 			FinishReason: func() *string {
 				mapped := convertBedrockStopReason(response.StopReason)
 				if usedStructuredOutputTool && len(toolCalls) == 0 &&
-					mapped == string(schemas.RakshaFinishReasonToolCalls) {
-					mapped = string(schemas.RakshaFinishReasonStop)
+					mapped == string(schemas.GatewayFinishReasonToolCalls) {
+					mapped = string(schemas.GatewayFinishReasonStop)
 				}
 				return &mapped
 			}(),
 		},
 	}
-	var usage *schemas.RakshaLLMUsage
+	var usage *schemas.GatewayLLMUsage
 	if response.Usage != nil {
 		// Convert usage information
-		usage = &schemas.RakshaLLMUsage{
+		usage = &schemas.GatewayLLMUsage{
 			PromptTokens:     response.Usage.InputTokens,
 			CompletionTokens: response.Usage.OutputTokens,
 			TotalTokens:      response.Usage.TotalTokens,
@@ -291,23 +291,23 @@ func (response *BedrockConverseResponse) ToRakshaChatResponse(ctx context.Contex
 		}
 	}
 
-	// Create the final Raksha response
-	rakshaResponse := &schemas.RakshaChatResponse{
+	// Create the final Gateway response
+	gatewayResponse := &schemas.GatewayChatResponse{
 		ID:          uuid.New().String(),
 		Model:       model,
 		Object:      "chat.completion",
 		Choices:     choices,
 		Usage:       usage,
 		Created:     int(time.Now().Unix()),
-		ExtraFields: schemas.RakshaResponseExtraFields{},
+		ExtraFields: schemas.GatewayResponseExtraFields{},
 	}
 
 	if response.ServiceTier != nil && response.ServiceTier.Type != "" {
-		tier := mapBedrockServiceTierToRaksha(response.ServiceTier.Type)
-		rakshaResponse.ServiceTier = &tier
+		tier := mapBedrockServiceTierToGateway(response.ServiceTier.Type)
+		gatewayResponse.ServiceTier = &tier
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // BedrockStreamState tracks per-stream tool call index state.
@@ -331,7 +331,7 @@ func NewBedrockStreamStateWithContext(ctx context.Context) *BedrockStreamState {
 	return state
 }
 
-func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStreamState) (*schemas.RakshaChatResponse, *schemas.RakshaError, bool) {
+func (chunk *BedrockStreamEvent) ToGatewayChatCompletionStream(state *BedrockStreamState) (*schemas.GatewayChatResponse, *schemas.GatewayError, bool) {
 	if state == nil {
 		state = NewBedrockStreamState()
 	} else if state.contentBlockToToolCallIdx == nil {
@@ -342,9 +342,9 @@ func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStre
 	switch {
 	case chunk.Role != nil:
 		// Send empty response to signal start
-		streamResponse := &schemas.RakshaChatResponse{
+		streamResponse := &schemas.GatewayChatResponse{
 			Object: "chat.completion.chunk",
-			Choices: []schemas.RakshaResponseChoice{
+			Choices: []schemas.GatewayResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -376,9 +376,9 @@ func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStre
 		toolCall.Function.Name = schemas.Ptr(bedrockRestoreToolName(state.ctx, toolUseStart.Name))
 		toolCall.Function.Arguments = "" // Start with empty arguments
 
-		streamResponse := &schemas.RakshaChatResponse{
+		streamResponse := &schemas.GatewayChatResponse{
 			Object: "chat.completion.chunk",
-			Choices: []schemas.RakshaResponseChoice{
+			Choices: []schemas.GatewayResponseChoice{
 				{
 					Index: 0,
 					ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -398,9 +398,9 @@ func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStre
 			// Handle text delta
 			text := *chunk.Delta.Text
 			if text != "" {
-				streamResponse := &schemas.RakshaChatResponse{
+				streamResponse := &schemas.GatewayChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.RakshaResponseChoice{
+					Choices: []schemas.GatewayResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -433,9 +433,9 @@ func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStre
 			// This is a simplified approach - in practice, you'd need to track tool calls across chunks
 			toolCall.Function.Arguments = toolUseDelta.Input
 
-			streamResponse := &schemas.RakshaChatResponse{
+			streamResponse := &schemas.GatewayChatResponse{
 				Object: "chat.completion.chunk",
-				Choices: []schemas.RakshaResponseChoice{
+				Choices: []schemas.GatewayResponseChoice{
 					{
 						Index: 0,
 						ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -458,11 +458,11 @@ func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStre
 				return nil, nil, false
 			}
 
-			var streamResponse *schemas.RakshaChatResponse
+			var streamResponse *schemas.GatewayChatResponse
 			if reasoningContentDelta.Text != nil && *reasoningContentDelta.Text != "" {
-				streamResponse = &schemas.RakshaChatResponse{
+				streamResponse = &schemas.GatewayChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.RakshaResponseChoice{
+					Choices: []schemas.GatewayResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -471,7 +471,7 @@ func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStre
 									ReasoningDetails: []schemas.ChatReasoningDetails{
 										{
 											Index: 0,
-											Type:  schemas.RakshaReasoningDetailsTypeText,
+											Type:  schemas.GatewayReasoningDetailsTypeText,
 											Text:  reasoningContentDelta.Text,
 										},
 									},
@@ -481,9 +481,9 @@ func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStre
 					},
 				}
 			} else if reasoningContentDelta.Signature != nil {
-				streamResponse = &schemas.RakshaChatResponse{
+				streamResponse = &schemas.GatewayChatResponse{
 					Object: "chat.completion.chunk",
-					Choices: []schemas.RakshaResponseChoice{
+					Choices: []schemas.GatewayResponseChoice{
 						{
 							Index: 0,
 							ChatStreamResponseChoice: &schemas.ChatStreamResponseChoice{
@@ -491,7 +491,7 @@ func (chunk *BedrockStreamEvent) ToRakshaChatCompletionStream(state *BedrockStre
 									ReasoningDetails: []schemas.ChatReasoningDetails{
 										{
 											Index:     0,
-											Type:      schemas.RakshaReasoningDetailsTypeText,
+											Type:      schemas.GatewayReasoningDetailsTypeText,
 											Signature: reasoningContentDelta.Signature,
 										},
 									},

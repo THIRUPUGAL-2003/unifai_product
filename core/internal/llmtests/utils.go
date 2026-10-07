@@ -10,20 +10,20 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // Shared test texts for TTS->SST round-trip validation
 const (
 	// Basic test text for simple round-trip validation
-	TTSTestTextBasic = "Hello, this is a comprehensive test of speech synthesis capabilities from Raksha AI Gateway. We are testing various aspects of text-to-speech conversion including clarity, pronunciation, and overall audio quality. This basic test should demonstrate the fundamental functionality of converting written text into natural-sounding speech audio."
+	TTSTestTextBasic = "Hello, this is a comprehensive test of speech synthesis capabilities from Gateway AI Gateway. We are testing various aspects of text-to-speech conversion including clarity, pronunciation, and overall audio quality. This basic test should demonstrate the fundamental functionality of converting written text into natural-sounding speech audio."
 
 	// Medium length text with punctuation for comprehensive testing
-	TTSTestTextMedium = "Testing speech synthesis and transcription round-trip functionality with Raksha AI Gateway. This comprehensive text includes various punctuation marks: commas, periods, exclamation points! Question marks? Semicolons; and colons: for thorough testing. We also include numbers like 123, 456.789, and technical terms such as API, HTTP, JSON, WebSocket, and machine learning algorithms. The system should handle abbreviations like Dr., Mr., Mrs., and acronyms like NASA, FBI, and CPU correctly. Additionally, we test special characters and symbols: @, #, $, %, &, *, +, =, and various currency symbols like €, £, ¥."
+	TTSTestTextMedium = "Testing speech synthesis and transcription round-trip functionality with Gateway AI Gateway. This comprehensive text includes various punctuation marks: commas, periods, exclamation points! Question marks? Semicolons; and colons: for thorough testing. We also include numbers like 123, 456.789, and technical terms such as API, HTTP, JSON, WebSocket, and machine learning algorithms. The system should handle abbreviations like Dr., Mr., Mrs., and acronyms like NASA, FBI, and CPU correctly. Additionally, we test special characters and symbols: @, #, $, %, &, *, +, =, and various currency symbols like €, £, ¥."
 
 	// Technical text for comprehensive format testing
-	TTSTestTextTechnical = "Raksha AI Gateway is a sophisticated artificial intelligence proxy server that efficiently processes and routes audio requests, chat completions, embeddings, and various machine learning workloads across multiple provider endpoints. The system implements advanced load balancing algorithms, request queuing mechanisms, and intelligent failover strategies to ensure high availability and optimal performance. It supports multiple audio formats including MP3, WAV, FLAC, and OGG, with configurable bitrates, sample rates, and encoding parameters. The gateway handles authentication, rate limiting, request validation, response transformation, and comprehensive logging for enterprise-grade deployments. Performance metrics indicate sub-100ms latency for most operations with 99.9% uptime reliability."
+	TTSTestTextTechnical = "Gateway AI Gateway is a sophisticated artificial intelligence proxy server that efficiently processes and routes audio requests, chat completions, embeddings, and various machine learning workloads across multiple provider endpoints. The system implements advanced load balancing algorithms, request queuing mechanisms, and intelligent failover strategies to ensure high availability and optimal performance. It supports multiple audio formats including MP3, WAV, FLAC, and OGG, with configurable bitrates, sample rates, and encoding parameters. The gateway handles authentication, rate limiting, request validation, response transformation, and comprehensive logging for enterprise-grade deployments. Performance metrics indicate sub-100ms latency for most operations with 99.9% uptime reliability."
 )
 
 func GetProviderDefaultFormat(provider schemas.ModelProvider) string {
@@ -203,7 +203,7 @@ func GetSampleChatTool(toolName SampleToolType) *schemas.ChatTool {
 		Type: "function",
 		Function: &schemas.ChatToolFunction{
 			Name:        toolDisplayName,
-			Description: raksha.Ptr(description),
+			Description: gateway.Ptr(description),
 			Parameters:  function.Parameters,
 		},
 	}
@@ -228,8 +228,8 @@ func GetSampleResponsesTool(toolName SampleToolType) *schemas.ResponsesTool {
 
 	return &schemas.ResponsesTool{
 		Type:        "function",
-		Name:        raksha.Ptr(toolDisplayName),
-		Description: raksha.Ptr(description),
+		Name:        gateway.Ptr(toolDisplayName),
+		Description: gateway.Ptr(description),
 		ResponsesToolFunction: &schemas.ResponsesToolFunction{
 			Parameters: function.Parameters,
 		},
@@ -281,8 +281,8 @@ func GetSampleAudioBase64() (string, error) {
 }
 
 // CreateSpeechRequest creates a basic speech input for testing
-func CreateSpeechRequest(text, voice, format string) *schemas.RakshaSpeechRequest {
-	return &schemas.RakshaSpeechRequest{
+func CreateSpeechRequest(text, voice, format string) *schemas.GatewaySpeechRequest {
+	return &schemas.GatewaySpeechRequest{
 		Input: &schemas.SpeechInput{
 			Input: text,
 		},
@@ -296,8 +296,8 @@ func CreateSpeechRequest(text, voice, format string) *schemas.RakshaSpeechReques
 }
 
 // CreateTranscriptionInput creates a basic transcription input for testing
-func CreateTranscriptionInput(audioData []byte, language, responseFormat *string) *schemas.RakshaTranscriptionRequest {
-	return &schemas.RakshaTranscriptionRequest{
+func CreateTranscriptionInput(audioData []byte, language, responseFormat *string) *schemas.GatewayTranscriptionRequest {
+	return &schemas.GatewayTranscriptionRequest{
 		Input: &schemas.TranscriptionInput{
 			File: audioData,
 		},
@@ -313,17 +313,17 @@ func CreateBasicChatMessage(content string) schemas.ChatMessage {
 	return schemas.ChatMessage{
 		Role: schemas.ChatMessageRoleUser,
 		Content: &schemas.ChatMessageContent{
-			ContentStr: raksha.Ptr(content),
+			ContentStr: gateway.Ptr(content),
 		},
 	}
 }
 
 func CreateBasicResponsesMessage(content string) schemas.ResponsesMessage {
 	return schemas.ResponsesMessage{
-		Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
-		Role: raksha.Ptr(schemas.ResponsesInputMessageRoleUser),
+		Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
+		Role: gateway.Ptr(schemas.ResponsesInputMessageRoleUser),
 		Content: &schemas.ResponsesMessageContent{
-			ContentStr: raksha.Ptr(content),
+			ContentStr: gateway.Ptr(content),
 		},
 	}
 }
@@ -333,7 +333,7 @@ func CreateImageChatMessage(text, imageURL string) schemas.ChatMessage {
 		Role: schemas.ChatMessageRoleUser,
 		Content: &schemas.ChatMessageContent{
 			ContentBlocks: []schemas.ChatContentBlock{
-				{Type: schemas.ChatContentBlockTypeText, Text: raksha.Ptr(text)},
+				{Type: schemas.ChatContentBlockTypeText, Text: gateway.Ptr(text)},
 				{Type: schemas.ChatContentBlockTypeImage, ImageURLStruct: &schemas.ChatInputImage{URL: imageURL}},
 			},
 		},
@@ -342,15 +342,15 @@ func CreateImageChatMessage(text, imageURL string) schemas.ChatMessage {
 
 func CreateImageResponsesMessage(text, imageURL string) schemas.ResponsesMessage {
 	return schemas.ResponsesMessage{
-		Type: raksha.Ptr(schemas.ResponsesMessageTypeMessage),
-		Role: raksha.Ptr(schemas.ResponsesInputMessageRoleUser),
+		Type: gateway.Ptr(schemas.ResponsesMessageTypeMessage),
+		Role: gateway.Ptr(schemas.ResponsesInputMessageRoleUser),
 		Content: &schemas.ResponsesMessageContent{
 			ContentBlocks: []schemas.ResponsesMessageContentBlock{
-				{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: raksha.Ptr(text)},
+				{Type: schemas.ResponsesInputMessageContentBlockTypeText, Text: gateway.Ptr(text)},
 				{
 					Type: schemas.ResponsesInputMessageContentBlockTypeImage,
 					ResponsesInputMessageContentBlockImage: &schemas.ResponsesInputMessageContentBlockImage{
-						ImageURL: raksha.Ptr(imageURL),
+						ImageURL: gateway.Ptr(imageURL),
 					},
 				},
 			},
@@ -359,12 +359,12 @@ func CreateImageResponsesMessage(text, imageURL string) schemas.ResponsesMessage
 }
 
 func CreateAudioChatMessage(text, audioData string, audioFormat string) schemas.ChatMessage {
-	format := raksha.Ptr(audioFormat)
+	format := gateway.Ptr(audioFormat)
 	return schemas.ChatMessage{
 		Role: schemas.ChatMessageRoleUser,
 		Content: &schemas.ChatMessageContent{
 			ContentBlocks: []schemas.ChatContentBlock{
-				{Type: schemas.ChatContentBlockTypeText, Text: raksha.Ptr(text)},
+				{Type: schemas.ChatContentBlockTypeText, Text: gateway.Ptr(text)},
 				{
 					Type: schemas.ChatContentBlockTypeInputAudio,
 					InputAudio: &schemas.ChatInputAudio{
@@ -381,23 +381,23 @@ func CreateToolChatMessage(content string, toolCallID string) schemas.ChatMessag
 	return schemas.ChatMessage{
 		Role: schemas.ChatMessageRoleTool,
 		Content: &schemas.ChatMessageContent{
-			ContentStr: raksha.Ptr(content),
+			ContentStr: gateway.Ptr(content),
 		},
 		ChatToolMessage: &schemas.ChatToolMessage{
-			ToolCallID: raksha.Ptr(toolCallID),
+			ToolCallID: gateway.Ptr(toolCallID),
 		},
 	}
 }
 
 func CreateToolResponsesMessage(content string, toolCallID string) schemas.ResponsesMessage {
 	return schemas.ResponsesMessage{
-		Type: raksha.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
+		Type: gateway.Ptr(schemas.ResponsesMessageTypeFunctionCallOutput),
 		// Note: function_call_output messages don't have a role field per OpenAI API
 		ResponsesToolMessage: &schemas.ResponsesToolMessage{
-			CallID: raksha.Ptr(toolCallID),
+			CallID: gateway.Ptr(toolCallID),
 			// Set ResponsesFunctionToolCallOutput for OpenAI's native Responses API
 			Output: &schemas.ResponsesToolMessageOutputStruct{
-				ResponsesToolCallOutputStr: raksha.Ptr(content),
+				ResponsesToolCallOutputStr: gateway.Ptr(content),
 			},
 		},
 	}
@@ -411,8 +411,8 @@ type ToolCallInfo struct {
 	Index     int // OpenAI tool_calls index (0, 1, 2, ...); -1 when not available
 }
 
-// GetChatContent returns the string content from a RakshaChatResponse
-func GetChatContent(response *schemas.RakshaChatResponse) string {
+// GetChatContent returns the string content from a GatewayChatResponse
+func GetChatContent(response *schemas.GatewayChatResponse) string {
 	if response == nil || response.Choices == nil {
 		return ""
 	}
@@ -441,8 +441,8 @@ func GetChatContent(response *schemas.RakshaChatResponse) string {
 	return ""
 }
 
-// GetTextCompletionContent returns the string content from a RakshaTextCompletionResponse
-func GetTextCompletionContent(response *schemas.RakshaTextCompletionResponse) string {
+// GetTextCompletionContent returns the string content from a GatewayTextCompletionResponse
+func GetTextCompletionContent(response *schemas.GatewayTextCompletionResponse) string {
 	if response == nil || response.Choices == nil {
 		return ""
 	}
@@ -457,8 +457,8 @@ func GetTextCompletionContent(response *schemas.RakshaTextCompletionResponse) st
 	return ""
 }
 
-// GetResponsesContent returns the string content from a RakshaResponsesResponse
-func GetResponsesContent(response *schemas.RakshaResponsesResponse) string {
+// GetResponsesContent returns the string content from a GatewayResponsesResponse
+func GetResponsesContent(response *schemas.GatewayResponsesResponse) string {
 	if response == nil || response.Output == nil {
 		return ""
 	}
@@ -539,8 +539,8 @@ func GetResponsesContent(response *schemas.RakshaResponsesResponse) string {
 	return ""
 }
 
-// ExtractChatToolCalls extracts tool call information from a RakshaChatResponse
-func ExtractChatToolCalls(response *schemas.RakshaChatResponse) []ToolCallInfo {
+// ExtractChatToolCalls extracts tool call information from a GatewayChatResponse
+func ExtractChatToolCalls(response *schemas.GatewayChatResponse) []ToolCallInfo {
 	var toolCalls []ToolCallInfo
 
 	if response == nil || response.Choices == nil {
@@ -566,8 +566,8 @@ func ExtractChatToolCalls(response *schemas.RakshaChatResponse) []ToolCallInfo {
 	return toolCalls
 }
 
-// ExtractResponsesToolCalls extracts tool call information from a RakshaResponsesResponse
-func ExtractResponsesToolCalls(response *schemas.RakshaResponsesResponse) []ToolCallInfo {
+// ExtractResponsesToolCalls extracts tool call information from a GatewayResponsesResponse
+func ExtractResponsesToolCalls(response *schemas.GatewayResponsesResponse) []ToolCallInfo {
 	var toolCalls []ToolCallInfo
 
 	if response == nil || response.Output == nil {
@@ -593,7 +593,7 @@ func ExtractResponsesToolCalls(response *schemas.RakshaResponsesResponse) []Tool
 	return toolCalls
 }
 
-func GetResultContent(response *schemas.RakshaResponse) string {
+func GetResultContent(response *schemas.GatewayResponse) string {
 	if response == nil {
 		return ""
 	}
@@ -608,7 +608,7 @@ func GetResultContent(response *schemas.RakshaResponse) string {
 	return ""
 }
 
-func ExtractToolCalls(response *schemas.RakshaResponse) []ToolCallInfo {
+func ExtractToolCalls(response *schemas.GatewayResponse) []ToolCallInfo {
 	if response == nil {
 		return []ToolCallInfo{}
 	}
@@ -621,7 +621,7 @@ func ExtractToolCalls(response *schemas.RakshaResponse) []ToolCallInfo {
 	return []ToolCallInfo{}
 }
 
-// getEmbeddingVector extracts the float64 vector from a RakshaEmbeddingResponse.
+// getEmbeddingVector extracts the float64 vector from a GatewayEmbeddingResponse.
 func getEmbeddingVector(embedding schemas.EmbeddingData) ([]float64, error) {
 	if embedding.Embedding.EmbeddingArray != nil {
 		return embedding.Embedding.EmbeddingArray, nil
@@ -649,7 +649,7 @@ func getEmbeddingVector(embedding schemas.EmbeddingData) ([]float64, error) {
 
 // GenerateTTSAudioForTest generates real audio using TTS and writes a temp file.
 // Returns audio bytes and temp filepath. Caller’s t will clean it up.
-func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *raksha.Raksha, provider schemas.ModelProvider, ttsModel string, text string, voiceType string, format string) ([]byte, string) {
+func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *gateway.Gateway, provider schemas.ModelProvider, ttsModel string, text string, voiceType string, format string) ([]byte, string) {
 	// inline import guard comment: context/testing/os are required at call sites; Go compiler will include them.
 	voice := GetProviderVoice(provider, voiceType)
 	if voice == "" {
@@ -659,7 +659,7 @@ func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *raksha.R
 		format = "mp3"
 	}
 
-	req := &schemas.RakshaSpeechRequest{
+	req := &schemas.GatewaySpeechRequest{
 		Provider: provider,
 		Model:    ttsModel,
 		Input:    &schemas.SpeechInput{Input: text},
@@ -698,8 +698,8 @@ func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *raksha.R
 		OnFinalFail: retryConfig.OnFinalFail,
 	}
 
-	resp, err := WithSpeechTestRetry(t, speechRetryConfig, retryContext, expectations, "GenerateTTSAudioForTest", func() (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+	resp, err := WithSpeechTestRetry(t, speechRetryConfig, retryContext, expectations, "GenerateTTSAudioForTest", func() (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		return client.SpeechRequest(bfCtx, req)
 	})
 	if err != nil {
@@ -710,7 +710,7 @@ func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *raksha.R
 	}
 
 	suffix := "." + format
-	f, cerr := os.CreateTemp("", "raksha-tts-*"+suffix)
+	f, cerr := os.CreateTemp("", "gateway-tts-*"+suffix)
 	if cerr != nil {
 		t.Fatalf("failed to create temp audio file: %v", cerr)
 	}
@@ -726,7 +726,7 @@ func GenerateTTSAudioForTest(ctx context.Context, t *testing.T, client *raksha.R
 	return resp.Audio, tempPath
 }
 
-func GetErrorMessage(err *schemas.RakshaError) string {
+func GetErrorMessage(err *schemas.GatewayError) string {
 	if err == nil {
 		return ""
 	}

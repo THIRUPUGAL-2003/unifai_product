@@ -1,27 +1,27 @@
-Raksha Guard — Windows Install (turn ON)
+Gateway Guard — Windows Install (turn ON)
 =======================================
 
 Company server: https://unifai.yespanchi.com
 (If IT gave you a different URL, use the config packaged in this ZIP.)
 
-1. Extract Raksha_Guard_Windows.zip completely (do not run Setup from inside the ZIP).
-2. Run Raksha_Guard_Setup.exe.
+1. Extract Gateway_Guard_Windows.zip completely (do not run Setup from inside the ZIP).
+2. Run Gateway_Guard_Setup.exe.
 3. Keep "Start automatically at Windows login" checked.
 4. Finish — Guard runs in the background (system tray / no black terminal).
 5. Open monitored AI sites as usual (ChatGPT, etc.).
 6. Certificate warnings → contact IT (CA trust). Status file:
-   %LOCALAPPDATA%\Raksha\Guard\ca_install_status.txt
+   %LOCALAPPDATA%\Gateway\Guard\ca_install_status.txt
 
 Optional update later
 ---------------------
-Run Update_Raksha_Guard.ps1 from this package (or IT push via Browser AI Rebuild).
+Run Update_Gateway_Guard.ps1 from this package (or IT push via Browser AI Rebuild).
 
 Logs
 ----
-%LOCALAPPDATA%\Raksha\Guard\raksha_guard.log
+%LOCALAPPDATA%\Gateway\Guard\gateway_guard.log
 
 Uninstall (turn OFF)
 --------------------
-Windows Settings → Apps → Raksha Guard → Uninstall
-(or Start Menu → Raksha Guard → Uninstall).
+Windows Settings → Apps → Gateway Guard → Uninstall
+(or Start Menu → Gateway Guard → Uninstall).
 Enter the company uninstall key (from Setup) or today's rotating daily Guard key (from Guard Agents menu).

@@ -1,4 +1,4 @@
-// Package handlers provides HTTP request handlers for the Raksha HTTP transport.
+// Package handlers provides HTTP request handlers for the Gateway HTTP transport.
 // This file contains all governance management functionality including CRUD operations for VKs, Rules, and configs.
 package handlers
 
@@ -20,16 +20,16 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
 	"github.com/google/uuid"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/logstore"
-	"github.com/raksha/raksha/framework/modelcatalog"
-	"github.com/raksha/raksha/plugins/governance"
-	"github.com/raksha/raksha/plugins/governance/complexity"
-	"github.com/raksha/raksha/plugins/logging"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/logstore"
+	"github.com/gateway/gateway/framework/modelcatalog"
+	"github.com/gateway/gateway/plugins/governance"
+	"github.com/gateway/gateway/plugins/governance/complexity"
+	"github.com/gateway/gateway/plugins/logging"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -70,7 +70,7 @@ type GovernanceManager interface {
 }
 
 type complexityAnalyzerConfigReloader interface {
-	// HTTP server bridge signature: RakshaHTTPServer implements this and adapts
+	// HTTP server bridge signature: GatewayHTTPServer implements this and adapts
 	// to the governance plugin's in-memory ReloadComplexityAnalyzerConfig(config).
 	ReloadComplexityAnalyzerConfig(ctx context.Context, config *complexity.AnalyzerConfig) error
 }
@@ -1137,7 +1137,7 @@ type UpdateProviderGovernanceRequest struct {
 }
 
 // RegisterRoutes registers all governance-related routes for the new hierarchical system
-func (h *GovernanceHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *GovernanceHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/governance/complexity-analyzer-config", lib.ChainMiddlewares(h.getComplexityAnalyzerConfig, middlewares...))
 	r.PUT("/api/governance/complexity-analyzer-config", lib.ChainMiddlewares(h.updateComplexityAnalyzerConfig, middlewares...))
 	r.POST("/api/governance/complexity-analyzer-config/reset", lib.ChainMiddlewares(h.resetComplexityAnalyzerConfig, middlewares...))
@@ -1258,7 +1258,7 @@ func (h *GovernanceHandler) updateComplexityAnalyzerConfig(ctx *fasthttp.Request
 		return
 	}
 	if err := h.reloadComplexityAnalyzerConfig(ctx, normalized); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("failed to reload complexity analyzer config in memory: %v, please restart raksha to sync with the database", err))
+		SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("failed to reload complexity analyzer config in memory: %v, please restart gateway to sync with the database", err))
 		return
 	}
 
@@ -1277,7 +1277,7 @@ func (h *GovernanceHandler) resetComplexityAnalyzerConfig(ctx *fasthttp.RequestC
 		return
 	}
 	if err := h.reloadComplexityAnalyzerConfig(ctx, &defaults); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("failed to reload complexity analyzer config in memory: %v, please restart raksha to sync with the database", err))
+		SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("failed to reload complexity analyzer config in memory: %v, please restart gateway to sync with the database", err))
 		return
 	}
 
@@ -1309,7 +1309,7 @@ func allowedVKIDsForRequest(ctx *fasthttp.RequestCtx, store configstore.ConfigSt
 	if store == nil {
 		return nil, false
 	}
-	token, _ := ctx.UserValue(schemas.RakshaContextKeySessionToken).(string)
+	token, _ := ctx.UserValue(schemas.GatewayContextKeySessionToken).(string)
 	if token == "" {
 		token = sessionToken(ctx)
 	}
@@ -1369,7 +1369,7 @@ func requestSessionUserID(ctx *fasthttp.RequestCtx, store configstore.ConfigStor
 	if store == nil {
 		return ""
 	}
-	token, _ := ctx.UserValue(schemas.RakshaContextKeySessionToken).(string)
+	token, _ := ctx.UserValue(schemas.GatewayContextKeySessionToken).(string)
 	if token == "" {
 		token = sessionToken(ctx)
 	}
@@ -4711,7 +4711,7 @@ func (h *GovernanceHandler) createRoutingRule(ctx *fasthttp.RequestCtx) {
 	// Handle Enabled/ChainRule: nil means use DB default (true/false), otherwise use provided value
 	enabled := req.Enabled
 	if enabled == nil {
-		enabled = raksha.Ptr(true)
+		enabled = gateway.Ptr(true)
 	}
 	chainRule := false // DB default
 	if req.ChainRule != nil {
@@ -4740,7 +4740,7 @@ func (h *GovernanceHandler) createRoutingRule(ctx *fasthttp.RequestCtx) {
 
 	// Update in-memory store via manager callback
 	if err := h.governanceManager.ReloadRoutingRule(ctx, rule.ID); err != nil {
-		SendError(ctx, 500, fmt.Sprintf("Failed to reload routing rule in memory: %v, please restart raksha to sync with the database", err))
+		SendError(ctx, 500, fmt.Sprintf("Failed to reload routing rule in memory: %v, please restart gateway to sync with the database", err))
 		return
 	}
 
@@ -4849,7 +4849,7 @@ func (h *GovernanceHandler) updateRoutingRule(ctx *fasthttp.RequestCtx) {
 
 	// Update in-memory store via manager callback
 	if err := h.governanceManager.ReloadRoutingRule(ctx, rule.ID); err != nil {
-		SendError(ctx, 500, fmt.Sprintf("Failed to reload routing rule in memory: %v, please restart raksha to sync with the database", err))
+		SendError(ctx, 500, fmt.Sprintf("Failed to reload routing rule in memory: %v, please restart gateway to sync with the database", err))
 		return
 	}
 

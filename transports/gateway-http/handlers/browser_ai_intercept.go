@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/framework/logstore"
+	"github.com/gateway/gateway/framework/logstore"
 	"github.com/valyala/fasthttp"
 )
 
@@ -212,7 +212,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 							ruleWarning = ""
 						}
 						if ruleWarning == "" {
-							ruleWarning = "This request was blocked by Raksha Guard."
+							ruleWarning = "This request was blocked by Gateway Guard."
 						}
 						allowed = false
 						isViolationBlock = true
@@ -279,7 +279,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		} // end non-opaque AI bot evaluation
 	}
 
-	// What the browser AI receives: REDACT → [RAKSHA REDACTED]; WARN → [RAKSHA WARNING]. Logs keep original only.
+	// What the browser AI receives: REDACT → [GATEWAY REDACTED]; WARN → [GATEWAY WARNING]. Logs keep original only.
 	forwardPrompt := payload.Prompt
 	if logEntry.Action == "Redacted" {
 		forwardPrompt = logstore.FormatWarnedForwardPrompt(payload.Prompt, ruleWarning)
@@ -327,7 +327,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 			}
 		}
 		if strings.TrimSpace(replyText) == "" && !isViolationBlock {
-			replyText = "Raksha Reply Bot is enabled for this site, but no model response was returned. Please try again or check provider/model settings."
+			replyText = "Gateway Reply Bot is enabled for this site, but no model response was returned. Please try again or check provider/model settings."
 		}
 		_ = h.manager.UpdateLogReplyBot(ctx, logEntry.ID, replyProvider, replyModel, replyText)
 		logEntry.ReplyBotProvider = replyProvider

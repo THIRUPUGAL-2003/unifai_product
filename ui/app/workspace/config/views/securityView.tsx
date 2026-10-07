@@ -5,7 +5,7 @@ import { SecretVarInput } from "@/components/ui/secretVarInput";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { IS_ENTERPRISE } from "@/lib/constants/config";
+import { IS_ENTERPRISE, PRODUCT_NAME } from "@/lib/constants/config";
 import {
 	getErrorMessage,
 	useGetCoreConfigQuery,
@@ -53,12 +53,12 @@ const isRedactedPassword = (pwd?: string) => {
 
 export default function SecurityView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const { data: authType, isLoading: authTypeLoading, error: authTypeError } = useGetAuthTypeQuery(undefined, { skip: !IS_ENTERPRISE });
-	const { data: smtpData } = useGetSMTPConfigQuery();
+	const { data: smtpData, error: smtpError } = useGetSMTPConfigQuery();
 	const [updateSMTP, { isLoading: isSavingSMTP }] = useUpdateSMTPConfigMutation();
 	const [testSMTP, { isLoading: isTestingSMTP }] = useTestSMTPConfigMutation();
-	const config = rakshaConfig?.client_config;
+	const config = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [localConfig, setLocalConfig] = useState<CoreConfig>(DefaultCoreConfig);
 	const showPasswordSection = !IS_ENTERPRISE || (!authTypeLoading && !authTypeError && authType?.type !== "sso");
@@ -71,7 +71,7 @@ export default function SecurityView() {
 		username: "",
 		password: "",
 		from_email: "",
-		from_name: "Raksha",
+		from_name: PRODUCT_NAME,
 		use_tls: true,
 		notify_on_login: false,
 		notify_on_user_create: true,
@@ -97,7 +97,7 @@ export default function SecurityView() {
 	const [passwordError, setPasswordError] = useState("");
 
 	useEffect(() => {
-		if (rakshaConfig && config) {
+		if (gatewayConfig && config) {
 			setLocalConfig(config);
 			setLocalValues({
 				allowed_origins: config?.allowed_origins?.join(", ") || "",
@@ -106,11 +106,11 @@ export default function SecurityView() {
 				whitelisted_routes: config?.whitelisted_routes?.join(", ") || "",
 			});
 		}
-		if (rakshaConfig?.auth_config) {
-			setAuthConfig(rakshaConfig.auth_config);
+		if (gatewayConfig?.auth_config) {
+			setAuthConfig(gatewayConfig.auth_config);
 			setPasswordError("");
 		}
-	}, [config, rakshaConfig]);
+	}, [config, gatewayConfig]);
 
 	useEffect(() => {
 		if (!smtpData) return;
@@ -121,7 +121,7 @@ export default function SecurityView() {
 			username: smtpData.username || "",
 			password: "",
 			from_email: smtpData.from_email || "",
-			from_name: smtpData.from_name || "Raksha",
+			from_name: smtpData.from_name || PRODUCT_NAME,
 			use_tls: smtpData.use_tls,
 			notify_on_login: smtpData.notify_on_login,
 			notify_on_user_create: smtpData.notify_on_user_create,
@@ -168,15 +168,15 @@ export default function SecurityView() {
 		const headersChanged = localHeaders !== serverHeaders;
 
 		const usernameChanged =
-			authConfig.admin_username?.value !== rakshaConfig?.auth_config?.admin_username?.value ||
-			authConfig.admin_username?.ref !== rakshaConfig?.auth_config?.admin_username?.ref ||
-			authConfig.admin_username?.type !== rakshaConfig?.auth_config?.admin_username?.type;
+			authConfig.admin_username?.value !== gatewayConfig?.auth_config?.admin_username?.value ||
+			authConfig.admin_username?.ref !== gatewayConfig?.auth_config?.admin_username?.ref ||
+			authConfig.admin_username?.type !== gatewayConfig?.auth_config?.admin_username?.type;
 		const passwordChanged =
-			authConfig.admin_password?.value !== rakshaConfig?.auth_config?.admin_password?.value ||
-			authConfig.admin_password?.ref !== rakshaConfig?.auth_config?.admin_password?.ref ||
-			authConfig.admin_password?.type !== rakshaConfig?.auth_config?.admin_password?.type;
+			authConfig.admin_password?.value !== gatewayConfig?.auth_config?.admin_password?.value ||
+			authConfig.admin_password?.ref !== gatewayConfig?.auth_config?.admin_password?.ref ||
+			authConfig.admin_password?.type !== gatewayConfig?.auth_config?.admin_password?.type;
 		const authChanged = showPasswordSection
-			? authConfig.is_enabled !== rakshaConfig?.auth_config?.is_enabled || usernameChanged || passwordChanged
+			? authConfig.is_enabled !== gatewayConfig?.auth_config?.is_enabled || usernameChanged || passwordChanged
 			: false;
 
 		const localRequired = localConfig.required_headers?.slice().sort().join(",");
@@ -199,7 +199,7 @@ export default function SecurityView() {
 			enforceAuthOnInferenceChanged ||
 			allowDirectKeysChanged
 		);
-	}, [config, localConfig, authConfig, rakshaConfig, showPasswordSection]);
+	}, [config, localConfig, authConfig, gatewayConfig, showPasswordSection]);
 
 	const handleAllowedOriginsChange = useCallback((value: string) => {
 		setLocalValues((prev) => ({ ...prev, allowed_origins: value }));
@@ -232,12 +232,12 @@ export default function SecurityView() {
 	const handleAuthFieldChange = useCallback((field: "admin_username" | "admin_password", value: SecretVar) => {
 		if (field === "admin_password") {
 			const isRedacted = isRedactedPassword(value?.value);
-			const isUnchanged = value?.value === rakshaConfig?.auth_config?.admin_password?.value;
+			const isUnchanged = value?.value === gatewayConfig?.auth_config?.admin_password?.value;
 			const passwordPolicyFailures = !value.ref && value.value && !isRedacted && !isUnchanged ? getPasswordPolicyFailures(value.value) : [];
 			setPasswordError(passwordPolicyFailures.length > 0 ? `Password must include ${passwordPolicyFailures.join(", ")}.` : "");
 		}
 		setAuthConfig((prev) => ({ ...prev, [field]: value }));
-	}, [rakshaConfig]);
+	}, [gatewayConfig]);
 
 	const handleSave = useCallback(async () => {
 		try {
@@ -252,9 +252,9 @@ export default function SecurityView() {
 			const hasUsername = authConfig.admin_username?.value || authConfig.admin_username?.ref;
 			const hasPassword = authConfig.admin_password?.value || authConfig.admin_password?.ref;
 			const passwordChanged =
-				authConfig.admin_password?.value !== rakshaConfig?.auth_config?.admin_password?.value ||
-				authConfig.admin_password?.ref !== rakshaConfig?.auth_config?.admin_password?.ref ||
-				authConfig.admin_password?.type !== rakshaConfig?.auth_config?.admin_password?.type;
+				authConfig.admin_password?.value !== gatewayConfig?.auth_config?.admin_password?.value ||
+				authConfig.admin_password?.ref !== gatewayConfig?.auth_config?.admin_password?.ref ||
+				authConfig.admin_password?.type !== gatewayConfig?.auth_config?.admin_password?.type;
 			const isRedacted = isRedactedPassword(authConfig.admin_password?.value);
 
 			const passwordPolicyFailures =
@@ -281,7 +281,7 @@ export default function SecurityView() {
 			}
 
 			await updateCoreConfig({
-				...rakshaConfig!,
+				...gatewayConfig!,
 				client_config: localConfig,
 				...(showPasswordSection
 					? {
@@ -293,7 +293,7 @@ export default function SecurityView() {
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
-	}, [rakshaConfig, localConfig, authConfig, showPasswordSection, updateCoreConfig]);
+	}, [gatewayConfig, localConfig, authConfig, showPasswordSection, updateCoreConfig]);
 
 	return (
 		<div className="mx-auto h-[calc(100vh-50px)] w-full max-w-4xl space-y-4 overflow-y-auto">
@@ -301,6 +301,13 @@ export default function SecurityView() {
 				<h2 className="text-lg font-semibold tracking-tight">Security Settings</h2>
 				<p className="text-muted-foreground text-sm">Configure security and access control settings.</p>
 			</div>
+
+			{smtpError ? (
+				<div className="border-destructive/50 bg-destructive/10 rounded-sm border p-4">
+					<p className="text-destructive text-sm font-medium">Failed to load SMTP settings</p>
+					<p className="text-muted-foreground mt-1 text-sm">{getErrorMessage(smtpError)}</p>
+				</div>
+			) : null}
 
 			<div className="space-y-4">
 				<div className="space-y-4 rounded-sm border p-4">
@@ -454,7 +461,7 @@ export default function SecurityView() {
 										Password protect the dashboard <Badge variant="secondary">BETA</Badge>
 									</Label>
 									<p className="text-muted-foreground text-sm">
-										Set up authentication credentials to protect your Raksha dashboard. Once configured, use the generated token for all
+										Set up authentication credentials to protect your {PRODUCT_NAME} dashboard. Once configured, use the generated token for all
 										admin API calls.
 									</p>
 								</div>
@@ -531,7 +538,7 @@ export default function SecurityView() {
 						</label>
 						<p className="text-muted-foreground text-sm">
 							When enabled, callers can pass a provider API key directly in the <b>Authorization</b>, <b>x-api-key</b>, or{" "}
-							<b>x-goog-api-key</b> header alongside <b>x-uf-direct-key: true</b>. Raksha will use that key directly, bypassing the
+							<b>x-goog-api-key</b> header alongside <b>x-uf-direct-key: true</b>. {PRODUCT_NAME} will use that key directly, bypassing the
 							registered key pool.
 						</p>
 					</div>

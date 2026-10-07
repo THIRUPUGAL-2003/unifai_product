@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate/auth"
 	"github.com/weaviate/weaviate-go-client/v5/weaviate/filters"
@@ -18,7 +18,7 @@ import (
 // Default values for Weaviate vector index configuration
 const (
 	// Default class names (Weaviate prefers PascalCase)
-	DefaultClassName = "RakshaStore"
+	DefaultClassName = "GatewayStore"
 )
 
 // WeaviateConfig represents the configuration for the Weaviate vector store.

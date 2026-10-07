@@ -1,4 +1,4 @@
-// Package server provides the HTTP server for Raksha.
+// Package server provides the HTTP server for Gateway.
 package server
 
 import (
@@ -21,26 +21,26 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
-	"github.com/raksha/raksha/framework/logstore"
-	dynamicPlugins "github.com/raksha/raksha/framework/plugins"
-	"github.com/raksha/raksha/framework/temptoken"
-	"github.com/raksha/raksha/framework/tracing"
-	"github.com/raksha/raksha/plugins/governance"
-	"github.com/raksha/raksha/plugins/governance/complexity"
-	"github.com/raksha/raksha/plugins/logging"
-	"github.com/raksha/raksha/plugins/otel"
-	"github.com/raksha/raksha/plugins/prompts"
-	"github.com/raksha/raksha/plugins/semanticcache"
-	"github.com/raksha/raksha/plugins/telemetry"
-	"github.com/raksha/raksha/transports/raksha-http/handlers"
-	"github.com/raksha/raksha/transports/raksha-http/integrations"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
-	ufws "github.com/raksha/raksha/transports/raksha-http/websocket"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/gateway/gateway/framework/logstore"
+	dynamicPlugins "github.com/gateway/gateway/framework/plugins"
+	"github.com/gateway/gateway/framework/temptoken"
+	"github.com/gateway/gateway/framework/tracing"
+	"github.com/gateway/gateway/plugins/governance"
+	"github.com/gateway/gateway/plugins/governance/complexity"
+	"github.com/gateway/gateway/plugins/logging"
+	"github.com/gateway/gateway/plugins/otel"
+	"github.com/gateway/gateway/plugins/prompts"
+	"github.com/gateway/gateway/plugins/semanticcache"
+	"github.com/gateway/gateway/plugins/telemetry"
+	"github.com/gateway/gateway/transports/gateway-http/handlers"
+	"github.com/gateway/gateway/transports/gateway-http/integrations"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
+	ufws "github.com/gateway/gateway/transports/gateway-http/websocket"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"gorm.io/gorm"
@@ -128,9 +128,9 @@ type ServerCallbacks interface {
 	EnableMCPClient(ctx context.Context, id string) error
 }
 
-// RakshaHTTPServer represents a HTTP server instance.
-type RakshaHTTPServer struct {
-	Ctx    *schemas.RakshaContext
+// GatewayHTTPServer represents a HTTP server instance.
+type GatewayHTTPServer struct {
+	Ctx    *schemas.GatewayContext
 	cancel context.CancelFunc
 
 	Version   string
@@ -145,7 +145,7 @@ type RakshaHTTPServer struct {
 	LogsCleaner     *logstore.LogsCleaner
 	AsyncJobCleaner *logstore.AsyncJobCleaner
 
-	Client *raksha.Raksha
+	Client *gateway.Gateway
 	Config *lib.Config
 
 	Server *fasthttp.Server
@@ -179,9 +179,9 @@ func SetLogger(l schemas.Logger) {
 	logger = l
 }
 
-// NewRakshaHTTPServer creates a new instance of RakshaHTTPServer.
-func NewRakshaHTTPServer(version string, uiContent embed.FS) *RakshaHTTPServer {
-	return &RakshaHTTPServer{
+// NewGatewayHTTPServer creates a new instance of GatewayHTTPServer.
+func NewGatewayHTTPServer(version string, uiContent embed.FS) *GatewayHTTPServer {
+	return &GatewayHTTPServer{
 		Version:        version,
 		UIContent:      uiContent,
 		Port:           DefaultPort,
@@ -208,7 +208,7 @@ func (s *GovernanceInMemoryStore) GetMCPClientsAllowingAllVirtualKeys() map[stri
 }
 
 // AddMCPClient adds a new MCP client to the in-memory store
-func (s *RakshaHTTPServer) AddMCPClient(ctx context.Context, clientConfig *schemas.MCPClientConfig) error {
+func (s *GatewayHTTPServer) AddMCPClient(ctx context.Context, clientConfig *schemas.MCPClientConfig) error {
 	if err := s.Config.AddMCPClient(ctx, clientConfig); err != nil {
 		return err
 	}
@@ -219,8 +219,8 @@ func (s *RakshaHTTPServer) AddMCPClient(ctx context.Context, clientConfig *schem
 }
 
 // ReconnectMCPClient reconnects an MCP client to the in-memory store
-func (s *RakshaHTTPServer) ReconnectMCPClient(ctx context.Context, id string) error {
-	// Check if client is registered in Raksha (can be not registered if client initialization failed)
+func (s *GatewayHTTPServer) ReconnectMCPClient(ctx context.Context, id string) error {
+	// Check if client is registered in Gateway (can be not registered if client initialization failed)
 	if clients, err := s.Client.GetMCPClients(); err == nil && len(clients) > 0 {
 		for _, client := range clients {
 			if client.Config.ID == id {
@@ -231,7 +231,7 @@ func (s *RakshaHTTPServer) ReconnectMCPClient(ctx context.Context, id string) er
 			}
 		}
 	}
-	// Config exists in store, but not in Raksha (can happen if client initialization failed)
+	// Config exists in store, but not in Gateway (can happen if client initialization failed)
 	clientConfig, err := s.Config.GetMCPClient(id)
 	if err != nil {
 		return err
@@ -246,7 +246,7 @@ func (s *RakshaHTTPServer) ReconnectMCPClient(ctx context.Context, id string) er
 }
 
 // UpdateMCPClient updates an MCP client in the in-memory store
-func (s *RakshaHTTPServer) UpdateMCPClient(ctx context.Context, id string, updatedConfig *schemas.MCPClientConfig) error {
+func (s *GatewayHTTPServer) UpdateMCPClient(ctx context.Context, id string, updatedConfig *schemas.MCPClientConfig) error {
 	if err := s.Config.UpdateMCPClient(ctx, id, updatedConfig); err != nil {
 		return err
 	}
@@ -257,7 +257,7 @@ func (s *RakshaHTTPServer) UpdateMCPClient(ctx context.Context, id string, updat
 }
 
 // UpdateMCPClientConnection reconnects an existing MCP client using updated headers
-func (s *RakshaHTTPServer) UpdateMCPClientConnection(ctx context.Context, id string, newConfig *schemas.MCPClientConfig) error {
+func (s *GatewayHTTPServer) UpdateMCPClientConnection(ctx context.Context, id string, newConfig *schemas.MCPClientConfig) error {
 	if err := s.Config.UpdateMCPClientConnection(ctx, id, newConfig); err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ func (s *RakshaHTTPServer) UpdateMCPClientConnection(ctx context.Context, id str
 }
 
 // RemoveMCPClient removes an MCP client from the in-memory store
-func (s *RakshaHTTPServer) RemoveMCPClient(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) RemoveMCPClient(ctx context.Context, id string) error {
 	if err := s.Config.RemoveMCPClient(ctx, id); err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func (s *RakshaHTTPServer) RemoveMCPClient(ctx context.Context, id string) error
 }
 
 // DisableMCPClient shuts down an MCP client's connection and workers without removing it.
-func (s *RakshaHTTPServer) DisableMCPClient(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) DisableMCPClient(ctx context.Context, id string) error {
 	if err := s.Config.DisableMCPClient(ctx, id); err != nil {
 		return err
 	}
@@ -290,7 +290,7 @@ func (s *RakshaHTTPServer) DisableMCPClient(ctx context.Context, id string) erro
 }
 
 // EnableMCPClient reconnects a disabled MCP client and restarts its health monitor and tool syncer.
-func (s *RakshaHTTPServer) EnableMCPClient(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) EnableMCPClient(ctx context.Context, id string) error {
 	if err := s.Config.EnableMCPClient(ctx, id); err != nil {
 		return err
 	}
@@ -300,21 +300,21 @@ func (s *RakshaHTTPServer) EnableMCPClient(ctx context.Context, id string) error
 	return nil
 }
 
-// VerifyHeadersConnection delegates to the Raksha client to verify an MCP
+// VerifyHeadersConnection delegates to the Gateway client to verify an MCP
 // server with caller-supplied header values and discover its tools.
-func (s *RakshaHTTPServer) VerifyHeadersConnection(ctx context.Context, config *schemas.MCPClientConfig, userHeaders map[string]string) (map[string]schemas.ChatTool, map[string]string, error) {
+func (s *GatewayHTTPServer) VerifyHeadersConnection(ctx context.Context, config *schemas.MCPClientConfig, userHeaders map[string]string) (map[string]schemas.ChatTool, map[string]string, error) {
 	return s.Client.VerifyHeadersConnection(ctx, config, userHeaders)
 }
 
-// VerifyPerUserOAuthConnection delegates to the Raksha client to verify an MCP
+// VerifyPerUserOAuthConnection delegates to the Gateway client to verify an MCP
 // server using a temporary access token and discover available tools.
-func (s *RakshaHTTPServer) VerifyPerUserOAuthConnection(ctx context.Context, config *schemas.MCPClientConfig, accessToken string) (map[string]schemas.ChatTool, map[string]string, error) {
+func (s *GatewayHTTPServer) VerifyPerUserOAuthConnection(ctx context.Context, config *schemas.MCPClientConfig, accessToken string) (map[string]schemas.ChatTool, map[string]string, error) {
 	return s.Client.VerifyPerUserOAuthConnection(ctx, config, accessToken)
 }
 
-// SetClientTools delegates to the Raksha client to update tool map for an existing MCP client,
+// SetClientTools delegates to the Gateway client to update tool map for an existing MCP client,
 // then re-syncs the MCP server so the new tools are immediately visible via /mcp.
-func (s *RakshaHTTPServer) SetClientTools(clientID string, tools map[string]schemas.ChatTool, toolNameMapping map[string]string) {
+func (s *GatewayHTTPServer) SetClientTools(clientID string, tools map[string]schemas.ChatTool, toolNameMapping map[string]string) {
 	s.Client.SetClientTools(clientID, tools, toolNameMapping)
 	if err := s.MCPServerHandler.SyncAllMCPServers(context.Background()); err != nil {
 		logger.Warn("failed to sync MCP servers after setting client tools: %v", err)
@@ -322,38 +322,38 @@ func (s *RakshaHTTPServer) SetClientTools(clientID string, tools map[string]sche
 }
 
 // ExecuteChatMCPTool executes an MCP tool call and returns the result as a chat message.
-func (s *RakshaHTTPServer) ExecuteChatMCPTool(ctx context.Context, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.RakshaError) {
-	rakshaCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-	return s.Client.ExecuteChatMCPTool(rakshaCtx, toolCall)
+func (s *GatewayHTTPServer) ExecuteChatMCPTool(ctx context.Context, toolCall *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.GatewayError) {
+	gatewayCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+	return s.Client.ExecuteChatMCPTool(gatewayCtx, toolCall)
 }
 
 // ExecuteResponsesMCPTool executes an MCP tool call and returns the result as a responses message.
-func (s *RakshaHTTPServer) ExecuteResponsesMCPTool(ctx context.Context, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.RakshaError) {
-	rakshaCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-	return s.Client.ExecuteResponsesMCPTool(rakshaCtx, toolCall)
+func (s *GatewayHTTPServer) ExecuteResponsesMCPTool(ctx context.Context, toolCall *schemas.ResponsesToolMessage) (*schemas.ResponsesMessage, *schemas.GatewayError) {
+	gatewayCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+	return s.Client.ExecuteResponsesMCPTool(gatewayCtx, toolCall)
 }
 
-func (s *RakshaHTTPServer) GetAvailableMCPTools(ctx context.Context) []schemas.ChatTool {
-	rakshaCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
-	return s.Client.GetAvailableMCPTools(rakshaCtx)
+func (s *GatewayHTTPServer) GetAvailableMCPTools(ctx context.Context) []schemas.ChatTool {
+	gatewayCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
+	return s.Client.GetAvailableMCPTools(gatewayCtx)
 }
 
 // markPluginDisabled marks a plugin as disabled in the plugin status
-func (s *RakshaHTTPServer) markPluginDisabled(name string) error {
+func (s *GatewayHTTPServer) markPluginDisabled(name string) error {
 	return s.Config.UpdatePluginStatus(name, schemas.PluginStatusDisabled)
 }
 
 // getGovernancePluginName returns the governance plugin name from context or default
-func (s *RakshaHTTPServer) getGovernancePluginName() string {
-	if name, ok := s.Ctx.Value(schemas.RakshaContextKeyGovernancePluginName).(string); ok && name != "" {
+func (s *GatewayHTTPServer) getGovernancePluginName() string {
+	if name, ok := s.Ctx.Value(schemas.GatewayContextKeyGovernancePluginName).(string); ok && name != "" {
 		return name
 	}
 	return governance.PluginName
 }
 
 // getPromptsPluginName returns the prompts plugin name from context or default
-func (s *RakshaHTTPServer) getPromptsPluginName() string {
-	if name, ok := s.Ctx.Value(schemas.RakshaContextKeyPromptsPluginName).(string); ok && name != "" {
+func (s *GatewayHTTPServer) getPromptsPluginName() string {
+	if name, ok := s.Ctx.Value(schemas.GatewayContextKeyPromptsPluginName).(string); ok && name != "" {
 		return name
 	}
 	return prompts.PluginName
@@ -362,13 +362,13 @@ func (s *RakshaHTTPServer) getPromptsPluginName() string {
 // getGovernancePlugin safely retrieves the governance plugin with proper locking.
 // It acquires a read lock, finds the plugin, releases the lock, performs type assertion,
 // and returns the BaseGovernancePlugin implementation or an error.
-func (s *RakshaHTTPServer) getGovernancePlugin() (governance.BaseGovernancePlugin, error) {
+func (s *GatewayHTTPServer) getGovernancePlugin() (governance.BaseGovernancePlugin, error) {
 	// Use type-safe finder from Config
 	return lib.FindPluginAs[governance.BaseGovernancePlugin](s.Config, s.getGovernancePluginName())
 }
 
 // ReloadVirtualKey reloads a virtual key from the in-memory store
-func (s *RakshaHTTPServer) ReloadVirtualKey(ctx context.Context, id string) (*tables.TableVirtualKey, error) {
+func (s *GatewayHTTPServer) ReloadVirtualKey(ctx context.Context, id string) (*tables.TableVirtualKey, error) {
 	// Load relationships for response
 	preloadedVk, err := s.Config.ConfigStore.RetryOnNotFound(ctx, func(ctx context.Context) (any, error) {
 		preloadedVk, err := s.Config.ConfigStore.GetVirtualKey(ctx, id)
@@ -436,7 +436,7 @@ func (s *RakshaHTTPServer) ReloadVirtualKey(ctx context.Context, id string) (*ta
 }
 
 // RemoveVirtualKey removes a virtual key from the in-memory store
-func (s *RakshaHTTPServer) RemoveVirtualKey(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) RemoveVirtualKey(ctx context.Context, id string) error {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return err
@@ -458,7 +458,7 @@ func (s *RakshaHTTPServer) RemoveVirtualKey(ctx context.Context, id string) erro
 }
 
 // ReloadTeam reloads a team from the in-memory store
-func (s *RakshaHTTPServer) ReloadTeam(ctx context.Context, id string) (*tables.TableTeam, error) {
+func (s *GatewayHTTPServer) ReloadTeam(ctx context.Context, id string) (*tables.TableTeam, error) {
 	// Load relationships for response
 	preloadedTeam, err := s.Config.ConfigStore.GetTeam(ctx, id)
 	if err != nil {
@@ -475,7 +475,7 @@ func (s *RakshaHTTPServer) ReloadTeam(ctx context.Context, id string) (*tables.T
 }
 
 // RemoveTeam removes a team from the in-memory store
-func (s *RakshaHTTPServer) RemoveTeam(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) RemoveTeam(ctx context.Context, id string) error {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return err
@@ -496,7 +496,7 @@ func (s *RakshaHTTPServer) RemoveTeam(ctx context.Context, id string) error {
 }
 
 // ReloadCustomer reloads a customer from the in-memory store
-func (s *RakshaHTTPServer) ReloadCustomer(ctx context.Context, id string) (*tables.TableCustomer, error) {
+func (s *GatewayHTTPServer) ReloadCustomer(ctx context.Context, id string) (*tables.TableCustomer, error) {
 	preloadedCustomer, err := s.Config.ConfigStore.GetCustomer(ctx, id)
 	if err != nil {
 		return nil, err
@@ -511,7 +511,7 @@ func (s *RakshaHTTPServer) ReloadCustomer(ctx context.Context, id string) (*tabl
 }
 
 // RemoveCustomer removes a customer from the in-memory store
-func (s *RakshaHTTPServer) RemoveCustomer(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) RemoveCustomer(ctx context.Context, id string) error {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return err
@@ -533,7 +533,7 @@ func (s *RakshaHTTPServer) RemoveCustomer(ctx context.Context, id string) error 
 
 // ReloadModelConfig reloads a model config from the database into in-memory store
 // If usage was modified (e.g., reset due to config change), syncs it back to DB
-func (s *RakshaHTTPServer) ReloadModelConfig(ctx context.Context, id string) (*tables.TableModelConfig, error) {
+func (s *GatewayHTTPServer) ReloadModelConfig(ctx context.Context, id string) (*tables.TableModelConfig, error) {
 	preloadedMC, err := s.Config.ConfigStore.GetModelConfigByID(ctx, id)
 	if err != nil {
 		logger.Error("failed to load model config: %v", err)
@@ -578,7 +578,7 @@ func (s *RakshaHTTPServer) ReloadModelConfig(ctx context.Context, id string) (*t
 
 // ResetBudgetUsageInMemory zeros the live usage counters for the given budgets. The
 // caller is responsible for persisting the same reset to the database.
-func (s *RakshaHTTPServer) ResetBudgetUsageInMemory(ctx context.Context, budgetIDs []string) error {
+func (s *GatewayHTTPServer) ResetBudgetUsageInMemory(ctx context.Context, budgetIDs []string) error {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return err
@@ -603,7 +603,7 @@ func (s *RakshaHTTPServer) ResetBudgetUsageInMemory(ctx context.Context, budgetI
 // their LastReset to the current calendar period, ignoring each budget's in-memory
 // alignment flag (used right before the owner reload that flips it on). The caller is
 // responsible for persisting the same reset to the database.
-func (s *RakshaHTTPServer) SnapBudgetUsageToCalendarInMemory(ctx context.Context, budgetIDs []string) error {
+func (s *GatewayHTTPServer) SnapBudgetUsageToCalendarInMemory(ctx context.Context, budgetIDs []string) error {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return err
@@ -624,7 +624,7 @@ func (s *RakshaHTTPServer) SnapBudgetUsageToCalendarInMemory(ctx context.Context
 // SnapRateLimitUsageToCalendarInMemory zeros the live calendar-alignable counters of the
 // given rate limits and snaps their LastReset to the current calendar period. The caller
 // is responsible for persisting the same reset to the database.
-func (s *RakshaHTTPServer) SnapRateLimitUsageToCalendarInMemory(ctx context.Context, rateLimitIDs []string) error {
+func (s *GatewayHTTPServer) SnapRateLimitUsageToCalendarInMemory(ctx context.Context, rateLimitIDs []string) error {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return err
@@ -647,7 +647,7 @@ func (s *RakshaHTTPServer) SnapRateLimitUsageToCalendarInMemory(ctx context.Cont
 }
 
 // RemoveModelConfig removes a model config from the in-memory store
-func (s *RakshaHTTPServer) RemoveModelConfig(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) RemoveModelConfig(ctx context.Context, id string) error {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return err
@@ -656,7 +656,7 @@ func (s *RakshaHTTPServer) RemoveModelConfig(ctx context.Context, id string) err
 	return nil
 }
 
-func (s *RakshaHTTPServer) ReloadProvider(ctx context.Context, provider schemas.ModelProvider) (*tables.TableProvider, error) {
+func (s *GatewayHTTPServer) ReloadProvider(ctx context.Context, provider schemas.ModelProvider) (*tables.TableProvider, error) {
 	if s.Config == nil || s.Config.ConfigStore == nil {
 		return nil, fmt.Errorf("config store not found")
 	}
@@ -664,7 +664,7 @@ func (s *RakshaHTTPServer) ReloadProvider(ctx context.Context, provider schemas.
 		return nil, fmt.Errorf("pricing manager not found")
 	}
 	if s.Client == nil {
-		return nil, fmt.Errorf("raksha client not found")
+		return nil, fmt.Errorf("gateway client not found")
 	}
 
 	// Load provider from DB
@@ -731,7 +731,7 @@ func (s *RakshaHTTPServer) ReloadProvider(ctx context.Context, provider schemas.
 }
 
 // RemoveProvider removes a provider from the in-memory store
-func (s *RakshaHTTPServer) RemoveProvider(ctx context.Context, provider schemas.ModelProvider) error {
+func (s *GatewayHTTPServer) RemoveProvider(ctx context.Context, provider schemas.ModelProvider) error {
 	err := s.Client.RemoveProvider(provider)
 	if err != nil && !strings.Contains(err.Error(), "not found") {
 		logger.Error("failed to remove provider from client: %v", err)
@@ -739,8 +739,8 @@ func (s *RakshaHTTPServer) RemoveProvider(ctx context.Context, provider schemas.
 	}
 	err = s.Config.RemoveProvider(ctx, provider)
 	if err != nil && !errors.Is(err, lib.ErrNotFound) {
-		logger.Error("failed to remove provider from config: %v. Client and config may be out of sync, please restart raksha", err)
-		return fmt.Errorf("failed to remove provider from config: %w. Client and config may be out of sync, please restart raksha", err)
+		logger.Error("failed to remove provider from config: %v. Client and config may be out of sync, please restart gateway", err)
+		return fmt.Errorf("failed to remove provider from config: %w. Client and config may be out of sync, please restart gateway", err)
 	}
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
@@ -759,7 +759,7 @@ func (s *RakshaHTTPServer) RemoveProvider(ctx context.Context, provider schemas.
 // OnKeyAdded refreshes the keyconfig snapshot and fetches list-models for the
 // new key only — 2 calls instead of ReloadProvider's 2×N. Called by the key
 // handler after a successful AddProviderKey write.
-func (s *RakshaHTTPServer) OnKeyAdded(ctx context.Context, provider schemas.ModelProvider, key schemas.Key) error {
+func (s *GatewayHTTPServer) OnKeyAdded(ctx context.Context, provider schemas.ModelProvider, key schemas.Key) error {
 	if s.Config == nil || s.Config.ModelCatalog == nil {
 		return fmt.Errorf("model catalog not found")
 	}
@@ -780,7 +780,7 @@ func (s *RakshaHTTPServer) OnKeyAdded(ctx context.Context, provider schemas.Mode
 // OnKeyUpdated invalidates the affected key's live entries (the gate may have
 // changed even when Value didn't), refreshes the keyconfig, then refetches
 // for just that key. 2 calls regardless of N keys on the provider.
-func (s *RakshaHTTPServer) OnKeyUpdated(ctx context.Context, provider schemas.ModelProvider, key schemas.Key) error {
+func (s *GatewayHTTPServer) OnKeyUpdated(ctx context.Context, provider schemas.ModelProvider, key schemas.Key) error {
 	if s.Config == nil || s.Config.ModelCatalog == nil {
 		return fmt.Errorf("model catalog not found")
 	}
@@ -801,7 +801,7 @@ func (s *RakshaHTTPServer) OnKeyUpdated(ctx context.Context, provider schemas.Mo
 // OnKeyDeleted invalidates the deleted key's live entries and refreshes the
 // keyconfig. No list-models calls — the provider's remaining keys' cached
 // entries stay valid.
-func (s *RakshaHTTPServer) OnKeyDeleted(ctx context.Context, provider schemas.ModelProvider, keyID string) error {
+func (s *GatewayHTTPServer) OnKeyDeleted(ctx context.Context, provider schemas.ModelProvider, keyID string) error {
 	if s.Config == nil || s.Config.ModelCatalog == nil {
 		return fmt.Errorf("model catalog not found")
 	}
@@ -829,7 +829,7 @@ func isKeylessProvider(provider schemas.ModelProvider, cfg *lib.Config) bool {
 }
 
 // GetGovernanceData returns the governance data
-func (s *RakshaHTTPServer) GetGovernanceData(ctx context.Context) *governance.GovernanceData {
+func (s *GatewayHTTPServer) GetGovernanceData(ctx context.Context) *governance.GovernanceData {
 	// Use type-safe finder from Config
 	governancePlugin, err := lib.FindPluginAs[governance.BaseGovernancePlugin](s.Config, s.getGovernancePluginName())
 	if err != nil {
@@ -839,7 +839,7 @@ func (s *RakshaHTTPServer) GetGovernanceData(ctx context.Context) *governance.Go
 }
 
 // ReloadBusinessUnitTeamIndex refreshes team → business-unit lookups used for log stamping.
-func (s *RakshaHTTPServer) ReloadBusinessUnitTeamIndex(ctx context.Context) {
+func (s *GatewayHTTPServer) ReloadBusinessUnitTeamIndex(ctx context.Context) {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return
@@ -851,7 +851,7 @@ func (s *RakshaHTTPServer) ReloadBusinessUnitTeamIndex(ctx context.Context) {
 
 // ExhaustedBilledEntity reports the team or customer whose used-up budget blocks a member of
 // userTeamIDs from calling the virtual key vkID.
-func (s *RakshaHTTPServer) ExhaustedBilledEntity(ctx context.Context, vkID string, userTeamIDs []string) (string, string) {
+func (s *GatewayHTTPServer) ExhaustedBilledEntity(ctx context.Context, vkID string, userTeamIDs []string) (string, string) {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return "", ""
@@ -868,7 +868,7 @@ func (s *RakshaHTTPServer) ExhaustedBilledEntity(ctx context.Context, vkID strin
 }
 
 // SyncUserGovernance loads a user's materialized budget/rate-limit into memory.
-func (s *RakshaHTTPServer) SyncUserGovernance(ctx context.Context, userID string, budget *tables.TableBudget, rateLimit *tables.TableRateLimit) {
+func (s *GatewayHTTPServer) SyncUserGovernance(ctx context.Context, userID string, budget *tables.TableBudget, rateLimit *tables.TableRateLimit) {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return
@@ -878,7 +878,7 @@ func (s *RakshaHTTPServer) SyncUserGovernance(ctx context.Context, userID string
 }
 
 // DeleteUserGovernance removes a user's in-memory budget/rate-limit entries.
-func (s *RakshaHTTPServer) DeleteUserGovernance(ctx context.Context, userID string) {
+func (s *GatewayHTTPServer) DeleteUserGovernance(ctx context.Context, userID string) {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return
@@ -887,7 +887,7 @@ func (s *RakshaHTTPServer) DeleteUserGovernance(ctx context.Context, userID stri
 }
 
 // DeleteUserModelConfigs evicts a deleted user's user-scoped model configs from memory.
-func (s *RakshaHTTPServer) DeleteUserModelConfigs(ctx context.Context, userID string) {
+func (s *GatewayHTTPServer) DeleteUserModelConfigs(ctx context.Context, userID string) {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return
@@ -901,7 +901,7 @@ func (s *RakshaHTTPServer) DeleteUserModelConfigs(ctx context.Context, userID st
 }
 
 // GetBudgetUsage returns the live, real-time in-memory budget usage for a budget ID.
-func (s *RakshaHTTPServer) GetBudgetUsage(ctx context.Context, budgetID string) (float64, bool) {
+func (s *GatewayHTTPServer) GetBudgetUsage(ctx context.Context, budgetID string) (float64, bool) {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return 0, false
@@ -914,7 +914,7 @@ func (s *RakshaHTTPServer) GetBudgetUsage(ctx context.Context, budgetID string) 
 }
 
 // ReloadComplexityAnalyzerConfig reloads the complexity analyzer config into the governance plugin.
-func (s *RakshaHTTPServer) ReloadComplexityAnalyzerConfig(ctx context.Context, config *complexity.AnalyzerConfig) error {
+func (s *GatewayHTTPServer) ReloadComplexityAnalyzerConfig(ctx context.Context, config *complexity.AnalyzerConfig) error {
 	governancePlugin, err := s.getGovernancePlugin()
 	if err != nil {
 		return fmt.Errorf("governance plugin not found: %w", err)
@@ -930,9 +930,9 @@ func (s *RakshaHTTPServer) ReloadComplexityAnalyzerConfig(ctx context.Context, c
 }
 
 // ReloadRoutingRule reloads a routing rule from the database into the governance store
-func (s *RakshaHTTPServer) ReloadRoutingRule(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) ReloadRoutingRule(ctx context.Context, id string) error {
 	governancePluginName := governance.PluginName
-	if name, ok := s.Ctx.Value(schemas.RakshaContextKeyGovernancePluginName).(string); ok && name != "" {
+	if name, ok := s.Ctx.Value(schemas.GatewayContextKeyGovernancePluginName).(string); ok && name != "" {
 		governancePluginName = name
 	}
 	governancePlugin, err := lib.FindPluginAs[governance.BaseGovernancePlugin](s.Config, governancePluginName)
@@ -953,9 +953,9 @@ func (s *RakshaHTTPServer) ReloadRoutingRule(ctx context.Context, id string) err
 }
 
 // RemoveRoutingRule removes a routing rule from the governance store
-func (s *RakshaHTTPServer) RemoveRoutingRule(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) RemoveRoutingRule(ctx context.Context, id string) error {
 	governancePluginName := governance.PluginName
-	if name, ok := s.Ctx.Value(schemas.RakshaContextKeyGovernancePluginName).(string); ok && name != "" {
+	if name, ok := s.Ctx.Value(schemas.GatewayContextKeyGovernancePluginName).(string); ok && name != "" {
 		governancePluginName = name
 	}
 	governancePlugin, err := lib.FindPluginAs[governance.BaseGovernancePlugin](s.Config, governancePluginName)
@@ -972,7 +972,7 @@ func (s *RakshaHTTPServer) RemoveRoutingRule(ctx context.Context, id string) err
 }
 
 // ReloadClientConfigFromConfigStore reloads the client config from config store
-func (s *RakshaHTTPServer) ReloadClientConfigFromConfigStore(ctx context.Context) error {
+func (s *GatewayHTTPServer) ReloadClientConfigFromConfigStore(ctx context.Context) error {
 	if s.Config == nil || s.Config.ConfigStore == nil {
 		return fmt.Errorf("config store not found")
 	}
@@ -995,14 +995,14 @@ func (s *RakshaHTTPServer) ReloadClientConfigFromConfigStore(ctx context.Context
 	if s.CORSMiddleware != nil {
 		s.CORSMiddleware.UpdateConfig(s.Config)
 	}
-	// Reloading config in raksha client
+	// Reloading config in gateway client
 	if s.Client != nil {
 		account := lib.NewBaseAccount(s.Config)
 		var mcpConfig *schemas.MCPConfig
 		if s.Config.MCPConfig != nil {
 			mcpConfig = s.Config.MCPConfig
 		}
-		s.Client.ReloadConfig(schemas.RakshaConfig{
+		s.Client.ReloadConfig(schemas.GatewayConfig{
 			Account:            account,
 			InitialPoolSize:    s.Config.ClientConfig.InitialPoolSize,
 			DropExcessRequests: s.Config.ClientConfig.DropExcessRequests,
@@ -1024,7 +1024,7 @@ func (s *RakshaHTTPServer) ReloadClientConfigFromConfigStore(ctx context.Context
 }
 
 // UpdateAuthConfig updates auth config in the config store and updates the AuthMiddleware's in-memory config
-func (s *RakshaHTTPServer) UpdateAuthConfig(ctx context.Context, authConfig *configstore.AuthConfig) error {
+func (s *GatewayHTTPServer) UpdateAuthConfig(ctx context.Context, authConfig *configstore.AuthConfig) error {
 	if authConfig == nil {
 		return fmt.Errorf("auth config is nil")
 	}
@@ -1055,7 +1055,7 @@ func (s *RakshaHTTPServer) UpdateAuthConfig(ctx context.Context, authConfig *con
 }
 
 // UpdateDropExcessRequests updates excess requests config
-func (s *RakshaHTTPServer) UpdateDropExcessRequests(ctx context.Context, value bool) {
+func (s *GatewayHTTPServer) UpdateDropExcessRequests(ctx context.Context, value bool) {
 	if s.Config == nil {
 		return
 	}
@@ -1064,7 +1064,7 @@ func (s *RakshaHTTPServer) UpdateDropExcessRequests(ctx context.Context, value b
 
 // UpdateMCPToolManagerConfig updates the MCP tool manager config.
 // Always pass the current disableAutoToolInject value so it is never reset.
-func (s *RakshaHTTPServer) UpdateMCPToolManagerConfig(ctx context.Context, maxAgentDepth int, toolExecutionTimeoutInSeconds int, codeModeBindingLevel string, disableAutoToolInject bool) error {
+func (s *GatewayHTTPServer) UpdateMCPToolManagerConfig(ctx context.Context, maxAgentDepth int, toolExecutionTimeoutInSeconds int, codeModeBindingLevel string, disableAutoToolInject bool) error {
 	if s.Config == nil {
 		return fmt.Errorf("config not found")
 	}
@@ -1072,7 +1072,7 @@ func (s *RakshaHTTPServer) UpdateMCPToolManagerConfig(ctx context.Context, maxAg
 }
 
 // SetMCPToolSyncInterval applies a new global MCP tool sync interval to running clients.
-func (s *RakshaHTTPServer) SetMCPToolSyncInterval(ctx context.Context, interval time.Duration) error {
+func (s *GatewayHTTPServer) SetMCPToolSyncInterval(ctx context.Context, interval time.Duration) error {
 	if s.Client == nil {
 		return fmt.Errorf("client not initialized")
 	}
@@ -1080,14 +1080,14 @@ func (s *RakshaHTTPServer) SetMCPToolSyncInterval(ctx context.Context, interval 
 }
 
 // reloadObservabilityPlugins reloads all observability plugins in the tracing middleware
-func (s *RakshaHTTPServer) reloadObservabilityPlugins() {
+func (s *GatewayHTTPServer) reloadObservabilityPlugins() {
 	observabilityPlugins := s.CollectObservabilityPlugins()
 	// Always update the tracing middleware, even with empty slice, to clear stale plugins
 	s.TracingMiddleware.SetObservabilityPlugins(observabilityPlugins)
 }
 
 // ReloadPricingManager reloads the pricing manager
-func (s *RakshaHTTPServer) UpdateSyncConfig(ctx context.Context) error {
+func (s *GatewayHTTPServer) UpdateSyncConfig(ctx context.Context) error {
 	if s.Config == nil || s.Config.ModelCatalog == nil {
 		return fmt.Errorf("pricing manager not found")
 	}
@@ -1103,7 +1103,7 @@ func (s *RakshaHTTPServer) UpdateSyncConfig(ctx context.Context) error {
 //
 // Callers are responsible for invalidating stale entries first when keys
 // have been removed from the provider's set.
-func (s *RakshaHTTPServer) RefreshLiveModelsForProvider(ctx context.Context, provider schemas.ModelProvider, keys []schemas.Key) {
+func (s *GatewayHTTPServer) RefreshLiveModelsForProvider(ctx context.Context, provider schemas.ModelProvider, keys []schemas.Key) {
 	if len(keys) == 0 {
 		// Empty key slice + non-keyless provider would write under the "" sentinel
 		// reserved for keyless providers — colliding with the keyless namespace and
@@ -1135,7 +1135,7 @@ func (s *RakshaHTTPServer) RefreshLiveModelsForProvider(ctx context.Context, pro
 // the check (today: OpenRouter, whose /v1/models is unauthenticated) so the
 // routing graph is the same at boot, after a key add, and after a reload —
 // stale-but-routable behavior would diverge otherwise.
-func (s *RakshaHTTPServer) FetchAndStoreLiveForKey(ctx context.Context, provider schemas.ModelProvider, keyID string) {
+func (s *GatewayHTTPServer) FetchAndStoreLiveForKey(ctx context.Context, provider schemas.ModelProvider, keyID string) {
 	// Skip the fetch entirely when the provider has disabled list_models via
 	// allowed_requests — every per-(provider,keyID) call would just bounce with
 	// "operation not allowed", wasting two goroutines and one bfCtx per attempt.
@@ -1146,14 +1146,14 @@ func (s *RakshaHTTPServer) FetchAndStoreLiveForKey(ctx context.Context, provider
 			return
 		}
 	}
-	// One RakshaContext per goroutine. RakshaContext.SetValue mutates state
+	// One GatewayContext per goroutine. GatewayContext.SetValue mutates state
 	// in place, so the request-scoped metadata core sets during a routing pass
 	// (RequestID, FallbackIndex, span IDs, ...) would otherwise bleed between
 	// the filtered and unfiltered calls and conflate them in logs/billing.
-	newListModelsCtx := func() *schemas.RakshaContext {
-		c := schemas.NewRakshaContext(ctx, time.Now().Add(15*time.Second))
-		c.SetValue(schemas.RakshaContextKeySkipPluginPipeline, true)
-		c.SetValue(schemas.RakshaContextKeyValidateKeys, true)
+	newListModelsCtx := func() *schemas.GatewayContext {
+		c := schemas.NewGatewayContext(ctx, time.Now().Add(15*time.Second))
+		c.SetValue(schemas.GatewayContextKeySkipPluginPipeline, true)
+		c.SetValue(schemas.GatewayContextKeyValidateKeys, true)
 		return c
 	}
 
@@ -1168,12 +1168,12 @@ func (s *RakshaHTTPServer) FetchAndStoreLiveForKey(ctx context.Context, provider
 		defer wg.Done()
 		bfCtx := newListModelsCtx()
 		defer bfCtx.Cancel()
-		resp, bfErr := s.Client.ListModelsRequest(bfCtx, &schemas.RakshaListModelsRequest{
+		resp, bfErr := s.Client.ListModelsRequest(bfCtx, &schemas.GatewayListModelsRequest{
 			Provider: provider,
 			KeyID:    keyIDPtr,
 		})
 		if bfErr != nil {
-			logger.Warn("filtered list-models failed for provider %s key %s: %v: falling back onto the static datasheet", provider, keyID, raksha.GetErrorMessage(bfErr))
+			logger.Warn("filtered list-models failed for provider %s key %s: %v: falling back onto the static datasheet", provider, keyID, gateway.GetErrorMessage(bfErr))
 			if len(bfErr.ExtraFields.KeyStatuses) > 0 && s.Config.ConfigStore != nil {
 				s.updateKeyStatus(ctx, bfErr.ExtraFields.KeyStatuses)
 			}
@@ -1191,13 +1191,13 @@ func (s *RakshaHTTPServer) FetchAndStoreLiveForKey(ctx context.Context, provider
 		defer wg.Done()
 		bfCtx := newListModelsCtx()
 		defer bfCtx.Cancel()
-		resp, bfErr := s.Client.ListModelsRequest(bfCtx, &schemas.RakshaListModelsRequest{
+		resp, bfErr := s.Client.ListModelsRequest(bfCtx, &schemas.GatewayListModelsRequest{
 			Provider:   provider,
 			KeyID:      keyIDPtr,
 			Unfiltered: true,
 		})
 		if bfErr != nil {
-			logger.Warn("unfiltered list-models failed for provider %s key %s: %v: falling back onto the static datasheet", provider, keyID, raksha.GetErrorMessage(bfErr))
+			logger.Warn("unfiltered list-models failed for provider %s key %s: %v: falling back onto the static datasheet", provider, keyID, gateway.GetErrorMessage(bfErr))
 			return
 		}
 		if resp == nil {
@@ -1211,7 +1211,7 @@ func (s *RakshaHTTPServer) FetchAndStoreLiveForKey(ctx context.Context, provider
 // ForceReloadPricing triggers an immediate pricing sync and resets the sync
 // timer. No longer triggers a list-models refresh — pricing reload is now
 // pricing-only.
-func (s *RakshaHTTPServer) ForceReloadPricing(ctx context.Context) error {
+func (s *GatewayHTTPServer) ForceReloadPricing(ctx context.Context) error {
 	if s.Config == nil {
 		return fmt.Errorf("server config not initialized")
 	}
@@ -1226,7 +1226,7 @@ func (s *RakshaHTTPServer) ForceReloadPricing(ctx context.Context) error {
 // ReloadPricingFromDBAndPopulateModelPool reloads the pricing from DB. The
 // list-models refresh that used to follow is gone — pricing reload is now
 // pricing-only.
-func (s *RakshaHTTPServer) ReloadPricingFromDBAndPopulateModelPool(ctx context.Context) error {
+func (s *GatewayHTTPServer) ReloadPricingFromDBAndPopulateModelPool(ctx context.Context) error {
 	if s.Config == nil {
 		return fmt.Errorf("server config not initialized")
 	}
@@ -1239,7 +1239,7 @@ func (s *RakshaHTTPServer) ReloadPricingFromDBAndPopulateModelPool(ctx context.C
 }
 
 // UpsertPricingOverride inserts or updates a pricing override in the in-memory model catalog.
-func (s *RakshaHTTPServer) UpsertPricingOverride(ctx context.Context, override *tables.TablePricingOverride) error {
+func (s *GatewayHTTPServer) UpsertPricingOverride(ctx context.Context, override *tables.TablePricingOverride) error {
 	if s.Config == nil || s.Config.ModelCatalog == nil {
 		return fmt.Errorf("pricing manager not found")
 	}
@@ -1247,7 +1247,7 @@ func (s *RakshaHTTPServer) UpsertPricingOverride(ctx context.Context, override *
 }
 
 // DeletePricingOverride removes a pricing override from the in-memory model catalog.
-func (s *RakshaHTTPServer) DeletePricingOverride(ctx context.Context, id string) error {
+func (s *GatewayHTTPServer) DeletePricingOverride(ctx context.Context, id string) error {
 	if s.Config == nil || s.Config.ModelCatalog == nil {
 		return fmt.Errorf("pricing manager not found")
 	}
@@ -1261,7 +1261,7 @@ func (s *RakshaHTTPServer) DeletePricingOverride(ctx context.Context, id string)
 // rolls back the lot. After a successful commit the in-memory pricing cache
 // is reloaded once. Enterprise overrides this method to broadcast a peer
 // reload after commit.
-func (s *RakshaHTTPServer) UpsertModelPricingAttributes(ctx context.Context, entries []handlers.ModelPricingAttributesEntry) error {
+func (s *GatewayHTTPServer) UpsertModelPricingAttributes(ctx context.Context, entries []handlers.ModelPricingAttributesEntry) error {
 	if s.Config == nil || s.Config.ModelCatalog == nil {
 		return fmt.Errorf("model catalog not initialized")
 	}
@@ -1294,7 +1294,7 @@ func (s *RakshaHTTPServer) UpsertModelPricingAttributes(ctx context.Context, ent
 }
 
 // ReloadProxyConfig reloads the proxy configuration
-func (s *RakshaHTTPServer) ReloadProxyConfig(ctx context.Context, config *tables.GlobalProxyConfig) error {
+func (s *GatewayHTTPServer) ReloadProxyConfig(ctx context.Context, config *tables.GlobalProxyConfig) error {
 	if s.Config == nil {
 		return fmt.Errorf("config not found")
 	}
@@ -1305,7 +1305,7 @@ func (s *RakshaHTTPServer) ReloadProxyConfig(ctx context.Context, config *tables
 }
 
 // ReloadHeaderFilterConfig reloads the header filter configuration
-func (s *RakshaHTTPServer) ReloadHeaderFilterConfig(ctx context.Context, config *tables.GlobalHeaderFilterConfig) error {
+func (s *GatewayHTTPServer) ReloadHeaderFilterConfig(ctx context.Context, config *tables.GlobalHeaderFilterConfig) error {
 	if s.Config == nil {
 		return fmt.Errorf("config not found")
 	}
@@ -1324,7 +1324,7 @@ func (s *RakshaHTTPServer) ReloadHeaderFilterConfig(ctx context.Context, config 
 }
 
 // GetModelsForProvider returns all models for a specific provider from the model catalog
-func (s *RakshaHTTPServer) GetModelsForProvider(provider schemas.ModelProvider) []string {
+func (s *GatewayHTTPServer) GetModelsForProvider(provider schemas.ModelProvider) []string {
 	if s.Config == nil || s.Config.ModelCatalog == nil {
 		return []string{}
 	}
@@ -1332,7 +1332,7 @@ func (s *RakshaHTTPServer) GetModelsForProvider(provider schemas.ModelProvider) 
 }
 
 // GetUnfilteredModelsForProvider returns all unfiltered models for a specific provider from the model catalog
-func (s *RakshaHTTPServer) GetUnfilteredModelsForProvider(provider schemas.ModelProvider) []string {
+func (s *GatewayHTTPServer) GetUnfilteredModelsForProvider(provider schemas.ModelProvider) []string {
 	if s.Config == nil || s.Config.ModelCatalog == nil {
 		return []string{}
 	}
@@ -1341,13 +1341,13 @@ func (s *RakshaHTTPServer) GetUnfilteredModelsForProvider(provider schemas.Model
 
 // GetPluginStatus returns the status of all plugins
 // Delegates to Config for centralized plugin status management
-func (s *RakshaHTTPServer) GetPluginStatus(ctx context.Context) map[string]schemas.PluginStatus {
+func (s *GatewayHTTPServer) GetPluginStatus(ctx context.Context) map[string]schemas.PluginStatus {
 	return s.Config.GetPluginStatus()
 }
 
 // GetLoadedPluginNames returns the sanitized names of all currently loaded plugins,
 // matching the names embedded in their trace span names.
-func (s *RakshaHTTPServer) GetLoadedPluginNames() []string {
+func (s *GatewayHTTPServer) GetLoadedPluginNames() []string {
 	if s.Config == nil {
 		return []string{}
 	}
@@ -1357,7 +1357,7 @@ func (s *RakshaHTTPServer) GetLoadedPluginNames() []string {
 // NormalizePluginConfig implements handlers.PluginsLoader. It looks up the plugin
 // by name in the ConfigMarshallers cache and calls MarshalConfigForStorage if found.
 // Returns nil, nil when the plugin is not loaded or does not implement ConfigMarshallerPlugin.
-func (s *RakshaHTTPServer) NormalizePluginConfig(name string, config map[string]any) (map[string]any, error) {
+func (s *GatewayHTTPServer) NormalizePluginConfig(name string, config map[string]any) (map[string]any, error) {
 	if m := s.Config.ConfigMarshallers.Load(); m != nil {
 		if cm, ok := (*m)[name]; ok {
 			return cm.MarshalConfigForStorage(config)
@@ -1369,7 +1369,7 @@ func (s *RakshaHTTPServer) NormalizePluginConfig(name string, config map[string]
 // ExpandPluginConfigForAPI implements handlers.PluginsLoader. It looks up the plugin
 // by name in the ConfigMarshallers cache and calls RedactConfig if found.
 // Returns nil, nil when the plugin is not loaded or does not implement ConfigMarshallerPlugin.
-func (s *RakshaHTTPServer) ExpandPluginConfigForAPI(name string, config map[string]any) (map[string]any, error) {
+func (s *GatewayHTTPServer) ExpandPluginConfigForAPI(name string, config map[string]any) (map[string]any, error) {
 	if m := s.Config.ConfigMarshallers.Load(); m != nil {
 		if cm, ok := (*m)[name]; ok {
 			return cm.RedactConfig(config)
@@ -1382,14 +1382,14 @@ func (s *RakshaHTTPServer) ExpandPluginConfigForAPI(name string, config map[stri
 // Uses UpdatePluginOverallStatus to create the status entry if it doesn't exist,
 // ensuring plugins that were never loaded can still have their error status tracked.
 // Always returns the original error so the actual failure reason is surfaced to the user.
-func (s *RakshaHTTPServer) updatePluginErrorStatus(name, step string, originalErr error) error {
+func (s *GatewayHTTPServer) updatePluginErrorStatus(name, step string, originalErr error) error {
 	logs := []string{fmt.Sprintf("error %s plugin %s: %v", step, name, originalErr)}
 	s.Config.UpdatePluginOverallStatus(name, name, schemas.PluginStatusError, logs, []schemas.PluginType{})
 	return originalErr
 }
 
-// SyncLoadedPlugin syncs a loaded plugin to the Raksha client and updates the plugin status
-func (s *RakshaHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, plugin schemas.BasePlugin, placement *schemas.PluginPlacement, order *int) error {
+// SyncLoadedPlugin syncs a loaded plugin to the Gateway client and updates the plugin status
+func (s *GatewayHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, plugin schemas.BasePlugin, placement *schemas.PluginPlacement, order *int) error {
 	// 2. Register (replaces old version atomically)
 	if err := s.Config.ReloadPlugin(plugin); err != nil {
 		return s.updatePluginErrorStatus(plugin.GetName(), "registering", err)
@@ -1397,9 +1397,9 @@ func (s *RakshaHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, pl
 	// 2b. Set order info and re-sort
 	s.Config.SetPluginOrderInfo(plugin.GetName(), placement, order)
 	s.Config.SortAndRebuildPlugins()
-	// 3. Update Raksha client
+	// 3. Update Gateway client
 	if err := s.Client.ReloadPlugin(plugin, InferPluginTypes(plugin)); err != nil {
-		return s.updatePluginErrorStatus(plugin.GetName(), "reloading raksha config for", err)
+		return s.updatePluginErrorStatus(plugin.GetName(), "reloading gateway config for", err)
 	}
 	// 3b. Sync plugin execution order from config to core
 	s.Client.ReorderPlugins(s.Config.GetPluginOrder())
@@ -1413,10 +1413,10 @@ func (s *RakshaHTTPServer) SyncLoadedPlugin(ctx context.Context, name string, pl
 	return nil
 }
 
-// ReloadPlugin reloads a plugin with new instance and updates Raksha core.
+// ReloadPlugin reloads a plugin with new instance and updates Gateway core.
 // The plugin is checked for LLM and MCP interfaces independently and registered
 // to the appropriate arrays based on which interfaces it implements.
-func (s *RakshaHTTPServer) ReloadPlugin(ctx context.Context, name string, path *string, pluginConfig any, placement *schemas.PluginPlacement, order *int) error {
+func (s *GatewayHTTPServer) ReloadPlugin(ctx context.Context, name string, path *string, pluginConfig any, placement *schemas.PluginPlacement, order *int) error {
 	logger.Debug("reloading plugin %s", name)
 	// 1. Instantiate new version
 	plugin, err := InstantiatePlugin(ctx, name, path, pluginConfig, s.Config)
@@ -1432,7 +1432,7 @@ func (s *RakshaHTTPServer) ReloadPlugin(ctx context.Context, name string, path *
 
 // RemovePlugin removes a plugin from the server.
 // The plugin is removed from both LLM and MCP arrays independently if it exists in them.
-func (s *RakshaHTTPServer) RemovePlugin(ctx context.Context, displayName string) error {
+func (s *GatewayHTTPServer) RemovePlugin(ctx context.Context, displayName string) error {
 	// Get the actual plugin name from the display name
 	name, ok := s.Config.GetPluginNameByDisplayName(displayName)
 	if !ok {
@@ -1452,9 +1452,9 @@ func (s *RakshaHTTPServer) RemovePlugin(ctx context.Context, displayName string)
 		return err
 	}
 
-	// 2. Update Raksha client
+	// 2. Update Gateway client
 	if err := s.Client.RemovePlugin(name, InferPluginTypes(plugin)); err != nil {
-		logger.Warn("failed to reload raksha config after plugin removal: %v", err)
+		logger.Warn("failed to reload gateway config after plugin removal: %v", err)
 	}
 
 	// 3. Reload observability plugins if necessary
@@ -1475,7 +1475,7 @@ func (s *RakshaHTTPServer) RemovePlugin(ctx context.Context, displayName string)
 }
 
 // RegisterInferenceRoutes initializes the routes for the inference handler
-func (s *RakshaHTTPServer) RegisterInferenceRoutes(ctx context.Context, middlewares ...schemas.RakshaHTTPMiddleware) error {
+func (s *GatewayHTTPServer) RegisterInferenceRoutes(ctx context.Context, middlewares ...schemas.GatewayHTTPMiddleware) error {
 	// Initialize WebSocket pool and handler before integrations so it can be wired through
 	s.wsPool = ufws.NewPool(s.Config.WebSocketConfig.Pool)
 	wsResponsesHandler := handlers.NewWSResponsesHandler(s.Client, s.Config, s.wsPool)
@@ -1510,8 +1510,8 @@ func (s *RakshaHTTPServer) RegisterInferenceRoutes(ctx context.Context, middlewa
 	return nil
 }
 
-// RegisterAPIRoutes initializes the routes for the Raksha HTTP server.
-func (s *RakshaHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks ServerCallbacks, middlewares ...schemas.RakshaHTTPMiddleware) error {
+// RegisterAPIRoutes initializes the routes for the Gateway HTTP server.
+func (s *GatewayHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks ServerCallbacks, middlewares ...schemas.GatewayHTTPMiddleware) error {
 	var err error
 	// Initializing plugin specific handlers
 	var loggingHandler *handlers.LoggingHandler
@@ -1523,7 +1523,7 @@ func (s *RakshaHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Serv
 	}
 	var governanceHandler *handlers.GovernanceHandler
 	governancePluginName := governance.PluginName
-	if name, ok := ctx.Value(schemas.RakshaContextKeyGovernancePluginName).(string); ok && name != "" {
+	if name, ok := ctx.Value(schemas.GatewayContextKeyGovernancePluginName).(string); ok && name != "" {
 		governancePluginName = name
 	}
 	governancePlugin, _ := lib.FindPluginAs[schemas.LLMPlugin](s.Config, governancePluginName)
@@ -1654,9 +1654,9 @@ func (s *RakshaHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Serv
 	}
 	authedMetrics := lib.ChainMiddlewares(metricsHandler, middlewares...)
 	s.Router.GET("/metrics", func(ctx *fasthttp.RequestCtx) {
-		// External Prometheus cannot hold a dashboard session: when RAKSHA_METRICS_TOKEN
+		// External Prometheus cannot hold a dashboard session: when GATEWAY_METRICS_TOKEN
 		// is set, "Authorization: Bearer <token>" scrapes /metrics without login.
-		if token := strings.TrimSpace(os.Getenv("RAKSHA_METRICS_TOKEN")); token != "" {
+		if token := strings.TrimSpace(GatewayEnv("METRICS_TOKEN")); token != "" {
 			got := strings.TrimSpace(strings.TrimPrefix(string(ctx.Request.Header.Peek("Authorization")), "Bearer "))
 			if subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1 {
 				metricsHandler(ctx)
@@ -1673,13 +1673,13 @@ func (s *RakshaHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Serv
 }
 
 // RegisterUIRoutes registers the UI handler with the specified router
-func (s *RakshaHTTPServer) RegisterUIRoutes(middlewares ...schemas.RakshaHTTPMiddleware) {
+func (s *GatewayHTTPServer) RegisterUIRoutes(middlewares ...schemas.GatewayHTTPMiddleware) {
 	// WARNING: This UI handler needs to be registered after all the other handlers
 	handlers.NewUIHandler(s.UIContent).RegisterRoutes(s.Router, middlewares...)
 }
 
 // GetAllRedactedKeys gets all redacted keys from the config store
-func (s *RakshaHTTPServer) GetAllRedactedKeys(ctx context.Context, ids []string) []schemas.Key {
+func (s *GatewayHTTPServer) GetAllRedactedKeys(ctx context.Context, ids []string) []schemas.Key {
 	if s.Config == nil || s.Config.ConfigStore == nil {
 		return nil
 	}
@@ -1692,7 +1692,7 @@ func (s *RakshaHTTPServer) GetAllRedactedKeys(ctx context.Context, ids []string)
 }
 
 // GetAllRedactedVirtualKeys gets all redacted virtual keys from the config store
-func (s *RakshaHTTPServer) GetAllRedactedVirtualKeys(ctx context.Context, ids []string) []tables.TableVirtualKey {
+func (s *GatewayHTTPServer) GetAllRedactedVirtualKeys(ctx context.Context, ids []string) []tables.TableVirtualKey {
 	if s.Config == nil || s.Config.ConfigStore == nil {
 		return nil
 	}
@@ -1705,7 +1705,7 @@ func (s *RakshaHTTPServer) GetAllRedactedVirtualKeys(ctx context.Context, ids []
 }
 
 // GetAllRedactedRoutingRules gets all redacted routing rules from the config store
-func (s *RakshaHTTPServer) GetAllRedactedRoutingRules(ctx context.Context, ids []string) []tables.TableRoutingRule {
+func (s *GatewayHTTPServer) GetAllRedactedRoutingRules(ctx context.Context, ids []string) []tables.TableRoutingRule {
 	if s.Config == nil || s.Config.ConfigStore == nil {
 		return nil
 	}
@@ -1717,9 +1717,9 @@ func (s *RakshaHTTPServer) GetAllRedactedRoutingRules(ctx context.Context, ids [
 	return routingRules
 }
 
-// PrepareCommonMiddlewares gets the common middlewares for the Raksha HTTP server
-func (s *RakshaHTTPServer) PrepareCommonMiddlewares() []schemas.RakshaHTTPMiddleware {
-	commonMiddlewares := []schemas.RakshaHTTPMiddleware{}
+// PrepareCommonMiddlewares gets the common middlewares for the Gateway HTTP server
+func (s *GatewayHTTPServer) PrepareCommonMiddlewares() []schemas.GatewayHTTPMiddleware {
+	commonMiddlewares := []schemas.GatewayHTTPMiddleware{}
 	// Preparing middlewares
 	// Prometheus is opt-in from Observability → Connectors; resolve it per request so
 	// connecting it later takes effect without a restart.
@@ -1777,20 +1777,20 @@ func startSkillsOrphanCleanupWorker(ctx context.Context, config *lib.Config) {
 	}()
 }
 
-// Bootstrap initializes the Raksha HTTP server with all necessary components.
+// Bootstrap initializes the Gateway HTTP server with all necessary components.
 // It:
 // 1. Initializes Prometheus collectors for monitoring
 // 2. Reads and parses configuration from the specified config file
-// 3. Initializes the Raksha client with the configuration
+// 3. Initializes the Gateway client with the configuration
 // 4. Sets up HTTP routes for text and chat completions
 //
 // The server exposes the following endpoints:
 //   - POST /v1/text/completions: For text completion requests
 //   - POST /v1/chat/completions: For chat completion requests
 //   - GET /metrics: For Prometheus metrics
-func (s *RakshaHTTPServer) Bootstrap(ctx context.Context) error {
+func (s *GatewayHTTPServer) Bootstrap(ctx context.Context) error {
 	var err error
-	s.Ctx, s.cancel = schemas.NewRakshaContextWithCancel(ctx)
+	s.Ctx, s.cancel = schemas.NewGatewayContextWithCancel(ctx)
 	handlers.SetVersion(s.Version)
 	configDir := GetDefaultConfigDir(s.AppDir)
 
@@ -1868,16 +1868,16 @@ func (s *RakshaHTTPServer) Bootstrap(ctx context.Context) error {
 	if tableMCPConfig != nil {
 		mcpConfig = s.Config.MCPConfig
 		if mcpConfig != nil {
-			mcpConfig.FetchNewRequestIDFunc = func(ctx *schemas.RakshaContext) string {
+			mcpConfig.FetchNewRequestIDFunc = func(ctx *schemas.GatewayContext) string {
 				return uuid.New().String()
 			}
 		}
 	}
-	// Initialize raksha client
+	// Initialize gateway client
 	// Create account backed by the high-performance store (all processing is done in LoadFromDatabase)
 	// The account interface now benefits from ultra-fast config access times via in-memory storage
 	account := lib.NewBaseAccount(s.Config)
-	s.Client, err = raksha.Init(ctx, schemas.RakshaConfig{
+	s.Client, err = gateway.Init(ctx, schemas.GatewayConfig{
 		Account:            account,
 		InitialPoolSize:    s.Config.ClientConfig.InitialPoolSize,
 		DropExcessRequests: s.Config.ClientConfig.DropExcessRequests,
@@ -1890,9 +1890,9 @@ func (s *RakshaHTTPServer) Bootstrap(ctx context.Context) error {
 		KVStore:            s.Config.KVStore,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to initialize raksha: %v", err)
+		return fmt.Errorf("failed to initialize gateway: %v", err)
 	}
-	logger.Info("raksha client initialized")
+	logger.Info("gateway client initialized")
 	// Sync plugin execution order from config to core (defensive — Init receives sorted list,
 	// but this ensures order consistency if the loading path changes in the future)
 	s.Client.ReorderPlugins(s.Config.GetPluginOrder())
@@ -1917,7 +1917,7 @@ func (s *RakshaHTTPServer) Bootstrap(ctx context.Context) error {
 		wg.Wait()
 	}
 	logger.Info("models added to catalog")
-	s.Config.SetRakshaClient(s.Client)
+	s.Config.SetGatewayClient(s.Client)
 	// Initialize routes
 	s.Router = router.New()
 	// Initialize CORS middleware
@@ -1978,7 +1978,7 @@ func (s *RakshaHTTPServer) Bootstrap(ctx context.Context) error {
 			}
 			return fmt.Errorf("failed to initialize auth middleware: %v", err)
 		}
-		if ctx.Value(schemas.RakshaContextKeyIsEnterprise) == nil {
+		if ctx.Value(schemas.GatewayContextKeyIsEnterprise) == nil {
 			apiMiddlewares = append(apiMiddlewares, s.AuthMiddleware.APIMiddleware())
 		}
 		// Audit every mutating /api/* action into Governance → Audit Logs
@@ -2011,7 +2011,7 @@ func (s *RakshaHTTPServer) Bootstrap(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize routes: %v", err)
 	}
 	// Registering inference routes
-	if ctx.Value(schemas.RakshaContextKeyIsEnterprise) == nil && s.AuthMiddleware != nil {
+	if ctx.Value(schemas.GatewayContextKeyIsEnterprise) == nil && s.AuthMiddleware != nil {
 		inferenceMiddlewares = append(inferenceMiddlewares, s.AuthMiddleware.InferenceMiddleware())
 	}
 	// Once auth is done we will first add the Tracing middleware
@@ -2029,8 +2029,8 @@ func (s *RakshaHTTPServer) Bootstrap(ctx context.Context) error {
 	// TransportInterceptor must be inside TracingMiddleware so that the tracing defer
 	// runs AFTER transport post-hooks (capturing HTTPTransportPostHook plugin logs).
 	// Order: Tracing.pre → TransportInterceptor.pre → handler → TransportInterceptor.post → Tracing.defer
-	inferenceMiddlewares = append([]schemas.RakshaHTTPMiddleware{handlers.TransportInterceptorMiddleware(s.Config)}, inferenceMiddlewares...)
-	inferenceMiddlewares = append([]schemas.RakshaHTTPMiddleware{s.TracingMiddleware.Middleware()}, inferenceMiddlewares...)
+	inferenceMiddlewares = append([]schemas.GatewayHTTPMiddleware{handlers.TransportInterceptorMiddleware(s.Config)}, inferenceMiddlewares...)
+	inferenceMiddlewares = append([]schemas.GatewayHTTPMiddleware{s.TracingMiddleware.Middleware()}, inferenceMiddlewares...)
 
 	err = s.RegisterInferenceRoutes(s.Ctx, inferenceMiddlewares...)
 	if err != nil {
@@ -2049,7 +2049,7 @@ func (s *RakshaHTTPServer) Bootstrap(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize inference routes: %v", err)
 	}
 	// Dial configured MCP clients now that every plugin is registered in the core.
-	// Construction (raksha.Init) no longer connects MCP, so connecting here ensures
+	// Construction (gateway.Init) no longer connects MCP, so connecting here ensures
 	// each client's PreMCPConnectionHook runs against the full plugin set rather than
 	// the point-in-time snapshot captured at Init (which would skip plugins — e.g.
 	// enterprise ones — registered after that snapshot, causing the client to fail
@@ -2077,7 +2077,7 @@ func (s *RakshaHTTPServer) Bootstrap(ctx context.Context) error {
 
 // Start starts the HTTP server at the specified host and port
 // Also watches signals and errors
-func (s *RakshaHTTPServer) Start() error {
+func (s *GatewayHTTPServer) Start() error {
 	// Printing plugin status in a table
 	for _, pluginStatus := range s.Config.GetPluginStatus() {
 		logger.Info("plugin status: %s - %s", pluginStatus.Name, pluginStatus.Status)
@@ -2094,7 +2094,7 @@ func (s *RakshaHTTPServer) Start() error {
 		return fmt.Errorf("failed to create listener on %s: %v", serverAddr, err)
 	}
 	go func() {
-		logger.Info("successfully started raksha, serving UI on http://%s", serverAddr)
+		logger.Info("successfully started gateway, serving UI on http://%s", serverAddr)
 		if err := s.Server.Serve(ln); err != nil {
 			errChan <- err
 		}
@@ -2124,9 +2124,9 @@ func (s *RakshaHTTPServer) Start() error {
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
-			logger.Info("shutting down raksha client...")
+			logger.Info("shutting down gateway client...")
 			s.Client.Shutdown()
-			logger.Info("raksha client shutdown completed")
+			logger.Info("gateway client shutdown completed")
 			logger.Info("cleaning up storage engines...")
 			// Cleanup server-specific components
 			if s.LogsCleaner != nil {

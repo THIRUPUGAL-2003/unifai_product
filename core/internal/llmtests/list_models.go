@@ -5,24 +5,24 @@ import (
 	"os"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// listModelsRakshaContext returns a context for ListModels. For Replicate, pins the deployments-endpoint
+// listModelsGatewayContext returns a context for ListModels. For Replicate, pins the deployments-endpoint
 // key by name (see replicateProviderTestKeys in account.go) so the test always exercises that specific key.
 // That key must not use an empty Models allowlist, or ListModelsPipeline.ShouldEarlyExit returns no models
 // before the API runs.
-func listModelsRakshaContext(parent context.Context, provider schemas.ModelProvider) *schemas.RakshaContext {
-	bfCtx := schemas.NewRakshaContext(parent, schemas.NoDeadline)
+func listModelsGatewayContext(parent context.Context, provider schemas.ModelProvider) *schemas.GatewayContext {
+	bfCtx := schemas.NewGatewayContext(parent, schemas.NoDeadline)
 	if provider == schemas.Replicate {
-		bfCtx.SetValue(schemas.RakshaContextKeyAPIKeyName, ReplicateKeyNameListModels)
+		bfCtx.SetValue(schemas.GatewayContextKeyAPIKeyName, ReplicateKeyNameListModels)
 	}
 	return bfCtx
 }
 
 // RunListModelsTest executes the list models test scenario
-func RunListModelsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunListModelsTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ListModels {
 		t.Logf("List models not supported for provider %s", testConfig.Provider)
 		return
@@ -34,7 +34,7 @@ func RunListModelsTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 		}
 
 		// Create basic list models request
-		request := &schemas.RakshaListModelsRequest{
+		request := &schemas.GatewayListModelsRequest{
 			Provider: testConfig.Provider,
 		}
 
@@ -70,13 +70,13 @@ func RunListModelsTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		response, rakshaErr := WithListModelsTestRetry(t, listModelsRetryConfig, retryContext, expectations, "ListModels", func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
-			bfCtx := listModelsRakshaContext(ctx, testConfig.Provider)
+		response, gatewayErr := WithListModelsTestRetry(t, listModelsRetryConfig, retryContext, expectations, "ListModels", func() (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
+			bfCtx := listModelsGatewayContext(ctx, testConfig.Provider)
 			return client.ListModelsRequest(bfCtx, request)
 		})
 
-		if rakshaErr != nil {
-			t.Fatalf("❌ List models request failed after retries: %v", GetErrorMessage(rakshaErr))
+		if gatewayErr != nil {
+			t.Fatalf("❌ List models request failed after retries: %v", GetErrorMessage(gatewayErr))
 		}
 
 		if response == nil {
@@ -122,7 +122,7 @@ func RunListModelsTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 
 // RunListModelsResponseMarshalTest verifies that a successful ListModels response
 // (including KeyStatuses) can be marshaled to JSON without cycle errors.
-func RunListModelsResponseMarshalTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunListModelsResponseMarshalTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ListModels {
 		t.Logf("List models not supported for provider %s", testConfig.Provider)
 		return
@@ -133,7 +133,7 @@ func RunListModelsResponseMarshalTest(t *testing.T, client *raksha.Raksha, ctx c
 			t.Parallel()
 		}
 
-		request := &schemas.RakshaListModelsRequest{
+		request := &schemas.GatewayListModelsRequest{
 			Provider: testConfig.Provider,
 		}
 
@@ -165,13 +165,13 @@ func RunListModelsResponseMarshalTest(t *testing.T, client *raksha.Raksha, ctx c
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		response, rakshaErr := WithListModelsTestRetry(t, listModelsRetryConfig, retryContext, expectations, "ListModelsResponseMarshal", func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
-			bfCtx := listModelsRakshaContext(ctx, testConfig.Provider)
+		response, gatewayErr := WithListModelsTestRetry(t, listModelsRetryConfig, retryContext, expectations, "ListModelsResponseMarshal", func() (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
+			bfCtx := listModelsGatewayContext(ctx, testConfig.Provider)
 			return client.ListModelsRequest(bfCtx, request)
 		})
 
-		if rakshaErr != nil {
-			t.Fatalf("❌ List models request failed after retries: %v", GetErrorMessage(rakshaErr))
+		if gatewayErr != nil {
+			t.Fatalf("❌ List models request failed after retries: %v", GetErrorMessage(gatewayErr))
 		}
 
 		if response == nil {
@@ -200,10 +200,10 @@ func RunListModelsResponseMarshalTest(t *testing.T, client *raksha.Raksha, ctx c
 	})
 }
 
-// RunListModelsErrorMarshalTest verifies that the KeyStatus ↔ RakshaError circular
+// RunListModelsErrorMarshalTest verifies that the KeyStatus ↔ GatewayError circular
 // reference pattern used by HandleMultipleListModelsRequests and HandleKeylessListModelsRequest
 // marshals without cycle errors.
-func RunListModelsErrorMarshalTest(t *testing.T, _ *raksha.Raksha, _ context.Context, testConfig ComprehensiveTestConfig) {
+func RunListModelsErrorMarshalTest(t *testing.T, _ *gateway.Gateway, _ context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ListModels {
 		t.Logf("List models not supported for provider %s", testConfig.Provider)
 		return
@@ -217,11 +217,11 @@ func RunListModelsErrorMarshalTest(t *testing.T, _ *raksha.Raksha, _ context.Con
 		// Construct the exact circular reference pattern that HandleMultipleListModelsRequests
 		// and HandleKeylessListModelsRequest create in production.
 		statusCode := 500
-		rakshaErr := &schemas.RakshaError{
-			IsRakshaError: true,
+		gatewayErr := &schemas.GatewayError{
+			IsGatewayError: true,
 			StatusCode:     &statusCode,
 			Error:          &schemas.ErrorField{Message: "simulated list models failure"},
-			ExtraFields: schemas.RakshaErrorExtraFields{
+			ExtraFields: schemas.GatewayErrorExtraFields{
 				Provider: testConfig.Provider,
 			},
 		}
@@ -229,17 +229,17 @@ func RunListModelsErrorMarshalTest(t *testing.T, _ *raksha.Raksha, _ context.Con
 			KeyID:    "test-key",
 			Status:   schemas.KeyStatusListModelsFailed,
 			Provider: testConfig.Provider,
-			Error:    rakshaErr,
+			Error:    gatewayErr,
 		}
-		// Create the cycle: RakshaError → ExtraFields.KeyStatuses → KeyStatus → Error → RakshaError
-		rakshaErr.ExtraFields.KeyStatuses = []schemas.KeyStatus{keyStatus}
+		// Create the cycle: GatewayError → ExtraFields.KeyStatuses → KeyStatus → Error → GatewayError
+		gatewayErr.ExtraFields.KeyStatuses = []schemas.KeyStatus{keyStatus}
 
-		// Marshal the RakshaError (top-level, contains the cycle via KeyStatuses)
-		errData, err := schemas.Marshal(rakshaErr)
+		// Marshal the GatewayError (top-level, contains the cycle via KeyStatuses)
+		errData, err := schemas.Marshal(gatewayErr)
 		if err != nil {
-			t.Fatalf("❌ Failed to marshal RakshaError with circular KeyStatuses: %v", err)
+			t.Fatalf("❌ Failed to marshal GatewayError with circular KeyStatuses: %v", err)
 		}
-		t.Logf("✅ RakshaError with circular KeyStatuses marshaled successfully (%d bytes)", len(errData))
+		t.Logf("✅ GatewayError with circular KeyStatuses marshaled successfully (%d bytes)", len(errData))
 
 		// Marshal the individual KeyStatus (contains the cycle via Error.ExtraFields.KeyStatuses)
 		ksData, err := schemas.Marshal(keyStatus)
@@ -253,7 +253,7 @@ func RunListModelsErrorMarshalTest(t *testing.T, _ *raksha.Raksha, _ context.Con
 }
 
 // RunListModelsPaginationTest executes pagination test for list models
-func RunListModelsPaginationTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunListModelsPaginationTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.ListModels {
 		t.Logf("List models not supported for provider %s", testConfig.Provider)
 		return
@@ -266,7 +266,7 @@ func RunListModelsPaginationTest(t *testing.T, client *raksha.Raksha, ctx contex
 
 		// Test pagination with page size
 		pageSize := 5
-		request := &schemas.RakshaListModelsRequest{
+		request := &schemas.GatewayListModelsRequest{
 			Provider: testConfig.Provider,
 			PageSize: pageSize,
 		}
@@ -304,13 +304,13 @@ func RunListModelsPaginationTest(t *testing.T, client *raksha.Raksha, ctx contex
 			OnFinalFail: retryConfig.OnFinalFail,
 		}
 
-		response, rakshaErr := WithListModelsTestRetry(t, listModelsRetryConfig, retryContext, expectations, "ListModelsPagination", func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
-			bfCtx := listModelsRakshaContext(ctx, testConfig.Provider)
+		response, gatewayErr := WithListModelsTestRetry(t, listModelsRetryConfig, retryContext, expectations, "ListModelsPagination", func() (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
+			bfCtx := listModelsGatewayContext(ctx, testConfig.Provider)
 			return client.ListModelsRequest(bfCtx, request)
 		})
 
-		if rakshaErr != nil {
-			t.Fatalf("❌ List models pagination request failed after retries: %v", GetErrorMessage(rakshaErr))
+		if gatewayErr != nil {
+			t.Fatalf("❌ List models pagination request failed after retries: %v", GetErrorMessage(gatewayErr))
 		}
 
 		if response == nil {
@@ -329,7 +329,7 @@ func RunListModelsPaginationTest(t *testing.T, client *raksha.Raksha, ctx contex
 			t.Logf("✅ Next page token available: %s", response.NextPageToken)
 
 			// Fetch next page - also use retry wrapper
-			nextPageRequest := &schemas.RakshaListModelsRequest{
+			nextPageRequest := &schemas.GatewayListModelsRequest{
 				Provider:  testConfig.Provider,
 				PageSize:  pageSize,
 				PageToken: response.NextPageToken,
@@ -347,8 +347,8 @@ func RunListModelsPaginationTest(t *testing.T, client *raksha.Raksha, ctx contex
 				},
 			}
 
-			nextPageResponse, nextPageErr := WithListModelsTestRetry(t, listModelsRetryConfig, nextPageRetryContext, expectations, "ListModelsPagination_NextPage", func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
-				bfCtx := listModelsRakshaContext(ctx, testConfig.Provider)
+			nextPageResponse, nextPageErr := WithListModelsTestRetry(t, listModelsRetryConfig, nextPageRetryContext, expectations, "ListModelsPagination_NextPage", func() (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
+				bfCtx := listModelsGatewayContext(ctx, testConfig.Provider)
 				return client.ListModelsRequest(bfCtx, nextPageRequest)
 			})
 

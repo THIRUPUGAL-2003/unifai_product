@@ -8,7 +8,7 @@ import (
 )
 
 // TableOAuth2Client holds a registered OAuth2 client created via Dynamic Client
-// Registration (RFC 7591). Raksha only supports public clients
+// Registration (RFC 7591). Gateway only supports public clients
 // (token_endpoint_auth_method=none) — no client secrets.
 type TableOAuth2Client struct {
 	ID               string    `gorm:"type:varchar(255);primaryKey" json:"id"`

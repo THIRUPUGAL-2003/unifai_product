@@ -107,7 +107,7 @@ def bump_versions(bg: str) -> str:
             write_text(bootstrap_path, boot_src)
         else:
             print("[publish] WARNING: RUNTIME_VERSION_BAKED not found in guard_bootstrap.py", file=sys.stderr)
-    iss_path = os.path.join(bg, "installer", "Raksha_Guard.iss")
+    iss_path = os.path.join(bg, "installer", "Gateway_Guard.iss")
     if os.path.isfile(iss_path):
         iss = read_text(iss_path)
         iss2, n_iss = re.subn(
@@ -120,7 +120,7 @@ def bump_versions(bg: str) -> str:
             write_text(iss_path, iss2)
             print(f"[publish] Inno MyAppVersion → {new_ver}")
         else:
-            print("[publish] WARNING: MyAppVersion define not found in Raksha_Guard.iss", file=sys.stderr)
+            print("[publish] WARNING: MyAppVersion define not found in Gateway_Guard.iss", file=sys.stderr)
     print(f"[publish] version {current} → {new_ver}")
     return new_ver
 
@@ -164,23 +164,27 @@ def main() -> int:
     run([sys.executable, sync], cwd=repo, timeout=120)
 
     # Verify secret landed in release config when required.
-    release_cfg = os.path.join(bg, "release", "raksha_guard_config.json")
-    require = os.environ.get("RAKSHA_GUARD_REQUIRE_SECRET", "1").strip().lower()
+    release_cfg = os.path.join(bg, "release", "gateway_guard_config.json")
+    require = (
+        os.environ.get("GATEWAY_GUARD_REQUIRE_SECRET")
+        or os.environ.get("GATEWAY_GUARD_REQUIRE_SECRET")
+        or "1"
+    ).strip().lower()
     if require not in ("0", "false", "no", "off") and os.path.isfile(release_cfg):
         import json
 
         data = json.loads(read_text(release_cfg))
         if not str(data.get("guard_secret") or "").strip():
             raise SystemExit(
-                "release/raksha_guard_config.json still has empty guard_secret after sync — "
-                "set RAKSHA_GUARD_SECRET in .env"
+                "release/gateway_guard_config.json still has empty guard_secret after sync — "
+                "set GATEWAY_GUARD_SECRET in .env"
             )
 
     steps_ok: list[str] = ["sync"]
     steps_skip: list[str] = []
 
-    mac_app = os.path.join(bg, "release", "Raksha_Guard.app")
-    mac_zip = os.path.join(bg, "release", "Raksha_Guard_macOS.zip")
+    mac_app = os.path.join(bg, "release", "Gateway_Guard.app")
+    mac_zip = os.path.join(bg, "release", "Gateway_Guard_macOS.zip")
     hard_errors: list[str] = []
 
     def repackage_macos() -> None:
@@ -188,12 +192,12 @@ def main() -> int:
         ps1 = os.path.join(scripts, "package_macos.ps1")
         if not os.path.isfile(ps1):
             if os.path.isdir(mac_app):
-                hard_errors.append("package_macos.ps1 missing but Raksha_Guard.app exists")
+                hard_errors.append("package_macos.ps1 missing but Gateway_Guard.app exists")
             else:
                 steps_skip.append("macos_repackage (no script)")
             return
         if not os.path.isdir(mac_app):
-            steps_skip.append("macos_repackage (no Raksha_Guard.app — run make build-guard-mac on a Mac once)")
+            steps_skip.append("macos_repackage (no Gateway_Guard.app — run make build-guard-mac on a Mac once)")
             return
         ps_bin = shutil.which("powershell") or shutil.which("pwsh")
         if not ps_bin:
@@ -212,7 +216,7 @@ def main() -> int:
             timeout=600,
         )
         if not os.path.isfile(mac_zip):
-            hard_errors.append("macos_repackage finished but Raksha_Guard_macOS.zip was not created")
+            hard_errors.append("macos_repackage finished but Gateway_Guard_macOS.zip was not created")
             return
         steps_ok.append("macos_repackage")
 
@@ -248,17 +252,17 @@ def main() -> int:
         print("[publish] skipped:", ", ".join(steps_skip))
     print(f"[publish] version={version or '(unchanged)'}")
 
-    win_setup = os.path.join(bg, "release", "Raksha_Guard_Setup.exe")
-    win_exe = os.path.join(bg, "release", "Raksha_Guard.exe")
+    win_setup = os.path.join(bg, "release", "Gateway_Guard_Setup.exe")
+    win_exe = os.path.join(bg, "release", "Gateway_Guard.exe")
     if system == "windows" and not os.path.isfile(win_setup) and not os.path.isfile(win_exe):
         hard_errors.append("no Windows Setup/EXE in release/ after build — Windows fleet cannot update")
     if not os.path.isfile(mac_zip):
         if os.path.isdir(mac_app):
-            hard_errors.append("Raksha_Guard_macOS.zip missing after publish but .app exists")
+            hard_errors.append("Gateway_Guard_macOS.zip missing after publish but .app exists")
         else:
             print(
-                "[publish] WARNING: Raksha_Guard_macOS.zip missing — Mac fleet cannot update "
-                "(copy a Mac-built Raksha_Guard.app then rebuild, or run make build-guard-mac on a Mac)",
+                "[publish] WARNING: Gateway_Guard_macOS.zip missing — Mac fleet cannot update "
+                "(copy a Mac-built Gateway_Guard.app then rebuild, or run make build-guard-mac on a Mac)",
                 file=sys.stderr,
             )
     else:

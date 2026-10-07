@@ -1,4 +1,4 @@
-# UnifAI / Raksha Enterprise Docker & SSL/TLS Configuration Guide
+# UnifAI / Gateway Enterprise Docker & SSL/TLS Configuration Guide
 
 **Audience:** DevOps Engineers, Cloud Engineers, SREs, Systems & Security Administrators  
 **Scope:** Docker topology, multi-container orchestration, exhaustive Docker command handbook, SSL/TLS certificate acquisition via Certbot, OpenSSL self-signed generation, Browser Guard Root CA generation, OS trust store deployment commands, Nginx reverse proxy integration, and diagnostics.  
@@ -20,12 +20,12 @@ UnifAI deploys as a multi-container Docker Compose application:
                             │            │ http://127.0.0.1:6000│                    │
                             │            ▼                      ▼                    │
                             │   ┌──────────────────┐   ┌──────────────────────────┐  │
-                            │   │   raksha_tech    │   │ raksha_browser_ai_proxy  │  │
+                            │   │   gateway_tech    │   │ gateway_browser_ai_proxy  │  │
                             │   │   (Go Backend &  │   │ (Optional Network Proxy  │  │
                             │   │    Embedded UI)  │   │  mitmproxy profile)      │  │
                             │   └────────┬─────────┘   └────────────┬─────────────┘  │
                             │            │                          │                │
-                            │            │ (raksha-network bridge)  │                │
+                            │            │ (gateway-network bridge)  │                │
                             │            └──────────────┬───────────┘                │
                             │                           │                            │
                             │                           ▼                            │
@@ -38,10 +38,10 @@ UnifAI deploys as a multi-container Docker Compose application:
 ```
 
 ### Services Defined in `docker-compose.yml`
-1. **`raksha_tech` (Primary Application):**
+1. **`gateway_tech` (Primary Application):**
    - Multi-stage build (`deploy/docker/Dockerfile.local`): `node:25-alpine` builds React UI $\rightarrow$ `golang:1.26.4-alpine` builds Go binary $\rightarrow$ `alpine:3.23` lightweight runtime.
    - Serves the UI, `/v1/*` inference gateway, `/api/*` management plane, and Browser AI endpoints.
-2. **`raksha_browser_ai_proxy` (Optional Network Proxy):**
+2. **`gateway_browser_ai_proxy` (Optional Network Proxy):**
    - Enabled via profile: `docker compose --profile network-proxy up -d`.
    - Runs `mitmproxy/mitmproxy:latest` with the Browser Guard Python addon for office/lab PAC proxying.
 
@@ -58,7 +58,7 @@ The compose file references an external network for Ollama (`1panel-network`). C
 docker network create 1panel-network
 
 # Create primary application bridge network (if custom name specified in .env)
-docker network create raksha-network
+docker network create gateway-network
 
 # List all Docker networks
 docker network ls
@@ -91,13 +91,13 @@ docker compose ps
 docker compose ps -a
 
 # View real-time CPU %, Memory usage, Network I/O, and PIDs
-docker stats raksha_tech
+docker stats gateway_tech
 
 # Inspect detailed container JSON metadata (IP address, mounts, environment)
-docker inspect raksha_tech
+docker inspect gateway_tech
 
 # Inspect network to see assigned IP addresses of connected containers
-docker network inspect raksha-network
+docker network inspect gateway-network
 docker network inspect 1panel-network
 ```
 
@@ -107,37 +107,37 @@ docker network inspect 1panel-network
 docker compose logs -f
 
 # Follow logs of primary Go backend with last 100 lines
-docker compose logs -f --tail=100 raksha_tech
+docker compose logs -f --tail=100 gateway_tech
 
 # Follow logs of network proxy container
-docker compose logs -f --tail=100 raksha_browser_ai_proxy
+docker compose logs -f --tail=100 gateway_browser_ai_proxy
 
 # Filter logs for errors or warnings
-docker compose logs raksha_tech | grep -i "error"
+docker compose logs gateway_tech | grep -i "error"
 
 # Check startup banner and plugin status table
-docker compose logs raksha_tech | grep -E "successfully started|plugin status:"
+docker compose logs gateway_tech | grep -E "successfully started|plugin status:"
 ```
 
 ### 2.5 Container Execution & In-Container Debugging
 ```bash
 # Open an interactive shell inside the running backend container
-docker exec -it raksha_tech /bin/sh
+docker exec -it gateway_tech /bin/sh
 
 # Test backend healthcheck directly from inside the container
-docker exec -it raksha_tech curl -v http://localhost:6000/health
+docker exec -it gateway_tech curl -v http://localhost:6000/health
 
 # Verify environment variables loaded inside the container
-docker exec -it raksha_tech env | grep -E "APP_PORT|DB_HOST|SERVER_DOMAIN"
+docker exec -it gateway_tech env | grep -E "APP_PORT|DB_HOST|SERVER_DOMAIN"
 
 # Inspect data directory contents inside container
-docker exec -it raksha_tech ls -la /app/data
+docker exec -it gateway_tech ls -la /app/data
 ```
 
 ### 2.6 Stopping, Restarting & Cleanup Commands
 ```bash
 # Restart the backend container gracefully (after modifying .env)
-docker compose restart raksha_tech
+docker compose restart gateway_tech
 
 # Stop running containers without deleting them
 docker compose stop
@@ -251,7 +251,7 @@ openssl rsa -noout -modulus -in unifai_server.key | openssl md5
 
 ---
 
-### 3.3 Generating Root CA Certificate for Raksha Browser Guard (MITM Proxy)
+### 3.3 Generating Root CA Certificate for Gateway Browser Guard (MITM Proxy)
 
 To inspect HTTPS traffic between employee browsers and target Generative AI websites (ChatGPT, Claude, Gemini), Browser Guard requires an internal Root Certificate Authority (CA).
 
@@ -261,16 +261,16 @@ To inspect HTTPS traffic between employee browsers and target Generative AI webs
 mkdir -p /opt/unifai/certs/ca && cd /opt/unifai/certs/ca
 
 # 1. Generate Root CA Private Key (4096-bit RSA)
-openssl genrsa -out raksha-ca.key 4096
-chmod 400 raksha-ca.key
+openssl genrsa -out gateway-ca.key 4096
+chmod 400 gateway-ca.key
 
 # 2. Generate Root CA Certificate (valid for 10 years / 3650 days)
-openssl req -x509 -new -nodes -key raksha-ca.key -sha256 -days 3650 \
-  -out raksha-ca.crt \
-  -subj "/C=US/ST=State/L=City/O=Raksha Security Enterprise/OU=Fleet Security/CN=Raksha Root CA - Enterprise AI Guard"
+openssl req -x509 -new -nodes -key gateway-ca.key -sha256 -days 3650 \
+  -out gateway-ca.crt \
+  -subj "/C=US/ST=State/L=City/O=Gateway Security Enterprise/OU=Fleet Security/CN=Gateway Root CA - Enterprise AI Guard"
 
 # 3. Create combined PEM file for mitmproxy
-cat raksha-ca.key raksha-ca.crt > mitmproxy-ca.pem
+cat gateway-ca.key gateway-ca.crt > mitmproxy-ca.pem
 chmod 600 mitmproxy-ca.pem
 ```
 
@@ -278,19 +278,19 @@ chmod 600 mitmproxy-ca.pem
 
 ### 3.4 Installing the Root CA Certificate into Client Operating Systems
 
-For Browser Guard to inspect HTTPS sessions without browser security warnings (`ERR_CERT_AUTHORITY_INVALID`), the Root CA certificate (`raksha-ca.crt`) must be installed into the client trust store.
+For Browser Guard to inspect HTTPS sessions without browser security warnings (`ERR_CERT_AUTHORITY_INVALID`), the Root CA certificate (`gateway-ca.crt`) must be installed into the client trust store.
 
 #### A. Windows Client Installation (Automated via CMD / PowerShell / Inno Setup)
 Execute as **Administrator**:
 
 ```cmd
 :: Using built-in Windows certutil utility
-certutil -addstore -f "Root" "C:\path\to\raksha-ca.crt"
+certutil -addstore -f "Root" "C:\path\to\gateway-ca.crt"
 ```
 
 Verify installation in Windows Certificate Manager:
 ```cmd
-certutil -verifystore "Root" "Raksha Root CA - Enterprise AI Guard"
+certutil -verifystore "Root" "Gateway Root CA - Enterprise AI Guard"
 ```
 
 #### B. macOS Client Installation (Terminal / Jamf / Kandji)
@@ -302,18 +302,18 @@ sudo security add-trusted-cert \
   -d \
   -r trustRoot \
   -k /Library/Keychains/System.keychain \
-  /path/to/raksha-ca.crt
+  /path/to/gateway-ca.crt
 ```
 
 Verify on macOS:
 ```bash
-security find-certificate -c "Raksha Root CA - Enterprise AI Guard" /Library/Keychains/System.keychain
+security find-certificate -c "Gateway Root CA - Enterprise AI Guard" /Library/Keychains/System.keychain
 ```
 
 #### C. Linux (Ubuntu / Debian) Client Installation
 ```bash
 # Copy certificate to trusted store directory
-sudo cp raksha-ca.crt /usr/local/share/ca-certificates/raksha-ca.crt
+sudo cp gateway-ca.crt /usr/local/share/ca-certificates/gateway-ca.crt
 
 # Update system certificate authorities
 sudo update-ca-certificates
@@ -330,7 +330,7 @@ sudo apt install -y libnss3-tools  # Linux
 # Import into all Firefox user profiles
 for certDB in $(find $HOME/.mozilla/firefox* -name "cert9.db"); do
     certdir=$(dirname ${certDB})
-    certutil -A -n "Raksha Root CA" -t "TCu,Cu,Tu" -i /path/to/raksha-ca.crt -d sql:${certdir}
+    certutil -A -n "Gateway Root CA" -t "TCu,Cu,Tu" -i /path/to/gateway-ca.crt -d sql:${certdir}
 done
 ```
 

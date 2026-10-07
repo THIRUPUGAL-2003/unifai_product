@@ -15,10 +15,10 @@ import (
 	"strings"
 
 	"github.com/fasthttp/router"
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/transports/raksha-http/lib"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/valyala/fasthttp"
 )
 
@@ -33,7 +33,7 @@ func NewMCPSessionsHandler(store *lib.Config) *MCPSessionsHandler {
 }
 
 // RegisterRoutes registers the sessions tab routes.
-func (h *MCPSessionsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.RakshaHTTPMiddleware) {
+func (h *MCPSessionsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/mcp/sessions", lib.ChainMiddlewares(h.list, middlewares...))
 	r.POST("/api/mcp/sessions/{id}/reauth", lib.ChainMiddlewares(h.reauth, middlewares...))
 	r.DELETE("/api/mcp/sessions/{id}", lib.ChainMiddlewares(h.revoke, middlewares...))
@@ -374,7 +374,7 @@ func bindingKeyFromFlow(f tables.TableOauthUserSession) sessionBindingKey {
 // context. Returns "" when unauthenticated or in OSS — callers should treat
 // empty as "no user identity" (which fails the user-mode access gate).
 func callerUserIDFromCtx(ctx *fasthttp.RequestCtx) string {
-	v, _ := ctx.UserValue(schemas.RakshaContextKeyUserID).(string)
+	v, _ := ctx.UserValue(schemas.GatewayContextKeyUserID).(string)
 	return v
 }
 
@@ -412,7 +412,7 @@ func (h *MCPSessionsHandler) reauth(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid session id")
 		return
 	}
-	bfCtx, cancel := lib.ConvertToRakshaContext(ctx, h.store)
+	bfCtx, cancel := lib.ConvertToGatewayContext(ctx, h.store)
 	defer cancel()
 
 	// Header credential rows and OAuth token rows are both UUIDs in
@@ -466,15 +466,15 @@ func (h *MCPSessionsHandler) reauth(ctx *fasthttp.RequestCtx) {
 	switch rowMode {
 	case schemas.MCPAuthModeSession:
 		if tok.SessionID != "" {
-			bfCtx.SetValue(schemas.RakshaContextKeyMCPSessionID, tok.SessionID)
+			bfCtx.SetValue(schemas.GatewayContextKeyMCPSessionID, tok.SessionID)
 		}
 	case schemas.MCPAuthModeVK:
 		if tok.VirtualKeyID != nil && *tok.VirtualKeyID != "" {
-			bfCtx.SetValue(schemas.RakshaContextKeyGovernanceVirtualKeyID, *tok.VirtualKeyID)
+			bfCtx.SetValue(schemas.GatewayContextKeyGovernanceVirtualKeyID, *tok.VirtualKeyID)
 		}
 	case schemas.MCPAuthModeUser:
 		if tok.UserID != nil && *tok.UserID != "" {
-			bfCtx.SetValue(schemas.RakshaContextKeyUserID, *tok.UserID)
+			bfCtx.SetValue(schemas.GatewayContextKeyUserID, *tok.UserID)
 		}
 	}
 
@@ -502,7 +502,7 @@ func (h *MCPSessionsHandler) reauth(ctx *fasthttp.RequestCtx) {
 // existing identity, then returns the submission URL. Mirrors the OAuth
 // branch's call to InitiateUserOAuthFlow — same shape on the wire so the UI
 // can render a single "click → redirect" affordance for both kinds.
-func (h *MCPSessionsHandler) reauthHeaderCredential(ctx *fasthttp.RequestCtx, bfCtx *schemas.RakshaContext, cred *tables.TableMCPPerUserHeaderCredential) {
+func (h *MCPSessionsHandler) reauthHeaderCredential(ctx *fasthttp.RequestCtx, bfCtx *schemas.GatewayContext, cred *tables.TableMCPPerUserHeaderCredential) {
 	if cred.Status == "orphaned" {
 		SendError(ctx, fasthttp.StatusForbidden, "Access to this MCP has been revoked. Re-submitting headers will not restore access - contact your administrator.")
 		return

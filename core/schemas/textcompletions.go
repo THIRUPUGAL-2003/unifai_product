@@ -4,23 +4,23 @@ import (
 	"fmt"
 )
 
-// RakshaTextCompletionRequest is the request struct for text completion requests
-type RakshaTextCompletionRequest struct {
+// GatewayTextCompletionRequest is the request struct for text completion requests
+type GatewayTextCompletionRequest struct {
 	Provider       ModelProvider             `json:"provider"`
 	Model          string                    `json:"model"`
 	Input          *TextCompletionInput      `json:"input,omitempty"`
 	Params         *TextCompletionParameters `json:"params,omitempty"`
 	Fallbacks      []Fallback                `json:"fallbacks,omitempty"`
-	RawRequestBody []byte                    `json:"-"` // set raksha-use-raw-request-body to true in ctx to use the raw request body. Raksha will directly send this to the downstream provider.
+	RawRequestBody []byte                    `json:"-"` // set gateway-use-raw-request-body to true in ctx to use the raw request body. Gateway will directly send this to the downstream provider.
 }
 
-func (r *RakshaTextCompletionRequest) GetRawRequestBody() []byte {
+func (r *GatewayTextCompletionRequest) GetRawRequestBody() []byte {
 	return r.RawRequestBody
 }
 
-// ToRakshaChatRequest converts a Raksha text completion request to a Raksha chat completion request
+// ToGatewayChatRequest converts a Gateway text completion request to a Gateway chat completion request
 // This method is discouraged to use, but is useful for litellm fallback flows
-func (r *RakshaTextCompletionRequest) ToRakshaChatRequest() *RakshaChatRequest {
+func (r *GatewayTextCompletionRequest) ToGatewayChatRequest() *GatewayChatRequest {
 	if r == nil || r.Input == nil {
 		return nil
 	}
@@ -55,7 +55,7 @@ func (r *RakshaTextCompletionRequest) ToRakshaChatRequest() *RakshaChatRequest {
 		params.PresencePenalty = r.Params.PresencePenalty
 		params.Seed = r.Params.Seed
 	}
-	return &RakshaChatRequest{
+	return &GatewayChatRequest{
 		Provider:  r.Provider,
 		Model:     r.Model,
 		Fallbacks: r.Fallbacks,
@@ -64,14 +64,14 @@ func (r *RakshaTextCompletionRequest) ToRakshaChatRequest() *RakshaChatRequest {
 	}
 }
 
-type RakshaTextCompletionResponse struct {
+type GatewayTextCompletionResponse struct {
 	ID                string                     `json:"id"`
-	Choices           []RakshaResponseChoice    `json:"choices"`
+	Choices           []GatewayResponseChoice    `json:"choices"`
 	Model             string                     `json:"model"`
 	Object            string                     `json:"object"` // "text_completion" (same for text completion stream)
 	SystemFingerprint string                     `json:"system_fingerprint"`
-	Usage             *RakshaLLMUsage           `json:"usage"`
-	ExtraFields       RakshaResponseExtraFields `json:"extra_fields"`
+	Usage             *GatewayLLMUsage           `json:"usage"`
+	ExtraFields       GatewayResponseExtraFields `json:"extra_fields"`
 }
 
 type TextCompletionInput struct {

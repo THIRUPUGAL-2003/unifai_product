@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,7 +27,7 @@ interface FolderSheetProps {
 export function FolderSheet({ open, onOpenChange, folder, parentId, onSaved }: FolderSheetProps) {
 	const [createFolder, { isLoading: isCreating }] = useCreateFolderMutation();
 	const [updateFolder, { isLoading: isUpdating }] = useUpdateFolderMutation();
-	const { data: foldersData } = useGetFoldersQuery(undefined, { skip: !open });
+	const { data: foldersData, isError: foldersFailed, error: foldersError } = useGetFoldersQuery(undefined, { skip: !open });
 
 	const [selectedParentId, setSelectedParentId] = useState<string>("");
 
@@ -112,6 +113,12 @@ export function FolderSheet({ open, onOpenChange, folder, parentId, onSaved }: F
 					</SheetHeader>
 
 					<div className="mt-6 space-y-4">
+						{foldersFailed ? (
+							<QueryErrorBanner
+								testId="folder-sheet-folders-query-error"
+								message={getErrorMessage(foldersError) || "Failed to load folders."}
+							/>
+						) : null}
 						<div className="space-y-2">
 							<Label htmlFor="name">Name</Label>
 							<Input

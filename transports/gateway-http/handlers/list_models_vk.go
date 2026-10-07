@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	governanceplugin "github.com/raksha/raksha/plugins/governance"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	governanceplugin "github.com/gateway/gateway/plugins/governance"
 	"github.com/valyala/fasthttp"
 )
 
@@ -15,7 +15,7 @@ import (
 // when the request is made with a virtual key. Without this, ListAllModels asks every
 // configured provider to list models and governance rejects providers outside the VK,
 // creating noisy, expected errors in request logs.
-func (h *CompletionHandler) applyListModelsVirtualKeyProviderFilter(ctx *fasthttp.RequestCtx, rakshaCtx *schemas.RakshaContext) bool {
+func (h *CompletionHandler) applyListModelsVirtualKeyProviderFilter(ctx *fasthttp.RequestCtx, gatewayCtx *schemas.GatewayContext) bool {
 	vkValue := governanceplugin.ParseVirtualKeyFromFastHTTPRequest(ctx)
 	if vkValue == nil {
 		return true
@@ -52,6 +52,6 @@ func (h *CompletionHandler) applyListModelsVirtualKeyProviderFilter(ctx *fasthtt
 		availableProviders = append(availableProviders, schemas.ModelProvider(provider))
 	}
 
-	rakshaCtx.SetValue(schemas.RakshaContextKeyAvailableProviders, availableProviders)
+	gatewayCtx.SetValue(schemas.GatewayContextKeyAvailableProviders, availableProviders)
 	return true
 }

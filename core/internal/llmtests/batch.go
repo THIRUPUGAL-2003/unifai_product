@@ -1,4 +1,4 @@
-// Package llmtests provides batch API test utilities for the Raksha system.
+// Package llmtests provides batch API test utilities for the Gateway system.
 package llmtests
 
 import (
@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // getFakeBatchID returns a provider-specific fake batch ID for testing
@@ -29,7 +29,7 @@ func getFakeBatchID(provider schemas.ModelProvider) string {
 }
 
 // RunBatchCreateTest tests the batch create functionality
-func RunBatchCreateTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunBatchCreateTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.BatchCreate {
 		t.Logf("[SKIPPED] Batch Create: Not supported by provider %s", testConfig.Provider)
 		return
@@ -66,8 +66,8 @@ func RunBatchCreateTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 			},
 		}
 
-		response, err := WithBatchCreateTestRetry(t, batchCreateRetryConfig, retryContext, expectations, "BatchCreate", func() (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
-			request := &schemas.RakshaBatchCreateRequest{
+		response, err := WithBatchCreateTestRetry(t, batchCreateRetryConfig, retryContext, expectations, "BatchCreate", func() (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
+			request := &schemas.GatewayBatchCreateRequest{
 				Provider: testConfig.Provider,
 				Model:    schemas.Ptr(testConfig.ChatModel),
 				Endpoint: schemas.BatchEndpointChatCompletions,
@@ -86,7 +86,7 @@ func RunBatchCreateTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 				ExtraParams:      testConfig.BatchExtraParams,
 				OutputFolder:     testConfig.BatchOutputFolder,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.BatchCreateRequest(bfCtx, request)
 		})
 
@@ -112,7 +112,7 @@ func RunBatchCreateTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 }
 
 // RunBatchListTest tests the batch list functionality
-func RunBatchListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunBatchListTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.BatchList {
 		t.Logf("[SKIPPED] Batch List: Not supported by provider %s", testConfig.Provider)
 		return
@@ -149,12 +149,12 @@ func RunBatchListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 			},
 		}
 
-		response, err := WithBatchListTestRetry(t, batchListRetryConfig, retryContext, expectations, "BatchList", func() (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
-			request := &schemas.RakshaBatchListRequest{
+		response, err := WithBatchListTestRetry(t, batchListRetryConfig, retryContext, expectations, "BatchList", func() (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
+			request := &schemas.GatewayBatchListRequest{
 				Provider: testConfig.Provider,
 				Limit:    10,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.BatchListRequest(bfCtx, request)
 		})
 
@@ -176,7 +176,7 @@ func RunBatchListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, 
 }
 
 // RunBatchRetrieveTest tests the batch retrieve functionality
-func RunBatchRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunBatchRetrieveTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.BatchRetrieve {
 		t.Logf("[SKIPPED] Batch Retrieve: Not supported by provider %s", testConfig.Provider)
 		return
@@ -214,8 +214,8 @@ func RunBatchRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 			},
 		}
 
-		createResponse, createErr := WithBatchCreateTestRetry(t, batchCreateRetryConfig, createRetryContext, createExpectations, "BatchRetrieve_Create", func() (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
-			createRequest := &schemas.RakshaBatchCreateRequest{
+		createResponse, createErr := WithBatchCreateTestRetry(t, batchCreateRetryConfig, createRetryContext, createExpectations, "BatchRetrieve_Create", func() (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
+			createRequest := &schemas.GatewayBatchCreateRequest{
 				Provider: testConfig.Provider,
 				Model:    schemas.Ptr(testConfig.ChatModel),
 				Endpoint: schemas.BatchEndpointChatCompletions,
@@ -234,7 +234,7 @@ func RunBatchRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 				ExtraParams:      testConfig.BatchExtraParams,
 				OutputFolder:     testConfig.BatchOutputFolder,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.BatchCreateRequest(bfCtx, createRequest)
 		})
 
@@ -278,12 +278,12 @@ func RunBatchRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 			},
 		}
 
-		response, err := WithBatchRetrieveTestRetry(t, batchRetrieveRetryConfig, retrieveRetryContext, retrieveExpectations, "BatchRetrieve", func() (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
-			retrieveRequest := &schemas.RakshaBatchRetrieveRequest{
+		response, err := WithBatchRetrieveTestRetry(t, batchRetrieveRetryConfig, retrieveRetryContext, retrieveExpectations, "BatchRetrieve", func() (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
+			retrieveRequest := &schemas.GatewayBatchRetrieveRequest{
 				Provider: testConfig.Provider,
 				BatchID:  createResponse.ID,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.BatchRetrieveRequest(bfCtx, retrieveRequest)
 		})
 
@@ -304,7 +304,7 @@ func RunBatchRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Conte
 }
 
 // RunBatchCancelTest tests the batch cancel functionality
-func RunBatchCancelTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunBatchCancelTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.BatchCancel {
 		t.Logf("[SKIPPED] Batch Cancel: Not supported by provider %s", testConfig.Provider)
 		return
@@ -342,8 +342,8 @@ func RunBatchCancelTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 			},
 		}
 
-		createResponse, createErr := WithBatchCreateTestRetry(t, batchCreateRetryConfig, createRetryContext, createExpectations, "BatchCancel_Create", func() (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
-			createRequest := &schemas.RakshaBatchCreateRequest{
+		createResponse, createErr := WithBatchCreateTestRetry(t, batchCreateRetryConfig, createRetryContext, createExpectations, "BatchCancel_Create", func() (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
+			createRequest := &schemas.GatewayBatchCreateRequest{
 				Provider: testConfig.Provider,
 				Model:    schemas.Ptr(testConfig.ChatModel),
 				Endpoint: schemas.BatchEndpointChatCompletions,
@@ -362,7 +362,7 @@ func RunBatchCancelTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 				ExtraParams:      testConfig.BatchExtraParams,
 				OutputFolder:     testConfig.BatchOutputFolder,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.BatchCreateRequest(bfCtx, createRequest)
 		})
 
@@ -406,12 +406,12 @@ func RunBatchCancelTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 			},
 		}
 
-		response, err := WithBatchCancelTestRetry(t, batchCancelRetryConfig, cancelRetryContext, cancelExpectations, "BatchCancel", func() (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
-			cancelRequest := &schemas.RakshaBatchCancelRequest{
+		response, err := WithBatchCancelTestRetry(t, batchCancelRetryConfig, cancelRetryContext, cancelExpectations, "BatchCancel", func() (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
+			cancelRequest := &schemas.GatewayBatchCancelRequest{
 				Provider: testConfig.Provider,
 				BatchID:  createResponse.ID,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.BatchCancelRequest(bfCtx, cancelRequest)
 		})
 
@@ -430,7 +430,7 @@ func RunBatchCancelTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 }
 
 // RunBatchResultsTest tests the batch results functionality
-func RunBatchResultsTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunBatchResultsTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.BatchResults {
 		t.Logf("[SKIPPED] Batch Results: Not supported by provider %s", testConfig.Provider)
 		return
@@ -446,11 +446,11 @@ func RunBatchResultsTest(t *testing.T, client *raksha.Raksha, ctx context.Contex
 
 		// We intentionally don't use the retry framework here because we expect
 		// an error with the fake batch ID - retrying would give the same result.
-		request := &schemas.RakshaBatchResultsRequest{
+		request := &schemas.GatewayBatchResultsRequest{
 			Provider: testConfig.Provider,
 			BatchID:  getFakeBatchID(testConfig.Provider), // Fake batch ID with provider-specific prefix
 		}
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		_, err := client.BatchResultsRequest(bfCtx, request)
 
 		if err != nil {
@@ -504,7 +504,7 @@ func RunBatchResultsTest(t *testing.T, client *raksha.Raksha, ctx context.Contex
 }
 
 // RunBatchUnsupportedTest tests that unsupported providers return appropriate errors
-func RunBatchUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunBatchUnsupportedTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	// Only run this test for providers that don't support batch
 	if testConfig.Scenarios.BatchCreate || testConfig.Scenarios.BatchList ||
 		testConfig.Scenarios.BatchRetrieve || testConfig.Scenarios.BatchCancel ||
@@ -523,7 +523,7 @@ func RunBatchUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Co
 		}
 
 		// Try to create a batch - should fail with unsupported error
-		request := &schemas.RakshaBatchCreateRequest{
+		request := &schemas.GatewayBatchCreateRequest{
 			Provider: testConfig.Provider,
 			Model:    schemas.Ptr(testConfig.ChatModel),
 			Endpoint: schemas.BatchEndpointChatCompletions,
@@ -540,7 +540,7 @@ func RunBatchUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Co
 			},
 		}
 
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		_, err := client.BatchCreateRequest(bfCtx, request)
 		if err == nil {
 			t.Error("BatchCreate should have failed for unsupported provider")
@@ -562,7 +562,7 @@ func RunBatchUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Co
 // ============================================================================
 
 // RunFileUploadTest tests the file upload functionality
-func RunFileUploadTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileUploadTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileUpload {
 		t.Logf("[SKIPPED] File Upload: Not supported by provider %s", testConfig.Provider)
 		return
@@ -599,11 +599,11 @@ func RunFileUploadTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 			},
 		}
 
-		response, err := WithFileUploadTestRetry(t, fileUploadRetryConfig, retryContext, expectations, "FileUpload", func() (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+		response, err := WithFileUploadTestRetry(t, fileUploadRetryConfig, retryContext, expectations, "FileUpload", func() (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 			// Create a simple JSONL file content for batch processing
 			fileContent := []byte(`{"custom_id": "test-1", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}}
 `)
-			request := &schemas.RakshaFileUploadRequest{
+			request := &schemas.GatewayFileUploadRequest{
 				Provider:    testConfig.Provider,
 				File:        fileContent,
 				Filename:      "test_batch.jsonl",
@@ -611,7 +611,7 @@ func RunFileUploadTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 				ExtraParams:   testConfig.FileExtraParams,
 				StorageConfig: testConfig.FileStorageConfig,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.FileUploadRequest(bfCtx, request)
 		})
 
@@ -637,7 +637,7 @@ func RunFileUploadTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 }
 
 // RunFileListTest tests the file list functionality
-func RunFileListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileListTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileList {
 		t.Logf("[SKIPPED] File List: Not supported by provider %s", testConfig.Provider)
 		return
@@ -674,14 +674,14 @@ func RunFileListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, t
 			},
 		}
 
-		response, err := WithFileListTestRetry(t, fileListRetryConfig, retryContext, expectations, "FileList", func() (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
-			request := &schemas.RakshaFileListRequest{
+		response, err := WithFileListTestRetry(t, fileListRetryConfig, retryContext, expectations, "FileList", func() (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
+			request := &schemas.GatewayFileListRequest{
 				Provider:      testConfig.Provider,
 				Limit:         10,
 				ExtraParams:   testConfig.FileExtraParams,
 				StorageConfig: testConfig.FileStorageConfig,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.FileListRequest(bfCtx, request)
 		})
 
@@ -703,7 +703,7 @@ func RunFileListTest(t *testing.T, client *raksha.Raksha, ctx context.Context, t
 }
 
 // RunFileRetrieveTest tests the file retrieve functionality
-func RunFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileRetrieveTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileRetrieve {
 		t.Logf("[SKIPPED] File Retrieve: Not supported by provider %s", testConfig.Provider)
 		return
@@ -741,10 +741,10 @@ func RunFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Contex
 			},
 		}
 
-		uploadResponse, uploadErr := WithFileUploadTestRetry(t, fileUploadRetryConfig, uploadRetryContext, uploadExpectations, "FileRetrieve_Upload", func() (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+		uploadResponse, uploadErr := WithFileUploadTestRetry(t, fileUploadRetryConfig, uploadRetryContext, uploadExpectations, "FileRetrieve_Upload", func() (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 			fileContent := []byte(`{"custom_id": "test-retrieve-1", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}}
 `)
-			uploadRequest := &schemas.RakshaFileUploadRequest{
+			uploadRequest := &schemas.GatewayFileUploadRequest{
 				Provider:    testConfig.Provider,
 				File:        fileContent,
 				Filename:      "test_retrieve.jsonl",
@@ -752,7 +752,7 @@ func RunFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Contex
 				ExtraParams:   testConfig.FileExtraParams,
 				StorageConfig: testConfig.FileStorageConfig,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.FileUploadRequest(bfCtx, uploadRequest)
 		})
 
@@ -796,12 +796,12 @@ func RunFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Contex
 			},
 		}
 
-		response, err := WithFileRetrieveTestRetry(t, fileRetrieveRetryConfig, retrieveRetryContext, retrieveExpectations, "FileRetrieve", func() (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
-			retrieveRequest := &schemas.RakshaFileRetrieveRequest{
+		response, err := WithFileRetrieveTestRetry(t, fileRetrieveRetryConfig, retrieveRetryContext, retrieveExpectations, "FileRetrieve", func() (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
+			retrieveRequest := &schemas.GatewayFileRetrieveRequest{
 				Provider: testConfig.Provider,
 				FileID:   uploadResponse.ID,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.FileRetrieveRequest(bfCtx, retrieveRequest)
 		})
 
@@ -822,7 +822,7 @@ func RunFileRetrieveTest(t *testing.T, client *raksha.Raksha, ctx context.Contex
 }
 
 // RunFileDeleteTest tests the file delete functionality
-func RunFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileDeleteTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileDelete {
 		t.Logf("[SKIPPED] File Delete: Not supported by provider %s", testConfig.Provider)
 		return
@@ -860,10 +860,10 @@ func RunFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 			},
 		}
 
-		uploadResponse, uploadErr := WithFileUploadTestRetry(t, fileUploadRetryConfig, uploadRetryContext, uploadExpectations, "FileDelete_Upload", func() (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+		uploadResponse, uploadErr := WithFileUploadTestRetry(t, fileUploadRetryConfig, uploadRetryContext, uploadExpectations, "FileDelete_Upload", func() (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 			fileContent := []byte(`{"custom_id": "test-delete-1", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}}
 `)
-			uploadRequest := &schemas.RakshaFileUploadRequest{
+			uploadRequest := &schemas.GatewayFileUploadRequest{
 				Provider:    testConfig.Provider,
 				File:        fileContent,
 				Filename:      "test_delete.jsonl",
@@ -871,7 +871,7 @@ func RunFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 				ExtraParams:   testConfig.FileExtraParams,
 				StorageConfig: testConfig.FileStorageConfig,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.FileUploadRequest(bfCtx, uploadRequest)
 		})
 
@@ -915,12 +915,12 @@ func RunFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 			},
 		}
 
-		response, err := WithFileDeleteTestRetry(t, fileDeleteRetryConfig, deleteRetryContext, deleteExpectations, "FileDelete", func() (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
-			deleteRequest := &schemas.RakshaFileDeleteRequest{
+		response, err := WithFileDeleteTestRetry(t, fileDeleteRetryConfig, deleteRetryContext, deleteExpectations, "FileDelete", func() (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
+			deleteRequest := &schemas.GatewayFileDeleteRequest{
 				Provider: testConfig.Provider,
 				FileID:   uploadResponse.ID,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.FileDeleteRequest(bfCtx, deleteRequest)
 		})
 
@@ -941,7 +941,7 @@ func RunFileDeleteTest(t *testing.T, client *raksha.Raksha, ctx context.Context,
 }
 
 // RunFileContentTest tests the file content download functionality
-func RunFileContentTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileContentTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if !testConfig.Scenarios.FileContent {
 		t.Logf("[SKIPPED] File Content: Not supported by provider %s", testConfig.Provider)
 		return
@@ -979,10 +979,10 @@ func RunFileContentTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 			},
 		}
 
-		uploadResponse, uploadErr := WithFileUploadTestRetry(t, fileUploadRetryConfig, uploadRetryContext, uploadExpectations, "FileContent_Upload", func() (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+		uploadResponse, uploadErr := WithFileUploadTestRetry(t, fileUploadRetryConfig, uploadRetryContext, uploadExpectations, "FileContent_Upload", func() (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 			originalContent := []byte(`{"custom_id": "test-content-1", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello"}]}}
 `)
-			uploadRequest := &schemas.RakshaFileUploadRequest{
+			uploadRequest := &schemas.GatewayFileUploadRequest{
 				Provider:    testConfig.Provider,
 				File:        originalContent,
 				Filename:      "test_content.jsonl",
@@ -990,7 +990,7 @@ func RunFileContentTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 				ExtraParams:   testConfig.FileExtraParams,
 				StorageConfig: testConfig.FileStorageConfig,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.FileUploadRequest(bfCtx, uploadRequest)
 		})
 
@@ -1034,13 +1034,13 @@ func RunFileContentTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 			},
 		}
 
-		response, err := WithFileContentTestRetry(t, fileContentRetryConfig, contentRetryContext, contentExpectations, "FileContent", func() (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
-			contentRequest := &schemas.RakshaFileContentRequest{
+		response, err := WithFileContentTestRetry(t, fileContentRetryConfig, contentRetryContext, contentExpectations, "FileContent", func() (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
+			contentRequest := &schemas.GatewayFileContentRequest{
 				Provider:    testConfig.Provider,
 				FileID:      uploadResponse.ID,
 				ExtraParams: testConfig.FileExtraParams,
 			}
-			bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+			bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 			return client.FileContentRequest(bfCtx, contentRequest)
 		})
 
@@ -1062,7 +1062,7 @@ func RunFileContentTest(t *testing.T, client *raksha.Raksha, ctx context.Context
 }
 
 // RunFileUnsupportedTest tests that unsupported providers return appropriate errors for file operations
-func RunFileUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileUnsupportedTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	// Only run this test for providers that don't support any file operations
 	if testConfig.Scenarios.FileUpload || testConfig.Scenarios.FileList ||
 		testConfig.Scenarios.FileRetrieve || testConfig.Scenarios.FileDelete ||
@@ -1081,14 +1081,14 @@ func RunFileUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 		}
 
 		// Try to upload a file - should fail with unsupported error
-		request := &schemas.RakshaFileUploadRequest{
+		request := &schemas.GatewayFileUploadRequest{
 			Provider: testConfig.Provider,
 			File:     []byte("test content"),
 			Filename: "test.txt",
 			Purpose:  "batch",
 		}
 
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		_, err := client.FileUploadRequest(bfCtx, request)
 		if err == nil {
 			t.Error("FileUpload should have failed for unsupported provider")
@@ -1106,7 +1106,7 @@ func RunFileUnsupportedTest(t *testing.T, client *raksha.Raksha, ctx context.Con
 }
 
 // RunFileAndBatchIntegrationTest tests the integration between file upload and batch create
-func RunFileAndBatchIntegrationTest(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunFileAndBatchIntegrationTest(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	// Skip if file-based batch input is not supported
 	if !testConfig.Scenarios.FileBatchInput {
 		t.Logf("[SKIPPED] File and Batch Integration: FileBatchInput=%v for provider %s",
@@ -1122,7 +1122,7 @@ func RunFileAndBatchIntegrationTest(t *testing.T, client *raksha.Raksha, ctx con
 {"custom_id": "integration-test-2", "method": "POST", "url": "/v1/chat/completions", "body": {"model": "` + testConfig.ChatModel + `", "messages": [{"role": "user", "content": "Say goodbye"}]}}
 `)
 
-		uploadRequest := &schemas.RakshaFileUploadRequest{
+		uploadRequest := &schemas.GatewayFileUploadRequest{
 			Provider:    testConfig.Provider,
 			File:        fileContent,
 			Filename:      "integration_test_batch.jsonl",
@@ -1131,7 +1131,7 @@ func RunFileAndBatchIntegrationTest(t *testing.T, client *raksha.Raksha, ctx con
 			StorageConfig: testConfig.FileStorageConfig,
 		}
 
-		bfCtx := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		uploadResponse, uploadErr := client.FileUploadRequest(bfCtx, uploadRequest)
 		if uploadErr != nil {
 			if uploadErr.Error != nil && (uploadErr.Error.Code != nil && *uploadErr.Error.Code == "unsupported_operation") {
@@ -1150,7 +1150,7 @@ func RunFileAndBatchIntegrationTest(t *testing.T, client *raksha.Raksha, ctx con
 		t.Logf("[INFO] File uploaded successfully, ID: %s", uploadResponse.ID)
 
 		// Step 2: Create a batch using the uploaded file
-		batchRequest := &schemas.RakshaBatchCreateRequest{
+		batchRequest := &schemas.GatewayBatchCreateRequest{
 			Provider:         testConfig.Provider,
 			Model:            schemas.Ptr(testConfig.ChatModel),
 			InputFileID:      uploadResponse.ID,
@@ -1160,7 +1160,7 @@ func RunFileAndBatchIntegrationTest(t *testing.T, client *raksha.Raksha, ctx con
 			OutputFolder:     testConfig.BatchOutputFolder,
 		}
 
-		bfCtx2 := schemas.NewRakshaContext(ctx, schemas.NoDeadline)
+		bfCtx2 := schemas.NewGatewayContext(ctx, schemas.NoDeadline)
 		batchResponse, batchErr := client.BatchCreateRequest(bfCtx2, batchRequest)
 		if batchErr != nil {
 			if batchErr.Error != nil && (batchErr.Error.Code != nil && *batchErr.Error.Code == "unsupported_operation") {

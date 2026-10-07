@@ -5,28 +5,28 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-func ToElevenlabsTranscriptionRequest(rakshaReq *schemas.RakshaTranscriptionRequest) *ElevenlabsTranscriptionRequest {
-	if rakshaReq == nil {
+func ToElevenlabsTranscriptionRequest(gatewayReq *schemas.GatewayTranscriptionRequest) *ElevenlabsTranscriptionRequest {
+	if gatewayReq == nil {
 		return nil
 	}
 
 	req := &ElevenlabsTranscriptionRequest{
-		ModelID: rakshaReq.Model,
+		ModelID: gatewayReq.Model,
 	}
 
-	if rakshaReq.Input != nil && len(rakshaReq.Input.File) > 0 {
-		req.File = rakshaReq.Input.File
-		req.Filename = rakshaReq.Input.Filename
+	if gatewayReq.Input != nil && len(gatewayReq.Input.File) > 0 {
+		req.File = gatewayReq.Input.File
+		req.Filename = gatewayReq.Input.Filename
 	}
 
-	if rakshaReq.Params == nil {
+	if gatewayReq.Params == nil {
 		return req
 	}
 
-	params := rakshaReq.Params
+	params := gatewayReq.Params
 
 	if params.Language != nil {
 		req.LanguageCode = params.Language
@@ -83,7 +83,7 @@ func ToElevenlabsTranscriptionRequest(rakshaReq *schemas.RakshaTranscriptionRequ
 			delete(params.ExtraParams, "use_multi_channel")
 			req.UseMultiChannel = useMultiChannel
 		}
-		req.ExtraParams = rakshaReq.Params.ExtraParams
+		req.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 
 	if len(params.AdditionalFormats) > 0 {
@@ -111,7 +111,7 @@ func ToElevenlabsTranscriptionRequest(rakshaReq *schemas.RakshaTranscriptionRequ
 	return req
 }
 
-func ToRakshaTranscriptionResponse(chunks []ElevenlabsSpeechToTextChunkResponse) *schemas.RakshaTranscriptionResponse {
+func ToGatewayTranscriptionResponse(chunks []ElevenlabsSpeechToTextChunkResponse) *schemas.GatewayTranscriptionResponse {
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -145,7 +145,7 @@ func ToRakshaTranscriptionResponse(chunks []ElevenlabsSpeechToTextChunkResponse)
 
 	text := strings.Join(textParts, "\n")
 
-	response := &schemas.RakshaTranscriptionResponse{
+	response := &schemas.GatewayTranscriptionResponse{
 		Text:     text,
 		Words:    allWords,
 		LogProbs: allLogProbs,

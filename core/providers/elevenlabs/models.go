@@ -3,16 +3,16 @@ package elevenlabs
 import (
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-func (response *ElevenlabsListModelsResponse) ToRakshaListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.RakshaListModelsResponse {
+func (response *ElevenlabsListModelsResponse) ToGatewayListModelsResponse(providerKey schemas.ModelProvider, allowedModels schemas.WhiteList, blacklistedModels schemas.BlackList, aliases schemas.KeyAliases, unfiltered bool) *schemas.GatewayListModelsResponse {
 	if response == nil {
 		return nil
 	}
 
-	rakshaResponse := &schemas.RakshaListModelsResponse{
+	gatewayResponse := &schemas.GatewayListModelsResponse{
 		Data: make([]schemas.Model, 0, len(*response)),
 	}
 
@@ -25,7 +25,7 @@ func (response *ElevenlabsListModelsResponse) ToRakshaListModelsResponse(provide
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return rakshaResponse
+		return gatewayResponse
 	}
 
 	included := make(map[string]bool)
@@ -39,13 +39,13 @@ func (response *ElevenlabsListModelsResponse) ToRakshaListModelsResponse(provide
 			if result.AliasValue != "" {
 				entry.Alias = schemas.Ptr(result.AliasValue)
 			}
-			rakshaResponse.Data = append(rakshaResponse.Data, entry)
+			gatewayResponse.Data = append(gatewayResponse.Data, entry)
 			included[strings.ToLower(result.ResolvedID)] = true
 		}
 	}
 
-	rakshaResponse.Data = append(rakshaResponse.Data,
+	gatewayResponse.Data = append(gatewayResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return rakshaResponse
+	return gatewayResponse
 }

@@ -1,7 +1,9 @@
 import { cn } from "@/components/ui/utils";
+import { getErrorMessage } from "@/lib/store";
 import { useLazyGetBaseModelsQuery, useLazyGetModelsQuery } from "@/lib/store/apis/providersApi";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { components, MultiValueProps, OptionProps, SingleValueProps } from "react-select";
 import { AsyncMultiSelect } from "./asyncMultiselect";
 import { Option } from "./multiselectUtils";
@@ -77,10 +79,12 @@ export function ModelMultiselect(props: ModelMultiselectProps) {
 	} = props;
 	const isSingleSelect = props.isSingleSelect === true;
 
-	const [getModels, { data: modelsData, isLoading }] = useLazyGetModelsQuery();
-	const [getBaseModels, { data: baseModelsData, isLoading: isLoadingBaseModels }] = useLazyGetBaseModelsQuery();
+	const [getModels, { data: modelsData, isLoading, isError: modelsLoadFailed, error: modelsLoadError }] = useLazyGetModelsQuery();
+	const [getBaseModels, { data: baseModelsData, isLoading: isLoadingBaseModels, isError: baseModelsLoadFailed, error: baseModelsLoadError }] =
+		useLazyGetBaseModelsQuery();
 	const [inputValue, setInputValue] = useState("");
 	const inputValueRef = useRef("");
+	const [initialLoadFailed, setInitialLoadFailed] = useState(false);
 
 	// Determine if we should use base models (no provider selected + "base_models" mode)
 	const shouldUseBaseModels = loadModelsOnEmptyProvider === "base_models" && !provider;
@@ -95,8 +99,14 @@ export function ModelMultiselect(props: ModelMultiselectProps) {
 			: []
 		: arrayValue.map((model) => (model === "*" ? ALL_MODELS_OPTION : { label: model, value: model }));
 
+	const reportLoadError = useCallback((err: unknown) => {
+		setInitialLoadFailed(true);
+		toast.error(getErrorMessage(err) || "Failed to load models.");
+	}, []);
+
 	// Fetch initial models on mount or when provider/keys/vks change
 	useEffect(() => {
+		setInitialLoadFailed(false);
 		if (provider) {
 			getModels({
 				provider,
@@ -104,18 +114,22 @@ export function ModelMultiselect(props: ModelMultiselectProps) {
 				vks: vks && vks.length > 0 ? vks : undefined,
 				limit: 5000,
 				unfiltered,
-			});
+			})
+				.unwrap()
+				.catch(reportLoadError);
 		} else if (shouldUseBaseModels) {
-			getBaseModels({ limit: 5000 });
+			getBaseModels({ limit: 5000 }).unwrap().catch(reportLoadError);
 		} else if (shouldLoadOnEmpty) {
 			getModels({
 				keys: keys && keys.length > 0 ? keys : undefined,
 				vks: vks && vks.length > 0 ? vks : undefined,
 				limit: 5000,
 				unfiltered,
-			});
+			})
+				.unwrap()
+				.catch(reportLoadError);
 		}
-	}, [provider, keys, vks, getModels, getBaseModels, shouldLoadOnEmpty, shouldUseBaseModels]);
+	}, [provider, keys, vks, getModels, getBaseModels, shouldLoadOnEmpty, shouldUseBaseModels, unfiltered, reportLoadError]);
 
 	// Load options function for AsyncMultiSelect
 	const loadOptions = useCallback(
@@ -141,7 +155,8 @@ export function ModelMultiselect(props: ModelMultiselectProps) {
 						}));
 						callback([...prefix, ...options]);
 					})
-					.catch(() => {
+					.catch((err) => {
+						toast.error(getErrorMessage(err) || "Failed to load models.");
 						callback(prefix);
 					});
 			} else {
@@ -162,7 +177,8 @@ export function ModelMultiselect(props: ModelMultiselectProps) {
 						}));
 						callback([...prefix, ...options]);
 					})
-					.catch(() => {
+					.catch((err) => {
+						toast.error(getErrorMessage(err) || "Failed to load models.");
 						callback(prefix);
 					});
 			}
@@ -247,8 +263,11 @@ export function ModelMultiselect(props: ModelMultiselectProps) {
 	}, [modelsData, baseModelsData, shouldUseBaseModels, allowAllOption]);
 
 	const shouldBeDisabled = disabled || (!provider && !shouldLoadOnEmpty);
+	const loadFailed = initialLoadFailed || (shouldUseBaseModels ? baseModelsLoadFailed : modelsLoadFailed);
+	const loadErrorMessage = shouldUseBaseModels ? baseModelsLoadError : modelsLoadError;
 
 	return (
+		<div className={cn("flex w-full flex-col gap-1", className)}>
 		<AsyncMultiSelect<ModelOption>
 			isSingleSelect={isSingleSelect}
 			hideSelectedOptions
@@ -266,7 +285,7 @@ export function ModelMultiselect(props: ModelMultiselectProps) {
 			isLoading={shouldUseBaseModels ? isLoadingBaseModels : isLoading}
 			placeholder={placeholder}
 			disabled={shouldBeDisabled}
-			className={cn("!min-h-9 w-full", className)}
+			className="!min-h-9 w-full"
 			triggerClassName="!shadow-none !border-border !min-h-9 px-1"
 			menuClassName="!z-[100] max-h-[300px] overflow-y-auto w-full cursor-pointer custom-scrollbar"
 			isClearable={clearable}
@@ -323,5 +342,11 @@ export function ModelMultiselect(props: ModelMultiselectProps) {
 				},
 			}}
 		/>
+		{loadFailed ? (
+			<p className="text-destructive text-xs" role="alert">
+				{getErrorMessage(loadErrorMessage) || "Failed to load models."}
+			</p>
+		) : null}
+		</div>
 	);
 }

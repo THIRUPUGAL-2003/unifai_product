@@ -3,10 +3,10 @@ package huggingface
 import (
 	"fmt"
 
-	schemas "github.com/raksha/raksha/core/schemas"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
-func ToHuggingFaceSpeechRequest(request *schemas.RakshaSpeechRequest) (*HuggingFaceSpeechRequest, error) {
+func ToHuggingFaceSpeechRequest(request *schemas.GatewaySpeechRequest) (*HuggingFaceSpeechRequest, error) {
 	if request == nil {
 		return nil, nil
 	}
@@ -113,7 +113,7 @@ func ToHuggingFaceSpeechRequest(request *schemas.RakshaSpeechRequest) (*HuggingF
 	return hfRequest, nil
 }
 
-func (response *HuggingFaceSpeechResponse) ToRakshaSpeechResponse(requestedModel string, audioData []byte) (*schemas.RakshaSpeechResponse, error) {
+func (response *HuggingFaceSpeechResponse) ToGatewaySpeechResponse(requestedModel string, audioData []byte) (*schemas.GatewaySpeechResponse, error) {
 	if response == nil {
 		return nil, nil
 	}
@@ -122,13 +122,13 @@ func (response *HuggingFaceSpeechResponse) ToRakshaSpeechResponse(requestedModel
 		return nil, fmt.Errorf("model name cannot be empty")
 	}
 
-	// Create the base Raksha response with the downloaded audio data
-	rakshaResponse := &schemas.RakshaSpeechResponse{
+	// Create the base Gateway response with the downloaded audio data
+	gatewayResponse := &schemas.GatewaySpeechResponse{
 		Audio: audioData,
 	}
 
 	// Note: HuggingFace TTS API typically doesn't return usage information
 	// or alignment data, so we leave those fields as nil
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }

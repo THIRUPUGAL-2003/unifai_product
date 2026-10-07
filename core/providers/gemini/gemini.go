@@ -16,13 +16,13 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
 const (
-	RakshaContextKeyResponseFormat schemas.RakshaContextKey = "raksha_context_key_response_format"
+	GatewayContextKeyResponseFormat schemas.GatewayContextKey = "gateway_context_key_response_format"
 )
 
 type GeminiProvider struct {
@@ -30,8 +30,8 @@ type GeminiProvider struct {
 	client               *fasthttp.Client              // HTTP client for unary API requests (ReadTimeout bounds overall response)
 	streamingClient      *fasthttp.Client              // HTTP client for streaming API requests (no ReadTimeout; idle governed by NewIdleTimeoutReader)
 	networkConfig        schemas.NetworkConfig         // Network configuration including extra headers
-	sendBackRawRequest   bool                          // Whether to include raw request in RakshaResponse
-	sendBackRawResponse  bool                          // Whether to include raw response in RakshaResponse
+	sendBackRawRequest   bool                          // Whether to include raw request in GatewayResponse
+	sendBackRawResponse  bool                          // Whether to include raw response in GatewayResponse
 	customProviderConfig *schemas.CustomProviderConfig // Custom provider config
 }
 
@@ -47,8 +47,8 @@ func setGeminiRequestBody(req *fasthttp.Request, bodyReader io.Reader, bodySize 
 	req.SetBody(jsonData)
 }
 
-func normalizeRawGenerateContentBody(ctx *schemas.RakshaContext, body []byte) []byte {
-	if rawBody, ok := ctx.Value(schemas.RakshaContextKeyUseRawRequestBody).(bool); ok && rawBody {
+func normalizeRawGenerateContentBody(ctx *schemas.GatewayContext, body []byte) []byte {
+	if rawBody, ok := ctx.Value(schemas.GatewayContextKeyUseRawRequestBody).(bool); ok && rawBody {
 		body = NormalizeRawGenerateContentRequestForCompatibility(body)
 	}
 	if updated, err := providerUtils.DeleteJSONField(body, "fallbacks"); err == nil {
@@ -103,9 +103,9 @@ func (provider *GeminiProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // completeRequest handles the common HTTP request pattern for Gemini API calls.
-// When large response streaming is activated (RakshaContextKeyLargeResponseMode set in ctx),
+// When large response streaming is activated (GatewayContextKeyLargeResponseMode set in ctx),
 // returns (nil, nil, latency, nil) — callers must check the context flag.
-func (provider *GeminiProvider) completeRequest(ctx *schemas.RakshaContext, model string, key schemas.Key, jsonBody []byte, endpoint string) (*GenerateContentResponse, interface{}, time.Duration, map[string]string, *schemas.RakshaError) {
+func (provider *GeminiProvider) completeRequest(ctx *schemas.GatewayContext, model string, key schemas.Key, jsonBody []byte, endpoint string) (*GenerateContentResponse, interface{}, time.Duration, map[string]string, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -138,10 +138,10 @@ func (provider *GeminiProvider) completeRequest(ctx *schemas.RakshaContext, mode
 
 	// Send the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, nil, latency, nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, nil, latency, nil, gatewayErr
 	}
 	if usedLargePayloadBody {
 		providerUtils.DrainLargePayloadRemainder(ctx)
@@ -168,13 +168,13 @@ func (provider *GeminiProvider) completeRequest(ctx *schemas.RakshaContext, mode
 	// Parse Gemini's response
 	var geminiResponse GenerateContentResponse
 	if err := sonic.Unmarshal(body, &geminiResponse); err != nil {
-		return nil, nil, latency, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, nil, latency, providerResponseHeaders, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	var rawResponse interface{}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		if err := sonic.Unmarshal(body, &rawResponse); err != nil {
-			return nil, nil, latency, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+			return nil, nil, latency, providerResponseHeaders, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 		}
 	}
 
@@ -183,7 +183,7 @@ func (provider *GeminiProvider) completeRequest(ctx *schemas.RakshaContext, mode
 
 // listModelsByKey performs a list models request for a single key.
 // Returns the response and latency, or an error if the request fails.
-func (provider *GeminiProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) listModelsByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 	// Create request
 	req := fasthttp.AcquireRequest()
@@ -203,14 +203,14 @@ func (provider *GeminiProvider) listModelsByKey(ctx *schemas.RakshaContext, key 
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Store provider response headers in context before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -219,9 +219,9 @@ func (provider *GeminiProvider) listModelsByKey(ctx *schemas.RakshaContext, key 
 
 	// Parse Gemini's response
 	var geminiResponse GeminiListModelsResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(resp.Body(), &geminiResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(resp.Body(), &geminiResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if len(geminiResponse.Models) == 0 {
 		var singleModel GeminiModel
@@ -230,7 +230,7 @@ func (provider *GeminiProvider) listModelsByKey(ctx *schemas.RakshaContext, key 
 		}
 	}
 
-	response := geminiResponse.ToRakshaListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+	response := geminiResponse.ToGatewayListModelsResponse(providerName, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 
 	response.ExtraFields.Latency = latency.Milliseconds()
 
@@ -249,12 +249,12 @@ func (provider *GeminiProvider) listModelsByKey(ctx *schemas.RakshaContext, key 
 
 // ListModels performs a list models request to Gemini's API.
 // Requests are made concurrently for improved performance.
-func (provider *GeminiProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
 	if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
-		return providerUtils.HandleKeylessListModelsRequest(provider.GetProviderKey(), func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+		return providerUtils.HandleKeylessListModelsRequest(provider.GetProviderKey(), func() (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 			return provider.listModelsByKey(ctx, schemas.Key{Models: schemas.WhiteList{"*"}}, request)
 		})
 	}
@@ -267,19 +267,19 @@ func (provider *GeminiProvider) ListModels(ctx *schemas.RakshaContext, keys []sc
 }
 
 // TextCompletion is not supported by the Gemini provider.
-func (provider *GeminiProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionRequest, provider.GetProviderKey())
 }
 
 // TextCompletionStream performs a streaming text completion request to Gemini's API.
 // It formats the request, sends it to Gemini, and processes the response.
-// Returns a channel of RakshaStreamChunk objects or an error if the request fails.
-func (provider *GeminiProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel of GatewayStreamChunk objects or an error if the request fails.
+func (provider *GeminiProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionStreamRequest, provider.GetProviderKey())
 }
 
 // ChatCompletion performs a chat completion request to the Gemini API.
-func (provider *GeminiProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	// Check if chat completion is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
@@ -295,47 +295,47 @@ func (provider *GeminiProvider) ChatCompletion(ctx *schemas.RakshaContext, key s
 		return nil, err
 	}
 
-	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, gatewayErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.RakshaChatResponse{
+	if isLargeResp, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.GatewayChatResponse{
 			Model: request.Model,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
 		}, nil
 	}
 
-	rakshaResponse := geminiResponse.ToRakshaChatResponse()
+	gatewayResponse := geminiResponse.ToGatewayChatResponse()
 
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ChatCompletionStream performs a streaming chat completion request to the Gemini API.
 // It supports real-time streaming of responses using Server-Sent Events (SSE).
-// Returns a channel containing RakshaStreamChunk objects representing the stream or an error if the request fails.
-func (provider *GeminiProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+// Returns a channel containing GatewayStreamChunk objects representing the stream or an error if the request fails.
+func (provider *GeminiProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	// Check if chat completion stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
@@ -390,7 +390,7 @@ func (provider *GeminiProvider) ChatCompletionStream(ctx *schemas.RakshaContext,
 
 // HandleGeminiChatCompletionStream handles streaming for Gemini-compatible APIs.
 func HandleGeminiChatCompletionStream(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
 	jsonBody []byte,
@@ -401,10 +401,10 @@ func HandleGeminiChatCompletionStream(
 	providerName schemas.ModelProvider,
 	model string,
 	postHookRunner schemas.PostHookRunner,
-	postResponseConverter func(*schemas.RakshaChatResponse) *schemas.RakshaChatResponse,
+	postResponseConverter func(*schemas.GatewayChatResponse) *schemas.GatewayChatResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	resp.StreamBody = true
@@ -433,8 +433,8 @@ func HandleGeminiChatCompletionStream(
 	if doErr != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(doErr, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -443,13 +443,13 @@ func HandleGeminiChatCompletionStream(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(doErr, fasthttp.ErrTimeout) || errors.Is(doErr, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors — use parseGeminiError to preserve upstream error details
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -460,13 +460,13 @@ func HandleGeminiChatCompletionStream(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -482,12 +482,12 @@ func HandleGeminiChatCompletionStream(
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 
 		if resp.BodyStream() == nil {
-			rakshaErr := providerUtils.NewRakshaOperationError(
+			gatewayErr := providerUtils.NewGatewayOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"),
 			)
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -524,8 +524,8 @@ func HandleGeminiChatCompletionStream(
 		// Running usage handle so a mid-stream cancel/timeout can bill for
 		// tokens already processed. Gemini's usageMetadata is cumulative, so the
 		// latest non-nil copy below is the running total.
-		streamUsage := &schemas.RakshaLLMUsage{}
-		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, streamUsage)
+		streamUsage := &schemas.GatewayLLMUsage{}
+		ctx.SetValue(schemas.GatewayContextKeyStreamAccumulatedUsage, streamUsage)
 
 		for {
 			// If context was cancelled/timed out, let defer handle it
@@ -549,7 +549,7 @@ func HandleGeminiChatCompletionStream(
 				if ctx.Err() != nil {
 					return
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				logger.Warn("Error reading stream: %v", readErr)
 				providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				return
@@ -559,16 +559,16 @@ func HandleGeminiChatCompletionStream(
 			if err != nil {
 				if strings.Contains(err.Error(), "gemini api error") {
 					// Handle API error
-					rakshaErr := &schemas.RakshaError{
+					gatewayErr := &schemas.GatewayError{
 						Type:           schemas.Ptr("gemini_api_error"),
-						IsRakshaError: false,
+						IsGatewayError: false,
 						Error: &schemas.ErrorField{
 							Message: err.Error(),
 							Error:   err,
 						},
 					}
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 				logger.Warn("Failed to process chunk: %v", err)
@@ -583,11 +583,11 @@ func HandleGeminiChatCompletionStream(
 				modelName = geminiResponse.ModelVersion
 			}
 
-			// Convert to Raksha stream response
-			response, rakshaErr, isLastChunk := geminiResponse.ToRakshaChatCompletionStream(streamState)
-			if rakshaErr != nil {
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
+			// Convert to Gateway stream response
+			response, gatewayErr, isLastChunk := geminiResponse.ToGatewayChatCompletionStream(streamState)
+			if gatewayErr != nil {
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency), responseChan, logger, postHookSpanFinalizer)
 				return
 			}
 
@@ -600,7 +600,7 @@ func HandleGeminiChatCompletionStream(
 				if response.Usage != nil {
 					*streamUsage = *response.Usage
 				}
-				response.ExtraFields = schemas.RakshaResponseExtraFields{
+				response.ExtraFields = schemas.GatewayResponseExtraFields{
 					ChunkIndex: chunkIndex,
 					Latency:    time.Since(lastChunkTime).Milliseconds(),
 				}
@@ -625,13 +625,13 @@ func HandleGeminiChatCompletionStream(
 						providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 					}
 					response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 					break
 				}
 
 				// Process response through post-hooks and send to channel
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, response, nil, nil, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
 	}()
@@ -641,8 +641,8 @@ func HandleGeminiChatCompletionStream(
 
 // Responses performs a chat completion request to Gemini's API.
 // It formats the request, sends it to Gemini, and processes the response.
-// Returns a RakshaResponse containing the completion results or an error if the request fails.
-func (provider *GeminiProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+// Returns a GatewayResponse containing the completion results or an error if the request fails.
+func (provider *GeminiProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ResponsesRequest); err != nil {
 		return nil, err
 	}
@@ -653,10 +653,10 @@ func (provider *GeminiProvider) Responses(ctx *schemas.RakshaContext, key schema
 	bodySize := -1
 	var jsonData []byte
 
-	if isLargePayload, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
-		if reader, readerOk := ctx.Value(schemas.RakshaContextKeyLargePayloadReader).(io.Reader); readerOk && reader != nil {
+	if isLargePayload, ok := ctx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+		if reader, readerOk := ctx.Value(schemas.GatewayContextKeyLargePayloadReader).(io.Reader); readerOk && reader != nil {
 			bodyReader = reader
-			if contentLength, lenOk := ctx.Value(schemas.RakshaContextKeyLargePayloadContentLength).(int); lenOk {
+			if contentLength, lenOk := ctx.Value(schemas.GatewayContextKeyLargePayloadContentLength).(int); lenOk {
 				bodySize = contentLength
 			}
 		}
@@ -664,7 +664,7 @@ func (provider *GeminiProvider) Responses(ctx *schemas.RakshaContext, key schema
 
 	// For normal path (no large payload body reader), convert request to bytes
 	if bodyReader == nil {
-		var err *schemas.RakshaError
+		var err *schemas.GatewayError
 		jsonData, err = providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
@@ -684,24 +684,24 @@ func (provider *GeminiProvider) Responses(ctx *schemas.RakshaContext, key schema
 	}
 
 	// Check if enterprise large response detection is enabled
-	if responseThreshold, ok := ctx.Value(schemas.RakshaContextKeyLargeResponseThreshold).(int64); ok && responseThreshold > 0 {
+	if responseThreshold, ok := ctx.Value(schemas.GatewayContextKeyLargeResponseThreshold).(int64); ok && responseThreshold > 0 {
 		return provider.responsesWithLargeResponseDetection(ctx, key, request, jsonData, responseThreshold, bodyReader, bodySize)
 	}
 
 	// Use struct directly for JSON marshaling
-	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, gatewayErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.RakshaResponsesResponse{
+	if isLargeResp, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.GatewayResponsesResponse{
 			Model: request.Model,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -709,23 +709,23 @@ func (provider *GeminiProvider) Responses(ctx *schemas.RakshaContext, key schema
 	}
 
 	// Create final response
-	rakshaResponse := geminiResponse.ToResponsesRakshaResponsesResponse()
+	gatewayResponse := geminiResponse.ToResponsesGatewayResponsesResponse()
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // responsesWithLargeResponseDetection makes the upstream request with response body streaming
@@ -733,14 +733,14 @@ func (provider *GeminiProvider) Responses(ctx *schemas.RakshaContext, key schema
 // the router to stream the body directly to the client without full materialization.
 // If the response is small, it falls through to the normal parse-and-convert path.
 func (provider *GeminiProvider) responsesWithLargeResponseDetection(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
-	request *schemas.RakshaResponsesRequest,
+	request *schemas.GatewayResponsesRequest,
 	jsonData []byte,
 	responseThreshold int64,
 	bodyReader io.Reader, // Optional: for large payload request streaming (pass nil for normal path)
 	bodySize int, // Required if bodyReader is non-nil
-) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -767,20 +767,20 @@ func (provider *GeminiProvider) responsesWithLargeResponseDetection(
 
 	// Make request
 	streamingClient := providerUtils.BuildLargeResponseClient(provider.client, responseThreshold)
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, streamingClient, req, resp)
-	if rakshaErr != nil {
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, streamingClient, req, resp)
+	if gatewayErr != nil {
 		wait()
 		fasthttp.ReleaseResponse(resp)
-		return nil, rakshaErr
+		return nil, gatewayErr
 	}
 
 	// Handle error response — materialize stream body for error parsing
 	if resp.StatusCode() != fasthttp.StatusOK {
 		providerUtils.MaterializeStreamErrorBody(ctx, resp)
-		rakshaErr := parseGeminiError(resp)
+		gatewayErr := parseGeminiError(resp)
 		wait()
 		fasthttp.ReleaseResponse(resp)
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Delegate large response detection + normal buffered path to shared utility
@@ -792,18 +792,18 @@ func (provider *GeminiProvider) responsesWithLargeResponseDetection(
 	}
 	if isLarge {
 		// Build lightweight response with usage from preview for plugin pipeline
-		preview, _ := ctx.Value(schemas.RakshaContextKeyLargePayloadResponsePreview).(string)
+		preview, _ := ctx.Value(schemas.GatewayContextKeyLargePayloadResponsePreview).(string)
 		usage := extractUsageFromResponsePrefetch([]byte(preview))
-		rakshaResponse := &schemas.RakshaResponsesResponse{
+		gatewayResponse := &schemas.GatewayResponsesResponse{
 			ID:        schemas.Ptr("resp_" + providerUtils.GetRandomString(50)),
 			CreatedAt: int(time.Now().Unix()),
 			Model:     request.Model,
 			Usage:     usage,
 		}
-		rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+		gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
 		// resp owned by reader in context — don't release
 		wait()
-		return rakshaResponse, nil
+		return gatewayResponse, nil
 	}
 	wait()
 	fasthttp.ReleaseResponse(resp)
@@ -811,19 +811,19 @@ func (provider *GeminiProvider) responsesWithLargeResponseDetection(
 	// Normal parse-and-convert path
 	var geminiResponse GenerateContentResponse
 	if unmarshalErr := sonic.Unmarshal(responseBody, &geminiResponse); unmarshalErr != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, unmarshalErr)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, unmarshalErr)
 	}
-	rakshaResponse := geminiResponse.ToResponsesRakshaResponsesResponse()
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse := geminiResponse.ToResponsesGatewayResponsesResponse()
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		providerUtils.ParseAndSetRawRequest(&rakshaResponse.ExtraFields, jsonData)
+		providerUtils.ParseAndSetRawRequest(&gatewayResponse.ExtraFields, jsonData)
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 		var rawResponse interface{}
 		sonic.Unmarshal(responseBody, &rawResponse) //nolint:errcheck
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // extractUsageFromResponsePrefetch extracts usage metadata from the response prefetch buffer.
@@ -847,7 +847,7 @@ func extractUsageFromResponsePrefetch(data []byte) *schemas.ResponsesResponseUsa
 }
 
 // ResponsesStream performs a streaming responses request to the Gemini API.
-func (provider *GeminiProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *GeminiProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	// Check if responses stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ResponsesStreamRequest); err != nil {
 		return nil, err
@@ -901,7 +901,7 @@ func (provider *GeminiProvider) ResponsesStream(ctx *schemas.RakshaContext, post
 
 // HandleGeminiResponsesStream handles streaming for Gemini-compatible APIs.
 func HandleGeminiResponsesStream(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	client *fasthttp.Client,
 	url string,
 	jsonBody []byte,
@@ -912,10 +912,10 @@ func HandleGeminiResponsesStream(
 	providerName schemas.ModelProvider,
 	model string,
 	postHookRunner schemas.PostHookRunner,
-	postResponseConverter func(*schemas.RakshaResponsesStreamResponse) *schemas.RakshaResponsesStreamResponse,
+	postResponseConverter func(*schemas.GatewayResponsesStreamResponse) *schemas.GatewayResponsesStreamResponse,
 	logger schemas.Logger,
 	postHookSpanFinalizer func(context.Context),
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	resp.StreamBody = true
@@ -944,8 +944,8 @@ func HandleGeminiResponsesStream(
 	if doErr != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(doErr, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -954,13 +954,13 @@ func HandleGeminiResponsesStream(
 			}, jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
 		if errors.Is(doErr, fasthttp.ErrTimeout) || errors.Is(doErr, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 		}
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderDoRequest, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderDoRequest, doErr), jsonBody, nil, sendBackRawRequest, sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors — use parseGeminiError to preserve upstream error details
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -970,13 +970,13 @@ func HandleGeminiResponsesStream(
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	// Start streaming in a goroutine
 	go func() {
@@ -993,15 +993,15 @@ func HandleGeminiResponsesStream(
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 
 		if resp.BodyStream() == nil {
-			rakshaErr := providerUtils.NewRakshaOperationError(
+			gatewayErr := providerUtils.NewGatewayOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"),
 			)
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendRakshaError(
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendGatewayError(
 				ctx,
 				postHookRunner,
-				providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse),
+				providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse),
 				responseChan,
 				logger,
 				postHookSpanFinalizer,
@@ -1043,8 +1043,8 @@ func HandleGeminiResponsesStream(
 
 		// Running usage handle so a mid-stream cancel/timeout can bill for
 		// tokens already processed. Gemini's usageMetadata is cumulative.
-		streamUsage := &schemas.RakshaLLMUsage{}
-		ctx.SetValue(schemas.RakshaContextKeyStreamAccumulatedUsage, streamUsage)
+		streamUsage := &schemas.GatewayLLMUsage{}
+		ctx.SetValue(schemas.GatewayContextKeyStreamAccumulatedUsage, streamUsage)
 
 		for {
 			// If context was cancelled/timed out, let defer handle it
@@ -1067,7 +1067,7 @@ func HandleGeminiResponsesStream(
 				if ctx.Err() != nil {
 					return
 				}
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				logger.Warn("Error reading stream: %v", readErr)
 				providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, logger, postHookSpanFinalizer)
 				return
@@ -1078,16 +1078,16 @@ func HandleGeminiResponsesStream(
 			if err != nil {
 				if strings.Contains(err.Error(), "gemini api error") {
 					// Handle API error
-					rakshaErr := &schemas.RakshaError{
+					gatewayErr := &schemas.GatewayError{
 						Type:           schemas.Ptr("gemini_api_error"),
-						IsRakshaError: false,
+						IsGatewayError: false,
 						Error: &schemas.ErrorField{
 							Message: err.Error(),
 							Error:   err,
 						},
 					}
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
 					return
 				}
 				logger.Warn("Failed to process chunk: %v", err)
@@ -1103,17 +1103,17 @@ func HandleGeminiResponsesStream(
 				}
 			}
 
-			// Convert to Raksha responses stream response
-			responses, rakshaErr := geminiResponse.ToRakshaResponsesStream(sequenceNumber, streamState)
-			if rakshaErr != nil {
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-				providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
+			// Convert to Gateway responses stream response
+			responses, gatewayErr := geminiResponse.ToGatewayResponsesStream(sequenceNumber, streamState)
+			if gatewayErr != nil {
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+				providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, nil, sendBackRawRequest, sendBackRawResponse), responseChan, logger, postHookSpanFinalizer)
 				return
 			}
 
 			for i, response := range responses {
 				if response != nil {
-					response.ExtraFields = schemas.RakshaResponseExtraFields{
+					response.ExtraFields = schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					}
@@ -1145,8 +1145,8 @@ func HandleGeminiResponsesStream(
 							providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 						}
 						response.ExtraFields.Latency = time.Since(startTime).Milliseconds()
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 						return
 					}
 
@@ -1156,7 +1156,7 @@ func HandleGeminiResponsesStream(
 					}
 
 					// Process response through post-hooks and send to channel
-					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
+					providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, response, nil, nil, nil), responseChan, postHookSpanFinalizer)
 				}
 			}
 		}
@@ -1167,7 +1167,7 @@ func HandleGeminiResponsesStream(
 				logger.Warn("FinalizeGeminiResponsesStream returned nil; skipping final response")
 				continue
 			}
-			finalResponse.ExtraFields = schemas.RakshaResponseExtraFields{
+			finalResponse.ExtraFields = schemas.GatewayResponseExtraFields{
 				ChunkIndex: chunkIndex,
 				Latency:    time.Since(lastChunkTime).Milliseconds(),
 			}
@@ -1189,10 +1189,10 @@ func HandleGeminiResponsesStream(
 			isLast := i == len(finalResponses)-1
 			// Set final latency on the last response (completed event)
 			if isLast {
-				ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+				ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 				finalResponse.ExtraFields.Latency = time.Since(startTime).Milliseconds()
 			}
-			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, finalResponse, nil, nil, nil), responseChan, postHookSpanFinalizer)
+			providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, finalResponse, nil, nil, nil), responseChan, postHookSpanFinalizer)
 		}
 	}()
 
@@ -1200,7 +1200,7 @@ func HandleGeminiResponsesStream(
 }
 
 // Embedding performs an embedding request to the Gemini API.
-func (provider *GeminiProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	// Check if embedding is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.EmbeddingRequest); err != nil {
 		return nil, err
@@ -1208,7 +1208,7 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.RakshaContext, key schema
 
 	providerName := provider.GetProviderKey()
 
-	// Convert Raksha request to Gemini batch embedding request format
+	// Convert Gateway request to Gemini batch embedding request format
 	jsonData, err := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
@@ -1245,11 +1245,11 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.RakshaContext, key schema
 
 	// Send the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
-	if rakshaErr != nil {
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	if gatewayErr != nil {
 		wait()
 		fasthttp.ReleaseResponse(resp)
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	// When upstream responds before consuming full upload, drain remaining bytes from
 	// ingress reader so proxy hops (e.g., Caddy) don't surface broken-pipe 502s.
@@ -1259,7 +1259,7 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.RakshaContext, key schema
 
 	// Extract provider response headers before status check so error responses also forward them
 	providerResponseHeaders := providerUtils.ExtractProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 
 	// Handle error response
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1281,9 +1281,9 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.RakshaContext, key schema
 		// Large response detected — return lightweight response with metadata only;
 		// resp owned by LargeResponseReader in context, don't release.
 		wait()
-		return &schemas.RakshaEmbeddingResponse{
+		return &schemas.GatewayEmbeddingResponse{
 			Model: request.Model,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -1294,37 +1294,37 @@ func (provider *GeminiProvider) Embedding(ctx *schemas.RakshaContext, key schema
 
 	// Parse Gemini's batch embedding response
 	var geminiResponse GeminiEmbeddingResponse
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &geminiResponse, jsonData,
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &geminiResponse, jsonData,
 		providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest),
 		providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	// Convert to Raksha format
-	rakshaResponse := ToRakshaEmbeddingResponse(&geminiResponse, request.Model)
-	if rakshaResponse == nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal,
-			fmt.Errorf("failed to convert Gemini embedding response to Raksha format"))
+	// Convert to Gateway format
+	gatewayResponse := ToGatewayEmbeddingResponse(&geminiResponse, request.Model)
+	if gatewayResponse == nil {
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal,
+			fmt.Errorf("failed to convert Gemini embedding response to Gateway format"))
 	}
 
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // Speech performs a speech synthesis request to the Gemini API.
-func (provider *GeminiProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	// Check if speech is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.SpeechRequest); err != nil {
 		return nil, err
@@ -1342,18 +1342,18 @@ func (provider *GeminiProvider) Speech(ctx *schemas.RakshaContext, key schemas.K
 	}
 
 	// Use common request function
-	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, gatewayErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.RakshaSpeechResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{
+	if isLargeResp, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.GatewaySpeechResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
@@ -1361,11 +1361,11 @@ func (provider *GeminiProvider) Speech(ctx *schemas.RakshaContext, key schemas.K
 	}
 
 	if request.Params != nil {
-		ctx.SetValue(RakshaContextKeyResponseFormat, request.Params.ResponseFormat)
+		ctx.SetValue(GatewayContextKeyResponseFormat, request.Params.ResponseFormat)
 	}
-	response, convErr := geminiResponse.ToRakshaSpeechResponse(ctx)
+	response, convErr := geminiResponse.ToGatewaySpeechResponse(ctx)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set ExtraFields
@@ -1384,31 +1384,31 @@ func (provider *GeminiProvider) Speech(ctx *schemas.RakshaContext, key schemas.K
 }
 
 // Rerank is not supported by the Gemini provider.
-func (provider *GeminiProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Gemini provider.
-func (provider *GeminiProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
 // SpeechStream performs a streaming speech synthesis request to the Gemini API.
-func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *GeminiProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	// Check if speech stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.SpeechStreamRequest); err != nil {
 		return nil, err
 	}
 
 	// Prepare request body using speech-specific function
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiSpeechRequest(request)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create HTTP request for streaming
@@ -1443,8 +1443,8 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHoo
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1453,17 +1453,17 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHoo
 			}, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		// non-streaming path - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1473,13 +1473,13 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHoo
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1528,7 +1528,7 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHoo
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
@@ -1543,16 +1543,16 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHoo
 			if err != nil {
 				if strings.Contains(err.Error(), "gemini api error") {
 					// Handle API error
-					rakshaErr := &schemas.RakshaError{
+					gatewayErr := &schemas.GatewayError{
 						Type:           schemas.Ptr("gemini_api_error"),
-						IsRakshaError: false,
+						IsGatewayError: false,
 						Error: &schemas.ErrorField{
 							Message: err.Error(),
 							Error:   err,
 						},
 					}
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				provider.logger.Warn("Failed to process chunk: %v", err)
@@ -1595,11 +1595,11 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHoo
 			if len(audioChunk) > 0 {
 				chunkIndex++
 
-				// Create Raksha speech response for streaming
-				response := &schemas.RakshaSpeechStreamResponse{
+				// Create Gateway speech response for streaming
+				response := &schemas.GatewaySpeechStreamResponse{
 					Type:  schemas.SpeechStreamResponseTypeDelta,
 					Audio: audioChunk,
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -1611,13 +1611,13 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHoo
 				}
 
 				// Process response through post-hooks and send to channel
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
-		response := &schemas.RakshaSpeechStreamResponse{
+		response := &schemas.GatewaySpeechStreamResponse{
 			Type:  schemas.SpeechStreamResponseTypeDone,
 			Usage: usage,
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				ChunkIndex: chunkIndex + 1,
 				Latency:    time.Since(startTime).Milliseconds(),
 			},
@@ -1627,51 +1627,51 @@ func (provider *GeminiProvider) SpeechStream(ctx *schemas.RakshaContext, postHoo
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 		}
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, response, nil, nil), responseChan, postHookSpanFinalizer)
 	}()
 
 	return responseChan, nil
 }
 
 // Transcription performs a speech-to-text request to the Gemini API.
-func (provider *GeminiProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	// Check if transcription is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.TranscriptionRequest); err != nil {
 		return nil, err
 	}
 
 	// Prepare request body using transcription-specific function
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiTranscriptionRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Use common request function
-	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, gatewayErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.RakshaTranscriptionResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{
+	if isLargeResp, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.GatewayTranscriptionResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
 		}, nil
 	}
 
-	response := geminiResponse.ToRakshaTranscriptionResponse()
+	response := geminiResponse.ToGatewayTranscriptionResponse()
 
 	// Set ExtraFields
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -1689,21 +1689,21 @@ func (provider *GeminiProvider) Transcription(ctx *schemas.RakshaContext, key sc
 }
 
 // TranscriptionStream performs a streaming speech-to-text request to the Gemini API.
-func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	// Check if transcription stream is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.TranscriptionStreamRequest); err != nil {
 		return nil, err
 	}
 
 	// Prepare request body using transcription-specific function
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiTranscriptionRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create HTTP request for streaming
@@ -1738,8 +1738,8 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.EnrichError(ctx, &schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.EnrichError(ctx, &schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1748,17 +1748,17 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 			}, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		// non-streaming path - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1768,13 +1768,13 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1823,7 +1823,7 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 					return
 				}
 				if readErr != io.EOF {
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 					provider.logger.Warn("Error reading stream: %v", readErr)
 					providerUtils.ProcessAndSendError(ctx, postHookRunner, readErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
@@ -1837,16 +1837,16 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 			geminiResponse, err := processGeminiStreamChunk(jsonData)
 			if err != nil {
 				if strings.Contains(err.Error(), "gemini api error") {
-					rakshaErr := &schemas.RakshaError{
+					gatewayErr := &schemas.GatewayError{
 						Type:           schemas.Ptr("gemini_api_error"),
-						IsRakshaError: false,
+						IsGatewayError: false,
 						Error: &schemas.ErrorField{
 							Message: err.Error(),
 							Error:   err,
 						},
 					}
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				provider.logger.Warn("Failed to process chunk: %v", err)
@@ -1883,11 +1883,11 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 			if deltaText != "" {
 				chunkIndex++
 
-				// Create Raksha transcription response for streaming
-				response := &schemas.RakshaTranscriptionStreamResponse{
+				// Create Gateway transcription response for streaming
+				response := &schemas.GatewayTranscriptionStreamResponse{
 					Type:  schemas.TranscriptionStreamResponseTypeDelta,
 					Delta: &deltaText, // Delta text for this chunk
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -1899,10 +1899,10 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 				}
 
 				// Process response through post-hooks and send to channel
-				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
+				providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
 			}
 		}
-		response := &schemas.RakshaTranscriptionStreamResponse{
+		response := &schemas.GatewayTranscriptionStreamResponse{
 			Type: schemas.TranscriptionStreamResponseTypeDone,
 			Text: fullTranscriptionText,
 			Usage: &schemas.TranscriptionUsage{
@@ -1911,7 +1911,7 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 				OutputTokens: usage.OutputTokens,
 				TotalTokens:  usage.TotalTokens,
 			},
-			ExtraFields: schemas.RakshaResponseExtraFields{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				ChunkIndex: chunkIndex + 1,
 				Latency:    time.Since(startTime).Milliseconds(),
 			},
@@ -1921,8 +1921,8 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
 			providerUtils.ParseAndSetRawRequest(&response.ExtraFields, jsonBody)
 		}
-		ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
+		ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+		providerUtils.ProcessAndSendResponse(ctx, postHookRunner, providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, response, nil), responseChan, postHookSpanFinalizer)
 
 	}()
 
@@ -1930,7 +1930,7 @@ func (provider *GeminiProvider) TranscriptionStream(ctx *schemas.RakshaContext, 
 }
 
 // ImageGeneration performs an image generation request to the Gemini API.
-func (provider *GeminiProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	// Check if image gen is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ImageGenerationRequest); err != nil {
 		return nil, err
@@ -1941,43 +1941,43 @@ func (provider *GeminiProvider) ImageGeneration(ctx *schemas.RakshaContext, key 
 		return provider.handleImagenImageGeneration(ctx, key, request)
 	}
 	// Prepare body
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiImageGenerationRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Use common request function
-	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, gatewayErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.RakshaImageGenerationResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{
+	if isLargeResp, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.GatewayImageGenerationResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
 		}, nil
 	}
 
-	response, rakshaErr := geminiResponse.ToRakshaImageGenerationResponse()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	response, gatewayErr := geminiResponse.ToGatewayImageGenerationResponse()
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if response == nil {
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			"failed to convert Gemini image generation response",
-			fmt.Errorf("ToRakshaImageGenerationResponse returned nil response"),
+			fmt.Errorf("ToGatewayImageGenerationResponse returned nil response"),
 		)
 	}
 
@@ -1997,16 +1997,16 @@ func (provider *GeminiProvider) ImageGeneration(ctx *schemas.RakshaContext, key 
 }
 
 // handleImagenImageGeneration handles Imagen model requests using Vertex AI endpoint with API key auth
-func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	// Prepare Imagen request body
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToImagenImageGenerationRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	baseURL := provider.networkConfig.BaseURL + providerUtils.GetPathFromContext(ctx, "/models/"+request.Model+":predict")
@@ -2035,10 +2035,10 @@ func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.RakshaC
 
 	// Send the request with optional large response streaming
 	activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -2054,20 +2054,20 @@ func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.RakshaC
 	}
 	if isLargeResp {
 		respOwned = false
-		return &schemas.RakshaImageGenerationResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{
+		return &schemas.GatewayImageGenerationResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency: latency.Milliseconds(),
 			},
 		}, nil
 	}
 
 	imagenResponse := GeminiImagenResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &imagenResponse, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &imagenResponse, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
-	// Convert to Raksha format
-	response := imagenResponse.ToRakshaImageGenerationResponse()
+	// Convert to Gateway format
+	response := imagenResponse.ToGatewayImageGenerationResponse()
 	response.ExtraFields.Latency = latency.Milliseconds()
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
@@ -2082,26 +2082,26 @@ func (provider *GeminiProvider) handleImagenImageGeneration(ctx *schemas.RakshaC
 }
 
 // ImageGenerationStream is not supported by the Gemini provider.
-func (provider *GeminiProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *GeminiProvider) ImageGenerationStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageGenerationRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageGenerationStreamRequest, provider.GetProviderKey())
 }
 
 // ImageEdit handles image edit requests. For Imagen models, uses the Imagen edit API; otherwise uses Gemini generateContent.
-func (provider *GeminiProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.ImageEditRequest); err != nil {
 		return nil, err
 	}
 
 	// Handle Imagen models using :predict endpoint
 	if schemas.IsImagenModel(request.Model) {
-		jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+		jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
 				return ToImagenImageEditRequest(request), nil
 			})
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 
 		baseURL := provider.networkConfig.BaseURL + providerUtils.GetPathFromContext(ctx, "/models/"+request.Model+":predict")
@@ -2126,10 +2126,10 @@ func (provider *GeminiProvider) ImageEdit(ctx *schemas.RakshaContext, key schema
 		}
 
 		activeClient := providerUtils.PrepareResponseStreaming(ctx, provider.client, resp)
-		latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
+		latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, activeClient, req, resp)
 		defer wait()
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 
 		if resp.StatusCode() != fasthttp.StatusOK {
@@ -2143,20 +2143,20 @@ func (provider *GeminiProvider) ImageEdit(ctx *schemas.RakshaContext, key schema
 		}
 		if isLargeResp {
 			imagenRespOwned = false
-			return &schemas.RakshaImageGenerationResponse{
-				ExtraFields: schemas.RakshaResponseExtraFields{
+			return &schemas.GatewayImageGenerationResponse{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					Latency: latency.Milliseconds(),
 				},
 			}, nil
 		}
 
 		imagenResponse := GeminiImagenResponse{}
-		rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &imagenResponse, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &imagenResponse, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 
-		response := imagenResponse.ToRakshaImageGenerationResponse()
+		response := imagenResponse.ToGatewayImageGenerationResponse()
 		response.ExtraFields.Latency = latency.Milliseconds()
 
 		if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
@@ -2170,43 +2170,43 @@ func (provider *GeminiProvider) ImageEdit(ctx *schemas.RakshaContext, key schema
 	}
 
 	// Prepare body for non-Imagen models
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToGeminiImageEditRequest(request), nil
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Use common request function
-	geminiResponse, rawResponse, latency, providerResponseHeaders, rakshaErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
+	geminiResponse, rawResponse, latency, providerResponseHeaders, gatewayErr := provider.completeRequest(ctx, request.Model, key, jsonData, ":generateContent")
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Large response mode: return lightweight response with metadata only
-	if isLargeResp, _ := ctx.Value(schemas.RakshaContextKeyLargeResponseMode).(bool); isLargeResp {
-		return &schemas.RakshaImageGenerationResponse{
-			ExtraFields: schemas.RakshaResponseExtraFields{
+	if isLargeResp, _ := ctx.Value(schemas.GatewayContextKeyLargeResponseMode).(bool); isLargeResp {
+		return &schemas.GatewayImageGenerationResponse{
+			ExtraFields: schemas.GatewayResponseExtraFields{
 				Latency:                 latency.Milliseconds(),
 				ProviderResponseHeaders: providerResponseHeaders,
 			},
 		}, nil
 	}
 
-	response, rakshaErr := geminiResponse.ToRakshaImageGenerationResponse()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	response, gatewayErr := geminiResponse.ToGatewayImageGenerationResponse()
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if response == nil {
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			"failed to convert Gemini image edit response",
-			fmt.Errorf("ToRakshaImageGenerationResponse returned nil response"),
+			fmt.Errorf("ToGatewayImageGenerationResponse returned nil response"),
 		)
 	}
 
@@ -2226,33 +2226,33 @@ func (provider *GeminiProvider) ImageEdit(ctx *schemas.RakshaContext, key schema
 }
 
 // ImageEditStream is not supported by the Gemini provider.
-func (provider *GeminiProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *GeminiProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageEditStreamRequest, provider.GetProviderKey())
 }
 
 // ImageVariation is not supported by the Gemini provider.
-func (provider *GeminiProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration creates a video generation operation using Gemini's Veo models.
 // Uses the POST /models/{model}:predictLongRunning endpoint.
-func (provider *GeminiProvider) VideoGeneration(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) VideoGeneration(ctx *schemas.GatewayContext, key schemas.Key, gatewayReq *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.VideoGenerationRequest); err != nil {
 		return nil, err
 	}
 
-	model := rakshaReq.Model
+	model := gatewayReq.Model
 
-	jsonData, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonData, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
-		rakshaReq,
+		gatewayReq,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
-			return ToGeminiVideoGenerationRequest(rakshaReq)
+			return ToGeminiVideoGenerationRequest(gatewayReq)
 		},
 	)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	jsonData = normalizeRawGenerateContentBody(ctx, jsonData)
@@ -2276,10 +2276,10 @@ func (provider *GeminiProvider) VideoGeneration(ctx *schemas.RakshaContext, key 
 
 	req.SetBody(jsonData)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -2290,43 +2290,43 @@ func (provider *GeminiProvider) VideoGeneration(ctx *schemas.RakshaContext, key 
 	// use handle provider response
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Parse response
 	var operation GenerateVideosOperation
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(body, &operation, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(body, &operation, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	// Convert to Raksha response
-	rakshaResp, rakshaErr := ToRakshaVideoGenerationResponse(&operation, model)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	// Convert to Gateway response
+	gatewayResp, gatewayErr := ToGatewayVideoGenerationResponse(&operation, model)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	rakshaResp.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResp.ID, provider.GetProviderKey())
+	gatewayResp.ID = providerUtils.AddVideoIDProviderSuffix(gatewayResp.ID, provider.GetProviderKey())
 
-	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResp.ExtraFields.Latency = latency.Milliseconds()
 
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResp.ExtraFields.RawRequest = rawRequest
+		gatewayResp.ExtraFields.RawRequest = rawRequest
 	}
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResp.ExtraFields.RawResponse = rawResponse
+		gatewayResp.ExtraFields.RawResponse = rawResponse
 	}
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // VideoRetrieve retrieves the status of a video generation operation.
 // Uses the GET /operations/{operationName} endpoint.
-func (provider *GeminiProvider) VideoRetrieve(ctx *schemas.RakshaContext, key schemas.Key, rakshaReq *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) VideoRetrieve(ctx *schemas.GatewayContext, key schemas.Key, gatewayReq *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.VideoRetrieveRequest); err != nil {
 		return nil, err
 	}
 
-	operationID := rakshaReq.ID
+	operationID := gatewayReq.ID
 
 	operationID = providerUtils.StripVideoIDProviderSuffix(operationID, provider.GetProviderKey())
 
@@ -2345,10 +2345,10 @@ func (provider *GeminiProvider) VideoRetrieve(ctx *schemas.RakshaContext, key sc
 		req.Header.Set("x-goog-api-key", key.Value.GetValue())
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -2359,52 +2359,52 @@ func (provider *GeminiProvider) VideoRetrieve(ctx *schemas.RakshaContext, key sc
 
 	// Parse response
 	var operation GenerateVideosOperation
-	_, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(resp.Body(), &operation, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	_, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(resp.Body(), &operation, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
-	rakshaResp, rakshaErr := ToRakshaVideoGenerationResponse(&operation, "")
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	gatewayResp, gatewayErr := ToGatewayVideoGenerationResponse(&operation, "")
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
-	rakshaResp.ID = providerUtils.AddVideoIDProviderSuffix(rakshaResp.ID, provider.GetProviderKey())
+	gatewayResp.ID = providerUtils.AddVideoIDProviderSuffix(gatewayResp.ID, provider.GetProviderKey())
 
 	// Add extra fields
-	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResp.ExtraFields.Latency = latency.Milliseconds()
 
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResp.ExtraFields.RawResponse = rawResponse
+		gatewayResp.ExtraFields.RawResponse = rawResponse
 	}
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // VideoDownload downloads a video from Gemini.
-func (provider *GeminiProvider) VideoDownload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) VideoDownload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.VideoDownloadRequest); err != nil {
 		return nil, err
 	}
 	if request == nil || request.ID == "" {
-		return nil, providerUtils.NewRakshaOperationError("video_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("video_id is required", nil)
 	}
 	// Retrieve operation first so download behavior follows retrieve status.
-	rakshaVideoRetrieveRequest := &schemas.RakshaVideoRetrieveRequest{
+	gatewayVideoRetrieveRequest := &schemas.GatewayVideoRetrieveRequest{
 		Provider: request.Provider,
 		ID:       request.ID,
 	}
-	videoResp, rakshaErr := provider.VideoRetrieve(ctx, key, rakshaVideoRetrieveRequest)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	videoResp, gatewayErr := provider.VideoRetrieve(ctx, key, gatewayVideoRetrieveRequest)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 	if videoResp.Status != schemas.VideoStatusCompleted {
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("video not ready, current status: %s", videoResp.Status),
 			nil,
 		)
 	}
 	if len(videoResp.Videos) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("video URL not available", nil)
+		return nil, providerUtils.NewGatewayOperationError("video URL not available", nil)
 	}
 	var content []byte
 	contentType := "video/mp4"
@@ -2415,7 +2415,7 @@ func (provider *GeminiProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 		startTime := time.Now()
 		decoded, err := base64.StdEncoding.DecodeString(*videoResp.Videos[0].Base64Data)
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to decode base64 video data", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to decode base64 video data", err)
 		}
 		content = decoded
 		latency = time.Since(startTime)
@@ -2433,53 +2433,53 @@ func (provider *GeminiProvider) VideoDownload(ctx *schemas.RakshaContext, key sc
 		if key.Value.GetValue() != "" {
 			req.Header.Set("x-goog-api-key", key.Value.GetValue())
 		}
-		var rakshaErr *schemas.RakshaError
+		var gatewayErr *schemas.GatewayError
 		var wait func()
-		latency, rakshaErr, wait = providerUtils.MakeRequestWithContextFollowRedirects(ctx, provider.client, req, resp, 5)
+		latency, gatewayErr, wait = providerUtils.MakeRequestWithContextFollowRedirects(ctx, provider.client, req, resp, 5)
 		defer wait()
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 		if resp.StatusCode() != fasthttp.StatusOK {
 			// log full error
 			provider.logger.Error("failed to download video: " + string(resp.Body()))
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaOperationError(
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayOperationError(
 				fmt.Sprintf("failed to download video: HTTP %d", resp.StatusCode()),
 				nil,
 			), latency)
 		}
 		body, err := providerUtils.CheckAndDecodeBody(resp)
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+			return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 		}
 		contentType = string(resp.Header.ContentType())
 		content = append([]byte(nil), body...)
 	} else {
-		return nil, providerUtils.NewRakshaOperationError("invalid video output type", nil)
+		return nil, providerUtils.NewGatewayOperationError("invalid video output type", nil)
 	}
-	rakshaResp := &schemas.RakshaVideoDownloadResponse{
+	gatewayResp := &schemas.GatewayVideoDownloadResponse{
 		VideoID:     request.ID,
 		Content:     content,
 		ContentType: contentType,
 	}
 
-	rakshaResp.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResp.ExtraFields.Latency = latency.Milliseconds()
 
-	return rakshaResp, nil
+	return gatewayResp, nil
 }
 
 // VideoDelete is not supported by the Gemini provider.
-func (provider *GeminiProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) VideoDelete(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by the Gemini provider.
-func (provider *GeminiProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) VideoList(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by the Gemini provider.
-func (provider *GeminiProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) VideoRemix(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
@@ -2488,7 +2488,7 @@ func (provider *GeminiProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.K
 // BatchCreate creates a new batch job for Gemini.
 // Uses the asynchronous batchGenerateContent endpoint as per official documentation.
 // Supports both inline requests and file-based input (via InputFileID).
-func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) BatchCreate(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchCreateRequest); err != nil {
 		return nil, err
 	}
@@ -2503,18 +2503,18 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 	hasInlineRequests := len(request.Requests) > 0
 
 	if len(jsonData) == 0 && !hasFileInput && !hasInlineRequests {
-		return nil, providerUtils.NewRakshaOperationError("either input_file_id or requests must be provided", nil)
+		return nil, providerUtils.NewGatewayOperationError("either input_file_id or requests must be provided", nil)
 	}
 
 	if hasFileInput && hasInlineRequests {
-		return nil, providerUtils.NewRakshaOperationError("cannot specify both input_file_id and requests", nil)
+		return nil, providerUtils.NewGatewayOperationError("cannot specify both input_file_id and requests", nil)
 	}
 
 	if len(jsonData) == 0 {
 		// Build the batch request with proper nested structure
 		batchReq := &GeminiBatchCreateRequest{
 			Batch: GeminiBatchConfig{
-				DisplayName: fmt.Sprintf("raksha-batch-%d", time.Now().UnixNano()),
+				DisplayName: fmt.Sprintf("gateway-batch-%d", time.Now().UnixNano()),
 			},
 		}
 
@@ -2529,21 +2529,21 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 				FileName: fileID,
 			}
 		} else {
-			// Inline requests: convert Raksha requests to Gemini format
+			// Inline requests: convert Gateway requests to Gemini format
 			geminiRequests := make([]GeminiBatchRequestItem, len(request.Requests))
-			for i, rakshaItem := range request.Requests {
-				geminiReq, err := ToGeminiBatchGenerateContentRequest(rakshaItem.Body)
+			for i, gatewayItem := range request.Requests {
+				geminiReq, err := ToGeminiBatchGenerateContentRequest(gatewayItem.Body)
 				if err != nil {
-					return nil, providerUtils.NewRakshaOperationError("failed to convert batch request to gemini format", err)
+					return nil, providerUtils.NewGatewayOperationError("failed to convert batch request to gemini format", err)
 				}
 
 				geminiRequests[i] = GeminiBatchRequestItem{
 					Request: geminiReq,
 				}
 				// Set metadata with custom_id
-				if rakshaItem.CustomID != "" {
+				if gatewayItem.CustomID != "" {
 					geminiRequests[i].Metadata = &GeminiBatchMetadata{
-						Key: rakshaItem.CustomID,
+						Key: gatewayItem.CustomID,
 					}
 				}
 			}
@@ -2558,7 +2558,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 		var err error
 		jsonData, err = providerUtils.MarshalSorted(batchReq)
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderRequestMarshal, err)
+			return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderRequestMarshal, err)
 		}
 	}
 
@@ -2593,10 +2593,10 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 	req.SetBody(jsonData)
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Handle error response
@@ -2606,22 +2606,22 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Parse the batch job response
 	var geminiResp GeminiBatchJobResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
 		provider.logger.Error("gemini batch create unmarshal error: " + err.Error())
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err), jsonData, body, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	// Check for metadata
 	if geminiResp.Metadata == nil {
-		return nil, providerUtils.NewRakshaOperationError("gemini batch response missing metadata", nil)
+		return nil, providerUtils.NewGatewayOperationError("gemini batch response missing metadata", nil)
 	}
 	// Check for batch stats
 	if geminiResp.Metadata.BatchStats == nil {
-		return nil, providerUtils.NewRakshaOperationError("gemini batch response missing batch stats", nil)
+		return nil, providerUtils.NewGatewayOperationError("gemini batch response missing batch stats", nil)
 	}
 	// Calculate request counts based on response
 	totalRequests := geminiResp.Metadata.BatchStats.RequestCount
@@ -2643,7 +2643,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 	}
 
 	// Determine status
-	status := ToRakshaBatchStatus(geminiResp.Metadata.State)
+	status := ToGatewayBatchStatus(geminiResp.Metadata.State)
 
 	// If state is empty but we have results, it's completed
 	if geminiResp.Metadata.State == "" && len(inlinedResponses) > 0 {
@@ -2652,7 +2652,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 	}
 
 	// Build response
-	result := &schemas.RakshaBatchCreateResponse{
+	result := &schemas.GatewayBatchCreateResponse{
 		ID:            geminiResp.Metadata.Name,
 		Object:        "batch",
 		Endpoint:      string(request.Endpoint),
@@ -2664,7 +2664,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 			Completed: completedCount,
 			Failed:    failedCount,
 		},
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -2683,7 +2683,7 @@ func (provider *GeminiProvider) BatchCreate(ctx *schemas.RakshaContext, key sche
 }
 
 // batchListByKey lists batch jobs for Gemini for a single key.
-func (provider *GeminiProvider) batchListByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, time.Duration, *schemas.RakshaError) {
+func (provider *GeminiProvider) batchListByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, time.Duration, *schemas.GatewayError) {
 	// Create HTTP request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2715,10 +2715,10 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.RakshaContext, key s
 	req.Header.SetContentType("application/json")
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, latency, rakshaErr
+	if gatewayErr != nil {
+		return nil, latency, gatewayErr
 	}
 
 	// Handle error response - if listing is not supported, return empty list
@@ -2726,11 +2726,11 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.RakshaContext, key s
 		// If 404 or method not allowed, batch listing may not be available
 		if resp.StatusCode() == fasthttp.StatusNotFound || resp.StatusCode() == fasthttp.StatusMethodNotAllowed {
 			provider.logger.Debug("gemini batch list not available, returning empty list")
-			return &schemas.RakshaBatchListResponse{
+			return &schemas.GatewayBatchListResponse{
 				Object:  "list",
-				Data:    []schemas.RakshaBatchRetrieveResponse{},
+				Data:    []schemas.GatewayBatchRetrieveResponse{},
 				HasMore: false,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					Latency: latency.Milliseconds(),
 				},
 			}, latency, nil
@@ -2740,25 +2740,25 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.RakshaContext, key s
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, latency, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiBatchListResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	// Convert to Raksha format
-	data := make([]schemas.RakshaBatchRetrieveResponse, 0, len(geminiResp.Operations))
+	// Convert to Gateway format
+	data := make([]schemas.GatewayBatchRetrieveResponse, 0, len(geminiResp.Operations))
 	for _, batch := range geminiResp.Operations {
-		data = append(data, schemas.RakshaBatchRetrieveResponse{
+		data = append(data, schemas.GatewayBatchRetrieveResponse{
 			// Full name (batches/<id>), matching create/retrieve so the id is stable.
 			ID:            batch.Name,
 			Object:        "batch",
-			Status:        ToRakshaBatchStatus(batch.Metadata.State),
+			Status:        ToGatewayBatchStatus(batch.Metadata.State),
 			CreatedAt:     parseGeminiTimestamp(batch.Metadata.CreateTime),
 			OperationName: &batch.Name,
-			ExtraFields:   schemas.RakshaResponseExtraFields{},
+			ExtraFields:   schemas.GatewayResponseExtraFields{},
 		})
 	}
 
@@ -2768,12 +2768,12 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.RakshaContext, key s
 		nextCursor = &geminiResp.NextPageToken
 	}
 
-	return &schemas.RakshaBatchListResponse{
+	return &schemas.GatewayBatchListResponse{
 		Object:     "list",
 		Data:       data,
 		HasMore:    hasMore,
 		NextCursor: nextCursor,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, latency, nil
@@ -2783,28 +2783,28 @@ func (provider *GeminiProvider) batchListByKey(ctx *schemas.RakshaContext, key s
 // Note: The consumer API may have limited list functionality.
 // BatchList lists batch jobs using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *GeminiProvider) BatchList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) BatchList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchListRequest); err != nil {
 		return nil, err
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch list", nil)
+		return nil, providerUtils.NewGatewayOperationError("no keys provided for batch list", nil)
 	}
 
 	// Initialize serial pagination helper (Gemini uses PageToken for pagination)
 	helper, err := providerUtils.NewSerialListHelper(keys, request.PageToken, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaBatchListResponse{
+		return &schemas.GatewayBatchListResponse{
 			Object:  "list",
-			Data:    []schemas.RakshaBatchRetrieveResponse{},
+			Data:    []schemas.GatewayBatchRetrieveResponse{},
 			HasMore: false,
 		}, nil
 	}
@@ -2818,9 +2818,9 @@ func (provider *GeminiProvider) BatchList(ctx *schemas.RakshaContext, keys []sch
 	}
 
 	// Call the single-key helper
-	resp, latency, rakshaErr := provider.batchListByKey(ctx, key, &modifiedRequest)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	resp, latency, gatewayErr := provider.batchListByKey(ctx, key, &modifiedRequest)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Determine native cursor for next page
@@ -2832,11 +2832,11 @@ func (provider *GeminiProvider) BatchList(ctx *schemas.RakshaContext, keys []sch
 	// Build cursor for next request
 	nextCursor, hasMore := helper.BuildNextCursor(resp.HasMore, nativeNextCursor)
 
-	result := &schemas.RakshaBatchListResponse{
+	result := &schemas.GatewayBatchListResponse{
 		Object:  "list",
 		Data:    resp.Data,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -2848,7 +2848,7 @@ func (provider *GeminiProvider) BatchList(ctx *schemas.RakshaContext, keys []sch
 }
 
 // batchRetrieveByKey retrieves a specific batch job for Gemini for a single key.
-func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	// Create HTTP request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2873,10 +2873,10 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.RakshaContext, k
 	req.Header.SetContentType("application/json")
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -2886,12 +2886,12 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.RakshaContext, k
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiBatchJobResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	var completedCount, failedCount int
@@ -2905,10 +2905,10 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.RakshaContext, k
 		geminiResp.Metadata.State == GeminiBatchStateCancelled ||
 		geminiResp.Metadata.State == GeminiBatchStateExpired
 
-	result := &schemas.RakshaBatchRetrieveResponse{
+	result := &schemas.GatewayBatchRetrieveResponse{
 		ID:            geminiResp.Metadata.Name,
 		Object:        "batch",
-		Status:        ToRakshaBatchStatus(geminiResp.Metadata.State),
+		Status:        ToGatewayBatchStatus(geminiResp.Metadata.State),
 		CreatedAt:     parseGeminiTimestamp(geminiResp.Metadata.CreateTime),
 		OperationName: &geminiResp.Metadata.Name,
 		Done:          &isDone,
@@ -2919,7 +2919,7 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.RakshaContext, k
 			Pending:   geminiResp.Metadata.BatchStats.PendingRequestCount,
 			Failed:    failedCount,
 		},
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -2935,21 +2935,21 @@ func (provider *GeminiProvider) batchRetrieveByKey(ctx *schemas.RakshaContext, k
 }
 
 // BatchRetrieve retrieves a specific batch job for Gemini, trying each key until successful.
-func (provider *GeminiProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) BatchRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch retrieve", nil)
+		return nil, providerUtils.NewGatewayOperationError("no keys provided for batch retrieve", nil)
 	}
 
 	// Try each key until we find the batch
-	var lastError *schemas.RakshaError
+	var lastError *schemas.GatewayError
 	for _, key := range keys {
 		resp, err := provider.batchRetrieveByKey(ctx, key, request)
 		if err == nil {
@@ -2963,7 +2963,7 @@ func (provider *GeminiProvider) BatchRetrieve(ctx *schemas.RakshaContext, keys [
 }
 
 // batchCancelByKey cancels a batch job for Gemini for a single key.
-func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	// Create HTTP request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -2989,10 +2989,10 @@ func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.RakshaContext, key
 	req.Header.SetContentType("application/json")
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle response
@@ -3007,12 +3007,12 @@ func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.RakshaContext, key
 	}
 
 	now := time.Now().Unix()
-	return &schemas.RakshaBatchCancelResponse{
+	return &schemas.GatewayBatchCancelResponse{
 		ID:           request.BatchID,
 		Object:       "batch",
 		Status:       schemas.BatchStatusCancelling,
 		CancellingAt: &now,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
@@ -3020,21 +3020,21 @@ func (provider *GeminiProvider) batchCancelByKey(ctx *schemas.RakshaContext, key
 
 // BatchCancel cancels a batch job for Gemini, trying each key until successful.
 // Note: Cancellation support depends on the API version and batch state.
-func (provider *GeminiProvider) BatchCancel(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) BatchCancel(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchCancelRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch cancel", nil)
+		return nil, providerUtils.NewGatewayOperationError("no keys provided for batch cancel", nil)
 	}
 
 	// Try each key until cancellation succeeds
-	var lastError *schemas.RakshaError
+	var lastError *schemas.GatewayError
 	for _, key := range keys {
 		resp, err := provider.batchCancelByKey(ctx, key, request)
 		if err == nil {
@@ -3051,7 +3051,7 @@ func (provider *GeminiProvider) BatchCancel(ctx *schemas.RakshaContext, keys []s
 // batchDeleteByKey deletes a batch job for Gemini for a single key.
 // batches.delete indicates the client is no longer interested in the operation result.
 // It does not cancel the operation. If the server doesn't support this method, it returns UNIMPLEMENTED.
-func (provider *GeminiProvider) batchDeleteByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) batchDeleteByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -3073,21 +3073,21 @@ func (provider *GeminiProvider) batchDeleteByKey(ctx *schemas.RakshaContext, key
 		req.Header.Set("x-goog-api-key", key.Value.GetValue())
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	if resp.StatusCode() != fasthttp.StatusOK && resp.StatusCode() != fasthttp.StatusNoContent {
 		return nil, providerUtils.SetErrorLatency(parseGeminiError(resp), latency)
 	}
 
-	return &schemas.RakshaBatchDeleteResponse{
+	return &schemas.GatewayBatchDeleteResponse{
 		ID:     request.BatchID,
 		Object: "batch",
 		Status: schemas.BatchStatusDeleted,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
@@ -3096,20 +3096,20 @@ func (provider *GeminiProvider) batchDeleteByKey(ctx *schemas.RakshaContext, key
 // BatchDelete deletes a batch job for Gemini, trying each key until successful.
 // This indicates the client is no longer interested in the operation result.
 // It does not cancel the operation. If the server doesn't support this method, it returns UNIMPLEMENTED.
-func (provider *GeminiProvider) BatchDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) BatchDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchDeleteRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch delete", nil)
+		return nil, providerUtils.NewGatewayOperationError("no keys provided for batch delete", nil)
 	}
 
-	var lastError *schemas.RakshaError
+	var lastError *schemas.GatewayError
 	for _, key := range keys {
 		resp, err := provider.batchDeleteByKey(ctx, key, request)
 		if err == nil {
@@ -3142,14 +3142,14 @@ func processGeminiStreamChunk(jsonData []byte) (*GenerateContentResponse, error)
 	return &geminiResponse, nil
 }
 
-func shouldSkipInlineDataForStreamingContext(ctx *schemas.RakshaContext) bool {
+func shouldSkipInlineDataForStreamingContext(ctx *schemas.GatewayContext) bool {
 	if ctx == nil {
 		return false
 	}
-	if isLargePayload, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && isLargePayload {
+	if isLargePayload, ok := ctx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool); ok && isLargePayload {
 		return true
 	}
-	if responseThreshold, ok := ctx.Value(schemas.RakshaContextKeyLargeResponseThreshold).(int64); ok && responseThreshold > 0 {
+	if responseThreshold, ok := ctx.Value(schemas.GatewayContextKeyLargeResponseThreshold).(int64); ok && responseThreshold > 0 {
 		return true
 	}
 	return false
@@ -3253,7 +3253,7 @@ func readNextSSEDataLine(reader *bufio.Reader, skipInlineData bool) ([]byte, err
 }
 
 // batchResultsByKey retrieves batch results for Gemini for a single key.
-func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	// We need to get the full batch response with results, so make the API call directly
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3279,10 +3279,10 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.RakshaContext, ke
 	req.Header.SetContentType("application/json")
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -3292,17 +3292,17 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.RakshaContext, ke
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiBatchJobResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	// Check if batch is still processing
 	if geminiResp.Metadata.State == GeminiBatchStatePending || geminiResp.Metadata.State == GeminiBatchStateRunning {
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("batch %s is still processing (state: %s), results not yet available", request.BatchID, geminiResp.Metadata.State),
 			nil,
 		)
@@ -3316,9 +3316,9 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.RakshaContext, ke
 	if outputFile != "" {
 		// File-based results: download and parse the results file
 		provider.logger.Debug("gemini batch results in file: " + outputFile)
-		fileResults, fileParseErrors, rakshaErr := provider.downloadBatchResultsFile(ctx, key, outputFile)
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		fileResults, fileParseErrors, gatewayErr := provider.downloadBatchResultsFile(ctx, key, outputFile)
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 		results = fileResults
 		parseErrors = fileParseErrors
@@ -3343,10 +3343,10 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.RakshaContext, ke
 		}}
 	}
 
-	batchResultsResp := &schemas.RakshaBatchResultsResponse{
+	batchResultsResp := &schemas.GatewayBatchResultsResponse{
 		BatchID: request.BatchID,
 		Results: results,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -3362,21 +3362,21 @@ func (provider *GeminiProvider) batchResultsByKey(ctx *schemas.RakshaContext, ke
 // Results are extracted from the batch response's inline responses
 // (response.inlinedResponses) for inline batches, or downloaded from the responses
 // file (response.responsesFile) for file-based batches.
-func (provider *GeminiProvider) BatchResults(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) BatchResults(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.BatchResultsRequest); err != nil {
 		return nil, err
 	}
 
 	if request.BatchID == "" {
-		return nil, providerUtils.NewRakshaOperationError("batch_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("batch_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("no keys provided for batch results", nil)
+		return nil, providerUtils.NewGatewayOperationError("no keys provided for batch results", nil)
 	}
 
 	// Try each key until we get results
-	var lastError *schemas.RakshaError
+	var lastError *schemas.GatewayError
 	for _, key := range keys {
 		resp, err := provider.batchResultsByKey(ctx, key, request)
 		if err == nil {
@@ -3391,13 +3391,13 @@ func (provider *GeminiProvider) BatchResults(ctx *schemas.RakshaContext, keys []
 }
 
 // FileUpload uploads a file to Gemini.
-func (provider *GeminiProvider) FileUpload(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) FileUpload(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileUploadRequest); err != nil {
 		return nil, err
 	}
 
 	if len(request.File) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("file content is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file content is required", nil)
 	}
 
 	// Create multipart request
@@ -3407,11 +3407,11 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 	// Add file metadata as JSON
 	metadataField, err := writer.CreateFormField("metadata")
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to create metadata field", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to create metadata field", err)
 	}
 	metadataJSON, err := providerUtils.SetJSONField([]byte(`{}`), "file.displayName", request.Filename)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to marshal metadata", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to marshal metadata", err)
 	}
 	contentType := ""
 	if request.ContentType != nil {
@@ -3420,11 +3420,11 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 	if contentType != "" {
 		metadataJSON, err = providerUtils.SetJSONField(metadataJSON, "file.mimeType", contentType)
 		if err != nil {
-			return nil, providerUtils.NewRakshaOperationError("failed to marshal metadata", err)
+			return nil, providerUtils.NewGatewayOperationError("failed to marshal metadata", err)
 		}
 	}
 	if _, err := metadataField.Write(metadataJSON); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write metadata", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write metadata", err)
 	}
 
 	// Add file content
@@ -3442,14 +3442,14 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 		part, err = writer.CreateFormFile("file", filename)
 	}
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to create form file", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to create form file", err)
 	}
 	if _, err := part.Write(request.File); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to write file content", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to write file content", err)
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to close multipart writer", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to close multipart writer", err)
 	}
 
 	// Create request
@@ -3472,10 +3472,10 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 	req.SetBody(buf.Bytes())
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -3485,7 +3485,7 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Parse response - wrapped in "file" object
@@ -3493,7 +3493,7 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 		File GeminiFileResponse `json:"file"`
 	}
 	if err := sonic.Unmarshal(body, &responseWrapper); err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	geminiResp := responseWrapper.File
@@ -3517,25 +3517,25 @@ func (provider *GeminiProvider) FileUpload(ctx *schemas.RakshaContext, key schem
 		}
 	}
 
-	return &schemas.RakshaFileUploadResponse{
+	return &schemas.GatewayFileUploadResponse{
 		ID:             geminiResp.Name,
 		Object:         "file",
 		Bytes:          sizeBytes,
 		CreatedAt:      createdAt,
 		Filename:       geminiResp.DisplayName,
 		Purpose:        request.Purpose,
-		Status:         ToRakshaFileStatus(geminiResp.State),
+		Status:         ToGatewayFileStatus(geminiResp.State),
 		StorageBackend: schemas.FileStorageAPI,
 		StorageURI:     geminiResp.URI,
 		ExpiresAt:      expiresAt,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
 }
 
 // fileListByKey lists files from Gemini for a single key.
-func (provider *GeminiProvider) fileListByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, time.Duration, *schemas.RakshaError) {
+func (provider *GeminiProvider) fileListByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, time.Duration, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3564,10 +3564,10 @@ func (provider *GeminiProvider) fileListByKey(ctx *schemas.RakshaContext, key sc
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, latency, rakshaErr
+	if gatewayErr != nil {
+		return nil, latency, gatewayErr
 	}
 
 	// Handle error response
@@ -3577,26 +3577,26 @@ func (provider *GeminiProvider) fileListByKey(ctx *schemas.RakshaContext, key sc
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, latency, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiFileListResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, latency, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, latency, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
-	// Convert to Raksha response
-	rakshaResp := &schemas.RakshaFileListResponse{
+	// Convert to Gateway response
+	gatewayResp := &schemas.GatewayFileListResponse{
 		Object:  "list",
 		Data:    make([]schemas.FileObject, len(geminiResp.Files)),
 		HasMore: geminiResp.NextPageToken != "",
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
 
 	if geminiResp.NextPageToken != "" {
-		rakshaResp.After = &geminiResp.NextPageToken
+		gatewayResp.After = &geminiResp.NextPageToken
 	}
 
 	for i, file := range geminiResp.Files {
@@ -3620,7 +3620,7 @@ func (provider *GeminiProvider) fileListByKey(ctx *schemas.RakshaContext, key sc
 			}
 		}
 
-		rakshaResp.Data[i] = schemas.FileObject{
+		gatewayResp.Data[i] = schemas.FileObject{
 			ID:        file.Name,
 			Object:    "file",
 			Bytes:     sizeBytes,
@@ -3628,37 +3628,37 @@ func (provider *GeminiProvider) fileListByKey(ctx *schemas.RakshaContext, key sc
 			UpdatedAt: updatedAt,
 			Filename:  file.DisplayName,
 			Purpose:   schemas.FilePurposeVision,
-			Status:    ToRakshaFileStatus(file.State),
+			Status:    ToGatewayFileStatus(file.State),
 			ExpiresAt: expiresAt,
 		}
 	}
 
-	return rakshaResp, latency, nil
+	return gatewayResp, latency, nil
 }
 
 // FileList lists files from Gemini across all provided keys.
 // FileList lists files using serial pagination across keys.
 // Exhausts all pages from one key before moving to the next.
-func (provider *GeminiProvider) FileList(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) FileList(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileListRequest); err != nil {
 		return nil, err
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("no keys provided for file list", nil)
+		return nil, providerUtils.NewGatewayOperationError("no keys provided for file list", nil)
 	}
 
 	// Initialize serial pagination helper
 	helper, err := providerUtils.NewSerialListHelper(keys, request.After, provider.logger, true)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("invalid pagination cursor", err)
+		return nil, providerUtils.NewGatewayOperationError("invalid pagination cursor", err)
 	}
 
 	// Get current key to query
 	key, nativeCursor, ok := helper.GetCurrentKey()
 	if !ok {
 		// All keys exhausted
-		return &schemas.RakshaFileListResponse{
+		return &schemas.GatewayFileListResponse{
 			Object:  "list",
 			Data:    []schemas.FileObject{},
 			HasMore: false,
@@ -3674,9 +3674,9 @@ func (provider *GeminiProvider) FileList(ctx *schemas.RakshaContext, keys []sche
 	}
 
 	// Call the single-key helper
-	resp, latency, rakshaErr := provider.fileListByKey(ctx, key, &modifiedRequest)
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	resp, latency, gatewayErr := provider.fileListByKey(ctx, key, &modifiedRequest)
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Determine native cursor for next page
@@ -3688,11 +3688,11 @@ func (provider *GeminiProvider) FileList(ctx *schemas.RakshaContext, keys []sche
 	// Build cursor for next request
 	nextCursor, hasMore := helper.BuildNextCursor(resp.HasMore, nativeNextCursor)
 
-	result := &schemas.RakshaFileListResponse{
+	result := &schemas.GatewayFileListResponse{
 		Object:  "list",
 		Data:    resp.Data,
 		HasMore: hasMore,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}
@@ -3704,7 +3704,7 @@ func (provider *GeminiProvider) FileList(ctx *schemas.RakshaContext, keys []sche
 }
 
 // fileRetrieveByKey retrieves file metadata from Gemini for a single key.
-func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3727,10 +3727,10 @@ func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.RakshaContext, ke
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response
@@ -3740,12 +3740,12 @@ func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.RakshaContext, ke
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	var geminiResp GeminiFileResponse
 	if err := sonic.Unmarshal(body, &geminiResp); err != nil {
-		return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseUnmarshal, err)
+		return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseUnmarshal, err)
 	}
 
 	var sizeBytes int64
@@ -3769,7 +3769,7 @@ func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.RakshaContext, ke
 		}
 	}
 
-	return &schemas.RakshaFileRetrieveResponse{
+	return &schemas.GatewayFileRetrieveResponse{
 		ID:             geminiResp.Name,
 		Object:         "file",
 		Bytes:          sizeBytes,
@@ -3777,32 +3777,32 @@ func (provider *GeminiProvider) fileRetrieveByKey(ctx *schemas.RakshaContext, ke
 		UpdatedAt:      updatedAt,
 		Filename:       geminiResp.DisplayName,
 		Purpose:        schemas.FilePurposeVision,
-		Status:         ToRakshaFileStatus(geminiResp.State),
+		Status:         ToGatewayFileStatus(geminiResp.State),
 		StorageBackend: schemas.FileStorageAPI,
 		StorageURI:     geminiResp.URI,
 		ExpiresAt:      expiresAt,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
 }
 
 // FileRetrieve retrieves file metadata from Gemini, trying each key until successful.
-func (provider *GeminiProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) FileRetrieve(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileRetrieveRequest); err != nil {
 		return nil, err
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("no keys provided for file retrieve", nil)
+		return nil, providerUtils.NewGatewayOperationError("no keys provided for file retrieve", nil)
 	}
 
 	// Try each key until we find the file
-	var lastError *schemas.RakshaError
+	var lastError *schemas.GatewayError
 	for _, key := range keys {
 		resp, err := provider.fileRetrieveByKey(ctx, key, request)
 		if err == nil {
@@ -3817,7 +3817,7 @@ func (provider *GeminiProvider) FileRetrieve(ctx *schemas.RakshaContext, keys []
 }
 
 // fileDeleteByKey deletes a file from Gemini for a single key.
-func (provider *GeminiProvider) fileDeleteByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) fileDeleteByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	// Create request
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
@@ -3840,10 +3840,10 @@ func (provider *GeminiProvider) fileDeleteByKey(ctx *schemas.RakshaContext, key 
 	}
 
 	// Make request
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Handle error response - DELETE returns 200 with empty body on success
@@ -3851,32 +3851,32 @@ func (provider *GeminiProvider) fileDeleteByKey(ctx *schemas.RakshaContext, key 
 		return nil, providerUtils.SetErrorLatency(parseGeminiError(resp), latency)
 	}
 
-	return &schemas.RakshaFileDeleteResponse{
+	return &schemas.GatewayFileDeleteResponse{
 		ID:      request.FileID,
 		Object:  "file",
 		Deleted: true,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency: latency.Milliseconds(),
 		},
 	}, nil
 }
 
 // FileDelete deletes a file from Gemini, trying each key until successful.
-func (provider *GeminiProvider) FileDelete(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) FileDelete(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileDeleteRequest); err != nil {
 		return nil, err
 	}
 
 	if request.FileID == "" {
-		return nil, providerUtils.NewRakshaOperationError("file_id is required", nil)
+		return nil, providerUtils.NewGatewayOperationError("file_id is required", nil)
 	}
 
 	if len(keys) == 0 {
-		return nil, providerUtils.NewRakshaOperationError("no keys provided for file delete", nil)
+		return nil, providerUtils.NewGatewayOperationError("no keys provided for file delete", nil)
 	}
 
 	// Try each key until deletion succeeds
-	var lastError *schemas.RakshaError
+	var lastError *schemas.GatewayError
 	for _, key := range keys {
 		resp, err := provider.fileDeleteByKey(ctx, key, request)
 		if err == nil {
@@ -3893,21 +3893,21 @@ func (provider *GeminiProvider) FileDelete(ctx *schemas.RakshaContext, keys []sc
 // FileContent downloads file content from Gemini.
 // Note: Gemini Files API doesn't support direct content download.
 // Files are accessed via their URI in API requests.
-func (provider *GeminiProvider) FileContent(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) FileContent(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.FileContentRequest); err != nil {
 		return nil, err
 	}
 
 	// Gemini doesn't support direct file content download
 	// Files are referenced by their URI in requests
-	return nil, providerUtils.NewRakshaOperationError(
+	return nil, providerUtils.NewGatewayOperationError(
 		"Gemini Files API doesn't support direct content download. Use the file URI in your requests instead.",
 		nil,
 	)
 }
 
 // CountTokens performs a token counting request to Gemini's countTokens endpoint.
-func (provider *GeminiProvider) CountTokens(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) CountTokens(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.CountTokensRequest); err != nil {
 		return nil, err
 	}
@@ -3917,25 +3917,25 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.RakshaContext, key sche
 	// This avoids early upstream completion before body upload (which can trigger
 	// proxy broken-pipe 502s when a fronting LB is still forwarding a large body).
 	isLargePayload := false
-	if v, ok := ctx.Value(schemas.RakshaContextKeyLargePayloadMode).(bool); ok && v {
+	if v, ok := ctx.Value(schemas.GatewayContextKeyLargePayloadMode).(bool); ok && v {
 		isLargePayload = true
 	}
 
 	var (
 		jsonData   []byte
-		rakshaErr *schemas.RakshaError
+		gatewayErr *schemas.GatewayError
 	)
 	if !isLargePayload {
-		// Build JSON body from Raksha request for normal path.
-		jsonData, rakshaErr = providerUtils.CheckContextAndGetRequestBody(
+		// Build JSON body from Gateway request for normal path.
+		jsonData, gatewayErr = providerUtils.CheckContextAndGetRequestBody(
 			ctx,
 			request,
 			func() (providerUtils.RequestBodyWithExtraParams, error) {
 				return ToGeminiResponsesRequest(ctx, request)
 			},
 		)
-		if rakshaErr != nil {
-			return nil, rakshaErr
+		if gatewayErr != nil {
+			return nil, gatewayErr
 		}
 
 		jsonData = normalizeRawGenerateContentBody(ctx, jsonData)
@@ -3952,7 +3952,7 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.RakshaContext, key sche
 	defer fasthttp.ReleaseResponse(resp)
 
 	if strings.TrimSpace(request.Model) == "" {
-		return nil, providerUtils.NewRakshaOperationError("model is required for Gemini count tokens request", fmt.Errorf("missing model"))
+		return nil, providerUtils.NewGatewayOperationError("model is required for Gemini count tokens request", fmt.Errorf("missing model"))
 	}
 
 	// Determine native model name (e.g., parse any provider prefix)
@@ -3971,10 +3971,10 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.RakshaContext, key sche
 		req.SetBody(jsonData)
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 	// Keep passthrough request mode for countTokens, but fully drain the remaining
 	// client upload before returning. This avoids proxy-layer broken-pipe 502s when
@@ -3990,24 +3990,24 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.RakshaContext, key sche
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err), jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	responseBody := append([]byte(nil), body...)
 
 	geminiResponse := &GeminiCountTokensResponse{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(
 		responseBody,
 		geminiResponse,
 		jsonData,
 		providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest),
 		providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse),
 	)
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	response := geminiResponse.ToRakshaCountTokensResponse(request.Model)
+	response := geminiResponse.ToGatewayCountTokensResponse(request.Model)
 
 	// Set ExtraFields
 	response.ExtraFields.Latency = latency.Milliseconds()
@@ -4024,60 +4024,60 @@ func (provider *GeminiProvider) CountTokens(ctx *schemas.RakshaContext, key sche
 }
 
 // Compaction is not supported by the Gemini provider.
-func (provider *GeminiProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ContainerCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ContainerList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ContainerRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ContainerDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ContainerFileCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ContainerFileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ContainerFileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ContainerFileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Gemini provider.
-func (provider *GeminiProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *GeminiProvider) ContainerFileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 func (provider *GeminiProvider) Passthrough(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	key schemas.Key,
-	req *schemas.RakshaPassthroughRequest,
-) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.PassthroughRequest); err != nil {
 		return nil, err
 	}
@@ -4108,30 +4108,30 @@ func (provider *GeminiProvider) Passthrough(
 
 	fasthttpReq.SetBody(req.Body)
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, fasthttpReq, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, providerUtils.NewRakshaOperationError("failed to decode response body", err)
+		return nil, providerUtils.NewGatewayOperationError("failed to decode response body", err)
 	}
 
-	var passthroughUsage *schemas.RakshaPassthroughUsage
+	var passthroughUsage *schemas.GatewayPassthroughUsage
 	if resp.StatusCode() >= 200 && resp.StatusCode() < 300 {
 		passthroughUsage = ExtractGeminiPassthroughUsage(req.Path, req.Body, body)
 	}
 
-	rakshaResponse := &schemas.RakshaPassthroughResponse{
+	gatewayResponse := &schemas.GatewayPassthroughResponse{
 		StatusCode: resp.StatusCode(),
 		Headers:    headers,
 		Body:       body,
-		ExtraFields: schemas.RakshaResponseExtraFields{
+		ExtraFields: schemas.GatewayResponseExtraFields{
 			Latency:                 latency.Milliseconds(),
 			ProviderResponseHeaders: headers,
 			PassthroughPath:         req.Path,
@@ -4139,16 +4139,16 @@ func (provider *GeminiProvider) Passthrough(
 		PassthroughUsage: passthroughUsage,
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 func (provider *GeminiProvider) PassthroughStream(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	postHookRunner schemas.PostHookRunner,
 	postHookSpanFinalizer func(context.Context),
 	key schemas.Key,
-	req *schemas.RakshaPassthroughRequest,
-) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+	req *schemas.GatewayPassthroughRequest,
+) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.Gemini, provider.customProviderConfig, schemas.PassthroughStreamRequest); err != nil {
 		return nil, err
 	}
@@ -4189,8 +4189,8 @@ func (provider *GeminiProvider) PassthroughStream(
 	if err != nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -4199,18 +4199,18 @@ func (provider *GeminiProvider) PassthroughStream(
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	headers := providerUtils.ExtractPassthroughProviderResponseHeaders(resp)
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, headers)
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, headers)
 
 	bodyStream := resp.BodyStream()
 	if bodyStream == nil {
 		providerUtils.ReleaseStreamingResponse(ctx, resp)
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			"provider returned an empty stream body",
 			fmt.Errorf("provider returned an empty stream body"),
 		)
@@ -4229,7 +4229,7 @@ func (provider *GeminiProvider) PassthroughStream(
 			UseTerminalDetector: true,
 			Logger:              provider.logger,
 			HasUsage:            HasGeminiPassthroughUsage,
-			Observe: func(event []byte) *schemas.RakshaPassthroughUsage {
+			Observe: func(event []byte) *schemas.GatewayPassthroughUsage {
 				return ExtractGeminiPassthroughUsage(req.Path, req.Body, event)
 			},
 		},

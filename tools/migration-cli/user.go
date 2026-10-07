@@ -4,40 +4,40 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/raksha/raksha/scripts/raksha-migration-cli/litellm"
+	"github.com/gateway/gateway/scripts/gateway-migration-cli/litellm"
 )
 
-// UserPlan is the planned Raksha user (POST /api/users) plus the LiteLLM team
-// ids it should be linked to. Team-id -> Raksha-team resolution and the
+// UserPlan is the planned Gateway user (POST /api/users) plus the LiteLLM team
+// ids it should be linked to. Team-id -> Gateway-team resolution and the
 // membership writes are done by the caller (orchestration), keeping the
 // transform pure.
 type UserPlan struct {
 	UserID        string   // LiteLLM user_id, for logging
-	Name          string   // Raksha user name (required, non-empty)
-	Email         string   // Raksha user email (required, valid)
+	Name          string   // Gateway user name (required, non-empty)
+	Email         string   // Gateway user email (required, valid)
 	SourceTeamIDs []string // LiteLLM team_ids to link as memberships
 }
 
 // UserMigrationReport collects everything the transform could not faithfully
 // carry, so the operator can act on it.
 type UserMigrationReport struct {
-	SkippedNoEmail    []string // LiteLLM has no email; Raksha requires one
-	DroppedRoles      []string // LiteLLM user_role has no Raksha numeric role_id mapping
+	SkippedNoEmail    []string // LiteLLM has no email; Gateway requires one
+	DroppedRoles      []string // LiteLLM user_role has no Gateway numeric role_id mapping
 	DroppedBudgets    []string // user-level spend cap (no field on POST /api/users)
 	DroppedRateLimits []string // user-level tpm/rpm (no field on POST /api/users)
 }
 
-// LiteLLMUsersToRakshaUsers transforms LiteLLM internal users into Raksha user
+// LiteLLMUsersToGatewayUsers transforms LiteLLM internal users into Gateway user
 // plans. The mapping is pure (no I/O):
 //   - user_email -> email (required; user skipped + reported when missing)
 //   - user_alias -> name  (falls back to email when blank)
 //   - teams      -> SourceTeamIDs (linked downstream)
 //
 // LiteLLM user_role, max_budget/budget_duration and tpm/rpm have no field on
-// Raksha's create-user API (role is a numeric role_id with no LiteLLM mapping;
+// Gateway's create-user API (role is a numeric role_id with no LiteLLM mapping;
 // user governance is driven by access profiles), so they are reported, not
 // carried.
-func LiteLLMUsersToRakshaUsers(users []litellm.LiteLLMUser) ([]UserPlan, UserMigrationReport) {
+func LiteLLMUsersToGatewayUsers(users []litellm.LiteLLMUser) ([]UserPlan, UserMigrationReport) {
 	var plans []UserPlan
 	var report UserMigrationReport
 

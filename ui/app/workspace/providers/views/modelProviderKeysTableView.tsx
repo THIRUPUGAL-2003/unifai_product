@@ -8,6 +8,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdownMenu";
@@ -116,7 +117,7 @@ export default function ModelProviderKeysTableView({ provider, className, header
 	const [updateProviderKey, { isLoading: isUpdatingProviderKey }] = useUpdateProviderKeyMutation();
 	const [deleteProviderKey, { isLoading: isDeletingProviderKey }] = useDeleteProviderKeyMutation();
 	const [rediscoverProviderKey, { isLoading: isRediscoveringKey }] = useRediscoverProviderKeyMutation();
-	const { data: keys = [] } = useGetProviderKeysQuery(provider.name);
+	const { data: keys = [], isError: keysFailed, error: keysError, refetch: refetchKeys } = useGetProviderKeysQuery(provider.name);
 	const isMutatingProviderKey = isUpdatingProviderKey || isDeletingProviderKey || isRediscoveringKey;
 	const [togglingKeyIds, setTogglingKeyIds] = useState<Set<string>>(new Set());
 	const [showAddNewKeyDialog, setShowAddNewKeyDialog] = useState<{ show: boolean; keyId: string | null } | undefined>(undefined);
@@ -212,6 +213,17 @@ export default function ModelProviderKeysTableView({ provider, className, header
 					</div>
 				</CardTitle>
 			</CardHeader>
+			{keysFailed ? (
+				<div className="mb-3 flex flex-col gap-2">
+					<QueryErrorBanner
+						message={getErrorMessage(keysError) || `Failed to load ${entityLabelPlural}.`}
+						testId="provider-keys-query-error"
+					/>
+					<Button size="sm" variant="outline" className="w-fit" onClick={() => void refetchKeys()}>
+						Retry
+					</Button>
+				</div>
+			) : null}
 			{isKeylessProvider ? (
 				<div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-sm border py-10 text-center text-sm">
 					<p>This is a keyless provider - no API keys are required.</p>

@@ -9,8 +9,8 @@ import { toast } from "sonner";
 
 export default function CompatibilityView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: rakshaConfig } = useGetCoreConfigQuery({ fromDB: true });
-	const config = rakshaConfig?.client_config?.compat;
+	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const config = gatewayConfig?.client_config?.compat;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [localCompatConfig, setLocalCompatConfig] = useState<CompatConfig>(DefaultCoreConfig.compat);
 
@@ -37,16 +37,16 @@ export default function CompatibilityView() {
 	}, []);
 
 	const handleSave = useCallback(async () => {
-		if (!rakshaConfig) {
+		if (!gatewayConfig) {
 			toast.error("Configuration not loaded");
 			return;
 		}
 
 		try {
 			await updateCoreConfig({
-				...rakshaConfig,
+				...gatewayConfig,
 				client_config: {
-					...(rakshaConfig.client_config ?? DefaultCoreConfig),
+					...(gatewayConfig.client_config ?? DefaultCoreConfig),
 					compat: localCompatConfig,
 				},
 			}).unwrap();
@@ -54,7 +54,7 @@ export default function CompatibilityView() {
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
-	}, [rakshaConfig, localCompatConfig, updateCoreConfig]);
+	}, [gatewayConfig, localCompatConfig, updateCoreConfig]);
 
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-6">

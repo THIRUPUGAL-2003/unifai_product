@@ -1,7 +1,7 @@
 package schemas
 
-// RakshaCountTokensResponse captures token counts for a provided input.
-type RakshaCountTokensResponse struct {
+// GatewayCountTokensResponse captures token counts for a provided input.
+type GatewayCountTokensResponse struct {
 	Object             string                        `json:"object,omitempty"`
 	Model              string                        `json:"model"`
 	InputTokens        int                           `json:"input_tokens"`
@@ -10,5 +10,5 @@ type RakshaCountTokensResponse struct {
 	TokenStrings       []string                      `json:"token_strings,omitempty"`
 	OutputTokens       *int                          `json:"output_tokens,omitempty"`
 	TotalTokens        *int                          `json:"total_tokens"`
-	ExtraFields        RakshaResponseExtraFields    `json:"extra_fields"`
+	ExtraFields        GatewayResponseExtraFields    `json:"extra_fields"`
 }

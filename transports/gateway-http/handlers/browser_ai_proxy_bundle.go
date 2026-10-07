@@ -19,13 +19,13 @@ import (
 )
 
 // Guard code bundle: the Guard's Python code (agent/*.py + the mitmproxy addon
-// browser_ai_proxy.py + raksha_proxy_parts) is published by Rebuild and installed
+// browser_ai_proxy.py + gateway_proxy_parts) is published by Rebuild and installed
 // Guards switch to it without a new installer (guard_bootstrap loads it). Only new
 // Python packages, runtime upgrades or installer changes need a new EXE/.app build.
 
 const (
 	guardProxyEntry    = "browser_ai_proxy.py"
-	guardProxyPartsDir = "raksha_proxy_parts"
+	guardProxyPartsDir = "gateway_proxy_parts"
 	guardAgentDir      = "agent"
 	// Frozen into the EXE as the entry point; never hot-updated.
 	guardBootstrapFile = "guard_bootstrap.py"
@@ -64,7 +64,7 @@ func guardAgentSourceDir() (string, bool) {
 		filepath.Join("apps", "browser-guard", "agent"),
 		"/app/guard-agent",
 	} {
-		if info, err := os.Stat(filepath.Join(dir, "raksha_agent.py")); err == nil && !info.IsDir() {
+		if info, err := os.Stat(filepath.Join(dir, "gateway_agent.py")); err == nil && !info.IsDir() {
 			return dir, true
 		}
 	}
@@ -255,7 +255,7 @@ func (h *BrowserAIHandler) downloadProxyBundle(ctx *fasthttp.RequestCtx) {
 	}
 	ctx.SetStatusCode(fasthttp.StatusOK)
 	ctx.SetContentType("application/zip")
-	ctx.Response.Header.Set("X-Raksha-Bundle-SHA256", meta.SHA256)
+	ctx.Response.Header.Set("X-Gateway-Bundle-SHA256", meta.SHA256)
 	ctx.Response.Header.Set("Cache-Control", "no-store")
 	ctx.SetBody(data)
 }

@@ -3,21 +3,21 @@ package replicate
 import (
 	"strings"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	"github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	"github.com/gateway/gateway/core/schemas"
 )
 
-// ToRakshaListModelsResponse converts Replicate deployments to a Raksha list models response.
+// ToGatewayListModelsResponse converts Replicate deployments to a Gateway list models response.
 // Replicate model IDs are composite: "{owner}/{name}" (e.g. "stability-ai/stable-diffusion").
-func ToRakshaListModelsResponse(
+func ToGatewayListModelsResponse(
 	deploymentsResponse *ReplicateDeploymentListResponse,
 	providerKey schemas.ModelProvider,
 	allowedModels schemas.WhiteList,
 	blacklistedModels schemas.BlackList,
 	aliases schemas.KeyAliases,
 	unfiltered bool,
-) *schemas.RakshaListModelsResponse {
-	rakshaResponse := &schemas.RakshaListModelsResponse{
+) *schemas.GatewayListModelsResponse {
+	gatewayResponse := &schemas.GatewayListModelsResponse{
 		Data: make([]schemas.Model, 0),
 	}
 
@@ -30,7 +30,7 @@ func ToRakshaListModelsResponse(
 		MatchFns:          providerUtils.DefaultMatchFns(),
 	}
 	if pipeline.ShouldEarlyExit() {
-		return rakshaResponse
+		return gatewayResponse
 	}
 
 	included := make(map[string]bool)
@@ -49,27 +49,27 @@ func ToRakshaListModelsResponse(
 			}
 
 			for _, result := range pipeline.FilterModel(deploymentID) {
-				rakshaModel := schemas.Model{
+				gatewayModel := schemas.Model{
 					ID:      string(providerKey) + "/" + result.ResolvedID,
 					Name:    schemas.Ptr(deployment.Name),
 					OwnedBy: schemas.Ptr(deployment.Owner),
 					Created: created,
 				}
 				if result.AliasValue != "" {
-					rakshaModel.Alias = schemas.Ptr(result.AliasValue)
+					gatewayModel.Alias = schemas.Ptr(result.AliasValue)
 				}
-				rakshaResponse.Data = append(rakshaResponse.Data, rakshaModel)
+				gatewayResponse.Data = append(gatewayResponse.Data, gatewayModel)
 				included[strings.ToLower(result.ResolvedID)] = true
 			}
 		}
 
 		if deploymentsResponse.Next != nil {
-			rakshaResponse.NextPageToken = *deploymentsResponse.Next
+			gatewayResponse.NextPageToken = *deploymentsResponse.Next
 		}
 	}
 
-	rakshaResponse.Data = append(rakshaResponse.Data,
+	gatewayResponse.Data = append(gatewayResponse.Data,
 		pipeline.BackfillModels(included)...)
 
-	return rakshaResponse
+	return gatewayResponse
 }

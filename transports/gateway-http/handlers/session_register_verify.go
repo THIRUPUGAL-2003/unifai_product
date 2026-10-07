@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raksha/raksha/framework/configstore/tables"
-	"github.com/raksha/raksha/framework/encrypt"
+	"github.com/gateway/gateway/framework/configstore/tables"
+	"github.com/gateway/gateway/framework/encrypt"
 	"github.com/valyala/fasthttp"
 )
 
@@ -66,10 +66,10 @@ func (h *SessionHandler) sendRegistrationCode(ctx *fasthttp.RequestCtx, user *ta
 		return err
 	}
 	body := fmt.Sprintf(
-		"Hello %s,\n\nYour Raksha sign-up verification code is: %s\n\nIt expires in %d minutes. After you verify, an administrator must approve your account.\nIf you did not sign up, ignore this email.\n",
+		"Hello %s,\n\nYour Gateway sign-up verification code is: %s\n\nIt expires in %d minutes. After you verify, an administrator must approve your account.\nIf you did not sign up, ignore this email.\n",
 		user.Username, otp, int(passwordResetOTPTTL.Minutes()),
 	)
-	return sendAuthEmail(h.configStore, ctx, user.Email, "Raksha sign-up verification code", body)
+	return sendAuthEmail(h.configStore, ctx, user.Email, "Gateway sign-up verification code", body)
 }
 
 // verifyRegistration handles POST /api/session/register/verify — email code → admin approval queue.

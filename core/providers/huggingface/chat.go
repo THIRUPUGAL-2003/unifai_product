@@ -6,8 +6,8 @@ import (
 
 	"github.com/bytedance/sonic"
 
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 )
 
 // sanitizeMessagesForHuggingFace removes unsupported ChatAssistantMessage fields
@@ -33,21 +33,21 @@ func sanitizeMessagesForHuggingFace(messages []schemas.ChatMessage) []schemas.Ch
 	return sanitized
 }
 
-func ToHuggingFaceChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) (*HuggingFaceChatRequest, error) {
-	if rakshaReq == nil || rakshaReq.Input == nil {
+func ToHuggingFaceChatCompletionRequest(gatewayReq *schemas.GatewayChatRequest) (*HuggingFaceChatRequest, error) {
+	if gatewayReq == nil || gatewayReq.Input == nil {
 		return nil, nil
 	}
 
 	// Create the HuggingFace request
 	// Sanitize messages to remove unsupported fields like reasoning_details
 	hfReq := &HuggingFaceChatRequest{
-		Messages: sanitizeMessagesForHuggingFace(rakshaReq.Input),
-		Model:    rakshaReq.Model,
+		Messages: sanitizeMessagesForHuggingFace(gatewayReq.Input),
+		Model:    gatewayReq.Model,
 	}
 
 	// Map parameters if present
-	if rakshaReq.Params != nil {
-		params := rakshaReq.Params
+	if gatewayReq.Params != nil {
+		params := gatewayReq.Params
 
 		if params.FrequencyPenalty != nil {
 			hfReq.FrequencyPenalty = params.FrequencyPenalty
@@ -137,7 +137,7 @@ func ToHuggingFaceChatCompletionRequest(rakshaReq *schemas.RakshaChatRequest) (*
 				hfReq.ToolChoice = hfToolChoice
 			}
 		}
-		hfReq.ExtraParams = rakshaReq.Params.ExtraParams
+		hfReq.ExtraParams = gatewayReq.Params.ExtraParams
 	}
 
 	return hfReq, nil

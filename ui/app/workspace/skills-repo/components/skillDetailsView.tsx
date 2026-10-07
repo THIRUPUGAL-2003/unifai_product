@@ -46,7 +46,7 @@ export function SkillDetailView({
 	const hasEditAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Delete);
 
-	const { data: skillData, isLoading } = useGetSkillQuery(skillId);
+	const { data: skillData, isLoading, isError, error: skillError, refetch } = useGetSkillQuery(skillId);
 	const [updateSkill, { isLoading: isUpdating }] = useUpdateSkillMutation();
 	const [deleteSkill, { isLoading: isDeleting }] = useDeleteSkillMutation();
 
@@ -149,6 +149,23 @@ export function SkillDetailView({
 
 	if (isLoading) {
 		return <FullPageLoader />;
+	}
+
+	if (isError) {
+		return (
+			<div className="flex w-full flex-1 flex-col items-center justify-center gap-3 p-4">
+				<p className="text-destructive text-sm">{getErrorMessage(skillError) || "Failed to load skill."}</p>
+				<div className="flex gap-2">
+					<Button variant="outline" size="sm" onClick={() => void refetch()}>
+						Retry
+					</Button>
+					<Button variant="outline" size="sm" onClick={onBack}>
+						<ArrowLeft className="h-3.5 w-3.5" />
+						Back to list
+					</Button>
+				</div>
+			</div>
+		);
 	}
 
 	if (!skill) {

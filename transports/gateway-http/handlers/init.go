@@ -3,7 +3,7 @@ package handlers
 import (
 	"strings"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 var version string

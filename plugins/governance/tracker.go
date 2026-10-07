@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
-	"github.com/raksha/raksha/framework/configstore"
-	configstoreTables "github.com/raksha/raksha/framework/configstore/tables"
+	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/configstore"
+	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 )
 
 // UsageUpdate contains data for VK-level usage tracking
@@ -262,7 +262,7 @@ func captureRequestAttribution(ctx context.Context, update *UsageUpdate) {
 	if ids, ok := ctx.Value(governanceUserTeamIDsContextKey).([]string); ok && len(ids) > 0 {
 		update.UserTeamIDs = append([]string(nil), ids...)
 	}
-	if scoped, ok := ctx.Value(schemas.RakshaContextKeyGovernanceScopedCustomerID).(string); ok {
+	if scoped, ok := ctx.Value(schemas.GatewayContextKeyGovernanceScopedCustomerID).(string); ok {
 		update.ScopedCustomerID = scoped
 	}
 }
@@ -278,10 +278,10 @@ func withRequestAttribution(ctx context.Context, update *UsageUpdate) context.Co
 		ctx = context.WithValue(ctx, governanceUserTeamIDsContextKey, update.UserTeamIDs)
 	}
 	if update.ScopedCustomerID != "" {
-		ctx = context.WithValue(ctx, schemas.RakshaContextKeyGovernanceScopedCustomerID, update.ScopedCustomerID)
+		ctx = context.WithValue(ctx, schemas.GatewayContextKeyGovernanceScopedCustomerID, update.ScopedCustomerID)
 	}
 	if update.UserID != "" {
-		ctx = context.WithValue(ctx, schemas.RakshaContextKeyUserID, update.UserID)
+		ctx = context.WithValue(ctx, schemas.GatewayContextKeyUserID, update.UserID)
 	}
 	return ctx
 }

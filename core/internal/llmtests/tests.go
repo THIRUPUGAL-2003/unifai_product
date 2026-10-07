@@ -5,15 +5,15 @@ import (
 	"strings"
 	"testing"
 
-	raksha "github.com/raksha/raksha/core"
-	"github.com/raksha/raksha/core/schemas"
+	gateway "github.com/gateway/gateway/core"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // TestScenarioFunc defines the function signature for test scenario functions
-type TestScenarioFunc func(*testing.T, *raksha.Raksha, context.Context, ComprehensiveTestConfig)
+type TestScenarioFunc func(*testing.T, *gateway.Gateway, context.Context, ComprehensiveTestConfig)
 
 // RunAllComprehensiveTests executes all comprehensive test scenarios for a given configuration
-func RunAllComprehensiveTests(t *testing.T, client *raksha.Raksha, ctx context.Context, testConfig ComprehensiveTestConfig) {
+func RunAllComprehensiveTests(t *testing.T, client *gateway.Gateway, ctx context.Context, testConfig ComprehensiveTestConfig) {
 	if testConfig.SkipReason != "" {
 		t.Skipf("Skipping %s: %s", testConfig.Provider, testConfig.SkipReason)
 		return
@@ -133,9 +133,9 @@ func RunAllComprehensiveTests(t *testing.T, client *raksha.Raksha, ctx context.C
 
 	// Execute all test scenarios WITH raw request/response enabled
 	t.Run("WithRawRequestResponse", func(t *testing.T) {
-		rawCtx := context.WithValue(ctx, schemas.RakshaContextKeyAllowPerRequestRawOverride, true)
-		rawCtx = context.WithValue(rawCtx, schemas.RakshaContextKeySendBackRawRequest, true)
-		rawCtx = context.WithValue(rawCtx, schemas.RakshaContextKeySendBackRawResponse, true)
+		rawCtx := context.WithValue(ctx, schemas.GatewayContextKeyAllowPerRequestRawOverride, true)
+		rawCtx = context.WithValue(rawCtx, schemas.GatewayContextKeySendBackRawRequest, true)
+		rawCtx = context.WithValue(rawCtx, schemas.GatewayContextKeySendBackRawResponse, true)
 		rawConfig := testConfig
 		rawConfig.ExpectRawRequestResponse = true
 		for _, scenarioFunc := range testScenarios {

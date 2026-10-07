@@ -773,8 +773,8 @@ export const coreConfigSchema = z.object({
 	mcp_enable_temp_token_auth: z.boolean().default(false),
 });
 
-// Raksha config schema
-export const rakshaConfigSchema = z.object({
+// Gateway config schema
+export const gatewayConfigSchema = z.object({
 	client_config: coreConfigSchema,
 	is_db_connected: z.boolean(),
 	is_cache_connected: z.boolean(),
@@ -963,7 +963,7 @@ export const otelFormSchema = z.object({
 export const prometheusConfigSchema = z
 	.object({
 		push_gateway_url: secretVarSchema.optional(),
-		job_name: z.string().default("raksha"),
+		job_name: z.string().default("gateway"),
 		instance_id: z.string().optional(),
 		push_interval: z.number().min(1).max(300).default(15),
 		basic_auth_username: secretVarSchema.optional(),

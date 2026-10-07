@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/raksha/raksha/core/providers/openai"
-	providerUtils "github.com/raksha/raksha/core/providers/utils"
-	schemas "github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/providers/openai"
+	providerUtils "github.com/gateway/gateway/core/providers/utils"
+	schemas "github.com/gateway/gateway/core/schemas"
 	"github.com/valyala/fasthttp"
 )
 
@@ -114,7 +114,7 @@ func (provider *HuggingFaceProvider) GetProviderKey() schemas.ModelProvider {
 }
 
 // buildRequestURL composes the final request URL based on context overrides.
-func (provider *HuggingFaceProvider) buildRequestURL(ctx *schemas.RakshaContext, defaultPath string, requestType schemas.RequestType) string {
+func (provider *HuggingFaceProvider) buildRequestURL(ctx *schemas.GatewayContext, defaultPath string, requestType schemas.RequestType) string {
 	path, isCompleteURL := providerUtils.GetRequestPath(ctx, defaultPath, provider.customProviderConfig, requestType)
 	if isCompleteURL {
 		return path
@@ -124,7 +124,7 @@ func (provider *HuggingFaceProvider) buildRequestURL(ctx *schemas.RakshaContext,
 
 // completeRequestWithModelAliasCache performs a request and retries once on 404 by clearing the cache and refetching model info
 func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
-	ctx *schemas.RakshaContext,
+	ctx *schemas.GatewayContext,
 	jsonData []byte,
 	key string,
 	isHFInferenceAudioRequest bool,
@@ -133,7 +133,7 @@ func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
 	originalModelName string,
 	requiredTask string,
 	requestType schemas.RequestType,
-) ([]byte, time.Duration, map[string]string, *schemas.RakshaError) {
+) ([]byte, time.Duration, map[string]string, *schemas.GatewayError) {
 
 	// Build URL with original model name
 	url, urlErr := provider.getInferenceProviderRouteURL(ctx, inferenceProvider, originalModelName, requestType)
@@ -144,7 +144,7 @@ func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
 	// For fal-ai, nebius, and together image generation, skip validation (model format is already correct)
 	skipValidation := (inferenceProvider == falAI || inferenceProvider == nebius || inferenceProvider == together) && requestType == schemas.ImageGenerationRequest
 	var modelName string
-	var err *schemas.RakshaError
+	var err *schemas.GatewayError
 	if skipValidation {
 		// Use original model name for validation skip case (though we won't use it for these providers)
 		modelName = originalModelName
@@ -180,7 +180,7 @@ func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
 				// Keep original model name for validation skip case
 				modelName = originalModelName
 			} else {
-				var retryErr *schemas.RakshaError
+				var retryErr *schemas.GatewayError
 				modelName, retryErr = provider.getValidatedProviderModelID(ctx, inferenceProvider, originalModelName, requiredTask, requestType)
 				if retryErr != nil {
 					return nil, 0, nil, retryErr
@@ -219,7 +219,7 @@ func (provider *HuggingFaceProvider) completeRequestWithModelAliasCache(
 	return responseBody, latency, providerResponseHeaders, nil
 }
 
-func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.RakshaContext, jsonData []byte, url string, key string, isHFInferenceAudioRequest bool, _ bool) ([]byte, time.Duration, map[string]string, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.GatewayContext, jsonData []byte, url string, key string, isHFInferenceAudioRequest bool, _ bool) ([]byte, time.Duration, map[string]string, *schemas.GatewayError) {
 	req := fasthttp.AcquireRequest()
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
@@ -246,10 +246,10 @@ func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.RakshaContext,
 		req.SetBody(jsonData)
 	}
 
-	latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+	latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 	defer wait()
-	if rakshaErr != nil {
-		return nil, latency, nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, latency, nil, gatewayErr
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
@@ -262,7 +262,7 @@ func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.RakshaContext,
 
 	body, err := providerUtils.CheckAndDecodeBody(resp)
 	if err != nil {
-		return nil, latency, providerResponseHeaders, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)
+		return nil, latency, providerResponseHeaders, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)
 	}
 
 	// Read the response body and copy it before releasing the response
@@ -272,7 +272,7 @@ func (provider *HuggingFaceProvider) completeRequest(ctx *schemas.RakshaContext,
 	return bodyCopy, latency, providerResponseHeaders, nil
 }
 
-func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 	providerName := provider.GetProviderKey()
 
 	type providerResult struct {
@@ -280,7 +280,7 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.RakshaContext,
 		response *HuggingFaceListModelsResponse
 		latency  int64
 		rawResp  map[string]interface{}
-		err      *schemas.RakshaError
+		err      *schemas.GatewayError
 	}
 
 	resultsChan := make(chan providerResult, len(INFERENCE_PROVIDERS))
@@ -306,38 +306,38 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.RakshaContext,
 				req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", key.Value.GetValue()))
 			}
 
-			latency, rakshaErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
+			latency, gatewayErr, wait := providerUtils.MakeRequestWithContext(ctx, provider.client, req, resp)
 			defer wait()
-			if rakshaErr != nil {
-				resultsChan <- providerResult{provider: inferProvider, err: rakshaErr}
+			if gatewayErr != nil {
+				resultsChan <- providerResult{provider: inferProvider, err: gatewayErr}
 				return
 			}
 
 			if resp.StatusCode() != fasthttp.StatusOK {
 				var errorResp HuggingFaceHubError
-				rakshaErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
-				if rakshaErr.Error == nil {
-					rakshaErr.Error = &schemas.ErrorField{}
+				gatewayErr := providerUtils.HandleProviderAPIError(resp, &errorResp)
+				if gatewayErr.Error == nil {
+					gatewayErr.Error = &schemas.ErrorField{}
 				}
 				if strings.TrimSpace(errorResp.Message) != "" {
-					rakshaErr.Error.Message = errorResp.Message
+					gatewayErr.Error.Message = errorResp.Message
 				}
-				resultsChan <- providerResult{provider: inferProvider, err: rakshaErr}
+				resultsChan <- providerResult{provider: inferProvider, err: gatewayErr}
 				return
 			}
 
 			body, err := providerUtils.CheckAndDecodeBody(resp)
 			if err != nil {
-				resultsChan <- providerResult{provider: inferProvider, err: providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, err)}
+				resultsChan <- providerResult{provider: inferProvider, err: providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, err)}
 				return
 			}
 
 			var huggingfaceAPIResponse HuggingFaceListModelsResponse
 			var rawResponse interface{}
 			var rawRequest interface{}
-			rawRequest, rawResponse, rakshaErr = providerUtils.HandleProviderResponse(body, &huggingfaceAPIResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-			if rakshaErr != nil {
-				resultsChan <- providerResult{provider: inferProvider, err: rakshaErr}
+			rawRequest, rawResponse, gatewayErr = providerUtils.HandleProviderResponse(body, &huggingfaceAPIResponse, nil, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+			if gatewayErr != nil {
+				resultsChan <- providerResult{provider: inferProvider, err: gatewayErr}
 				return
 			}
 			var rawRespMap map[string]interface{}
@@ -370,12 +370,12 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.RakshaContext,
 	}()
 
 	// Aggregate results
-	aggregatedResponse := &schemas.RakshaListModelsResponse{
+	aggregatedResponse := &schemas.GatewayListModelsResponse{
 		Data: make([]schemas.Model, 0),
 	}
 	var totalLatency int64
 	var successCount int
-	var firstError *schemas.RakshaError
+	var firstError *schemas.GatewayError
 	var rawResponses []map[string]interface{}
 
 	for result := range resultsChan {
@@ -387,7 +387,7 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.RakshaContext,
 		}
 
 		if result.response != nil {
-			providerResponse := result.response.ToRakshaListModelsResponse(providerName, result.provider, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
+			providerResponse := result.response.ToGatewayListModelsResponse(providerName, result.provider, key.Models, key.BlacklistedModels, key.Aliases, request.Unfiltered)
 			if providerResponse != nil {
 				aggregatedResponse.Data = append(aggregatedResponse.Data, providerResponse.Data...)
 				totalLatency += result.latency
@@ -422,13 +422,13 @@ func (provider *HuggingFaceProvider) listModelsByKey(ctx *schemas.RakshaContext,
 }
 
 // ListModels queries the Hugging Face model hub API to list models served by the inference provider.
-func (provider *HuggingFaceProvider) ListModels(ctx *schemas.RakshaContext, keys []schemas.Key, request *schemas.RakshaListModelsRequest) (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ListModels(ctx *schemas.GatewayContext, keys []schemas.Key, request *schemas.GatewayListModelsRequest) (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ListModelsRequest); err != nil {
 		return nil, err
 	}
 	if provider.customProviderConfig != nil && provider.customProviderConfig.IsKeyLess {
-		return providerUtils.HandleKeylessListModelsRequest(provider.GetProviderKey(), func() (*schemas.RakshaListModelsResponse, *schemas.RakshaError) {
+		return providerUtils.HandleKeylessListModelsRequest(provider.GetProviderKey(), func() (*schemas.GatewayListModelsResponse, *schemas.GatewayError) {
 			return provider.listModelsByKey(ctx, schemas.Key{Models: schemas.WhiteList{"*"}}, request)
 		})
 	}
@@ -441,23 +441,23 @@ func (provider *HuggingFaceProvider) ListModels(ctx *schemas.RakshaContext, keys
 
 }
 
-func (provider *HuggingFaceProvider) TextCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTextCompletionRequest) (*schemas.RakshaTextCompletionResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) TextCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTextCompletionRequest) (*schemas.GatewayTextCompletionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) TextCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTextCompletionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) TextCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTextCompletionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TextCompletionStreamRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) ChatCompletion(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaChatRequest) (*schemas.RakshaChatResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ChatCompletion(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayChatRequest) (*schemas.GatewayChatResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ChatCompletionRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -491,56 +491,56 @@ func (provider *HuggingFaceProvider) ChatCompletion(ctx *schemas.RakshaContext, 
 
 	responseBody, latency, providerResponseHeaders, err := provider.completeRequest(ctx, jsonBody, requestURL, key.Value.GetValue(), false, false)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	rakshaResponse := &schemas.RakshaChatResponse{}
+	gatewayResponse := &schemas.GatewayChatResponse{}
 
 	var rawResponse interface{}
 	var rawRequest interface{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, rakshaResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, gatewayResponse, jsonBody, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Ensure model is set correctly
-	if rakshaResponse.Model == "" {
-		rakshaResponse.Model = request.Model
+	if gatewayResponse.Model == "" {
+		gatewayResponse.Model = request.Model
 	}
 
 	// Set object if not already set
-	if rakshaResponse.Object == "" {
-		rakshaResponse.Object = "chat.completion"
+	if gatewayResponse.Object == "" {
+		gatewayResponse.Object = "chat.completion"
 	}
 
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
-func (provider *HuggingFaceProvider) ChatCompletionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaChatRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ChatCompletionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayChatRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ChatCompletionStreamRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -553,7 +553,7 @@ func (provider *HuggingFaceProvider) ChatCompletionStream(ctx *schemas.RakshaCon
 		request.Model = modelName
 	}
 
-	customRequestConverter := func(request *schemas.RakshaChatRequest) (providerUtils.RequestBodyWithExtraParams, error) {
+	customRequestConverter := func(request *schemas.GatewayChatRequest) (providerUtils.RequestBodyWithExtraParams, error) {
 		reqBody, err := ToHuggingFaceChatCompletionRequest(request)
 		if err != nil {
 			return nil, err
@@ -587,7 +587,7 @@ func (provider *HuggingFaceProvider) ChatCompletionStream(ctx *schemas.RakshaCon
 	)
 }
 
-func (provider *HuggingFaceProvider) Responses(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaResponsesRequest) (*schemas.RakshaResponsesResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) Responses(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayResponsesRequest) (*schemas.GatewayResponsesResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ResponsesRequest); err != nil {
 		return nil, err
 	}
@@ -597,17 +597,17 @@ func (provider *HuggingFaceProvider) Responses(ctx *schemas.RakshaContext, key s
 		return nil, err
 	}
 
-	response := chatResponse.ToRakshaResponsesResponse()
+	response := chatResponse.ToGatewayResponsesResponse()
 
 	return response, nil
 }
 
-func (provider *HuggingFaceProvider) ResponsesStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaResponsesRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ResponsesStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayResponsesRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ResponsesStreamRequest); err != nil {
 		return nil, err
 	}
 
-	ctx.SetValue(schemas.RakshaContextKeyIsResponsesToChatCompletionFallback, true)
+	ctx.SetValue(schemas.GatewayContextKeyIsResponsesToChatCompletionFallback, true)
 	return provider.ChatCompletionStream(
 		ctx,
 		postHookRunner,
@@ -617,15 +617,15 @@ func (provider *HuggingFaceProvider) ResponsesStream(ctx *schemas.RakshaContext,
 	)
 }
 
-func (provider *HuggingFaceProvider) Embedding(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaEmbeddingRequest) (*schemas.RakshaEmbeddingResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) Embedding(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayEmbeddingRequest) (*schemas.GatewayEmbeddingResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.EmbeddingRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -656,7 +656,7 @@ func (provider *HuggingFaceProvider) Embedding(ctx *schemas.RakshaContext, key s
 		schemas.EmbeddingRequest,
 	)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
@@ -676,30 +676,30 @@ func (provider *HuggingFaceProvider) Embedding(ctx *schemas.RakshaContext, key s
 		}
 	}
 
-	// Unmarshal directly to RakshaEmbeddingResponse with custom logic
-	rakshaResponse, convErr := UnmarshalHuggingFaceEmbeddingResponse(responseBody, request.Model)
+	// Unmarshal directly to GatewayEmbeddingResponse with custom logic
+	gatewayResponse, convErr := UnmarshalHuggingFaceEmbeddingResponse(responseBody, request.Model)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
-func (provider *HuggingFaceProvider) Speech(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaSpeechRequest) (*schemas.RakshaSpeechResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) Speech(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewaySpeechRequest) (*schemas.GatewaySpeechResponse, *schemas.GatewayError) {
 	// Check if Speech is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.SpeechRequest); err != nil {
 		return nil, err
@@ -707,8 +707,8 @@ func (provider *HuggingFaceProvider) Speech(ctx *schemas.RakshaContext, key sche
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -738,7 +738,7 @@ func (provider *HuggingFaceProvider) Speech(ctx *schemas.RakshaContext, key sche
 		schemas.SpeechRequest,
 	)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonData, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
@@ -749,52 +749,52 @@ func (provider *HuggingFaceProvider) Speech(ctx *schemas.RakshaContext, key sche
 
 	var rawResponse interface{}
 	var rawRequest interface{}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
-		return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, response, jsonData, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
+		return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Download the audio file from the URL
 	audioData, downloadErr := provider.downloadAudioFromURL(ctx, response.Audio.URL)
 	if downloadErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, downloadErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, downloadErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	rakshaResponse, convErr := response.ToRakshaSpeechResponse(request.Model, audioData)
+	gatewayResponse, convErr := response.ToGatewaySpeechResponse(request.Model, audioData)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // Rerank is not supported by the HuggingFace provider.
-func (provider *HuggingFaceProvider) Rerank(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaRerankRequest) (*schemas.RakshaRerankResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) Rerank(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayRerankRequest) (*schemas.GatewayRerankResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.RerankRequest, provider.GetProviderKey())
 }
 
 // OCR is not supported by the Huggingface provider.
-func (provider *HuggingFaceProvider) OCR(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaOCRRequest) (*schemas.RakshaOCRResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) OCR(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayOCRRequest) (*schemas.GatewayOCRResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.OCRRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) SpeechStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaSpeechRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) SpeechStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewaySpeechRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.SpeechStreamRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) Transcription(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaTranscriptionRequest) (*schemas.RakshaTranscriptionResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) Transcription(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayTranscriptionRequest) (*schemas.GatewayTranscriptionResponse, *schemas.GatewayError) {
 	// Check if Transcription is allowed for this provider
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.TranscriptionRequest); err != nil {
 		return nil, err
@@ -802,8 +802,8 @@ func (provider *HuggingFaceProvider) Transcription(ctx *schemas.RakshaContext, k
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -812,12 +812,12 @@ func (provider *HuggingFaceProvider) Transcription(ctx *schemas.RakshaContext, k
 	}
 
 	var jsonData []byte
-	var err *schemas.RakshaError
+	var err *schemas.GatewayError
 	// hf-inference expects raw audio bytes with an audio content type instead of JSON
 	isHFInferenceAudioRequest := inferenceProvider == hfInference
 	if inferenceProvider == hfInference {
 		if request.Input == nil || len(request.Input.File) == 0 {
-			return nil, providerUtils.NewRakshaOperationError(schemas.ErrProviderCreateRequest, fmt.Errorf("input file data is required for hf-inference transcription requests"))
+			return nil, providerUtils.NewGatewayOperationError(schemas.ErrProviderCreateRequest, fmt.Errorf("input file data is required for hf-inference transcription requests"))
 		}
 		jsonData = request.Input.File
 	} else {
@@ -845,7 +845,7 @@ func (provider *HuggingFaceProvider) Transcription(ctx *schemas.RakshaContext, k
 		schemas.TranscriptionRequest,
 	)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		// Don't wrap raw audio bytes (when isHFInferenceAudioRequest is true)
@@ -865,49 +865,49 @@ func (provider *HuggingFaceProvider) Transcription(ctx *schemas.RakshaContext, k
 	if !isHFInferenceAudioRequest {
 		requestBodyForHandling = jsonData
 	}
-	rawRequest, rawResponse, rakshaErr := providerUtils.HandleProviderResponse(responseBody, response, requestBodyForHandling, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
-	if rakshaErr != nil {
+	rawRequest, rawResponse, gatewayErr := providerUtils.HandleProviderResponse(responseBody, response, requestBodyForHandling, providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest), providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse))
+	if gatewayErr != nil {
 		if !isHFInferenceAudioRequest {
-			return nil, providerUtils.EnrichError(ctx, rakshaErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+			return nil, providerUtils.EnrichError(ctx, gatewayErr, jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 		}
-		return nil, rakshaErr
+		return nil, gatewayErr
 	}
 
-	rakshaResponse, convErr := response.ToRakshaTranscriptionResponse(request.Model)
+	gatewayResponse, convErr := response.ToGatewayTranscriptionResponse(request.Model)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, convErr), jsonData, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 
 }
 
 // TranscriptionStream is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) TranscriptionStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaTranscriptionRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) TranscriptionStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayTranscriptionRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.TranscriptionStreamRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) ImageGeneration(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageGenerationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ImageGeneration(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageGenerationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ImageGenerationRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -938,7 +938,7 @@ func (provider *HuggingFaceProvider) ImageGeneration(ctx *schemas.RakshaContext,
 		schemas.ImageGenerationRequest,
 	)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
@@ -959,41 +959,41 @@ func (provider *HuggingFaceProvider) ImageGeneration(ctx *schemas.RakshaContext,
 	}
 
 	// Unmarshal response using Nebius converter
-	rakshaResponse, convErr := UnmarshalHuggingFaceImageGenerationResponse(responseBody, request.Model)
+	gatewayResponse, convErr := UnmarshalHuggingFaceImageGenerationResponse(responseBody, request.Model)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	rakshaResponse.Created = time.Now().Unix()
+	gatewayResponse.Created = time.Now().Unix()
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ImageGenerationStream handles streaming for fal-ai image generation.
 // Only fal-ai inference provider supports streaming for HuggingFace.
-func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageGenerationRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageGenerationRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ImageGenerationStreamRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -1003,7 +1003,7 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 
 	// Only fal-ai supports streaming for HuggingFace
 	if inferenceProvider != falAI {
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("image generation streaming is only supported for fal-ai inference provider, got: %s", inferenceProvider),
 			nil)
 	}
@@ -1019,14 +1019,14 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 		headers["Authorization"] = "Bearer " + value
 	}
 
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToHuggingFaceImageStreamRequest(request)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create HTTP request for streaming
@@ -1063,8 +1063,8 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1073,17 +1073,17 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		// non-streaming path - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1093,13 +1093,13 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1110,11 +1110,11 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 		defer close(responseChan)
 
 		if resp.BodyStream() == nil {
-			rakshaErr := providerUtils.NewRakshaOperationError(
+			gatewayErr := providerUtils.NewGatewayOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"))
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -1150,11 +1150,11 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 					return
 				}
 				if readErr != io.EOF {
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						fmt.Sprintf("Error reading fal-ai stream: %v", readErr),
 						readErr)
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				break
@@ -1170,17 +1170,17 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 				var errorResp HuggingFaceResponseError
 				if err := sonic.UnmarshalString(jsonData, &errorResp); err == nil {
 					if errorResp.Error != "" || errorResp.Message != "" {
-						rakshaErr := &schemas.RakshaError{
-							IsRakshaError: false,
+						gatewayErr := &schemas.GatewayError{
+							IsGatewayError: false,
 							Error: &schemas.ErrorField{
 								Message: errorResp.Message,
 							},
 						}
 						if errorResp.Error != "" {
-							rakshaErr.Error.Message = errorResp.Error
+							gatewayErr.Error.Message = errorResp.Error
 						}
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -1197,9 +1197,9 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 			// Process each image in the response
 			for i, img := range images {
 				// Create a fresh chunk for each image to avoid data race
-				chunk := &schemas.RakshaImageGenerationStreamResponse{
+				chunk := &schemas.GatewayImageGenerationStreamResponse{
 					Type: schemas.ImageGenerationEventTypePartial,
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -1230,22 +1230,22 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 				lastJsonData = jsonData
 
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+					providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 					responseChan, postHookSpanFinalizer)
 			}
 		}
 
 		// Stream closed - send completion chunk
 		if chunkIndex > 0 {
-			finalChunk := &schemas.RakshaImageGenerationStreamResponse{
+			finalChunk := &schemas.GatewayImageGenerationStreamResponse{
 				Type:  schemas.ImageGenerationEventTypeCompleted,
 				Index: lastIndex,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					ChunkIndex: chunkIndex,
 					Latency:    time.Since(startTime).Milliseconds(),
 				},
 			}
-			finalChunk.BackfillParams(&schemas.RakshaRequest{
+			finalChunk.BackfillParams(&schemas.GatewayRequest{
 				ImageGenerationRequest: request,
 			})
 			if lastURLData != "" {
@@ -1262,9 +1262,9 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 			if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
 				finalChunk.ExtraFields.RawResponse = lastJsonData
 			}
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-				providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
+				providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
 				responseChan, postHookSpanFinalizer)
 
 		}
@@ -1273,15 +1273,15 @@ func (provider *HuggingFaceProvider) ImageGenerationStream(ctx *schemas.RakshaCo
 	return responseChan, nil
 }
 
-func (provider *HuggingFaceProvider) ImageEdit(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageEditRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ImageEdit(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageEditRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ImageEditRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -1313,7 +1313,7 @@ func (provider *HuggingFaceProvider) ImageEdit(ctx *schemas.RakshaContext, key s
 
 	responseBody, latency, providerResponseHeaders, err := provider.completeRequest(ctx, jsonBody, url, key.Value.GetValue(), false, true)
 	if providerResponseHeaders != nil {
-		ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerResponseHeaders)
+		ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerResponseHeaders)
 	}
 	if err != nil {
 		return nil, providerUtils.EnrichError(ctx, err, jsonBody, nil, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
@@ -1334,41 +1334,41 @@ func (provider *HuggingFaceProvider) ImageEdit(ctx *schemas.RakshaContext, key s
 	}
 
 	// Unmarshal response
-	rakshaResponse, convErr := UnmarshalHuggingFaceImageGenerationResponse(responseBody, request.Model)
+	gatewayResponse, convErr := UnmarshalHuggingFaceImageGenerationResponse(responseBody, request.Model)
 	if convErr != nil {
-		return nil, providerUtils.EnrichError(ctx, providerUtils.NewRakshaOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
+		return nil, providerUtils.EnrichError(ctx, providerUtils.NewGatewayOperationError(schemas.ErrProviderResponseDecode, convErr), jsonBody, responseBody, provider.sendBackRawRequest, provider.sendBackRawResponse, latency)
 	}
 
-	rakshaResponse.Created = time.Now().Unix()
+	gatewayResponse.Created = time.Now().Unix()
 
 	// Set ExtraFields
-	rakshaResponse.ExtraFields.Latency = latency.Milliseconds()
-	rakshaResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
+	gatewayResponse.ExtraFields.Latency = latency.Milliseconds()
+	gatewayResponse.ExtraFields.ProviderResponseHeaders = providerResponseHeaders
 
 	// Set raw response if enabled
 	if providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse) {
-		rakshaResponse.ExtraFields.RawResponse = rawResponse
+		gatewayResponse.ExtraFields.RawResponse = rawResponse
 	}
 
 	// Set raw request if enabled
 	if providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest) {
-		rakshaResponse.ExtraFields.RawRequest = rawRequest
+		gatewayResponse.ExtraFields.RawRequest = rawRequest
 	}
 
-	return rakshaResponse, nil
+	return gatewayResponse, nil
 }
 
 // ImageEditStream handles streaming for fal-ai image edit.
 // Only fal-ai inference provider supports streaming for HuggingFace.
-func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.RakshaImageEditRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.GatewayContext, postHookRunner schemas.PostHookRunner, postHookSpanFinalizer func(context.Context), key schemas.Key, request *schemas.GatewayImageEditRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	if err := providerUtils.CheckOperationAllowed(schemas.HuggingFace, provider.customProviderConfig, schemas.ImageEditStreamRequest); err != nil {
 		return nil, err
 	}
 
 	inferenceProvider, modelName, nameErr := splitIntoModelProvider(request.Model)
 	if nameErr != nil {
-		return nil, &schemas.RakshaError{
-			IsRakshaError: false,
+		return nil, &schemas.GatewayError{
+			IsGatewayError: false,
 			Error: &schemas.ErrorField{
 				Message: nameErr.Error(),
 				Error:   nameErr,
@@ -1378,7 +1378,7 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 
 	// Only fal-ai supports streaming for HuggingFace image edit
 	if inferenceProvider != falAI {
-		return nil, providerUtils.NewRakshaOperationError(
+		return nil, providerUtils.NewGatewayOperationError(
 			fmt.Sprintf("image edit streaming is only supported for fal-ai inference provider, got: %s", inferenceProvider),
 			nil)
 	}
@@ -1407,14 +1407,14 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 	sendBackRawRequest := providerUtils.ShouldSendBackRawRequest(ctx, provider.sendBackRawRequest)
 	sendBackRawResponse := providerUtils.ShouldSendBackRawResponse(ctx, provider.sendBackRawResponse)
 
-	jsonBody, rakshaErr := providerUtils.CheckContextAndGetRequestBody(
+	jsonBody, gatewayErr := providerUtils.CheckContextAndGetRequestBody(
 		ctx,
 		request,
 		func() (providerUtils.RequestBodyWithExtraParams, error) {
 			return ToHuggingFaceImageEditRequest(request)
 		})
-	if rakshaErr != nil {
-		return nil, rakshaErr
+	if gatewayErr != nil {
+		return nil, gatewayErr
 	}
 
 	// Create HTTP request for streaming
@@ -1447,8 +1447,8 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 	if err != nil {
 		defer providerUtils.ReleaseStreamingResponse(ctx, resp)
 		if errors.Is(err, context.Canceled) {
-			return nil, providerUtils.SetErrorLatency(&schemas.RakshaError{
-				IsRakshaError: false,
+			return nil, providerUtils.SetErrorLatency(&schemas.GatewayError{
+				IsGatewayError: false,
 				Error: &schemas.ErrorField{
 					Type:    schemas.Ptr(schemas.RequestCancelled),
 					Message: schemas.ErrRequestCancelled,
@@ -1457,17 +1457,17 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 			}, latency)
 		}
 		if errors.Is(err, fasthttp.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
+			return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayTimeoutError(schemas.ErrProviderRequestTimedOut, err), latency)
 		}
 		// Request failed before the first response byte (server closed an idle/pooled connection,
 		// broken pipe, connection refused, DNS failure, etc.). Surface as a retriable upstream
 		// connection error (502) so executeRequestWithRetries honors max_retries, matching the
-		// non-streaming path - see https://github.com/raksha/raksha/issues/4496.
-		return nil, providerUtils.SetErrorLatency(providerUtils.NewRakshaUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
+		// non-streaming path - see https://github.com/gateway/gateway/issues/4496.
+		return nil, providerUtils.SetErrorLatency(providerUtils.NewGatewayUpstreamConnectionError(schemas.ErrProviderDoRequest, err), latency)
 	}
 
 	// Extract provider response headers before status check so error responses also forward them
-	ctx.SetValue(schemas.RakshaContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
+	ctx.SetValue(schemas.GatewayContextKeyProviderResponseHeaders, providerUtils.ExtractProviderResponseHeaders(resp))
 
 	// Check for HTTP errors
 	if resp.StatusCode() != fasthttp.StatusOK {
@@ -1477,13 +1477,13 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 
 	// Large payload streaming passthrough — pipe raw upstream SSE to client
 	if providerUtils.SetupStreamingPassthrough(ctx, resp) {
-		responseChan := make(chan *schemas.RakshaStreamChunk)
+		responseChan := make(chan *schemas.GatewayStreamChunk)
 		providerUtils.CloseStream(ctx, responseChan)
 		return responseChan, nil
 	}
 
 	// Create response channel
-	responseChan := make(chan *schemas.RakshaStreamChunk, schemas.DefaultStreamBufferSize)
+	responseChan := make(chan *schemas.GatewayStreamChunk, schemas.DefaultStreamBufferSize)
 
 	providerUtils.SetStreamIdleTimeoutIfEmpty(ctx, provider.networkConfig.StreamIdleTimeoutInSeconds)
 
@@ -1494,11 +1494,11 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 		defer close(responseChan)
 
 		if resp.BodyStream() == nil {
-			rakshaErr := providerUtils.NewRakshaOperationError(
+			gatewayErr := providerUtils.NewGatewayOperationError(
 				"Provider returned an empty response",
 				fmt.Errorf("provider returned an empty response"))
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-			providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+			providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 			return
 		}
 
@@ -1534,11 +1534,11 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 					return
 				}
 				if readErr != io.EOF {
-					rakshaErr := providerUtils.NewRakshaOperationError(
+					gatewayErr := providerUtils.NewGatewayOperationError(
 						fmt.Sprintf("Error reading fal-ai stream: %v", readErr),
 						readErr)
-					ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-					providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+					ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+					providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 					return
 				}
 				break
@@ -1554,17 +1554,17 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 				var errorResp HuggingFaceResponseError
 				if err := sonic.UnmarshalString(jsonData, &errorResp); err == nil {
 					if errorResp.Error != "" || errorResp.Message != "" {
-						rakshaErr := &schemas.RakshaError{
-							IsRakshaError: false,
+						gatewayErr := &schemas.GatewayError{
+							IsGatewayError: false,
 							Error: &schemas.ErrorField{
 								Message: errorResp.Message,
 							},
 						}
 						if errorResp.Error != "" {
-							rakshaErr.Error.Message = errorResp.Error
+							gatewayErr.Error.Message = errorResp.Error
 						}
-						ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
-						providerUtils.ProcessAndSendRakshaError(ctx, postHookRunner, rakshaErr, responseChan, provider.logger, postHookSpanFinalizer)
+						ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
+						providerUtils.ProcessAndSendGatewayError(ctx, postHookRunner, gatewayErr, responseChan, provider.logger, postHookSpanFinalizer)
 						return
 					}
 				}
@@ -1581,9 +1581,9 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 			// Process each image in the response
 			for i, img := range images {
 				// Create a fresh chunk for each image to avoid data race
-				chunk := &schemas.RakshaImageGenerationStreamResponse{
+				chunk := &schemas.GatewayImageGenerationStreamResponse{
 					Type: schemas.ImageEditEventTypePartial,
-					ExtraFields: schemas.RakshaResponseExtraFields{
+					ExtraFields: schemas.GatewayResponseExtraFields{
 						ChunkIndex: chunkIndex,
 						Latency:    time.Since(lastChunkTime).Milliseconds(),
 					},
@@ -1614,22 +1614,22 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 				lastJsonData = jsonData
 
 				providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-					providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
+					providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, chunk),
 					responseChan, postHookSpanFinalizer)
 			}
 		}
 
 		// Stream closed - send completion chunk
 		if chunkIndex > 0 {
-			finalChunk := &schemas.RakshaImageGenerationStreamResponse{
+			finalChunk := &schemas.GatewayImageGenerationStreamResponse{
 				Type:  schemas.ImageEditEventTypeCompleted,
 				Index: lastIndex,
-				ExtraFields: schemas.RakshaResponseExtraFields{
+				ExtraFields: schemas.GatewayResponseExtraFields{
 					ChunkIndex: chunkIndex,
 					Latency:    time.Since(startTime).Milliseconds(),
 				},
 			}
-			finalChunk.BackfillParams(&schemas.RakshaRequest{
+			finalChunk.BackfillParams(&schemas.GatewayRequest{
 				ImageEditRequest: request,
 			})
 			if lastURLData != "" {
@@ -1646,9 +1646,9 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 			if sendBackRawResponse {
 				finalChunk.ExtraFields.RawResponse = lastJsonData
 			}
-			ctx.SetValue(schemas.RakshaContextKeyStreamEndIndicator, true)
+			ctx.SetValue(schemas.GatewayContextKeyStreamEndIndicator, true)
 			providerUtils.ProcessAndSendResponse(ctx, postHookRunner,
-				providerUtils.GetRakshaResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
+				providerUtils.GetGatewayResponseForStreamResponse(nil, nil, nil, nil, nil, finalChunk),
 				responseChan, postHookSpanFinalizer)
 
 		}
@@ -1658,155 +1658,155 @@ func (provider *HuggingFaceProvider) ImageEditStream(ctx *schemas.RakshaContext,
 }
 
 // ImageVariation is not supported by the HuggingFace provider.
-func (provider *HuggingFaceProvider) ImageVariation(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaImageVariationRequest) (*schemas.RakshaImageGenerationResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ImageVariation(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayImageVariationRequest) (*schemas.GatewayImageGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ImageVariationRequest, provider.GetProviderKey())
 }
 
 // VideoGeneration is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoGeneration(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoGenerationRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) VideoGeneration(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoGenerationRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoGenerationRequest, provider.GetProviderKey())
 }
 
 // VideoRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoRetrieve(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRetrieveRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) VideoRetrieve(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRetrieveRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRetrieveRequest, provider.GetProviderKey())
 }
 
 // VideoDownload is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoDownload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDownloadRequest) (*schemas.RakshaVideoDownloadResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) VideoDownload(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDownloadRequest) (*schemas.GatewayVideoDownloadResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDownloadRequest, provider.GetProviderKey())
 }
 
 // VideoDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoDelete(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoDeleteRequest) (*schemas.RakshaVideoDeleteResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) VideoDelete(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoDeleteRequest) (*schemas.GatewayVideoDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoDeleteRequest, provider.GetProviderKey())
 }
 
 // VideoList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoList(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoListRequest) (*schemas.RakshaVideoListResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) VideoList(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoListRequest) (*schemas.GatewayVideoListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoListRequest, provider.GetProviderKey())
 }
 
 // VideoRemix is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) VideoRemix(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaVideoRemixRequest) (*schemas.RakshaVideoGenerationResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) VideoRemix(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayVideoRemixRequest) (*schemas.GatewayVideoGenerationResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.VideoRemixRequest, provider.GetProviderKey())
 }
 
 // BatchCreate is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaBatchCreateRequest) (*schemas.RakshaBatchCreateResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) BatchCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayBatchCreateRequest) (*schemas.GatewayBatchCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCreateRequest, provider.GetProviderKey())
 }
 
 // BatchList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchListRequest) (*schemas.RakshaBatchListResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) BatchList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchListRequest) (*schemas.GatewayBatchListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchListRequest, provider.GetProviderKey())
 }
 
 // BatchRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchRetrieveRequest) (*schemas.RakshaBatchRetrieveResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) BatchRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchRetrieveRequest) (*schemas.GatewayBatchRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchRetrieveRequest, provider.GetProviderKey())
 }
 
 // BatchCancel is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchCancel(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchCancelRequest) (*schemas.RakshaBatchCancelResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) BatchCancel(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchCancelRequest) (*schemas.GatewayBatchCancelResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchCancelRequest, provider.GetProviderKey())
 }
 
 // BatchDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchDeleteRequest) (*schemas.RakshaBatchDeleteResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) BatchDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchDeleteRequest) (*schemas.GatewayBatchDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchDeleteRequest, provider.GetProviderKey())
 }
 
 // BatchResults is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) BatchResults(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaBatchResultsRequest) (*schemas.RakshaBatchResultsResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) BatchResults(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayBatchResultsRequest) (*schemas.GatewayBatchResultsResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.BatchResultsRequest, provider.GetProviderKey())
 }
 
 // FileUpload is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileUpload(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaFileUploadRequest) (*schemas.RakshaFileUploadResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) FileUpload(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayFileUploadRequest) (*schemas.GatewayFileUploadResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileUploadRequest, provider.GetProviderKey())
 }
 
 // FileList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileListRequest) (*schemas.RakshaFileListResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) FileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileListRequest) (*schemas.GatewayFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileListRequest, provider.GetProviderKey())
 }
 
 // FileRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileRetrieveRequest) (*schemas.RakshaFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) FileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileRetrieveRequest) (*schemas.GatewayFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileRetrieveRequest, provider.GetProviderKey())
 }
 
 // FileDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileDeleteRequest) (*schemas.RakshaFileDeleteResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) FileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileDeleteRequest) (*schemas.GatewayFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileDeleteRequest, provider.GetProviderKey())
 }
 
 // FileContent is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) FileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaFileContentRequest) (*schemas.RakshaFileContentResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) FileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayFileContentRequest) (*schemas.GatewayFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.FileContentRequest, provider.GetProviderKey())
 }
 
 // CountTokens is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) CountTokens(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaResponsesRequest) (*schemas.RakshaCountTokensResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) CountTokens(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayResponsesRequest) (*schemas.GatewayCountTokensResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CountTokensRequest, provider.GetProviderKey())
 }
 
 // Compaction is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) Compaction(ctx *schemas.RakshaContext, key schemas.Key, request *schemas.RakshaCompactionRequest) (*schemas.RakshaCompactionResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) Compaction(ctx *schemas.GatewayContext, key schemas.Key, request *schemas.GatewayCompactionRequest) (*schemas.GatewayCompactionResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.CompactionRequest, provider.GetProviderKey())
 }
 
 // ContainerCreate is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerCreateRequest) (*schemas.RakshaContainerCreateResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ContainerCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerCreateRequest) (*schemas.GatewayContainerCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerListRequest) (*schemas.RakshaContainerListResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ContainerList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerListRequest) (*schemas.GatewayContainerListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerListRequest, provider.GetProviderKey())
 }
 
 // ContainerRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerRetrieveRequest) (*schemas.RakshaContainerRetrieveResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ContainerRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerRetrieveRequest) (*schemas.GatewayContainerRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerDeleteRequest) (*schemas.RakshaContainerDeleteResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ContainerDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerDeleteRequest) (*schemas.GatewayContainerDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerDeleteRequest, provider.GetProviderKey())
 }
 
 // ContainerFileCreate is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileCreate(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaContainerFileCreateRequest) (*schemas.RakshaContainerFileCreateResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ContainerFileCreate(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayContainerFileCreateRequest) (*schemas.GatewayContainerFileCreateResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileCreateRequest, provider.GetProviderKey())
 }
 
 // ContainerFileList is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileList(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileListRequest) (*schemas.RakshaContainerFileListResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ContainerFileList(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileListRequest) (*schemas.GatewayContainerFileListResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileListRequest, provider.GetProviderKey())
 }
 
 // ContainerFileRetrieve is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileRetrieve(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileRetrieveRequest) (*schemas.RakshaContainerFileRetrieveResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ContainerFileRetrieve(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileRetrieveRequest) (*schemas.GatewayContainerFileRetrieveResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileRetrieveRequest, provider.GetProviderKey())
 }
 
 // ContainerFileContent is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileContent(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileContentRequest) (*schemas.RakshaContainerFileContentResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ContainerFileContent(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileContentRequest) (*schemas.GatewayContainerFileContentResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileContentRequest, provider.GetProviderKey())
 }
 
 // ContainerFileDelete is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) ContainerFileDelete(_ *schemas.RakshaContext, _ []schemas.Key, _ *schemas.RakshaContainerFileDeleteRequest) (*schemas.RakshaContainerFileDeleteResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) ContainerFileDelete(_ *schemas.GatewayContext, _ []schemas.Key, _ *schemas.GatewayContainerFileDeleteRequest) (*schemas.GatewayContainerFileDeleteResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.ContainerFileDeleteRequest, provider.GetProviderKey())
 }
 
 // Passthrough is not supported by the Hugging Face provider.
-func (provider *HuggingFaceProvider) Passthrough(_ *schemas.RakshaContext, _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (*schemas.RakshaPassthroughResponse, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) Passthrough(_ *schemas.GatewayContext, _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (*schemas.GatewayPassthroughResponse, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughRequest, provider.GetProviderKey())
 }
 
-func (provider *HuggingFaceProvider) PassthroughStream(_ *schemas.RakshaContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.RakshaPassthroughRequest) (chan *schemas.RakshaStreamChunk, *schemas.RakshaError) {
+func (provider *HuggingFaceProvider) PassthroughStream(_ *schemas.GatewayContext, _ schemas.PostHookRunner, _ func(context.Context), _ schemas.Key, _ *schemas.GatewayPassthroughRequest) (chan *schemas.GatewayStreamChunk, *schemas.GatewayError) {
 	return nil, providerUtils.NewUnsupportedOperationError(schemas.PassthroughStreamRequest, provider.GetProviderKey())
 }

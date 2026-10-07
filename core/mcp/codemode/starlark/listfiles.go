@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	codemcp "github.com/raksha/raksha/core/mcp"
-	"github.com/raksha/raksha/core/schemas"
+	codemcp "github.com/gateway/gateway/core/mcp"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // createListToolFilesTool creates the listToolFiles tool definition for code mode.

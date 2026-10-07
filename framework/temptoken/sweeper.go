@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/raksha/raksha/core/schemas"
+	"github.com/gateway/gateway/core/schemas"
 )
 
 // SweepWorker periodically deletes temp_tokens rows whose expires_at is in the

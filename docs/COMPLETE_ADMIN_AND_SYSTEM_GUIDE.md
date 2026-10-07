@@ -1,4 +1,4 @@
-# UnifAI & Raksha Enterprise — Complete System & Administrator Guide
+# UnifAI & Gateway Enterprise — Complete System & Administrator Guide
 
 **Version:** 1.1.16  
 **Audience:** Platform Administrators, Security Engineers, DevOps, Compliance Teams  
@@ -17,7 +17,7 @@
    - [4.4 MCP Logs (Model Context Protocol)](#44-mcp-logs-model-context-protocol)
    - [4.5 Third-Party Connectors (Datadog, New Relic, BigQuery, Kafka, PubSub)](#45-third-party-connectors)
    - [4.6 Logs Settings & Data Retention](#46-logs-settings--data-retention)
-5. [Browser AI & Desktop Guard (Raksha Guard)](#5-browser-ai--desktop-guard-raksha-guard)
+5. [Browser AI & Desktop Guard (Gateway Guard)](#5-browser-ai--desktop-guard-gateway-guard)
    - [5.1 Architecture & PAC Routing](#51-architecture--pac-routing)
    - [5.2 Target Websites (Monitored vs Blocked)](#52-target-websites-monitored-vs-blocked)
    - [5.3 Guard Rules (DLP, PII Regex & Policy Actions)](#53-guard-rules-dlp-pii-regex--policy-actions)
@@ -39,7 +39,7 @@
 
 ## 1. System Architecture & Codebase Folder Structure
 
-The UnifAI / Raksha platform is built with a decoupled enterprise architecture:
+The UnifAI / Gateway platform is built with a decoupled enterprise architecture:
 - **FastHTTP Gateway & Core Engine (Go):** Handles tens of thousands of requests per second for LLM proxying, policy checks, and log streaming.
 - **Enterprise Management UI (Next.js & TypeScript):** Full-featured React dashboard using Tailwind CSS and Radix UI primitives.
 - **Desktop Endpoint Guard Agent (Python & Rust/C):** Lightweight client agent running on macOS and Windows to enforce Browser AI security and PAC routing.
@@ -53,12 +53,12 @@ d:/unifai_project/
 │       │   ├── agent_pac_content.py # Local proxy.pac generator & search engine rule injector
 │       │   ├── agent_pac_server.py  # Serves http://127.0.0.1:18195/pac
 │       │   ├── guard_bootstrap.py   # Launcher and dynamic hot-code bundle loader
-│       │   └── raksha_agent.py      # Main entry point for the desktop agent
+│       │   └── gateway_agent.py      # Main entry point for the desktop agent
 │       ├── installer/               # Packaging scripts (Inno Setup ISS, macOS shell scripts)
 │       ├── proxy/                   # mitmproxy addon and interception engine
-│       │   └── raksha_proxy_parts/  # DLP rules, upload detector, search logger
+│       │   └── gateway_proxy_parts/  # DLP rules, upload detector, search logger
 │       ├── release/                 # Distributable binaries (.exe, .pkg, .zip)
-│       └── Raksha_Guard.spec        # PyInstaller specification for Windows
+│       └── Gateway_Guard.spec        # PyInstaller specification for Windows
 ├── configs/                         # Static configurations & environment defaults
 ├── data/                            # Local database backups, sqlite, certificates
 ├── deploy/                          # Dockerfiles, Helm charts, Systemd units
@@ -69,7 +69,7 @@ d:/unifai_project/
 │   ├── logstore/                    # PostgreSQL log queries, search logs, PAC generator
 │   └── rbac/                        # Role-based access control engine
 ├── transports/
-│   └── raksha-http/                 # High-performance FastHTTP Backend Gateway
+│   └── gateway-http/                 # High-performance FastHTTP Backend Gateway
 │       ├── handlers/                # HTTP API routes (/api/logs, /api/browser-ai/*)
 │       └── server/                  # Core HTTP server initialization & plugin pipeline
 └── ui/                              # Next.js / React Admin Management Dashboard
@@ -217,7 +217,7 @@ UnifAI streams all logs, metrics, and security audits directly to your enterpris
 
 ---
 
-## 5. Browser AI & Desktop Guard (Raksha Guard)
+## 5. Browser AI & Desktop Guard (Gateway Guard)
 
 Browser AI is the endpoint security subsystem designed to monitor, audit, and safeguard employee interactions with external generative AI websites (ChatGPT, Claude, Gemini, DeepSeek, etc.) and search engines.
 
@@ -225,7 +225,7 @@ Browser AI is the endpoint security subsystem designed to monitor, audit, and sa
 flowchart TD
     UserApp[Employee Browser: Chrome/Edge/Firefox] -->|1. Requests PAC| LocalPAC["Local PAC Server (:18195)"]
     LocalPAC -->|2. Returns PROXY for AI & Search| UserApp
-    UserApp -->|3. Routes Monitored Traffic| LocalProxy["Raksha Proxy (:18103)"]
+    UserApp -->|3. Routes Monitored Traffic| LocalProxy["Gateway Proxy (:18103)"]
     LocalProxy -->|4. Inspects Prompt & Attachments| DLPEngine{Guard DLP Engine}
     DLPEngine -->|Violates Rule| Action["BLOCK / MASK / WARN"]
     DLPEngine -->|Allowed| PublicAI["External AI Service (chatgpt.com)"]
@@ -236,7 +236,7 @@ flowchart TD
 ### 5.1 Architecture & PAC Routing
 * **Zero Overhead PAC Architecture:** The desktop agent runs a lightweight local PAC server on `http://127.0.0.1:18195/pac`.
 * **Selective Interception:** Standard internet traffic (internal intranets, GitHub, news, streaming) is routed `DIRECT` without passing through any proxy.
-* **Local Proxy Port:** The interception engine listens on `127.0.0.1:18103` using a local enterprise root CA (`Raksha Enterprise Root CA`) installed into the system trust store.
+* **Local Proxy Port:** The interception engine listens on `127.0.0.1:18103` using a local enterprise root CA (`Gateway Enterprise Root CA`) installed into the system trust store.
 
 ### 5.2 Target Websites (Monitored vs Blocked) (`/workspace/browser-ai?tab=target-websites`)
 Controls which public AI platforms are governed by the desktop agent:
@@ -271,7 +271,7 @@ Captures search engine queries across Google, Bing, DuckDuckGo, and Yahoo to det
 * **Monitored Browsers:** Google Chrome, Microsoft Edge, Mozilla Firefox, Brave, Safari, Opera.
 * **Incognito / Private Mode:** Fully inspected and logged even when private browsing is enabled.
 * **Predictive Threat Scoring:**
-  * **CRITICAL (Risk Score 90–92):** Intent to bypass security controls, sabotage, or exploit vulnerabilities (e.g., `"how to kill raksha guard"`, `"bypass endpoint dlp"`, `"dump postgres password"`).
+  * **CRITICAL (Risk Score 90–92):** Intent to bypass security controls, sabotage, or exploit vulnerabilities (e.g., `"how to kill gateway guard"`, `"bypass endpoint dlp"`, `"dump postgres password"`).
   * **HIGH (Risk Score 78):** Exfiltration of corporate intellectual property (e.g., `"upload proprietary codebase to external repo"`, `"internal financial forecasts 2026"`).
   * **MEDIUM (Risk Score 45):** Corporate reconnaissance or high-risk topics (e.g., `"competitor executive salaries"`, `"confidential legal settlements"`).
   * **LOW (Risk Score 10):** Standard daily technical, operational, and informational queries.
@@ -279,21 +279,21 @@ Captures search engine queries across Google, Bing, DuckDuckGo, and Yahoo to det
 ### 5.6 Guard Setup & Deployment (Windows & macOS) (`/workspace/browser-ai?tab=setup`)
 
 #### Binary Artifacts:
-* **Windows:** [`apps/browser-guard/release/Raksha_Guard_Setup.exe`](file:///d:/unifai_project/apps/browser-guard/release/Raksha_Guard_Setup.exe) (or `.zip` containing standalone binaries).
-* **macOS:** [`apps/browser-guard/release/Raksha_Guard_Setup.pkg`](file:///d:/unifai_project/apps/browser-guard/release/Raksha_Guard_Setup.pkg).
+* **Windows:** [`apps/browser-guard/release/Gateway_Guard_Setup.exe`](file:///d:/unifai_project/apps/browser-guard/release/Gateway_Guard_Setup.exe) (or `.zip` containing standalone binaries).
+* **macOS:** [`apps/browser-guard/release/Gateway_Guard_Setup.pkg`](file:///d:/unifai_project/apps/browser-guard/release/Gateway_Guard_Setup.pkg).
 
 #### Enterprise Silent Deployment:
 * **Windows (via Microsoft Intune / SCCM / GPO):**
   ```powershell
-  Raksha_Guard_Setup.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES
+  Gateway_Guard_Setup.exe /VERYSILENT /NORESTART /SUPPRESSMSGBOXES
   ```
 * **macOS (via JAMF / Kandji / Munki):**
   ```bash
-  sudo installer -pkg Raksha_Guard_Setup.pkg -target /
+  sudo installer -pkg Gateway_Guard_Setup.pkg -target /
   ```
 
 #### Tamper Protection & Uninstall Key:
-* End users cannot stop or uninstall Raksha Guard without administrative privilege.
+* End users cannot stop or uninstall Gateway Guard without administrative privilege.
 * To uninstall, administrators retrieve the unique **Uninstall Key** from the **Setup** tab and enter it into the installer uninstaller dialog.
 
 ### 5.7 Guard Agents (Heartbeat, Health, Remote Controls) (`/workspace/browser-ai?tab=guard-agents`)
@@ -352,9 +352,9 @@ Manage upstream provider connections:
 
 | Issue / Symptom | Root Cause | Resolution |
 |---|---|---|
-| **LLM Logs page shows "Internal server error" (HTTP 500)** | PostgreSQL immutable helper function `raksha_safe_jsonb` is missing from database | Run `CREATE OR REPLACE FUNCTION raksha_safe_jsonb(...)` in PostgreSQL or verify migration execution. |
+| **LLM Logs page shows "Internal server error" (HTTP 500)** | PostgreSQL immutable helper function `gateway_safe_jsonb` is missing from database | Run `CREATE OR REPLACE FUNCTION gateway_safe_jsonb(...)` in PostgreSQL or verify migration execution. |
 | **Search engine queries not appearing in Search Logs** | Desktop agent PAC rule did not route search engine traffic or fleet config had obsolete port | Upgrade desktop agent to version 1.1.16 which auto-injects `SEARCH_ENGINE_PAC_RULE` client-side, and verify `browser_guard_fleet_config` port is `127.0.0.1:18103`. |
-| **Browser displays SSL / Certificate Warning on AI websites** | `Raksha Enterprise Root CA` is not trusted by the user certificate store | Run the installer or verify `ca_install_status.txt` in `%LOCALAPPDATA%\Programs\Raksha\Guard`. Ensure certutil or macOS security keychain import succeeded. |
+| **Browser displays SSL / Certificate Warning on AI websites** | `Gateway Enterprise Root CA` is not trusted by the user certificate store | Run the installer or verify `ca_install_status.txt` in `%LOCALAPPDATA%\Programs\Gateway\Guard`. Ensure certutil or macOS security keychain import succeeded. |
 | **Prompt Logs show zero entries despite visiting AI websites** | Browser proxy setting disabled or PAC server not running | Verify PAC server is listening on port 18195 via `netstat -ano \| findstr 18195`. Check OS Proxy settings point to `http://127.0.0.1:18195/pac`. |
 | **Agent heartbeat status shows "DEGRADED"** | Local MitM proxy engine crashed or port 18103 is occupied | Check `agent_heartbeat.log` in local app data directory. Ensure no other application binds to port 18103. |
 
