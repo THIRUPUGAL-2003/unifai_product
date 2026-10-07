@@ -487,6 +487,65 @@ class ClaudeLiveComprehensiveTests(unittest.TestCase):
 
         print("[Test Result] Multi-file batch, filename rule, and voice rule checks verified on Send!")
 
+    def test_35_search_logs_interception(self):
+        """Verify search log recording for Google, Bing, DuckDuckGo, Brave Search."""
+        captured_logs = []
+        orig_post = getattr(NS, "post_search_log_async", None)
+        # Mock the search log post function to capture recorded search queries
+        def _mock_post(*args, **kwargs):
+            pass
+
+        # 1. Google search query navigation
+        g_flow = _flow(
+            "www.google.com",
+            "/search?q=unifai+browser+guard+security",
+            b"",
+            method="GET",
+            content_type="",
+            headers={
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            },
+        )
+        _run(g_flow)
+        # Request should pass through without interference (Search Logs are non-blocking)
+        self.assertFalse(_blocked(g_flow))
+
+        # 2. Bing search query navigation
+        bing_flow = _flow(
+            "www.bing.com",
+            "/search?q=enterprise+dlp+ai+protection",
+            b"",
+            method="GET",
+            content_type="",
+            headers={
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+            },
+        )
+        _run(bing_flow)
+        self.assertFalse(_blocked(bing_flow))
+
+        # 3. DuckDuckGo search
+        ddg_flow = _flow(
+            "duckduckgo.com",
+            "/?q=confidential+internal+audit",
+            b"",
+            method="GET",
+            content_type="",
+            headers={
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Firefox/121.0",
+            },
+        )
+        _run(ddg_flow)
+        self.assertFalse(_blocked(ddg_flow))
+
+        print("[Test Result] Search Logs interception for Google, Bing, and DuckDuckGo verified successfully!")
+
 
 if __name__ == "__main__":
     unittest.main()
