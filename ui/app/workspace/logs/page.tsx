@@ -23,6 +23,7 @@ import { useLazyGetLogByIdQuery, useLazyGetLogsQuery } from "@/lib/store/apis/lo
 import type { LogEntry, LogFilters, Pagination } from "@/lib/types/logs";
 import { dateUtils } from "@/lib/types/logs";
 import { COMPACT_NUMBER_FORMAT } from "@/lib/utils/numbers";
+import { getRangeForPeriod } from "@/lib/utils/timeRange";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import NumberFlow from "@number-flow/react";
 import { useLocation } from "@tanstack/react-router";
@@ -365,14 +366,28 @@ export default function LogsPage() {
 
 	const handlePollToggle = useCallback(
 		(enabled: boolean) => {
-			setUrlState({ polling: enabled });
 			if (enabled) {
+				// Live needs a sliding relative period; a closed absolute window would look live but stay stale.
+				if (!urlState.period) {
+					const { from, to } = getRangeForPeriod("1h");
+					setUrlState({
+						polling: true,
+						period: "1h",
+						start_time: Math.floor(from.getTime() / 1000),
+						end_time: Math.floor(to.getTime() / 1000),
+						offset: 0,
+					});
+				} else {
+					setUrlState({ polling: true });
+				}
 				refetchLogs();
 				refetchStats();
 				refetchHistogram();
+			} else {
+				setUrlState({ polling: false });
 			}
 		},
-		[setUrlState, refetchLogs, refetchStats, refetchHistogram],
+		[setUrlState, urlState.period, refetchLogs, refetchStats, refetchHistogram],
 	);
 
 	// Period selection: store relative period + fresh timestamps in URL (bypasses setFilters
@@ -380,8 +395,11 @@ export default function LogsPage() {
 	const handlePeriodChange = useCallback(
 		(p?: string, from?: Date, to?: Date) => {
 			if (p) {
+				const range = getRangeForPeriod(p);
 				setUrlState({
 					period: p,
+					start_time: Math.floor(range.from.getTime() / 1000),
+					end_time: Math.floor(range.to.getTime() / 1000),
 					offset: 0,
 					polling: true,
 				});

@@ -3,8 +3,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { getErrorMessage } from "@/lib/store";
-import { useGetConnectorQuery, useUpdateConnectorMutation } from "@enterprise/lib/store/apis/connectorsApi";
-import { Save } from "lucide-react";
+import {
+	useGetConnectorQuery,
+	useTestConnectorMutation,
+	useUpdateConnectorMutation,
+} from "@enterprise/lib/store/apis/connectorsApi";
+import { Cable, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -20,19 +24,24 @@ interface ConnectorFormProps {
 export function ConnectorForm({ name, title, description, fields, onDelete, isDeleting }: ConnectorFormProps) {
 	const { data } = useGetConnectorQuery(name);
 	const [updateConnector, { isLoading: saving }] = useUpdateConnectorMutation();
+	const [testConnector, { isLoading: testing }] = useTestConnectorMutation();
 	const [enabled, setEnabled] = useState(false);
 	const [config, setConfig] = useState<Record<string, string>>({});
+	const [lastProbe, setLastProbe] = useState<{ ok?: boolean; error?: string } | null>(null);
 
 	useEffect(() => {
 		if (!data) return;
 		setEnabled(!!data.enabled);
 		setConfig(data.config || {});
+		const connection = (data as { connection?: { ok?: boolean; error?: string } }).connection;
+		if (connection) setLastProbe(connection);
 	}, [data]);
 
 	const save = async () => {
 		try {
 			const result = await updateConnector({ name, enabled, config }).unwrap();
 			const connection = (result as { connection?: { ok?: boolean; error?: string } }).connection;
+			if (connection) setLastProbe(connection);
 			if (connection && enabled && connection.ok === false) {
 				toast.error(connection.error || `${title} saved but connection failed`);
 				return;
@@ -49,16 +58,40 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 		}
 	};
 
+	const runTest = async () => {
+		try {
+			const result = await testConnector(name).unwrap();
+			const connection = result.connection;
+			if (connection) setLastProbe(connection);
+			if (connection?.ok) {
+				toast.success(`${title} connection OK`);
+			} else {
+				toast.error(connection?.error || `${title} connection failed`);
+			}
+		} catch (err) {
+			toast.error(getErrorMessage(err));
+		}
+	};
+
 	const handleToggle = async (checked: boolean) => {
 		setEnabled(checked);
-		if (!checked && data) {
-			try {
-				await updateConnector({ name, enabled: false, config }).unwrap();
+		if (!data) return;
+		try {
+			const result = await updateConnector({ name, enabled: checked, config }).unwrap();
+			const connection = (result as { connection?: { ok?: boolean; error?: string } }).connection;
+			if (connection) setLastProbe(connection);
+			if (!checked) {
 				toast.success(`${title} disabled and saved`);
-			} catch (err) {
-				setEnabled(true);
-				toast.error(getErrorMessage(err));
+				return;
 			}
+			if (connection && connection.ok === false) {
+				toast.error(connection.error || `${title} enabled but connection failed`);
+				return;
+			}
+			toast.success(connection?.ok ? `${title} enabled and connected` : `${title} enabled and saved`);
+		} catch (err) {
+			setEnabled(!checked);
+			toast.error(getErrorMessage(err));
 		}
 	};
 
@@ -75,6 +108,18 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 				<Label>Enable connector</Label>
 				<Switch checked={enabled} disabled={saving} onCheckedChange={(checked) => void handleToggle(checked)} />
 			</div>
+			{lastProbe && (
+				<div
+					className={`rounded-lg border px-3 py-2 text-xs ${
+						lastProbe.ok
+							? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+							: "border-red-500/30 bg-red-500/10 text-red-400"
+					}`}
+					data-testid={`${name}-connection-status`}
+				>
+					{lastProbe.ok ? "Connected — last probe succeeded" : `Disconnected — ${lastProbe.error || "probe failed"}`}
+				</div>
+			)}
 			{fields.map((field) => (
 				<div key={field.key} className="space-y-1">
 					<Label htmlFor={`${name}-${field.key}`}>{field.label}</Label>
@@ -93,11 +138,20 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 			))}
 			<div className="flex justify-end gap-2">
 				{onDelete && (
-					<Button variant="outline" onClick={onDelete} disabled={isDeleting}>
+					<Button variant="outline" onClick={onDelete} disabled={isDeleting || saving || testing}>
 						Remove
 					</Button>
 				)}
-				<Button onClick={() => void save()} disabled={saving}>
+				<Button
+					variant="outline"
+					onClick={() => void runTest()}
+					disabled={testing || saving || !data}
+					data-testid={`${name}-test-connection`}
+				>
+					<Cable className="h-4 w-4" />
+					{testing ? "Testing…" : "Test connection"}
+				</Button>
+				<Button onClick={() => void save()} disabled={saving || testing}>
 					<Save className="h-4 w-4" />
 					{saving ? "Saving…" : "Save connector"}
 				</Button>

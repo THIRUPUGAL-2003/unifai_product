@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scrollArea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TruncatedLabel } from "@/components/ui/truncatedLabel";
-import { Statuses } from "@/lib/constants/logs";
+import { MCPStatuses } from "@/lib/constants/logs";
 import { useGetMCPLogsFilterDataQuery, useGetTeamsQuery, useGetSessionUsersQuery, useGetCustomersQuery } from "@/lib/store";
 import { useGetBusinessUnitsQuery } from "@enterprise/lib/store/apis/businessUnitsApi";
 import type { MCPToolLogFilters } from "@/lib/types/logs";
@@ -312,7 +312,7 @@ function StatusFilter({ filters, onFiltersChange, defaultOpen }: FilterComponent
 
 	return (
 		<FilterSection title="Status" defaultOpen={defaultOpen || hasActive}>
-			{Statuses.map((status) => (
+			{MCPStatuses.map((status) => (
 				<CheckboxFilterItem
 					key={status}
 					labelClassName="capitalize"

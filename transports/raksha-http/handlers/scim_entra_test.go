@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -1412,5 +1414,99 @@ func TestSCIMDisplayNameMapping_EntraOktaKeycloak(t *testing.T) {
 		if dbUser.Username != "Admin YesPanchi (Lead)" {
 			t.Fatalf("Expected patched Username 'Admin YesPanchi (Lead)', got '%s'", dbUser.Username)
 		}
+	}
+}
+
+// TestSCIMProvisioningChain_UniquenessAndDiscovery covers displayName collisions,
+// ResourceTypes discovery, and unsupported-filter error handling used by Entra/Okta/Keycloak.
+func TestSCIMProvisioningChain_UniquenessAndDiscovery(t *testing.T) {
+	store := newSCIMTestStore()
+	handler := &WorkspaceHandler{
+		workspace: store,
+		store: &lib.Config{
+			ConfigStore: store,
+		},
+	}
+	testBearer := "test-bearer-token-chain"
+	scimCfg := scimConfigPayload{
+		Enabled:     true,
+		Provider:    "entra",
+		BearerToken: testBearer,
+		Config:      map[string]any{},
+	}
+	raw, _ := json.Marshal(scimCfg)
+	_ = store.UpsertWorkspaceSetting(nil, configstore.WorkspaceSettingSCIM, string(raw))
+
+	authMiddleware := handler.scimMiddleware()
+	runWithAuth := func(h fasthttp.RequestHandler, method, uri, token string, body any) *fasthttp.RequestCtx {
+		ctx := &fasthttp.RequestCtx{}
+		ctx.Request.Header.SetMethod(method)
+		ctx.Request.SetRequestURI(uri)
+		if token != "" {
+			ctx.Request.Header.Set("Authorization", "Bearer "+token)
+		}
+		if body != nil {
+			rawBody, _ := json.Marshal(body)
+			ctx.Request.SetBody(rawBody)
+			ctx.Request.Header.Set("Content-Type", "application/scim+json")
+		}
+		authMiddleware(h)(ctx)
+		return ctx
+	}
+
+	ctxRT := runWithAuth(handler.scimResourceTypes, "GET", "/scim/v2/ResourceTypes", testBearer, nil)
+	if ctxRT.Response.StatusCode() != http.StatusOK {
+		t.Fatalf("ResourceTypes: got %d", ctxRT.Response.StatusCode())
+	}
+	if ct := string(ctxRT.Response.Header.ContentType()); !strings.Contains(ct, "application/scim+json") {
+		t.Fatalf("ResourceTypes content-type=%q want scim+json", ct)
+	}
+
+	ctxBad := runWithAuth(handler.scimListUsers, "GET", `/scim/v2/Users?filter=title%20eq%20"CEO"`, testBearer, nil)
+	if ctxBad.Response.StatusCode() != http.StatusBadRequest {
+		t.Fatalf("unsupported filter: got %d want 400", ctxBad.Response.StatusCode())
+	}
+
+	for i, email := range []string{"john.a@contoso.com", "john.b@contoso.com"} {
+		payload := map[string]any{
+			"schemas":     []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
+			"userName":    email,
+			"displayName": "John Smith",
+			"externalId":  fmt.Sprintf("ext-john-%d", i+1),
+			"active":      true,
+			"emails": []map[string]any{
+				{"value": email, "primary": true, "type": "work"},
+			},
+		}
+		ctx := runWithAuth(handler.scimCreateUser, "POST", "/scim/v2/Users", testBearer, payload)
+		if ctx.Response.StatusCode() != http.StatusCreated {
+			t.Fatalf("create John #%d: status %d body=%s", i+1, ctx.Response.StatusCode(), string(ctx.Response.Body()))
+		}
+	}
+	users, err := store.GetUsers(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byEmail := map[string]*tables.TableUser{}
+	for _, u := range users {
+		if u == nil {
+			continue
+		}
+		if strings.EqualFold(u.Email, "john.a@contoso.com") || strings.EqualFold(u.Email, "john.b@contoso.com") {
+			byEmail[strings.ToLower(u.Email)] = u
+		}
+	}
+	if len(byEmail) != 2 {
+		t.Fatalf("expected 2 provisioned users, got %d", len(byEmail))
+	}
+	a, b := byEmail["john.a@contoso.com"], byEmail["john.b@contoso.com"]
+	if a.Username != "John Smith" {
+		t.Fatalf("first user username=%q want John Smith", a.Username)
+	}
+	if strings.EqualFold(a.Username, b.Username) {
+		t.Fatalf("displayName collision not uniquified: both %q", a.Username)
+	}
+	if !strings.HasPrefix(b.Username, "John Smith") {
+		t.Fatalf("second user should keep displayName prefix, got %q", b.Username)
 	}
 }

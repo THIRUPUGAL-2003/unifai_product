@@ -29,6 +29,9 @@ export const connectorsApi = baseApi.injectEndpoints({
 				{ type: "Connectors", id: name },
 			],
 		}),
+		testConnector: builder.mutation<{ connection?: { ok?: boolean; error?: string; detail?: string } }, string>({
+			query: (name) => ({ url: `/connectors/${name}/test`, method: "POST" }),
+		}),
 	}),
 });
 
@@ -37,4 +40,5 @@ export const {
 	useGetConnectorQuery,
 	useUpdateConnectorMutation,
 	useDeleteConnectorMutation,
+	useTestConnectorMutation,
 } = connectorsApi;

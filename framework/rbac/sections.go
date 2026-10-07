@@ -37,6 +37,8 @@ func SectionRequirementFor(method, path string) []string {
 		default:
 			return []string{"observability/llm-logs", "observability/logs-settings"}
 		}
+	case strings.HasPrefix(path, "/api/connectors"):
+		return []string{"observability/connectors"}
 	}
 
 	if read {

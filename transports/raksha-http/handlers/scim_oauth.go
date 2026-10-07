@@ -184,14 +184,9 @@ func (h *WorkspaceHandler) scimOAuthCallback(ctx *fasthttp.RequestCtx) {
 	}
 
 	if access, ok := tok["access_token"].(string); ok && access != "" {
+		// Outbound OAuth token for calling the IdP — never overwrite the inbound SCIM
+		// bearer the IdP must send on /scim/v2 (that secret is configured separately).
 		oauth["access_token"] = access
-		// Also store as SCIM bearer so /scim/v2 works immediately when enabled.
-		if cfg.Config["bearer_token"] == nil || strings.TrimSpace(fmt.Sprint(cfg.Config["bearer_token"])) == "" {
-			cfg.Config["bearer_token"] = access
-		}
-		if cfg.BearerToken == "" {
-			cfg.BearerToken = fmt.Sprint(cfg.Config["bearer_token"])
-		}
 	}
 	if refresh, ok := tok["refresh_token"].(string); ok && refresh != "" {
 		oauth["refresh_token"] = refresh

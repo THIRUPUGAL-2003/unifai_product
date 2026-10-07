@@ -122,6 +122,8 @@ export const EmbeddingSupportedProviders: readonly ProviderName[] = [
 ] as const;
 
 export const Statuses = ["success", "error", "warning", "processing", "cancelled"] as const;
+/** MCP tool executions only report success/error — do not reuse LLM statuses in MCP filters. */
+export const MCPStatuses = ["success", "error"] as const;
 
 export const RequestTypes = [
 	"list_models",

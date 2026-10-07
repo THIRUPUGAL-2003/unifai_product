@@ -200,6 +200,8 @@ func (h *SessionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.DELETE("/api/session/users/{id}", lib.ChainMiddlewares(h.deleteUser, middlewares...))
 	r.POST("/api/session/users/{id}/approve", lib.ChainMiddlewares(h.approveUser, middlewares...))
 	r.POST("/api/session/users/{id}/reject", lib.ChainMiddlewares(h.rejectUser, middlewares...))
+	// Signed Accept/Deny links from admin notification email (token auth; no session required).
+	r.GET("/api/session/users/review", lib.ChainMiddlewares(h.reviewRegistrationByToken, middlewares...))
 	r.POST("/api/session/change-temporary-password", lib.ChainMiddlewares(h.changeTemporaryPassword, middlewares...))
 }
 
@@ -743,10 +745,14 @@ func (h *SessionHandler) assertEmailAvailable(ctx *fasthttp.RequestCtx, email, e
 	if exceptUserID != "" && other.ID == exceptUserID {
 		return true
 	}
-	// An abandoned sign-up whose code has expired must not hold the email forever.
-	if other.Status == tables.UserStatusEmailUnverified && time.Since(other.UpdatedAt) > passwordResetOTPTTL {
-		if err := h.configStore.DeleteUser(ctx, other.ID); err == nil {
-			return true
+	// Abandoned unverified sign-ups and denied rows must not hold the email forever.
+	// Denied accounts are hidden from Governance; reclaim frees the address for a new sign-up.
+	if other.Status == tables.UserStatusRejected ||
+		(other.Status == tables.UserStatusEmailUnverified && time.Since(other.UpdatedAt) > passwordResetOTPTTL) {
+		if strings.TrimSpace(other.ExternalID) == "" {
+			if err := h.configStore.DeleteUser(ctx, other.ID); err == nil {
+				return true
+			}
 		}
 	}
 	SendError(ctx, fasthttp.StatusConflict, "Unable to complete registration with this email. Try a different email or sign in if you already have an account.")
@@ -1995,6 +2001,8 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 		existing.Status = initialStatus
 		existing.ReviewedAt = nil
 		existing.UpdatedAt = now
+		// Drop any leftover grants from a prior denied/abandoned row so Accept cannot revive them.
+		h.clearRegistrationReuseGrants(existing)
 		if err := h.configStore.UpdateUser(ctx, existing); err != nil {
 			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to submit registration")
 			return
@@ -2057,11 +2065,36 @@ func (h *SessionHandler) registrationMayReuse(ctx *fasthttp.RequestCtx, existing
 	return true
 }
 
+// clearRegistrationReuseGrants strips privileges that must not survive a denied → re-register cycle.
+func (h *SessionHandler) clearRegistrationReuseGrants(user *tables.TableUser) {
+	if user == nil {
+		return
+	}
+	user.AllowedSections = ""
+	user.AllowedPromptRepos = ""
+	user.Budget = 0
+	user.RateLimit = 0
+	user.BudgetID = nil
+	user.RateLimitID = nil
+	user.MustChangePassword = false
+	user.ExternalID = ""
+}
+
 // reviewTargetGuard applies the same role guards as edit/delete to approve/reject and
 // limits both to sign-ups still awaiting review. Returns false after sending an error.
-func (h *SessionHandler) reviewTargetGuard(ctx *fasthttp.RequestCtx, user *tables.TableUser) bool {
-	if user.Status != tables.UserStatusPending && user.Status != tables.UserStatusEmailUnverified {
-		SendError(ctx, fasthttp.StatusConflict, "Only pending sign-ups can be approved or denied. Use Edit to change an existing account.")
+// Approve requires email-verified pending; deny also allows cleaning up unverified rows.
+func (h *SessionHandler) reviewTargetGuard(ctx *fasthttp.RequestCtx, user *tables.TableUser, forApprove bool) bool {
+	if forApprove {
+		if user.Status == tables.UserStatusEmailUnverified {
+			SendError(ctx, fasthttp.StatusConflict, "This sign-up has not verified email yet. Wait for verification, or Deny to remove the request.")
+			return false
+		}
+		if user.Status != tables.UserStatusPending {
+			SendError(ctx, fasthttp.StatusConflict, "Only pending sign-ups can be approved. Use Edit to change an existing account.")
+			return false
+		}
+	} else if user.Status != tables.UserStatusPending && user.Status != tables.UserStatusEmailUnverified {
+		SendError(ctx, fasthttp.StatusConflict, "Only pending sign-ups can be denied. Use Edit to change an existing account.")
 		return false
 	}
 	if user.Role == "admin" && !h.isSuperAdmin(ctx) {
@@ -2098,7 +2131,7 @@ func (h *SessionHandler) approveUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusConflict, "This account was disabled by the identity provider. Re-activate it there.")
 		return
 	}
-	if !h.reviewTargetGuard(ctx, user) {
+	if !h.reviewTargetGuard(ctx, user, true) {
 		return
 	}
 	now := time.Now()
@@ -2142,7 +2175,7 @@ func (h *SessionHandler) rejectUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusNotFound, "User not found")
 		return
 	}
-	if !h.reviewTargetGuard(ctx, user) {
+	if !h.reviewTargetGuard(ctx, user, false) {
 		return
 	}
 	now := time.Now()

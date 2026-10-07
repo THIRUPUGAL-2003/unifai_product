@@ -82,14 +82,41 @@ export default function SCIMView() {
 
 			<Card>
 				<CardHeader>
+					<CardTitle className="text-base">Connect chain (IdP → Raksha)</CardTitle>
+					<CardDescription>
+						Provisioning is inbound SCIM: the identity provider pushes create / update / deactivate / delete to Raksha.
+						Optional provider fields below are metadata only — connection requires Enable + bearer token + Tenant URL in the IdP.
+					</CardDescription>
+				</CardHeader>
+				<CardContent className="text-muted-foreground space-y-2 text-sm">
+					<ol className="list-decimal space-y-1 pl-5">
+						<li>Enable SCIM, pick your IdP, click Save (generates bearer token if empty).</li>
+						<li>Copy Base URL + bearer token into the IdP enterprise app / SCIM client.</li>
+						<li>
+							{config.provider === "entra" && "Entra: Enterprise app → Provisioning → Automatic → Tenant URL = Base URL, Secret Token = bearer."}
+							{config.provider === "okta" && "Okta: Applications → Provisioning → Integration → SCIM connector base URL + HTTP Header Authorization."}
+							{config.provider === "keycloak" && "Keycloak: Realm → Clients / SCIM or Identity Brokering push → SCIM endpoint + bearer."}
+							{!config.provider && "Configure the IdP SCIM client with Base URL + bearer token."}
+						</li>
+						<li>Assign users/groups in the IdP and start provisioning (or Test Connection).</li>
+						<li>
+							Create/update syncs into Users; soft-delete sets <code className="text-xs">active=false</code>; hard DELETE removes the local user.
+						</li>
+					</ol>
+				</CardContent>
+			</Card>
+
+			<Card>
+				<CardHeader>
 					<CardTitle className="text-base">SCIM endpoints (for your IdP)</CardTitle>
 					<CardDescription>Configure these in Okta, Entra, or Keycloak when provisioning users into Raksha.</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-3 text-sm">
-					<EndpointRow label="Base URL" value={scimBase} onCopy={copyToClipboard} />
+					<EndpointRow label="Base URL (Tenant URL)" value={scimBase} onCopy={copyToClipboard} />
 					<EndpointRow label="Users endpoint" value={`${scimBase}/Users`} onCopy={copyToClipboard} />
 					<EndpointRow label="Groups endpoint" value={`${scimBase}/Groups`} onCopy={copyToClipboard} />
 					<EndpointRow label="ServiceProviderConfig" value={`${scimBase}/ServiceProviderConfig`} onCopy={copyToClipboard} />
+					<EndpointRow label="ResourceTypes" value={`${scimBase}/ResourceTypes`} onCopy={copyToClipboard} />
 					<p className="text-muted-foreground text-xs">
 						Authentication: Bearer token (set below). Token is required on every SCIM request from your identity provider.
 					</p>
@@ -121,8 +148,22 @@ export default function SCIMView() {
 							<option value="keycloak">Keycloak</option>
 						</select>
 					</div>
+					<div className="space-y-1">
+						<Label>Default role for provisioned users</Label>
+						<select
+							value={String(config.config?.defaultRole || config.config?.default_role || "user")}
+							onChange={(e) => setField("defaultRole", e.target.value)}
+							className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+						>
+							<option value="user">user</option>
+							<option value="sub_admin">sub_admin</option>
+							<option value="admin">admin</option>
+						</select>
+						<p className="text-muted-foreground text-xs">Used when the IdP does not send a recognised role mapping.</p>
+					</div>
 					{config.provider === "okta" && (
 						<>
+							<p className="text-muted-foreground text-xs">Optional notes for your Okta app (not used for inbound SCIM auth).</p>
 							<Field label="Issuer URL" value={config.config.issuerUrl || ""} onChange={(value) => setField("issuerUrl", value)} />
 							<Field label="Client ID" value={config.config.clientId || ""} onChange={(value) => setField("clientId", value)} />
 							<Field label="Client secret" type="password" value={config.config.clientSecret || ""} onChange={(value) => setField("clientSecret", value)} />
@@ -131,6 +172,7 @@ export default function SCIMView() {
 					)}
 					{config.provider === "entra" && (
 						<>
+							<p className="text-muted-foreground text-xs">Optional notes for your Entra enterprise app (not used for inbound SCIM auth).</p>
 							<Field label="Tenant ID" value={config.config.tenantId || ""} onChange={(value) => setField("tenantId", value)} />
 							<Field label="Client ID" value={config.config.clientId || ""} onChange={(value) => setField("clientId", value)} />
 							<Field label="Client secret" type="password" value={config.config.clientSecret || ""} onChange={(value) => setField("clientSecret", value)} />
@@ -138,6 +180,7 @@ export default function SCIMView() {
 					)}
 					{config.provider === "keycloak" && (
 						<>
+							<p className="text-muted-foreground text-xs">Optional notes for your Keycloak realm (not used for inbound SCIM auth).</p>
 							<Field label="Issuer URL" value={config.config.issuerUrl || ""} onChange={(value) => setField("issuerUrl", value)} />
 							<Field label="Client ID" value={config.config.clientId || ""} onChange={(value) => setField("clientId", value)} />
 							<Field label="Client secret" type="password" value={config.config.clientSecret || ""} onChange={(value) => setField("clientSecret", value)} />

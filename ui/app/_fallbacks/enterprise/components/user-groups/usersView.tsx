@@ -171,7 +171,7 @@ export default function UsersView() {
 		isError: usersError,
 		error: usersErrorDetail,
 		refetch: refetchUsers,
-	} = useGetSessionUsersQuery();
+	} = useGetSessionUsersQuery(undefined, { pollingInterval: 15_000, refetchOnFocus: true });
 	const { data: promptsData } = useGetPromptsQuery();
 	const { data: teamsData } = useGetTeamsQuery({ limit: 500, offset: 0 });
 	const teams = teamsData?.teams || [];
@@ -802,9 +802,10 @@ export default function UsersView() {
 		{ value: "admin", label: "Admin" },
 	];
 
-	// email_unverified sign-ups are listed too (badged) so admins can see and clean up stuck requests.
+	// Pending queue ignores role filter — every sign-up still needs Accept/Deny regardless of Admin/User toggle.
+	// email_unverified rows stay visible (badged) so admins can deny stuck requests.
 	const pendingUsers = users.filter(
-		(u) => ["pending", "email_unverified"].includes(u.status || "approved") && matchesSearch(u) && matchesRole(u),
+		(u) => ["pending", "email_unverified"].includes(u.status || "approved") && matchesSearch(u),
 	);
 	const activeUsers = approvedUsers.filter((u) => matchesSearch(u) && matchesRole(u));
 	const [activeUsersOffset, setActiveUsersOffset] = useState(0);
@@ -926,6 +927,10 @@ export default function UsersView() {
 								Pending approvals ({pendingUsers.length})
 							</h2>
 						</div>
+						<p className="text-muted-foreground pl-6 text-xs">
+							Accept activates the account (after email verification). Deny blocks sign-in and removes the request from this list.
+							Admins also receive Accept/Deny email links when SMTP is enabled.
+						</p>
 						{pendingUsers.length === 0 ? (
 							<p className="text-muted-foreground text-sm pl-6">No registration requests waiting.</p>
 						) : (
@@ -975,7 +980,16 @@ export default function UsersView() {
 													<div className="flex justify-end gap-2">
 														<Button
 															size="sm"
-															disabled={actionBusyId === user.id || !hasUpdateAccess}
+															disabled={
+																actionBusyId === user.id ||
+																!hasUpdateAccess ||
+																user.status === "email_unverified"
+															}
+															title={
+																user.status === "email_unverified"
+																	? "Applicant must verify email before Accept"
+																	: "Accept — activate account"
+															}
 															onClick={() => handleApprove(user)}
 															className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-500 text-white"
 															data-testid="user-registration-accept"

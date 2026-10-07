@@ -138,6 +138,7 @@ func (h *WorkspaceHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	scim := h.scimMiddleware()
 	r.GET("/scim/v2/ServiceProviderConfig", scim(h.scimServiceProviderConfig))
 	r.GET("/scim/v2/Schemas", scim(h.scimSchemas))
+	r.GET("/scim/v2/ResourceTypes", scim(h.scimResourceTypes))
 	r.GET("/scim/v2/Users", scim(h.scimListUsers))
 	r.POST("/scim/v2/Users", scim(h.scimCreateUser))
 	r.GET("/scim/v2/Users/{id}", scim(h.scimGetUser))

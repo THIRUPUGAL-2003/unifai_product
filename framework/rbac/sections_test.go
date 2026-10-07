@@ -46,6 +46,9 @@ func TestSectionRequirementFor(t *testing.T) {
 		{"rule providers section saves providers", "PUT", "/api/guardrails/providers", "guardrails/providers", true},
 		{"rule providers section cannot save rules", "PUT", "/api/guardrails/rules", "guardrails/providers", false},
 		{"unmapped route is not section-gated", "GET", "/api/providers", "", true},
+		{"connectors need connectors section", "GET", "/api/connectors", "observability/llm-logs", false},
+		{"connectors section can list connectors", "GET", "/api/connectors", "observability/connectors", true},
+		{"observability parent covers connectors", "PUT", "/api/connectors/datadog", "observability", true},
 	}
 	for _, c := range cases {
 		if got := SectionsAllow(c.grants, SectionRequirementFor(c.method, c.path)); got != c.want {

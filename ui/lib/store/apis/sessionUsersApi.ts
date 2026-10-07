@@ -36,6 +36,8 @@ export const sessionUsersApi = baseApi.injectEndpoints({
 	endpoints: (builder) => ({
 		getSessionUsers: builder.query<SessionUser[], void>({
 			query: () => ({ url: "/session/users" }),
+			// Keep Governance → Users in sync when sign-ups land while the page is open.
+			keepUnusedDataFor: 30,
 			providesTags: ["Users"],
 		}),
 		createSessionUser: builder.mutation<SessionUser, SessionUserPayload>({

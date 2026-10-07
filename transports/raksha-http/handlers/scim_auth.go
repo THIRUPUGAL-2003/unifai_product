@@ -58,6 +58,23 @@ func scimError(ctx *fasthttp.RequestCtx, status int, detail string, scimType ...
 	ctx.SetBody(raw)
 }
 
+// SendSCIMJSON writes a successful SCIM payload with the IdP-expected media type.
+func SendSCIMJSON(ctx *fasthttp.RequestCtx, data any) {
+	ctx.SetContentType("application/scim+json")
+	if err := json.NewEncoder(ctx).Encode(data); err != nil {
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to encode scim response")
+	}
+}
+
+// SendSCIMJSONWithStatus is SendSCIMJSON with an explicit status (e.g. 201 Created).
+func SendSCIMJSONWithStatus(ctx *fasthttp.RequestCtx, data any, statusCode int) {
+	ctx.SetContentType("application/scim+json")
+	ctx.SetStatusCode(statusCode)
+	if err := json.NewEncoder(ctx).Encode(data); err != nil {
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to encode scim response")
+	}
+}
+
 func scimBearerTokenFromRequest(ctx *fasthttp.RequestCtx) string {
 	auth := strings.TrimSpace(string(ctx.Request.Header.Peek("Authorization")))
 	if len(auth) >= 7 && strings.EqualFold(auth[:7], "bearer ") {

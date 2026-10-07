@@ -166,8 +166,10 @@ export default function DashboardPage() {
 		],
 	);
 
-	const mcpFilters: MCPToolLogFilters = useMemo(
-		() => ({
+	const mcpFilters: MCPToolLogFilters = useMemo(() => {
+		// Shared sidebar can include LLM-only statuses; MCP metrics only understand success/error.
+		const mcpStatus = urlState.status.filter((s) => s === "success" || s === "error");
+		return {
 			...(urlState.period
 				? { period: urlState.period }
 				: {
@@ -180,7 +182,7 @@ export default function DashboardPage() {
 			...(selectedMcpServerLabels.length > 0 && {
 				server_labels: selectedMcpServerLabels,
 			}),
-			...(urlState.status.length > 0 && { status: urlState.status }),
+			...(mcpStatus.length > 0 && { status: mcpStatus }),
 			...(urlState.virtual_key_ids.length > 0 && {
 				virtual_key_ids: urlState.virtual_key_ids,
 			}),
@@ -188,21 +190,20 @@ export default function DashboardPage() {
 			...(urlState.team_ids.length > 0 && { team_ids: urlState.team_ids }),
 			...(urlState.customer_ids.length > 0 && { customer_ids: urlState.customer_ids }),
 			...(urlState.business_unit_ids.length > 0 && { business_unit_ids: urlState.business_unit_ids }),
-		}),
-		[
-			urlState.period,
-			urlState.start_time,
-			urlState.end_time,
-			selectedMcpToolNames,
-			selectedMcpServerLabels,
-			urlState.status,
-			urlState.virtual_key_ids,
-			urlState.user_ids,
-			urlState.team_ids,
-			urlState.customer_ids,
-			urlState.business_unit_ids,
-		],
-	);
+		};
+	}, [
+		urlState.period,
+		urlState.start_time,
+		urlState.end_time,
+		selectedMcpToolNames,
+		selectedMcpServerLabels,
+		urlState.status,
+		urlState.virtual_key_ids,
+		urlState.user_ids,
+		urlState.team_ids,
+		urlState.customer_ids,
+		urlState.business_unit_ids,
+	]);
 
 	// Tab view refs for export data aggregation
 	const overviewRef = useRef<OverviewTabViewHandle>(null);
@@ -298,7 +299,7 @@ export default function DashboardPage() {
 			const newEndTime = newFilters.end_time ? dateUtils.toUnixTimestamp(new Date(newFilters.end_time)) : undefined;
 			const timeChanged = newStartTime !== urlState.start_time || newEndTime !== urlState.end_time;
 			setUrlState({
-				...(timeChanged && { period: "" }),
+				...(timeChanged && { period: "", polling: false }),
 				start_time: newStartTime,
 				end_time: newEndTime,
 				providers: newFilters.providers || [],
@@ -353,8 +354,10 @@ export default function DashboardPage() {
 	const handleDateRangeChange = useCallback(
 		(range: { from?: Date; to?: Date }) => {
 			if (!range.from || !range.to) return;
+			// Absolute range is a closed window — Live would only re-query the same stale interval.
 			setUrlState({
 				period: "",
+				polling: false,
 				start_time: dateUtils.toUnixTimestamp(range.from),
 				end_time: dateUtils.toUnixTimestamp(range.to),
 			});
@@ -482,9 +485,23 @@ export default function DashboardPage() {
 
 	const handlePollToggle = useCallback(
 		(enabled: boolean) => {
-			setUrlState({ polling: enabled });
+			if (enabled) {
+				if (!urlState.period) {
+					const { from, to } = getRangeForPeriod("1h");
+					setUrlState({
+						polling: true,
+						period: "1h",
+						start_time: Math.floor(from.getTime() / 1000),
+						end_time: Math.floor(to.getTime() / 1000),
+					});
+					return;
+				}
+				setUrlState({ polling: true });
+				return;
+			}
+			setUrlState({ polling: false });
 		},
-		[setUrlState],
+		[setUrlState, urlState.period],
 	);
 
 	return (

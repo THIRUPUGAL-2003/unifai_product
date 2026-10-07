@@ -744,12 +744,12 @@ func TestLogin_AccountLockout(t *testing.T) {
 	}
 }
 
-// 9. Single Session Fixation / Hijacking Mitigation
-func TestLogin_SingleSessionFixationMitigation(t *testing.T) {
+// 9. New login issues a fresh session token without kicking other devices/tabs.
+// Prior sessions stay valid until expiry or password change (see login handler comment).
+func TestLogin_IssuesDistinctSessionWithoutRevokingOthers(t *testing.T) {
 	store := setupTestStore(t)
 	handler := NewSessionHandler(store, nil)
 
-	// First login
 	ctx1 := makeFastHTTPCtx("POST", "/api/session/login", map[string]string{
 		"username": "admin",
 		"password": "AdminPass123!",
@@ -759,14 +759,11 @@ func TestLogin_SingleSessionFixationMitigation(t *testing.T) {
 	if token1 == "" {
 		t.Fatal("First login did not receive token")
 	}
-
-	// Verify token1 is in store
 	s1, _ := store.GetSession(context.Background(), token1)
 	if s1 == nil {
 		t.Fatal("token1 should be stored")
 	}
 
-	// Second login by same user (e.g., from another browser or attacker session fixation)
 	ctx2 := makeFastHTTPCtx("POST", "/api/session/login", map[string]string{
 		"username": "admin",
 		"password": "AdminPass123!",
@@ -776,19 +773,14 @@ func TestLogin_SingleSessionFixationMitigation(t *testing.T) {
 	if token2 == "" {
 		t.Fatal("Second login did not receive token")
 	}
-
-	// token2 must be different from token1
 	if token1 == token2 {
 		t.Errorf("New login must generate a new UUID token")
 	}
 
-	// token1 must have been purged from store (mitigating concurrent stolen sessions)
-	s1Old, _ := store.GetSession(context.Background(), token1)
-	if s1Old != nil {
-		t.Errorf("Prior session token1 should have been invalidated on new login")
+	s1Still, _ := store.GetSession(context.Background(), token1)
+	if s1Still == nil {
+		t.Errorf("Prior session should remain valid for multi-tab / multi-device use")
 	}
-
-	// token2 must be active
 	s2, _ := store.GetSession(context.Background(), token2)
 	if s2 == nil {
 		t.Errorf("token2 should be active in store")

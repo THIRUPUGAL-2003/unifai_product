@@ -18,6 +18,7 @@ const registrationVerifyGeneric = "If a sign-up is waiting for verification, a n
 // username and email are not held by a sign-up nobody can verify.
 func (h *SessionHandler) respondRegistered(ctx *fasthttp.RequestCtx, user *tables.TableUser, verifyEmail, discardOnSendFailure bool) {
 	if !verifyEmail {
+		h.notifyAdminsPendingRegistration(ctx, user)
 		SendJSON(ctx, map[string]any{
 			"message": "Sent to the admin waiting for approval",
 			"id":      user.ID,
@@ -124,6 +125,7 @@ func (h *SessionHandler) verifyRegistration(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to submit registration")
 		return
 	}
+	h.notifyAdminsPendingRegistration(ctx, user)
 	SendJSON(ctx, map[string]any{
 		"message": "Email verified. Sent to the admin waiting for approval",
 		"id":      user.ID,
