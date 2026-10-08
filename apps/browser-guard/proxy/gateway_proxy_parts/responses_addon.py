@@ -53,6 +53,53 @@ def _tee_response_body(flow: http.HTTPFlow):
     return _tee
 
 
+_UA_GENERIC = {
+    "mozilla", "applewebkit", "version", "safari", "chrome", "chromium", "crios",
+    "mobile", "gecko", "khtml", "like", "compatible", "fxios", "edg", "edga", "edgios",
+}
+_CH_IGNORE = {
+    "chromium", "google chrome", "microsoft edge", "not a brand", "not.a brand",
+    "not/a)brand", "not;a=brand", "not)a;brand",
+}
+
+
+def _search_browser_label(user_agent: str, sec_ch_ua: str) -> str:
+    """Name the browser for Search Logs. Known brands keep stable labels; any other
+    browser (including ones that do not exist yet) is taken from Client Hints or the UA.
+    Logging never depends on this name — an unnamed client is still recorded as Browser.
+    """
+    import re
+
+    ua = (user_agent or "").lower()
+    sec = (sec_ch_ua or "").lower()
+    if "edg/" in ua or "edga/" in ua or "edgios/" in ua or "microsoft edge" in sec:
+        return "Edge"
+    if "opr/" in ua or "opera" in sec:
+        return "Opera"
+    if "brave" in sec or "brave/" in ua:
+        return "Brave"
+    if "vivaldi" in ua or "vivaldi" in sec:
+        return "Vivaldi"
+    if "firefox/" in ua or "fxios/" in ua:
+        return "Firefox"
+
+    for brand in re.findall(r'"([^"]{2,40})"', sec_ch_ua or ""):
+        key = brand.strip().lower()
+        if key and any(c.isalpha() for c in key) and key not in _CH_IGNORE and not key.startswith("not"):
+            return brand.strip()
+
+    products = re.findall(r"([A-Za-z][A-Za-z0-9_.-]{1,40})/\d", user_agent or "")
+    named = [p for p in products if p.lower() not in _UA_GENERIC]
+    if named:
+        return named[-1]
+
+    if ("safari/" in ua or "version/" in ua) and "chrome" not in ua and "chromium" not in ua:
+        return "Safari"
+    if "chrome/" in ua or "crios/" in ua or "google chrome" in sec or "chromium" in sec:
+        return "Chrome"
+    return "Browser"
+
+
 class BrowserAIInterceptor:
 
     def __init__(self):
@@ -190,33 +237,11 @@ class BrowserAIInterceptor:
         return False, n_processed, caption_consumed
 
     def _detect_search_browser(self, flow: http.HTTPFlow) -> str:
-        """Identify the employee browser from UA / Client Hints — any Chromium or Gecko browser."""
-        user_agent = flow.request.headers.get("user-agent", "") or ""
-        sec_ch_ua = (flow.request.headers.get("sec-ch-ua", "") or "").lower()
-        ua = user_agent.lower()
-
-        # Order matters: Edge/Opera/Brave/Vivaldi embed "chrome/" in UA.
-        if (
-            "edg/" in ua
-            or "edga/" in ua
-            or "edgios/" in ua
-            or "microsoft edge" in sec_ch_ua
-            or '"microsoft edge"' in sec_ch_ua
-        ):
-            return "Edge"
-        if "opr/" in ua or "opera" in sec_ch_ua:
-            return "Opera"
-        if "brave" in sec_ch_ua or "brave/" in ua:
-            return "Brave"
-        if "vivaldi" in ua or "vivaldi" in sec_ch_ua:
-            return "Vivaldi"
-        if "firefox/" in ua or "fxios/" in ua:
-            return "Firefox"
-        if ("safari/" in ua or "version/" in ua) and "chrome" not in ua and "chromium" not in ua:
-            return "Safari"
-        if "chrome/" in ua or "crios/" in ua or "google chrome" in sec_ch_ua or "chromium" in sec_ch_ua:
-            return "Chrome"
-        return "Unknown"
+        """Label the browser. Any current or future browser is still search-logged."""
+        return _search_browser_label(
+            flow.request.headers.get("user-agent", "") or "",
+            flow.request.headers.get("sec-ch-ua", "") or "",
+        )
 
     @staticmethod
     def _decode_bing_click_u(u_val: str) -> str:

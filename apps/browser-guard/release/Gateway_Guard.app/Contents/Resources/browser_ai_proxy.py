@@ -54,8 +54,13 @@ def _load_parts() -> None:
 
     if enc_path.is_file():
         try:
-            sys.path.insert(0, str(parts))
-            import bundle_crypto
+            # Prefer the decryptor compiled into the frozen binary. A loose
+            # bundle_crypto.py beside the ciphertext would expose the key.
+            try:
+                import bundle_crypto
+            except ImportError:
+                sys.path.insert(0, str(parts))
+                import bundle_crypto
             code_map = bundle_crypto.decrypt_parts_bundle(enc_path)
 
             manifest = parts / "MANIFEST.txt"
@@ -77,7 +82,12 @@ def _load_parts() -> None:
             print(f"[Gateway Proxy] Secure in-memory bundle loaded: {loaded_count} encrypted parts active (zero disk leak).")
             return
         except Exception as e:
+            if getattr(sys, "frozen", False):
+                raise RuntimeError(f"Encrypted proxy bundle failed to load: {e}") from e
             print(f"[Gateway Proxy WARNING] Failed to load encrypted bundle: {e}, attempting source fallback...")
+
+    if getattr(sys, "frozen", False):
+        raise RuntimeError("Frozen Guard requires gateway_proxy_parts.enc; plain proxy sources are not loaded.")
 
     # 2. Source fallback (Development / unit testing)
     manifest = parts / "MANIFEST.txt"
