@@ -55,6 +55,7 @@ function useScopeLookup(scope: string, scopeId?: string): { scopeName?: string; 
 
 	const scopeName = useMemo(() => {
 		if (!scopeId) return undefined;
+		if (scopeId === "*") return "All";
 		if (scope === "team") return (teamsData?.teams ?? []).find((t) => t.id === scopeId)?.name;
 		if (scope === "customer") return (customersData?.customers ?? []).find((c) => c.id === scopeId)?.name;
 		if (scope === "virtual_key") return (vksData?.virtual_keys ?? []).find((v) => v.id === scopeId)?.name;

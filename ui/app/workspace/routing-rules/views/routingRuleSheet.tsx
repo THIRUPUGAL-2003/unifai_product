@@ -18,11 +18,13 @@ import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { getErrorMessage } from "@/lib/store";
 import { useGetCustomersQuery, useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store/apis/governanceApi";
+import { useGetSessionUsersQuery } from "@/lib/store/apis/sessionUsersApi";
 import { useGetAllKeysQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { useCreateRoutingRuleMutation, useGetRoutingRulesQuery, useUpdateRoutingRuleMutation } from "@/lib/store/apis/routingRulesApi";
 import {
 	DEFAULT_ROUTING_RULE_FORM_DATA,
 	DEFAULT_ROUTING_TARGET,
+	ROUTING_RULE_ALL_SCOPE_ID,
 	ROUTING_RULE_SCOPES,
 	RoutingRule,
 	RoutingRuleFormData,
@@ -69,12 +71,13 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 	const { data: vksData, isError: vksError, error: vksErr } = useGetVirtualKeysQuery();
 	const { data: teamsData, isError: teamsError, error: teamsErr } = useGetTeamsQuery();
 	const { data: customersData, isError: customersError, error: customersErr } = useGetCustomersQuery();
+	const { data: usersData, isError: usersError, error: usersErr } = useGetSessionUsersQuery();
 	const [createRoutingRule, { isLoading: isCreating }] = useCreateRoutingRuleMutation();
 	const [updateRoutingRule, { isLoading: isUpdating }] = useUpdateRoutingRuleMutation();
 
 	const helperQueryFailed =
-		rulesError || providersError || keysError || vksError || teamsError || customersError;
-	const helperQueryError = rulesErr || providersErr || keysErr || vksErr || teamsErr || customersErr;
+		rulesError || providersError || keysError || vksError || teamsError || customersError || usersError;
+	const helperQueryError = rulesErr || providersErr || keysErr || vksErr || teamsErr || customersErr || usersErr;
 
 	useEffect(() => {
 		if (!open) return;
@@ -228,7 +231,9 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 	const onSubmit = (data: RoutingRuleFormData) => {
 		// Validate scope_id is required when scope is not global
 		if (data.scope !== "global" && !data.scope_id?.trim()) {
-			toast.error(`${data.scope === "team" ? "Team" : data.scope === "customer" ? "Customer" : "Virtual Key"} is required`);
+			toast.error(
+				`${data.scope === "team" ? "Team" : data.scope === "customer" ? "Customer" : data.scope === "user" ? "User" : "Virtual Key"} is required`,
+			);
 			return;
 		}
 
@@ -433,41 +438,56 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						{scope !== "global" && (
 							<div className="space-y-2">
 								<Label htmlFor="scope_id">
-									{scope === "team" ? "Team" : scope === "customer" ? "Customer" : "Virtual Key"} <span className="text-red-500">*</span>
+									{scope === "team" ? "Team" : scope === "customer" ? "Customer" : scope === "user" ? "User" : "Virtual Key"}{" "}
+									<span className="text-red-500">*</span>
 								</Label>
-								{scope === "team" && teams.length > 0 && (
+								{scope === "team" && (
 									<ComboboxSelect
 										options={teams.map((team) => ({ label: team.name || team.id || "Unnamed Team", value: team.id }))}
 										value={scopeId || null}
 										onValueChange={(value) => setValue("scope_id", value ?? "")}
 										placeholder="Select a team..."
+										selectAllValue={ROUTING_RULE_ALL_SCOPE_ID}
+										selectAllLabel="(Select All)"
+										selectAllTriggerLabel="All teams"
 										noPortal
 									/>
 								)}
-								{scope === "customer" && customers.length > 0 && (
+								{scope === "customer" && (
 									<ComboboxSelect
 										options={customers.map((customer) => ({ label: customer.name || customer.id || "Unnamed Customer", value: customer.id }))}
 										value={scopeId || null}
 										onValueChange={(value) => setValue("scope_id", value ?? "")}
 										placeholder="Select a customer..."
+										selectAllValue={ROUTING_RULE_ALL_SCOPE_ID}
+										selectAllLabel="(Select All)"
+										selectAllTriggerLabel="All customers"
 										noPortal
 									/>
 								)}
-								{scope === "virtual_key" && virtualKeys.length > 0 && (
+								{scope === "virtual_key" && (
 									<ComboboxSelect
 										options={virtualKeys.map((vk) => ({ label: vk.name || vk.id || "Unnamed Key", value: vk.id }))}
 										value={scopeId || null}
 										onValueChange={(value) => setValue("scope_id", value ?? "")}
 										placeholder="Select a virtual key..."
+										selectAllValue={ROUTING_RULE_ALL_SCOPE_ID}
+										selectAllLabel="(Select All)"
+										selectAllTriggerLabel="All virtual keys"
 										noPortal
 									/>
 								)}
-								{((scope === "team" && teams.length === 0) ||
-									(scope === "customer" && customers.length === 0) ||
-									(scope === "virtual_key" && virtualKeys.length === 0)) && (
-									<p className="text-muted-foreground text-sm">
-										No {scope === "team" ? "teams" : scope === "customer" ? "customers" : "virtual keys"} available
-									</p>
+								{scope === "user" && (
+									<ComboboxSelect
+										options={(usersData || []).map((user) => ({ label: user.username || user.email || user.id, value: user.id }))}
+										value={scopeId || null}
+										onValueChange={(value) => setValue("scope_id", value ?? "")}
+										placeholder="Select a user..."
+										selectAllValue={ROUTING_RULE_ALL_SCOPE_ID}
+										selectAllLabel="(Select All)"
+										selectAllTriggerLabel="All users"
+										noPortal
+									/>
 								)}
 								{errors.scope_id && <p className="text-destructive text-sm">{errors.scope_id.message}</p>}
 							</div>

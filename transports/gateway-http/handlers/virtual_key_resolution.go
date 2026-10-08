@@ -105,15 +105,6 @@ func ResolveAllowedVirtualKeyIDsForUser(ctx context.Context, store configstore.C
 				}
 			}
 		}
-
-		// 4. Virtual keys created by this user
-		var createdVKs []string
-		_ = db.Model(&tables.TableVirtualKey{}).Where("created_by_user_id = ?", userID).Pluck("id", &createdVKs).Error
-		for _, id := range createdVKs {
-			if id != "" {
-				allowed[id] = true
-			}
-		}
 	}
 
 	return allowed, nil

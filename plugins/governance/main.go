@@ -777,6 +777,7 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.GatewayContext, req *s
 		BilledTeamName:           billedTeamName,
 		BilledCustomerID:         billedCustomerID,
 		BilledCustomerName:       billedCustomerName,
+		UserID:                   gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID),
 		Provider:                 provider,
 		Model:                    model,
 		RequestType:              requestType,

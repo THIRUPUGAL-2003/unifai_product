@@ -4524,8 +4524,26 @@ func (gs *LocalGovernanceStore) GetAllRoutingRules(ctx context.Context) []*confi
 
 // GetScopedRoutingRules retrieves routing rules by scope and scope ID (from in-memory cache)
 // Rules are already sorted by priority ASC (0 is highest priority)
+func (gs *LocalGovernanceStore) enabledRoutingRules(key string) []*configstoreTables.TableRoutingRule {
+	rules, ok := gs.routingRules.Load(key)
+	if !ok {
+		return nil
+	}
+	rulesList, ok := rules.([]*configstoreTables.TableRoutingRule)
+	if !ok {
+		return nil
+	}
+	var enabledRules []*configstoreTables.TableRoutingRule
+	for _, rule := range rulesList {
+		if rule.EnabledValue() {
+			enabledRules = append(enabledRules, rule)
+		}
+	}
+	return enabledRules
+}
+
 func (gs *LocalGovernanceStore) GetScopedRoutingRules(ctx context.Context, scope string, scopeID string) []*configstoreTables.TableRoutingRule {
-	// Build cache key: "scope:scopeID" (scopeID empty string for global)
+	// Build cache key: "scope:scopeID" (scopeID empty string for global, "*" for every entity of that scope)
 	var key string
 	if scope == "global" {
 		key = "global:"
@@ -4533,25 +4551,13 @@ func (gs *LocalGovernanceStore) GetScopedRoutingRules(ctx context.Context, scope
 		key = fmt.Sprintf("%s:%s", scope, scopeID)
 	}
 
-	// Load from in-memory sync.Map
-	rules, ok := gs.routingRules.Load(key)
-	if !ok {
-		return nil
+	enabledRules := gs.enabledRoutingRules(key)
+	if scope != "global" && scopeID != "" && scopeID != "*" {
+		enabledRules = append(enabledRules, gs.enabledRoutingRules(scope+":*")...)
+		sort.SliceStable(enabledRules, func(i, j int) bool {
+			return enabledRules[i].Priority < enabledRules[j].Priority
+		})
 	}
-
-	rulesList, ok := rules.([]*configstoreTables.TableRoutingRule)
-	if !ok {
-		return nil
-	}
-
-	// Filter by enabled and return
-	var enabledRules []*configstoreTables.TableRoutingRule
-	for _, rule := range rulesList {
-		if rule.EnabledValue() {
-			enabledRules = append(enabledRules, rule)
-		}
-	}
-
 	return enabledRules
 }
 

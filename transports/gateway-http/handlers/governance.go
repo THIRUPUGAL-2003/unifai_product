@@ -5275,6 +5275,7 @@ var validRoutingScopes = map[string]bool{
 	"team":        true,
 	"customer":    true,
 	"virtual_key": true,
+	"user":        true,
 }
 
 // validateRoutingScope validates that the scope value is one of the allowed values
@@ -5283,7 +5284,7 @@ func validateRoutingScope(scope string) error {
 		return nil // Empty scope will default to "global" later
 	}
 	if !validRoutingScopes[scope] {
-		return fmt.Errorf("invalid scope %q: must be one of: global, team, customer, virtual_key", scope)
+		return fmt.Errorf("invalid scope %q: must be one of: global, team, customer, virtual_key, user", scope)
 	}
 	return nil
 }

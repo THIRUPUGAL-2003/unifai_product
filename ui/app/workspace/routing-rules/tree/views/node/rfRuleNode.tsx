@@ -97,7 +97,7 @@ export function RFRuleNode({ data }: { data: any }) {
 									<span className="font-semibold" style={{ color: scopeColor }}>
 										{cfg?.label ?? rule.scope}:{" "}
 									</span>
-									<span className="text-foreground font-medium">{rule.scope_id}</span>
+									<span className="text-foreground font-medium">{rule.scope_id === "*" ? "All" : rule.scope_id}</span>
 								</p>
 							</div>
 						)}

@@ -307,6 +307,10 @@ interface ComboboxSelectBaseProps {
 	creatable?: boolean;
 	createLabel?: (value: string) => React.ReactNode;
 	"data-testid"?: string;
+	/** When set, the list shows a Select All tick. Choosing it stores this value (single) or every option (multi). */
+	selectAllValue?: string;
+	selectAllLabel?: string;
+	selectAllTriggerLabel?: string;
 }
 
 interface ComboboxCreatableProps {
@@ -456,7 +460,11 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 		createLabel,
 		"data-testid": dataTestId,
 		searchPlaceholder,
+		selectAllValue,
+		selectAllLabel = "(Select All)",
+		selectAllTriggerLabel,
 	} = props;
+	const selectedAllLabel = selectAllTriggerLabel || selectAllLabel;
 
 	const [open, setOpen] = React.useState(false);
 	const [query, setQuery] = React.useState("");
@@ -542,6 +550,34 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 							</div>
 						)}
 						<CommandPrimitive.List className="max-h-[300px] overflow-y-auto p-1">
+							{selectAllValue && !query && (
+								<CommandPrimitive.Item
+									value={selectAllValue}
+									className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
+									onSelect={() => {
+										const all = options.map((option) => option.value);
+										const everySelected = all.length > 0 && all.every((value) => selectedValues.includes(value));
+										props.onValueChange?.(everySelected ? [] : all);
+									}}
+								>
+									<span
+										className={cn(
+											"border-primary flex size-4 items-center justify-center rounded-sm border",
+											options.length > 0 && options.every((option) => selectedValues.includes(option.value))
+												? "bg-primary text-primary-foreground"
+												: "opacity-50",
+										)}
+									>
+										<CheckIcon
+											className={cn(
+												"size-3",
+												options.length > 0 && options.every((option) => selectedValues.includes(option.value)) ? "" : "invisible",
+											)}
+										/>
+									</span>
+									<span>{selectAllLabel}</span>
+								</CommandPrimitive.Item>
+							)}
 							{filtered.map((option) => {
 								const isSelected = selectedValues.includes(option.value);
 								return (
@@ -605,7 +641,7 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 						className,
 					)}
 				>
-					<span className="truncate">{selectedLabel || placeholder}</span>
+					<span className="truncate">{props.value === selectAllValue ? selectedAllLabel : selectedLabel || placeholder}</span>
 					<div className="ml-2 flex shrink-0 items-center gap-1">
 						{!props.hideClear && props.value && (
 							<button
@@ -639,6 +675,26 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 						</div>
 					)}
 					<CommandPrimitive.List className={cn("max-h-[300px] overflow-y-auto p-1", filtered.length === 0 ? "p-0" : "")}>
+						{selectAllValue && !query && (
+							<CommandPrimitive.Item
+								value={selectAllValue}
+								className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
+								onSelect={() => {
+									props.onValueChange?.(selectAllValue);
+									setOpen(false);
+								}}
+							>
+								<span
+									className={cn(
+										"border-primary flex size-4 items-center justify-center rounded-sm border",
+										props.value === selectAllValue ? "bg-primary text-primary-foreground" : "opacity-50",
+									)}
+								>
+									<CheckIcon className={cn("size-3", props.value === selectAllValue ? "" : "invisible")} />
+								</span>
+								<span>{selectAllLabel}</span>
+							</CommandPrimitive.Item>
+						)}
 						{filtered.map((option) => (
 							<CommandPrimitive.Item
 								key={option.value}

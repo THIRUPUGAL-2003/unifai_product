@@ -298,7 +298,7 @@ func TestRoutingScopeChainFollowsBilledTeam(t *testing.T) {
 		t.Fatalf("billed identity = %q/%q/%q/%q", teamID, teamName, customerID, customerName)
 	}
 
-	chain := buildScopeChain(vk, teamID, customerID)
+	chain := buildScopeChain(vk, teamID, customerID, "")
 	want := []ScopeLevel{
 		{ScopeName: "virtual_key", ScopeID: "vk-cust"},
 		{ScopeName: "team", ScopeID: "team-dev"},

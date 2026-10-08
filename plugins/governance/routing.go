@@ -42,6 +42,7 @@ type RoutingContext struct {
 	BilledTeamName           string                              // Display name of BilledTeamID
 	BilledCustomerID         string                              // Customer the request is billed to (or the billed team's customer)
 	BilledCustomerName       string                              // Display name of BilledCustomerID
+	UserID                   string                              // Logged-in user, for user-scoped rules
 	Provider                 schemas.ModelProvider               // Current provider
 	Model                    string                              // Current model
 	RequestType              string                              // Normalized request type (e.g., "chat_completion", "embedding") from HTTP context
@@ -105,7 +106,7 @@ func (re *RoutingEngine) EvaluateRoutingRules(ctx *schemas.GatewayContext, routi
 	visitedRuleIDs := map[string]struct{}{}
 
 	// Build scope chain once — it's based on the immutable VirtualKey and won't change across chain steps.
-	scopeChain := buildScopeChain(routingCtx.VirtualKey, routingCtx.BilledTeamID, routingCtx.BilledCustomerID)
+	scopeChain := buildScopeChain(routingCtx.VirtualKey, routingCtx.BilledTeamID, routingCtx.BilledCustomerID, routingCtx.UserID)
 
 	// Cache rules per scope upfront to avoid redundant store lookups when rules chain
 	// and we re-evaluate the scope hierarchy on subsequent steps.
@@ -360,7 +361,7 @@ func selectWeightedTarget(targets []configstoreTables.TableRoutingTarget) (confi
 //
 // billedTeamID / billedCustomerID (what the request is charged to) lead their levels, so a
 // customer key used by a team member also honours that team's routing rules — matching budgets.
-func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey, billedTeamID, billedCustomerID string) []ScopeLevel {
+func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey, billedTeamID, billedCustomerID, userID string) []ScopeLevel {
 	var chain []ScopeLevel
 
 	// VirtualKey level (highest precedence)
@@ -439,6 +440,13 @@ func buildScopeChain(virtualKey *configstoreTables.TableVirtualKey, billedTeamID
 				})
 			}
 		}
+	}
+
+	if userID != "" {
+		chain = append(chain, ScopeLevel{
+			ScopeName: "user",
+			ScopeID:   userID,
+		})
 	}
 
 	// Global level (lowest precedence)
