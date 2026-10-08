@@ -51,15 +51,35 @@ interface PromptFileImportBarProps {
 	disabled?: boolean;
 	onAttachmentsAdded: (attachments: MessageContent[]) => void;
 	onTextExtracted?: (text: string) => void;
+	onLiveTranscript?: (text: string) => void;
+	onRecordingChange?: (isRecording: boolean) => void;
+	onRecordingCancel?: () => void;
 	className?: string;
 }
 
-export function PromptFileImportBar({ disabled, onAttachmentsAdded, onTextExtracted, className = "" }: PromptFileImportBarProps) {
+export function PromptFileImportBar({
+	disabled,
+	onAttachmentsAdded,
+	onTextExtracted,
+	onLiveTranscript,
+	onRecordingChange,
+	onRecordingCancel,
+	className = "",
+}: PromptFileImportBarProps) {
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [isRecording, setIsRecording] = useState(false);
 	const [recordingSeconds, setRecordingSeconds] = useState(0);
 	const [frequencyData, setFrequencyData] = useState<number[]>([20, 45, 65, 80, 65, 45, 30, 20]);
 	const [liveTranscript, setLiveTranscript] = useState("");
+
+	const onLiveTranscriptRef = useRef(onLiveTranscript);
+	onLiveTranscriptRef.current = onLiveTranscript;
+	const onTextExtractedRef = useRef(onTextExtracted);
+	onTextExtractedRef.current = onTextExtracted;
+	const onRecordingChangeRef = useRef(onRecordingChange);
+	onRecordingChangeRef.current = onRecordingChange;
+	const onRecordingCancelRef = useRef(onRecordingCancel);
+	onRecordingCancelRef.current = onRecordingCancel;
 
 	const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 	const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -229,6 +249,9 @@ export function PromptFileImportBar({ disabled, onAttachmentsAdded, onTextExtrac
 						}
 						transcriptRef.current = fullText;
 						setLiveTranscript(fullText);
+						if (onLiveTranscriptRef.current && fullText) {
+							onLiveTranscriptRef.current(fullText);
+						}
 					};
 					// eslint-disable-next-line @typescript-eslint/no-explicit-any
 					recognition.onerror = (event: any) => {
@@ -262,6 +285,7 @@ export function PromptFileImportBar({ disabled, onAttachmentsAdded, onTextExtrac
 				cleanupAudioVisualizer();
 				cleanupTimer();
 				setIsRecording(false);
+				onRecordingChangeRef.current?.(false);
 				mediaRecorderRef.current = null;
 				toast.error("Recording failed. Please try again.");
 			};
@@ -271,14 +295,15 @@ export function PromptFileImportBar({ disabled, onAttachmentsAdded, onTextExtrac
 				cleanupAudioVisualizer();
 				cleanupTimer();
 				setIsRecording(false);
+				onRecordingChangeRef.current?.(false);
 				mediaRecorderRef.current = null;
 
 				const capturedLiveText = transcriptRef.current.trim();
 
 				// Option A: Live Speech Recognition provided the text
 				if (capturedLiveText) {
-					if (onTextExtracted) {
-						onTextExtracted(capturedLiveText);
+					if (onTextExtractedRef.current) {
+						onTextExtractedRef.current(capturedLiveText);
 						toast.success(`Voice transcribed: "${capturedLiveText.slice(0, 50)}${capturedLiveText.length > 50 ? "..." : ""}"`);
 					} else {
 						const attachment = voiceTranscriptAttachment(`voice-${Date.now()}.wav`, capturedLiveText);
@@ -310,8 +335,8 @@ export function PromptFileImportBar({ disabled, onAttachmentsAdded, onTextExtrac
 				const whisperResult = await transcribeAudioFile(file);
 				if (whisperResult?.text?.trim()) {
 					const text = whisperResult.text.trim();
-					if (onTextExtracted) {
-						onTextExtracted(text);
+					if (onTextExtractedRef.current) {
+						onTextExtractedRef.current(text);
 						toast.success(`Voice transcribed: "${text.slice(0, 50)}${text.length > 50 ? "..." : ""}"`);
 					} else {
 						const attachment = voiceTranscriptAttachment(file.name, text);
@@ -332,6 +357,7 @@ export function PromptFileImportBar({ disabled, onAttachmentsAdded, onTextExtrac
 			recorder.start(250);
 			mediaRecorderRef.current = recorder;
 			setIsRecording(true);
+			onRecordingChangeRef.current?.(true);
 			setRecordingSeconds(0);
 			timerRef.current = window.setInterval(() => {
 				setRecordingSeconds((prev) => prev + 1);
@@ -341,10 +367,11 @@ export function PromptFileImportBar({ disabled, onAttachmentsAdded, onTextExtrac
 			cleanupAudioVisualizer();
 			cleanupTimer();
 			setIsRecording(false);
+			onRecordingChangeRef.current?.(false);
 			mediaRecorderRef.current = null;
 			toast.error(getMicrophoneErrorMessage(error));
 		}
-	}, [cleanupAudioVisualizer, cleanupStream, cleanupTimer, onAttachmentsAdded, onTextExtracted]);
+	}, [cleanupAudioVisualizer, cleanupStream, cleanupTimer, onAttachmentsAdded]);
 
 	const stopAndExtract = useCallback(() => {
 		if (recognitionRef.current) {
@@ -377,6 +404,8 @@ export function PromptFileImportBar({ disabled, onAttachmentsAdded, onTextExtrac
 		cleanupAudioVisualizer();
 		cleanupTimer();
 		setIsRecording(false);
+		onRecordingChangeRef.current?.(false);
+		onRecordingCancelRef.current?.();
 		toast.message("Voice recording discarded");
 	}, [cleanupAudioVisualizer, cleanupStream, cleanupTimer]);
 

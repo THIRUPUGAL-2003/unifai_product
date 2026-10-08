@@ -426,18 +426,17 @@ def looks_like_user_prompt(text: str) -> bool:
         return False
     if "what would you like to do with this file?" in t.lower():
         return False
+    # Numbers and symbols are real prompts on every added domain / subdomain.
+    if t.isdigit() or _is_typed_numeric_prompt(t) or _is_symbol_prompt(t):
+        return True
     if t.startswith("gAAAA") or '"p":"gAAAA' in t:
         return False
     if t.startswith("[FILE UPLOAD") or t.startswith("[FILE DOWNLOAD") or t.startswith("[FILE CONTENT") or t.startswith("[SITE BLOCKED"):
         return True
     if _looks_like_filename_only(t):
         return False
-    # Only drop lone path separators — keep user symbols like # @ ! ? $ %
+    # Only drop lone path separators — keep user symbols like # @ ! ? $ % and single letters.
     if len(t) == 1 and t in "/.\\|":
-        return False
-    # Isolated single ASCII letters (e.g. 'b', 'r', 'x') are protobuf varints/tags or wire tokens, not user chat prompts.
-    # Preserve digits ('0'-'9'), user symbols ('?', '!', '#', '$', '%'), and non-ASCII characters (e.g. Chinese/Japanese kanji).
-    if len(t) == 1 and t.isalpha() and ord(t) < 128:
         return False
 
     # Reject raw urlencoded wire parameters or batch execute bodies
@@ -453,8 +452,6 @@ def looks_like_user_prompt(text: str) -> bool:
         return False
     # Locale strings or locale tags with trailing wire noise (e.g. 'en-US', 'en-USz qBudp', 'fr-FR', 'zh-CN')
     if re.match(r"^[a-z]{2}[-_][a-z]{2,4}", low):
-        return False
-    if low in _CONTROL_PLANE_PROMPT_TOKENS:
         return False
     if low in {
         "batchexecute", "wrb.fr",
@@ -779,9 +776,7 @@ def _is_confident_chat_send(path: str, raw_text: str, raw_bytes: bytes = b"") ->
 
 
 _CHAT_METADATA_JUNK = frozenset({
-    "user", "assistant", "system", "auto", "text", "message", "role", "content",
     "parts", "author", "metadata", "recipient", "client", "server", "ping", "pong",
-    "null", "undefined", "true", "false", "default", "model", "parent", "child",
     "chatgpt", "gpt-4", "gpt-4o", "gpt-3.5", "o1", "o3", "thinking", "standard",
     "claude", "haiku", "sonnet", "opus", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-7-sonnet",
 })
@@ -800,6 +795,9 @@ def _is_chat_metadata_token(text: str) -> bool:
     t_l = t.lower()
     if not t:
         return True
+    # A typed number or symbol string is the prompt, not a timestamp or session id.
+    if t.isdigit() or _is_typed_numeric_prompt(t) or _is_symbol_prompt(t):
+        return False
     if t_l in _CHAT_METADATA_JUNK:
         return True
     if re.fullmatch(r"gpt[-\d\.]+[a-z]*", t_l) or re.fullmatch(r"claude[-\d\.]+[a-z]*", t_l):
@@ -846,7 +844,8 @@ def _pick_best_user_text(candidates: list[str]) -> str | None:
         if " " in got:
             score += 24
         if got.isdigit():
-            score += 20
+            # Keep the number if it is the only text. Do not let a long id beat a short word.
+            score += 20 if len(got) < 10 else -30
         if 2 <= len(got) <= 4 and got.isalpha():
             score += 12
         if re.search(r"[a-zA-Z]", got) and re.search(r"\d", got):
@@ -1491,6 +1490,14 @@ def _extract_from_message_obj(msg: dict) -> str | None:
     return None
 
 
+def _single_letter_user_prompt(val) -> str | None:
+    """One typed letter in a prompt field. Protobuf crumbs stay noise outside that field."""
+    raw = str(val).strip() if isinstance(val, (str, int, float)) and not isinstance(val, bool) else ""
+    if len(raw) == 1 and raw.isalpha() and raw not in "/.\\|":
+        return raw
+    return None
+
+
 def _extract_from_json(data) -> str | None:
     """Walk known and custom chat API shapes across ANY domain to extract the submitted user prompt."""
     if isinstance(data, list):
@@ -1528,7 +1535,7 @@ def _extract_from_json(data) -> str | None:
 
     # Claude / Anthropic: messages or prompt
     if isinstance(data.get("prompt"), (str, int, float)):
-        got = _clean_prompt_text(str(data["prompt"]))
+        got = _clean_prompt_text(str(data["prompt"])) or _single_letter_user_prompt(data["prompt"])
         if got:
             return got
 
@@ -1640,8 +1647,6 @@ def _deep_extract_from_json(data, depth: int = 0, max_depth: int = 10) -> str | 
                 if isinstance(val, (int, float, bool)):
                     if key in ("code", "data", "payload", "body", "operation", "entry", "status", "type", "id", "index", "count", "version", "step"):
                         continue
-                    if val in (0, 1) and key not in ("prompt", "text", "query", "user_input", "message"):
-                        continue
                 sval = str(val).strip()
                 # Unpack nested JSON string values.
                 if sval.startswith(("{", "[")):
@@ -1657,13 +1662,13 @@ def _deep_extract_from_json(data, depth: int = 0, max_depth: int = 10) -> str | 
                 # NOT language-based filters. Any user text in a named prompt field
                 # must be accepted regardless of length or language.
                 if not _is_opaque_wire_blob(sval) and not _is_clear_protocol_junk(sval):
-                    got = _clean_prompt_text(sval)
+                    got = _clean_prompt_text(sval) or _single_letter_user_prompt(sval)
                     if got:
                         return got
                     # For floats/ints that clean to empty string, return raw stripped value
                     if isinstance(val, (int, float)):
                         raw = str(val).strip()
-                        if raw and raw not in ("0", "1"):
+                        if raw:
                             return raw
             elif isinstance(val, list):
                 got = _parts_to_text(val)
@@ -1695,7 +1700,7 @@ def _deep_extract_from_json(data, depth: int = 0, max_depth: int = 10) -> str | 
             if isinstance(item, str):
                 sval = item.strip()
                 if (
-                    len(sval) >= 2
+                    len(sval) >= 1
                     and looks_like_user_prompt(sval)
                     and not _is_opaque_wire_blob(sval)
                     and not _is_clear_protocol_junk(sval)
@@ -2070,6 +2075,31 @@ def extract_protobuf_strings(data: bytes) -> list[str]:
     """Parse arbitrary protobuf message and extract all length-delimited (wire_type 2) strings."""
     if not data or len(data) < 2:
         return []
+    # If wrapped in Connect-RPC / gRPC 5-byte frame (flags 0x00/0x01 + 4-byte len):
+    if len(data) >= 5 and data[0] in (0, 1):
+        f_len = int.from_bytes(data[1:5], "big")
+        if 0 < f_len <= len(data) - 5:
+            out: list[str] = []
+            idx = 0
+            while idx + 5 <= len(data) and data[idx] in (0, 1):
+                sub_len = int.from_bytes(data[idx+1:idx+5], "big")
+                if sub_len <= 0 or idx + 5 + sub_len > len(data):
+                    break
+                sub_data = data[idx+5 : idx+5+sub_len]
+                idx += 5 + sub_len
+                if data[idx - sub_len - 5] == 1:  # compressed
+                    try:
+                        import gzip
+                        sub_data = gzip.decompress(sub_data)
+                    except Exception:
+                        try:
+                            import zlib
+                            sub_data = zlib.decompress(sub_data, 16 + zlib.MAX_WBITS)
+                        except Exception:
+                            pass
+                out.extend(extract_protobuf_strings(sub_data))
+            if out:
+                return out
     strings: list[str] = []
     idx = 0
     n = len(data)
@@ -2139,17 +2169,12 @@ def _is_claude_wire_noise(s: str) -> bool:
     if re.fullmatch(r"(?:org|chat|msg|user)_[0-9a-zA-Z]{12,}", t):
         return True
     # Standard role and MIME tokens (numbers like '0', '1', '42' are real user inputs, never noise)
-    if t.lower() in ("text", "text/plain", "user", "assistant", "human", "model", "application/json", "application/connect+proto", "true", "false", "null", "undefined"):
+    if t.lower() in ("text/plain", "application/json", "application/connect+proto"):
         return True
-    # Single non-digit characters (protobuf field tags, varint wire bytes like 'b', 'r')
+    if t.isdigit() or _is_typed_numeric_prompt(t):
+        return False
+    # Isolated protobuf tags (b, r). A one-letter Send is kept on the prompt field.
     if len(t) == 1 and t.isalpha() and ord(t) < 128:
-        return True
-    # Short alphabetic tokens that are not common English words (e.g. "zz").
-    # Keep user symbols/numbers: #1, c++, x=1, ?, +, $50 — those are real prompts.
-    if len(t) <= 2 and t.isalpha() and t.lower() not in (
-        "hi", "ok", "no", "go", "me", "we", "he", "it", "is", "in", "on", "at",
-        "to", "by", "if", "my", "or", "up", "so", "do", "am", "an", "as",
-    ):
         return True
     # Client locale tags with or without trailing wire characters (e.g. 'en-US', 'en-USz qBudp')
     if re.match(r"^[a-z]{2}[-_][A-Za-z]{2,4}", t, re.IGNORECASE):

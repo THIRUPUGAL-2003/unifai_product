@@ -1407,6 +1407,9 @@ def _is_google_wire_blob(text: str) -> bool:
         return True
     if " " in t or "\n" in t:
         return False
+    # Phone numbers, math, and symbol prompts are typed text on any domain.
+    if _is_typed_numeric_prompt(t) or _is_digit_heavy_user_text(t) or _is_symbol_prompt(t):
+        return False
     # Opaque tokens with punctuation (session ids), not Hello123 / passwords
     if re.search(r"[)(\]\[{}|;:]", t) and len(t) >= 8:
         return True
@@ -1454,6 +1457,28 @@ def _is_typed_numeric_prompt(text: str) -> bool:
     return False
 
 
+def _is_symbol_prompt(text: str) -> bool:
+    """Typed symbols / code / math — predict on every added domain."""
+    t = (text or "").strip()
+    if not t or len(t) > 400:
+        return False
+    if "://" in t or t.lower().startswith("www."):
+        return False
+    if re.fullmatch(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", t, re.I):
+        return False
+    letters = sum(1 for c in t if c.isalpha())
+    syms = sum(1 for c in t if not c.isalnum() and not c.isspace())
+    if syms < 1:
+        return False
+    if re.match(r"^[a-z]{2}[-_][A-Za-z]{2,4}", t, re.IGNORECASE):
+        return False
+    if letters == 0:
+        return True
+    if len(t) <= 48 and not (letters >= 12 and syms <= 1):
+        return True
+    return False
+
+
 # Exact short tokens from API/settings bootstrap (e.g. ChatGPT open → "set").
 # Never treat these alone as a typed user prompt, even on confident chat paths.
 _CONTROL_PLANE_PROMPT_TOKENS = frozenset({
@@ -1472,9 +1497,6 @@ def _is_clear_protocol_junk(text: str) -> bool:
     if not t:
         return True
     if _is_google_wire_blob(t) or _is_opaque_wire_blob(t):
-        return True
-    # ChatGPT/settings control crumbs mis-extracted as prompts on page open
-    if " " not in t and "\n" not in t and t.lower() in _CONTROL_PLANE_PROMPT_TOKENS:
         return True
     low_head = t[:80].lower()
     if (

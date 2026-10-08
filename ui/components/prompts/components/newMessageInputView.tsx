@@ -130,6 +130,35 @@ export function NewMessageInputView() {
 		setAttachments((prev) => [...prev, ...newAttachments]);
 	}, []);
 
+	const textBeforeRecordingRef = useRef<string>("");
+	const [isVoiceRecording, setIsVoiceRecording] = useState(false);
+
+	const handleRecordingChange = useCallback((recording: boolean) => {
+		setIsVoiceRecording(recording);
+		if (recording) {
+			textBeforeRecordingRef.current = userInput;
+		}
+	}, [userInput]);
+
+	const handleLiveTranscript = useCallback((liveText: string) => {
+		const base = textBeforeRecordingRef.current.trim();
+		const updated = base ? `${base} ${liveText}` : liveText;
+		setUserInput(updated);
+	}, []);
+
+	const handleRecordingCancel = useCallback(() => {
+		setUserInput(textBeforeRecordingRef.current);
+		setIsVoiceRecording(false);
+	}, []);
+
+	const handleTextExtracted = useCallback((text: string) => {
+		const base = textBeforeRecordingRef.current.trim();
+		const updated = base ? `${base} ${text}` : text;
+		setUserInput(updated);
+		setIsVoiceRecording(false);
+		setTimeout(() => userInputRef.current?.focus(), 0);
+	}, []);
+
 	const handleAddMessage = useCallback(() => {
 		if (isStreaming) return;
 		const input = userInput.trim();
@@ -320,6 +349,10 @@ export function NewMessageInputView() {
 						className="ml-auto shrink-0"
 						disabled={isStreaming}
 						onAttachmentsAdded={handleAddAttachments}
+						onTextExtracted={handleTextExtracted}
+						onLiveTranscript={handleLiveTranscript}
+						onRecordingChange={handleRecordingChange}
+						onRecordingCancel={handleRecordingCancel}
 					/>
 				)}
 			</div>
@@ -362,9 +395,21 @@ export function NewMessageInputView() {
 					<span className="flex-1">{budgetAlert.message}</span>
 				</div>
 			)}
-			<div className="relative">
+			<div
+				className={`relative rounded-md transition-all ${
+					isVoiceRecording
+						? "ring-1 ring-rose-500/40 bg-rose-500/[0.02] p-1.5"
+						: ""
+				}`}
+			>
 				<Textarea
-					placeholder={canAttach ? "Type a message or import files..." : "Type a message..."}
+					placeholder={
+						isVoiceRecording
+							? "Listening... Speak, and your words appear here live..."
+							: canAttach
+								? "Type a message or import files..."
+								: "Type a message..."
+					}
 					value={userInput}
 					ref={userInputRef}
 					onChange={(e) => setUserInput(e.target.value)}

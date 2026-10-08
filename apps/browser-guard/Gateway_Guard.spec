@@ -53,7 +53,7 @@ hiddenimports = [
 
 for pkg in ("pypdf", "PIL", "winrt", "mitmproxy", "mitmproxy_windows"):
     tmp_ret = collect_all(pkg)
-    datas += tmp_ret[0]
+    datas += [item for item in tmp_ret[0] if not str(item[0]).lower().endswith((".py", ".pyi"))]
     binaries += tmp_ret[1]
     hiddenimports += tmp_ret[2]
 

@@ -719,6 +719,56 @@ class UploadNameAndRuleTests(unittest.TestCase):
         )
         self.assertTrue(NS["is_chat_path"]("/rest/app-chat", "grok.com", ""))
 
+    def test_prompt_caption_is_not_a_second_attachment(self) -> None:
+        """File + typed prompt on one Send must log the file only."""
+        original = "quarterly-review.pdf"
+        caption = "summarize this document please " * 12
+        file_body = b"%PDF-1.4 quarterly review bytes\n" * 20
+        trim = NS["_trim_phantom_upload_caches"]
+        cached = [
+            {"file_name": original, "raw_bytes": file_body, "content_type": "application/pdf"},
+            {"file_name": "attachment", "raw_bytes": caption.encode(), "content_type": "application/x-www-form-urlencoded"},
+        ]
+        send = json.dumps({"file_name": original, "prompt": caption})
+        out = trim(cached, send, caption)
+        self.assertEqual([e.get("file_name") for e in out], [original])
+        self.assertEqual(out[0]["raw_bytes"], file_body)
+
+    def test_two_named_files_survive_one_send(self) -> None:
+        originals = ("alpha-notes.txt", "beta-notes.txt")
+        trim = NS["_trim_phantom_upload_caches"]
+        cached = [
+            {"file_name": originals[0], "raw_bytes": b"alpha file body " * 20},
+            {"file_name": originals[1], "raw_bytes": b"beta file body " * 20},
+        ]
+        send = json.dumps({"files": [{"file_name": originals[0]}, {"file_name": originals[1]}], "prompt": "read both"})
+        out = trim(cached, send, "read both")
+        self.assertEqual([e.get("file_name") for e in out], list(originals))
+
+    def test_numbers_symbols_and_text_predict_on_any_domain(self) -> None:
+        """Any added domain: numbers, symbols, and text must come back as the prompt."""
+        extract = NS["extract_prompt_universal"]
+        accept = NS["_should_intercept_extracted_prompt"]
+        samples = (
+            "0", "1", "42", "9876543210", "3.14159", "(555)123-4567",
+            "c++", "?", "+", "#1", "$50", "10%", "!@#$%",
+            "a", "ok", "hi", "hello world",
+        )
+        hosts = (
+            "custom-ai.example",
+            "api.custom-ai.example",
+            "chat.brand-new-ai.test",
+        )
+        for host in hosts:
+            for text in samples:
+                body = json.dumps({"prompt": text, "parent_message_uuid": "u"}).encode()
+                got = extract(body, "application/json", host=host, url=f"https://{host}/v1/chat")
+                self.assertEqual(got, text, f"{host} dropped {text!r} -> {got!r}")
+                self.assertTrue(
+                    accept(got, "/v1/chat", body.decode(), host, host=host, raw_bytes=body),
+                    f"{host} did not predict {text!r}",
+                )
+ 
     def test_multipart_batch_returns_every_filename(self) -> None:
         originals = ("alpha-notes.txt", "beta-notes.txt")
         body = (

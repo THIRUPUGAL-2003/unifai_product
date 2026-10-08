@@ -8,7 +8,12 @@ if (-not (Test-Path 'release\Gateway_Guard.app')) {
 }
 
 Copy-Item -Force 'release\gateway_guard_config.json' 'release\Gateway_Guard.app\Contents\Resources\gateway_guard_config.json'
-Copy-Item -Force 'proxy\browser_ai_proxy.py' 'release\Gateway_Guard.app\Contents\Resources\browser_ai_proxy.py'
+Copy-Item -Force 'installer\proxy_stub.py' 'release\Gateway_Guard.app\Contents\Resources\browser_ai_proxy.py'
+if (-not (Test-Path 'proxy\gateway_guard_code.enc')) {
+    Write-Error "proxy\gateway_guard_code.enc missing. Run installer\encrypt_proxy_bundle.py before packaging."
+    exit 1
+}
+Copy-Item -Force 'proxy\gateway_guard_code.enc' 'release\Gateway_Guard.app\Contents\Resources\gateway_guard_code.enc'
 $partsDest = 'release\Gateway_Guard.app\Contents\Resources\gateway_proxy_parts'
 New-Item -ItemType Directory -Force -Path $partsDest | Out-Null
 if (-not (Test-Path 'proxy\gateway_proxy_parts\gateway_proxy_parts.enc')) {
@@ -18,10 +23,10 @@ if (-not (Test-Path 'proxy\gateway_proxy_parts\gateway_proxy_parts.enc')) {
 Get-ChildItem $partsDest -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.py' -or $_.Name -eq 'README.md' -or $_.Name -eq 'Gateway_proxy_parts.enc' } | Remove-Item -Force -ErrorAction SilentlyContinue
 Copy-Item -Force 'proxy\gateway_proxy_parts\gateway_proxy_parts.enc' (Join-Path $partsDest 'gateway_proxy_parts.enc')
 Copy-Item -Force 'proxy\gateway_proxy_parts\MANIFEST.txt' (Join-Path $partsDest 'MANIFEST.txt')
-# This .app was built on a Mac before the decryptor was compiled into the binary.
-# Ship the scrambled decryptor so the existing Mac binary can open the enc.
-# A later make build-guard-mac on a Mac leaves this file out, same as the Windows EXE.
-Copy-Item -Force 'proxy\gateway_proxy_parts\bundle_crypto.py' (Join-Path $partsDest 'bundle_crypto.py')
+# Decryptor is compiled into the Mac binary (hidden import). Do not ship bundle_crypto.py.
+Get-ChildItem -Path 'release\Gateway_Guard.app' -Recurse -File -Filter '*.py' |
+    Where-Object { $_.Name -ne 'browser_ai_proxy.py' } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 
 # Keep Resources/VERSION.txt aligned with the .app Info.plist (NOT root VERSION.txt).
 # Root VERSION.txt may be ahead after a Windows-only rebuild; Mac auto-update must not loop.

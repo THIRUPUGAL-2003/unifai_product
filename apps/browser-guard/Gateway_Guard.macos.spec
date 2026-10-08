@@ -50,7 +50,8 @@ hiddenimports = [
 
 for pkg in ("pypdf", "PIL", "mitmproxy", "mitmproxy_macos"):
     tmp_ret = collect_all(pkg)
-    datas += tmp_ret[0]
+    # Keep data files (templates, certs). Do not ship third-party .py source.
+    datas += [item for item in tmp_ret[0] if not str(item[0]).lower().endswith((".py", ".pyi"))]
     binaries += tmp_ret[1]
     hiddenimports += tmp_ret[2]
 

@@ -109,6 +109,22 @@ export function logUserCaption(log: BrowserAILogEntry): string {
 export function logAttachmentLabel(log: BrowserAILogEntry): string {
 	const name = (log.attachment_name || "").trim();
 	const full = (log.user_prompt_full || log.user_prompt_preview || "").trim();
+	const meta = parseBrowserAiLogMetadata(log);
+
+	const isVoice =
+		full.startsWith("[VOICE UPLOAD]") ||
+		/\.(webm|wav|mp3|ogg|m4a|aac|flac)$/i.test(name) ||
+		(typeof meta.content_type === "string" && meta.content_type.startsWith("audio/"));
+
+	const isImage =
+		meta.is_image === true ||
+		meta.kind === "image" ||
+		/\.(png|jpe?g|gif|webp|svg|bmp|tiff|heic)$/i.test(name) ||
+		(typeof meta.content_type === "string" && meta.content_type.startsWith("image/")) ||
+		/image/i.test(String(meta.predicted_category || ""));
+
+	const defaultLabel = isVoice ? "Voice Note" : isImage ? "Image" : "Document";
+
 	const looksLikeSiteOrTab = (label: string) => {
 		const n = (label || "").trim();
 		if (!n) return true;
@@ -128,6 +144,7 @@ export function logAttachmentLabel(log: BrowserAILogEntry): string {
 		}
 		return false;
 	};
+
 	// [FILE UPLOAD] resumes.zip [3 files: a.pdf, b.docx] (1/2) | caption — Allowed
 	const m = full.match(/^\[(?:FILE|VOICE) UPLOAD\]\s+(.+?)(?:\s+[—–-]\s+|\s+--\s+|$)/i);
 	if (m?.[1]) {
@@ -143,13 +160,14 @@ export function logAttachmentLabel(log: BrowserAILogEntry): string {
 		if (
 			baseLabel &&
 			!/^attachment(-\d+)?$/i.test(baseLabel) &&
+			baseLabel.toLowerCase() !== "document.pdf" &&
 			!baseLabel.startsWith("[null,") &&
 			!looksLikeSiteOrTab(baseLabel)
 		) {
 			return `${baseLabel}${counter}`;
 		}
-		if (/^attachment(-\d+)?$/i.test(baseLabel) && counter) {
-			return `attachment${counter}`;
+		if (/^attachment(-\d+)?$/i.test(baseLabel) || baseLabel.toLowerCase() === "document.pdf") {
+			return `${defaultLabel}${counter}`;
 		}
 	}
 	if (
@@ -161,9 +179,64 @@ export function logAttachmentLabel(log: BrowserAILogEntry): string {
 	) {
 		return name;
 	}
-	if (full.startsWith("[VOICE UPLOAD]")) return "Voice Note";
+	if (isVoice) return "Voice Note";
 	if (name && !name.startsWith("[null,") && !looksLikeSiteOrTab(name)) return name;
-	return "attachment";
+	return defaultLabel;
+}
+
+export function logAttachmentList(log: BrowserAILogEntry): string[] {
+	const rawName = (log.attachment_name || "").trim();
+	const full = (log.user_prompt_full || log.user_prompt_preview || "").trim();
+	const meta = parseBrowserAiLogMetadata(log);
+
+	const items = new Set<string>();
+
+	// 1. Check metadata files array
+	if (Array.isArray(meta.files)) {
+		for (const f of meta.files) {
+			if (typeof f === "string" && f.trim()) items.add(f.trim());
+			else if (f && typeof f === "object" && typeof (f as { name?: string }).name === "string") {
+				items.add((f as { name: string }).name.trim());
+			}
+		}
+	}
+
+	// 2. Extract from [FILE UPLOAD] header
+	const m = full.match(/^\[(?:FILE|VOICE) UPLOAD\]\s+(.+?)(?:\s+[—–-]\s+|\s+--\s+|$)/i);
+	if (m?.[1]) {
+		let part = m[1].trim();
+		if (part.includes(" | ")) {
+			part = part.split(" | ")[0].trim();
+		}
+		part = part.replace(/\s+\(\d+\/\d+\)\s*$/, "").trim();
+
+		const split = part.split(",").map((s) => s.trim()).filter(Boolean);
+		for (const s of split) {
+			if (s && !s.startsWith("[null,")) {
+				items.add(s);
+			}
+		}
+	}
+
+	// 3. Extract from attachment_name
+	if (rawName && !rawName.startsWith("[null,")) {
+		const split = rawName.split(",").map((s) => s.trim()).filter(Boolean);
+		for (const s of split) {
+			if (s && !s.startsWith("[null,")) {
+				items.add(s);
+			}
+		}
+	}
+
+	const list = Array.from(items).filter((name) => {
+		const lower = name.toLowerCase();
+		return !/^attachment(-\d+)?$/i.test(lower) && lower !== "document.pdf";
+	});
+
+	if (list.length > 0) return list;
+
+	const single = logAttachmentLabel(log);
+	return single ? [single] : [];
 }
 
 /** Clear security pass/fail wording for Prompt Details (AI Guard Bot + categories). */

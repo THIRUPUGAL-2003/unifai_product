@@ -81,39 +81,78 @@ def enforce_file_send_policy(
             if cached_list:
                 has_attach = True
 
+    # The typed prompt must not become its own attachment next to the real file.
+    if cached_list and len(cached_list) > 1:
+        caption_peek = ""
+        try:
+            caption_peek = extract_prompt_universal(
+                (raw_text or "").encode("utf-8", errors="ignore"),
+                content_type or "",
+                host,
+                url,
+            ) or ""
+        except Exception:
+            caption_peek = ""
+        cached_list = _drop_prompt_echo_uploads(cached_list, caption_peek)
+
     # If Send clearly has N attachments, keep the N most recent distinct caches.
+    # Never drop a file that already has its own real name.
     if expected_n > 1 and cached_list and len(cached_list) > expected_n:
-        newest = max(float(e.get("ts") or 0) for e in cached_list)
-        clustered = [
+        named = [
             e for e in cached_list
-            if newest - float(e.get("ts") or 0) <= 180.0
+            if _is_real_user_upload_name((e.get("file_name") or "").strip())
         ]
-        if len(clustered) >= expected_n:
-            clustered.sort(key=lambda e: float(e.get("ts") or 0))
-            cached_list = clustered[-expected_n:]
+        if len({(e.get("file_name") or "").strip().lower() for e in named}) >= expected_n:
+            cached_list = named
         else:
-            cached_list = sorted(cached_list, key=lambda e: float(e.get("ts") or 0))[-expected_n:]
+            newest = max(float(e.get("ts") or 0) for e in cached_list)
+            clustered = [
+                e for e in cached_list
+                if newest - float(e.get("ts") or 0) <= 180.0
+            ]
+            if len(clustered) >= expected_n:
+                clustered.sort(key=lambda e: float(e.get("ts") or 0))
+                cached_list = clustered[-expected_n:]
+            else:
+                cached_list = sorted(cached_list, key=lambda e: float(e.get("ts") or 0))[-expected_n:]
 
     if not has_attach and not cached_list:
         return False, "", "", 0, False
 
-    if not cached_list and has_attach:
+    if has_attach:
         inlines = extract_all_inline_attachment_bytes(raw_text or "")
-        if inlines:
+        if inlines and not cached_list:
             cached_list = []
             for idx, (inline_bytes, inline_ct, inline_name) in enumerate(inlines):
+                is_img = _looks_like_image(inline_bytes, inline_ct, inline_name)
+                suffix = f" {idx + 1}" if len(inlines) > 1 else ""
+                fallback_name = f"Image{suffix}" if is_img else f"Document{suffix}"
                 cached_list.append({
-                    "file_name": inline_name or f"attachment_{idx + 1}",
+                    "file_name": inline_name or fallback_name,
                     "content_type": inline_ct or content_type,
                     "raw_bytes": inline_bytes,
                     "ts": time.time(),
                     "cache_uid": f"inline|{time.time():.6f}|{idx}|{len(inline_bytes)}",
                 })
-        else:
+        elif inlines and cached_list and len(cached_list) < expected_n:
+            cached_names = {(e.get("file_name") or "").strip().lower() for e in cached_list}
+            for idx, (inline_bytes, inline_ct, inline_name) in enumerate(inlines):
+                if inline_name.lower() not in cached_names:
+                    cached_list.append({
+                        "file_name": inline_name,
+                        "content_type": inline_ct or content_type,
+                        "raw_bytes": inline_bytes,
+                        "ts": time.time(),
+                        "cache_uid": f"inline|{time.time():.6f}|{idx}|{len(inline_bytes)}",
+                    })
+                    cached_names.add(inline_name.lower())
+        elif not cached_list:
             inline_bytes, inline_ct, inline_name = extract_inline_attachment_bytes(raw_text or "")
             if inline_bytes:
+                is_img = _looks_like_image(inline_bytes, inline_ct, inline_name)
+                fallback_name = "Image" if is_img else "Document"
                 cached_list = [{
-                    "file_name": inline_name or "attachment",
+                    "file_name": inline_name or fallback_name,
                     "content_type": inline_ct or content_type,
                     "raw_bytes": inline_bytes,
                     "ts": time.time(),
@@ -409,21 +448,24 @@ def enforce_file_send_policy(
         if _is_real_user_upload_name(n)
     ]
     if send_real_names:
-        # Stamp Send names onto nameless rows; keep distinct real files.
-        unused = [n for n in send_real_names]
+        # Send names MUST bind onto rows. If a row has a name not in send_real_names,
+        # it was a stale guess/pending name and must yield to send_real_names.
+        send_names_lower = {s.lower(): s for s in send_real_names}
         used: set[str] = set()
         for e in cached_list:
             cur = (e.get("file_name") or "").strip()
-            if _is_real_user_upload_name(cur):
+            if cur.lower() in send_names_lower and cur.lower() not in used:
+                e["file_name"] = send_names_lower[cur.lower()]
                 used.add(cur.lower())
-        leftover = [n for n in unused if n.lower() not in used]
+        leftover = [n for n in send_real_names if n.lower() not in used]
         li = 0
         for e in cached_list:
             cur = (e.get("file_name") or "").strip()
-            if _is_real_user_upload_name(cur):
+            if cur.lower() in used:
                 continue
             if li < len(leftover):
                 e["file_name"] = leftover[li]
+                used.add(leftover[li].lower())
                 li += 1
     # Pending names → nameless upload caches.
     still_fake = [e for e in cached_list if not _is_real_user_upload_name((e.get("file_name") or "").strip())]
@@ -476,6 +518,10 @@ def enforce_file_send_policy(
             if _is_fake_upload_name(fname) or fname.lower() in ("attachment", "audio.bin"):
                 suffix = f" {i + 1}" if n_cached > 1 else ""
                 fname = f"Voice Note{suffix}"
+        elif _looks_like_image(bytes(cached_bytes), cached_ct, fname):
+            if _is_fake_upload_name(fname) or fname.lower() in ("attachment", "image.png", "image.jpg"):
+                suffix = f" {i + 1}" if n_cached > 1 else ""
+                fname = f"Image{suffix}"
         elif _is_fake_upload_name(fname) or not fname:
             send_real = _prefer_real_filenames(
                 n for n in extract_all_attachment_filenames_from_send(raw_text or "")
@@ -500,11 +546,9 @@ def enforce_file_send_policy(
                     if pending:
                         fname = pending
                     else:
-                        fname = (fname or "").strip() or "attachment"
-                        if _is_fake_upload_name(fname):
-                            fname = "attachment"
-                        if n_cached > 1 and fname == "attachment":
-                            fname = f"attachment-{i + 1}"
+                        is_img = _looks_like_image(bytes(cached_bytes), cached_ct, fname)
+                        suffix = f" {i + 1}" if n_cached > 1 else ""
+                        fname = f"Image{suffix}" if is_img else f"Document{suffix}"
             cached["file_name"] = fname
             if _is_real_user_upload_name(fname) and cached_bytes:
                 try:
@@ -515,6 +559,12 @@ def enforce_file_send_policy(
         if is_audio and display_label.lower() in ("attachment", "audio.bin"):
             suffix = f" {i + 1}" if n_cached > 1 else ""
             display_label = f"Voice Note{suffix}"
+        elif _looks_like_image(bytes(cached_bytes), cached_ct, fname) and display_label.lower() in ("attachment", "image.png"):
+            suffix = f" {i + 1}" if n_cached > 1 else ""
+            display_label = f"Image{suffix}"
+        elif display_label.lower() in ("attachment", "document.pdf", "unknown"):
+            suffix = f" {i + 1}" if n_cached > 1 else ""
+            display_label = f"Document{suffix}"
         prepared.append({
             "file_label": display_label,
             "store_name": fname,
@@ -1097,13 +1147,26 @@ def post_upload_intercept(
     Also attaches file bytes (when present, capped) so backend can temp-store
     for ~10 minutes of View/Download, then auto-delete the file only.
     """
+    is_img = bool((content_type and "image/" in content_type.lower()) or _looks_like_image(raw_bytes or b"", content_type, file_name))
+    is_aud = bool((content_type and "audio/" in content_type.lower()) or _looks_like_audio(raw_bytes or b"", content_type, file_name))
+    fallback_name = "Voice Note" if is_aud else ("Image" if is_img else "Document")
+    if not file_name or _is_fake_upload_name(file_name) or file_name.lower() in ("attachment", "document.pdf", "unknown"):
+        file_name = fallback_name
+
+    safe_name = (file_name or fallback_name).replace('"', "").replace("\r", "").replace("\n", "")
+    if not safe_name:
+        safe_name = fallback_name
+
+    if "[FILE UPLOAD] attachment" in prompt:
+        prompt = prompt.replace("[FILE UPLOAD] attachment", f"[FILE UPLOAD] {safe_name}")
+
     metadata = {
         "domain": domain,
         "url": url,
         "method": method,
         "is_blocked": bool(is_blocked),
         "upload_scan": True,
-        "file_name": file_name or "attachment",
+        "file_name": safe_name,
         **_agent_metadata_fields(),
     }
     if scan_guard:
@@ -1116,9 +1179,6 @@ def post_upload_intercept(
     if upload_images:
         metadata["upload_images"] = upload_images[:10]
 
-    safe_name = (file_name or "attachment").replace('"', "").replace("\r", "").replace("\n", "")
-    if not safe_name:
-        safe_name = "attachment"
     ctype = (content_type or "application/octet-stream").strip() or "application/octet-stream"
 
     # Prefer clean payload (multipart unwrap / PDF island) for View storage
