@@ -28,8 +28,6 @@ services:
       - DB_SSL_MODE=${DB_SSL_MODE:-disable}
       - ADMIN_EMAIL=${ADMIN_EMAIL:?set ADMIN_EMAIL in .env}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
-      - BROWSER_AI_OLLAMA_URL=${OLLAMA_URL:?set OLLAMA_URL in .env}
-      - OLLAMA_URL=${OLLAMA_URL:?set OLLAMA_URL in .env}
       - GATEWAY_BRAND_NAME=${GATEWAY_BRAND_NAME:-Gateway}
       - GATEWAY_GUARD_SECRET=${GATEWAY_GUARD_SECRET:?set GATEWAY_GUARD_SECRET in .env}
       - GATEWAY_GUARD_REQUIRE_SECRET=${GATEWAY_GUARD_REQUIRE_SECRET:-1}
@@ -45,7 +43,6 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - default
-      - ollama
     ports:
       - "${APP_PORT:?set APP_PORT in .env}:${APP_PORT:?set APP_PORT in .env}"
     dns:
@@ -94,9 +91,3 @@ networks:
   default:
     name: ${DOCKER_NETWORK:-raksha-network}
     driver: bridge
-  # Existing network the Ollama container runs on, so OLLAMA_URL can use its container name
-  # (1Panel apps: 1panel-network). It must exist before `up`; on a server without 1Panel run
-  # `docker network create 1panel-network` once or set OLLAMA_DOCKER_NETWORK in .env.
-  ollama:
-    name: ${OLLAMA_DOCKER_NETWORK:-1panel-network}
-    external: true

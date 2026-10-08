@@ -1,18 +1,14 @@
-import React from "react";
-import { Bot, Cloud, Download, FileText, Loader2, Sparkles, X, Zap } from "lucide-react";
+import React, { useEffect } from "react";
+import { Bot, FileText, Loader2, Sparkles, X, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-	GUARD_BOT_OLLAMA_PROVIDER,
-	GUARD_BOT_OLLAMA_MODEL,
-	GUARD_BOT_REFERENCE_IMAGE_MAX_BYTES,
-} from "./browserAiConstants";
+import { GUARD_BOT_REFERENCE_IMAGE_MAX_BYTES } from "./browserAiConstants";
 import type { GuardRuleAIEvaluatorFieldsProps } from "./browserAiTypes";
 import { isDownloadGuardSource, isMultimodalGuardModel, isVisionGuardModel } from "./browserAiGuardHelpers";
-import { GuardBotModelPicker, GuardBotOutsourceModelPicker } from "./guardBotModelPickers";
+import { GuardBotOutsourceModelPicker } from "./guardBotModelPickers";
 
 export function GuardRuleAIEvaluatorFields({
 	botProvider,
@@ -40,40 +36,20 @@ export function GuardRuleAIEvaluatorFields({
 }: GuardRuleAIEvaluatorFieldsProps) {
 	const visionModel = isVisionGuardModel(botModel);
 	const multimodalModel = isMultimodalGuardModel(botModel);
-	const modelSource: "download" | "outsource" = isDownloadGuardSource(botProvider) ? "download" : "outsource";
 	const activeOutsourceProvider = (() => {
-		if (modelSource === "download") {
-			return outsourceProviderOptions[0]?.value || "";
-		}
 		const want = (botProvider || "").trim().toLowerCase();
 		const match = outsourceProviderOptions.find((o) => o.value.toLowerCase() === want);
-		// Prefer catalog provider id (exact casing) so model list + API keys resolve correctly.
 		if (match) return match.value;
-		return outsourceProviderOptions[0]?.value || botProvider || "";
+		if (isDownloadGuardSource(botProvider)) return outsourceProviderOptions[0]?.value || "";
+		return botProvider || "";
 	})();
 
-	const setModelSource = (source: "download" | "outsource") => {
-		if (source === "download") {
-			onProviderChange(GUARD_BOT_OLLAMA_PROVIDER);
-			onModelChange(GUARD_BOT_OLLAMA_MODEL);
-			return;
-		}
+	useEffect(() => {
+		if (!isDownloadGuardSource(botProvider)) return;
 		const first = outsourceProviderOptions[0]?.value || "";
-		if (!first) {
-			onProviderChange("");
-			onModelChange("");
-			return;
-		}
-		if (isDownloadGuardSource(botProvider) || !botProvider) {
-			onProviderChange(first);
-			onModelChange("");
-			return;
-		}
-		// Keep current outsource provider if it still exists in the catalog (case-insensitive).
-		const keep = outsourceProviderOptions.find((o) => o.value.toLowerCase() === botProvider.toLowerCase());
-		onProviderChange(keep?.value || first);
-		if (!keep) onModelChange("");
-	};
+		if (botProvider !== first) onProviderChange(first);
+		if (botModel) onModelChange("");
+	}, [botProvider, botModel, outsourceProviderOptions, onProviderChange, onModelChange]);
 
 	return (
 		<div className="space-y-3 rounded-lg border border-purple-900/40 bg-purple-950/20 p-3">
@@ -82,44 +58,11 @@ export function GuardRuleAIEvaluatorFields({
 				<span>AI Evaluator</span>
 			</div>
 
-			<div className="space-y-1.5">
-				<Label className="text-xs">Model source</Label>
-				<div className="grid grid-cols-2 gap-2 p-1 bg-background/50 rounded-lg border border-border">
-					<button
-						type="button"
-						onClick={() => setModelSource("download")}
-						className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-[11px] font-semibold transition-all ${
-							modelSource === "download" ? "bg-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
-						}`}
-					>
-						<Download className="h-3.5 w-3.5" />
-						Download model
-					</button>
-					<button
-						type="button"
-						onClick={() => setModelSource("outsource")}
-						className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-md text-[11px] font-semibold transition-all ${
-							modelSource === "outsource" ? "bg-purple-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
-						}`}
-					>
-						<Cloud className="h-3.5 w-3.5" />
-						Outsource model
-					</button>
-				</div>
-				<p className="text-[11px] text-muted-foreground">
-					{modelSource === "download"
-						? "Uses Ollama models pulled on the Guard server (llama3.2, gemma4, llava, …)."
-						: "Uses the Model Provider + API key you configured. Provider and model must match that key (OpenAI key → openai models, OpenRouter key → openrouter models, etc.)."}
-				</p>
-			</div>
+			<p className="text-[11px] text-muted-foreground">
+				Uses the Model Provider and API key configured in this Gateway. Provider and model must match that key.
+			</p>
 
-			{modelSource === "download" ? (
-				<div className="space-y-1.5">
-					<Label className="text-xs">Ollama model</Label>
-					<GuardBotModelPicker provider={GUARD_BOT_OLLAMA_PROVIDER} value={botModel} onChange={onModelChange} />
-				</div>
-			) : (
-				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+			<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<div className="space-y-1.5">
 						<Label className="text-xs">Provider</Label>
 						<Select
@@ -165,7 +108,6 @@ export function GuardRuleAIEvaluatorFields({
 						/>
 					</div>
 				</div>
-			)}
 
 			<p className="text-[11px] text-muted-foreground">
 				{multimodalModel

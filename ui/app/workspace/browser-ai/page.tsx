@@ -85,10 +85,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { normalizeTargetDomain, groupTargetsByParent, relatedHostsForDomain, relatedHostOptions, HOST_ROLE_OPTIONS, hostRoleLabel, type HostRole } from "./relatedHosts";
 import { buildAttachmentPreview, type AttachmentPreviewKind, type AttachmentSheetPreview } from "./attachmentPreview";
-import {
-	GUARD_BOT_OLLAMA_PROVIDER,
-	GUARD_BOT_OLLAMA_MODEL,
-} from "./browserAiConstants";
+import { GUARD_BOT_OLLAMA_PROVIDER } from "./browserAiConstants";
 import type { RelatedHostEntry } from "./browserAiTypes";
 import {
 	predictReasonLabel,
@@ -102,7 +99,6 @@ import {
 	securityVerdictFromLog,
 } from "./browserAiLogHelpers";
 import {
-	isDownloadGuardSource,
 	guardRuleNoticeCopy,
 	guardRuleActionHint,
 	referenceImageDataUrl,
@@ -299,8 +295,8 @@ export default function BrowserAiPage() {
 	// New Rule Form
 	const [newRuleName, setNewRuleName] = useState("");
 	const [newRuleType, setNewRuleType] = useState<"regex" | "ai_bot">("regex");
-	const [newRuleBotProvider, setNewRuleBotProvider] = useState(GUARD_BOT_OLLAMA_PROVIDER);
-	const [newRuleBotModel, setNewRuleBotModel] = useState(GUARD_BOT_OLLAMA_MODEL);
+	const [newRuleBotProvider, setNewRuleBotProvider] = useState("");
+	const [newRuleBotModel, setNewRuleBotModel] = useState("");
 	const [newRuleBotPrompt, setNewRuleBotPrompt] = useState("");
 	const [newRuleBotReferenceImage, setNewRuleBotReferenceImage] = useState("");
 	const [newRuleBotReferenceImageType, setNewRuleBotReferenceImageType] = useState("");
@@ -404,7 +400,7 @@ export default function BrowserAiPage() {
 		error: controlsError,
 	} = useGetBrowserAiControlsQuery(undefined, { pollingInterval: activePolling });
 	const { data: providersData, isError: providersFailed, error: providersError } = useGetProvidersQuery();
-	// Outsource = configured Model Providers (OpenRouter, OpenAI, …). Download = Ollama on server.
+	// Guard bot uses configured Model Providers only (Ollama download models are not offered).
 	const outsourceProviderOptions = useMemo(() => {
 		const opts = (providersData || [])
 			.map((p) => String(p?.name || "").trim())
@@ -1508,8 +1504,8 @@ export default function BrowserAiPage() {
 				return;
 			}
 			if (newRuleBotEvalMode === "ai") {
-				if (!isDownloadGuardSource(newRuleBotProvider) && !newRuleBotProvider.trim()) {
-					setRuleError("Select an Outsource provider (or switch to Download model).");
+				if (!newRuleBotProvider.trim() || newRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER) {
+					setRuleError("Select a Model Provider for AI Guard Bot.");
 					return;
 				}
 				if (!newRuleBotModel.trim()) {
@@ -1536,11 +1532,8 @@ export default function BrowserAiPage() {
 					: newRuleType === "regex"
 						? newRulePattern.trim()
 						: newRuleGeneratedPattern.trim(),
-				bot_provider: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotProvider || GUARD_BOT_OLLAMA_PROVIDER : "",
-				bot_model:
-					newRuleType === "ai_bot" && !saveAsGeneratedRegex
-						? newRuleBotModel || (isDownloadGuardSource(newRuleBotProvider) ? GUARD_BOT_OLLAMA_MODEL : "")
-						: "",
+				bot_provider: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotProvider.trim() : "",
+				bot_model: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotModel.trim() : "",
 				bot_prompt: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotPrompt.trim() : "",
 				bot_reference_image: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotReferenceImage : "",
 				bot_reference_image_type: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotReferenceImageType : "",
@@ -1580,9 +1573,13 @@ export default function BrowserAiPage() {
 			return;
 		}
 		try {
+			if (!provider.trim() || provider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !model.trim()) {
+				setErr("Select a Model Provider and model first.");
+				return;
+			}
 			const res = await generateRegexFromPolicy({
-				bot_provider: provider || GUARD_BOT_OLLAMA_PROVIDER,
-				bot_model: model || GUARD_BOT_OLLAMA_MODEL,
+				bot_provider: provider.trim(),
+				bot_model: model.trim(),
 				bot_prompt: prompt,
 			}).unwrap();
 			const pat = (res.pattern || "").trim();
@@ -1619,9 +1616,13 @@ export default function BrowserAiPage() {
 			return;
 		}
 		try {
+			if (!provider.trim() || provider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !model.trim()) {
+				setResult("Select a Model Provider and model first.");
+				return;
+			}
 			const res = await testGuardBot({
-				bot_provider: provider || GUARD_BOT_OLLAMA_PROVIDER,
-				bot_model: model || GUARD_BOT_OLLAMA_MODEL,
+				bot_provider: provider.trim(),
+				bot_model: model.trim(),
 				bot_prompt: policy,
 				sample_prompt: sample,
 				action,
@@ -1672,8 +1673,8 @@ export default function BrowserAiPage() {
 				return;
 			}
 			if (editRuleBotEvalMode === "ai") {
-				if (!isDownloadGuardSource(editRuleBotProvider) && !editRuleBotProvider.trim()) {
-					setRuleError("Select an Outsource provider (or switch to Download model).");
+				if (!editRuleBotProvider.trim() || editRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER) {
+					setRuleError("Select a Model Provider for AI Guard Bot.");
 					return;
 				}
 				if (!editRuleBotModel.trim()) {
@@ -1708,8 +1709,8 @@ export default function BrowserAiPage() {
 					updates.description = `Generated from policy: ${editRuleBotPrompt.trim().slice(0, 500)}`;
 				}
 			} else if (editRuleType === "ai_bot") {
-				updates.bot_provider = editRuleBotProvider || GUARD_BOT_OLLAMA_PROVIDER;
-				updates.bot_model = editRuleBotModel || (isDownloadGuardSource(editRuleBotProvider) ? GUARD_BOT_OLLAMA_MODEL : "");
+				updates.bot_provider = editRuleBotProvider.trim();
+				updates.bot_model = editRuleBotModel.trim();
 				updates.bot_prompt = editRuleBotPrompt.trim();
 				updates.bot_reference_image = editRuleBotReferenceImage;
 				updates.bot_reference_image_type = editRuleBotReferenceImageType;
@@ -3662,8 +3663,16 @@ export default function BrowserAiPage() {
 														type="button"
 														onClick={() => {
 															setNewRuleType("ai_bot");
-															setNewRuleBotProvider(GUARD_BOT_OLLAMA_PROVIDER);
-															setNewRuleBotModel(GUARD_BOT_OLLAMA_MODEL);
+															setNewRuleBotProvider((current) =>
+																current.trim() && current.trim().toLowerCase() !== GUARD_BOT_OLLAMA_PROVIDER
+																	? current
+																	: outsourceProviderOptions[0]?.value || "",
+															);
+															setNewRuleBotModel((current) =>
+																newRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !newRuleBotProvider.trim()
+																	? ""
+																	: current,
+															);
 														}}
 														className={`flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-semibold transition-all ${newRuleType === "ai_bot"
 																? "bg-purple-600 text-white shadow-sm"
@@ -3876,7 +3885,7 @@ export default function BrowserAiPage() {
 														<div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-purple-800 dark:text-purple-300/80">
 															<span>AI Security Policy (Prompt)</span>
 															<Badge variant="outline" className="text-[10px] py-0 px-1.5 text-purple-800 border-purple-300 dark:text-purple-300 dark:border-purple-800">
-																{rule.bot_provider || GUARD_BOT_OLLAMA_PROVIDER} / {rule.bot_model || GUARD_BOT_OLLAMA_MODEL}
+																{rule.bot_provider || "—"} / {rule.bot_model || "—"}
 															</Badge>
 														</div>
 														<p className="text-xs text-purple-950 whitespace-pre-wrap break-words font-mono dark:text-purple-100">
@@ -3911,8 +3920,16 @@ export default function BrowserAiPage() {
 															setEditRule(rule);
 															setEditRuleName(rule.name);
 															setEditRuleType(rule.rule_type === "ai_bot" ? "ai_bot" : "regex");
-															setEditRuleBotProvider(rule.bot_provider || GUARD_BOT_OLLAMA_PROVIDER);
-															setEditRuleBotModel(rule.bot_model || GUARD_BOT_OLLAMA_MODEL);
+															setEditRuleBotProvider(
+																rule.bot_provider && rule.bot_provider.trim().toLowerCase() !== GUARD_BOT_OLLAMA_PROVIDER
+																	? rule.bot_provider
+																	: outsourceProviderOptions[0]?.value || "",
+															);
+															setEditRuleBotModel(
+																rule.bot_provider && rule.bot_provider.trim().toLowerCase() !== GUARD_BOT_OLLAMA_PROVIDER
+																	? rule.bot_model || ""
+																	: "",
+															);
 															setEditRuleBotPrompt(rule.bot_prompt || "");
 															setEditRuleBotReferenceImage(rule.bot_reference_image || "");
 															setEditRuleBotReferenceImageType(rule.bot_reference_image_type || "");
@@ -4523,8 +4540,16 @@ export default function BrowserAiPage() {
 										type="button"
 										onClick={() => {
 											setEditRuleType("ai_bot");
-											setEditRuleBotProvider(GUARD_BOT_OLLAMA_PROVIDER);
-											setEditRuleBotModel(GUARD_BOT_OLLAMA_MODEL);
+											setEditRuleBotProvider((current) =>
+												current.trim() && current.trim().toLowerCase() !== GUARD_BOT_OLLAMA_PROVIDER
+													? current
+													: outsourceProviderOptions[0]?.value || "",
+											);
+											setEditRuleBotModel((current) =>
+												editRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !editRuleBotProvider.trim()
+													? ""
+													: current,
+											);
 										}}
 										className={`flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-semibold transition-all ${editRuleType === "ai_bot"
 												? "bg-purple-600 text-white shadow-sm"
