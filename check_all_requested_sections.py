@@ -78,9 +78,8 @@ for gov in [
     'governance_business_units',
     'governance_customers',
     'governance_virtual_keys',
-    'governance_access_profiles',
+    'access_profiles',
     'rbac_roles',
-    'rbac_role_permissions',
     'audit_logs'
 ]:
     print_table_info(f"Gov: {gov}", gov)

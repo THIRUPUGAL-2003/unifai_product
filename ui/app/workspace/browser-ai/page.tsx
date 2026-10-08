@@ -3359,17 +3359,11 @@ export default function BrowserAiPage() {
 									<div className="flex flex-wrap items-center gap-2">
 										<CardTitle className="text-lg">File upload policy</CardTitle>
 										{controls.enabled && controls.block_upload ? (
-											<Badge
-												variant="outline"
-												className="border-rose-700/70 bg-rose-950/40 text-rose-400"
-											>
+											<Badge variant="destructive">
 												Block all uploads
 											</Badge>
 										) : controls.enabled && !controls.block_upload ? (
-											<Badge
-												variant="outline"
-												className="border-emerald-700/70 bg-emerald-950/40 text-emerald-400"
-											>
+											<Badge variant="success">
 												Rules-based DLP
 											</Badge>
 										) : (
@@ -5169,8 +5163,12 @@ export default function BrowserAiPage() {
 											? `${licenseInfo.active_seats || 0} / ${licenseInfo.max_seats || 0} Laptops`
 											: `${licenseInfo?.active_seats || 0} online`}
 									</p>
-									<p className="text-[11px] text-emerald-400">
-										{licenseInfo?.is_licensed ? `${licenseInfo.remaining_seats ?? 0} seats available` : "Quota starts after activation"}
+									<p className={`text-[11px] font-medium ${licenseInfo?.is_active ? "text-emerald-800 dark:text-emerald-200" : "text-amber-800 dark:text-amber-200"}`}>
+										{licenseInfo?.is_licensed
+											? licenseInfo.is_active
+												? `${licenseInfo.remaining_seats ?? 0} seats available`
+												: "Not active until the signature verifies"
+											: "Quota starts after activation"}
 									</p>
 								</div>
 								<div>
