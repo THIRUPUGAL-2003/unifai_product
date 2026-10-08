@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -655,6 +656,49 @@ func (h *BrowserAIHandler) getRebuildHistory(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, map[string]any{"history": rows})
 }
 
+// findGuardPython returns a Python that can actually run the Guard publish script.
+// The repo venv is a Unix layout (bin/python is a 10-byte symlink). On Windows that
+// file exists, so Stat succeeds, but CreateProcess rejects it.
+func findGuardPython() string {
+	candidates := []string{
+		filepath.Join("apps", "browser-guard", ".venv-guard", "Scripts", "python.exe"),
+		filepath.Join("apps", "browser-guard", ".venv-guard", "bin", "python"),
+		"/opt/homebrew/bin/python3.12",
+		"/opt/homebrew/bin/python3",
+	}
+	for _, name := range candidates {
+		if pythonFileOK(name) {
+			return name
+		}
+	}
+	names := []string{"python3", "python"}
+	if runtime.GOOS == "windows" {
+		names = []string{"python", "python3"}
+	}
+	for _, name := range names {
+		p, err := exec.LookPath(name)
+		if err != nil {
+			continue
+		}
+		if runtime.GOOS == "windows" && strings.Contains(strings.ToLower(p), `\windowsapps\`) {
+			continue
+		}
+		return p
+	}
+	return ""
+}
+
+func pythonFileOK(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || info.Size() < 1024 {
+		return false
+	}
+	if runtime.GOOS == "windows" && !strings.EqualFold(filepath.Ext(path), ".exe") {
+		return false
+	}
+	return true
+}
+
 func (h *BrowserAIHandler) rebuildSetupPackages(ctx *fasthttp.RequestCtx) {
 	if !h.requireGuardAdmin(ctx, "Admin role required to rebuild Guard packages") {
 		return
@@ -671,24 +715,7 @@ func (h *BrowserAIHandler) rebuildSetupPackages(ctx *fasthttp.RequestCtx) {
 		filepath.Join("apps", "browser-guard", "scripts", "publish_fleet_packages.py"),
 		filepath.Join("scripts", "publish_fleet_packages.py"),
 	})
-	pythonBin := ""
-	for _, name := range []string{
-		filepath.Join("apps", "browser-guard", ".venv-guard", "bin", "python"),
-		"/opt/homebrew/bin/python3.12",
-		"/opt/homebrew/bin/python3",
-		"python3",
-		"python",
-	} {
-		if strings.Contains(name, string(filepath.Separator)) || strings.HasPrefix(name, "/") {
-			if info, err := os.Stat(name); err == nil && !info.IsDir() {
-				pythonBin = name
-				break
-			}
-		} else if p, err := exec.LookPath(name); err == nil {
-			pythonBin = p
-			break
-		}
-	}
+	pythonBin := findGuardPython()
 	if !scriptOK || pythonBin == "" {
 		// Docker runtime image ships prebuilt Guard binaries only (no Python / build tools):
 		// publish the proxy code hot-update and report the installers being served.

@@ -574,9 +574,19 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
 
     # ── Perplexity (request shape) ──
     if is_rest_sse_ask_submit(path, raw_body):
+        # Ask-text UIs read text, or a markdown block. Same reply, both shapes.
+        ask_evt = {
+            "text": msg,
+            "answer": msg,
+            "status": "completed",
+            "final": True,
+            "blocks": [{
+                "intended_usage": "ask_text",
+                "markdown_block": {"answer": msg, "chunks": [msg]},
+            }],
+        }
         pplx = (
-            f'event: message\ndata: {{"text":{msg_json}}}\n\n'
-            f'data: {{"status":"completed","text":{msg_json},"final":true}}\n\n'
+            f"event: message\ndata: {json.dumps(ask_evt, ensure_ascii=False)}\n\n"
             "data: [DONE]\n\n"
         )
         flow.response = http.Response.make(
@@ -597,7 +607,9 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
                 detected_rpc = rpc_cand
                 break
 
-        payload_data = [None, [None, None, None, [[msg]]]]
+        # StreamGenerate clients pick the reply from different array slots.
+        # Put the same text in each slot the page is known to read.
+        payload_data = [None, [None, None, None, [[msg]]], [[msg]], msg]
         payload_str = json.dumps(payload_data, ensure_ascii=False)
 
         envelopes = [
@@ -632,13 +644,27 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         or '"stream": true' in raw_low
     )
     if wants_stream or "completion" in path:
+        # Session-completion pages read delta.content, a plain "v" string, or "text".
+        chunk = {
+            "id": "gateway-reply",
+            "object": "chat.completion.chunk",
+            "choices": [{
+                "index": 0,
+                "delta": {"role": "assistant", "content": msg},
+                "finish_reason": None,
+            }],
+            "v": msg,
+            "text": msg,
+            "content": msg,
+        }
+        done = {
+            "id": "gateway-reply",
+            "object": "chat.completion.chunk",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        }
         openai_sse = (
-            'data: {"id":"gateway-reply","object":"chat.completion.chunk","choices":'
-            '[{"index":0,"delta":{"role":"assistant","content":'
-            f"{msg_json}"
-            '},"finish_reason":null}]}\n\n'
-            'data: {"id":"gateway-reply","object":"chat.completion.chunk","choices":'
-            '[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
+            f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            f"data: {json.dumps(done, ensure_ascii=False)}\n\n"
             "data: [DONE]\n\n"
         )
         flow.response = http.Response.make(

@@ -152,10 +152,12 @@ def _has_any_file_extension(name: str) -> bool:
     if "." not in base:
         return False
     ext = "." + base.rsplit(".", 1)[-1].lower()
+    # "5.3" is a version, not a file extension. Real extensions start with a letter.
+    if not re.fullmatch(r"\.[a-z][a-z0-9]{0,7}", ext):
+        return False
     if ext in _UPLOAD_NAME_EXTS:
         return True
-    # Accept any short alphanumeric extension (covers uncommon types).
-    return bool(re.fullmatch(r"\.[a-z0-9]{1,8}", ext))
+    return True
 
 
 def _looks_like_site_or_tab_label_not_file(name: str) -> bool:
@@ -198,13 +200,9 @@ def _json_name_field_ok(name: str, field: str = "") -> bool:
     if not n or not _is_real_user_upload_name(n):
         return False
     field_l = (field or "").lower()
-    if field_l in ("name", "title"):
-        if _has_any_file_extension(n):
-            return True
-        # Gemini-style extensionless: digits and/or parentheses.
-        if re.search(r"[\d()]", n) and len(n) >= 4:
-            return True
-        return False
+    if field_l in ("name", "title", "label", "model"):
+        # Chat title / model picker. The original upload name is file_name or filename=.
+        return _has_any_file_extension(n)
     return True
 
 
@@ -561,8 +559,8 @@ def _extract_names_from_one_text(raw_text: str) -> list[str]:
 
     patterns = (
         (r'["\'](file_name|fileName|filename|original_name|originalName|original_filename|originalFilename|display_name|displayName)["\']\s*:\s*["\']([^"\']+)["\']', True),
-        (r'["\'](name)["\']\s*:\s*["\']([^"\']+\.[A-Za-z0-9]{1,8})["\']', True),
-        (r'["\'](title)["\']\s*:\s*["\']([^"\']+\.[A-Za-z0-9]{1,8})["\']', True),
+        (r'["\'](name)["\']\s*:\s*["\']([^"\']+\.[A-Za-z][A-Za-z0-9]{0,7})["\']', True),
+        (r'["\'](title)["\']\s*:\s*["\']([^"\']+\.[A-Za-z][A-Za-z0-9]{0,7})["\']', True),
     )
     for pat, _ in patterns:
         for m in re.finditer(pat, raw_text, re.I):
@@ -1444,12 +1442,24 @@ def _trim_phantom_upload_caches(
     # Drop tiny caption/metadata phantoms next to a real file. Keep unnamed
     # rows that still look like real documents (multi-file: 1 named + 2 nameless).
     if realish and fakeish:
+        tiny_named = [e for e in realish if len(e.get("raw_bytes") or b"") < 256]
+        solid_named = [e for e in realish if e not in tiny_named]
         keep_fake = [
             e for e in fakeish
             if len(e.get("raw_bytes") or b"") >= 256
         ]
+        # Gemini StreamGenerate logs two rows: a tiny "File name: X" field plus the
+        # real bytes labeled "attachment". Move the real name onto the file and drop
+        # the name-only phantom so one Send is one file.
+        if tiny_named and keep_fake and not solid_named:
+            for i, e in enumerate(keep_fake):
+                if i < len(tiny_named):
+                    moved = (tiny_named[i].get("file_name") or "").strip()
+                    if moved and not _is_real_user_upload_name((e.get("file_name") or "").strip()):
+                        e["file_name"] = moved
+            return _dedupe_cached_uploads_by_bytes(keep_fake)
         if keep_fake:
-            return _dedupe_cached_uploads_by_bytes(realish + keep_fake)
+            return _dedupe_cached_uploads_by_bytes(solid_named + tiny_named + keep_fake)
         if expected > 1:
             return _dedupe_cached_uploads_by_bytes(realish + fakeish)
         return _dedupe_cached_uploads_by_bytes(realish)
@@ -1896,6 +1906,41 @@ def _extract_bytes_from_json_upload(raw: bytes, file_name: str = "") -> tuple[by
             return data, ctype, name or "attachment"
 
     return None, "", name
+
+
+def iter_multipart_named_files(raw: bytes) -> list[tuple[str, bytes]]:
+    """Each filename= part when one request carries two or more files (Claude batch upload)."""
+    if not raw or raw.lower().count(b"filename=") < 2:
+        return []
+    out: list[tuple[str, bytes]] = []
+    low = raw.lower()
+    start = 0
+    while True:
+        idx = low.find(b"filename=", start)
+        if idx < 0:
+            break
+        rest = raw[idx:]
+        hdr_end = rest.find(b"\r\n\r\n")
+        sep_len = 4
+        if hdr_end < 0:
+            hdr_end = rest.find(b"\n\n")
+            sep_len = 2
+        if hdr_end < 0:
+            break
+        hdr = rest[:hdr_end].decode("utf-8", errors="ignore")
+        hm = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';\r\n]+)["\']?', hdr, re.I)
+        name = _sanitize_upload_filename(hm.group(1)) if hm else ""
+        body = rest[hdr_end + sep_len :]
+        end = len(body)
+        for i in range(max(0, len(body) - 2)):
+            if body[i] == 10 and body[i + 1] == 45 and body[i + 2] == 45:
+                end = i - 1 if i > 0 and body[i - 1] == 13 else i
+                break
+        part = body[:end]
+        if name and part and _is_real_user_upload_name(name):
+            out.append((name, part))
+        start = idx + len(b"filename=")
+    return out if len(out) >= 2 else []
 
 
 def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: str = "") -> tuple[bytes | None, str, str]:

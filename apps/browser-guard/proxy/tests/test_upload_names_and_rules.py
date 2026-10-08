@@ -693,6 +693,105 @@ class UploadNameAndRuleTests(unittest.TestCase):
         self.assertTrue(compile_rx(r"(?P<n>\d{3})-(?:\d{2})").search("123-45"))
         self.assertTrue(compile_rx(r"\(?i\)").search("i)"))
 
+    def test_placeholder_row_keeps_the_upload_file_name(self) -> None:
+        original = "quarterly-review.pdf"
+        body = b"%PDF-1.4 quarterly review bytes\n" * 20
+        trim = NS["_trim_phantom_upload_caches"]
+        cached = [
+            {"file_name": original, "raw_bytes": f"File name: {original}".encode()},
+            {"file_name": "attachment", "raw_bytes": body},
+        ]
+        out = trim(cached, json.dumps({"file_name": original, "prompt": "please review"}), "please review")
+        self.assertEqual([e.get("file_name") for e in out], [original])
+        self.assertEqual(out[0]["raw_bytes"], body)
+        self.assertNotIn("attachment", [e.get("file_name") for e in out])
+
+    def test_version_label_does_not_replace_the_upload_name(self) -> None:
+        original = "budget.xlsx"
+        names = NS["extract_all_attachment_filenames_from_send"](
+            json.dumps({"name": "GLM 5.3", "model": "gpt-4o", "file_name": original})
+        )
+        self.assertEqual(names, [original])
+
+    def test_grok_suggestions_stream_is_not_a_chat_submit(self) -> None:
+        self.assertFalse(
+            NS["is_chat_path"]("/rest/suggestions/stream", "grok.com", '{"query":"hi"}')
+        )
+        self.assertTrue(NS["is_chat_path"]("/rest/app-chat", "grok.com", ""))
+
+    def test_multipart_batch_returns_every_filename(self) -> None:
+        originals = ("alpha-notes.txt", "beta-notes.txt")
+        body = (
+            b"------bound\r\n"
+            + f'Content-Disposition: form-data; name="file"; filename="{originals[0]}"\r\n'.encode()
+            + b"Content-Type: text/plain\r\n\r\n"
+            + b"alpha file body here\r\n"
+            + b"------bound\r\n"
+            + f'Content-Disposition: form-data; name="file"; filename="{originals[1]}"\r\n'.encode()
+            + b"Content-Type: text/plain\r\n\r\n"
+            + b"beta file body here\r\n"
+            + b"------bound--\r\n"
+        )
+        parts = NS["iter_multipart_named_files"](body)
+        self.assertEqual([p[0] for p in parts], list(originals))
+        self.assertIn(b"alpha", parts[0][1])
+        self.assertIn(b"beta", parts[1][1])
+
+    def test_security_reply_follows_request_shape(self) -> None:
+        """Claude stays on its SSE. Other chats get a reply in the shape they already speak."""
+        from mitmproxy.test import tflow, tutils
+
+        notice = "Blocked by Gateway Guard (post code)."
+
+        def _one(host: str, path: str, body: dict) -> bytes:
+            raw = json.dumps(body).encode()
+            req = tutils.treq(
+                host=host, port=443, scheme=b"https", method=b"POST",
+                path=path.encode(),
+                headers=[(b"content-type", b"application/json"), (b"host", host.encode()), (b"accept", b"text/event-stream")],
+                content=raw,
+            )
+            req.authority = host
+            flow = tflow.tflow(req=req)
+            NS["make_blocked_response"](flow, "post code", host, notice)
+            self.assertIsNotNone(flow.response)
+            return flow.response.content or b""
+
+        claude = _one(
+            "claude.ai",
+            "/api/organizations/o/chat_conversations/c/completion",
+            {"prompt": "613002", "parent_message_uuid": "u", "rendering_mode": "messages"},
+        )
+        self.assertIn(b"content_block_delta", claude)
+        self.assertIn(notice.encode(), claude)
+
+        deepseek = _one(
+            "chat.deepseek.com",
+            "/api/v0/chat/completion",
+            {"chat_session_id": "c1", "parent_message_id": None, "prompt": "613002"},
+        )
+        self.assertNotIn(b"content_block_delta", deepseek)
+        self.assertIn(b'"v":', deepseek)
+        self.assertIn(notice.encode(), deepseek)
+
+        gemini = _one(
+            "gemini.google.com",
+            "/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate",
+            {},
+        )
+        # StreamGenerate is detected from the path even when the form body is empty here.
+        # Real sends are form-encoded; path alone is enough for the chat-submit gate.
+        self.assertIn(b"wrb.fr", gemini)
+        self.assertIn(notice.encode(), gemini)
+
+        pplx = _one(
+            "www.perplexity.ai",
+            "/rest/sse/perplexity_ask",
+            {"query_str": "613002"},
+        )
+        self.assertIn(b"ask_text", pplx)
+        self.assertIn(notice.encode(), pplx)
+
 
 if __name__ == "__main__":
     # Keep proxy dir importable if helpers expect local paths.

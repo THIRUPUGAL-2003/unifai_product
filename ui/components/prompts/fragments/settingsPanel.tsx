@@ -14,8 +14,16 @@ import { useListSkillsQuery } from "@/lib/store/apis/skillsApi";
 import { useGetMCPClientsQuery } from "@/lib/store/apis/mcpApi";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { PanelRightClose, Wrench } from "lucide-react";
+import { Clock, PanelRightClose, Trash2, Wrench } from "lucide-react";
+import { toast } from "sonner";
+import {
+	useGetPromptHistorySettingsQuery,
+	useUpdatePromptHistorySettingsMutation,
+	useClearAllPromptHistoryMutation,
+} from "@/lib/store/apis/promptsApi";
 import { ModelProviderName } from "@/lib/types/config";
 import { ModelParams } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
@@ -54,6 +62,51 @@ export function SettingsPanel() {
 	const isMemberOnly = Boolean(authStatus?.role && authStatus.role !== "admin");
 
 	const { data: virtualKeysData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery(undefined, { pollingInterval: vkPollMs });
+
+	const { data: historySettings, isLoading: isLoadingHistorySettings } = useGetPromptHistorySettingsQuery();
+	const [updateHistorySettings, { isLoading: isUpdatingHistorySettings }] = useUpdatePromptHistorySettingsMutation();
+	const [clearAllHistory, { isLoading: isClearingHistory }] = useClearAllPromptHistoryMutation();
+	const [confirmClearHistory, setConfirmClearHistory] = useState(false);
+
+	const handleToggleAutoDelete = useCallback(
+		async (checked: boolean) => {
+			try {
+				await updateHistorySettings({
+					auto_delete: checked,
+					retention: historySettings?.retention || "7d",
+				}).unwrap();
+				toast.success(checked ? "Chat history auto-delete enabled" : "Chat history auto-delete disabled");
+			} catch (err) {
+				toast.error("Failed to update auto-delete setting", { description: getErrorMessage(err) });
+			}
+		},
+		[updateHistorySettings, historySettings?.retention],
+	);
+
+	const handleChangeRetention = useCallback(
+		async (retention: string) => {
+			try {
+				await updateHistorySettings({
+					auto_delete: true,
+					retention,
+				}).unwrap();
+				toast.success(`Chat history retention set to ${retention}`);
+			} catch (err) {
+				toast.error("Failed to update retention period", { description: getErrorMessage(err) });
+			}
+		},
+		[updateHistorySettings],
+	);
+
+	const handleClearHistory = useCallback(async () => {
+		try {
+			const res = await clearAllHistory().unwrap();
+			toast.success(res.message || "Chat history cleared successfully");
+			setConfirmClearHistory(false);
+		} catch (err) {
+			toast.error("Failed to clear chat history", { description: getErrorMessage(err) });
+		}
+	}, [clearAllHistory]);
 
 	useEffect(() => {
 		setAuthPollMs(authPollError ? 0 : POLL_MS);
@@ -462,6 +515,101 @@ export function SettingsPanel() {
 										</div>
 									</>
 								)}
+
+								<Separator />
+								<div className="flex flex-col gap-3 rounded-lg border border-border/70 bg-card/60 p-3.5 shadow-xs" data-testid="settings-chat-history-card">
+									<div className="flex items-center justify-between">
+										<div className="flex items-center gap-2">
+											<Clock className="h-4 w-4 text-primary" />
+											<Label className="text-xs font-semibold uppercase tracking-wider">
+												Chat History & Auto-Delete
+											</Label>
+										</div>
+										<Badge variant="outline" className="text-[10px] bg-primary/10 text-primary border-primary/20">
+											Text-Only Storage
+										</Badge>
+									</div>
+
+									<p className="text-muted-foreground text-xs leading-relaxed">
+										Uploaded files and documents are saved strictly as extracted text. Raw file binaries and heavy images are never stored to optimize storage.
+									</p>
+
+									<div className="flex items-center justify-between gap-2 pt-1">
+										<div className="flex items-center gap-2">
+											<Switch
+												id="settings-auto-delete-switch"
+												checked={!!historySettings?.auto_delete}
+												onCheckedChange={handleToggleAutoDelete}
+												disabled={isLoadingHistorySettings || isUpdatingHistorySettings}
+											/>
+											<Label htmlFor="settings-auto-delete-switch" className="cursor-pointer text-xs font-medium">
+												Auto-delete chat sessions
+											</Label>
+										</div>
+									</div>
+
+									{historySettings?.auto_delete && (
+										<div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40">
+											<Label className="text-muted-foreground text-xs">Retention Period</Label>
+											<Select
+												value={
+													["1d", "7d", "30d", "90d", "180d", "365d"].includes(historySettings?.retention || "")
+														? historySettings.retention
+														: "7d"
+												}
+												onValueChange={handleChangeRetention}
+												disabled={isLoadingHistorySettings || isUpdatingHistorySettings}
+											>
+												<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
+													<SelectValue />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="1d">1 day</SelectItem>
+													<SelectItem value="7d">7 days (1 week)</SelectItem>
+													<SelectItem value="30d">30 days (1 month)</SelectItem>
+													<SelectItem value="90d">90 days (3 months)</SelectItem>
+													<SelectItem value="180d">180 days (6 months)</SelectItem>
+													<SelectItem value="365d">365 days (1 year)</SelectItem>
+												</SelectContent>
+											</Select>
+										</div>
+									)}
+
+									<div className="pt-2 border-t border-border/40 flex items-center justify-between">
+										<span className="text-muted-foreground text-[11px]">Purge all chat sessions</span>
+										{confirmClearHistory ? (
+											<div className="flex items-center gap-1.5">
+												<Button
+													size="sm"
+													variant="destructive"
+													className="h-6 text-[11px] px-2"
+													onClick={handleClearHistory}
+													disabled={isClearingHistory}
+												>
+													Confirm Purge
+												</Button>
+												<Button
+													size="sm"
+													variant="ghost"
+													className="h-6 text-[11px] px-2"
+													onClick={() => setConfirmClearHistory(false)}
+												>
+													Cancel
+												</Button>
+											</div>
+										) : (
+											<Button
+												size="sm"
+												variant="outline"
+												className="h-6 text-[11px] gap-1 px-2 border-destructive/30 text-destructive hover:bg-destructive/10"
+												onClick={() => setConfirmClearHistory(true)}
+											>
+												<Trash2 className="h-3 w-3" />
+												Clear Now
+											</Button>
+										)}
+									</div>
+								</div>
 							</div>
 						</AccordionContent>
 					</AccordionItem>

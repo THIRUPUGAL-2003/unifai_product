@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-sLPvdpSW.js";import{t}from"./modelSettingsView-DVFQ9Dq2.js";var n=e();function r(){return(0,n.jsx)(`div`,{className:`mx-auto flex w-full max-w-7xl`,children:(0,n.jsx)(t,{})})}var i=r;export{i as component};

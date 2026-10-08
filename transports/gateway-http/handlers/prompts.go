@@ -1655,7 +1655,7 @@ func (h *PromptsHandler) createSession(ctx *fasthttp.RequestCtx) {
 		for _, msg := range req.Messages {
 			messages = append(messages, tables.TablePromptSessionMessage{
 				PromptID: promptID,
-				Message:  msg,
+				Message:  sanitizePromptMessageJSON(msg),
 			})
 		}
 	}
@@ -1750,7 +1750,7 @@ func (h *PromptsHandler) updateSession(ctx *fasthttp.RequestCtx) {
 	for _, msg := range req.Messages {
 		messages = append(messages, tables.TablePromptSessionMessage{
 			PromptID: session.PromptID,
-			Message:  msg,
+			Message:  sanitizePromptMessageJSON(msg),
 		})
 	}
 	session.Messages = messages
@@ -2073,9 +2073,9 @@ func (h *PromptsHandler) getPromptSettings(ctx *fasthttp.RequestCtx) {
 
 // updatePromptSettings handles PUT /api/prompt-repo/settings
 func (h *PromptsHandler) updatePromptSettings(ctx *fasthttp.RequestCtx) {
-	_, role := h.promptCallerIdentity(ctx)
-	if role != "" && !isWorkspaceAdminRole(role) {
-		SendError(ctx, fasthttp.StatusForbidden, "Forbidden: admin access required")
+	callerID, _ := h.promptCallerIdentity(ctx)
+	if callerID == "" {
+		SendError(ctx, fasthttp.StatusUnauthorized, "authentication required")
 		return
 	}
 
@@ -2097,9 +2097,9 @@ func (h *PromptsHandler) updatePromptSettings(ctx *fasthttp.RequestCtx) {
 
 // clearAllPromptHistory handles POST /api/prompt-repo/history/clear
 func (h *PromptsHandler) clearAllPromptHistory(ctx *fasthttp.RequestCtx) {
-	_, role := h.promptCallerIdentity(ctx)
-	if role != "" && !isWorkspaceAdminRole(role) {
-		SendError(ctx, fasthttp.StatusForbidden, "Forbidden: admin access required")
+	callerID, _ := h.promptCallerIdentity(ctx)
+	if callerID == "" {
+		SendError(ctx, fasthttp.StatusUnauthorized, "authentication required")
 		return
 	}
 
@@ -2113,4 +2113,80 @@ func (h *PromptsHandler) clearAllPromptHistory(ctx *fasthttp.RequestCtx) {
 		"message":       "All prompt chat history cleared successfully",
 		"deleted_count": count,
 	})
+}
+
+// sanitizePromptMessageJSON ensures that any raw binary files or large data URLs in message content
+// are replaced with their extracted text representation, preventing raw file payloads from being stored in the database.
+func sanitizePromptMessageJSON(raw tables.PromptMessage) tables.PromptMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+	var msg map[string]any
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		return raw
+	}
+	payload, ok := msg["payload"].(map[string]any)
+	if !ok {
+		return raw
+	}
+	content, ok := payload["content"].([]any)
+	if !ok {
+		return raw
+	}
+	modified := false
+	newContent := make([]any, 0, len(content))
+	for _, item := range content {
+		itemMap, ok := item.(map[string]any)
+		if !ok {
+			newContent = append(newContent, item)
+			continue
+		}
+		itemType, _ := itemMap["type"].(string)
+		switch itemType {
+		case "file":
+			modified = true
+			filename := "file"
+			if fileObj, ok := itemMap["file"].(map[string]any); ok {
+				if fn, ok := fileObj["filename"].(string); ok && fn != "" {
+					filename = fn
+				}
+			}
+			newContent = append(newContent, map[string]any{
+				"type": "text",
+				"text": fmt.Sprintf("Attached file: %s\n\n[Extracted text preserved — raw binary file purged]", filename),
+			})
+		case "image_url":
+			if imgObj, ok := itemMap["image_url"].(map[string]any); ok {
+				if url, ok := imgObj["url"].(string); ok && strings.HasPrefix(url, "data:") {
+					modified = true
+					filename := "image"
+					if fn, ok := imgObj["filename"].(string); ok && fn != "" {
+						filename = fn
+					}
+					newContent = append(newContent, map[string]any{
+						"type": "text",
+						"text": fmt.Sprintf("Attached image: %s\n\n[Visual text content preserved — raw image binary purged]", filename),
+					})
+					continue
+				}
+			}
+			newContent = append(newContent, item)
+		case "input_audio":
+			modified = true
+			newContent = append(newContent, map[string]any{
+				"type": "text",
+				"text": "Attached voice audio\n\n[Transcribed audio text preserved — raw audio binary purged]",
+			})
+		default:
+			newContent = append(newContent, item)
+		}
+	}
+	if modified {
+		payload["content"] = newContent
+		msg["payload"] = payload
+		if data, err := json.Marshal(msg); err == nil {
+			return tables.PromptMessage(data)
+		}
+	}
+	return raw
 }

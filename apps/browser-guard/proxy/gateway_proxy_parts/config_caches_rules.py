@@ -229,6 +229,8 @@ IGNORE_PATH_PATTERNS = [
     "/search/v2/navigate", "/rest/rate_limits", "/api/event",
     "/api/telemetry", "/api/analytics", "/api/stats",
     "/streamtimeline", "/reportviewing", "/report_viewing", "/event_logging",
+    # Grok/xAI typeahead — /rest/suggestions/stream contains the /stream chat marker.
+    "/suggestions",
     "/getconversation", "/listconversations", "/recordaction",
     # Activity pings & browser heartbeat
     "/activity", "/heartbeat", "/events",
@@ -1667,9 +1669,7 @@ def is_event_send_chat_submit(path: str, body: str = "") -> bool:
     if any(m in path_l for m in markers) and body_l:
         return True
     if "/chat" in path_l and "telemetry" not in path_l and "analytics" not in path_l and body_l:
-        if _body_has_user_send_payload(_loads_json_maybe_signalr(body) or {}) or (
-            '"event":"send"' in body_l or '"target":"chat"' in body_l
-        ):
+        if '"event":"send"' in body_l or '"target":"chat"' in body_l:
             return True
     return False
 
@@ -1681,9 +1681,8 @@ def is_rest_sse_ask_submit(path: str, body: str = "") -> bool:
         marker in path_l
         for marker in (
             "perplexity_ask", "/rest/sse", "/rest/thread", "/rest/entrypoint",
-            "/rest/search", "/rest/chat", "/api/chat", "/search",
-            "/socket", "/graphql", "/generative", "/completion", "/ask",
-            "/query", "/copilot", "/server-sent-events",
+            "/rest/search", "/rest/chat",
+            "/server-sent-events",
         )
     ):
         return True

@@ -147,7 +147,7 @@ export default function PromptsViewHeader() {
 	const handleSaveSession = useCallback(async () => {
 		if (!selectedPrompt || !hasChanges || isStreaming) return;
 		const data = {
-			messages: Message.serializeAll(messages),
+			messages: Message.serializeForStorage(messages),
 			model_params: buildSaveParams(),
 			provider,
 			model,
@@ -212,7 +212,7 @@ export default function PromptsViewHeader() {
 			const result = await createSession({
 				promptId: selectedPrompt.id,
 				data: {
-					messages: Message.serializeAll(messages),
+					messages: Message.serializeForStorage(messages),
 					model_params: buildSaveParams(),
 					provider,
 					model,
@@ -344,9 +344,9 @@ export default function PromptsViewHeader() {
 						Clear
 					</Button>
 				)}
+				<PromptHistoryControls />
 				{!isUserRole && (
 					<>
-						<PromptHistoryControls />
 						<SplitButton
 							onClick={handleSaveSession}
 							disabled={isCreatingSession || isUpdatingSession || isStreaming}

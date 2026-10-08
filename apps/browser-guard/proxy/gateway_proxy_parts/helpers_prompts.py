@@ -5,11 +5,16 @@ import os
 import urllib.parse
 
 def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
-    """Detect Claude / Anthropic chat submit from request path or JSON body — not hostname."""
+    """Claude / Anthropic chat submit from request shape — not hostname.
+
+    A bare /chat/completion path is a different product (session prompt + SSE).
+    Claude web is /chat_conversations/.../completion, or a body with
+    parent_message_uuid / max_tokens+messages.
+    """
     path_l = (path or "").lower()
     if _path_has_ignore_pattern(path_l):
         return False
-    if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "/completion", "performaction")):
+    if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "performaction")):
         return True
     if not body or not body.lstrip().startswith("{"):
         return False
@@ -21,7 +26,10 @@ def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
         return False
     if "max_tokens" in data and isinstance(data.get("messages"), list):
         return True
-    if isinstance(data.get("prompt"), str) and str(data.get("prompt", "")).strip():
+    prompt = data.get("prompt")
+    if isinstance(prompt, str) and prompt.strip() and any(
+        k in data for k in ("parent_message_uuid", "rendering_mode", "sync_sources")
+    ):
         return True
     return False
 
@@ -62,6 +70,16 @@ def _copilot_frame_is_user_send(body: str) -> bool:
         return True
     if ('"type":4' in bl or '"type": 4' in bl) and "chat" in bl:
         return True
+    # A normal JSON chat body (prompt / messages) is not a Copilot frame.
+    # Only SignalR / hub frames get the in-chat card reply.
+    signalr = (
+        "\x1e" in body
+        or '"arguments":' in bl
+        or '"invocationid"' in bl
+        or '"target":' in bl
+    )
+    if not signalr:
+        return False
     data = _loads_json_maybe_signalr(body)
     if isinstance(data, dict) and _body_has_user_send_payload(data):
         return True

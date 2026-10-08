@@ -711,7 +711,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		async (finalMessages: Message[]) => {
 			if (!selectedPrompt) return;
 			const data = {
-				messages: Message.serializeAll(finalMessages),
+				messages: Message.serializeForStorage(finalMessages),
 				model_params: buildPersistParams(),
 				provider,
 				model,

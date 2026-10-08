@@ -13,10 +13,17 @@ import {
 	ToolResult,
 } from "./types";
 
-/** Extracted file / voice transcript text parts live in content[] but act as attachments. */
+/** Extracted file / image / voice transcript text parts live in content[] but act as attachments. */
 function isEmbeddedAttachmentText(part: MessageContent): boolean {
 	if (part.type !== "text" || !part.text) return false;
-	return part.text.startsWith("Attached file:") || part.text.startsWith("Voice transcript");
+	return (
+		part.text.startsWith("Attached file:") ||
+		part.text.startsWith("Attached zip:") ||
+		part.text.startsWith("Attached image:") ||
+		part.text.startsWith("Voice transcript") ||
+		part.text.includes("--- extracted content ---") ||
+		part.text.includes("--- OCR extracted content ---")
+	);
 }
 
 export class Message {
@@ -338,6 +345,65 @@ export class Message {
 
 	static deserializeAll(data: SerializedMessage[]): Message[] {
 		return data.map((d) => Message.deserialize(d));
+	}
+
+	/**
+	 * Serialize messages for persistent storage (sessions / database), ensuring that
+	 * raw file/image/audio binaries (base64 data URLs) are purged and only the
+	 * extracted text content is preserved.
+	 */
+	static serializeForStorage(messages: Message[]): SerializedMessage[] {
+		const serialized = Message.serializeAll(messages);
+		return Message.sanitizeSerializedForStorage(serialized);
+	}
+
+	/**
+	 * Strips raw base64 data URLs from file_data, image_url, and input_audio,
+	 * retaining only extracted plain text and human-readable references.
+	 */
+	static sanitizeSerializedForStorage(serialized: SerializedMessage[]): SerializedMessage[] {
+		return serialized.map((msg) => {
+			if (!msg.payload) return msg;
+			const clone = JSON.parse(JSON.stringify(msg)) as SerializedMessage;
+			const payload = clone.payload as any;
+			if (!payload) return clone;
+
+			if (Array.isArray(payload.content)) {
+				payload.content = payload.content.map((item: any) => {
+					if (!item || typeof item !== "object") return item;
+
+					// If it's a file attachment, keep extracted text or metadata only - purge raw file_data
+					if (item.type === "file") {
+						const filename = item.file?.filename || "file";
+						return {
+							type: "text",
+							text: `Attached file: ${filename}\n\n[Extracted text preserved — raw binary file purged]`,
+						};
+					}
+
+					// If it's an image, keep filename and note - purge giant base64 data URL
+					if (item.type === "image_url") {
+						const filename = item.image_url?.filename || "image";
+						return {
+							type: "text",
+							text: `Attached image: ${filename}\n\n[Extracted visual text preserved — raw image binary purged]`,
+						};
+					}
+
+					// If it's an audio attachment, purge raw audio data
+					if (item.type === "input_audio") {
+						return {
+							type: "text",
+							text: `Attached voice audio\n\n[Transcribed audio text preserved — raw audio binary purged]`,
+						};
+					}
+
+					return item;
+				});
+			}
+
+			return clone;
+		});
 	}
 
 	/**

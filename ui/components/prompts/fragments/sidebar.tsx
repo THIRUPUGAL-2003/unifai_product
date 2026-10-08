@@ -462,7 +462,7 @@ export function PromptSidebar() {
 									? // Server copies provider/model/params/messages from the committed version.
 										{ version_id: latestVersion.id }
 									: {
-											messages: Message.serializeAll([
+											messages: Message.serializeForStorage([
 												Message.fromLegacyAll((latestVersion?.messages ?? []).map((m) => m.message)).find(
 													(m) => m.role === "system",
 												) || Message.system(""),

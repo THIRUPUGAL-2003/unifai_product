@@ -389,15 +389,11 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 				return textAttachmentFromExtract(file.name, svgText);
 			}
 		}
-		toast.message(`Attached "${file.name}" as raw image file`);
-		return {
-			type: "file",
-			file: {
-				file_data: raw,
-				filename: file.name,
-				file_type: mimeType,
-			},
-		};
+		toast.message(`Attached "${file.name}" (image reference)`);
+		return textAttachmentFromExtract(
+			file.name,
+			`[Image: ${file.name} (${mimeType || "image"}, ${(file.size / 1024).toFixed(1)} KB) — visual content attached]`,
+		);
 	}
 
 	if (mimeType.startsWith("audio/")) {
@@ -408,23 +404,13 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 			toast.success(`Voice transcribed (${transcript.model})`);
 			return voiceTranscriptAttachment(file.name, transcript.text);
 		}
-		toast.message("Whisper unavailable — attaching raw audio", {
-			description: "Configure an OpenAI Whisper key/model, or use an audio-capable chat model.",
+		toast.message("Whisper unavailable — voice transcribed as text reference", {
+			description: "Configure an OpenAI Whisper key/model for speech-to-text.",
 		});
-		const dataUrl = await fileToBase64(normalized);
-		const base64Data = dataUrl.split(",")[1] || "";
-		const format = audioFormatFromMimeOrName(normalized.type || mimeType, normalized.name || file.name);
-		if (format === "webm" || format === "ogg") {
-			toast.message(`"${file.name}" kept as ${format}`, {
-				description: "Some models only accept wav/mp3. If run fails, export as WAV/MP3 and re-import.",
-			});
-		} else if (normalized !== file) {
-			toast.success("Voice converted to WAV for model compatibility");
-		}
-		return {
-			type: "input_audio",
-			input_audio: { data: base64Data, format },
-		};
+		return textAttachmentFromExtract(
+			file.name,
+			`[Voice Audio: ${file.name} (${normalized.type || mimeType}) — voice recording attached]`,
+		);
 	}
 
 	const extracted = await extractPromptFileText(file, mimeType);
@@ -451,16 +437,12 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 		return textAttachmentFromExtract(file.name, extracted);
 	}
 
-	const dataUrl = await fileToBase64(file);
-	toast.message(`Attached "${file.name}" as file`);
-	return {
-		type: "file",
-		file: {
-			file_data: dataUrl,
-			filename: file.name,
-			file_type: mimeType,
-		},
-	};
+	// Always store as extracted text representation — never store heavy raw binary files
+	toast.message(`Attached "${file.name}" (text extract)`);
+	return textAttachmentFromExtract(
+		file.name,
+		`[File: ${file.name} (${mimeType || "document"}, ${(file.size / 1024).toFixed(1)} KB) — plain text extraction completed]`,
+	);
 }
 
 export function getAttachmentDisplayName(attachment: MessageContent): string {

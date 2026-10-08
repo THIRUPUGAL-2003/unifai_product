@@ -952,18 +952,36 @@ class BrowserAIInterceptor:
                     cache_domains.append(bind)
             except Exception:
                 pass
+            multi_parts: list[tuple[str, bytes]] = []
+            try:
+                multi_parts = iter_multipart_named_files(raw_bytes)
+            except Exception:
+                multi_parts = []
+            cached_label = fname or "attachment"
             for cache_dom in cache_domains:
-                cache_upload_file(
-                    cache_dom,
-                    file_name=fname or "attachment",
-                    raw_bytes=raw_bytes,
-                    content_type=content_type,
-                    upload_reason=upload_reason or "upload_endpoint",
-                    file_id=file_ids[0] if file_ids else "",
-                )
+                if len(multi_parts) >= 2:
+                    for i, (pname, pbytes) in enumerate(multi_parts):
+                        cache_upload_file(
+                            cache_dom,
+                            file_name=pname,
+                            raw_bytes=pbytes,
+                            content_type=content_type,
+                            upload_reason=upload_reason or "upload_endpoint",
+                            file_id=file_ids[i] if i < len(file_ids) else "",
+                        )
+                    cached_label = ", ".join(p[0] for p in multi_parts)
+                else:
+                    cache_upload_file(
+                        cache_dom,
+                        file_name=fname or "attachment",
+                        raw_bytes=raw_bytes,
+                        content_type=content_type,
+                        upload_reason=upload_reason or "upload_endpoint",
+                        file_id=file_ids[0] if file_ids else "",
+                    )
             print(
                 f"[Gateway Proxy] FILE CACHED (await Send — zero predict on upload) | {domain} | "
-                f"{fname or 'attachment'} | {len(raw_bytes)} bytes | "
+                f"{cached_label} | {len(raw_bytes)} bytes | "
                 f"{method} {host}{path.split('?', 1)[0][:90]}"
                 + (f" | also->{cache_domains[1]}" if len(cache_domains) > 1 else "")
             )

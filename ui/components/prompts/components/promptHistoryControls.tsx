@@ -24,15 +24,8 @@ export default function PromptHistoryControls({ className }: PromptHistoryContro
 	const { data: authStatus } = useIsAuthEnabledQuery();
 	const isUserRole = isPromptMemberRole(authStatus?.role);
 
-	const { data: settings, isLoading, isError: settingsFailed, error: settingsError } = useGetPromptHistorySettingsQuery(undefined, {
-		skip: isUserRole,
-	});
+	const { data: settings, isLoading, isError: settingsFailed, error: settingsError } = useGetPromptHistorySettingsQuery();
 	const [updateSettings, { isLoading: isUpdating }] = useUpdatePromptHistorySettingsMutation();
-
-	// Strictly for Admin / Workspace side only (not exposed to end-users)
-	if (isUserRole) {
-		return null;
-	}
 
 	const handleToggleAutoDelete = async (checked: boolean) => {
 		try {
