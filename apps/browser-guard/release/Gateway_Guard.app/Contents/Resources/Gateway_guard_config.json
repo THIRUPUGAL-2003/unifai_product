@@ -10,5 +10,5 @@
   "pac_http_port": 18195,
   "pac_url": "https://unifai.yespanchi.com/api/browser-ai/pac",
   "guard_secret": "ycsKvD5uWlL1ymRZZW/3ePHqMe7sab4ZiG9L1VRMAFo=",
-  "_secret_note": "Set via GATEWAY_GUARD_SECRET / sync_config_from_env.py \u2014 never commit a live secret"
+  "_secret_note": "Set via GATEWAY_GUARD_SECRET (or GATEWAY_GUARD_SECRET) / sync_config_from_env.py \u2014 never commit a live secret"
 }
