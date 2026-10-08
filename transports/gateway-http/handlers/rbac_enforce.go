@@ -109,12 +109,23 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 }
 
 // sessionSectionsAllow applies sidebar / Workspace Access section grants to the API.
-// Admin is unrestricted. Built-in "user", sub_admin, and custom roles are scoped so a
-// user only reaches the features assigned to them (view via RBAC + section grant).
+// An admin with no saved section list (and the bootstrap admin, who has no user row)
+// stays unrestricted. A specific admin whose allowed_sections were customized is
+// limited to that list. Built-in "user", sub_admin, and custom roles are always scoped.
 func sessionSectionsAllow(ctx context.Context, store configstore.ConfigStore, role, username string, required []string) bool {
 	r := strings.ToLower(strings.TrimSpace(role))
-	if r == "" || r == "admin" {
+	if r == "" {
 		return true
+	}
+	if r == "admin" {
+		if username == "" {
+			return true
+		}
+		user, err := store.GetUserByUsername(ctx, username)
+		if err != nil || user == nil || strings.TrimSpace(user.AllowedSections) == "" {
+			return true
+		}
+		return rbac.SectionsAllow(user.AllowedSections, required)
 	}
 	if username == "" {
 		return false

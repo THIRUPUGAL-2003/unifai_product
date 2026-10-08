@@ -96,8 +96,16 @@ func TestSessionSectionsAllow_UsesOwnAndInheritedSections(t *testing.T) {
 	if sessionSectionsAllow(nil, store, "auditor", "viewer", rawLogs) {
 		t.Fatalf("dashboard section must not reach raw logs")
 	}
-	if !sessionSectionsAllow(nil, store, "admin", "viewer", rawLogs) {
-		t.Fatalf("admin must not be section-scoped")
+	openAdmin := &tables.TableUser{ID: "u-admin", Username: "boss", Role: "admin", AllowedSections: "", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	_ = store.CreateUser(nil, openAdmin)
+	if !sessionSectionsAllow(nil, store, "admin", "boss", rawLogs) {
+		t.Fatalf("admin with no saved section list must stay unrestricted")
+	}
+	if sessionSectionsAllow(nil, store, "admin", "viewer", rawLogs) {
+		t.Fatalf("admin with a saved section list must honor it")
+	}
+	if !sessionSectionsAllow(nil, store, "admin", "bootstrap-only", rawLogs) {
+		t.Fatalf("admin session with no user row must stay unrestricted")
 	}
 	// Built-in user role is section-scoped: this viewer only has observability/dashboard.
 	if sessionSectionsAllow(nil, store, "user", "viewer", rawLogs) {
