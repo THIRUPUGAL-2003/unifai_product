@@ -1,1 +1,0 @@
-../../Resources/PIL/_avif.pyi
