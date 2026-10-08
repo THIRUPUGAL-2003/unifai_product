@@ -40,13 +40,11 @@ export default function ModelParameters({ model, config, onChange, disabled, hid
 		return data.model_parameters.filter((p) => SUPPORTED_TYPES.has(p.type));
 	}, [data, isLoading]);
 
-	// Clear config when switching models — values stay undefined until the user explicitly sets them
+	// Keep config when switching models — standard parameters (temperature, max_tokens, etc.) persist
 	const prevModelRef = useRef(model);
 	useEffect(() => {
-		if (prevModelRef.current === model) return;
 		prevModelRef.current = model;
-		onChange({});
-	}, [model, datasheetModel, parameters, onChange]);
+	}, [model]);
 
 	const handleFieldChange = useCallback(
 		(fieldId: string, value: any, overrides?: Record<string, any>) => {

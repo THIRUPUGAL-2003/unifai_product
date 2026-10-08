@@ -12,8 +12,10 @@ import { getErrorMessage, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQ
 import { useGetAllKeysQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { useListSkillsQuery } from "@/lib/store/apis/skillsApi";
 import { useGetMCPClientsQuery } from "@/lib/store/apis/mcpApi";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Wrench } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { PanelRightClose, Wrench } from "lucide-react";
 import { ModelProviderName } from "@/lib/types/config";
 import { ModelParams } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
@@ -42,6 +44,7 @@ export function SettingsPanel() {
 		setCustomHeaders,
 		requiredHeaders,
 		selectedPromptId,
+		toggleSettings,
 	} = usePromptContext();
 
 	const POLL_MS = 5000;
@@ -68,7 +71,11 @@ export function SettingsPanel() {
 				setApiKeyId("__auto__");
 			}
 			onModelChange("");
-			onModelParamsChange({} as ModelParams);
+			onModelParamsChange((prev) => ({
+				stream: true,
+				temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
+				max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
+			}));
 		},
 		[setProvider, setApiKeyId, onModelChange, onModelParamsChange, virtualKeysData, apiKeyId],
 	);
@@ -144,7 +151,11 @@ export function SettingsPanel() {
 		if (provider && selectedVKProviders.includes(provider)) return;
 		setProvider(selectedVKProviders[0]);
 		onModelChange("");
-		onModelParamsChange({} as ModelParams);
+		onModelParamsChange((prev) => ({
+			stream: true,
+			temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
+			max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
+		}));
 	}, [selectedVKProviders, provider, setProvider, onModelChange, onModelParamsChange]);
 
 	// Ensure current provider always has a label-resolved option (even before providers query loads)
@@ -167,18 +178,12 @@ export function SettingsPanel() {
 		return (allKeys ?? []).filter((k) => k.provider === provider);
 	}, [allKeys, provider, isMemberOnly]);
 
-	// Virtual keys filtered by selected provider (align with backend deny-by-default:
-	// empty provider_configs means no providers, not all providers).
+	// Virtual keys: show all active virtual keys so any assigned or available key can be selected,
+	// driving provider and model filtering.
 	const providerVirtualKeys = useMemo(() => {
 		const vks = virtualKeysData?.virtual_keys ?? [];
-		return vks.filter((vk) => {
-			if (vk.is_active === false) return false;
-			// Members already receive only assigned VKs from API — show all of them.
-			if (isMemberOnly) return true;
-			if (!vk.provider_configs || vk.provider_configs.length === 0) return false;
-			return vk.provider_configs.some((pc) => pc.provider === provider);
-		});
-	}, [virtualKeysData, provider, isMemberOnly]);
+		return vks.filter((vk) => vk.is_active !== false);
+	}, [virtualKeysData]);
 
 	// Auto-bind first assigned VK for members so usage hits the correct budget meter,
 	// skipping keys whose team or customer budget is used up.
@@ -220,9 +225,8 @@ export function SettingsPanel() {
 
 	const hasModel = Boolean(model);
 
-	// Members start from their assigned key: it sets the provider and limits Model to the key's models.
-	const keyFirst = isMemberOnly && providerVirtualKeys.length > 0;
-	const showKeySelector = (providerKeys.length > 0 || providerVirtualKeys.length > 0) && (keyFirst || !!provider);
+	// Key selector shows when either provider keys or virtual keys are available.
+	const showKeySelector = providerKeys.length > 0 || providerVirtualKeys.length > 0;
 	// Members always get the budget strip (user budget always; VK meters only when a key is assigned).
 	const showMemberBudgetStrip = isMemberOnly;
 	const keySelector =
@@ -232,7 +236,7 @@ export function SettingsPanel() {
 				virtualKeys={providerVirtualKeys}
 				value={apiKeyId}
 				onValueChange={(v) => onApiKeyIdChange(v ?? "__auto__")}
-				disabled={!keyFirst && !provider && showKeySelector}
+				disabled={false}
 			/>
 		) : null;
 
@@ -270,6 +274,24 @@ export function SettingsPanel() {
 						/>
 					</div>
 				) : null}
+				<div className="flex items-center justify-between pb-2 border-b mb-1">
+					<span className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Settings & Keys</span>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="h-6 w-6 text-muted-foreground hover:text-foreground"
+								onClick={toggleSettings}
+								data-testid="settings-panel-close-btn"
+								aria-label="Collapse settings"
+							>
+								<PanelRightClose className="h-3.5 w-3.5" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent side="left">Collapse settings</TooltipContent>
+					</Tooltip>
+				</div>
 				<Accordion
 					type="single"
 					collapsible
@@ -298,7 +320,6 @@ export function SettingsPanel() {
 							className="min-h-0 flex-1 overflow-y-auto pt-0 pb-2"
 						>
 							<div className="space-y-6">
-								{(keyFirst || (showMemberBudgetStrip && !showKeySelector)) && keySelector}
 								<div className="flex flex-col gap-2" data-testid="settings-provider">
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Provider</Label>
 									<ComboboxSelect
@@ -327,7 +348,7 @@ export function SettingsPanel() {
 									/>
 								</div>
 
-								{!keyFirst && showKeySelector && keySelector}
+								{keySelector}
 								{isMemberOnly && providerVirtualKeys.length === 0 && (
 									<p className="text-amber-600 text-xs" data-testid="settings-no-member-key">
 										No virtual key is available to you yet. Ask your admin to assign one to you, your team or your customer.

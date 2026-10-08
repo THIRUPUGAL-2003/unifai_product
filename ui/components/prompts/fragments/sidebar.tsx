@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scrollArea";
 import { CreateSessionRequest, Folder, Prompt } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
 import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	Archive,
 	Building,
@@ -26,6 +27,7 @@ import {
 	Folder as FolderIcon,
 	FolderOpen,
 	MoreHorizontal,
+	PanelLeftClose,
 	Pencil,
 	Plus,
 	PlusIcon,
@@ -87,6 +89,7 @@ export function PromptSidebar() {
 		canUpdate,
 		canDelete,
 		selectedPrompt,
+		toggleSidebar,
 	} = usePromptContext();
 
 	const { data: authStatus } = useIsAuthEnabledQuery();
@@ -384,9 +387,26 @@ export function PromptSidebar() {
 	if (isUserRole) {
 		return (
 			<div className="flex h-full flex-col">
-				<div className="border-b p-3">
-					<span className="text-sm font-semibold">Your prompts</span>
-					<p className="text-muted-foreground mt-0.5 text-xs">Select a prompt assigned by your admin to start chatting.</p>
+				<div className="flex items-center justify-between border-b p-3">
+					<div>
+						<span className="text-sm font-semibold">Your prompts</span>
+						<p className="text-muted-foreground mt-0.5 text-xs">Select a prompt assigned by your admin to start chatting.</p>
+					</div>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+								onClick={toggleSidebar}
+								data-testid="user-sidebar-collapse-btn"
+								aria-label="Collapse sidebar"
+							>
+								<PanelLeftClose className="h-4 w-4" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent side="right">Collapse sidebar</TooltipContent>
+					</Tooltip>
 				</div>
 				<ScrollArea className="max-h-[45%] shrink-0 overflow-y-auto border-b" viewportClassName="no-table">
 					<div className="flex flex-col gap-1 p-2 px-3">
@@ -583,6 +603,21 @@ export function PromptSidebar() {
 							</DropdownMenuContent>
 						</DropdownMenu>
 					)}
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+								onClick={toggleSidebar}
+								data-testid="admin-sidebar-collapse-btn"
+								aria-label="Collapse sidebar"
+							>
+								<PanelLeftClose className="h-4 w-4" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent side="right">Collapse sidebar</TooltipContent>
+					</Tooltip>
 				</div>
 
 				<ScrollArea className="grow overflow-y-auto" viewportClassName="no-table viewport-table-height-full">

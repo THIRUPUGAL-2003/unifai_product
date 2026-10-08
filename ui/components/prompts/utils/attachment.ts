@@ -7,34 +7,100 @@ import { isThinExtractedText, ocrImageFile, ocrPdfFile, ocrTextAttachment } from
 import { transcribeAudioFile, voiceTranscriptAttachment } from "./transcribeAudio";
 
 /** Accepted file types for prompt repository attachments */
-export const PROMPT_FILE_ACCEPT =
-	"image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.tiff,.tif,.avif,.heic,.heif,.ico,audio/*,.pdf,.txt,.csv,.json,.xml,.md,.html,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.mp3,.wav,.m4a,.webm,.ogg";
+export const PROMPT_FILE_ACCEPT = "*/*";
 
 export const PROMPT_FILE_ACCEPT_LABEL =
-	"Images (PNG, JPG, WEBP, GIF, SVG, etc.), PDF, Zip, Excel, Word, audio, voice, and more";
+	"All file types: Images (PNG, JPG, WEBP, GIF, SVG, etc.), Code, PDF, Word, Excel, PowerPoint, Zip archives, Audio, and Text files";
 
 export const MAX_PROMPT_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB
 
 const EXTENSION_MIME: Record<string, string> = {
+	// Documents
 	pdf: "application/pdf",
 	txt: "text/plain",
 	csv: "text/csv",
+	tsv: "text/tab-separated-values",
 	json: "application/json",
+	jsonl: "application/x-jsonlines",
+	jsonc: "application/json",
 	xml: "application/xml",
 	md: "text/markdown",
+	markdown: "text/markdown",
+	rst: "text/x-rst",
+	tex: "text/x-tex",
 	html: "text/html",
+	htm: "text/html",
 	doc: "application/msword",
 	docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 	xls: "application/vnd.ms-excel",
 	xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 	ppt: "application/vnd.ms-powerpoint",
 	pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-	zip: "application/zip",
-	mp3: "audio/mpeg",
-	wav: "audio/wav",
-	m4a: "audio/mp4",
-	webm: "audio/webm",
-	ogg: "audio/ogg",
+	odt: "application/vnd.oasis.opendocument.text",
+	ods: "application/vnd.oasis.opendocument.spreadsheet",
+	odp: "application/vnd.oasis.opendocument.presentation",
+	rtf: "application/rtf",
+	ipynb: "application/x-ipynb+json",
+	// Code & Scripts
+	py: "text/x-python",
+	pyw: "text/x-python",
+	js: "text/javascript",
+	jsx: "text/javascript",
+	mjs: "text/javascript",
+	cjs: "text/javascript",
+	ts: "text/typescript",
+	tsx: "text/typescript",
+	java: "text/x-java-source",
+	go: "text/x-go",
+	rs: "text/x-rust",
+	c: "text/x-c",
+	cpp: "text/x-c++",
+	cc: "text/x-c++",
+	cxx: "text/x-c++",
+	h: "text/x-c",
+	hpp: "text/x-c++",
+	cs: "text/x-csharp",
+	php: "text/x-php",
+	rb: "text/x-ruby",
+	swift: "text/x-swift",
+	kt: "text/x-kotlin",
+	kts: "text/x-kotlin",
+	scala: "text/x-scala",
+	r: "text/x-r",
+	sql: "text/x-sql",
+	sh: "text/x-shellscript",
+	bash: "text/x-shellscript",
+	zsh: "text/x-shellscript",
+	ps1: "text/x-powershell",
+	bat: "text/plain",
+	cmd: "text/plain",
+	yaml: "text/yaml",
+	yml: "text/yaml",
+	toml: "text/x-toml",
+	ini: "text/plain",
+	env: "text/plain",
+	conf: "text/plain",
+	config: "text/plain",
+	properties: "text/plain",
+	proto: "text/plain",
+	graphql: "text/plain",
+	gql: "text/plain",
+	css: "text/css",
+	scss: "text/x-scss",
+	sass: "text/x-sass",
+	less: "text/x-less",
+	vue: "text/plain",
+	svelte: "text/plain",
+	dart: "text/plain",
+	lua: "text/plain",
+	dockerfile: "text/plain",
+	makefile: "text/plain",
+	gitignore: "text/plain",
+	npmrc: "text/plain",
+	diff: "text/plain",
+	patch: "text/plain",
+	log: "text/plain",
+	// Images
 	png: "image/png",
 	jpg: "image/jpeg",
 	jpeg: "image/jpeg",
@@ -48,6 +114,15 @@ const EXTENSION_MIME: Record<string, string> = {
 	heic: "image/heic",
 	heif: "image/heif",
 	ico: "image/x-icon",
+	// Audio & Archives
+	zip: "application/zip",
+	mp3: "audio/mpeg",
+	wav: "audio/wav",
+	m4a: "audio/mp4",
+	webm: "audio/webm",
+	ogg: "audio/ogg",
+	flac: "audio/flac",
+	aac: "audio/aac",
 };
 
 export function resolveFileMimeType(file: File): string {
@@ -297,19 +372,32 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 			toast.success(`Image attached: ${file.name}`);
 			return {
 				type: "image_url",
-				image_url: { url: dataUrl, detail: "auto" },
+				image_url: { url: dataUrl, detail: "auto", filename: file.name },
 			};
 		}
 		const raw = await fileToBase64(file);
 		const ocr = await ocrImageFile(raw);
 		if (ocr?.text) {
-			toast.message(`"${file.name}" could not be decoded by the browser — attached OCR text instead`);
+			toast.message(`"${file.name}" attached with OCR extracted text`);
 			return ocrTextAttachment(file.name, ocr.text);
 		}
-		toast.error(`Unsupported image "${file.name}"`, {
-			description: "Convert it to PNG or JPG and attach again.",
-		});
-		return null;
+		// If SVG, extract XML text directly so model can read the vector markup
+		if (file.name.toLowerCase().endsWith(".svg") || mimeType.includes("svg")) {
+			const svgText = await extractPromptFileText(file, mimeType);
+			if (svgText) {
+				toast.success(`Attached SVG markup: ${file.name}`);
+				return textAttachmentFromExtract(file.name, svgText);
+			}
+		}
+		toast.message(`Attached "${file.name}" as raw image file`);
+		return {
+			type: "file",
+			file: {
+				file_data: raw,
+				filename: file.name,
+				file_type: mimeType,
+			},
+		};
 	}
 
 	if (mimeType.startsWith("audio/")) {
@@ -363,21 +451,8 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 		return textAttachmentFromExtract(file.name, extracted);
 	}
 
-	const lower = file.name.toLowerCase();
-	if (
-		/\.(pdf|docx|doc|xlsx|xls|csv|txt|md|json|xml|html|htm|pptx|ppt|ppsx|pps)$/i.test(lower) ||
-		mimeType.startsWith("text/")
-	) {
-		toast.error(`Could not extract readable text from "${file.name}"`, {
-			description: "File may be empty, image-only, or corrupted. Try re-exporting or paste the content.",
-		});
-		return null;
-	}
-
 	const dataUrl = await fileToBase64(file);
-	toast.message(`Attached "${file.name}" as raw file`, {
-		description: "This model may ignore raw file blocks. Prefer PDF/DOCX/XLSX/TXT when possible.",
-	});
+	toast.message(`Attached "${file.name}" as file`);
 	return {
 		type: "file",
 		file: {
@@ -389,7 +464,7 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 }
 
 export function getAttachmentDisplayName(attachment: MessageContent): string {
-	if (attachment.type === "image_url") return "Image";
+	if (attachment.type === "image_url") return attachment.image_url?.filename || "Image";
 	if (attachment.type === "input_audio") return attachment.input_audio?.format?.toUpperCase() || "Voice";
 	if (attachment.type === "text" && attachment.text?.startsWith("Voice transcript")) return "Voice transcript";
 	if (attachment.type === "text" && attachment.text?.includes("--- OCR extracted content ---")) {

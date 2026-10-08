@@ -1,1 +1,0 @@
-import{M as e,j as t}from"./baseApi-BySYOqQM.js";import"./provider-C5EkZCXi.js";var n=t.withTypes(),r=e.withTypes();export{r as n,n as t};

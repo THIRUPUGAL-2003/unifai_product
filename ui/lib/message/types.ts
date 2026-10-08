@@ -35,6 +35,7 @@ export type MessageContent = {
 export type MessageImageURL = {
 	url: string;
 	detail?: "auto" | "low" | "high";
+	filename?: string;
 };
 
 export type MessageInputAudio = {

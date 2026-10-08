@@ -10,7 +10,8 @@ import { getErrorMessage, useIsAuthEnabledQuery, useGetVirtualKeysQuery } from "
 import { useCreateSessionMutation, useGetSessionsQuery, useGetVersionsQuery, useRenameSessionMutation, useUpdateSessionMutation } from "@/lib/store/apis/promptsApi";
 import { ModelParams, PromptSession } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
-import { Check, Eye, GitCommit, MoreHorizontal, PencilIcon, Save, ShieldCheck, Trash2 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Check, Eye, GitCommit, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PencilIcon, Save, ShieldCheck, SlidersHorizontal, Trash2 } from "lucide-react";
 import { parseAsInteger, useQueryStates } from "nuqs";
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -40,6 +41,10 @@ export default function PromptsViewHeader() {
 		canUpdate,
 		canDelete,
 		selectedSession: fullSelectedSession,
+		isSidebarOpen,
+		toggleSidebar,
+		isSettingsOpen,
+		toggleSettings,
 	} = usePromptContext();
 
 	const POLL_MS = 5000;
@@ -272,7 +277,22 @@ export default function PromptsViewHeader() {
 				</div>
 			) : null}
 		<div className="flex items-center justify-between px-4 py-3">
-			<div className="flex min-w-0 items-center gap-4">
+			<div className="flex min-w-0 items-center gap-2.5">
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+							onClick={toggleSidebar}
+							data-testid="header-toggle-sidebar"
+							aria-label={isSidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+						>
+							{isSidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent side="bottom">{isSidebarOpen ? "Collapse prompts sidebar" : "Expand prompts sidebar"}</TooltipContent>
+				</Tooltip>
 				<h3 className="truncate font-semibold">
 					{selectedPrompt?.name || "Playground"}
 					{!isUserRole && hasChanges && <span className="text-destructive ml-1">*</span>}
@@ -469,6 +489,21 @@ export default function PromptsViewHeader() {
 						)}
 					</>
 				)}
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							variant={isSettingsOpen ? "secondary" : "ghost"}
+							size="icon"
+							className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+							onClick={toggleSettings}
+							data-testid="header-toggle-settings"
+							aria-label={isSettingsOpen ? "Hide Settings panel" : "Show Settings panel"}
+						>
+							<SlidersHorizontal className="h-4 w-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent side="bottom">{isSettingsOpen ? "Hide Settings panel" : "Show Settings panel"}</TooltipContent>
+				</Tooltip>
 			</div>
 		</div>
 	</div>

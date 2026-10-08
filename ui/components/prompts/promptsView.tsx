@@ -1,8 +1,9 @@
 import FullPageLoader from "@/components/fullPageLoader";
 import { useIsAuthEnabledQuery } from "@/lib/store";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Loader2, PanelLeftOpen } from "lucide-react";
 import { PromptSidebar } from "./fragments/sidebar";
 import { PlaygroundPanel } from "./fragments/playgroundPanel";
 import { SettingsPanel } from "./fragments/settingsPanel";
@@ -26,6 +27,9 @@ export default function PromptsView() {
 		isLoadingPlayground,
 		playgroundError,
 		selectedPromptId,
+		isSidebarOpen,
+		toggleSidebar,
+		isSettingsOpen,
 	} = usePromptContext();
 
 	const { data: authStatus } = useIsAuthEnabledQuery();
@@ -53,14 +57,21 @@ export default function PromptsView() {
 			<PromptSheets />
 			<PromptAccessDialog />
 
-			<ResizablePanelGroup direction="horizontal" className="h-full">
-				<ResizablePanel defaultSize="24%" minSize="18%" maxSize="35%" className="bg-card mr-1 overflow-hidden rounded-r-md">
-					<PromptSidebar />
-				</ResizablePanel>
+			<ResizablePanelGroup
+				key={`outer-group-${isSidebarOpen ? "expanded" : "collapsed"}`}
+				direction="horizontal"
+				className="h-full"
+			>
+				{isSidebarOpen && (
+					<>
+						<ResizablePanel defaultSize="24%" minSize="18%" maxSize="35%" className="bg-card mr-1 overflow-hidden rounded-r-md">
+							<PromptSidebar />
+						</ResizablePanel>
+						<ResizableHandle className="mr-1 bg-transparent" />
+					</>
+				)}
 
-				<ResizableHandle className="mr-1 bg-transparent" />
-
-				<ResizablePanel defaultSize="76%" minSize="65%" className="overflow-hidden">
+				<ResizablePanel defaultSize={isSidebarOpen ? "76%" : "100%"} minSize="40%" className="overflow-hidden">
 					<div className="bg-card h-full w-full min-w-0 overflow-hidden rounded-md">
 						{selectedPromptId ? (
 							<div className="flex h-full flex-col">
@@ -78,24 +89,48 @@ export default function PromptsView() {
 										<Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
 									</div>
 								) : (
-									<ResizablePanelGroup direction="horizontal" className="flex-1">
-										<ResizablePanel defaultSize="70%" minSize="40%">
+									<ResizablePanelGroup
+										key={`inner-group-${isSettingsOpen ? "expanded" : "collapsed"}`}
+										direction="horizontal"
+										className="flex-1"
+									>
+										<ResizablePanel defaultSize={isSettingsOpen ? "70%" : "100%"} minSize="35%">
 											<PlaygroundPanel />
 										</ResizablePanel>
-										<ResizableHandle />
-										<ResizablePanel defaultSize="30%" minSize="20%">
-											<SettingsPanel />
-										</ResizablePanel>
+										{isSettingsOpen && (
+											<>
+												<ResizableHandle />
+												<ResizablePanel defaultSize="30%" minSize="20%" maxSize="50%">
+													<SettingsPanel />
+												</ResizablePanel>
+											</>
+										)}
 									</ResizablePanelGroup>
 								)}
 							</div>
 						) : (
 							<div className="flex h-full flex-col">
-								{!isUserRole && (
-									<div className="flex items-center justify-end border-b px-4 py-3">
-										<PromptHistoryControls />
-									</div>
-								)}
+								<div className="flex items-center justify-between border-b px-4 py-3">
+									{!isSidebarOpen ? (
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={toggleSidebar}
+											className="h-8 gap-1.5"
+											data-testid="show-prompts-sidebar-btn"
+										>
+											<PanelLeftOpen className="h-4 w-4" />
+											Show Prompts
+										</Button>
+									) : (
+										<div />
+									)}
+									{!isUserRole && (
+										<div className="ml-auto flex items-center gap-2">
+											<PromptHistoryControls />
+										</div>
+									)}
+								</div>
 								<div className="flex-1">
 									<EmptyState />
 								</div>

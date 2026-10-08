@@ -1,8 +1,8 @@
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-const MAX_EXTRACT_CHARS = 80_000;
-const MAX_PDF_PAGES = 40;
-const MAX_PPTX_SLIDES = 40;
+const MAX_EXTRACT_CHARS = 120_000;
+const MAX_PDF_PAGES = 50;
+const MAX_PPTX_SLIDES = 50;
 
 let pdfjsReady: Promise<typeof import("pdfjs-dist")> | null = null;
 
@@ -286,7 +286,84 @@ function looksLikeOleCompound(bytes: Uint8Array): boolean {
 	);
 }
 
-/** Best-effort plain text for prompt-repo attachments (PDF / Office / text). */
+function isTextBytes(bytes: Uint8Array): boolean {
+	if (bytes.length === 0) return false;
+	const checkLen = Math.min(bytes.length, 8192);
+	let nonPrintable = 0;
+	for (let i = 0; i < checkLen; i++) {
+		const b = bytes[i];
+		if (b === 0x00) return false;
+		if (b < 0x09 || (b > 0x0d && b < 0x20)) {
+			nonPrintable++;
+		}
+	}
+	return nonPrintable / checkLen < 0.05;
+}
+
+function extractJupyterNotebookText(raw: string): string {
+	try {
+		const nb = JSON.parse(raw);
+		if (!Array.isArray(nb.cells)) return raw;
+		const parts: string[] = [];
+		for (const cell of nb.cells) {
+			const src = Array.isArray(cell.source) ? cell.source.join("") : String(cell.source || "");
+			if (!src.trim()) continue;
+			if (cell.cell_type === "markdown") {
+				parts.push(src.trim());
+			} else if (cell.cell_type === "code") {
+				parts.push("```python\n" + src.trim() + "\n```");
+			} else {
+				parts.push(src.trim());
+			}
+		}
+		return parts.join("\n\n");
+	} catch {
+		return raw;
+	}
+}
+
+async function extractOdfText(buf: ArrayBuffer): Promise<string> {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const JSzipMod: any = await import("jszip");
+	const JSZip = JSzipMod.default ?? JSzipMod;
+	const zip = await JSZip.loadAsync(buf);
+	const contentXml = zip.files["content.xml"];
+	if (!contentXml) return "";
+	const xml = await contentXml.async("string");
+	const matches = [...xml.matchAll(/<text:(?:p|h)[^>]*>([\s\S]*?)<\/text:(?:p|h)>/g)];
+	const lines = matches.map((m) => htmlToPlainText(m[1] || "")).filter(Boolean);
+	return lines.join("\n\n").trim();
+}
+
+function extractRtfText(rtf: string): string {
+	return rtf
+		.replace(/\\par[d]?/g, "\n")
+		.replace(/\\tab/g, "\t")
+		.replace(/\\line/g, "\n")
+		.replace(/\\'[0-9a-fA-F]{2}/g, " ")
+		.replace(/\\[a-zA-Z]+-?\d* ?/g, "")
+		.replace(/[{}]/g, "")
+		.replace(/\n\s*\n+/g, "\n\n")
+		.trim();
+}
+
+const TEXT_CODE_EXT_RE =
+	/\.(txt|md|markdown|rst|tex|latex|json|jsonl|jsonc|xml|html|htm|xhtml|yaml|yml|toml|ini|env|conf|config|properties|proto|graphql|gql|sql|sh|bash|zsh|fish|ps1|bat|cmd|py|pyw|js|jsx|mjs|cjs|ts|tsx|mts|cts|java|go|rs|c|h|cpp|hpp|cc|cxx|hh|hxx|cs|php|rb|swift|kt|kts|scala|r|m|mm|css|scss|sass|less|vue|svelte|dart|lua|pl|pm|tcl|dockerfile|makefile|gitignore|npmrc|diff|patch|log|csv|tsv|svg)$/i;
+
+const TEXT_STANDALONE_NAMES = new Set([
+	"dockerfile",
+	"makefile",
+	"license",
+	"licence",
+	"readme",
+	"changelog",
+	"gemfile",
+	"procfile",
+	"vagrantfile",
+	"jenkinsfile",
+]);
+
+/** Best-effort plain text for prompt-repo attachments (PDF / Office / Code / Text). */
 export async function extractPromptFileText(file: File, mimeType: string): Promise<string | null> {
 	const buf = await file.arrayBuffer();
 	const bytes = new Uint8Array(buf);
@@ -298,11 +375,13 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 	const mime = (mimeType || file.type || "").toLowerCase();
 
 	try {
+		// PDF
 		if (mime.includes("pdf") || name.endsWith(".pdf") || (bytes.length >= 5 && new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-")) {
 			const text = await extractPdfText(bytes);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
+		// Word .docx
 		if (mime.includes("wordprocessingml") || name.endsWith(".docx") || (looksLikeZipOffice(bytes) && name.endsWith(".docx"))) {
 			const text = await extractDocxText(buf);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
@@ -315,7 +394,7 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
-		// PowerPoint OOXML
+		// PowerPoint OOXML (.pptx, .ppsx)
 		if (
 			mime.includes("presentationml") ||
 			name.endsWith(".pptx") ||
@@ -333,15 +412,31 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
+		// OpenDocument Text (.odt)
+		if (name.endsWith(".odt") || mime.includes("opendocument.text")) {
+			const text = await extractOdfText(buf);
+			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		}
+
+		// OpenDocument Presentation (.odp)
+		if (name.endsWith(".odp") || mime.includes("opendocument.presentation")) {
+			const text = await extractOdfText(buf);
+			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		}
+
+		// Spreadsheets (.xlsx, .xls, .ods, .csv, .tsv)
 		if (
 			mime.includes("spreadsheetml") ||
 			mime.includes("excel") ||
 			name.endsWith(".xlsx") ||
 			name.endsWith(".xls") ||
+			name.endsWith(".ods") ||
+			name.endsWith(".csv") ||
+			name.endsWith(".tsv") ||
 			mime.includes("csv") ||
-			name.endsWith(".csv")
+			mime.includes("tab-separated")
 		) {
-			if (name.endsWith(".csv") || mime.includes("csv")) {
+			if (name.endsWith(".csv") || name.endsWith(".tsv") || mime.includes("csv") || mime.includes("tab-separated")) {
 				const text = new TextDecoder().decode(bytes);
 				return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 			}
@@ -349,22 +444,41 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
-		if (
+		// Jupyter Notebook (.ipynb)
+		if (name.endsWith(".ipynb")) {
+			const raw = new TextDecoder().decode(bytes);
+			const text = extractJupyterNotebookText(raw);
+			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		}
+
+		// Rich Text Format (.rtf)
+		if (name.endsWith(".rtf") || mime.includes("rtf")) {
+			const raw = new TextDecoder().decode(bytes);
+			const text = extractRtfText(raw);
+			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		}
+
+		// Code, Markdown, Config, Markup, Text files
+		const isKnownTextExt = TEXT_CODE_EXT_RE.test(name) || TEXT_STANDALONE_NAMES.has(name);
+		const isTextMime =
 			mime.startsWith("text/") ||
 			mime.includes("json") ||
 			mime.includes("xml") ||
-			mime.includes("markdown") ||
-			/\.(txt|md|json|xml|html|htm|log|csv)$/i.test(name)
-		) {
+			mime.includes("yaml") ||
+			mime.includes("javascript") ||
+			mime.includes("typescript") ||
+			mime.includes("markdown");
+
+		if (isKnownTextExt || isTextMime || isTextBytes(bytes)) {
 			let text = new TextDecoder().decode(bytes);
-			if (name.endsWith(".json") || mime.includes("json")) {
+			if (name.endsWith(".json") || name.endsWith(".jsonc") || mime.includes("json")) {
 				try {
 					text = JSON.stringify(JSON.parse(text), null, 2);
 				} catch {
-					/* keep raw */
+					/* keep raw text */
 				}
 			}
-			if (name.endsWith(".html") || name.endsWith(".htm") || mime.includes("html")) {
+			if (name.endsWith(".html") || name.endsWith(".htm") || name.endsWith(".xhtml") || mime.includes("html")) {
 				text = htmlToPlainText(text);
 			}
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;

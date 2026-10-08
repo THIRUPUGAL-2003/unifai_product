@@ -165,9 +165,15 @@ export function NewMessageInputView() {
 			});
 			return;
 		}
+		if (isStreaming) return;
 		const effectiveProvider = provider || committed?.provider;
 		const effectiveModel = model || committed?.model;
-		if (isStreaming || !effectiveProvider || !effectiveModel) return;
+		if (!effectiveProvider || !effectiveModel) {
+			toast.error("Provider and Model Required", {
+				description: "Please select a provider and model in the Settings panel before running.",
+			});
+			return;
+		}
 		if (missingRequiredHeaders.length > 0) {
 			toast.error("Fill required headers in Settings before running", {
 				description: missingRequiredHeaders.join(", "),
@@ -215,22 +221,17 @@ export function NewMessageInputView() {
 		const items = e.clipboardData?.items;
 		if (!items) return;
 
-		const imageFiles: File[] = [];
+		const pastedFiles: File[] = [];
 		for (const item of Array.from(items)) {
-			if (item.type.startsWith("image/")) {
+			if (item.kind === "file") {
 				const file = item.getAsFile();
-				if (file) imageFiles.push(file);
-			} else if (item.kind === "file") {
-				const file = item.getAsFile();
-				if (file && isImageFile(file)) {
-					imageFiles.push(file);
-				}
+				if (file) pastedFiles.push(file);
 			}
 		}
-		if (imageFiles.length === 0) return;
+		if (pastedFiles.length === 0) return;
 
 		e.preventDefault();
-		const newAttachments = await filesToAttachments(imageFiles);
+		const newAttachments = await filesToAttachments(pastedFiles);
 		if (newAttachments.length > 0) {
 			handleAddAttachments(newAttachments);
 		}

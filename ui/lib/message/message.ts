@@ -364,45 +364,57 @@ export class Message {
 		}
 
 		return validMessages.map((m): APIMessage => {
-				// When role has been changed, currentType differs from originalType —
-				// fall back to a generic conversion using the public getters.
+				const p = m._payload as CompletionRequest;
+				let rawContent: string | MessageContent[] | null;
+
 				if (m.currentType !== m.originalType) {
-					const msg: APIMessage = { role: m.role ?? MessageRole.ASSISTANT, content: m.content };
-					if (m.toolCalls && m.toolCalls.length > 0) msg.tool_calls = m.toolCalls;
-					if (m.toolCallId) msg.tool_call_id = m.toolCallId;
+					rawContent = Array.isArray(p?.content) ? p.content : m.content;
+				} else if (m.originalType === MessageType.CompletionRequest) {
+					rawContent = p.content;
+				} else if (m.originalType === MessageType.CompletionResult) {
+					const choice = (m._payload as CompletionResult)?.choices?.[0]?.message;
+					const msg: APIMessage = {
+						role: choice?.role ?? MessageRole.ASSISTANT,
+						content: choice?.content ?? "",
+					};
+					if (choice?.tool_calls && choice.tool_calls.length > 0) {
+						msg.tool_calls = choice.tool_calls;
+					}
+					return msg;
+				} else if (m.originalType === MessageType.ToolResult) {
+					const tp = m._payload as ToolResult;
+					return {
+						role: MessageRole.TOOL,
+						content: tp.content,
+						tool_call_id: tp.tool_call_id,
+					};
+				} else {
+					return { role: MessageRole.ASSISTANT, content: m.content };
+				}
+
+				if (Array.isArray(rawContent)) {
+					const cleanedParts = rawContent.map((part) => {
+						if (part.type === "image_url" && part.image_url) {
+							return {
+								type: "image_url" as const,
+								image_url: {
+									url: part.image_url.url,
+									detail: part.image_url.detail || "auto",
+								},
+							};
+						}
+						return part;
+					});
+					const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: cleanedParts as any };
+					if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
+					if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;
 					return msg;
 				}
 
-				switch (m.originalType) {
-					case MessageType.CompletionRequest: {
-						const p = m._payload as CompletionRequest;
-						const msg: APIMessage = { role: p.role, content: p.content };
-						if (p.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
-						if (p.tool_call_id) msg.tool_call_id = p.tool_call_id;
-						return msg;
-					}
-					case MessageType.CompletionResult: {
-						const choice = (m._payload as CompletionResult)?.choices?.[0]?.message;
-						const msg: APIMessage = {
-							role: choice?.role ?? MessageRole.ASSISTANT,
-							content: choice?.content ?? "",
-						};
-						if (choice?.tool_calls && choice.tool_calls.length > 0) {
-							msg.tool_calls = choice.tool_calls;
-						}
-						return msg;
-					}
-					case MessageType.ToolResult: {
-						const p = m._payload as ToolResult;
-						return {
-							role: MessageRole.TOOL,
-							content: p.content,
-							tool_call_id: p.tool_call_id,
-						};
-					}
-					default:
-						return { role: MessageRole.ASSISTANT, content: m.content };
-				}
+				const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: rawContent ?? "" };
+				if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
+				if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;
+				return msg;
 			});
 	}
 

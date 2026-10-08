@@ -19,7 +19,20 @@ interface Props {
 export default function NumberFieldView(props: Props) {
 	const { field, config } = props;
 
-	const invalid = field.range ? isInvalid(config[field.id] as number, field.range) : false;
+	const defaultValue =
+		typeof field.default === "number"
+			? field.default
+			: field.id === "temperature"
+				? 0.7
+				: field.id === "max_tokens"
+					? 4096
+					: (field.range?.min ?? 0);
+
+	const rawVal = config[field.id];
+	const hasExplicitVal = rawVal !== undefined && rawVal !== null && rawVal !== "";
+	const displayVal = hasExplicitVal ? Number(rawVal) : defaultValue;
+
+	const invalid = field.range && hasExplicitVal ? isInvalid(displayVal, field.range) : false;
 
 	useEffect(() => {
 		if (!props.onInvalid) return;
@@ -28,23 +41,38 @@ export default function NumberFieldView(props: Props) {
 		} else {
 			props.onInvalid(false, field.id);
 		}
-	}, [invalid]);
+	}, [invalid, field.id, props]);
+
+	const sliderStep =
+		field.range?.step ??
+		((field.range?.max ?? 1) > 10 ? 1 : 0.01);
 
 	return (
 		<div className={cn("flex flex-col gap-3", props.className)}>
-			<FieldLabel label={field.label} helpText={field.helpText} onClear={props.onClear}>
-				{field.range && config[field.id] !== undefined && (
+			<FieldLabel
+				label={field.label}
+				helpText={field.helpText}
+				onClear={hasExplicitVal && !props.disabled ? props.onClear : undefined}
+			>
+				{field.range && (
 					<NumberInput
 						className={cn(
 							"ml-auto h-[24px] w-[80px] text-center shrink-0",
 							invalid ? "border-border-error focus-visible:ring-border-error" : "",
 						)}
-						value={config[field.id] as number}
+						value={displayVal}
 						disabled={props.disabled && props.disabled === true}
-						onChange={(value) => props.onChange(value)}
+						onChange={(value) => {
+							if (value === undefined) {
+								props.onChange(undefined);
+							} else {
+								props.onChange(Number(value));
+							}
+						}}
 						preventOnBlurFallback
 						min={field.range?.min}
 						max={field.range?.max}
+						step={sliderStep}
 					/>
 				)}
 			</FieldLabel>
@@ -52,20 +80,26 @@ export default function NumberFieldView(props: Props) {
 				<Slider
 					min={field.range?.min ?? 0}
 					max={field.range?.max ?? 1}
-					step={field.range?.step ?? (field.range?.max ?? 1) / 100}
+					step={sliderStep}
 					disabled={props.disabled && props.disabled === true}
-					value={[(config[field.id] as number) !== undefined ? (config[field.id] as number) : 0]}
+					value={[displayVal]}
 					onValueChange={(value) => {
-						props.onChange(value[0]);
+						props.onChange(Number(value[0]));
 					}}
 					thumbTooltipText={(props.disabled && props.disabledText) || undefined}
 				/>
 			) : (
 				<NumberInput
 					className="w-full"
-					value={config[field.id] as number}
+					value={displayVal}
 					disabled={props.disabled && props.disabled === true}
-					onChange={(value) => props.onChange(value)}
+					onChange={(value) => {
+						if (value === undefined) {
+							props.onChange(undefined);
+						} else {
+							props.onChange(Number(value));
+						}
+					}}
 					preventOnBlurFallback
 				/>
 			)}

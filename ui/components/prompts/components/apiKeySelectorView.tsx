@@ -89,8 +89,8 @@ export function ApiKeySelectorView({
 	const isMember = authStatus?.role !== "admin";
 	const userBudget = authStatus?.budget;
 	const userUsage = authStatus?.budget_current_usage ?? 0;
-	// Members always see their personal budget. VK / team / customer meters only when a key is assigned & selected.
-	const showUserBudget = isMember;
+	// Members always see their personal budget. Users with a configured budget also see their meter.
+	const showUserBudget = isMember || (userBudget !== undefined && userBudget > 0);
 	const hasAssignedKeys = virtualKeys.length > 0 || providerKeys.length > 0;
 	const showVKBudget = Boolean(selectedVK);
 

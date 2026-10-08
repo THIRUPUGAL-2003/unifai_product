@@ -94,11 +94,23 @@ function formatPlaygroundError(raw: string, status?: number): string {
 	if (lower.includes("budget is used up")) {
 		return text;
 	}
-	if (status === 402 || lower.includes("budget exceeded") || lower.includes("budget_exceeded")) {
-		return `Budget is used up: ${text}. Please use another virtual key.`;
+	if (status === 402 || lower.includes("budget exceeded") || lower.includes("budget_exceeded") || lower.includes("insufficient balance") || lower.includes("payment required")) {
+		return `Budget is used up: ${text}. Please select another virtual key or contact your administrator.`;
+	}
+	if (status === 401 || status === 403 || lower.includes("unauthorized") || lower.includes("authentication fails") || lower.includes("permission denied")) {
+		return `Authentication failed (${status || 401}): Virtual Key or provider credentials are invalid, expired, or lack permission. Check your assigned key in Settings.`;
+	}
+	if (status === 404 || lower.includes("no such model") || lower.includes("unknown model") || lower.includes("model not found")) {
+		return `Model or provider endpoint not found (${status || 404}): ${text}. Check the provider and model configured in Settings.`;
+	}
+	if (status === 429 || lower.includes("rate limit") || lower.includes("too many requests")) {
+		return `Rate limit reached (${status || 429}): ${text}. Please wait a moment before sending another request.`;
 	}
 	if (status === 413 || lower.includes("too large") || lower.includes("payload")) {
 		return "Attachment or request is too large for this gateway/provider. Use a smaller file (max ~20 MB) or extract text and paste it.";
+	}
+	if (status && status >= 500) {
+		return `Upstream provider error (${status}): The AI provider service is temporarily unavailable (${text}). Please retry shortly.`;
 	}
 	return text;
 }
@@ -203,18 +215,35 @@ export async function executePrompt(
 		resolvedMessages = await enrichVoiceWithWhisper(resolvedMessages, config.apiKeyId, signal);
 		const headers = buildHeaders(config);
 
-		const { api_key_id: _, skill_id: _skill, ...requestParams } = config.modelParams;
+		const { api_key_id: _, skill_id: _skill, ...rawParams } = config.modelParams || {};
+		const payload: Record<string, any> = {
+			model: `${config.provider}/${config.model}`,
+			messages: Message.toAPIMessages(resolvedMessages),
+			...rawParams,
+			stream: rawParams.stream !== false,
+		};
+
+		if (rawParams.temperature !== undefined && rawParams.temperature !== null && !isNaN(Number(rawParams.temperature))) {
+			payload.temperature = Number(rawParams.temperature);
+		}
+		if (rawParams.max_tokens !== undefined && rawParams.max_tokens !== null && !isNaN(Number(rawParams.max_tokens))) {
+			const tokens = Math.max(1, Math.round(Number(rawParams.max_tokens)));
+			payload.max_tokens = tokens;
+			payload.max_completion_tokens = tokens;
+		}
+
+		// Reasoning models (e.g. OpenAI o1, o3, o4) reject the 'temperature' parameter in chat completions API
+		const isReasoningModel = /(^|\/)(o1|o3|o4)(-|$)/i.test(config.model);
+		if (isReasoningModel) {
+			delete payload.temperature;
+		}
+
 		const response = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
 			method: "POST",
 			headers,
 			credentials: "include",
 			signal,
-			body: JSON.stringify({
-				model: `${config.provider}/${config.model}`,
-				messages: Message.toAPIMessages(resolvedMessages),
-				...requestParams,
-				stream: requestParams.stream,
-			}),
+			body: JSON.stringify(payload),
 		});
 
 		if (!response.ok) {

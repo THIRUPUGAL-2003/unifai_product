@@ -132,6 +132,14 @@ interface PromptContextValue {
 	canCreate: boolean;
 	canUpdate: boolean;
 	canDelete: boolean;
+
+	// Panel collapse states
+	isSidebarOpen: boolean;
+	setIsSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>;
+	toggleSidebar: () => void;
+	isSettingsOpen: boolean;
+	setIsSettingsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+	toggleSettings: () => void;
 }
 
 const PromptContext = createContext<PromptContextValue | null>(null);
@@ -235,6 +243,43 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		user_ids: [],
 	});
 
+	// Panel collapse states
+	const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+		if (typeof window !== "undefined") {
+			const saved = localStorage.getItem("unifai_prompt_sidebar_open");
+			return saved !== null ? saved === "true" : true;
+		}
+		return true;
+	});
+
+	const toggleSidebar = useCallback(() => {
+		setIsSidebarOpen((prev) => {
+			const next = !prev;
+			if (typeof window !== "undefined") {
+				localStorage.setItem("unifai_prompt_sidebar_open", String(next));
+			}
+			return next;
+		});
+	}, []);
+
+	const [isSettingsOpen, setIsSettingsOpen] = useState(() => {
+		if (typeof window !== "undefined") {
+			const saved = localStorage.getItem("unifai_prompt_settings_open");
+			return saved !== null ? saved === "true" : true;
+		}
+		return true;
+	});
+
+	const toggleSettings = useCallback(() => {
+		setIsSettingsOpen((prev) => {
+			const next = !prev;
+			if (typeof window !== "undefined") {
+				localStorage.setItem("unifai_prompt_settings_open", String(next));
+			}
+			return next;
+		});
+	}, []);
+
 	// Playground state
 	const [messages, setMessagesRaw] = useState<Message[]>([Message.system("")]);
 	const setMessages = useCallback<React.Dispatch<React.SetStateAction<Message[]>>>((action) => {
@@ -245,7 +290,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	}, []);
 	const [provider, setProvider] = useState("");
 	const [model, setModel] = useState("");
-	const [modelParams, setModelParams] = useState<ModelParams>({ stream: true });
+	const [modelParams, setModelParams] = useState<ModelParams>({ stream: true, temperature: 0.7, max_tokens: 4096 });
 	const [apiKeyId, setApiKeyId] = useState("__auto__");
 	const [skillId, setSkillId] = useState("");
 	const [isStreaming, setIsStreaming] = useState(false);
@@ -380,7 +425,12 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 		const loadFromParams = (params: ModelParams, prov: string, mod: string) => {
 			const { api_key_id, skill_id, ...rest } = params || ({} as ModelParams);
-			setModelParams({ stream: true, ...rest });
+			setModelParams({
+				stream: true,
+				temperature: typeof rest.temperature === "number" ? rest.temperature : 0.7,
+				max_tokens: typeof rest.max_tokens === "number" ? rest.max_tokens : 4096,
+				...rest,
+			});
 			setApiKeyId(api_key_id || "__auto__");
 			setSkillId(typeof skill_id === "string" ? skill_id : "");
 			setProvider(prov || "");
@@ -442,7 +492,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			loadMessages([Message.system("")]);
 			setProvider("");
 			setModel("");
-			setModelParams({ stream: true });
+			setModelParams({ stream: true, temperature: 0.7, max_tokens: 4096 });
 			setApiKeyId("__auto__");
 			setSkillId("");
 			loadedPlaygroundKeyRef.current = playgroundKey;
@@ -503,10 +553,15 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			if (currentApiKeyId !== (refApiKeyId || undefined)) return true;
 			if ((skillId || undefined) !== (refSkillId || undefined)) return true;
 
-			// Normalize: treat missing stream as stream: true so legacy params without stream don't appear changed
+			// Normalize: treat missing stream/temperature/max_tokens as defaults so legacy params don't appear changed
 			const normalizeParams = (p: ModelParams): ModelParams => {
-				const { stream = true, ...rest } = p;
-				return { stream, ...rest };
+				const { stream = true, temperature = 0.7, max_tokens = 4096, ...rest } = p || {};
+				return {
+					stream: Boolean(stream),
+					temperature: Number(temperature),
+					max_tokens: Number(max_tokens),
+					...rest,
+				};
 			};
 			const normalizedCurrent = normalizeParams(modelParams);
 			const normalizedRef = normalizeParams(refParamsRest);
@@ -585,7 +640,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			setMessages([Message.system("")]);
 			setProvider("");
 			setModel("");
-			setModelParams({ stream: true });
+			setModelParams({ stream: true, temperature: 0.7, max_tokens: 4096 });
 			setApiKeyId("__auto__");
 			setUrlState({ promptId: id, sessionId: null, versionId: null });
 		},
@@ -696,23 +751,25 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			let execProvider = provider;
 			let execModel = model;
 			let execApiKeyId = apiKeyId;
+			const committed = selectedPrompt?.latest_version;
+			if (!execProvider || !execModel) {
+				execProvider = committed?.provider || execProvider;
+				execModel = committed?.model || execModel;
+			}
 			if (isUserRole) {
-				const committed = selectedPrompt?.latest_version;
-				if (!execProvider || !execModel) {
-					execProvider = committed?.provider || execProvider;
-					execModel = committed?.model || execModel;
-				}
 				if (!String(execApiKeyId).startsWith("sk-uf-") && assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
-				if (!execProvider || !execModel) {
-					toast.error("Select a key and a model in Settings before running.");
-					setIsStreaming(false);
-					activeRunRef.current = null;
-					return;
-				}
 				// No assigned VK: run with Auto (server provider keys), same as admin Auto.
 				if (!execApiKeyId) {
 					execApiKeyId = "__auto__";
 				}
+			}
+			if (!execProvider || !execModel) {
+				toast.error("Provider and Model Required", {
+					description: "Please select a provider and model in the Settings panel before running.",
+				});
+				setIsStreaming(false);
+				activeRunRef.current = null;
+				return;
 			}
 
 			setIsStreaming(true);
@@ -827,13 +884,24 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			let execProvider = provider;
 			let execModel = model;
 			let execApiKeyId = apiKeyId;
+			const committed = selectedPrompt?.latest_version;
+			if (!execProvider || !execModel) {
+				execProvider = committed?.provider || execProvider;
+				execModel = committed?.model || execModel;
+			}
 			if (isUserRole) {
-				const committed = selectedPrompt?.latest_version;
-				if (!execProvider || !execModel) {
-					execProvider = committed?.provider || execProvider;
-					execModel = committed?.model || execModel;
-				}
 				if (!String(execApiKeyId).startsWith("sk-uf-") && assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
+				if (!execApiKeyId) {
+					execApiKeyId = "__auto__";
+				}
+			}
+			if (!execProvider || !execModel) {
+				toast.error("Provider and Model Required", {
+					description: "Please select a provider and model in Settings before executing tool calls.",
+				});
+				setIsStreaming(false);
+				activeRunRef.current = null;
+				return;
 			}
 			setIsStreaming(true);
 			await executePrompt(
@@ -944,15 +1012,38 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			}
 			setMessages(newMessages);
 
+			let execProvider = provider;
+			let execModel = model;
+			let execApiKeyId = apiKeyId;
+			const committed = selectedPrompt?.latest_version;
+			if (!execProvider || !execModel) {
+				execProvider = committed?.provider || execProvider;
+				execModel = committed?.model || execModel;
+			}
+			if (isUserRole) {
+				if (!String(execApiKeyId).startsWith("sk-uf-") && assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
+				if (!execApiKeyId) {
+					execApiKeyId = "__auto__";
+				}
+			}
+			if (!execProvider || !execModel) {
+				toast.error("Provider and Model Required", {
+					description: "Please select a provider and model in Settings before executing tool calls.",
+				});
+				setIsStreaming(false);
+				activeRunRef.current = null;
+				return;
+			}
+
 			setIsStreaming(true);
 			await executePrompt(
 				newMessages,
 				undefined,
 				{
-					provider,
-					model,
+					provider: execProvider,
+					model: execModel,
 					modelParams,
-					apiKeyId,
+					apiKeyId: execApiKeyId,
 					variables,
 					customHeaders,
 					skillSystemPrompt,
@@ -1135,6 +1226,12 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		canCreate,
 		canUpdate,
 		canDelete,
+		isSidebarOpen,
+		setIsSidebarOpen,
+		toggleSidebar,
+		isSettingsOpen,
+		setIsSettingsOpen,
+		toggleSettings,
 	};
 
 	return <PromptContext.Provider value={value}>{children}</PromptContext.Provider>;

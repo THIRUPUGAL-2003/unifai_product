@@ -1,0 +1,1 @@
+import{N as e}from"./index-DL22Fmus.js";var t=e(`chevron-up`,[[`path`,{d:`m18 15-6-6-6 6`,key:`153udz`}]]);export{t};

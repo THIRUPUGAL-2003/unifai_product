@@ -22,8 +22,8 @@ export function AttachmentBadge({ attachment, onRemove }: { attachment: MessageC
 		<div className="group/att bg-muted/50 relative flex items-center gap-1.5 rounded-sm border px-2 py-1 text-xs">
 			{isImage && attachment.image_url?.url ? (
 				<>
-					<img src={attachment.image_url.url} alt="attachment" className="h-8 w-8 rounded object-cover" />
-					<span className="text-muted-foreground max-w-[100px] truncate">Image</span>
+					<img src={attachment.image_url.url} alt="attachment" className="h-8 w-8 rounded object-cover shrink-0" />
+					<span className="text-muted-foreground max-w-[120px] truncate">{attachment.image_url.filename || "Image"}</span>
 				</>
 			) : isAudio ? (
 				<>
@@ -82,9 +82,15 @@ export function AttachmentDisplay({
 							{/* eslint-disable-next-line jsx-a11y/alt-text */}
 							<img
 								src={att.image_url.url}
-								alt="attached image"
-								className="max-h-48 max-w-full rounded-sm border object-contain sm:max-w-xs"
+								alt={att.image_url.filename || "attached image"}
+								title={att.image_url.filename || "Attached image"}
+								className="max-h-56 max-w-full rounded-sm border object-contain sm:max-w-xs shadow-sm bg-muted/20"
 							/>
+							{att.image_url.filename && (
+								<div className="text-[11px] text-muted-foreground truncate max-w-xs mt-0.5 px-0.5">
+									{att.image_url.filename}
+								</div>
+							)}
 							{editable && onRemoveAttachment && (
 								<button
 									onClick={() => onRemoveAttachment(i)}
