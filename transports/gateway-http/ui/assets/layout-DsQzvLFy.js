@@ -1,0 +1,1 @@
+import{t as e}from"./jsx-runtime-sLPvdpSW.js";import{tt as t}from"./index-C3Pd13er.js";var n=e(),r=()=>(0,n.jsx)(t,{to:`/workspace/routing-rules`,replace:!0});export{r as component};

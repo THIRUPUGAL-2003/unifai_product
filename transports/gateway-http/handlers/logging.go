@@ -248,6 +248,7 @@ func (h *LoggingHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.GET("/api/logs/dashboard", lib.ChainMiddlewares(q(h.getDashboard), middlewares...))
 	r.DELETE("/api/logs", lib.ChainMiddlewares(h.adminOnlyLogs(h.deleteLogs), middlewares...))
 	r.POST("/api/logs/recalculate-cost", lib.ChainMiddlewares(h.adminOnlyLogs(h.recalculateLogCosts), middlewares...))
+	r.POST("/api/logs/cleanup", lib.ChainMiddlewares(h.adminOnlyLogs(h.triggerLogCleanup), middlewares...))
 
 	// MCP Tool Log retrieval with filtering, search, and pagination
 	r.GET("/api/mcp-logs", lib.ChainMiddlewares(q(h.getMCPLogs), middlewares...))
@@ -1663,6 +1664,86 @@ func (h *LoggingHandler) deleteLogs(ctx *fasthttp.RequestCtx) {
 
 	SendJSON(ctx, map[string]interface{}{
 		"message": "Logs deleted successfully",
+	})
+}
+
+// triggerLogCleanup handles POST /api/logs/cleanup - run immediate batch log deletion based on retention
+func (h *LoggingHandler) triggerLogCleanup(ctx *fasthttp.RequestCtx) {
+	if h.config == nil || h.config.LogsStore == nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "Logs store is not configured")
+		return
+	}
+
+	retentionDays := h.config.ClientConfig.LogRetentionDays
+	// Optional override from query or JSON payload
+	if daysStr := string(ctx.QueryArgs().Peek("retention_days")); daysStr != "" {
+		if d, err := strconv.Atoi(daysStr); err == nil && d >= 0 {
+			retentionDays = d
+		}
+	}
+	var req struct {
+		RetentionDays *int `json:"retention_days"`
+	}
+	if len(ctx.PostBody()) > 0 {
+		if err := sonic.Unmarshal(ctx.PostBody(), &req); err == nil && req.RetentionDays != nil && *req.RetentionDays >= 0 {
+			retentionDays = *req.RetentionDays
+		}
+	}
+
+	if retentionDays <= 0 {
+		SendJSON(ctx, map[string]interface{}{
+			"message":          "Log auto-delete is disabled (retention set to 0)",
+			"retention_days":   0,
+			"deleted_logs":     0,
+			"deleted_mcp_logs": 0,
+		})
+		return
+	}
+
+	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
+	totalDeletedLogs := int64(0)
+	totalDeletedMCP := int64(0)
+
+	if retMgr, ok := h.config.LogsStore.(logstore.LogRetentionManager); ok {
+		for {
+			deleted, err := retMgr.DeleteLogsBatch(ctx, cutoff, 100)
+			if err != nil {
+				logger.Error("failed to delete logs during manual cleanup: %v", err)
+				break
+			}
+			if deleted == 0 {
+				break
+			}
+			totalDeletedLogs += deleted
+			if deleted < 100 {
+				break
+			}
+		}
+	}
+
+	if mcpMgr, ok := h.config.LogsStore.(logstore.MCPToolLogRetentionManager); ok {
+		for {
+			deleted, err := mcpMgr.DeleteMCPToolLogsBatch(ctx, cutoff, 100)
+			if err != nil {
+				logger.Error("failed to delete MCP logs during manual cleanup: %v", err)
+				break
+			}
+			if deleted == 0 {
+				break
+			}
+			totalDeletedMCP += deleted
+			if deleted < 100 {
+				break
+			}
+		}
+	}
+
+	SendJSON(ctx, map[string]interface{}{
+		"message":          "Log cleanup completed",
+		"retention_days":   retentionDays,
+		"cutoff":           cutoff.Format(time.RFC3339),
+		"deleted_logs":     totalDeletedLogs,
+		"deleted_mcp_logs": totalDeletedMCP,
 	})
 }
 

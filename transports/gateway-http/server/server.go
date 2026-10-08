@@ -1024,6 +1024,15 @@ func (s *GatewayHTTPServer) ReloadClientConfigFromConfigStore(ctx context.Contex
 		s.Server.MaxRequestBodySize = s.Config.ClientConfig.MaxRequestBodySizeMB * 1024 * 1024
 	}
 	s.syncLoggingPlugin(ctx)
+	if s.LogsCleaner == nil && s.Config != nil && s.Config.LogsStore != nil {
+		if rdbStore, ok := s.Config.LogsStore.(logstore.LogRetentionManager); ok {
+			cleanerConfig := logstore.CleanerConfig{
+				RetentionDays: s.Config.ClientConfig.LogRetentionDays,
+			}
+			s.LogsCleaner = logstore.NewLogsCleaner(rdbStore, cleanerConfig, logger)
+			s.LogsCleaner.StartCleanupRoutine()
+		}
+	}
 	if s.LogsCleaner != nil {
 		s.LogsCleaner.UpdateRetentionDays(s.Config.ClientConfig.LogRetentionDays)
 		if s.Config.ClientConfig.LogRetentionDays > 0 {
@@ -1874,17 +1883,14 @@ func (s *GatewayHTTPServer) Bootstrap(ctx context.Context) error {
 			logRetentionDays = s.Config.ClientConfig.LogRetentionDays
 		}
 		logger.Info("log retention days: %d", logRetentionDays)
-		if logRetentionDays > 0 {
-			// Type assert to get RDBLogStore (which implements LogRetentionManager)
-			if rdbStore, ok := s.Config.LogsStore.(logstore.LogRetentionManager); ok {
-				cleanerConfig := logstore.CleanerConfig{
-					RetentionDays: logRetentionDays,
-				}
-				s.LogsCleaner = logstore.NewLogsCleaner(rdbStore, cleanerConfig, logger)
-				s.LogsCleaner.StartCleanupRoutine()
-				logger.Info("log retention cleaner initialized with %d days retention",
-					logRetentionDays)
+		// Type assert to get store that implements LogRetentionManager
+		if rdbStore, ok := s.Config.LogsStore.(logstore.LogRetentionManager); ok {
+			cleanerConfig := logstore.CleanerConfig{
+				RetentionDays: logRetentionDays,
 			}
+			s.LogsCleaner = logstore.NewLogsCleaner(rdbStore, cleanerConfig, logger)
+			s.LogsCleaner.StartCleanupRoutine()
+			logger.Info("log retention cleaner initialized with %d days retention", logRetentionDays)
 		}
 	}
 	// Initialize async job cleaner if log store is configured

@@ -364,6 +364,19 @@ export const logsApi = baseApi.injectEndpoints({
 			invalidatesTags: ["Logs"],
 		}),
 
+		// Trigger immediate log cleanup based on retention
+		triggerLogCleanup: builder.mutation<
+			{ message: string; retention_days: number; cutoff: string; deleted_logs: number; deleted_mcp_logs: number },
+			{ retention_days?: number } | void
+		>({
+			query: (body) => ({
+				url: "/logs/cleanup",
+				method: "POST",
+				body: body || {},
+			}),
+			invalidatesTags: ["Logs"],
+		}),
+
 		// Get a single log entry by ID (includes raw_request and raw_response)
 		getLogById: builder.query<LogEntry, string>({
 			query: (id) => `/logs/${encodeURIComponent(id)}`,
@@ -405,6 +418,7 @@ export const {
 	useLazyGetAvailableFilterDataQuery,
 	useDeleteLogsMutation,
 	useRecalculateLogCostsMutation,
+	useTriggerLogCleanupMutation,
 	useLazyGetLogByIdQuery,
 	useGetLogByIdQuery,
 } = logsApi;
