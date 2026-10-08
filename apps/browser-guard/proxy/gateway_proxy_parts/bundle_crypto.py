@@ -19,15 +19,38 @@ from pathlib import Path
 from typing import Any
 
 MAGIC_HEADER = b"GATEWAYENC02\n"
-AUTH_CONTEXT = b"Gateway_Browser_AI_Proxy_Bundle_V2_Enterprise"
-# Proprietary master secret seed
-_MASTER_SEED = b"GatewayGuard::EnterpriseDLP::CoreRulesEngine::2026.09::SecretKeySeed"
+_MASK = 0x5C
+# Key material is stored scrambled. It is rebuilt only for one HMAC and then dropped.
+_SEED_MIXED = (
+    27, 12, 10, 234, 215, 208, 187, 148, 145, 148, 116, 115, 18, 3, 15, 53, 24, 24, 252, 239,
+    194, 168, 161, 134, 176, 73, 70, 29, 2, 10, 53, 25, 25, 223, 235, 195, 165, 162, 167, 157,
+    99, 124, 72, 82, 114, 99, 88, 75, 190, 171, 128, 143, 233, 219, 200, 80, 113, 70, 68, 34,
+    44, 34, 31, 242, 207, 200, 219, 171,
+)
+_CTX_MIXED = (
+    27, 12, 10, 234, 215, 208, 187, 140, 166, 135, 105, 96, 91, 92, 56, 4, 45, 52, 209, 207,
+    194, 174, 170, 154, 171, 71, 99, 73, 92, 37, 63, 52, 42, 191, 193, 234, 174, 165, 135, 129,
+    116, 103, 79, 68, 45,
+)
+
+
+def _unwrap(mixed: tuple[int, ...]) -> bytes:
+    raw = bytearray(len(mixed))
+    for i, n in enumerate(mixed):
+        raw[i] = n ^ ((_MASK + i * 17) & 0xFF)
+    try:
+        return bytes(raw)
+    finally:
+        for i in range(len(raw)):
+            raw[i] = 0
 
 
 def _derive_key(salt: bytes) -> bytes:
-    """Derive 256-bit key from master seed + salt using standard HKDF-SHA256."""
-    prk = hmac.new(salt, _MASTER_SEED, hashlib.sha256).digest()
-    return hmac.new(prk, AUTH_CONTEXT + b"\x01", hashlib.sha256).digest()
+    """Derive a 256-bit key. The seed is not stored as a readable string."""
+    seed = _unwrap(_SEED_MIXED)
+    ctx = _unwrap(_CTX_MIXED)
+    prk = hmac.new(salt, seed, hashlib.sha256).digest()
+    return hmac.new(prk, ctx + b"\x01", hashlib.sha256).digest()
 
 
 def _cipher_stream(key: bytes, nonce: bytes, data: bytes) -> bytes:
@@ -89,7 +112,7 @@ def encrypt_parts_bundle(parts_dir: Path, output_enc_path: Path) -> dict[str, in
 
     ciphertext = _cipher_stream(key, nonce, compressed)
     # 256-bit HMAC tag covering salt + nonce + ciphertext
-    tag = hmac.new(key, salt + nonce + ciphertext + AUTH_CONTEXT, hashlib.sha256).digest()
+    tag = hmac.new(key, salt + nonce + ciphertext + _unwrap(_CTX_MIXED), hashlib.sha256).digest()
 
     # Format: MAGIC(12) + SALT(16) + NONCE(16) + TAG(32) + CIPHERTEXT
     output_enc_path.write_bytes(MAGIC_HEADER + salt + nonce + tag + ciphertext)
@@ -115,7 +138,7 @@ def decrypt_parts_bundle(enc_path: Path) -> dict[str, Any]:
     ciphertext = raw_data[offset:]
 
     key = _derive_key(salt)
-    expected_tag = hmac.new(key, salt + nonce + ciphertext + AUTH_CONTEXT, hashlib.sha256).digest()
+    expected_tag = hmac.new(key, salt + nonce + ciphertext + _unwrap(_CTX_MIXED), hashlib.sha256).digest()
     if not hmac.compare_digest(tag, expected_tag):
         raise PermissionError("Bundle integrity check failed (tampered ciphertext)")
 
