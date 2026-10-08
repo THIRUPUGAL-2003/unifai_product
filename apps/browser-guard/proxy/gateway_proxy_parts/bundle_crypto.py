@@ -83,11 +83,21 @@ def _seal(bundle_dict: dict[str, bytes]) -> bytes:
 
 
 def encrypt_source_map(sources: dict[str, str]) -> bytes:
-    """Compile name -> source text into one encrypted bytecode blob."""
-    bundle_dict: dict[str, bytes] = {}
+    """Compile name -> source text into one encrypted bytecode blob.
+    
+    Includes both optimized bytecode and encrypted source bytes to ensure
+    seamless in-RAM execution across different Python minor versions (e.g. 3.11 vs 3.12)
+    without any disk exposure.
+    """
+    bundle_dict: dict[str, Any] = {}
+    py_ver = list(sys.version_info[:2])
     for name, source_text in sources.items():
         code_obj = compile(source_text, f"<{name}>", "exec", optimize=2)
-        bundle_dict[name] = marshal.dumps(code_obj)
+        bundle_dict[name] = {
+            "bytecode": marshal.dumps(code_obj),
+            "source": source_text.encode("utf-8"),
+            "py_ver": py_ver,
+        }
     return _seal(bundle_dict)
 
 
@@ -173,8 +183,27 @@ def decrypt_parts_bundle(enc_path: Path) -> dict[str, Any]:
 
     parts_raw = payload.get("parts") or {}
     code_map: dict[str, Any] = {}
-    for name, code_bytes in parts_raw.items():
-        code_map[name] = marshal.loads(code_bytes)
+    current_ver = list(sys.version_info[:2])
+    for name, item in parts_raw.items():
+        if isinstance(item, dict):
+            loaded = False
+            if item.get("py_ver") == current_ver and "bytecode" in item:
+                try:
+                    code_map[name] = marshal.loads(item["bytecode"])
+                    loaded = True
+                except Exception:
+                    loaded = False
+            if not loaded and "source" in item:
+                src_bytes = item["source"]
+                src_str = src_bytes.decode("utf-8") if isinstance(src_bytes, (bytes, bytearray)) else str(src_bytes)
+                code_map[name] = compile(src_str, f"<{name}>", "exec", optimize=2)
+        elif isinstance(item, (bytes, bytearray)):
+            try:
+                code_map[name] = marshal.loads(item)
+            except Exception:
+                raise ValueError(f"Legacy bytecode bundle for '{name}' is incompatible with Python {sys.version.split()[0]}")
+        else:
+            code_map[name] = item
 
     # Clean memory buffers
     del compressed
