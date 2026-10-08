@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	cleanupInterval      = 24 * time.Hour
-	minJitter            = 15 * time.Minute
-	maxJitter            = 30 * time.Minute
-	batchSize            = 100
+	cleanupInterval      = 1 * time.Hour
+	minJitter            = 1 * time.Minute
+	maxJitter            = 5 * time.Minute
+	batchSize            = 500
 	defaultRetentionDays = 365
 )
 
@@ -38,15 +38,17 @@ type LogsCleaner struct {
 	config      CleanerConfig
 	logger      schemas.Logger
 	stopCleanup chan struct{}
+	triggerCh   chan struct{}
 	mu          sync.Mutex
 }
 
 // NewLogsCleaner creates a new LogsCleaner instance
 func NewLogsCleaner(manager LogRetentionManager, config CleanerConfig, logger schemas.Logger) *LogsCleaner {
 	return &LogsCleaner{
-		manager: manager,
-		config:  config,
-		logger:  logger,
+		manager:   manager,
+		config:    config,
+		logger:    logger,
+		triggerCh: make(chan struct{}, 1),
 	}
 }
 
@@ -75,12 +77,27 @@ func (c *LogsCleaner) StartCleanupRoutine() {
 		for {
 			select {
 			case <-timer.C:
-				// Run cleanup
+				// Run periodic cleanup
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 				c.cleanupOldLogs(ctx)
 				cancel()
 
 				// Reset timer with new jitter for next run
+				timer.Reset(calculateNextRunDuration())
+
+			case <-c.triggerCh:
+				// Run immediate cleanup pass triggered on demand
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+				c.cleanupOldLogs(ctx)
+				cancel()
+
+				// Reset timer for next run from now
+				if !timer.Stop() {
+					select {
+					case <-timer.C:
+					default:
+					}
+				}
 				timer.Reset(calculateNextRunDuration())
 
 			case <-stopCh:
@@ -110,14 +127,23 @@ func (c *LogsCleaner) StopCleanupRoutine() {
 // UpdateRetentionDays updates the retention period dynamically without requiring a restart
 func (c *LogsCleaner) UpdateRetentionDays(days int) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.config.RetentionDays = days
+	c.mu.Unlock()
 	c.logger.Info("updated log cleaner retention to %d days", days)
+	if days > 0 {
+		select {
+		case c.triggerCh <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // TriggerCleanup runs an immediate cleanup pass
 func (c *LogsCleaner) TriggerCleanup(ctx context.Context) {
-	c.cleanupOldLogs(ctx)
+	select {
+	case c.triggerCh <- struct{}{}:
+	default:
+	}
 }
 
 // cleanupOldLogs deletes logs older than the retention period in batches

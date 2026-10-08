@@ -3522,7 +3522,7 @@ func (s *RDBLogStore) DeleteLogsBatch(ctx context.Context, cutoff time.Time, bat
 	if err := s.db.WithContext(ctx).
 		Model(&Log{}).
 		Select("id").
-		Where("created_at < ?", cutoff).
+		Where("created_at < ? OR (created_at IS NULL AND timestamp < ?)", cutoff, cutoff).
 		Limit(batchSize).
 		Pluck("id", &ids).Error; err != nil {
 		return 0, err
@@ -3546,7 +3546,7 @@ func (s *RDBLogStore) DeleteMCPToolLogsBatch(ctx context.Context, cutoff time.Ti
 	var ids []string
 	if err := s.db.WithContext(ctx).
 		Model(&MCPToolLog{}).
-		Where("created_at < ?", cutoff).
+		Where("created_at < ? OR (created_at IS NULL AND timestamp < ?)", cutoff, cutoff).
 		Limit(batchSize).
 		Pluck("id", &ids).Error; err != nil {
 		return 0, err

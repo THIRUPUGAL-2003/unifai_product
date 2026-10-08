@@ -47,7 +47,11 @@ echo ============================================================
 if not exist installer\staging mkdir installer\staging
 if not exist release mkdir release
 
-copy /Y dist\Gateway_Guard.exe installer\staging\Gateway_Guard.exe >nul
+if exist build\exe\Gateway_Guard.exe (
+  copy /Y build\exe\Gateway_Guard.exe installer\staging\Gateway_Guard.exe >nul
+) else (
+  copy /Y dist\Gateway_Guard.exe installer\staging\Gateway_Guard.exe >nul
+)
 copy /Y release\gateway_guard_config.json installer\staging\gateway_guard_config.json >nul
 copy /Y gateway_guard.ico installer\staging\gateway_guard.ico >nul
 copy /Y gateway_guard.ico installer\gateway_guard.ico >nul
@@ -90,8 +94,13 @@ mkdir "%ZIP_STAGE%"
 
 copy /Y release\Gateway_Guard_Setup.exe "%ZIP_STAGE%\Gateway_Guard_Setup.exe" >nul
 if not exist "%ZIP_STAGE%\portable" mkdir "%ZIP_STAGE%\portable"
-if exist release\Gateway_Guard.exe copy /Y release\Gateway_Guard.exe "%ZIP_STAGE%\portable\Gateway_Guard.exe" >nul
-if exist dist\Gateway_Guard.exe if not exist release\Gateway_Guard.exe copy /Y dist\Gateway_Guard.exe "%ZIP_STAGE%\portable\Gateway_Guard.exe" >nul
+if exist build\exe\Gateway_Guard.exe (
+  copy /Y build\exe\Gateway_Guard.exe "%ZIP_STAGE%\portable\Gateway_Guard.exe" >nul
+) else if exist release\Gateway_Guard.exe (
+  copy /Y release\Gateway_Guard.exe "%ZIP_STAGE%\portable\Gateway_Guard.exe" >nul
+) else if exist dist\Gateway_Guard.exe (
+  copy /Y dist\Gateway_Guard.exe "%ZIP_STAGE%\portable\Gateway_Guard.exe" >nul
+)
 copy /Y release\gateway_guard_config.json "%ZIP_STAGE%\gateway_guard_config.json" >nul
 if exist release\INSTALL_WINDOWS.txt copy /Y release\INSTALL_WINDOWS.txt "%ZIP_STAGE%\INSTALL_WINDOWS.txt" >nul
 if exist installer\EMPLOYEE_README.txt copy /Y installer\EMPLOYEE_README.txt "%ZIP_STAGE%\EMPLOYEE_README.txt" >nul

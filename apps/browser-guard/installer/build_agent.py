@@ -36,14 +36,41 @@ def build_windows() -> Path:
     spec = ROOT / "Gateway_Guard.spec"
     if not spec.is_file():
         raise SystemExit(f"Missing {spec}")
-    run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", str(spec)])
-    exe = DIST / "Gateway_Guard.exe"
+    # dist\Gateway_Guard.exe can stay locked by a previous copy. Write the new
+    # binary beside the PyInstaller work dir, then publish copies that file.
+    out_dir = ROOT / "build" / "exe"
+    work_dir = ROOT / "build" / "pyi"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    run(
+        [
+            sys.executable,
+            "-m",
+            "PyInstaller",
+            "--noconfirm",
+            "--clean",
+            "--distpath",
+            str(out_dir),
+            "--workpath",
+            str(work_dir),
+            str(spec),
+        ]
+    )
+    exe = out_dir / "Gateway_Guard.exe"
     if not exe.is_file():
         raise SystemExit(f"Expected {exe} after PyInstaller")
     RELEASE.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(exe, RELEASE / "Gateway_Guard.exe")
+    _replace_copy(exe, DIST / "Gateway_Guard.exe")
+    _replace_copy(exe, RELEASE / "Gateway_Guard.exe")
     shutil.copy2(CONFIG, RELEASE / "gateway_guard_config.json")
     return exe
+
+
+def _replace_copy(src: Path, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        shutil.copy2(src, dest)
+    except OSError as exc:
+        print(f"WARNING: could not replace {dest}: {exc}", file=sys.stderr)
 
 
 def strip_plain_text_sources_from_bundle(app_path: Path) -> None:

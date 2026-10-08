@@ -4,7 +4,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { PRODUCT_NAME } from "@/lib/constants/config";
-import { getErrorMessage, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
+import { getErrorMessage, useGetCoreConfigQuery, useTriggerLogCleanupMutation, useUpdateCoreConfigMutation } from "@/lib/store";
 import { CoreConfig, DefaultCoreConfig } from "@/lib/types/config";
 import { parseArrayFromText } from "@/lib/utils/array";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
@@ -16,6 +16,7 @@ export default function LoggingView() {
 	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
+	const [triggerLogCleanup, { isLoading: isCleaning }] = useTriggerLogCleanupMutation();
 	const [localConfig, setLocalConfig] = useState<CoreConfig>(DefaultCoreConfig);
 	const [needsRestart, setNeedsRestart] = useState<boolean>(false);
 	const [loggingHeadersText, setLoggingHeadersText] = useState<string>("");
@@ -67,11 +68,25 @@ export default function LoggingView() {
 
 		try {
 			await updateCoreConfig({ ...gatewayConfig, client_config: localConfig }).unwrap();
-			toast.success("Logging configuration updated successfully.");
+			if (localConfig.log_retention_days > 0) {
+				try {
+					const cleanupRes = await triggerLogCleanup({ retention_days: localConfig.log_retention_days }).unwrap();
+					const totalDeleted = (cleanupRes?.deleted_logs || 0) + (cleanupRes?.deleted_mcp_logs || 0);
+					if (totalDeleted > 0) {
+						toast.success(`Logging configuration updated (${localConfig.log_retention_days} days retention, ${totalDeleted} older logs pruned)`);
+					} else {
+						toast.success("Logging configuration updated successfully.");
+					}
+				} catch {
+					toast.success("Logging configuration updated successfully.");
+				}
+			} else {
+				toast.info("Logging configuration updated (auto-delete disabled, logs retained indefinitely).");
+			}
 		} catch (error) {
 			toast.error(getErrorMessage(error));
 		}
-	}, [gatewayConfig, localConfig, updateCoreConfig]);
+	}, [gatewayConfig, localConfig, updateCoreConfig, triggerLogCleanup]);
 
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-4">

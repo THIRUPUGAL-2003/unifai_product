@@ -2,7 +2,7 @@
 ; Build: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\Gateway_Guard.iss
 
 #define MyAppName "Gateway Guard"
-#define MyAppVersion "1.1.16"
+#define MyAppVersion "1.1.17"
 #define MyAppPublisher "Gateway"
 ; Synced from .env SERVER_DOMAIN by apps/browser-guard/scripts/sync_config_from_env.py
 #define MyAppURL "https://unifai.yespanchi.com"

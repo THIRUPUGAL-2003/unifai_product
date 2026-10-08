@@ -1706,7 +1706,7 @@ func (h *LoggingHandler) triggerLogCleanup(ctx *fasthttp.RequestCtx) {
 
 	if retMgr, ok := h.config.LogsStore.(logstore.LogRetentionManager); ok {
 		for {
-			deleted, err := retMgr.DeleteLogsBatch(ctx, cutoff, 100)
+			deleted, err := retMgr.DeleteLogsBatch(ctx, cutoff, 500)
 			if err != nil {
 				logger.Error("failed to delete logs during manual cleanup: %v", err)
 				break
@@ -1715,7 +1715,7 @@ func (h *LoggingHandler) triggerLogCleanup(ctx *fasthttp.RequestCtx) {
 				break
 			}
 			totalDeletedLogs += deleted
-			if deleted < 100 {
+			if deleted < 500 {
 				break
 			}
 		}
@@ -1723,7 +1723,7 @@ func (h *LoggingHandler) triggerLogCleanup(ctx *fasthttp.RequestCtx) {
 
 	if mcpMgr, ok := h.config.LogsStore.(logstore.MCPToolLogRetentionManager); ok {
 		for {
-			deleted, err := mcpMgr.DeleteMCPToolLogsBatch(ctx, cutoff, 100)
+			deleted, err := mcpMgr.DeleteMCPToolLogsBatch(ctx, cutoff, 500)
 			if err != nil {
 				logger.Error("failed to delete MCP logs during manual cleanup: %v", err)
 				break
@@ -1732,7 +1732,7 @@ func (h *LoggingHandler) triggerLogCleanup(ctx *fasthttp.RequestCtx) {
 				break
 			}
 			totalDeletedMCP += deleted
-			if deleted < 100 {
+			if deleted < 500 {
 				break
 			}
 		}
