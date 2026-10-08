@@ -52,6 +52,7 @@ import { toast } from "sonner";
 // Selection Target Type
 type SelectionTarget =
 	| { type: "role"; role: RBACRole }
+	| { type: "all_admins" }
 	| { type: "all_users" }
 	| { type: "all_sub_admins" }
 	| { type: "user"; user: SessionUser }
@@ -110,20 +111,18 @@ function sectionGranted(allowed: Set<string>, section: string): boolean {
 	return section === "guardrails/cluster-config" && allowed.has("cluster-config");
 }
 
-// allowed_sections scopes all non-admin roles: admin is unrestricted.
-function sectionScopeApplies(role?: string): boolean {
-	const r = (role || "user").toLowerCase();
-	return r !== "admin";
+function isAdminRole(role?: string): boolean {
+	return (role || "").toLowerCase() === "admin";
 }
 
 function isSubAdminRole(role?: string): boolean {
 	return (role || "").toLowerCase() === "sub_admin";
 }
 
-// "user" and "sub_admin" have their own tree sections (All Users / All Sub Admins).
+// "user", "sub_admin", and "admin" have their own tree sections.
 function hasOwnTreeSection(role: RBACRole): boolean {
 	const r = role.name?.toLowerCase();
-	return r === "user" || r === "sub_admin";
+	return r === "user" || r === "sub_admin" || r === "admin";
 }
 
 type TargetScope = { type: RBACScopeType; id?: string; label: string; grant?: RBACScopeGrant };
@@ -160,12 +159,14 @@ export default function RBACView() {
 	// Navigation Tree Accordion States
 	const [expandedSections, setExpandedSections] = useState<{
 		roles: boolean;
+		admins: boolean;
 		subAdmins: boolean;
 		users: boolean;
 		teams: boolean;
 		customers: boolean;
 	}>({
 		roles: true,
+		admins: true,
 		subAdmins: true,
 		users: true,
 		teams: true,
@@ -212,6 +213,10 @@ export default function RBACView() {
 	// Determine active role ID for fetching role permissions query
 	const activeRoleId = useMemo(() => {
 		if (target.type === "role") return target.role.id;
+		if (target.type === "all_admins") {
+			const adminRole = roles.find((r) => r.name.toLowerCase() === "admin");
+			return adminRole?.id ?? 0;
+		}
 		if (target.type === "all_users") {
 			const userRole = roles.find((r) => r.name.toLowerCase() === "user");
 			return userRole?.id ?? 0;
@@ -233,7 +238,7 @@ export default function RBACView() {
 
 	const scope = useMemo(() => targetScope(target, scopeGrants), [target, scopeGrants]);
 
-	const userUsesSectionScope = Boolean(targetUser && sectionScopeApplies(targetUser.role));
+	const userUsesSectionScope = Boolean(targetUser);
 	const {
 		data: targetUserTeams,
 		isError: targetUserTeamsFailed,
@@ -301,6 +306,8 @@ export default function RBACView() {
 		switch (target.type) {
 			case "role":
 				return `role:${target.role.id}`;
+			case "all_admins":
+				return "all_admins";
 			case "all_users":
 				return "all_users";
 			case "all_sub_admins":
@@ -328,7 +335,7 @@ export default function RBACView() {
 			return;
 		}
 
-		if (target.type === "role" && target.role.name?.toLowerCase() === "admin") {
+		if ((target.type === "role" && target.role.name?.toLowerCase() === "admin") || target.type === "all_admins") {
 			if (permissions.length > 0) {
 				setSelectedPerms(permissions.map((p) => p.id));
 				setLastSyncedKey(activeTargetKey);
@@ -344,43 +351,70 @@ export default function RBACView() {
 
 		if (target.type === "user" && targetUser) {
 			const uRole = (targetUser.role || "user").toLowerCase();
-			if (uRole === "admin") {
-				if (permissions.length > 0) {
-					setSelectedPerms(permissions.map((p) => p.id));
-					setLastSyncedKey(activeTargetKey);
-				}
-				return;
-			}
 			const userSections = (targetUser.allowed_sections || "")
 				.split(",")
 				.map((s) => s.trim())
 				.filter(Boolean);
 
 			const allowed = new Set(userSections);
-			const userPermIds = new Set<number>();
-			const isViewOp = (op: string) => op === "View" || op === "Read";
 
-			// Per-user assignment is View-only (sidebar features). Edit/Delete live on the role.
-			if (userSections.length > 0) {
-				for (const p of permissions) {
-					if (!isViewOp(p.operation)) continue;
-					const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
-					if (sections.some((s) => sectionGranted(allowed, s))) {
-						userPermIds.add(p.id);
+			if (uRole === "admin") {
+				if (userSections.length > 0) {
+					const adminPermIds: number[] = [];
+					for (const p of permissions) {
+						const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
+						if (sections.some((s) => sectionGranted(allowed, s))) {
+							adminPermIds.push(p.id);
+						}
 					}
+					setSelectedPerms(adminPermIds);
+				} else if (permissions.length > 0) {
+					setSelectedPerms(permissions.map((p) => p.id));
 				}
-			} else if (rolePermData?.permissions) {
-				for (const p of rolePermData.permissions) {
-					if (isViewOp(p.operation)) userPermIds.add(p.id);
-				}
+				setLastSyncedKey(activeTargetKey);
+				return;
 			}
 
-			// If userSections is empty and rolePermData is still loading, wait before committing sync
+			if (isSubAdminRole(uRole)) {
+				// Sub-admin: automatically pre-tick all operations (View, Edit, Delete, Full Access) for their granted workspace sections!
+				if (userSections.length > 0) {
+					const subAdminPermIds: number[] = [];
+					for (const p of permissions) {
+						const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
+						if (sections.some((s) => sectionGranted(allowed, s))) {
+							subAdminPermIds.push(p.id);
+						}
+					}
+					setSelectedPerms(subAdminPermIds);
+				} else if (rolePermData?.permissions) {
+					setSelectedPerms(rolePermData.permissions.map((p) => p.id));
+				} else {
+					setSelectedPerms([]);
+				}
+				setLastSyncedKey(activeTargetKey);
+				return;
+			}
+
+			// Regular User:
+			if (userSections.length > 0) {
+				const userPermIds: number[] = [];
+				for (const p of permissions) {
+					const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
+					if (sections.some((s) => sectionGranted(allowed, s))) {
+						userPermIds.push(p.id);
+					}
+				}
+				setSelectedPerms(userPermIds);
+			} else if (rolePermData?.permissions) {
+				setSelectedPerms(rolePermData.permissions.map((p) => p.id));
+			} else {
+				setSelectedPerms([]);
+			}
+
 			if (userSections.length === 0 && activeRoleId !== 0 && !rolePermData?.permissions) {
 				return;
 			}
 
-			setSelectedPerms(Array.from(userPermIds));
 			setLastSyncedKey(activeTargetKey);
 			return;
 		}
@@ -443,8 +477,12 @@ export default function RBACView() {
 		);
 	}, [sessionUsers, treeSearch]);
 
+	const filteredAdmins = useMemo(() => searchedUsers.filter((u) => isAdminRole(u.role)), [searchedUsers]);
 	const filteredSubAdmins = useMemo(() => searchedUsers.filter((u) => isSubAdminRole(u.role)), [searchedUsers]);
-	const filteredUsers = useMemo(() => searchedUsers.filter((u) => !isSubAdminRole(u.role)), [searchedUsers]);
+	const filteredUsers = useMemo(
+		() => searchedUsers.filter((u) => !isAdminRole(u.role) && !isSubAdminRole(u.role)),
+		[searchedUsers],
+	);
 
 	const filteredTeams = useMemo(() => {
 		if (!treeSearch.trim()) return teams;
@@ -475,13 +513,21 @@ export default function RBACView() {
 	const handleSaveCurrentMatrix = async () => {
 		try {
 			if (target.type === "role") {
-				if (target.role.name.toLowerCase() === "admin") {
-					toast.info("Admin inherently possesses full unrestricted permissions.");
-					return;
-				}
 				await updatePerms({ id: target.role.id, permission_ids: selectedPerms }).unwrap();
 				setLastSyncedKey("");
 				toast.success(`Permissions saved for role '${target.role.name}'`);
+				return;
+			}
+
+			if (target.type === "all_admins") {
+				const adminRole = roles.find((r) => r.name.toLowerCase() === "admin");
+				if (!adminRole) {
+					toast.error("The built-in 'admin' role was not found.");
+					return;
+				}
+				await updatePerms({ id: adminRole.id, permission_ids: selectedPerms }).unwrap();
+				setLastSyncedKey("");
+				toast.success("Permissions updated for the 'admin' role policy");
 				return;
 			}
 
@@ -511,16 +557,8 @@ export default function RBACView() {
 
 			if (target.type === "user") {
 				const user = targetUser ?? target.user;
-				if (user.role?.toLowerCase() === "admin") {
-					toast.info("Admins always have full access.");
-					return;
-				}
-				// Only View/Read selections map to Workspace Access — users get view-only features.
-				const viewOnly = selectedPerms.filter((id) => {
-					const p = permissions.find((x) => x.id === id);
-					return p && (p.operation === "View" || p.operation === "Read");
-				});
-				const sectionsStr = computeAllowedSections(viewOnly);
+				const uRole = (user.role || "").toLowerCase();
+				const sectionsStr = computeAllowedSections(selectedPerms);
 				await updateSessionUser({
 					id: user.id,
 					updates: {
@@ -530,7 +568,9 @@ export default function RBACView() {
 					},
 				}).unwrap();
 				setLastSyncedKey("");
-				toast.success(`View access updated for '${user.username}' — they will see these pages in the sidebar`);
+				toast.success(
+					`Permissions saved for ${uRole === "admin" ? "admin" : isSubAdminRole(uRole) ? "sub admin" : "user"} '${user.username}'`,
+				);
 				return;
 			}
 
@@ -734,6 +774,70 @@ export default function RBACView() {
 											</div>
 										);
 									})}
+								</div>
+							)}
+						</div>
+
+						{/* ADMINS SECTION (role policy + individual admins) */}
+						<div className="rounded-lg border bg-muted/20">
+							<button
+								type="button"
+								onClick={() => toggleSection("admins")}
+								className="flex w-full items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+								data-testid="rbac-tree-admins"
+							>
+								<div className="flex items-center gap-1.5">
+									{expandedSections.admins ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+									<Shield className="h-3.5 w-3.5 text-emerald-500" />
+									<span>Admins</span>
+								</div>
+								<Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+									{filteredAdmins.length}
+								</Badge>
+							</button>
+
+							{expandedSections.admins && (
+								<div className="space-y-1 p-1 pt-0">
+									<div
+										onClick={() => setTarget({ type: "all_admins" })}
+										className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
+											target.type === "all_admins"
+												? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold"
+												: "hover:bg-muted text-muted-foreground hover:text-foreground"
+										}`}
+									>
+										<Globe className="h-3.5 w-3.5 text-emerald-500" />
+										<span>All Admins (Default Full Access)</span>
+									</div>
+
+									<div className="border-t pt-1 pl-2 space-y-0.5">
+										{filteredAdmins.length === 0 ? (
+											<p className="text-muted-foreground px-2 py-1 text-[11px]">No admins yet</p>
+										) : (
+											filteredAdmins.map((user) => {
+												const isSelected = target.type === "user" && target.user.id === user.id;
+												return (
+													<div
+														key={user.id}
+														onClick={() => setTarget({ type: "user", user })}
+														className={`flex cursor-pointer items-center justify-between rounded-md px-2 py-1 text-xs transition-colors ${
+															isSelected
+																? "bg-emerald-500/20 text-emerald-900 dark:text-emerald-200 font-semibold"
+																: "hover:bg-muted text-muted-foreground hover:text-foreground"
+														}`}
+													>
+														<div className="flex items-center gap-1.5 truncate">
+															<User className="h-3 w-3 shrink-0 text-muted-foreground" />
+															<span className="truncate">{user.username}</span>
+														</div>
+														<span className={`rounded border px-1 text-[10px] ${getRoleBadgeClass("admin")}`}>
+															admin
+														</span>
+													</div>
+												);
+											})
+										)}
+									</div>
 								</div>
 							)}
 						</div>
@@ -1003,10 +1107,11 @@ export default function RBACView() {
 									</span>
 									<span className="font-bold text-base">
 										{target.type === "role" && `Role: ${target.role.name}`}
+										{target.type === "all_admins" && "All Admins (Default Full Access Policy)"}
 										{target.type === "all_users" && "All Users (Bulk Global Policy)"}
 										{target.type === "all_sub_admins" && "All Sub Admins (sub_admin role)"}
 										{target.type === "user" &&
-											`${isSubAdminRole(targetUser?.role ?? target.user.role) ? "Sub Admin" : "User"}: ${target.user.username}`}
+											`${isAdminRole(targetUser?.role ?? target.user.role) ? "Admin" : isSubAdminRole(targetUser?.role ?? target.user.role) ? "Sub Admin" : "User"}: ${target.user.username}`}
 										{target.type === "all_teams" && "All Teams"}
 										{target.type === "team" && `Team: ${target.team.name}`}
 										{target.type === "all_customers" && "All Customers"}
@@ -1066,23 +1171,20 @@ export default function RBACView() {
 
 							{/* Action Buttons */}
 							<div className="flex flex-wrap items-center gap-2">
-								<Button variant="outline" size="sm" onClick={handleSelectAllReadView} className="h-8 text-xs">
-									<Eye className="mr-1.5 h-3.5 w-3.5 text-sky-500" />
+								<Button variant="outline" size="sm" onClick={handleSelectAllReadView} className="h-8 text-xs font-medium">
 									View Only
 								</Button>
-								<Button variant="outline" size="sm" onClick={handleSelectAll} className="h-8 text-xs">
-									<ShieldCheck className="mr-1.5 h-3.5 w-3.5 text-emerald-500" />
+								<Button variant="outline" size="sm" onClick={handleSelectAll} className="h-8 text-xs font-medium">
 									Full Access (All)
 								</Button>
-								<Button variant="outline" size="sm" onClick={handleClearAll} className="h-8 text-xs">
-									<X className="mr-1.5 h-3.5 w-3.5 text-amber-500" />
+								<Button variant="outline" size="sm" onClick={handleClearAll} className="h-8 text-xs font-medium">
 									Clear
 								</Button>
 								<Button
 									size="sm"
 									onClick={() => void handleSaveCurrentMatrix()}
 									disabled={isUpdatingPerms || isSavingScope || isUpdatingUser}
-									className="h-8 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold"
+									className="h-8 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold px-4"
 								>
 									{isUpdatingPerms || isSavingScope || isUpdatingUser ? "Saving..." : "Save Permissions"}
 								</Button>
@@ -1105,17 +1207,8 @@ export default function RBACView() {
 					<div className="border-b bg-muted/30 px-4 py-2 text-xs flex items-center gap-2 text-muted-foreground">
 						<Info className="h-4 w-4 shrink-0 text-emerald-500" />
 						<span>
-							{target.type === "user" && targetUser && sectionScopeApplies(targetUser.role) ? (
-								<>
-									Assigning a <strong>user</strong>: tick <strong>View</strong> only. They see those pages in the sidebar and can open them
-									read-only. Edit/Delete are controlled on the role (All Users / Roles), not per user.
-								</>
-							) : (
-								<>
-									Permissions are simplified into 4 clear levels: <strong>View</strong> (read-only), <strong>Edit</strong> (view +
-									create/update), <strong>Delete</strong> (remove records), or <strong>Full Access</strong> (complete control).
-								</>
-							)}
+							Permissions are configured into 4 clear levels: <strong>View</strong> (read-only), <strong>Edit</strong> (view + create/update),{" "}
+							<strong>Delete</strong> (remove records), or <strong>Full Access</strong> (complete control).
 						</span>
 					</div>
 
@@ -1125,8 +1218,6 @@ export default function RBACView() {
 							<p className="text-muted-foreground py-8 text-center text-sm">No resources matching filter.</p>
 						) : (
 							groupedPermissions.map(([resource, perms]) => {
-								const viewOnlyUser =
-									target.type === "user" && !!targetUser && sectionScopeApplies(targetUser.role);
 								const viewPerms = perms.filter((p) => p.operation === "Read" || p.operation === "View");
 								const editPerms = perms.filter((p) => p.operation === "Create" || p.operation === "Update");
 								const deletePerms = perms.filter((p) => p.operation === "Delete");
@@ -1136,52 +1227,42 @@ export default function RBACView() {
 								const deleteIds = deletePerms.map((p) => p.id);
 
 								const isViewActive = viewIds.length > 0 && viewIds.some((id) => selectedPerms.includes(id));
-								const isEditActive =
-									!viewOnlyUser && editIds.length > 0 && editIds.some((id) => selectedPerms.includes(id)) && isViewActive;
-								const isDeleteActive = !viewOnlyUser && deleteIds.length > 0 && deleteIds.every((id) => selectedPerms.includes(id));
-								const isFullAccessActive =
-									!viewOnlyUser && allPermIds.length > 0 && allPermIds.every((id) => selectedPerms.includes(id));
+								const isEditActive = editIds.length > 0 && editIds.some((id) => selectedPerms.includes(id)) && isViewActive;
+								const isDeleteActive = deleteIds.length > 0 && deleteIds.every((id) => selectedPerms.includes(id));
+								const isFullAccessActive = allPermIds.length > 0 && allPermIds.every((id) => selectedPerms.includes(id));
 
 								const toggleView = () => {
 									if (isViewActive) {
-										// Turning OFF View removes all access for this resource
 										const toRemove = new Set(allPermIds);
 										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
 									} else {
-										// Turning ON View
 										setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds])));
 									}
 								};
 
 								const toggleEdit = () => {
 									if (isEditActive) {
-										// Turning OFF Edit removes edit permissions
 										const toRemove = new Set(editIds);
 										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
 									} else {
-										// Turning ON Edit automatically ensures View is also active
 										setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds, ...editIds])));
 									}
 								};
 
 								const toggleDelete = () => {
 									if (isDeleteActive) {
-										// Turning OFF Delete
 										const toRemove = new Set(deleteIds);
 										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
 									} else {
-										// Turning ON Delete automatically ensures View is active
 										setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds, ...deleteIds])));
 									}
 								};
 
 								const toggleFullAccess = () => {
 									if (isFullAccessActive) {
-										// Clear all permissions for this resource
 										const toRemove = new Set(allPermIds);
 										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
 									} else {
-										// Grant full access
 										setSelectedPerms((prev) => Array.from(new Set([...prev, ...allPermIds])));
 									}
 								};
@@ -1242,140 +1323,80 @@ export default function RBACView() {
 												{renderStatusBadge()}
 											</div>
 
-											{!viewOnlyUser && (
-												<div className="flex items-center gap-2">
-													{isFullAccessActive ? (
-														<button
-															type="button"
-															onClick={toggleFullAccess}
-															className="text-xs text-muted-foreground hover:text-destructive transition-colors font-medium cursor-pointer"
-														>
-															Clear Access
-														</button>
-													) : (
-														<button
-															type="button"
-															onClick={toggleFullAccess}
-															className="text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors font-semibold cursor-pointer"
-														>
-															Grant Full Access
-														</button>
-													)}
-												</div>
-											)}
+											<div className="flex items-center gap-2">
+												{isFullAccessActive ? (
+													<button
+														type="button"
+														onClick={toggleFullAccess}
+														className="text-xs text-muted-foreground hover:text-destructive transition-colors font-medium cursor-pointer"
+													>
+														Clear Access
+													</button>
+												) : (
+													<button
+														type="button"
+														onClick={toggleFullAccess}
+														className="text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors font-semibold cursor-pointer"
+													>
+														Grant Full Access
+													</button>
+												)}
+											</div>
 										</div>
 
-										{/* View-only for per-user; 4-tier for roles / All Users / scopes */}
-										<div
-											className={
-												viewOnlyUser
-													? "grid grid-cols-1 gap-2 pt-1 sm:max-w-xs"
-													: "grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1"
-											}
-										>
+										{/* 4-tier clean toggle buttons */}
+										<div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
 											{/* 1. VIEW */}
 											<button
 												type="button"
 												onClick={toggleView}
-												className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
+												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 cursor-pointer flex items-center justify-center px-3 ${
 													isViewActive
-														? "border-sky-500/50 bg-sky-500/15 text-sky-900 dark:text-sky-200 shadow-2xs"
+														? "border-sky-500/60 bg-sky-500/15 text-sky-800 dark:text-sky-200 font-semibold shadow-2xs ring-1 ring-sky-500/30"
 														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
 												}`}
 											>
-												<div className="flex items-center gap-2">
-													<Eye className={`h-3.5 w-3.5 ${isViewActive ? "text-sky-500" : "text-muted-foreground"}`} />
-													<span>View</span>
-												</div>
-												<div
-													className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-														isViewActive ? "border-sky-500 bg-sky-500 text-white" : "border-muted-foreground/40 bg-background"
-													}`}
-												>
-													{isViewActive && <Check className="h-3 w-3 stroke-[3]" />}
-												</div>
+												View
 											</button>
 
-											{!viewOnlyUser && (
-												<>
-													{/* 2. EDIT */}
-													<button
-														type="button"
-														onClick={toggleEdit}
-														className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
-															isEditActive
-																? "border-blue-500/50 bg-blue-500/15 text-blue-900 dark:text-blue-200 shadow-2xs"
-																: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-														}`}
-													>
-														<div className="flex items-center gap-2">
-															<Edit2 className={`h-3.5 w-3.5 ${isEditActive ? "text-blue-500" : "text-muted-foreground"}`} />
-															<span>Edit</span>
-														</div>
-														<div
-															className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-																isEditActive
-																	? "border-blue-500 bg-blue-500 text-white"
-																	: "border-muted-foreground/40 bg-background"
-															}`}
-														>
-															{isEditActive && <Check className="h-3 w-3 stroke-[3]" />}
-														</div>
-													</button>
+											{/* 2. EDIT */}
+											<button
+												type="button"
+												onClick={toggleEdit}
+												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 cursor-pointer flex items-center justify-center px-3 ${
+													isEditActive
+														? "border-blue-500/60 bg-blue-500/15 text-blue-800 dark:text-blue-200 font-semibold shadow-2xs ring-1 ring-blue-500/30"
+														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+												}`}
+											>
+												Edit
+											</button>
 
-													{/* 3. DELETE */}
-													<button
-														type="button"
-														onClick={toggleDelete}
-														className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
-															isDeleteActive
-																? "border-rose-500/50 bg-rose-500/15 text-rose-900 dark:text-rose-200 shadow-2xs"
-																: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-														}`}
-													>
-														<div className="flex items-center gap-2">
-															<Trash2 className={`h-3.5 w-3.5 ${isDeleteActive ? "text-rose-500" : "text-muted-foreground"}`} />
-															<span>Delete</span>
-														</div>
-														<div
-															className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-																isDeleteActive
-																	? "border-rose-500 bg-rose-500 text-white"
-																	: "border-muted-foreground/40 bg-background"
-															}`}
-														>
-															{isDeleteActive && <Check className="h-3 w-3 stroke-[3]" />}
-														</div>
-													</button>
+											{/* 3. DELETE */}
+											<button
+												type="button"
+												onClick={toggleDelete}
+												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 cursor-pointer flex items-center justify-center px-3 ${
+													isDeleteActive
+														? "border-rose-500/60 bg-rose-500/15 text-rose-800 dark:text-rose-200 font-semibold shadow-2xs ring-1 ring-rose-500/30"
+														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+												}`}
+											>
+												Delete
+											</button>
 
-													{/* 4. FULL ACCESS */}
-													<button
-														type="button"
-														onClick={toggleFullAccess}
-														className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs font-semibold transition-all ${
-															isFullAccessActive
-																? "border-emerald-500/60 bg-emerald-500/20 text-emerald-950 dark:text-emerald-100 shadow-2xs"
-																: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-														}`}
-													>
-														<div className="flex items-center gap-2">
-															<ShieldCheck
-																className={`h-3.5 w-3.5 ${isFullAccessActive ? "text-emerald-500" : "text-muted-foreground"}`}
-															/>
-															<span>Full Access</span>
-														</div>
-														<div
-															className={`flex h-4 w-4 items-center justify-center rounded border transition-colors ${
-																isFullAccessActive
-																	? "border-emerald-500 bg-emerald-500 text-white"
-																	: "border-muted-foreground/40 bg-background"
-															}`}
-														>
-															{isFullAccessActive && <Check className="h-3 w-3 stroke-[3]" />}
-														</div>
-													</button>
-												</>
-											)}
+											{/* 4. FULL ACCESS */}
+											<button
+												type="button"
+												onClick={toggleFullAccess}
+												className={`h-8 rounded-lg border text-xs font-semibold transition-all duration-150 cursor-pointer flex items-center justify-center px-3 ${
+													isFullAccessActive
+														? "border-emerald-500/60 bg-emerald-500/20 text-emerald-900 dark:text-emerald-100 shadow-2xs ring-1 ring-emerald-500/30"
+														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+												}`}
+											>
+												Full Access
+											</button>
 										</div>
 									</div>
 								);

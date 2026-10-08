@@ -91,9 +91,9 @@ function isWorkspaceAdminRole(role: string): boolean {
 	return role === "admin" || role === "sub_admin";
 }
 
-// Section grants apply to user and sub_admin roles. Admin has unrestricted access.
-function sectionGrantsApply(role: string): boolean {
-	return role !== "admin";
+// Section grants apply to all roles (user, sub_admin, admin)
+function sectionGrantsApply(_role: string): boolean {
+	return true;
 }
 
 function isUserRole(role: string): boolean {
@@ -230,6 +230,7 @@ export default function UsersView() {
 	const [allowedPromptRepos, setAllowedPromptRepos] = useState("");
 	const [allowedSections, setAllowedSections] = useState<Set<WorkspaceGrantKey>>(new Set());
 	const [expandedSections, setExpandedSections] = useState<Set<WorkspaceSectionKey>>(new Set());
+	const [workspaceSearch, setWorkspaceSearch] = useState("");
 	const [autoCreatePrompt, setAutoCreatePrompt] = useState(false);
 
 	const {
@@ -429,6 +430,18 @@ export default function UsersView() {
 			</div>
 		) : null;
 
+	const filteredWorkspaceSections = useMemo(() => {
+		if (!workspaceSearch.trim()) return WORKSPACE_ACCESS_SECTIONS;
+		const q = workspaceSearch.trim().toLowerCase();
+		return WORKSPACE_ACCESS_SECTIONS.filter((section) => {
+			const matchSection = section.label.toLowerCase().includes(q) || section.key.toLowerCase().includes(q);
+			const matchItems = section.items?.some(
+				(item) => item.label.toLowerCase().includes(q) || item.key.toLowerCase().includes(q),
+			);
+			return matchSection || matchItems;
+		});
+	}, [workspaceSearch]);
+
 	const workspaceAccessPicker =
 		sectionGrantsApply(role) ? (
 			<div className="space-y-2">
@@ -437,56 +450,86 @@ export default function UsersView() {
 					Pages this user may open (view-only). They appear in their sidebar after login. Parent tick = whole section. Nothing is granted by default —
 					unchecked sections stay hidden for this user.
 				</p>
+				<div className="relative">
+					<Search className="text-muted-foreground absolute left-2.5 top-2.5 size-3.5" />
+					<Input
+						type="text"
+						placeholder="Search workspace pages or sections..."
+						value={workspaceSearch}
+						onChange={(e) => setWorkspaceSearch(e.target.value)}
+						className="h-8 pl-8 pr-7 text-xs bg-muted/20 border-border/50"
+					/>
+					{workspaceSearch && (
+						<button
+							type="button"
+							onClick={() => setWorkspaceSearch("")}
+							className="text-muted-foreground hover:text-foreground absolute right-2.5 top-2.5 size-3.5 flex items-center justify-center cursor-pointer"
+						>
+							<X className="size-3.5" />
+						</button>
+					)}
+				</div>
 				<div className="border-border/50 bg-muted/10 max-h-64 space-y-1 overflow-y-auto rounded-lg border p-2">
-					{WORKSPACE_ACCESS_SECTIONS.map((section) => {
-						const hasChildren = !!section.items?.length;
-						const expanded = expandedSections.has(section.key);
-						const sel = sectionSelectionState(section, allowedSections);
-						return (
-							<div key={section.key} className="rounded-md">
-								<div className="hover:bg-muted/40 flex items-center gap-1 rounded-md px-1 py-1">
-									{hasChildren ? (
-										<button
-											type="button"
-											onClick={() => toggleExpanded(section.key)}
-											className="text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded"
-											aria-label={expanded ? `Collapse ${section.label}` : `Expand ${section.label}`}
-										>
-											{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-										</button>
-									) : (
-										<span className="size-6 shrink-0" />
-									)}
-									<label className="text-foreground flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm select-none">
-										<IndeterminateCheckbox
-											checked={sel === "all"}
-											indeterminate={sel === "some"}
-											onChange={(checked) => toggleSection(section, checked)}
-										/>
-										<span className="truncate font-medium">{section.label}</span>
-									</label>
-								</div>
-								{hasChildren && expanded ? (
-									<div className="border-border/40 ml-6 space-y-0.5 border-l py-1 pl-3">
-										{section.items!.map((item) => (
-											<label
-												key={item.key}
-												className="text-foreground hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-sm select-none"
+					{filteredWorkspaceSections.length === 0 ? (
+						<p className="text-muted-foreground py-4 text-center text-xs">No workspace sections match "{workspaceSearch}"</p>
+					) : (
+						filteredWorkspaceSections.map((section) => {
+							const hasChildren = !!section.items?.length;
+							const isSearching = !!workspaceSearch.trim();
+							const expanded = isSearching || expandedSections.has(section.key);
+							const sel = sectionSelectionState(section, allowedSections);
+							const q = workspaceSearch.trim().toLowerCase();
+							const visibleItems = (section.items ?? []).filter((item) => {
+								if (!isSearching) return true;
+								if (section.label.toLowerCase().includes(q) || section.key.toLowerCase().includes(q)) return true;
+								return item.label.toLowerCase().includes(q) || item.key.toLowerCase().includes(q);
+							});
+							return (
+								<div key={section.key} className="rounded-md">
+									<div className="hover:bg-muted/40 flex items-center gap-1 rounded-md px-1 py-1">
+										{hasChildren ? (
+											<button
+												type="button"
+												onClick={() => toggleExpanded(section.key)}
+												className="text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded"
+												aria-label={expanded ? `Collapse ${section.label}` : `Expand ${section.label}`}
 											>
-												<input
-													type="checkbox"
-													checked={isItemChecked(section, item.key)}
-													onChange={(e) => toggleItem(section, item.key, e.target.checked)}
-													className="border-border rounded text-teal-500 focus:ring-teal-500/50"
-												/>
-												<span className="truncate">{item.label}</span>
-											</label>
-										))}
+												{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+											</button>
+										) : (
+											<span className="size-6 shrink-0" />
+										)}
+										<label className="text-foreground flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm select-none">
+											<IndeterminateCheckbox
+												checked={sel === "all"}
+												indeterminate={sel === "some"}
+												onChange={(checked) => toggleSection(section, checked)}
+											/>
+											<span className="truncate font-medium">{section.label}</span>
+										</label>
 									</div>
-								) : null}
-							</div>
-						);
-					})}
+									{hasChildren && expanded ? (
+										<div className="border-border/40 ml-6 space-y-0.5 border-l py-1 pl-3">
+											{visibleItems.map((item) => (
+												<label
+													key={item.key}
+													className="text-foreground hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-sm select-none"
+												>
+													<input
+														type="checkbox"
+														checked={isItemChecked(section, item.key)}
+														onChange={(e) => toggleItem(section, item.key, e.target.checked)}
+														className="border-border rounded text-teal-500 focus:ring-teal-500/50"
+													/>
+													<span className="truncate">{item.label}</span>
+												</label>
+											))}
+										</div>
+									) : null}
+								</div>
+							);
+						})
+					)}
 				</div>
 			</div>
 		) : null;
@@ -749,6 +792,7 @@ export default function UsersView() {
 		setExpandedSections(new Set());
 		setAutoCreatePrompt(false);
 		setSelectedUser(null);
+		setWorkspaceSearch("");
 	};
 
 	const openEditModal = (user: SessionUser) => {
@@ -765,8 +809,13 @@ export default function UsersView() {
 		setBudget(user.budget);
 		setRateLimit(user.rate_limit);
 		setAllowedPromptRepos(sanitizeAllowedPromptRepos(user.allowed_prompt_repos || ""));
-		const grants = sectionGrantsApply(nextRole) ? adminSectionsFromStorage(user.allowed_sections) : new Set<WorkspaceGrantKey>();
-		setAllowedSections(grants);
+		const grants = adminSectionsFromStorage(user.allowed_sections);
+		if (nextRole === "admin" && grants.size === 0) {
+			// Admins default to all sections selected
+			setAllowedSections(new Set(WORKSPACE_ACCESS_SECTIONS.map((s) => s.key)));
+		} else {
+			setAllowedSections(grants);
+		}
 		setExpandedSections(
 			new Set(
 				WORKSPACE_ACCESS_SECTIONS.filter(
@@ -774,6 +823,7 @@ export default function UsersView() {
 				).map((s) => s.key),
 			),
 		);
+		setWorkspaceSearch("");
 		setIsEditOpen(true);
 	};
 
@@ -1271,9 +1321,10 @@ export default function UsersView() {
 										setTeamId("");
 										setVirtualKeyId("");
 									}
-									if (!sectionGrantsApply(nextRole)) {
+									if (nextRole === "admin") {
+										setAllowedSections(new Set(WORKSPACE_ACCESS_SECTIONS.map((s) => s.key)));
+									} else if (role === "admin") {
 										setAllowedSections(new Set());
-										setExpandedSections(new Set());
 									}
 								}}
 								className="bg-muted/20 border-border/50 text-foreground w-full rounded-lg border p-2.5 text-sm focus:border-teal-500/50 focus:outline-none"
@@ -1447,9 +1498,8 @@ export default function UsersView() {
 										setTeamId("");
 										setVirtualKeyId("");
 									}
-									if (!sectionGrantsApply(nextRole)) {
-										setAllowedSections(new Set());
-										setExpandedSections(new Set());
+									if (nextRole === "admin" && allowedSections.size === 0) {
+										setAllowedSections(new Set(WORKSPACE_ACCESS_SECTIONS.map((s) => s.key)));
 									}
 								}}
 								className="bg-muted/20 border-border/50 text-foreground w-full rounded-lg border p-2.5 text-sm focus:border-teal-500/50 focus:outline-none"
