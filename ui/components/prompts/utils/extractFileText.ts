@@ -226,12 +226,28 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
 	for (let i = 1; i <= maxPages; i++) {
 		const page = await doc.getPage(i);
 		const content = await page.getTextContent();
-		const line = content.items
-			.map((item) => ("str" in item ? item.str : ""))
-			.join(" ")
-			.replace(/\s+/g, " ")
-			.trim();
-		if (line) parts.push(line);
+		let pageText = "";
+		let lastY: number | null = null;
+		for (const rawItem of content.items) {
+			if (!("str" in rawItem)) continue;
+			const item = rawItem as { str: string; transform?: number[]; hasEOL?: boolean };
+			const str = item.str;
+			if (!str) continue;
+			const y = Array.isArray(item.transform) ? item.transform[5] : null;
+			if (lastY !== null && y !== null && Math.abs(y - lastY) > 5) {
+				pageText += "\n";
+			} else if (item.hasEOL) {
+				pageText += "\n";
+			} else if (pageText && !pageText.endsWith("\n") && !pageText.endsWith(" ")) {
+				pageText += " ";
+			}
+			pageText += str;
+			if (y !== null) lastY = y;
+		}
+		const trimmedPage = pageText.trim();
+		if (trimmedPage) {
+			parts.push(maxPages > 1 ? `[Page ${i} of ${doc.numPages}]\n${trimmedPage}` : trimmedPage);
+		}
 	}
 	const text = parts.join("\n\n").trim();
 	if (doc.numPages > maxPages) {

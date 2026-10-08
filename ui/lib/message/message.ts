@@ -26,6 +26,202 @@ function isEmbeddedAttachmentText(part: MessageContent): boolean {
 	);
 }
 
+interface ExtractedFileInfo {
+	filename: string;
+	language?: string;
+	category: string;
+	content: string;
+	kind: "extracted" | "ocr" | "voice" | "zip" | "raw";
+}
+
+function detectLanguageFromExt(ext: string): string | undefined {
+	const map: Record<string, string> = {
+		ts: "typescript",
+		tsx: "typescript",
+		js: "javascript",
+		jsx: "javascript",
+		mjs: "javascript",
+		cjs: "javascript",
+		py: "python",
+		pyw: "python",
+		json: "json",
+		jsonl: "json",
+		jsonc: "json",
+		csv: "csv",
+		tsv: "tsv",
+		sql: "sql",
+		html: "html",
+		htm: "html",
+		xml: "xml",
+		svg: "xml",
+		yaml: "yaml",
+		yml: "yaml",
+		css: "css",
+		scss: "scss",
+		sass: "sass",
+		less: "less",
+		sh: "bash",
+		bash: "bash",
+		zsh: "bash",
+		ps1: "powershell",
+		go: "go",
+		rs: "rust",
+		java: "java",
+		c: "c",
+		h: "c",
+		cpp: "cpp",
+		hpp: "cpp",
+		cs: "csharp",
+		php: "php",
+		rb: "ruby",
+		swift: "swift",
+		kt: "kotlin",
+		scala: "scala",
+		r: "r",
+		md: "markdown",
+		markdown: "markdown",
+		toml: "toml",
+		ini: "ini",
+		dockerfile: "dockerfile",
+	};
+	return map[ext.toLowerCase()];
+}
+
+function getCategoryFromExt(ext: string): string {
+	const lower = ext.toLowerCase();
+	if (["pdf"].includes(lower)) return "PDF Document";
+	if (["doc", "docx", "odt", "rtf"].includes(lower)) return "Word Document";
+	if (["ppt", "pptx", "odp"].includes(lower)) return "Presentation";
+	if (["xls", "xlsx", "csv", "tsv", "ods"].includes(lower)) return "Spreadsheet / Data Table";
+	if (["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(lower)) return "Image / Visual";
+	if (["py", "ts", "js", "go", "java", "rs", "cpp", "c", "cs", "php", "rb", "swift", "kt", "sql"].includes(lower)) return "Source Code";
+	if (["json", "yaml", "yml", "xml", "toml", "ini", "env"].includes(lower)) return "Structured Config / Data";
+	return "Text Document";
+}
+
+function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
+	if (part.type !== "text" || !part.text) return null;
+	const text = part.text.trim();
+
+	// Check OCR
+	if (text.includes("--- OCR extracted content ---")) {
+		const lines = text.split("\n");
+		const fileLine = lines.find((l) => l.startsWith("Attached file:")) || "";
+		const filename = fileLine.replace(/^Attached file:\s*/i, "").trim() || "image_ocr";
+		const splitIdx = text.indexOf("--- OCR extracted content ---");
+		const content = text.slice(splitIdx + "--- OCR extracted content ---".length).trim();
+		return { filename, category: "Image OCR", content, kind: "ocr" };
+	}
+
+	// Check normal extracted file
+	if (text.startsWith("Attached file:") && text.includes("--- extracted content ---")) {
+		const splitIdx = text.indexOf("--- extracted content ---");
+		const header = text.slice(0, splitIdx).trim();
+		const filename = header.replace(/^Attached file:\s*/i, "").trim() || "file";
+		const content = text.slice(splitIdx + "--- extracted content ---".length).trim();
+		const ext = filename.split(".").pop()?.toLowerCase() || "";
+		const lang = detectLanguageFromExt(ext);
+		const category = getCategoryFromExt(ext);
+		return { filename, language: lang, category, content, kind: "extracted" };
+	}
+
+	// Check Voice transcript
+	if (text.startsWith("Voice transcript")) {
+		const match = text.match(/^Voice transcript\s*(?:\(([^)]+)\))?:\s*([\s\S]*)$/i);
+		const filename = match?.[1] || "voice.wav";
+		const content = (match?.[2] || text).trim();
+		return { filename, category: "Voice Recording", content, kind: "voice" };
+	}
+
+	// Check Attached zip
+	if (text.startsWith("Attached zip:")) {
+		const match = text.match(/^Attached zip:\s*([^\n]+)\n\n([\s\S]*)$/i);
+		const filename = match?.[1]?.trim() || "archive.zip";
+		const content = (match?.[2] || "").trim();
+		return { filename, category: "Zip Archive", content, kind: "zip" };
+	}
+
+	// Generic attached text fallback
+	if (text.startsWith("Attached file:") || text.startsWith("Attached image:")) {
+		const lines = text.split("\n");
+		const filename = lines[0].replace(/^(?:Attached file|Attached image):\s*/i, "").trim() || "attachment";
+		const content = lines.slice(1).join("\n").trim();
+		return { filename, category: "Attachment", content, kind: "raw" };
+	}
+
+	return null;
+}
+
+function formatUnifiedMultiFileContent(
+	userQuery: string,
+	files: ExtractedFileInfo[],
+	images: { filename?: string }[]
+): string {
+	const sections: string[] = [];
+	const totalItems = files.length + images.length;
+
+	// 1. User Instruction
+	const trimmedQuery = userQuery.trim();
+	if (trimmedQuery) {
+		sections.push(trimmedQuery);
+	} else if (totalItems > 1) {
+		sections.push(
+			"Please thoroughly review and analyze all the attached files below. Provide a clear summary of each file, compare or cross-reference their key details, and highlight any notable patterns, findings, or discrepancies."
+		);
+	} else if (totalItems === 1) {
+		sections.push(
+			"Please thoroughly review and analyze the attached file below. Provide a comprehensive summary, explain its key points, and highlight any significant findings or insights."
+		);
+	}
+
+	// 2. Multi-item Manifest
+	if (totalItems > 1 || (totalItems === 1 && files.length > 0)) {
+		const manifestLines: string[] = [];
+		manifestLines.push(`[ATTACHED ITEMS OVERVIEW - ${totalItems} item(s) provided for analysis]`);
+		let idx = 1;
+		for (const f of files) {
+			manifestLines.push(`• Item ${idx}: "${f.filename}" (${f.category})`);
+			idx++;
+		}
+		for (const img of images) {
+			manifestLines.push(`• Item ${idx}: "${img.filename || "Image"}" (Image - visual content attached below)`);
+			idx++;
+		}
+		sections.push(manifestLines.join("\n"));
+	}
+
+	// 3. Document / Code Content Blocks
+	let fileIdx = 1;
+	for (const f of files) {
+		const fence = f.language ? "```" + f.language + "\n" : "";
+		const closeFence = f.language ? "\n```" : "";
+		sections.push(
+`================================================================================
+<<< FILE ${fileIdx} OF ${files.length}: "${f.filename}" (${f.category}) >>>
+================================================================================
+${fence}${f.content}${closeFence}
+================================================================================
+<<< END OF FILE ${fileIdx}: "${f.filename}" >>>
+================================================================================`
+		);
+		fileIdx++;
+	}
+
+	// 4. Image Visual Reference
+	if (images.length > 0) {
+		const imgLines: string[] = [];
+		imgLines.push(`[ATTACHED IMAGES FOR VISUAL ANALYSIS]`);
+		imgLines.push(`The following ${images.length} visual image(s) are attached in order:`);
+		images.forEach((img, i) => {
+			imgLines.push(`  - Image ${i + 1}: "${img.filename || `Image ${i + 1}`}"`);
+		});
+		imgLines.push(`Please analyze these images in combination with the prompt and any text files above.`);
+		sections.push(imgLines.join("\n"));
+	}
+
+	return sections.join("\n\n");
+}
+
 export class Message {
 	readonly id: string;
 	readonly index: number;
@@ -459,19 +655,77 @@ export class Message {
 				}
 
 				if (Array.isArray(rawContent)) {
-					const cleanedParts = rawContent.map((part) => {
-						if (part.type === "image_url" && part.image_url) {
-							return {
+					const userTextParts: string[] = [];
+					const extractedFiles: ExtractedFileInfo[] = [];
+					const cleanedImageParts: MessageContent[] = [];
+					const imageInfos: { filename?: string }[] = [];
+					const otherParts: MessageContent[] = [];
+
+					for (const part of rawContent) {
+						if (!part) continue;
+						if (part.type === "text") {
+							if (isEmbeddedAttachmentText(part)) {
+								const parsed = parseAttachmentPart(part);
+								if (parsed) {
+									extractedFiles.push(parsed);
+								} else if (part.text?.trim()) {
+									userTextParts.push(part.text.trim());
+								}
+							} else if (part.text?.trim()) {
+								userTextParts.push(part.text.trim());
+							}
+						} else if (part.type === "image_url" && part.image_url) {
+							const filename = part.image_url.filename || "image";
+							imageInfos.push({ filename });
+							cleanedImageParts.push({
 								type: "image_url" as const,
 								image_url: {
 									url: part.image_url.url,
 									detail: part.image_url.detail || "auto",
 								},
-							};
+							});
+						} else {
+							otherParts.push(part);
 						}
-						return part;
-					});
-					const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: cleanedParts as any };
+					}
+
+					const userQuery = userTextParts.join("\n\n");
+
+					// If attachments are present (files or images)
+					if (extractedFiles.length > 0 || imageInfos.length > 0) {
+						const formattedUnifiedText = formatUnifiedMultiFileContent(userQuery, extractedFiles, imageInfos);
+						if (cleanedImageParts.length === 0 && otherParts.length === 0) {
+							// Text-only with file extractions: return single clean string for maximum model accuracy
+							const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: formattedUnifiedText };
+							if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
+							if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;
+							return msg;
+						} else {
+							// Multimodal (images or audio): 1 unified text block + image blocks
+							const finalParts: MessageContent[] = [
+								{ type: "text", text: formattedUnifiedText },
+								...cleanedImageParts,
+								...otherParts,
+							];
+							const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: finalParts as any };
+							if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
+							if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;
+							return msg;
+						}
+					}
+
+					// No attachments: ordinary multi-part text or empty
+					if (cleanedImageParts.length === 0 && otherParts.length === 0) {
+						const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: userQuery || "" };
+						if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
+						if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;
+						return msg;
+					}
+
+					const fallbackParts: MessageContent[] = [];
+					if (userQuery) fallbackParts.push({ type: "text", text: userQuery });
+					fallbackParts.push(...cleanedImageParts, ...otherParts);
+					const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: fallbackParts as any };
 					if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
 					if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;
 					return msg;

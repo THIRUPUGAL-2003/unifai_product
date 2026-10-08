@@ -1961,9 +1961,16 @@ func convertGatewayMessagesToGemini(messages []schemas.ChatMessage, allowedImage
 			} else if message.Content.ContentBlocks != nil {
 				for _, block := range message.Content.ContentBlocks {
 					if block.Text != nil {
-						parts = append(parts, &Part{
-							Text: *block.Text,
-						})
+						textVal := strings.TrimSpace(*block.Text)
+						if textVal != "" {
+							if len(parts) > 0 && parts[len(parts)-1].Text != "" {
+								parts[len(parts)-1].Text += "\n\n" + *block.Text
+							} else {
+								parts = append(parts, &Part{
+									Text: *block.Text,
+								})
+							}
+						}
 					} else if block.File != nil {
 						// Handle file blocks - use FileURL if available (uploaded file)
 						if block.File.FileURL != nil && *block.File.FileURL != "" {

@@ -753,11 +753,16 @@ func ToAnthropicChatRequest(ctx *schemas.GatewayContext, gatewayReq *schemas.Gat
 				} else if msg.Content.ContentBlocks != nil {
 					for _, block := range msg.Content.ContentBlocks {
 						if block.Text != nil && *block.Text != "" {
-							content = append(content, AnthropicContentBlock{
-								Type:         AnthropicContentBlockTypeText,
-								Text:         block.Text,
-								CacheControl: block.CacheControl,
-							})
+							if len(content) > 0 && content[len(content)-1].Type == AnthropicContentBlockTypeText && content[len(content)-1].Text != nil {
+								merged := *content[len(content)-1].Text + "\n\n" + *block.Text
+								content[len(content)-1].Text = &merged
+							} else {
+								content = append(content, AnthropicContentBlock{
+									Type:         AnthropicContentBlockTypeText,
+									Text:         block.Text,
+									CacheControl: block.CacheControl,
+								})
+							}
 						} else if block.ImageURLStruct != nil {
 							content = append(content, ConvertToAnthropicImageBlock(block))
 						} else if block.File != nil {
@@ -799,6 +804,12 @@ func ToAnthropicChatRequest(ctx *schemas.GatewayContext, gatewayReq *schemas.Gat
 			} else if len(content) > 0 {
 				// Multiple content blocks
 				anthropicMsg.Content = AnthropicContent{ContentBlocks: content}
+			} else {
+				// Fallback if content was completely empty to prevent Anthropic 400 rejection
+				fallback := "Please continue."
+				anthropicMsg.Content = AnthropicContent{ContentBlocks: []AnthropicContentBlock{
+					{Type: AnthropicContentBlockTypeText, Text: &fallback},
+				}}
 			}
 
 			anthropicMessages = append(anthropicMessages, anthropicMsg)

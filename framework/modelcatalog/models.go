@@ -255,18 +255,8 @@ func (mc *ModelCatalog) GetProvidersForModel(model string) []schemas.ModelProvid
 //   - explicit allowedModels: direct or provider-prefixed match against the
 //     provider's catalog.
 func (mc *ModelCatalog) IsModelAllowedForProvider(provider schemas.ModelProvider, model string, providerConfig *configstore.ProviderConfig, allowedModels schemas.WhiteList) bool {
-	isCustomProvider := false
-	hasListModelsEndpointDisabled := false
-	if providerConfig != nil && providerConfig.CustomProviderConfig != nil {
-		isCustomProvider = true
-		hasListModelsEndpointDisabled = !providerConfig.CustomProviderConfig.IsOperationAllowed(schemas.ListModelsRequest)
-	}
-
 	if allowedModels.IsUnrestricted() {
-		if isCustomProvider && hasListModelsEndpointDisabled {
-			return true
-		}
-		return slices.Contains(mc.GetProvidersForModel(model), provider)
+		return true
 	}
 	if allowedModels.IsEmpty() {
 		return false

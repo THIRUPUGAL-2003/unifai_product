@@ -35,10 +35,38 @@ func ConvertOpenAIMessagesToGatewayMessages(messages []OpenAIMessage) []schemas.
 func ConvertGatewayMessagesToOpenAIMessages(messages []schemas.ChatMessage) []OpenAIMessage {
 	openaiMessages := make([]OpenAIMessage, len(messages))
 	for i, message := range messages {
+		msgContent := message.Content
+		if msgContent != nil && len(msgContent.ContentBlocks) > 0 {
+			hasNonText := false
+			var textParts []string
+			var filteredBlocks []schemas.ChatContentBlock
+			for _, block := range msgContent.ContentBlocks {
+				if block.Type == schemas.ChatContentBlockTypeText {
+					if block.Text != nil && strings.TrimSpace(*block.Text) != "" {
+						textParts = append(textParts, *block.Text)
+						filteredBlocks = append(filteredBlocks, block)
+					}
+				} else {
+					hasNonText = true
+					filteredBlocks = append(filteredBlocks, block)
+				}
+			}
+			if !hasNonText && len(textParts) > 0 {
+				combined := strings.Join(textParts, "\n\n")
+				msgContent = &schemas.ChatMessageContent{
+					ContentStr: &combined,
+				}
+			} else if len(filteredBlocks) > 0 {
+				msgContent = &schemas.ChatMessageContent{
+					ContentBlocks: filteredBlocks,
+				}
+			}
+		}
+
 		openaiMessages[i] = OpenAIMessage{
 			Name:            message.Name,
 			Role:            message.Role,
-			Content:         message.Content,
+			Content:         msgContent,
 			ChatToolMessage: message.ChatToolMessage,
 		}
 		// Strip provider reasoning signatures (e.g. Gemini thoughtSignatures embedded in
