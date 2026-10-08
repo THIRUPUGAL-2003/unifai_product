@@ -1,5 +1,5 @@
 Gateway AI Domain Coverage Report
-Generated: 2026-10-08 01:53:08.180976
+Generated: 2026-10-08 21:05:07.325661
 ==========================================================================================
 
 #    Domain                           Platform                    Dom  Prompt  Upload  Status

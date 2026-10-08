@@ -52,19 +52,16 @@ func ensureProxyBundleEncrypted(proxyDir string) error {
 		}
 		return fmt.Errorf("encrypt_proxy_bundle.py not found and no encrypted bundle exists")
 	}
-	pythonBin, err := exec.LookPath("python")
-	if err != nil {
-		pythonBin, err = exec.LookPath("python3")
-	}
-	if err != nil {
+	pythonBin := findGuardPython()
+	if pythonBin == "" {
 		enc := filepath.Join(proxyDir, guardProxyPartsDir, "gateway_proxy_parts.enc")
 		if info, statErr := os.Stat(enc); statErr == nil && !info.IsDir() {
 			return nil
 		}
-		return fmt.Errorf("python is required to encrypt the proxy bundle: %w", err)
+		return fmt.Errorf("python is required to encrypt the proxy bundle")
 	}
 	cmd := exec.Command(pythonBin, script)
-	cmd.Dir = "."
+	cmd.Dir = filepath.Dir(filepath.Dir(script))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("encrypt proxy bundle: %w: %s", err, strings.TrimSpace(string(out)))

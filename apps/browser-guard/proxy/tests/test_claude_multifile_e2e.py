@@ -356,13 +356,17 @@ class TestClaudeMultiFileE2E(unittest.TestCase):
             path="/api/organizations/org-1/chat_conversations/conv-1/completion",
         )
 
+        time.sleep(0.15)
         self.assertFalse(should_block)
         self.assertEqual(len(logged_events), 2)
-        labels = [ev.get("file_name") for ev in logged_events]
+        prompts = [ev.get("prompt") or "" for ev in logged_events]
+        labels = [ev.get("file_name") or "" for ev in logged_events]
         for lbl in labels:
             self.assertNotIn("attachment", lbl.lower())
-        self.assertTrue(any("Document" in lbl for lbl in labels))
-        self.assertTrue(any("Image" in lbl for lbl in labels))
+        self.assertTrue(any("Document" in p for p in prompts))
+        self.assertTrue(any("Image" in p for p in prompts))
+        self.assertTrue(any("document" in lbl.lower() for lbl in labels))
+        self.assertTrue(any("image" in lbl.lower() for lbl in labels))
 
 
 if __name__ == "__main__":
