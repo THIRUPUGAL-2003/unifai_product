@@ -1,6 +1,7 @@
 import { ColumnConfigDropdown, type ColumnConfigEntry } from "@/components/table";
 import { Button } from "@/components/ui/button";
 import { Command, CommandItem, CommandList } from "@/components/ui/command";
+import { LogsAutoDeleteControl } from "@/components/logsAutoDeleteControl";
 import { DateTimePickerWithRange } from "@/components/ui/datePickerWithRange";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -148,6 +149,15 @@ export function LogsHeaderView({
 				{polling ? <Radio className="h-4 w-4 animate-pulse" /> : <Radio className="h-4 w-4" />}
 				Live
 			</Button>
+			<LogsAutoDeleteControl
+				testIdPrefix="llm-logs"
+				compact
+				onRetentionChange={() => {
+					void fetchLogs();
+					void fetchStats();
+					void fetchHistogram();
+				}}
+			/>
 			<div className="border-input flex h-7.5 flex-1 items-center gap-2 rounded-sm border">
 				<Search className="mr-0.5 ml-2 size-4" />
 				<Input

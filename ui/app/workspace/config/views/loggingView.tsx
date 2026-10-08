@@ -42,9 +42,8 @@ export default function LoggingView() {
 
 	const handleConfigChange = useCallback((field: keyof CoreConfig, value: boolean | number | string[]) => {
 		setLocalConfig((prev) => ({ ...prev, [field]: value }));
-		// enable_logging: logging plugin is registered/skipped at startup.
-		// log_retention_days: cleaner RetentionDays is loaded once at process start.
-		if (field === "enable_logging" || field === "log_retention_days") {
+		// enable_logging: logging plugin is registered/skipped at startup if store unconfigured.
+		if (field === "enable_logging") {
 			setNeedsRestart(true);
 		}
 	}, []);
@@ -61,8 +60,8 @@ export default function LoggingView() {
 		}
 
 		// Validate log retention days
-		if (localConfig.log_retention_days < 1) {
-			toast.error("Log retention days must be at least 1 day");
+		if (localConfig.log_retention_days < 0) {
+			toast.error("Log retention days cannot be negative");
 			return;
 		}
 
@@ -196,18 +195,18 @@ export default function LoggingView() {
 								Log Retention Days
 							</Label>
 							<p className="text-muted-foreground text-sm">
-								Number of days to retain logs in the database. Minimum is 1 day. Older logs will be automatically deleted.
-								Changing this requires a gateway restart to apply.
+								Number of days to retain logs in the database. Set to 0 to disable auto-deletion and retain indefinitely.
+								Older logs are automatically pruned in the background without needing a restart.
 							</p>
 						</div>
 						<Input
 							id="log-retention-days"
 							type="number"
-							min="1"
+							min="0"
 							value={localConfig.log_retention_days}
 							onChange={(e) => {
-								const value = parseInt(e.target.value) || 1;
-								handleConfigChange("log_retention_days", Math.max(1, value));
+								const value = parseInt(e.target.value);
+								handleConfigChange("log_retention_days", isNaN(value) ? 0 : Math.max(0, value));
 							}}
 							disabled={!hasSettingsUpdateAccess}
 							className="w-24"

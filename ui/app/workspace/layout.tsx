@@ -1,5 +1,7 @@
 import FullPageLoader from "@/components/fullPageLoader";
 import { WorkspaceErrorBoundary } from "@/components/workspaceErrorBoundary";
+import { isSectionFlagEnabled, sectionKeyForWorkspacePath } from "@/lib/constants/sectionFlags";
+import { useListFeatureFlagsQuery } from "@/lib/store/apis/featureFlagsApi";
 import { useIsAuthEnabledQuery } from "@/lib/store";
 import {
 	fetchSessionAuth,
@@ -31,13 +33,33 @@ function NoSectionsAssigned() {
 }
 
 // Must render inside ClientLayout: useIsAuthEnabledQuery needs the ReduxProvider it mounts.
+function SectionFlagOff({ name }: { name: string }) {
+	return (
+		<div className="flex h-full min-h-[60vh] items-center justify-center p-6">
+			<div className="border-border bg-card max-w-md space-y-3 rounded-lg border p-6 text-center">
+				<ShieldOff className="text-muted-foreground mx-auto h-8 w-8" />
+				<h2 className="text-foreground text-lg font-semibold">{name} is off</h2>
+				<p className="text-muted-foreground text-sm">
+					An admin turned this section off under Settings → Feature Flags. Turn the flag back on to use it.
+				</p>
+			</div>
+		</div>
+	);
+}
+
 function WorkspaceOutlet() {
 	const { data: authStatus } = useIsAuthEnabledQuery();
+	const { data: featureFlags } = useListFeatureFlagsQuery();
 	const pathname = useLocation({ select: (l) => l.pathname });
 	const blocked = hasNoWorkspaceSections(authStatus) && !isPublicWorkspacePath(pathname);
-	return blocked ? (
-		<NoSectionsAssigned />
-	) : (
+	const sectionKey = sectionKeyForWorkspacePath(pathname);
+	const sectionOff = !!sectionKey && !isSectionFlagEnabled(featureFlags?.flags, sectionKey);
+	if (blocked) return <NoSectionsAssigned />;
+	if (sectionOff) {
+		const label = sectionKey.replace(/-/g, " ");
+		return <SectionFlagOff name={label.charAt(0).toUpperCase() + label.slice(1)} />;
+	}
+	return (
 		<WorkspaceErrorBoundary>
 			<Outlet />
 		</WorkspaceErrorBoundary>

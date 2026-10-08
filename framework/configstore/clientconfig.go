@@ -77,7 +77,7 @@ type ClientConfig struct {
 	AllowPerRequestRawOverride            bool                             `json:"allow_per_request_raw_override"`             // Allow per-request override of raw request/response visibility via x-uf-send-back-raw-request and x-uf-send-back-raw-response headers
 	AllowDirectKeys                       bool                             `json:"allow_direct_keys"`                          // Allow callers to bypass the registered key pool via x-uf-direct-key: true header
 	DisableDBPingsInHealth                bool                             `json:"disable_db_pings_in_health"`
-	LogRetentionDays                      int                              `json:"log_retention_days" validate:"min=1"`  // Number of days to retain logs (minimum 1 day)
+	LogRetentionDays                      int                              `json:"log_retention_days" validate:"min=0"`  // Number of days to retain logs (0 = disabled / keep indefinitely)
 	EnforceAuthOnInference                bool                             `json:"enforce_auth_on_inference"`            // Require auth (VK, API key, or user token) on inference endpoints
 	EnforceGovernanceHeader               bool                             `json:"enforce_governance_header,omitempty"`  // Deprecated: use EnforceAuthOnInference
 	EnforceSCIMAuth                       bool                             `json:"enforce_scim_auth,omitempty"`          // Deprecated: use EnforceAuthOnInference

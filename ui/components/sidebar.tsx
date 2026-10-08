@@ -90,6 +90,8 @@ import {
 	isSidebarItemGranted,
 	type WorkspaceSectionKey,
 } from "@/lib/constants/workspaceSections";
+import { isSectionFlagEnabled } from "@/lib/constants/sectionFlags";
+import { useListFeatureFlagsQuery } from "@/lib/store/apis/featureFlagsApi";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import type { UserInfo } from "@enterprise/lib/store/utils/tokenManager";
 import { getUserInfo } from "@enterprise/lib/store/utils/tokenManager";
@@ -551,6 +553,7 @@ export default function AppSidebar() {
 		() => getScopedWorkspaceSections(authStatus),
 		[authStatus?.role, authStatus?.allowed_sections],
 	);
+	const { data: featureFlags } = useListFeatureFlagsQuery();
 	const pathname = useLocation({ select: (l) => l.pathname });
 	const search = useLocation({ select: (l) => l.searchStr ?? "" });
 	const tsNavigate = useNavigate();
@@ -1087,29 +1090,37 @@ export default function AppSidebar() {
 				],
 			},
 		];
+		const applySectionFlags = (list: typeof allItems) =>
+			list.filter((item) => {
+				const sectionKey = SECTION_KEY_BY_TITLE[item.title];
+				if (!sectionKey) return true;
+				return isSectionFlagEnabled(featureFlags?.flags, sectionKey);
+			});
 		// The built-in "user" role without custom or team sections is scoped to Prompt Repository.
 		if (authStatus?.role === "user" && (!scopedSidebarSections || scopedSidebarSections.size === 0)) {
-			return allItems.filter((item) => item.title === "Prompt Repository");
+			return applySectionFlags(allItems.filter((item) => item.title === "Prompt Repository"));
 		}
 		if (scopedSidebarSections) {
-			return allItems
-				.map((item) => {
-					const sectionKey = SECTION_KEY_BY_TITLE[item.title] as WorkspaceSectionKey | undefined;
-					if (!sectionKey || !isSectionGranted(sectionKey, scopedSidebarSections)) {
-						return null;
-					}
-					if (item.subItems?.length) {
-						const visibleSubItems = item.subItems.filter((sub) =>
-							isSidebarItemGranted(sectionKey, getSidebarItemHref(sub), scopedSidebarSections),
-						);
-						if (visibleSubItems.length === 0) return null;
-						return { ...item, subItems: visibleSubItems };
-					}
-					return item;
-				})
-				.filter(Boolean) as typeof allItems;
+			return applySectionFlags(
+				allItems
+					.map((item) => {
+						const sectionKey = SECTION_KEY_BY_TITLE[item.title] as WorkspaceSectionKey | undefined;
+						if (!sectionKey || !isSectionGranted(sectionKey, scopedSidebarSections)) {
+							return null;
+						}
+						if (item.subItems?.length) {
+							const visibleSubItems = item.subItems.filter((sub) =>
+								isSidebarItemGranted(sectionKey, getSidebarItemHref(sub), scopedSidebarSections),
+							);
+							if (visibleSubItems.length === 0) return null;
+							return { ...item, subItems: visibleSubItems };
+						}
+						return item;
+					})
+					.filter(Boolean) as typeof allItems,
+			);
 		}
-		return allItems;
+		return applySectionFlags(allItems);
 	}, [
 		hasLogsAccess,
 		hasBrowserAiAccess,
@@ -1145,6 +1156,7 @@ export default function AppSidebar() {
 		isDbConnected,
 		authStatus?.role,
 		scopedSidebarSections,
+		featureFlags?.flags,
 	]);
 
 	const accessibleItems: SidebarItem[] = useMemo(() => {

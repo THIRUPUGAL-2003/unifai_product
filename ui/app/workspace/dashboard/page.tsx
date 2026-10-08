@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { type ChartType } from "./components/charts/chartTypeToggle";
 import { ModelFilterSelect } from "./components/charts/modelFilterSelect";
 import { ExportPopover } from "./components/exportPopover";
+import { LogsAutoDeleteControl } from "@/components/logsAutoDeleteControl";
 import { type DimensionRankingsTabViewHandle, DimensionRankingsTabView } from "./components/tabViews/dimensionRankingsTabView";
 import { type MCPTabViewHandle, MCPTabView } from "./components/tabViews/mcpTabView";
 import { type ModelRankingsTabViewHandle, ModelRankingsTabView } from "./components/tabViews/modelRankingsTabView";
@@ -518,6 +519,12 @@ export default function DashboardPage() {
 						<h1 className="text-lg font-semibold">Dashboard</h1>
 					</div>
 					<div className="flex items-center gap-2">
+						<LogsAutoDeleteControl
+							testIdPrefix="dashboard"
+							onRetentionChange={() => {
+								void handleRefresh();
+							}}
+						/>
 						{/* Refresh button with spinner */}
 						<Button
 							variant="outline"

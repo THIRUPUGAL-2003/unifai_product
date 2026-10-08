@@ -91,6 +91,7 @@ type Gateway struct {
 	mcpCredStore        schemas.MCPCredentialStore          // Per-call credential resolver for MCP tool execution (wraps oauth2Provider for OAuth-flavored auth types)
 	mcpInitOnce         sync.Once                           // Ensures MCP manager is initialized only once
 	dropExcessRequests  atomic.Bool                         // If true, in cases where the queue is full, requests will not wait for the queue to be empty and will be dropped instead.
+	prewarmedPool       int                                 // How many objects were placed in each sync.Pool. Grows when InitialPoolSize is raised.
 	keySelector         schemas.KeySelector                 // Custom key selector function
 	keyPoolFilter       schemas.KeyPoolFilter               // optional hook to veto keys before selection (nil = all eligible)
 	kvStore             schemas.KVStore                     // optional KV store for session stickiness (nil = disabled)
@@ -300,18 +301,7 @@ func Init(ctx context.Context, config schemas.GatewayConfig) (*Gateway, error) {
 	}
 	// Prewarm pools. The MCP request pool is owned by the mcp package now —
 	// see core/mcp/exec.go.
-	for range config.InitialPoolSize {
-		// Create and put new objects directly into pools
-		gateway.channelMessagePool.Put(&ChannelMessage{})
-		gateway.responseChannelPool.Put(make(chan *schemas.GatewayResponse, 1))
-		gateway.errorChannelPool.Put(make(chan schemas.GatewayError, 1))
-		gateway.responseStreamPool.Put(make(chan chan *schemas.GatewayStreamChunk, 1))
-		gateway.pluginPipelinePool.Put(&PluginPipeline{
-			preHookErrors:  make([]error, 0),
-			postHookErrors: make([]error, 0),
-		})
-		gateway.gatewayRequestPool.Put(&schemas.GatewayRequest{})
-	}
+	gateway.prewarmPools(config.InitialPoolSize)
 
 	providerKeys, err := gateway.account.GetConfiguredProviders()
 	if err != nil {
@@ -394,7 +384,28 @@ func (gateway *Gateway) getTracer() schemas.Tracer {
 // We will keep on adding other aspects as required
 func (gateway *Gateway) ReloadConfig(config schemas.GatewayConfig) error {
 	gateway.dropExcessRequests.Store(config.DropExcessRequests)
+	if config.InitialPoolSize > gateway.prewarmedPool {
+		gateway.prewarmPools(config.InitialPoolSize - gateway.prewarmedPool)
+	}
 	return nil
+}
+
+func (gateway *Gateway) prewarmPools(n int) {
+	if n <= 0 {
+		return
+	}
+	for range n {
+		gateway.channelMessagePool.Put(&ChannelMessage{})
+		gateway.responseChannelPool.Put(make(chan *schemas.GatewayResponse, 1))
+		gateway.errorChannelPool.Put(make(chan schemas.GatewayError, 1))
+		gateway.responseStreamPool.Put(make(chan chan *schemas.GatewayStreamChunk, 1))
+		gateway.pluginPipelinePool.Put(&PluginPipeline{
+			preHookErrors:  make([]error, 0),
+			postHookErrors: make([]error, 0),
+		})
+		gateway.gatewayRequestPool.Put(&schemas.GatewayRequest{})
+	}
+	gateway.prewarmedPool += n
 }
 
 // PUBLIC API METHODS

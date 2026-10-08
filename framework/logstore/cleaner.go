@@ -107,11 +107,28 @@ func (c *LogsCleaner) StopCleanupRoutine() {
 	c.stopCleanup = nil
 }
 
+// UpdateRetentionDays updates the retention period dynamically without requiring a restart
+func (c *LogsCleaner) UpdateRetentionDays(days int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.config.RetentionDays = days
+	c.logger.Info("updated log cleaner retention to %d days", days)
+}
+
+// TriggerCleanup runs an immediate cleanup pass
+func (c *LogsCleaner) TriggerCleanup(ctx context.Context) {
+	c.cleanupOldLogs(ctx)
+}
+
 // cleanupOldLogs deletes logs older than the retention period in batches
 func (c *LogsCleaner) cleanupOldLogs(ctx context.Context) {
+	c.mu.Lock()
 	retentionDays := c.config.RetentionDays
-	if retentionDays < 1 {
-		retentionDays = defaultRetentionDays
+	c.mu.Unlock()
+
+	if retentionDays <= 0 {
+		c.logger.Debug("log auto-delete disabled (retention: %d days)", retentionDays)
+		return
 	}
 
 	// Calculate cutoff time

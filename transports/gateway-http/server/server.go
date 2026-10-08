@@ -1020,7 +1020,50 @@ func (s *GatewayHTTPServer) ReloadClientConfigFromConfigStore(ctx context.Contex
 			logger.Warn("failed to sync MCP tool manager config during client config reload: %v", err)
 		}
 	}
+	if s.Server != nil && s.Config.ClientConfig.MaxRequestBodySizeMB > 0 {
+		s.Server.MaxRequestBodySize = s.Config.ClientConfig.MaxRequestBodySizeMB * 1024 * 1024
+	}
+	s.syncLoggingPlugin(ctx)
+	if s.LogsCleaner != nil {
+		s.LogsCleaner.UpdateRetentionDays(s.Config.ClientConfig.LogRetentionDays)
+		if s.Config.ClientConfig.LogRetentionDays > 0 {
+			go s.LogsCleaner.TriggerCleanup(context.Background())
+		}
+	}
 	return nil
+}
+
+// syncLoggingPlugin turns the logging plugin on or off from the saved client config
+// so a Logs Settings save applies on the next request.
+func (s *GatewayHTTPServer) syncLoggingPlugin(ctx context.Context) {
+	if s.Config == nil || s.Client == nil {
+		return
+	}
+	want := s.Config.LogsStore != nil && (s.Config.ClientConfig.EnableLogging == nil || *s.Config.ClientConfig.EnableLogging)
+	plugin, err := s.Config.FindPluginByName(logging.PluginName)
+	loaded := err == nil && plugin != nil
+	if want && !loaded {
+		cfg := &logging.Config{
+			DisableContentLogging: &s.Config.ClientConfig.DisableContentLogging,
+			LoggingHeaders:        &s.Config.ClientConfig.LoggingHeaders,
+		}
+		if s.Config.LogsStoreConfig != nil {
+			cfg.Writer = s.Config.LogsStoreConfig.Writer
+		}
+		if err := s.registerPluginWithStatus(ctx, logging.PluginName, nil, cfg, false); err != nil {
+			logger.Warn("failed to enable logging plugin after config save: %v", err)
+		}
+		return
+	}
+	if !want && loaded {
+		if err := s.Config.UnregisterPlugin(logging.PluginName); err != nil {
+			logger.Warn("failed to disable logging plugin after config save: %v", err)
+			return
+		}
+		if err := s.Client.RemovePlugin(logging.PluginName, InferPluginTypes(plugin)); err != nil {
+			logger.Warn("failed to detach logging plugin after config save: %v", err)
+		}
+	}
 }
 
 // UpdateAuthConfig updates auth config in the config store and updates the AuthMiddleware's in-memory config

@@ -515,9 +515,6 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 
 	// Only update InitialPoolSize if explicitly provided (> 0) to avoid clearing stored value
 	if payload.ClientConfig.InitialPoolSize > 0 {
-		if payload.ClientConfig.InitialPoolSize != currentConfig.InitialPoolSize {
-			restartReasons = append(restartReasons, "Initial pool size")
-		}
 		updatedConfig.InitialPoolSize = payload.ClientConfig.InitialPoolSize
 	}
 
@@ -540,9 +537,6 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 
 	updatedConfig.EnforceAuthOnInference = payload.ClientConfig.EnforceAuthOnInference
 	// Sync deprecated columns to match new field so they stay consistent in the DB
-	updatedConfig.EnforceGovernanceHeader = payload.ClientConfig.EnforceAuthOnInference
-	updatedConfig.EnforceSCIMAuth = payload.ClientConfig.EnforceAuthOnInference
-
 	// Only update MaxRequestBodySizeMB if explicitly provided (> 0) to avoid clearing stored value
 	if payload.ClientConfig.MaxRequestBodySizeMB > 0 {
 		if payload.ClientConfig.MaxRequestBodySizeMB != currentConfig.MaxRequestBodySizeMB {
@@ -659,10 +653,10 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	// Validate LogRetentionDays
-	if payload.ClientConfig.LogRetentionDays < 1 {
-		logger.Warn("log_retention_days must be at least 1")
-		SendError(ctx, fasthttp.StatusBadRequest, "log_retention_days must be at least 1")
+	// Validate LogRetentionDays (0 = disabled / indefinite, >0 = retention in days)
+	if payload.ClientConfig.LogRetentionDays < 0 {
+		logger.Warn("log_retention_days cannot be negative")
+		SendError(ctx, fasthttp.StatusBadRequest, "log_retention_days cannot be negative")
 		return
 	}
 	updatedConfig.LogRetentionDays = payload.ClientConfig.LogRetentionDays
