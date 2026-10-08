@@ -161,19 +161,6 @@ export default function SCIMView() {
 							<option value="keycloak">Keycloak</option>
 						</select>
 					</div>
-					<div className="space-y-1">
-						<Label>Default role for provisioned users</Label>
-						<select
-							value={String(config.config?.defaultRole || config.config?.default_role || "user")}
-							onChange={(e) => setField("defaultRole", e.target.value)}
-							className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
-						>
-							<option value="user">user</option>
-							<option value="sub_admin">sub_admin</option>
-							<option value="admin">admin</option>
-						</select>
-						<p className="text-muted-foreground text-xs">Used when the IdP does not send a recognised role mapping.</p>
-					</div>
 					{config.provider === "okta" && (
 						<>
 							<p className="text-muted-foreground text-xs">Optional notes for your Okta app (not used for inbound SCIM auth).</p>

@@ -29,27 +29,8 @@ func (h *WorkspaceHandler) scimWorkspaceStore() configstore.WorkspaceStore {
 }
 
 func (h *WorkspaceHandler) scimDefaultRole(ctx *fasthttp.RequestCtx) string {
-	store := h.scimWorkspaceStore()
-	if store == nil {
-		return ""
-	}
-	row, err := store.GetWorkspaceSetting(ctx, configstore.WorkspaceSettingSCIM)
-	if err != nil || row == nil || strings.TrimSpace(row.Data) == "" {
-		return ""
-	}
-	var cfg scimConfigPayload
-	if err := json.Unmarshal([]byte(row.Data), &cfg); err != nil || cfg.Config == nil {
-		return ""
-	}
-	for _, key := range []string{"defaultRole", "default_role"} {
-		if raw, ok := cfg.Config[key]; ok {
-			switch v := raw.(type) {
-			case string:
-				return strings.TrimSpace(v)
-			}
-		}
-	}
-	return ""
+	// Provisioned people are always workspace users. Role is not chosen on the SCIM screen.
+	return "user"
 }
 
 func (h *WorkspaceHandler) scimDefaultTeam(ctx *fasthttp.RequestCtx) string {
@@ -323,6 +304,65 @@ func scimNormalizeRole(raw string) string {
 	}
 }
 
+// scimFlexBool accepts true/false as a JSON boolean or as "true"/"false".
+// Keycloak sometimes sends active as a string; Entra and Okta send a boolean.
+type scimFlexBool struct {
+	Set   bool
+	Value bool
+}
+
+func (b *scimFlexBool) UnmarshalJSON(data []byte) error {
+	if b == nil {
+		return nil
+	}
+	text := strings.TrimSpace(string(data))
+	if text == "" || text == "null" {
+		return nil
+	}
+	switch strings.ToLower(strings.Trim(text, `"`)) {
+	case "true", "1":
+		b.Set, b.Value = true, true
+	case "false", "0":
+		b.Set, b.Value = true, false
+	default:
+		return fmt.Errorf("invalid boolean %s", text)
+	}
+	return nil
+}
+
+type scimEmailItem struct {
+	Value   string `json:"value"`
+	Primary bool   `json:"primary"`
+}
+
+// scimFlexEmails accepts an email array (Entra, Okta) or one email object (some Keycloak builds).
+type scimFlexEmails []scimEmailItem
+
+func (e *scimFlexEmails) UnmarshalJSON(data []byte) error {
+	text := bytesTrimSpace(data)
+	if len(text) == 0 || string(text) == "null" {
+		return nil
+	}
+	if text[0] == '{' {
+		var one scimEmailItem
+		if err := json.Unmarshal(text, &one); err != nil {
+			return err
+		}
+		*e = scimFlexEmails{one}
+		return nil
+	}
+	var many []scimEmailItem
+	if err := json.Unmarshal(text, &many); err != nil {
+		return err
+	}
+	*e = many
+	return nil
+}
+
+func bytesTrimSpace(data []byte) []byte {
+	return []byte(strings.TrimSpace(string(data)))
+}
+
 func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 	if h.store == nil || h.store.ConfigStore == nil {
 		scimError(ctx, fasthttp.StatusServiceUnavailable, "config store is not available")
@@ -332,12 +372,9 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		UserName    string `json:"userName"`
 		DisplayName string `json:"displayName"`
 		ExternalID  string `json:"externalId"`
-		Emails      []struct {
-			Value   string `json:"value"`
-			Primary bool   `json:"primary"`
-		} `json:"emails"`
-		// Pointer: an omitted "active" means active (RFC 7643 default), not disabled.
-		Active *bool `json:"active"`
+		Emails scimFlexEmails `json:"emails"`
+		// Omitted "active" means active (RFC 7643). A string or boolean both count.
+		Active scimFlexBool `json:"active"`
 		Roles  []struct {
 			Value string `json:"value"`
 		} `json:"roles"`
@@ -398,8 +435,8 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		if externalID != "" {
 			existing.ExternalID = externalID
 		}
-		if body.Active != nil {
-			existing.Status = scimStatusFromActive(*body.Active)
+		if body.Active.Set {
+			existing.Status = scimStatusFromActive(body.Active.Value)
 		}
 		if requestedRole != "" {
 			existing.Role = h.scimValidRole(ctx, requestedRole, existing.Role)
@@ -427,25 +464,29 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 
 	username := h.scimAllocateUsername(ctx, preferredName, rawUsername, email, "")
 	role := h.scimValidRole(ctx, requestedRole, "")
-	// SCIM users sign in through the IdP / password reset; store a random hashed secret so the
-	// column never holds a usable plain-text password.
-	secret, err := encrypt.Hash(uuid.NewString())
+	tempPassword, genErr := generateTemporaryPassword()
+	if genErr != nil {
+		scimError(ctx, fasthttp.StatusInternalServerError, "failed to create user")
+		return
+	}
+	secret, err := encrypt.Hash(tempPassword)
 	if err != nil {
 		scimError(ctx, fasthttp.StatusInternalServerError, "failed to create user")
 		return
 	}
-	active := body.Active == nil || *body.Active
+	active := !body.Active.Set || body.Active.Value
 	now := time.Now().UTC()
 	user := &tables.TableUser{
-		ID:         uuid.NewString(),
-		Username:   username,
-		Email:      email,
-		Password:   secret,
-		Role:       role,
-		Status:     scimStatusFromActive(active),
-		ExternalID: externalID,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		ID:                 uuid.NewString(),
+		Username:           username,
+		Email:              email,
+		Password:           secret,
+		Role:               role,
+		Status:             scimStatusFromActive(active),
+		ExternalID:         externalID,
+		MustChangePassword: true,
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 	if err := h.store.ConfigStore.CreateUser(ctx, user); err != nil {
 		if scimIsUniqueViolation(err) {
@@ -460,7 +501,7 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 	}
 	if user.IsApproved() {
 		h.scimAssignDefaultTeam(ctx, user.ID)
-		trySendProvisionedEmail(h.store.ConfigStore, ctx, user.Username, user.Email)
+		trySendProvisionedEmail(h.store.ConfigStore, ctx, user.Username, user.Email, tempPassword)
 	}
 	ctx.Response.Header.Set("Location", "/scim/v2/Users/"+user.ID)
 	SendSCIMJSONWithStatus(ctx, scimUserResource(user), fasthttp.StatusCreated)
@@ -830,6 +871,12 @@ func applySCIMUserPatch(user *tables.TableUser, patch map[string]any) {
 				user.Email = strings.ToLower(strings.TrimSpace(s))
 			}
 		case "emails":
+			if one, ok := v.(map[string]any); ok {
+				if email, ok := one["value"].(string); ok && strings.TrimSpace(email) != "" {
+					user.Email = strings.ToLower(strings.TrimSpace(email))
+				}
+				break
+			}
 			if emails, ok := v.([]any); ok {
 				for _, item := range emails {
 					if m, ok := item.(map[string]any); ok {
@@ -859,10 +906,7 @@ func applySCIMUserPatch(user *tables.TableUser, patch map[string]any) {
 	}
 }
 
-func scimEmailFromBody(emails []struct {
-	Value   string `json:"value"`
-	Primary bool   `json:"primary"`
-}) string {
+func scimEmailFromBody(emails scimFlexEmails) string {
 	email := ""
 	for _, item := range emails {
 		if item.Value != "" {

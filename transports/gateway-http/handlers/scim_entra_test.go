@@ -607,7 +607,7 @@ func TestKeycloakSCIMFlow(t *testing.T) {
 		return ctx
 	}
 
-	// Keycloak creates user without specifying role -> should get "analyst" (defaultRole)
+	// Keycloak creates user without specifying role -> always "user"
 	{
 		payload := map[string]any{
 			"schemas":    []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
@@ -625,8 +625,8 @@ func TestKeycloakSCIMFlow(t *testing.T) {
 		var userResp map[string]any
 		_ = json.Unmarshal(ctx.Response.Body(), &userResp)
 		roles := userResp["roles"].([]any)
-		if len(roles) == 0 || roles[0].(map[string]any)["value"] != "analyst" {
-			t.Errorf("Expected fallback default role analyst, got %v", userResp["roles"])
+		if len(roles) == 0 || roles[0].(map[string]any)["value"] != "user" {
+			t.Errorf("Expected role user, got %v", userResp["roles"])
 		}
 	}
 }
@@ -1083,8 +1083,8 @@ func TestOktaAdvancedProvisioningAndKeycloakFullFlow(t *testing.T) {
 }
 
 // TestSCIMEmailAndDefaultRoleConfiguration verifies:
-// 1. When defaultRole is set to "sub_admin" in SCIM config, provisioned users without roles get "sub_admin"
-// 2. When defaultRole is set to "admin" or "user", provisioned users receive that exact role
+// 1. Provisioned users without an IdP role are always created as "user"
+// 2. A stored defaultRole is ignored
 // 3. When IdP provides userName as email without an emails array, email is automatically populated
 // 4. When email is patched via SCIM PATCH, user.Email updates correctly
 func TestSCIMEmailAndDefaultRoleConfiguration(t *testing.T) {
@@ -1146,10 +1146,9 @@ func TestSCIMEmailAndDefaultRoleConfiguration(t *testing.T) {
 		_ = json.Unmarshal(ctx.Response.Body(), &resp)
 		subAdminID = resp["id"].(string)
 
-		// Verify role is sub_admin
 		roles := resp["roles"].([]any)
-		if len(roles) == 0 || roles[0].(map[string]any)["value"] != "sub_admin" {
-			t.Fatalf("Expected role sub_admin from defaultRole setting, got %+v", roles)
+		if len(roles) == 0 || roles[0].(map[string]any)["value"] != "user" {
+			t.Fatalf("Expected role user, got %+v", roles)
 		}
 
 		// Verify email was populated from userName
@@ -1160,7 +1159,7 @@ func TestSCIMEmailAndDefaultRoleConfiguration(t *testing.T) {
 
 		// Verify in DB directly
 		dbUser, _ := store.GetUserByID(nil, subAdminID)
-		if dbUser == nil || dbUser.Role != "sub_admin" || dbUser.Email != "manager.dev@enterprise.com" {
+		if dbUser == nil || dbUser.Role != "user" || dbUser.Email != "manager.dev@enterprise.com" {
 			t.Fatalf("Database user state mismatch: role=%v email=%v", dbUser.Role, dbUser.Email)
 		}
 	}
@@ -1205,7 +1204,7 @@ func TestSCIMEmailAndDefaultRoleConfiguration(t *testing.T) {
 		_ = store.UpsertWorkspaceSetting(nil, configstore.WorkspaceSettingSCIM, string(raw))
 	}
 
-	// 5. Provision next user -> should receive "admin"
+	// 5. Provision next user -> still "user" even if a stored defaultRole says admin
 	{
 		payload := map[string]any{
 			"schemas":    []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
@@ -1220,8 +1219,8 @@ func TestSCIMEmailAndDefaultRoleConfiguration(t *testing.T) {
 		var resp map[string]any
 		_ = json.Unmarshal(ctx.Response.Body(), &resp)
 		roles := resp["roles"].([]any)
-		if len(roles) == 0 || roles[0].(map[string]any)["value"] != "admin" {
-			t.Fatalf("Expected role admin, got %+v", roles)
+		if len(roles) == 0 || roles[0].(map[string]any)["value"] != "user" {
+			t.Fatalf("Expected role user, got %+v", roles)
 		}
 	}
 }
@@ -1508,5 +1507,93 @@ func TestSCIMProvisioningChain_UniquenessAndDiscovery(t *testing.T) {
 	}
 	if !strings.HasPrefix(b.Username, "John Smith") {
 		t.Fatalf("second user should keep displayName prefix, got %q", b.Username)
+	}
+}
+
+func TestOktaAndKeycloakUserCreateUpdateDelete(t *testing.T) {
+	store := newSCIMTestStore()
+	handler := &WorkspaceHandler{workspace: store, store: &lib.Config{ConfigStore: store}}
+	token := "idp-sync-token"
+	raw, _ := json.Marshal(scimConfigPayload{Enabled: true, Provider: "okta", BearerToken: token})
+	_ = store.UpsertWorkspaceSetting(nil, configstore.WorkspaceSettingSCIM, string(raw))
+	auth := handler.scimMiddleware()
+	call := func(h fasthttp.RequestHandler, method, uri string, body any) *fasthttp.RequestCtx {
+		ctx := &fasthttp.RequestCtx{}
+		ctx.Request.Header.SetMethod(method)
+		ctx.Request.SetRequestURI(uri)
+		ctx.Request.Header.Set("Authorization", "Bearer "+token)
+		if body != nil {
+			encoded, _ := json.Marshal(body)
+			ctx.Request.SetBody(encoded)
+			ctx.Request.Header.Set("Content-Type", "application/json")
+		}
+		auth(h)(ctx)
+		return ctx
+	}
+
+	okta := call(handler.scimCreateUser, "POST", "/scim/v2/Users", map[string]any{
+		"schemas":    []string{"urn:ietf:params:scim:schemas:core:2.0:User"},
+		"userName":   "okta.user@company.com",
+		"externalId": "okta-1",
+		"active":     true,
+	})
+	if okta.Response.StatusCode() != http.StatusCreated {
+		t.Fatalf("okta create: %d %s", okta.Response.StatusCode(), okta.Response.Body())
+	}
+	var created map[string]any
+	_ = json.Unmarshal(okta.Response.Body(), &created)
+	oktaID, _ := created["id"].(string)
+	oktaUser, _ := store.GetUserByID(nil, oktaID)
+	if oktaUser == nil || oktaUser.Email != "okta.user@company.com" || !oktaUser.MustChangePassword {
+		t.Fatalf("okta user email/password flag = %+v", oktaUser)
+	}
+	patched := call(func(c *fasthttp.RequestCtx) {
+		c.SetUserValue("id", oktaID)
+		handler.scimPatchUser(c)
+	}, "PATCH", "/scim/v2/Users/"+oktaID, map[string]any{
+		"schemas": []string{"urn:ietf:params:scim:api:messages:2.0:PatchOp"},
+		"Operations": []map[string]any{{
+			"op": "replace", "path": "emails", "value": []map[string]any{{"value": "okta.renamed@company.com", "primary": true}},
+		}},
+	})
+	if patched.Response.StatusCode() != http.StatusOK {
+		t.Fatalf("okta patch: %d %s", patched.Response.StatusCode(), patched.Response.Body())
+	}
+	oktaUser, _ = store.GetUserByID(nil, oktaID)
+	if oktaUser.Email != "okta.renamed@company.com" {
+		t.Fatalf("okta email after update = %s", oktaUser.Email)
+	}
+	deleted := call(func(c *fasthttp.RequestCtx) {
+		c.SetUserValue("id", oktaID)
+		handler.scimDeleteUser(c)
+	}, "DELETE", "/scim/v2/Users/"+oktaID, nil)
+	if deleted.Response.StatusCode() != http.StatusNoContent {
+		t.Fatalf("okta delete: %d", deleted.Response.StatusCode())
+	}
+	if still, _ := store.GetUserByID(nil, oktaID); still != nil {
+		t.Fatal("okta user still exists after delete")
+	}
+
+	keycloak := call(handler.scimCreateUser, "POST", "/scim/v2/Users", map[string]any{
+		"userName":   "kc.user",
+		"externalId": "kc-1",
+		"active":     "true",
+		"emails":     map[string]any{"value": "kc.user@company.com", "primary": true},
+	})
+	if keycloak.Response.StatusCode() != http.StatusCreated {
+		t.Fatalf("keycloak create: %d %s", keycloak.Response.StatusCode(), keycloak.Response.Body())
+	}
+	_ = json.Unmarshal(keycloak.Response.Body(), &created)
+	kcID, _ := created["id"].(string)
+	kcUser, _ := store.GetUserByID(nil, kcID)
+	if kcUser == nil || kcUser.Email != "kc.user@company.com" || kcUser.Role != "user" || !kcUser.MustChangePassword {
+		t.Fatalf("keycloak user = %+v", kcUser)
+	}
+	removed := call(func(c *fasthttp.RequestCtx) {
+		c.SetUserValue("id", kcID)
+		handler.scimDeleteUser(c)
+	}, "DELETE", "/scim/v2/Users/"+kcID, nil)
+	if removed.Response.StatusCode() != http.StatusNoContent {
+		t.Fatalf("keycloak delete: %d", removed.Response.StatusCode())
 	}
 }

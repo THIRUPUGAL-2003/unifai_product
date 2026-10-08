@@ -311,25 +311,40 @@ func welcomeAccountEmailBody(username, email, tempPassword string) string {
 	)
 }
 
-func provisionedAccountEmailBody(username, email string) string {
+func publicLoginURL() string {
+	domain := strings.TrimRight(strings.TrimSpace(os.Getenv("SERVER_DOMAIN")), "/")
+	if domain == "" {
+		return ""
+	}
+	return domain + "/login"
+}
+
+func provisionedAccountEmailBody(username, email, tempPassword string) string {
+	loginLine := "Sign in on the login page."
+	if loginURL := publicLoginURL(); loginURL != "" {
+		loginLine = "Sign in: " + loginURL
+	}
 	return fmt.Sprintf(
-		"Hello %s,\n\nYour Gateway account was created by your organization's identity provider.\n\nEmail: %s\nUsername: %s\n\nTo sign in for the first time, open the Gateway login page, choose Forgot password, and set your password with the code we email you.\n",
-		username, email, username,
+		"Hello %s,\n\nYour account has been created.\n\n%s\n\nUsername: %s\nEmail: %s\nTemporary Password: %s\n\nImportant: You will be required to set a new permanent password upon your first sign in.\n",
+		username, loginLine, username, email, tempPassword,
 	)
 }
 
-// trySendProvisionedEmail tells a SCIM-provisioned user how to set their first password
-// (SCIM accounts get a random unusable password). Same notify-on-create switch as admin create.
-func trySendProvisionedEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email string) {
+// trySendProvisionedEmail emails the temporary password and login link.
+// SCIM user creation still succeeds when SMTP is off; the failure is only logged.
+func trySendProvisionedEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email, tempPassword string) {
 	email = strings.TrimSpace(email)
-	if email == "" || store == nil {
+	if email == "" || store == nil || strings.TrimSpace(tempPassword) == "" {
 		return
 	}
 	smtpRow, err := store.GetSMTPConfig(ctx)
-	if err != nil || smtpRow == nil || !smtpRow.Enabled || !smtpRow.NotifyOnUserCreate {
+	if err != nil || smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
+		if logger != nil {
+			logger.Warn("scim welcome email skipped username=%s: SMTP is not enabled", username)
+		}
 		return
 	}
-	if err := sendAuthEmail(store, ctx, email, "Your Gateway account", provisionedAccountEmailBody(username, email)); err != nil {
+	if err := sendAuthEmail(store, ctx, email, "Your account - login details", provisionedAccountEmailBody(username, email, tempPassword)); err != nil && logger != nil {
 		logger.Warn("scim welcome email failed username=%s: %v", username, err)
 	}
 }

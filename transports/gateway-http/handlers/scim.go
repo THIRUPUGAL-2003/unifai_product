@@ -147,27 +147,12 @@ func (h *WorkspaceHandler) updateSCIMConfig(ctx *fasthttp.RequestCtx) {
 		}
 		restoreRedactedKeys(payload.Config, stored.Config)
 	} else {
-		// The bearer token can create admin users over SCIM, so only admins may set secrets.
+		// The bearer token can create users over SCIM, so only admins may set secrets.
 		payload.BearerToken = stored.BearerToken
 		keepStoredSecretKeys(payload.Config, stored.Config)
-		// The default role is granted to every provisioned user without a role, so a
-		// non-admin may only pick roles it could assign by hand.
-		for _, key := range []string{"defaultRole", "default_role"} {
-			requested, _ := payload.Config[key].(string)
-			if strings.TrimSpace(requested) == "" {
-				continue
-			}
-			previous, _ := stored.Config[key].(string)
-			if strings.EqualFold(strings.TrimSpace(requested), strings.TrimSpace(previous)) {
-				continue
-			}
-			r := strings.ToLower(strings.TrimSpace(requested))
-			if r == "admin" || r == "sub_admin" || (h.store != nil && !callerMayManageRole(ctx, h.store.ConfigStore, r)) {
-				SendError(ctx, fasthttp.StatusForbidden, "Only the super admin can set the SCIM default role to "+requested)
-				return
-			}
-		}
 	}
+	delete(payload.Config, "defaultRole")
+	delete(payload.Config, "default_role")
 	ensureSCIMBearerToken(&payload)
 	raw, err := json.Marshal(payload)
 	if err != nil {
