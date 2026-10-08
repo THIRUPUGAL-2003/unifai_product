@@ -21,6 +21,7 @@ func writeFakeProxySource(t *testing.T, root string) {
 	files := map[string]string{
 		filepath.Join(root, guardProxyEntry):             "print('loader')\n",
 		filepath.Join(parts, "MANIFEST.txt"):             "a.py\nb.py\n",
+		filepath.Join(root, guardCodeEnc):                "GATEWAYENC02\ncode\n",
 		filepath.Join(parts, "gateway_proxy_parts.enc"):  "GATEWAYENC02\nfake\n",
 		filepath.Join(parts, "a.py"):                     "A = 1\n",
 		filepath.Join(parts, "b.py"):                     "B = 2\n",
@@ -68,8 +69,8 @@ func TestGuardCodeBundleIsDeterministicAndShipsAgentAndProxyCode(t *testing.T) {
 	if !bytes.Equal(first, second) {
 		t.Fatal("same sources must produce an identical bundle (stable SHA-256)")
 	}
-	if n != 5 {
-		t.Fatalf("expected 5 files (loader + MANIFEST + encrypted bundle + 2 agent modules), got %d", n)
+	if n != 3 {
+		t.Fatalf("expected 3 files (encrypted guard code + MANIFEST + encrypted proxy), got %d", n)
 	}
 	zr, err := zip.NewReader(bytes.NewReader(first), int64(len(first)))
 	if err != nil {
@@ -80,21 +81,20 @@ func TestGuardCodeBundleIsDeterministicAndShipsAgentAndProxyCode(t *testing.T) {
 		got[f.Name] = true
 	}
 	for _, want := range []string{
-		"browser_ai_proxy.py", "gateway_proxy_parts/MANIFEST.txt", "gateway_proxy_parts/gateway_proxy_parts.enc",
-		"agent/gateway_agent.py", "agent/agent_config.py",
+		guardCodeEnc, "gateway_proxy_parts/MANIFEST.txt", "gateway_proxy_parts/gateway_proxy_parts.enc",
 	} {
 		if !got[want] {
 			t.Errorf("bundle missing %s", want)
 		}
 	}
-	if got["agent/guard_bootstrap.py"] {
-		t.Error("the frozen bootstrap must never be shipped in the bundle")
+	if got["browser_ai_proxy.py"] || got["agent/gateway_agent.py"] || got["agent/guard_bootstrap.py"] {
+		t.Error("plaintext Guard sources must not be published")
 	}
 	if got["gateway_proxy_parts/a.py"] || got["gateway_proxy_parts/bundle_crypto.py"] {
 		t.Error("plaintext proxy sources and the decryptor must not be published")
 	}
 
-	if err := os.WriteFile(filepath.Join(agent, "gateway_agent.py"), []byte("def main(): return 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(src, guardCodeEnc), []byte("GATEWAYENC02\ncode-v2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	changed, _, _ := buildGuardProxyBundle(src, agent)

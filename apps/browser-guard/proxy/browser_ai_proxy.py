@@ -20,6 +20,7 @@ Do not import part files directly.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -27,6 +28,11 @@ _PARTS_DIR_NAME = "gateway_proxy_parts"
 
 
 def _parts_dir() -> Path:
+    code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
+    if code_dir:
+        hot = Path(code_dir) / _PARTS_DIR_NAME
+        if hot.is_dir():
+            return hot
     here = Path(__file__).resolve().parent
     cand = here / _PARTS_DIR_NAME
     if cand.is_dir():

@@ -129,8 +129,67 @@ def _count_boot(sha: str) -> bool:
     return True
 
 
+class _EncLoader(importlib.abc.Loader):
+    def __init__(self, code) -> None:
+        self._code = code
+
+    def create_module(self, spec):  # noqa: ANN001
+        return None
+
+    def exec_module(self, module) -> None:  # noqa: ANN001
+        module.__dict__.setdefault("__file__", f"<gateway_guard_code>/{getattr(module, '__name__', 'module')}.py")
+        exec(self._code, module.__dict__)
+
+
+class _EncFinder(importlib.abc.MetaPathFinder):
+    """Serves decrypted Guard modules from memory. Nothing is written to disk."""
+
+    def __init__(self, code_map: dict) -> None:
+        self.names = {
+            name[:-3]
+            for name in code_map
+            if name.endswith(".py") and name != "browser_ai_proxy.py"
+        }
+        self._code_map = code_map
+
+    def find_spec(self, fullname, path=None, target=None):  # noqa: ANN001
+        if fullname not in self.names:
+            return None
+        return importlib.util.spec_from_loader(fullname, _EncLoader(self._code_map[fullname + ".py"]))
+
+
+def _bundle_crypto():
+    try:
+        import bundle_crypto
+    except ImportError:
+        parts = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "proxy", "gateway_proxy_parts")
+        if parts not in sys.path:
+            sys.path.insert(0, parts)
+        import bundle_crypto
+    return bundle_crypto
+
+
+def _install_enc_finder(enc_path: str) -> _EncFinder:
+    from pathlib import Path
+
+    code_map = _bundle_crypto().decrypt_parts_bundle(Path(enc_path))
+    finder = _EncFinder(code_map)
+    sys.meta_path.insert(0, finder)
+    return finder
+
+
+def install_frozen_code() -> None:
+    """Load the encrypted agent built into this EXE. Dev runs use the source tree."""
+    if not getattr(sys, "frozen", False):
+        return
+    meipass = getattr(sys, "_MEIPASS", "") or ""
+    enc = os.path.join(meipass, "gateway_guard_code.enc")
+    if os.path.isfile(enc):
+        _install_enc_finder(enc)
+
+
 class _BundleFinder(importlib.abc.MetaPathFinder):
-    """Serves the bundle's agent modules ahead of the copies frozen into the EXE."""
+    """Serves a legacy plaintext bundle ahead of the code frozen into the EXE."""
 
     def __init__(self, agent_dir: str) -> None:
         self.agent_dir = agent_dir
@@ -143,11 +202,14 @@ class _BundleFinder(importlib.abc.MetaPathFinder):
         return None
 
 
-def install_code_dir(code_dir: str, sha: str) -> _BundleFinder | None:
+def install_code_dir(code_dir: str, sha: str):
     os.environ["GATEWAY_GUARD_CODE_DIR"] = code_dir
     os.environ["GATEWAY_GUARD_CODE_DIR"] = code_dir
     os.environ["GATEWAY_GUARD_CODE_SHA"] = sha
     os.environ["GATEWAY_GUARD_CODE_SHA"] = sha
+    enc = os.path.join(code_dir, "gateway_guard_code.enc")
+    if os.path.isfile(enc):
+        return _install_enc_finder(enc)
     agent_dir = os.path.join(code_dir, "agent")
     if not os.path.isdir(agent_dir):
         return None
@@ -156,7 +218,7 @@ def install_code_dir(code_dir: str, sha: str) -> _BundleFinder | None:
     return finder
 
 
-def uninstall_code_dir(finder: _BundleFinder | None) -> None:
+def uninstall_code_dir(finder) -> None:
     os.environ.pop("GATEWAY_GUARD_CODE_DIR", None)
     os.environ.pop("GATEWAY_GUARD_CODE_DIR", None)
     os.environ.pop("GATEWAY_GUARD_CODE_SHA", None)
@@ -210,15 +272,26 @@ def selftest(code_dir: str) -> int:
         if finder is not None:
             for name in sorted(finder.names):
                 mod = importlib.import_module(name)
-                if not os.path.abspath(getattr(mod, "__file__", "")).startswith(os.path.abspath(code_dir)):
-                    raise RuntimeError(f"{name} did not load from the bundle")
+                if not isinstance(finder, _EncFinder):
+                    if not os.path.abspath(getattr(mod, "__file__", "")).startswith(os.path.abspath(code_dir)):
+                        raise RuntimeError(f"{name} did not load from the bundle")
             if not callable(getattr(sys.modules.get("gateway_agent"), "main", None)):
                 raise RuntimeError("gateway_agent.main missing")
-        if not getattr(sys, "frozen", False):
-            repo_parts = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy", "gateway_proxy_parts"))
-            if os.path.isdir(repo_parts) and repo_parts not in sys.path:
-                sys.path.insert(0, repo_parts)
-        ns = runpy.run_path(os.path.join(code_dir, "browser_ai_proxy.py"), run_name="gateway_proxy_selftest")
+        enc_path = os.path.join(code_dir, "gateway_guard_code.enc")
+        if os.path.isfile(enc_path):
+            ns = {
+                "__name__": "gateway_proxy_selftest",
+                "__file__": os.path.join(code_dir, "browser_ai_proxy.py"),
+            }
+            from pathlib import Path
+
+            exec(_bundle_crypto().decrypt_parts_bundle(Path(enc_path))["browser_ai_proxy.py"], ns)
+        else:
+            if not getattr(sys, "frozen", False):
+                repo_parts = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy", "gateway_proxy_parts"))
+                if os.path.isdir(repo_parts) and repo_parts not in sys.path:
+                    sys.path.insert(0, repo_parts)
+            ns = runpy.run_path(os.path.join(code_dir, "browser_ai_proxy.py"), run_name="gateway_proxy_selftest")
         addons = ns.get("addons") or []
         if not (addons and type(addons[0]).__name__ == "BrowserAIInterceptor" and callable(getattr(addons[0], "request", None))):
             raise RuntimeError("BrowserAIInterceptor addon missing")
@@ -274,6 +347,7 @@ def main() -> None:
         selftest(args[1])
 
     main_mode = not args or args[0] not in _SERVICE_MODES
+    install_frozen_code()
     finder = None
     sha = ""
     if os.environ.pop("GATEWAY_GUARD_FORCE_BUILTIN", "") != "1":
@@ -284,7 +358,7 @@ def main() -> None:
             sha = ""
 
     try:
-        import gateway_agent
+        gateway_agent = importlib.import_module("gateway_agent")
     except (PermissionError, OSError) as e:
         if getattr(e, "winerror", None) in (5, 225) or "denied" in str(e).lower() or "virus" in str(e).lower():
             show_antivirus_block_warning(str(e))
@@ -293,14 +367,14 @@ def main() -> None:
         mark_bad(sha, f"import failed: {type(e).__name__}: {e}")
         uninstall_code_dir(finder)
         sha = ""
-        import gateway_agent
+        gateway_agent = importlib.import_module("gateway_agent")
     except Exception as e:
         if not sha:
             raise
         mark_bad(sha, f"import failed: {type(e).__name__}: {e}")
         uninstall_code_dir(finder)
         sha = ""
-        import gateway_agent
+        gateway_agent = importlib.import_module("gateway_agent")
 
     try:
         gateway_agent.main()

@@ -42,6 +42,16 @@ def source_files(mutate=None) -> dict[str, bytes]:
             files[f"agent/{p.name}"] = p.read_bytes()
     if mutate:
         mutate(files)
+    sources: dict[str, str] = {}
+    for name in list(files):
+        if name.endswith(".py"):
+            sources[name.split("/")[-1]] = files.pop(name).decode("utf-8")
+    parts_dir = str(parts)
+    if parts_dir not in sys.path:
+        sys.path.insert(0, parts_dir)
+    import bundle_crypto
+
+    files["gateway_guard_code.enc"] = bundle_crypto.encrypt_source_map(sources)
     return files
 
 
@@ -108,7 +118,9 @@ class ApplyBundleTests(unittest.TestCase):
         self.assertEqual(len(self.restarts), 1)
         code_dir, sha = gb.verified_code_dir(pb.AGENT_VERSION)
         self.assertEqual(sha, info["sha256"])
-        self.assertTrue(os.path.isfile(os.path.join(code_dir, "agent", "gateway_agent.py")))
+        self.assertTrue(os.path.isfile(os.path.join(code_dir, "gateway_guard_code.enc")))
+        self.assertFalse(os.path.isfile(os.path.join(code_dir, "browser_ai_proxy.py")))
+        self.assertFalse(os.path.isfile(os.path.join(code_dir, "agent", "gateway_agent.py")))
         self.assertFalse(pb.apply_bundle(info, self._restart), "same bundle must not re-apply")
 
     def test_agent_code_that_crashes_on_import_is_rejected(self) -> None:
@@ -171,7 +183,7 @@ class BootstrapTests(unittest.TestCase):
     def test_tampered_file_falls_back_to_builtin(self) -> None:
         sha = stage(source_files(), self.version)
         self.assertEqual(gb.verified_code_dir(self.version)[1], sha)
-        path = os.path.join(gb.bundle_root(), sha[:16], "agent", "agent_http.py")
+        path = os.path.join(gb.bundle_root(), sha[:16], "gateway_guard_code.enc")
         with open(path, "ab") as f:
             f.write(b"\n# tampered\n")
         self.assertEqual(gb.verified_code_dir(self.version), ("", ""))

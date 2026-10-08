@@ -68,6 +68,29 @@ def _cipher_stream(key: bytes, nonce: bytes, data: bytes) -> bytes:
     return bytes(d ^ k for d, k in zip(data, keystream))
 
 
+def _seal(bundle_dict: dict[str, bytes]) -> bytes:
+    """Serialize, compress, and encrypt a name -> bytecode map. Never writes source."""
+    if not bundle_dict:
+        raise RuntimeError("no sources to encrypt")
+    serialized = marshal.dumps({"version": 2, "parts": bundle_dict})
+    compressed = zlib.compress(serialized, level=9)
+    salt = os.urandom(16)
+    nonce = os.urandom(16)
+    key = _derive_key(salt)
+    ciphertext = _cipher_stream(key, nonce, compressed)
+    tag = hmac.new(key, salt + nonce + ciphertext + _unwrap(_CTX_MIXED), hashlib.sha256).digest()
+    return MAGIC_HEADER + salt + nonce + tag + ciphertext
+
+
+def encrypt_source_map(sources: dict[str, str]) -> bytes:
+    """Compile name -> source text into one encrypted bytecode blob."""
+    bundle_dict: dict[str, bytes] = {}
+    for name, source_text in sources.items():
+        code_obj = compile(source_text, f"<{name}>", "exec", optimize=2)
+        bundle_dict[name] = marshal.dumps(code_obj)
+    return _seal(bundle_dict)
+
+
 def encrypt_parts_bundle(parts_dir: Path, output_enc_path: Path) -> dict[str, int]:
     """Compile all proxy part scripts into encrypted bytecode bundle.
 
@@ -86,37 +109,39 @@ def encrypt_parts_bundle(parts_dir: Path, output_enc_path: Path) -> dict[str, in
             if not p.name.startswith("_") and p.name != "bundle_crypto.py"
         )
 
-    bundle_dict: dict[str, bytes] = {}
+    sources: dict[str, str] = {}
     stats: dict[str, int] = {}
     for name in names:
         py_file = parts_dir / name
         if not py_file.is_file():
             continue
         source_text = py_file.read_text(encoding="utf-8")
-        # Compile directly to optimized Python bytecode (strip docstrings, assert)
-        code_obj = compile(source_text, f"<gateway_proxy_parts/{name}>", "exec", optimize=2)
-        code_bytes = marshal.dumps(code_obj)
-        bundle_dict[name] = code_bytes
-        stats[name] = len(code_bytes)
-
-    if not bundle_dict:
+        sources[name] = source_text
+        stats[name] = len(marshal.dumps(compile(source_text, f"<{name}>", "exec", optimize=2)))
+    if not sources:
         raise RuntimeError(f"No proxy parts found in {parts_dir} to encrypt")
-
-    # Serialize bundle dict -> compress with zlib max level
-    serialized = marshal.dumps({"version": 2, "parts": bundle_dict})
-    compressed = zlib.compress(serialized, level=9)
-
-    salt = os.urandom(16)
-    nonce = os.urandom(16)
-    key = _derive_key(salt)
-
-    ciphertext = _cipher_stream(key, nonce, compressed)
-    # 256-bit HMAC tag covering salt + nonce + ciphertext
-    tag = hmac.new(key, salt + nonce + ciphertext + _unwrap(_CTX_MIXED), hashlib.sha256).digest()
-
-    # Format: MAGIC(12) + SALT(16) + NONCE(16) + TAG(32) + CIPHERTEXT
-    output_enc_path.write_bytes(MAGIC_HEADER + salt + nonce + tag + ciphertext)
+    output_enc_path.write_bytes(encrypt_source_map(sources))
     return stats
+
+
+def encrypt_guard_code_bundle(root: Path, output_enc_path: Path) -> dict[str, int]:
+    """Encrypt the proxy loader and agent modules. The frozen starter stays outside."""
+    sources: dict[str, str] = {}
+    proxy = root / "proxy" / "browser_ai_proxy.py"
+    if not proxy.is_file():
+        raise RuntimeError(f"missing {proxy}")
+    sources["browser_ai_proxy.py"] = proxy.read_text(encoding="utf-8")
+    agent = root / "agent"
+    for path in sorted(agent.glob("*.py")):
+        if path.name == "guard_bootstrap.py" or path.name.startswith("_"):
+            continue
+        sources[path.name] = path.read_text(encoding="utf-8")
+    if "gateway_agent.py" not in sources:
+        raise RuntimeError(f"missing agent modules under {agent}")
+    blob = encrypt_source_map(sources)
+    output_enc_path.parent.mkdir(parents=True, exist_ok=True)
+    output_enc_path.write_bytes(blob)
+    return {name: len(sources[name].encode("utf-8")) for name in sources}
 
 
 def decrypt_parts_bundle(enc_path: Path) -> dict[str, Any]:

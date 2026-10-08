@@ -37,6 +37,7 @@ _RETRY_FAILED_AFTER = 600
 _SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 _MODULE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.py$")
 _ENC_NAME = "gateway_proxy_parts.enc"
+_CODE_ENC = "gateway_guard_code.enc"
 
 _apply_lock = threading.Lock()
 _failed_at: dict[str, float] = {}
@@ -116,6 +117,8 @@ def validate_bundle(data: bytes) -> dict[str, bytes]:
                 continue
             if name == ENTRY:
                 pass
+            elif name == _CODE_ENC:
+                pass
             elif name.startswith(PARTS + "/"):
                 leaf = name[len(PARTS) + 1:]
                 if leaf not in ("MANIFEST.txt", _ENC_NAME):
@@ -127,16 +130,50 @@ def validate_bundle(data: bytes) -> dict[str, bytes]:
             else:
                 raise ValueError(f"unexpected file in bundle: {name!r}")
             files[name] = zf.read(info)
-    if ENTRY not in files:
-        raise ValueError("bundle has no browser_ai_proxy.py")
     if f"{PARTS}/{_ENC_NAME}" not in files:
         raise ValueError("bundle has no encrypted proxy engine")
+    if _CODE_ENC in files:
+        if any(name.endswith(".py") for name in files):
+            raise ValueError("encrypted code bundle must not include plaintext sources")
+        _require_code_enc(files[_CODE_ENC])
+        return files
+    if ENTRY not in files:
+        raise ValueError("bundle has no browser_ai_proxy.py")
     if any(n.startswith(AGENT + "/") for n in files) and f"{AGENT}/gateway_agent.py" not in files:
         raise ValueError("bundle agent code has no gateway_agent.py")
     for name, body in files.items():
         if name.endswith(".py"):
             compile(body.decode("utf-8"), name, "exec")
     return files
+
+
+def _require_code_enc(blob: bytes) -> None:
+    """Reject a code blob that is not a sealed loader + agent."""
+    import tempfile
+    from pathlib import Path
+
+    try:
+        import bundle_crypto
+    except ImportError:
+        parts = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "proxy", "gateway_proxy_parts")
+        if parts not in sys.path:
+            sys.path.insert(0, parts)
+        import bundle_crypto
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".enc")
+    try:
+        tmp.write(blob)
+        tmp.close()
+        code_map = bundle_crypto.decrypt_parts_bundle(Path(tmp.name))
+    except Exception as e:
+        raise ValueError(f"encrypted guard code rejected: {e}") from e
+    finally:
+        try:
+            os.remove(tmp.name)
+        except OSError:
+            pass
+    for required in ("browser_ai_proxy.py", "gateway_agent.py"):
+        if required not in code_map:
+            raise ValueError(f"encrypted guard code has no {required}")
 
 
 def _extract(files: dict[str, bytes], dest: str) -> None:

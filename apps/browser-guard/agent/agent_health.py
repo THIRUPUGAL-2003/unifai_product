@@ -160,7 +160,10 @@ def run_health_check(proxy_port: int | None = None) -> dict:
 
     code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
     addon = os.path.join(code_dir, "browser_ai_proxy.py") if code_dir else ""
-    if not addon or not os.path.isfile(addon):
+    enc_addon = os.path.join(code_dir, "gateway_guard_code.enc") if code_dir else ""
+    if enc_addon and os.path.isfile(enc_addon):
+        addon = enc_addon
+    elif not addon or not os.path.isfile(addon):
         addon = get_resource_path("browser_ai_proxy.py")
     if not os.path.exists(addon):
         addon = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy", "browser_ai_proxy.py"))

@@ -31,8 +31,13 @@ def main() -> int:
     for name, size in stats.items():
         print(f"  • {name} -> {size} bytes (bytecode)")
 
+    code_enc = ROOT / "proxy" / "gateway_guard_code.enc"
+    code_stats = bundle_crypto.encrypt_guard_code_bundle(ROOT, code_enc)
+    print(f"Encrypted {len(code_stats)} Guard code files into {code_enc.name}")
+
     total_kb = OUTPUT_ENC.stat().st_size / 1024
-    print(f"\nSUCCESS: Created secure container: {OUTPUT_ENC.name} ({total_kb:.1f} KB)")
+    code_kb = code_enc.stat().st_size / 1024
+    print(f"\nSUCCESS: {OUTPUT_ENC.name} ({total_kb:.1f} KB), {code_enc.name} ({code_kb:.1f} KB)")
     print("Encryption: AES-256-GCM + Hardware Acceleration + In-Memory Decryption")
     print("=" * 60)
     return 0

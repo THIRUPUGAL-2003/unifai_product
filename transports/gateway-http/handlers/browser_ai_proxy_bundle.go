@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -19,19 +18,15 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// Guard code bundle: agent/*.py, the proxy loader, and gateway_proxy_parts.enc
-// are published by Rebuild. Plain proxy part sources and bundle_crypto.py are
-// never included. Installed Guards switch to it without a new installer.
+// Guard code bundle: gateway_guard_code.enc and gateway_proxy_parts.enc
+// are published by Rebuild. Plain proxy, agent, and loader sources are never
+// included. Installed Guards switch to it without a new installer.
 
 const (
 	guardProxyEntry    = "browser_ai_proxy.py"
 	guardProxyPartsDir = "gateway_proxy_parts"
-	guardAgentDir      = "agent"
-	// Frozen into the EXE as the entry point; never hot-updated.
-	guardBootstrapFile = "guard_bootstrap.py"
+	guardCodeEnc       = "gateway_guard_code.enc"
 )
-
-var guardModuleNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*\.py$`)
 
 type guardProxyBundle struct {
 	SHA256        string    `json:"sha256"`
@@ -117,7 +112,11 @@ func guardProxyBundleStoreDir() string {
 // timestamps) so the SHA-256 only changes when the code changes. agentDir may be ""
 // (proxy code only).
 func buildGuardProxyBundle(proxyDir, agentDir string) ([]byte, int, error) {
-	sources := map[string]string{guardProxyEntry: filepath.Join(proxyDir, guardProxyEntry)}
+	codeEnc := filepath.Join(proxyDir, guardCodeEnc)
+	if info, err := os.Stat(codeEnc); err != nil || info.IsDir() {
+		return nil, 0, fmt.Errorf("encrypted guard code missing at %s; refusing to publish plaintext sources", codeEnc)
+	}
+	sources := map[string]string{guardCodeEnc: codeEnc}
 	partsDir := filepath.Join(proxyDir, guardProxyPartsDir)
 	encPath := filepath.Join(partsDir, "gateway_proxy_parts.enc")
 	if info, err := os.Stat(encPath); err != nil || info.IsDir() {
@@ -127,19 +126,6 @@ func buildGuardProxyBundle(proxyDir, agentDir string) ([]byte, int, error) {
 	manifestPath := filepath.Join(partsDir, "MANIFEST.txt")
 	if info, err := os.Stat(manifestPath); err == nil && !info.IsDir() {
 		sources[guardProxyPartsDir+"/MANIFEST.txt"] = manifestPath
-	}
-	if agentDir != "" {
-		entries, err := os.ReadDir(agentDir)
-		if err != nil {
-			return nil, 0, err
-		}
-		for _, e := range entries {
-			n := e.Name()
-			if e.IsDir() || n == guardBootstrapFile || !guardModuleNameRe.MatchString(n) {
-				continue
-			}
-			sources[guardAgentDir+"/"+n] = filepath.Join(agentDir, n)
-		}
 	}
 	names := make([]string, 0, len(sources))
 	for name := range sources {

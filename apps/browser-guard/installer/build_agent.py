@@ -49,24 +49,26 @@ def build_windows() -> Path:
 def strip_plain_text_sources_from_bundle(app_path: Path) -> None:
     """Ensure release bundle contains ONLY the encrypted container, removing plain text .py files."""
     enc_src = ROOT / "proxy" / "gateway_proxy_parts" / "gateway_proxy_parts.enc"
-    crypto_src = ROOT / "proxy" / "gateway_proxy_parts" / "bundle_crypto.py"
     manifest_src = ROOT / "proxy" / "gateway_proxy_parts" / "MANIFEST.txt"
-    proxy_src = ROOT / "proxy" / "browser_ai_proxy.py"
+    code_enc = ROOT / "proxy" / "gateway_guard_code.enc"
+    stub = ROOT / "installer" / "proxy_stub.py"
     if not enc_src.is_file():
         return
 
-    # Update browser_ai_proxy.py in Resources if present
-    res_proxy = app_path / "Contents" / "Resources" / "browser_ai_proxy.py"
-    if res_proxy.parent.is_dir() and proxy_src.is_file():
-        shutil.copy2(proxy_src, res_proxy)
+    resources = app_path / "Contents" / "Resources"
+    if resources.is_dir() and stub.is_file():
+        shutil.copy2(stub, resources / "browser_ai_proxy.py")
+    if resources.is_dir() and code_enc.is_file():
+        shutil.copy2(code_enc, resources / "gateway_guard_code.enc")
 
     # Check Frameworks, Resources, and app root
     for base in [app_path / "Contents" / "Frameworks", app_path / "Contents" / "Resources", app_path]:
         parts_target = base / "gateway_proxy_parts"
         if parts_target.is_dir():
             shutil.copy2(enc_src, parts_target / "gateway_proxy_parts.enc")
-            if crypto_src.is_file():
-                shutil.copy2(crypto_src, parts_target / "bundle_crypto.py")
+            loose_crypto = parts_target / "bundle_crypto.py"
+            if loose_crypto.is_file():
+                loose_crypto.unlink()
             if manifest_src.is_file():
                 shutil.copy2(manifest_src, parts_target / "MANIFEST.txt")
 
