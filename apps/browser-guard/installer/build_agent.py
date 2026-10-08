@@ -73,19 +73,10 @@ def strip_plain_text_sources_from_bundle(app_path: Path) -> None:
                 shutil.copy2(manifest_src, parts_target / "MANIFEST.txt")
 
             # Strip all plain text source files
-            for py_name in [
-                "config_caches_rules.py",
-                "helpers_prompts.py",
-                "uploads_detect.py",
-                "file_policy.py",
-                "extract_office_backend.py",
-                "responses_inject.py",
-                "responses_addon.py",
-            ]:
-                target_py = parts_target / py_name
-                if target_py.is_file():
-                    target_py.unlink()
-                    print(f"  [Security] Stripped plain text source from bundle: {py_name}")
+            for py_file in parts_target.glob("*.py"):
+                if py_file.is_file():
+                    py_file.unlink()
+                    print(f"  [Security] Stripped plain text source from bundle: {py_file.name}")
 
             # Strip any cached pyc files of parts
             pycache = parts_target / "__pycache__"
