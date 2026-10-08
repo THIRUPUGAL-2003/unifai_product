@@ -635,7 +635,7 @@ def _body_has_user_send_payload(data) -> bool:
 
     # Nested operation objects common in modern AIs (incl. Copilot SignalR arguments, Mistral messageInput)
     for nest_key in (
-        "request", "input", "payload", "body", "args", "data", "params", "arguments",
+        "item", "items", "request", "input", "payload", "body", "args", "data", "params", "arguments",
         "messageInput", "message_input", "message", "messages", "content", "contents",
         "docs", "files", "attachments", "uploadedFiles", "sources", "file_list",
     ):

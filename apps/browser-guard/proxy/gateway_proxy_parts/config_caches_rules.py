@@ -222,7 +222,7 @@ IGNORE_PATH_PATTERNS = [
     "/cdn-cgi/", "/challenge-platform/", "/jsd/oneshot",
     "/api/v1/fm", "/cfm/", "/cf-challenge",
     # ChatGPT Realtime WebRTC voice handshake (SDP negotiation, NOT user attachments)
-    "/realtime/", "/realtime",
+    "/realtime/session", "/realtime/sessions",
     # Datadog RUM / Telemetry endpoints
     "/rum", "/v2/rum", "/api/v2/rum", "/browser-intake", "/telemetry/datadog",
     # Perplexity / Claude noise endpoints & RPC streams
@@ -278,6 +278,8 @@ CHAT_PATH_MARKERS = [
     # Microsoft Copilot / Bing Chat / Edge Copilot extras
     "/edgesvc/chat", "/chat/reload", "/chathub/chat",
     "/sydney/chat", "/fetchresponse", "/chat/stream",
+    # OpenAI Realtime Voice & WebSocket APIs
+    "/v1/realtime", "/realtime",
 ]
 
 GEMINI_CHAT_RPCS = {"hR32Ce", "vyAQhe", "wXbdQc", "StreamGenerate", "GenerateContent"}
@@ -340,7 +342,7 @@ _UNIVERSAL_PROMPT_KEYS = (
     "prompt_str", "prompt_text_input", "raw_prompt", "user_prompt_text",
     "input_prompt", "completion_prompt", "generate_prompt",
     # Voice / Realtime Audio / Multimodal Transcription
-    "contents", "conversation", "speech", "transcription", "voice_text",
+    "transcript", "transcription", "contents", "conversation", "speech", "voice_text",
     "statement", "command", "audio_transcript", "speech_input", "voice_input",
     "audio_text", "spoken_text", "stt_text", "spoken_query", "transcribed_text",
     "dictated_text", "voice_prompt", "speech_prompt",
