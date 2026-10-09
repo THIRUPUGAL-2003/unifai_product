@@ -166,6 +166,8 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.GET("/api/browser-ai/license", lib.ChainMiddlewares(h.getLicense, middlewares...))
 	r.GET("/api/browser-ai/license/server-id", lib.ChainMiddlewares(h.getServerHardwareID, middlewares...))
 	r.POST("/api/browser-ai/license/activate", lib.ChainMiddlewares(h.activateLicense, middlewares...))
+	// Public: client Gateways call the vendor server. Unsigned replies are ignored.
+	r.POST("/api/license-authority/status", h.licenseAuthorityStatus)
 
 	r.POST("/api/browser-ai/intercept", lib.ChainMiddlewares(h.intercept, middlewares...))
 	r.POST("/api/browser-ai/intercept-file", lib.ChainMiddlewares(h.interceptFile, middlewares...))

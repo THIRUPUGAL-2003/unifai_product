@@ -49,6 +49,7 @@ import {
 	FileSpreadsheet,
 	KeyRound,
 	Clock,
+	Building2,
 } from "lucide-react";
 import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getProviderLabel } from "@/lib/constants/logs";
@@ -252,6 +253,9 @@ export default function BrowserAiPage() {
 		remaining_seats: number;
 		server_hardware_id?: string;
 		host_hardware_id?: string;
+		install_id?: string;
+		revision?: number;
+		authority_status?: string;
 		is_hardware_bound?: boolean;
 		expires_at: string;
 		issued_at: string;
@@ -259,6 +263,7 @@ export default function BrowserAiPage() {
 		status_message: string;
 	} | null>(null);
 	const [copiedServerID, setCopiedServerID] = useState(false);
+	const [copiedInstallID, setCopiedInstallID] = useState(false);
 	const [loadingLicense, setLoadingLicense] = useState(false);
 	const [licenseInput, setLicenseInput] = useState("");
 	const [activatingLicense, setActivatingLicense] = useState(false);
@@ -2782,9 +2787,12 @@ export default function BrowserAiPage() {
 													</div>
 												</TableCell>
 												<TableCell className="max-w-0 py-0">
-													<div className="truncate text-xs text-muted-foreground" title={log.agent_hostname || log.agent_id || ""}>
-														{log.agent_hostname || log.agent_id || "—"}
+													<div className="truncate text-xs text-foreground font-medium" title={log.ad_upn || log.domain_user || log.agent_hostname || log.agent_id || ""}>
+														{log.ad_upn || (log.domain_user ? log.domain_user : (log.agent_hostname || log.agent_id || "—"))}
 													</div>
+													{log.ad_domain && (
+														<div className="text-[10px] text-sky-400 font-mono truncate">{log.ad_domain}</div>
+													)}
 												</TableCell>
 												<TableCell className="max-w-0 py-0">
 													<div className="min-w-0 truncate">{getPlatformBadge(log.platform)}</div>
@@ -4845,7 +4853,16 @@ export default function BrowserAiPage() {
 											<TableCell className="text-sm">
 												{(agent.agent_type || "endpoint") === "network" ? "Network" : "Laptop"}
 											</TableCell>
-											<TableCell className="text-sm truncate">{agent.username || "—"}</TableCell>
+											<TableCell className="text-sm">
+												<div className="truncate font-medium" title={agent.ad_upn || agent.username || ""}>
+													{agent.ad_upn ? agent.ad_upn : agent.ad_domain ? `${agent.ad_domain}\\${agent.username}` : (agent.username || "—")}
+												</div>
+												{agent.is_domain_joined ? (
+													<div className="text-[10px] text-emerald-400 font-normal">
+														AD: {agent.ad_domain}
+													</div>
+												) : null}
+											</TableCell>
 											<TableCell className="text-xs font-mono truncate">{agent.ip_address || "—"}</TableCell>
 											<TableCell className="text-xs font-mono truncate pr-4" data-testid="guard-agent-mac-cell" title={agent.mac_address || ""}>
 												{agent.mac_address || "—"}
@@ -5258,27 +5275,52 @@ export default function BrowserAiPage() {
 								</div>
 
 								{licenseInfo?.host_hardware_id ? (
-									<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-lg bg-sky-950/20 border border-sky-800/40 text-xs">
-										<div className="flex items-center gap-2">
-											<span className="text-muted-foreground">Host Server Hardware ID:</span>
-											<code className="font-mono font-semibold text-sky-400 bg-background/80 px-2 py-0.5 rounded border border-border">
-												{licenseInfo.host_hardware_id}
-											</code>
+									<div className="flex flex-col gap-2 p-2.5 rounded-lg bg-sky-950/20 border border-sky-800/40 text-xs">
+										<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+											<div className="flex items-center gap-2">
+												<span className="text-muted-foreground">Server hardware ID:</span>
+												<code className="font-mono font-semibold text-sky-400 bg-background/80 px-2 py-0.5 rounded border border-border">
+													{licenseInfo.host_hardware_id}
+												</code>
+											</div>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												className="h-7 text-xs gap-1.5 text-sky-400 hover:text-sky-300 hover:bg-sky-950/50 self-start sm:self-auto"
+												onClick={() => {
+													navigator.clipboard.writeText(licenseInfo.host_hardware_id || "");
+													setCopiedServerID(true);
+													setTimeout(() => setCopiedServerID(false), 2000);
+												}}
+											>
+												{copiedServerID ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+												{copiedServerID ? "Copied" : "Copy server ID"}
+											</Button>
 										</div>
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											className="h-7 text-xs gap-1.5 text-sky-400 hover:text-sky-300 hover:bg-sky-950/50 self-start sm:self-auto"
-											onClick={() => {
-												navigator.clipboard.writeText(licenseInfo.host_hardware_id || "");
-												setCopiedServerID(true);
-												setTimeout(() => setCopiedServerID(false), 2000);
-											}}
-										>
-											{copiedServerID ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-											{copiedServerID ? "Copied" : "Copy for License Request"}
-										</Button>
+										<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+											<div className="flex items-center gap-2">
+												<span className="text-muted-foreground">Database install ID:</span>
+												<code className="font-mono font-semibold text-sky-400 bg-background/80 px-2 py-0.5 rounded border border-border">
+													{licenseInfo.install_id || "—"}
+												</code>
+											</div>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												className="h-7 text-xs gap-1.5 text-sky-400 hover:text-sky-300 hover:bg-sky-950/50 self-start sm:self-auto"
+												onClick={() => {
+													navigator.clipboard.writeText(licenseInfo.install_id || "");
+													setCopiedInstallID(true);
+													setTimeout(() => setCopiedInstallID(false), 2000);
+												}}
+											>
+												{copiedInstallID ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+												{copiedInstallID ? "Copied" : "Copy database ID"}
+											</Button>
+										</div>
+										<p className="text-muted-foreground">Send both IDs to YesPanchi. A key works only for this database and this server.</p>
 									</div>
 								) : null}
 
@@ -5965,9 +6007,16 @@ export default function BrowserAiPage() {
 															<div className="font-semibold text-foreground truncate max-w-[170px]" title={agent.hostname || "—"}>
 																{agent.hostname || "Unknown Host"}
 															</div>
-															<div className="text-[11px] text-muted-foreground truncate" title={agent.username || "—"}>
-																{agent.username ? `user: ${agent.username}` : "—"}
-															</div>
+															{agent.is_domain_joined ? (
+																<div className="text-[11px] text-sky-400 font-medium truncate flex items-center gap-1" title={agent.ad_upn || `${agent.ad_domain}\\${agent.username}`}>
+																	<span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block shrink-0" />
+																	<span>{agent.ad_upn || `${agent.ad_domain}\\${agent.username}`}</span>
+																</div>
+															) : (
+																<div className="text-[11px] text-muted-foreground truncate" title={agent.username || ""}>
+																	{agent.username ? `user: ${agent.username}` : "—"}
+																</div>
+															)}
 														</TableCell>
 														<TableCell className="font-mono text-muted-foreground">{agent.ip_address || "—"}</TableCell>
 														<TableCell className="font-mono text-xs">
@@ -6897,6 +6946,37 @@ export default function BrowserAiPage() {
 							</p>
 							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-purple-300 overflow-x-auto whitespace-pre-wrap break-all">
 								{`psexec \\\\${targetAgentForDeploy?.ip_address || "<laptop-ip>"} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Gateway_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`}
+							</pre>
+						</div>
+
+						{/* Option 4: Active Directory GPO Startup Script (Mass 1000+ Laptops) */}
+						<div className="space-y-1.5 p-3 rounded-md bg-secondary/20 border border-border">
+							<div className="flex items-center justify-between">
+								<span className="font-semibold text-foreground flex items-center gap-1.5">
+									<Building2 className="h-3.5 w-3.5 text-emerald-400" />
+									Active Directory GPO Startup Script (1,000+ Domain Laptops)
+								</span>
+								<Button
+									size="sm"
+									variant="ghost"
+									className="h-7 text-xs gap-1 text-emerald-400 hover:text-emerald-300"
+									onClick={() => {
+										const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:8080";
+										const script = `$InstallerUrl = "${origin}/api/browser-ai/setup/Gateway_Guard_Setup.exe"\n$TempPath = "$env:TEMP\\Gateway_Guard_Setup.exe"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    Invoke-WebRequest -Uri $InstallerUrl -OutFile $TempPath -UseBasicParsing\n    Start-Process $TempPath -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n    Remove-Item -Force $TempPath -ErrorAction SilentlyContinue\n}`;
+										navigator.clipboard.writeText(script);
+										setNetworkDeployCopied("gpo");
+										setTimeout(() => setNetworkDeployCopied(""), 2500);
+									}}
+								>
+									{networkDeployCopied === "gpo" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+									{networkDeployCopied === "gpo" ? "Copied!" : "Copy GPO Script"}
+								</Button>
+							</div>
+							<p className="text-[11px] text-muted-foreground">
+								Link this in <strong>Active Directory Group Policy (gpmc.msc) &gt; Computer Configuration &gt; Windows Settings &gt; Scripts &gt; Startup</strong>. All 1,000 domain computers silently install on next boot without employee interaction.
+							</p>
+							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">
+								{`$InstallerUrl = "${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Gateway_Guard_Setup.exe"\n$TempPath = "$env:TEMP\\Gateway_Guard_Setup.exe"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    Invoke-WebRequest -Uri $InstallerUrl -OutFile $TempPath -UseBasicParsing\n    Start-Process $TempPath -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n    Remove-Item -Force $TempPath -ErrorAction SilentlyContinue\n}`}
 							</pre>
 						</div>
 

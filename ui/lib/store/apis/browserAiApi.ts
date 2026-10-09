@@ -23,6 +23,9 @@ export interface BrowserAILogEntry {
 	attachment_name?: string;
 	attachment_stored_name?: string;
 	attachment_content_type?: string;
+	ad_domain?: string;
+	ad_upn?: string;
+	domain_user?: string;
 	metadata?: string;
 	created_at: string;
 }
@@ -67,6 +70,12 @@ export interface BrowserAIAgent {
 	/** True when this Guard has an auto-generated per-device uninstall key. */
 	has_uninstall_key?: boolean;
 	uninstall_key_rotated_at?: string;
+	/** Active Directory domain & corporate identity */
+	ad_domain?: string;
+	ad_upn?: string;
+	ad_groups?: string;
+	domain_user?: string;
+	is_domain_joined?: boolean;
 	last_seen_at: string;
 	installed_at: string;
 	/** First heartbeat on the current agent_version (fresh install or auto-update). */

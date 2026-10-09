@@ -17,9 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gateway/gateway/framework/encrypt"
 	"github.com/gateway/gateway/framework/envutil"
+	"github.com/google/uuid"
 	"golang.org/x/net/idna"
 	"gorm.io/gorm"
 )
@@ -194,8 +194,12 @@ type BrowserAILog struct {
 	AttachmentSizeBytes   int64      `json:"attachment_size_bytes,omitempty"`
 	AttachmentPath        string     `json:"attachment_path,omitempty"` // relative path under APP_DIR
 	AttachmentExpiresAt   *time.Time `json:"attachment_expires_at,omitempty"`
-	Metadata              string     `gorm:"type:text" json:"metadata"`
-	CreatedAt             time.Time  `json:"created_at"`
+	// Active Directory Domain & Corporate User Identity
+	ADDomain   string    `gorm:"index" json:"ad_domain"`
+	ADUpn      string    `gorm:"index" json:"ad_upn"`
+	DomainUser string    `json:"domain_user"`
+	Metadata   string    `gorm:"type:text" json:"metadata"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // BrowserAISearchLog represents an enterprise search event stored in Postgres (visible in pgAdmin).
@@ -326,8 +330,14 @@ type BrowserAIAgent struct {
 	ProxyBundleSHA       string     `gorm:"type:varchar(64)" json:"proxy_bundle_sha"`
 	ProxyBundleUpdatedAt *time.Time `json:"proxy_bundle_updated_at,omitempty"`
 	UninstalledAt        *time.Time `json:"uninstalled_at,omitempty"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
+	// Active Directory Domain & Identity (Enterprise AD / Entra ID)
+	ADDomain       string    `gorm:"index" json:"ad_domain"`
+	ADUpn          string    `gorm:"index" json:"ad_upn"`
+	ADGroups       string    `gorm:"type:text" json:"ad_groups"`
+	DomainUser     string    `json:"domain_user"`
+	IsDomainJoined bool      `gorm:"default:false" json:"is_domain_joined"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // BrowserAIWarningEmailLog audits Guard Insights / Agents security warning emails.
@@ -585,6 +595,7 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 		&BrowserAIWarningEmailLog{},
 		&BrowserGuardRebuildLog{},
 		&BrowserAILicenseRecord{},
+		&BrowserAIInstallRecord{},
 	)
 	if err != nil {
 		return err
@@ -1780,6 +1791,33 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		attachmentName = strings.TrimSpace(v)
 	}
 
+	adDomain := ""
+	adUpn := ""
+	domainUser := ""
+	if v, ok := metadata["ad_domain"].(string); ok {
+		adDomain = strings.TrimSpace(v)
+	}
+	if v, ok := metadata["ad_upn"].(string); ok {
+		adUpn = strings.TrimSpace(v)
+	}
+	if v, ok := metadata["domain_user"].(string); ok {
+		domainUser = strings.TrimSpace(v)
+	}
+	if (adDomain == "" || adUpn == "") && agentID != "" {
+		var ag BrowserAIAgent
+		if db.WithContext(ctx).Select("ad_domain, ad_upn, domain_user, username").Where("id = ?", agentID).First(&ag).Error == nil {
+			if adDomain == "" {
+				adDomain = ag.ADDomain
+			}
+			if adUpn == "" {
+				adUpn = ag.ADUpn
+			}
+			if domainUser == "" {
+				domainUser = firstNonEmpty(ag.DomainUser, ag.Username)
+			}
+		}
+	}
+
 	logEntry := BrowserAILog{
 		ID:                uuid.New().String(),
 		Timestamp:         time.Now(),
@@ -1791,6 +1829,9 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		ClientIP:          clientIP,
 		AgentID:           agentID,
 		AgentHostname:     agentHostname,
+		ADDomain:          adDomain,
+		ADUpn:             adUpn,
+		DomainUser:        domainUser,
 		Status:            status,
 		Action:            action,
 		RuleTriggered:     ruleTriggered,
@@ -2366,6 +2407,9 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 	if incoming == nil || strings.TrimSpace(incoming.ID) == "" {
 		return nil, fmt.Errorf("agent id is required")
 	}
+	if lockErr := m.BlockAgentIfLicenseRevoked(ctx); lockErr != nil {
+		return nil, lockErr
+	}
 	now := time.Now()
 	var existing BrowserAIAgent
 	err := db.WithContext(ctx).Where("id = ?", incoming.ID).First(&existing).Error
@@ -2376,23 +2420,31 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 		}
 
 		agent := BrowserAIAgent{
-			ID:            strings.TrimSpace(incoming.ID),
-			Hostname:      strings.TrimSpace(incoming.Hostname),
-			Username:      strings.TrimSpace(incoming.Username),
-			ContactEmail:  preferEmail(incoming.ContactEmail, incoming.Username),
-			IPAddress:     strings.TrimSpace(incoming.IPAddress),
-			MacAddress:    strings.TrimSpace(incoming.MacAddress),
-			TransportName: nicGUIDFromTransport(incoming.TransportName),
-			OSVersion:     strings.TrimSpace(incoming.OSVersion),
-			AgentVersion:  strings.TrimSpace(incoming.AgentVersion),
-			AgentType:     NormalizeBrowserAIAgentType(incoming.AgentType),
-			HealthStatus:  strings.TrimSpace(incoming.HealthStatus),
-			HealthDetail:  strings.TrimSpace(incoming.HealthDetail),
-			Status:        AgentStatusActive,
-			LastSeenAt:    now,
-			InstalledAt:   now,
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			ID:             strings.TrimSpace(incoming.ID),
+			Hostname:       strings.TrimSpace(incoming.Hostname),
+			Username:       strings.TrimSpace(incoming.Username),
+			ContactEmail:   preferEmail(incoming.ContactEmail, incoming.Username),
+			IPAddress:      strings.TrimSpace(incoming.IPAddress),
+			MacAddress:     strings.TrimSpace(incoming.MacAddress),
+			TransportName:  nicGUIDFromTransport(incoming.TransportName),
+			OSVersion:      strings.TrimSpace(incoming.OSVersion),
+			AgentVersion:   strings.TrimSpace(incoming.AgentVersion),
+			AgentType:      NormalizeBrowserAIAgentType(incoming.AgentType),
+			HealthStatus:   strings.TrimSpace(incoming.HealthStatus),
+			HealthDetail:   strings.TrimSpace(incoming.HealthDetail),
+			Status:         AgentStatusActive,
+			ADDomain:       strings.TrimSpace(incoming.ADDomain),
+			ADUpn:          strings.TrimSpace(incoming.ADUpn),
+			ADGroups:       strings.TrimSpace(incoming.ADGroups),
+			DomainUser:     firstNonEmpty(strings.TrimSpace(incoming.DomainUser), strings.TrimSpace(incoming.Username)),
+			IsDomainJoined: incoming.IsDomainJoined,
+			LastSeenAt:     now,
+			InstalledAt:    now,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}
+		if agent.ContactEmail == "" && agent.ADUpn != "" {
+			agent.ContactEmail = agent.ADUpn
 		}
 		if agent.AgentVersion != "" {
 			agent.VersionUpdatedAt = &now
@@ -2430,6 +2482,9 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 		} else if strings.TrimSpace(existing.ContactEmail) == "" {
 			existing.ContactEmail = preferEmail("", existing.Username)
 		}
+		if existing.ContactEmail == "" && strings.TrimSpace(incoming.ADUpn) != "" {
+			existing.ContactEmail = strings.TrimSpace(incoming.ADUpn)
+		}
 	}
 	existing.IPAddress = firstNonEmpty(strings.TrimSpace(incoming.IPAddress), existing.IPAddress)
 	existing.MacAddress = firstNonEmpty(strings.TrimSpace(incoming.MacAddress), existing.MacAddress)
@@ -2437,6 +2492,19 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 		existing.TransportName = t
 	}
 	existing.OSVersion = firstNonEmpty(strings.TrimSpace(incoming.OSVersion), existing.OSVersion)
+	if v := strings.TrimSpace(incoming.ADDomain); v != "" {
+		existing.ADDomain = v
+	}
+	if v := strings.TrimSpace(incoming.ADUpn); v != "" {
+		existing.ADUpn = v
+	}
+	if v := strings.TrimSpace(incoming.ADGroups); v != "" {
+		existing.ADGroups = v
+	}
+	if v := strings.TrimSpace(incoming.DomainUser); v != "" {
+		existing.DomainUser = v
+	}
+	existing.IsDomainJoined = incoming.IsDomainJoined
 	if v := strings.TrimSpace(incoming.AgentVersion); v != "" && (v != existing.AgentVersion || existing.VersionUpdatedAt == nil) {
 		existing.AgentVersion = v
 		existing.VersionUpdatedAt = &now

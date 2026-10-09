@@ -146,6 +146,9 @@ def run_all_tests():
         client_name="Test Enterprise Corp",
         seats=2,
         expiry_date=valid_expiry,
+        server_id="SRV-TEST0000-00000001",
+        install_id="DB-TEST",
+        registry_path=str(SCRIPT_DIR / "test_registry.json"),
         output_path=str(SCRIPT_DIR / "test_active_2_seat.lic")
     )
     env2 = res2["envelope"]
@@ -287,6 +290,10 @@ def run_all_tests():
         client_name="Test Enterprise Corp",
         seats=5,
         expiry_date=valid_expiry,
+        server_id="SRV-TEST0000-00000001",
+        install_id="DB-TEST",
+        license_id=env2["payload"]["license_id"],
+        registry_path=str(SCRIPT_DIR / "test_registry.json"),
         output_path=str(SCRIPT_DIR / "test_active_5_seat.lic")
     )
     env5 = res5["envelope"]

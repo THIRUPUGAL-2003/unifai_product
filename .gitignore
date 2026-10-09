@@ -79,6 +79,8 @@ apps/browser-guard/release/*.pkg
 apps/browser-guard/release/*.exe
 # Enterprise Licensing Security
 tools/license/master_private.key
+tools/license/license_registry.json
+tools/license/test_registry.json
 tools/license/*.lic
 *.lic
 

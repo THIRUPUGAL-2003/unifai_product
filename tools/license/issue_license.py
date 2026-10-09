@@ -24,17 +24,41 @@ from cryptography.hazmat.primitives import serialization
 DEFAULT_ISSUER = "YesPanchi Group of Companies"
 DEFAULT_PRODUCT = "Gateway - Real-time AI Knowledge Screening & Hazard Audit"
 
+def _registry_path(script_dir: Path, registry_path: str = None) -> Path:
+    return Path(registry_path) if registry_path else script_dir / "license_registry.json"
+
+
+def _load_registry(path: Path) -> dict:
+    if not path.exists():
+        return {"licenses": {}}
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        return {"licenses": {}}
+    data.setdefault("licenses", {})
+    return data
+
+
+def _save_registry(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
 def issue_license(
     client_name: str,
     seats: int,
     expiry_date: str,
-    server_id: str = None,
+    server_id: str,
+    install_id: str,
+    license_id: str = None,
     issuer: str = DEFAULT_ISSUER,
     product: str = DEFAULT_PRODUCT,
     tier: str = "Enterprise On-Premise",
     features: list = None,
     private_key_path: str = None,
-    output_path: str = None
+    output_path: str = None,
+    registry_path: str = None,
 ) -> dict:
     if features is None:
         features = [
@@ -68,9 +92,32 @@ def issue_license(
     except Exception as e:
         raise ValueError(f"Invalid expiry date '{expiry_date}'. Use YYYY-MM-DD format: {e}")
 
+    install_id = (install_id or "").strip()
+    server_id = (server_id or "").strip().upper()
+    if not install_id:
+        raise ValueError("install_id is required. Copy it from the client dashboard.")
+    if not server_id:
+        raise ValueError("server_id is required. Copy the server hardware ID from the client dashboard.")
+
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    license_id = f"YP-{now_dt.strftime('%Y%m')}-{uuid.uuid4().hex[:8].upper()}"
+    reg_file = _registry_path(script_dir, registry_path)
+    registry = _load_registry(reg_file)
+    licenses = registry.setdefault("licenses", {})
+
+    if license_id and str(license_id).strip():
+        license_id = str(license_id).strip()
+        previous = licenses.get(license_id) or {}
+        revision = int(previous.get("revision") or 0) + 1
+    else:
+        license_id = f"YP-{now_dt.strftime('%Y%m')}-{uuid.uuid4().hex[:8].upper()}"
+        revision = 1
+
+    for other_id, row in list(licenses.items()):
+        if other_id == license_id:
+            continue
+        if str(row.get("install_id") or "").strip().upper() == install_id.upper() and str(row.get("status") or "") == "active":
+            row["status"] = "revoked"
 
     # Canonical Payload Dictionary (sorted keys for deterministic JSON serialization)
     payload_data = {
@@ -81,13 +128,13 @@ def issue_license(
         "client_name": client_name.strip(),
         "tier": tier.strip(),
         "max_seats": int(seats),
+        "install_id": install_id,
+        "server_hardware_id": server_id,
+        "revision": int(revision),
         "features": sorted(features),
         "issued_at": now_iso,
         "expires_at": expiry_iso,
     }
-
-    if server_id and server_id.strip():
-        payload_data["server_hardware_id"] = server_id.strip().upper()
 
     # Deterministic JSON bytes
     canonical_json = json.dumps(payload_data, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -111,6 +158,18 @@ def issue_license(
     with open(out_file, "w", encoding="utf-8") as f:
         json.dump(license_envelope, f, indent=2)
 
+    licenses[license_id] = {
+        "license_id": license_id,
+        "install_id": install_id,
+        "server_hardware_id": server_id,
+        "max_seats": int(seats),
+        "revision": int(revision),
+        "expires_at": expiry_iso,
+        "status": "active",
+        "client_name": client_name.strip(),
+    }
+    _save_registry(reg_file, registry)
+
     return {
         "envelope": license_envelope,
         "output_file": str(out_file),
@@ -125,7 +184,10 @@ def main():
     parser.add_argument("--issuer", default=DEFAULT_ISSUER, help=f"Vendor Issuer name (default: '{DEFAULT_ISSUER}')")
     parser.add_argument("--product", default=DEFAULT_PRODUCT, help=f"Product name (default: '{DEFAULT_PRODUCT}')")
     parser.add_argument("--tier", default="Enterprise On-Premise", help="License tier name")
-    parser.add_argument("--server-id", default=None, help="Server Hardware ID to lock license to (e.g., 'SRV-D1FB08F6-AC2D7875')")
+    parser.add_argument("--server-id", required=True, help="Server Hardware ID from the client dashboard")
+    parser.add_argument("--install-id", required=True, help="Database install ID from the client dashboard")
+    parser.add_argument("--license-id", default=None, help="Existing license ID when moving server or changing seats. Omit to issue a new license.")
+    parser.add_argument("--registry", default=None, help="Vendor registry JSON updated when a key is issued or replaced")
     parser.add_argument("--out", default=None, help="Output file path (default: license_<client>.lic)")
     parser.add_argument("--key", default=None, help="Custom path to master_private.key")
 
@@ -137,11 +199,14 @@ def main():
             seats=args.seats,
             expiry_date=args.expiry,
             server_id=args.server_id,
+            install_id=args.install_id,
+            license_id=args.license_id,
             issuer=args.issuer,
             product=args.product,
             tier=args.tier,
             private_key_path=args.key,
-            output_path=args.out
+            output_path=args.out,
+            registry_path=args.registry,
         )
         p = res["envelope"]["payload"]
         print("\n" + "=" * 68)
@@ -153,10 +218,9 @@ def main():
         print(f" Issued To Client: {p['client_name']}")
         print(f" Max Seats:        {p['max_seats']} Laptops")
         print(f" Tier:             {p['tier']}")
-        if p.get("server_hardware_id"):
-            print(f" Node-Locked Host: {p['server_hardware_id']} (Hardware Tied)")
-        else:
-            print(f" Node-Locked Host: None (Floating License)")
+        print(f" Database Install: {p['install_id']}")
+        print(f" Server Hardware:  {p['server_hardware_id']}")
+        print(f" Revision:         {p['revision']}")
         print(f" Expires At:       {p['expires_at']}")
         print(f" File Path:        {res['output_file']}")
         print("=" * 68)

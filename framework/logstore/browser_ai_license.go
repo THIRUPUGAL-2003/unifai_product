@@ -38,10 +38,10 @@ var (
 
 // BrowserAILicenseRecord persists active license details in DB.
 type BrowserAILicenseRecord struct {
-	ID          string    `gorm:"primaryKey" json:"id"`
-	LicenseID   string    `json:"license_id"`
-	Issuer      string    `json:"issuer"`
-	Product     string    `json:"product"`
+	ID               string    `gorm:"primaryKey" json:"id"`
+	LicenseID        string    `json:"license_id"`
+	Issuer           string    `json:"issuer"`
+	Product          string    `json:"product"`
 	ClientName       string    `json:"client_name"`
 	Tier             string    `json:"tier"`
 	MaxSeats         int       `json:"max_seats"`
@@ -61,14 +61,16 @@ func (BrowserAILicenseRecord) TableName() string {
 
 // EnterpriseLicensePayload represents the cryptographically signed license payload.
 type EnterpriseLicensePayload struct {
-	Version    string   `json:"version"`
-	LicenseID  string   `json:"license_id"`
-	Issuer     string   `json:"issuer"`
-	Product    string   `json:"product"`
+	Version          string   `json:"version"`
+	LicenseID        string   `json:"license_id"`
+	Issuer           string   `json:"issuer"`
+	Product          string   `json:"product"`
 	ClientName       string   `json:"client_name"`
 	Tier             string   `json:"tier"`
 	MaxSeats         int      `json:"max_seats"`
 	ServerHardwareID string   `json:"server_hardware_id,omitempty"`
+	InstallID        string   `json:"install_id,omitempty"`
+	Revision         int      `json:"revision,omitempty"`
 	Features         []string `json:"features"`
 	IssuedAt         string   `json:"issued_at"`
 	ExpiresAt        string   `json:"expires_at"`
@@ -84,12 +86,12 @@ type EnterpriseLicenseEnvelope struct {
 
 // LicenseStatusInfo represents current fleet capacity & status sent to UI/Dashboard.
 type LicenseStatusInfo struct {
-	IsActive       bool     `json:"is_active"`
-	IsLicensed     bool     `json:"is_licensed"`
-	IsExpired      bool     `json:"is_expired"`
-	LicenseID      string   `json:"license_id"`
-	Issuer         string   `json:"issuer"`
-	Product        string   `json:"product"`
+	IsActive         bool     `json:"is_active"`
+	IsLicensed       bool     `json:"is_licensed"`
+	IsExpired        bool     `json:"is_expired"`
+	LicenseID        string   `json:"license_id"`
+	Issuer           string   `json:"issuer"`
+	Product          string   `json:"product"`
 	ClientName       string   `json:"client_name"`
 	Tier             string   `json:"tier"`
 	MaxSeats         int      `json:"max_seats"`
@@ -97,6 +99,9 @@ type LicenseStatusInfo struct {
 	RemainingSeats   int      `json:"remaining_seats"`
 	ServerHardwareID string   `json:"server_hardware_id,omitempty"`
 	HostHardwareID   string   `json:"host_hardware_id"`
+	InstallID        string   `json:"install_id"`
+	Revision         int      `json:"revision,omitempty"`
+	AuthorityStatus  string   `json:"authority_status,omitempty"`
 	IsHardwareBound  bool     `json:"is_hardware_bound"`
 	ExpiresAt        string   `json:"expires_at"`
 	IssuedAt         string   `json:"issued_at"`
@@ -210,15 +215,15 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 					if rem < 0 {
 						rem = 0
 					}
-					return &LicenseStatusInfo{
-						IsActive:       true,
-						IsLicensed:     true,
-						IsExpired:      false,
-						LicenseID:      payload.LicenseID,
-						Issuer:         firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
-						Product:        firstNonEmpty(payload.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
-						ClientName:     firstNonEmpty(payload.ClientName, "Enterprise Organization"),
-						Tier:           firstNonEmpty(payload.Tier, "Enterprise On-Premise"),
+					info := &LicenseStatusInfo{
+						IsActive:         true,
+						IsLicensed:       true,
+						IsExpired:        false,
+						LicenseID:        payload.LicenseID,
+						Issuer:           firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
+						Product:          firstNonEmpty(payload.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
+						ClientName:       firstNonEmpty(payload.ClientName, "Enterprise Organization"),
+						Tier:             firstNonEmpty(payload.Tier, "Enterprise On-Premise"),
 						MaxSeats:         payload.MaxSeats,
 						ActiveSeats:      allocatedSeats,
 						RemainingSeats:   rem,
@@ -229,25 +234,27 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 						IssuedAt:         payload.IssuedAt,
 						Features:         payload.Features,
 						StatusMessage:    fmt.Sprintf("Active (%d/%d seats in use)", allocatedSeats, payload.MaxSeats),
-					}, nil
+					}
+					return m.finishLicenseStatus(ctx, info, payload)
 				}
 			}
 		}
 
-		return &LicenseStatusInfo{
+		return m.finishLicenseStatus(ctx, &LicenseStatusInfo{
 			IsActive:       false,
 			IsLicensed:     false,
 			IsExpired:      false,
 			ActiveSeats:    allocatedSeats,
 			RemainingSeats: 0,
+			HostHardwareID: GetServerHardwareID(),
 			StatusMessage:  "No signed license is activated. Upload a .lic file issued by YesPanchi.",
-		}, nil
+		}, nil)
 	}
 
 	// Verify existing DB record signature to prevent offline database tampering
 	payload, _, err := VerifyLicenseEnvelope([]byte(record.RawEnvelope))
 	if err != nil {
-		return &LicenseStatusInfo{
+		return m.finishLicenseStatus(ctx, &LicenseStatusInfo{
 			IsActive:       false,
 			IsLicensed:     true,
 			IsExpired:      strings.Contains(err.Error(), "EXPIRED"),
@@ -262,7 +269,7 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 			ExpiresAt:      record.ExpiresAt.Format(time.RFC3339),
 			IssuedAt:       record.IssuedAt.Format(time.RFC3339),
 			StatusMessage:  fmt.Sprintf("License Invalid or Tampered: %v", err),
-		}, nil
+		}, nil)
 	}
 
 	rem := payload.MaxSeats - allocatedSeats
@@ -275,15 +282,15 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 		_ = json.Unmarshal([]byte(record.Features), &features)
 	}
 
-	return &LicenseStatusInfo{
-		IsActive:       true,
-		IsLicensed:     true,
-		IsExpired:      false,
-		LicenseID:      payload.LicenseID,
-		Issuer:         firstNonEmpty(payload.Issuer, record.Issuer, "YesPanchi Group of Companies"),
-		Product:        firstNonEmpty(payload.Product, record.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
-		ClientName:     payload.ClientName,
-		Tier:           payload.Tier,
+	return m.finishLicenseStatus(ctx, &LicenseStatusInfo{
+		IsActive:         true,
+		IsLicensed:       true,
+		IsExpired:        false,
+		LicenseID:        payload.LicenseID,
+		Issuer:           firstNonEmpty(payload.Issuer, record.Issuer, "YesPanchi Group of Companies"),
+		Product:          firstNonEmpty(payload.Product, record.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
+		ClientName:       payload.ClientName,
+		Tier:             payload.Tier,
 		MaxSeats:         payload.MaxSeats,
 		ActiveSeats:      allocatedSeats,
 		RemainingSeats:   rem,
@@ -294,13 +301,16 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 		IssuedAt:         payload.IssuedAt,
 		Features:         payload.Features,
 		StatusMessage:    fmt.Sprintf("Active Enterprise (%d/%d seats in use)", allocatedSeats, payload.MaxSeats),
-	}, nil
+	}, payload)
 }
 
 // ActivateLicense validates and activates a new signed license file/token.
 func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byte, updatedBy string) (*LicenseStatusInfo, error) {
 	payload, env, err := VerifyLicenseEnvelope(rawLicense)
 	if err != nil {
+		return nil, err
+	}
+	if err := m.assertLicenseBinding(ctx, payload); err != nil {
 		return nil, err
 	}
 
@@ -327,10 +337,10 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 	db := m.GetDB()
 	if db != nil {
 		rec := BrowserAILicenseRecord{
-			ID:          BrowserAILicenseID,
-			LicenseID:   payload.LicenseID,
-			Issuer:      firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
-			Product:     firstNonEmpty(payload.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
+			ID:               BrowserAILicenseID,
+			LicenseID:        payload.LicenseID,
+			Issuer:           firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
+			Product:          firstNonEmpty(payload.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
 			ClientName:       payload.ClientName,
 			Tier:             payload.Tier,
 			MaxSeats:         payload.MaxSeats,
@@ -347,6 +357,9 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 		if err := db.WithContext(ctx).Save(&rec).Error; err != nil {
 			return nil, fmt.Errorf("failed to save license record: %w", err)
 		}
+	}
+	if err := m.rememberAcceptedLicense(ctx, payload); err != nil {
+		return nil, err
 	}
 
 	// Also backup to file
@@ -373,7 +386,7 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 func (m *BrowserAIManager) CheckSeatQuotaEnforcement(ctx context.Context, agentID, hostname, mac string) error {
 	lic, err := m.GetActiveLicense(ctx)
 	if err != nil || lic == nil {
-		return nil // Fail open on internal DB error, or default capacity
+		return fmt.Errorf("LICENSE_CHECK_FAILED: seat check could not read the license")
 	}
 
 	if !lic.IsActive {
@@ -408,8 +421,6 @@ func (m *BrowserAIManager) CheckSeatQuotaEnforcement(ctx context.Context, agentI
 		}
 	}
 
-	// 2. This is a NEW laptop or a previously paused laptop trying to become active.
-	// Check if active seats >= maxSeats:
 	if lic.ActiveSeats >= lic.MaxSeats {
 		return fmt.Errorf("SEAT_LIMIT_REACHED: Enterprise on-premise license capacity reached (%d/%d active laptops in use). To activate this laptop, turn off or uninstall an unused laptop, or contact YesPanchi to upgrade seats.",
 			lic.ActiveSeats, lic.MaxSeats)
@@ -434,7 +445,11 @@ func GetServerHardwareID() string {
 
 func computeServerHardwareID() string {
 	// 1. Try Linux machine-id (/etc/machine-id, /var/lib/dbus/machine-id, DMI product UUID)
-	for _, p := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id", "/sys/class/dmi/id/product_uuid"} {
+	paths := []string{"/host/etc/machine-id", "/etc/machine-id", "/var/lib/dbus/machine-id", "/sys/class/dmi/id/product_uuid"}
+	if custom := strings.TrimSpace(os.Getenv("GATEWAY_HOST_MACHINE_ID_FILE")); custom != "" {
+		paths = append([]string{custom}, paths...)
+	}
+	for _, p := range paths {
 		if b, err := os.ReadFile(p); err == nil {
 			trimmed := strings.TrimSpace(string(b))
 			if len(trimmed) > 0 {

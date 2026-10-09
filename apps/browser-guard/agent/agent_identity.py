@@ -125,6 +125,94 @@ def detect_local_ip() -> str:
             return ""
 
 
+_AD_IDENTITY_CACHE: dict | None = None
+
+
+def detect_ad_identity() -> dict:
+    """Detects corporate Microsoft Active Directory identity when joined to a domain.
+    Seamlessly falls back to local user & standalone mode for non-domain machines.
+    """
+    global _AD_IDENTITY_CACHE
+    if _AD_IDENTITY_CACHE is not None:
+        return _AD_IDENTITY_CACHE
+
+    result = {
+        "is_domain_joined": False,
+        "ad_domain": "",
+        "ad_upn": "",
+        "ad_groups": "",
+        "domain_user": "",
+    }
+
+    if os.name != "nt":
+        _AD_IDENTITY_CACHE = result
+        return result
+
+    try:
+        user_domain = os.environ.get("USERDOMAIN", "").strip()
+        user_dns = os.environ.get("USERDNSDOMAIN", "").strip()
+        username = os.environ.get("USERNAME", "").strip()
+        computer_name = os.environ.get("COMPUTERNAME", "").strip()
+
+        is_domain = bool(user_dns) or (bool(user_domain) and user_domain.upper() != computer_name.upper())
+
+        upn = ""
+        try:
+            p = subprocess.run(
+                ["whoami", "/upn"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+            if p.returncode == 0 and "@" in p.stdout:
+                upn = p.stdout.strip()
+                is_domain = True
+        except Exception:
+            pass
+
+        domain_name = user_dns or user_domain if is_domain else ""
+        domain_user = f"{user_domain}\\{username}" if (is_domain and user_domain) else username
+
+        # Fetch AD Security Groups
+        groups_list = []
+        if is_domain:
+            try:
+                p_grp = subprocess.run(
+                    ["whoami", "/groups", "/fo", "csv", "/nh"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=3,
+                    check=False,
+                )
+                if p_grp.returncode == 0:
+                    for line in p_grp.stdout.splitlines():
+                        line = line.strip()
+                        if line:
+                            parts = [x.strip(' "') for x in line.split(",")]
+                            if parts:
+                                gname = parts[0]
+                                if not gname.startswith("NT AUTHORITY") and not gname.startswith("Mandatory Label") and not gname.lower().startswith("builtin"):
+                                    groups_list.append(gname)
+            except Exception:
+                pass
+
+        result = {
+            "is_domain_joined": is_domain,
+            "ad_domain": domain_name,
+            "ad_upn": upn,
+            "ad_groups": "; ".join(groups_list[:15]),
+            "domain_user": domain_user,
+        }
+    except Exception:
+        pass
+
+    _AD_IDENTITY_CACHE = result
+    return result
+
+
 def collect_agent_info(agent_id: str, status: str = "active") -> dict:
     hostname = socket.gethostname()
     username = os.environ.get("USERNAME") or os.environ.get("USER") or ""
@@ -136,6 +224,7 @@ def collect_agent_info(agent_id: str, status: str = "active") -> dict:
     pac_mode = str(health.get("pac_mode") or "")
     if pac_mode and pac_mode not in detail_s:
         detail_s = f"pac={pac_mode}" + (f"; {detail_s}" if detail_s else "")
+    ad = detect_ad_identity()
     return {
         "id": agent_id,
         "hostname": hostname,
@@ -151,4 +240,10 @@ def collect_agent_info(agent_id: str, status: str = "active") -> dict:
         "health_detail": detail_s,
         "pac_mode": pac_mode or "unknown",
         "status": status or "active",
+        "is_domain_joined": ad.get("is_domain_joined", False),
+        "ad_domain": ad.get("ad_domain", ""),
+        "ad_upn": ad.get("ad_upn", ""),
+        "ad_groups": ad.get("ad_groups", ""),
+        "domain_user": ad.get("domain_user", username),
+        "contact_email": ad.get("ad_upn") or "",
     }

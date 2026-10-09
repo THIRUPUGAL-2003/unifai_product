@@ -32,13 +32,13 @@ def login():
     with opener.open(req) as resp:
         return resp.getcode() == 200
 
-def get_server_id():
+def get_ids():
     url = f"{BASE_URL}/api/browser-ai/license/server-id"
     req = urllib.request.Request(url)
     with opener.open(req) as resp:
         data = json.loads(resp.read().decode("utf-8"))
-        print(f"[1] Server Hardware ID response: {data}")
-        return data.get("server_hardware_id")
+        print(f"[1] Server and database IDs: {data}")
+        return data.get("server_hardware_id"), data.get("install_id")
 
 def activate_license(lic_path):
     url = f"{BASE_URL}/api/browser-ai/license/activate"
@@ -68,9 +68,10 @@ def main():
     assert login(), "Admin login failed"
     print("[*] Logged in as Admin successfully.")
 
-    server_id = get_server_id()
+    server_id, install_id = get_ids()
     assert server_id and server_id.startswith("SRV-"), f"Invalid server ID format: {server_id}"
-    print(f"[*] Verified Current Host Server Hardware ID: {server_id}")
+    assert install_id and install_id.startswith("DB-"), f"Invalid install ID format: {install_id}"
+    print(f"[*] Verified host {server_id} database {install_id}")
 
     # TEST A: Valid Node-Locked License for this Host
     print("\n--- Test A: Activate License Locked to Current Host ID ---")
@@ -79,6 +80,7 @@ def main():
         seats=500,
         expiry_date="2028-12-31",
         server_id=server_id,
+        install_id=install_id,
         output_path="scratch/license_titan_locked.lic"
     )
     status_a, data_a = activate_license("scratch/license_titan_locked.lic")
@@ -96,6 +98,7 @@ def main():
         seats=500,
         expiry_date="2028-12-31",
         server_id="SRV-BAD00000-00000000",
+        install_id=install_id,
         output_path="scratch/license_titan_rogue.lic"
     )
     status_b, data_b = activate_license("scratch/license_titan_rogue.lic")
@@ -106,21 +109,21 @@ def main():
     assert "LICENSE_SERVER_MISMATCH" in error_msg, f"Expected LICENSE_SERVER_MISMATCH error, got: {error_msg}"
     print("[PASS] Test B Passed: Rogue server reuse rejected with LICENSE_SERVER_MISMATCH!")
 
-    # TEST C: Floating License (Empty Server ID)
-    print("\n--- Test C: Activate Floating License (No Server Lock) ---")
-    res_c = issue_license(
-        client_name="Floating Standard Corp",
-        seats=100,
-        expiry_date="2028-12-31",
-        server_id=None,
-        output_path="scratch/license_floating.lic"
-    )
-    status_c, data_c = activate_license("scratch/license_floating.lic")
-    print(f"Status: {status_c}")
-    print(f"Response: {data_c}")
-    assert status_c == 200, f"Expected 200, got {status_c}"
-    assert data_c["license"]["is_hardware_bound"] is False, "Expected is_hardware_bound == False for floating license"
-    print("[PASS] Test C Passed: Floating license continues to work seamlessly!")
+    # TEST C: A key without database id cannot be issued
+    print("\n--- Test C: Reject license that is not locked to a database ---")
+    try:
+        issue_license(
+            client_name="Floating Standard Corp",
+            seats=100,
+            expiry_date="2028-12-31",
+            server_id=server_id,
+            install_id="",
+            output_path="scratch/license_floating.lic"
+        )
+        raise AssertionError("expected install_id to be required")
+    except ValueError as exc:
+        assert "install_id" in str(exc), exc
+    print("[PASS] Test C Passed: unbound license is rejected.")
 
     print("\n" + "="*60)
     print(" ALL NODE-LOCKING TESTS PASSED PERFECTLY! [100% SUCCESS]")

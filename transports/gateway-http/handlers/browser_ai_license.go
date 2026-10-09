@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"crypto/ed25519"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/bytedance/sonic"
@@ -90,8 +92,62 @@ func (h *BrowserAIHandler) activateLicense(ctx *fasthttp.RequestCtx) {
 
 // getServerHardwareID returns the deterministic hardware identifier of this host machine.
 func (h *BrowserAIHandler) getServerHardwareID(ctx *fasthttp.RequestCtx) {
+	h.ensureDB(ctx)
+	installID := ""
+	if h.manager != nil {
+		installID, _ = h.manager.GetOrCreateInstallID(ctx)
+	}
 	SendJSON(ctx, map[string]any{
 		"status":             "success",
 		"server_hardware_id": logstore.GetServerHardwareID(),
+		"install_id":         installID,
+	})
+}
+
+// licenseAuthorityStatus is served only on the vendor Gateway.
+// Client Gateways call it with LICENSE_AUTHORITY_URL. The reply is signed with the vendor private key.
+func (h *BrowserAIHandler) licenseAuthorityStatus(ctx *fasthttp.RequestCtx) {
+	regPath := strings.TrimSpace(os.Getenv("LICENSE_AUTHORITY_REGISTRY"))
+	keyPath := strings.TrimSpace(os.Getenv("LICENSE_AUTHORITY_PRIVATE_KEY"))
+	if regPath == "" || keyPath == "" {
+		ctx.SetStatusCode(fasthttp.StatusNotFound)
+		ctx.SetContentType("application/json")
+		ctx.SetBodyString(`{"error":"license authority is not configured on this server"}`)
+		return
+	}
+	var req struct {
+		LicenseID        string `json:"license_id"`
+		InstallID        string `json:"install_id"`
+		ServerHardwareID string `json:"server_hardware_id"`
+		Revision         int    `json:"revision"`
+	}
+	if err := sonic.Unmarshal(ctx.PostBody(), &req); err != nil || strings.TrimSpace(req.LicenseID) == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "license_id, install_id, server_hardware_id and revision are required")
+		return
+	}
+	registry, err := os.ReadFile(regPath)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "license registry unreadable")
+		return
+	}
+	keyPEM, err := os.ReadFile(keyPath)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "license authority key unreadable")
+		return
+	}
+	priv, err := logstore.ParseLicenseAuthorityPrivateKey(keyPEM)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "license authority key invalid")
+		return
+	}
+	decision := logstore.DecideLicenseAuthority(registry, req.LicenseID, req.InstallID, req.ServerHardwareID, req.Revision)
+	payloadB64, sigB64, err := logstore.SignLicenseAuthorityDecision(ed25519.PrivateKey(priv), decision)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "could not sign authority response")
+		return
+	}
+	SendJSON(ctx, map[string]any{
+		"payload_b64": payloadB64,
+		"signature":   sigB64,
 	})
 }

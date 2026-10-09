@@ -98,11 +98,17 @@ def _agent_wire_fields() -> dict:
 
 
 def _agent_metadata_fields() -> dict:
-    return {
+    meta = {
         "agent_id": GATEWAY_AGENT_ID,
         "agent_hostname": GATEWAY_AGENT_HOSTNAME,
         "agent_type": GATEWAY_AGENT_TYPE,
     }
+    user_domain = os.getenv("USERDOMAIN", "").strip()
+    username = os.getenv("USERNAME", "").strip()
+    if user_domain:
+        meta["ad_domain"] = user_domain
+        meta["domain_user"] = f"{user_domain}\\{username}" if username else user_domain
+    return meta
 
 
 def _network_proxy_heartbeat_loop() -> None:

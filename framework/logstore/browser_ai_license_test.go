@@ -5,9 +5,13 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestEnterpriseLicenseVerification(t *testing.T) {
@@ -106,14 +110,21 @@ func TestSeatQuotaEnforcementLimit(t *testing.T) {
 	MasterPublicKeyBytes = pubKey
 	defer func() { MasterPublicKeyBytes = origKey }()
 
-	// Issue a 2-seat license
+	installID, err := mgr.GetOrCreateInstallID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	payload := EnterpriseLicensePayload{
-		Version:    "1.0",
-		ClientName: "Quota Test Corp",
-		Tier:       "Enterprise On-Premise",
-		MaxSeats:   2,
-		IssuedAt:   time.Now().UTC().Format(time.RFC3339),
-		ExpiresAt:  time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
+		Version:          "1.0",
+		LicenseID:        "YP-QUOTA-1",
+		ClientName:       "Quota Test Corp",
+		Tier:             "Enterprise On-Premise",
+		MaxSeats:         2,
+		InstallID:        installID,
+		ServerHardwareID: GetServerHardwareID(),
+		Revision:         1,
+		IssuedAt:         time.Now().UTC().Format(time.RFC3339),
+		ExpiresAt:        time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
 	}
 	rawPayload, _ := json.Marshal(payload)
 	sig := ed25519.Sign(privKey, rawPayload)
@@ -125,7 +136,7 @@ func TestSeatQuotaEnforcementLimit(t *testing.T) {
 	}
 	envBytes, _ := json.Marshal(env)
 
-	_, err := mgr.ActivateLicense(ctx, envBytes, "admin")
+	_, err = mgr.ActivateLicense(ctx, envBytes, "admin")
 	if err != nil {
 		t.Fatalf("activate failed: %v", err)
 	}
@@ -136,5 +147,105 @@ func TestSeatQuotaEnforcementLimit(t *testing.T) {
 	}
 	if lic.MaxSeats != 2 {
 		t.Fatalf("expected 2 max seats, got %d", lic.MaxSeats)
+	}
+}
+
+func signLicensePayload(t *testing.T, priv ed25519.PrivateKey, payload EnterpriseLicensePayload) []byte {
+	t.Helper()
+	rawPayload, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := ed25519.Sign(priv, rawPayload)
+	env := EnterpriseLicenseEnvelope{
+		Format:     "gateway_enterprise_license_v1",
+		Payload:    payload,
+		PayloadB64: base64.StdEncoding.EncodeToString(rawPayload),
+		Signature:  base64.StdEncoding.EncodeToString(sig),
+	}
+	envBytes, err := json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return envBytes
+}
+
+func newLicenseManager(t *testing.T) *BrowserAIManager {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "lic.db")), &gorm.Config{})
+	if err != nil {
+		t.Skipf("sqlite unavailable: %v", err)
+	}
+	mgr := NewBrowserAIManager(db)
+	if err := mgr.AutoMigrate(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return mgr
+}
+
+func TestLicenseLockedToOneDatabaseAndRevision(t *testing.T) {
+	ctx := context.Background()
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := MasterPublicKeyBytes
+	MasterPublicKeyBytes = pub
+	defer func() { MasterPublicKeyBytes = orig }()
+
+	dbA := newLicenseManager(t)
+	dbB := newLicenseManager(t)
+	installA, err := dbA.GetOrCreateInstallID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	installB, err := dbB.GetOrCreateInstallID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if installA == installB {
+		t.Fatal("two databases must not share an install id")
+	}
+	host := GetServerHardwareID()
+	first := EnterpriseLicensePayload{
+		Version: "1.0", LicenseID: "YP-DB-1", ClientName: "Client", Tier: "Enterprise On-Premise",
+		MaxSeats: 1000, InstallID: installA, ServerHardwareID: host, Revision: 1,
+		IssuedAt: time.Now().UTC().Format(time.RFC3339), ExpiresAt: time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
+	}
+	raw := signLicensePayload(t, priv, first)
+	if _, err := dbA.ActivateLicense(ctx, raw, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dbB.ActivateLicense(ctx, raw, "admin"); err == nil || !strings.Contains(err.Error(), "LICENSE_DB_MISMATCH") {
+		t.Fatalf("second database accepted the same key: %v", err)
+	}
+	upgraded := first
+	upgraded.Revision = 2
+	upgraded.MaxSeats = 1500
+	if _, err := dbA.ActivateLicense(ctx, signLicensePayload(t, priv, upgraded), "admin"); err != nil {
+		t.Fatal(err)
+	}
+	lic, err := dbA.GetActiveLicense(ctx)
+	if err != nil || !lic.IsActive || lic.MaxSeats != 1500 {
+		t.Fatalf("upgraded license = %+v err=%v", lic, err)
+	}
+	if _, err := dbA.ActivateLicense(ctx, raw, "admin"); err == nil || !strings.Contains(err.Error(), "LICENSE_REVOKED") {
+		t.Fatalf("old revision was accepted: %v", err)
+	}
+}
+
+func TestAuthorityRejectsReplacedRevision(t *testing.T) {
+	registry := []byte(`{"licenses":{"YP-1":{"license_id":"YP-1","install_id":"DB-1","server_hardware_id":"SRV-1","max_seats":1500,"revision":2,"expires_at":"2099-01-01T00:00:00Z","status":"active"}}}`)
+	old := DecideLicenseAuthority(registry, "YP-1", "DB-1", "SRV-1", 1)
+	if old.Allowed {
+		t.Fatal("old revision must be revoked")
+	}
+	current := DecideLicenseAuthority(registry, "YP-1", "DB-1", "SRV-1", 2)
+	if !current.Allowed || current.MaxSeats != 1500 {
+		t.Fatalf("current key rejected: %+v", current)
+	}
+	otherDB := DecideLicenseAuthority(registry, "YP-1", "DB-2", "SRV-1", 2)
+	if otherDB.Allowed {
+		t.Fatal("other database must be rejected")
 	}
 }
