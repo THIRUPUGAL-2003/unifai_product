@@ -4,6 +4,26 @@ import json
 import os
 import urllib.parse
 
+def _safe_unescape_prompt_str(raw: str) -> str:
+    """Safely decode JSON string escapes without destroying UTF-8 unicode/emojis."""
+    if not raw or "\\" not in raw:
+        return raw
+    try:
+        return json.loads(f'"{raw}"')
+    except Exception:
+        pass
+    try:
+        return (
+            raw.replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace('\\"', '"')
+            .replace("\\\\", "\\")
+            .replace("\\/", "/")
+        )
+    except Exception:
+        return raw
+
 def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
     """Claude / Anthropic chat submit from request shape — not hostname.
 
@@ -214,7 +234,11 @@ def extract_event_send_prompt(content: str) -> str:
     def _from_message_dict(msg: dict) -> str:
         if not isinstance(msg, dict):
             return ""
-        author = str(msg.get("author") or msg.get("role") or "").lower()
+        author_val = msg.get("author")
+        if isinstance(author_val, dict):
+            author = str(author_val.get("role") or "").lower()
+        else:
+            author = str(author_val or msg.get("role") or "").lower()
         if author and author not in ("user", "human", "customer", "client", "sender"):
             return ""
         got = _from_content_field(msg.get("content"))
@@ -889,11 +913,7 @@ def _extract_messages_parts_prompt(blob: str) -> str | None:
     for pat in patterns:
         for m in re.finditer(pat, blob):
             raw = m.group(1)
-            cand = _clean_prompt_text(
-                raw.encode("utf-8").decode("unicode_escape", errors="ignore")
-                if "\\" in raw
-                else raw
-            )
+            cand = _clean_prompt_text(_safe_unescape_prompt_str(raw))
             if (
                 cand
                 and looks_like_user_prompt(cand)
@@ -2602,9 +2622,7 @@ def _latest_typed_number_in_body(text: str) -> str | None:
         for m in re.finditer(pat, text):
             if m.start() < last_at:
                 continue
-            raw = m.group(1) or ""
-            cand = raw.encode("utf-8").decode("unicode_escape", errors="ignore") if "\\" in raw else raw
-            cand = cand.strip()
+            cand = _safe_unescape_prompt_str(raw).strip()
             if cand:
                 last = cand
                 last_at = m.start()

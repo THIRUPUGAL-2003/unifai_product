@@ -38,15 +38,20 @@ function detectLanguageFromExt(ext: string): string | undefined {
 	const map: Record<string, string> = {
 		ts: "typescript",
 		tsx: "typescript",
+		mts: "typescript",
+		cts: "typescript",
 		js: "javascript",
 		jsx: "javascript",
 		mjs: "javascript",
 		cjs: "javascript",
 		py: "python",
 		pyw: "python",
+		pyi: "python",
+		pyx: "python",
 		json: "json",
 		jsonl: "json",
 		jsonc: "json",
+		ndjson: "json",
 		csv: "csv",
 		tsv: "tsv",
 		sql: "sql",
@@ -63,39 +68,147 @@ function detectLanguageFromExt(ext: string): string | undefined {
 		sh: "bash",
 		bash: "bash",
 		zsh: "bash",
+		fish: "bash",
 		ps1: "powershell",
+		psm1: "powershell",
+		psd1: "powershell",
+		bat: "bat",
+		cmd: "bat",
 		go: "go",
 		rs: "rust",
+		rlib: "rust",
 		java: "java",
 		c: "c",
 		h: "c",
 		cpp: "cpp",
 		hpp: "cpp",
+		cc: "cpp",
+		cxx: "cpp",
+		hh: "cpp",
+		hxx: "cpp",
 		cs: "csharp",
+		csx: "csharp",
+		fs: "fsharp",
+		fsi: "fsharp",
+		fsx: "fsharp",
 		php: "php",
+		phtml: "php",
 		rb: "ruby",
+		rake: "ruby",
+		gemspec: "ruby",
 		swift: "swift",
 		kt: "kotlin",
+		kts: "kotlin",
 		scala: "scala",
+		sc: "scala",
 		r: "r",
+		rmd: "r",
+		m: "matlab",
+		mlx: "matlab",
+		jl: "julia",
+		dart: "dart",
+		lua: "lua",
+		pl: "perl",
+		pm: "perl",
+		t: "perl",
+		asm: "assembly",
+		s: "assembly",
+		f: "fortran",
+		for: "fortran",
+		f90: "fortran",
+		f95: "fortran",
+		cbl: "cobol",
+		cob: "cobol",
+		cpy: "cobol",
+		mm: "objectivec",
+		ex: "elixir",
+		exs: "elixir",
+		erl: "erlang",
+		hrl: "erlang",
+		hs: "haskell",
+		lhs: "haskell",
+		clj: "clojure",
+		cljs: "clojure",
+		cljc: "clojure",
+		edn: "clojure",
+		lisp: "lisp",
+		lsp: "lisp",
+		pro: "prolog",
+		sol: "solidity",
+		graphql: "graphql",
+		gql: "graphql",
+		proto: "protobuf",
+		wat: "wat",
+		vue: "vue",
+		svelte: "svelte",
 		md: "markdown",
 		markdown: "markdown",
+		mdown: "markdown",
+		rst: "rst",
+		tex: "latex",
+		latex: "latex",
 		toml: "toml",
 		ini: "ini",
+		cfg: "ini",
+		conf: "ini",
+		config: "ini",
+		env: "shell",
 		dockerfile: "dockerfile",
+		makefile: "makefile",
+		cmake: "cmake",
+		gradle: "groovy",
+		pom: "xml",
+		sln: "text",
+		csproj: "xml",
+		tf: "hcl",
+		tfvars: "hcl",
+		j2: "jinja2",
+		jinja: "jinja2",
+		jinja2: "jinja2",
+		diff: "diff",
+		patch: "diff",
+		log: "log",
+		hlsl: "hlsl",
+		glsl: "glsl",
+		shader: "glsl",
+		gcode: "gcode",
+		scad: "scad",
+		bib: "bibtex",
+		ris: "text",
+		qmd: "markdown",
+		fasta: "fasta",
+		fa: "fasta",
+		fastq: "fastq",
+		sam: "sam",
+		edi: "text",
+		x12: "text",
+		po: "gettext",
+		pot: "gettext",
+		strings: "text",
 	};
 	return map[ext.toLowerCase()];
 }
 
 function getCategoryFromExt(ext: string): string {
 	const lower = ext.toLowerCase();
-	if (["pdf"].includes(lower)) return "PDF Document";
-	if (["doc", "docx", "odt", "rtf"].includes(lower)) return "Word Document";
-	if (["ppt", "pptx", "odp"].includes(lower)) return "Presentation";
-	if (["xls", "xlsx", "csv", "tsv", "ods"].includes(lower)) return "Spreadsheet / Data Table";
-	if (["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(lower)) return "Image / Visual";
-	if (["py", "ts", "js", "go", "java", "rs", "cpp", "c", "cs", "php", "rb", "swift", "kt", "sql"].includes(lower)) return "Source Code";
-	if (["json", "yaml", "yml", "xml", "toml", "ini", "env"].includes(lower)) return "Structured Config / Data";
+	if (["pdf", "epub", "mobi", "azw", "azw3", "fb2", "djvu", "xps", "oxps"].includes(lower)) return "PDF / E-Book Document";
+	if (["doc", "docx", "dot", "dotx", "dotm", "odt", "rtf", "pages"].includes(lower)) return "Word Document";
+	if (["ppt", "pptx", "pptm", "pot", "potx", "potm", "odp", "key"].includes(lower)) return "Presentation Slides";
+	if (["xls", "xlsx", "xlsm", "xlsb", "xlt", "xltx", "xltm", "csv", "tsv", "ods", "numbers"].includes(lower)) return "Spreadsheet / Data Table";
+	if (["png", "jpg", "jpeg", "jpe", "webp", "gif", "bmp", "dib", "svg", "tiff", "tif", "avif", "heic", "heif", "ico", "cur", "psd", "psb", "ai", "raw", "dng", "cr2", "cr3", "nef", "hdr", "exr"].includes(lower)) return "Image / Visual Asset";
+	if (["mp3", "wav", "aac", "m4a", "flac", "ogg", "opus", "wma", "aiff", "aif", "mid", "midi", "amr", "weba", "pcm"].includes(lower)) return "Audio / Voice Recording";
+	if (["mp4", "m4v", "mpeg", "mpg", "mov", "avi", "mkv", "webm", "wmv", "flv", "mts", "m2ts"].includes(lower)) return "Video Recording";
+	if (["zip", "tar", "gz", "tgz", "bz2", "tbz2", "xz", "txz", "zst", "7z", "rar", "iso", "dmg", "cab", "pkg", "deb", "rpm", "apk"].includes(lower)) return "Archive Package";
+	if (["py", "pyw", "pyi", "js", "ts", "tsx", "jsx", "go", "java", "rs", "cpp", "c", "cs", "php", "rb", "swift", "kt", "scala", "dart", "lua", "r", "jl", "pl", "asm", "f", "cob", "ex", "erl", "hs", "clj", "sol", "sql", "sh", "bash", "ps1", "bat", "cmd", "proto", "graphql", "wat", "vue", "svelte", "html", "css"].includes(lower)) return "Source Code";
+	if (["json", "jsonl", "ndjson", "yaml", "yml", "xml", "toml", "ini", "cfg", "conf", "config", "env", "properties", "tf", "tfvars", "cmake", "gradle", "dockerfile", "makefile", "editorconfig"].includes(lower)) return "Structured Config / DevOps";
+	if (["pt", "pth", "onnx", "safetensors", "gguf", "ggml", "pkl", "pickle", "joblib", "tflite", "keras", "weights", "ckpt", "model", "cbm"].includes(lower)) return "AI / ML Model Artifact";
+	if (["sqlite", "sqlite3", "db", "duckdb", "parquet", "orc", "avro", "arrow", "feather", "h5", "hdf5", "dump", "bak"].includes(lower)) return "Database / Analytics Storage";
+	if (["pem", "crt", "cer", "cert", "csr", "key", "pub", "asc", "sig", "sha256", "sha512", "md5", "spdx"].includes(lower)) return "Security / Cryptographic Certificate or Key";
+	if (["obj", "stl", "gcode", "scad", "dxf", "step", "stp", "iges", "igs", "fbx", "gltf", "glb", "kicad_sch", "kicad_pcb", "gbr"].includes(lower)) return "CAD / 3D Model Specification";
+	if (["geojson", "kml", "kmz", "gpx", "topojson", "shp", "tab"].includes(lower)) return "Geospatial / GIS Map Data";
+	if (["bib", "ris", "rdf", "fasta", "fa", "fastq", "fq", "sam", "pdb", "cif", "qmd"].includes(lower)) return "Scientific / Research Data";
+	if (["eml", "msg", "vcf", "ics", "ical"].includes(lower)) return "Email / Calendar / Contact Record";
+	if (["exe", "dll", "so", "dylib", "wasm", "bin", "dex", "elf"].includes(lower)) return "Binary Executable / Module";
 	return "Text Document";
 }
 
@@ -126,9 +239,9 @@ function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
 	}
 
 	// Check Voice transcript
-	if (text.startsWith("Voice transcript")) {
+	if (text.startsWith("Voice transcript") || text.includes("voice recording attached") || text.includes("[Voice Audio:")) {
 		const match = text.match(/^Voice transcript\s*(?:\(([^)]+)\))?:\s*([\s\S]*)$/i);
-		const filename = match?.[1] || "voice.wav";
+		const filename = match?.[1] || "voice_recording.wav";
 		const content = (match?.[2] || text).trim();
 		return { filename, category: "Voice Recording", content, kind: "voice" };
 	}
@@ -142,11 +255,17 @@ function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
 	}
 
 	// Generic attached text fallback
-	if (text.startsWith("Attached file:") || text.startsWith("Attached image:")) {
+	if (text.startsWith("Attached file:") || text.startsWith("Attached image:") || text.startsWith("[File:")) {
 		const lines = text.split("\n");
-		const filename = lines[0].replace(/^(?:Attached file|Attached image):\s*/i, "").trim() || "attachment";
-		const content = lines.slice(1).join("\n").trim();
-		return { filename, category: "Attachment", content, kind: "raw" };
+		const first = lines[0];
+		let filename = "attachment";
+		const m = first.match(/^(?:Attached file|Attached image|\[File):\s*([^()\n]+)/i);
+		if (m?.[1]) filename = m[1].trim();
+		const content = lines.slice(1).join("\n").trim() || text;
+		const ext = filename.split(".").pop()?.toLowerCase() || "";
+		const lang = detectLanguageFromExt(ext);
+		const category = getCategoryFromExt(ext);
+		return { filename, language: lang, category, content, kind: "raw" };
 	}
 
 	return null;
@@ -163,14 +282,16 @@ function formatUnifiedMultiFileContent(
 	// 1. User Instruction
 	const trimmedQuery = userQuery.trim();
 	if (trimmedQuery) {
-		sections.push(trimmedQuery);
+		sections.push(
+			`[USER QUESTION / INSTRUCTION]\n${trimmedQuery}\n\nPlease thoroughly analyze all the attached files, extracted content, and voice transcripts provided below to answer this question completely and accurately.`
+		);
 	} else if (totalItems > 1) {
 		sections.push(
-			"Please thoroughly review and analyze all the attached files below. Provide a clear summary of each file, compare or cross-reference their key details, and highlight any notable patterns, findings, or discrepancies."
+			"Please thoroughly review and analyze all the attached files and voice recordings below. Provide a clear summary of each item, compare or cross-reference their key details, and highlight any notable patterns, findings, or discrepancies."
 		);
 	} else if (totalItems === 1) {
 		sections.push(
-			"Please thoroughly review and analyze the attached file below. Provide a comprehensive summary, explain its key points, and highlight any significant findings or insights."
+			"Please thoroughly review and analyze the attached file or voice recording below. Provide a comprehensive summary, explain its key points, and highlight any significant findings or insights."
 		);
 	}
 

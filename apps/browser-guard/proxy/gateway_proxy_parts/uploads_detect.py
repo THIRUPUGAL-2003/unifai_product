@@ -19,19 +19,129 @@ _GENERATED_UPLOAD_NAME_RE = re.compile(
     re.I,
 )
 
-_UPLOAD_NAME_EXTS = (
-    ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".xlsm", ".pptx", ".ppt",
-    ".odt", ".ods", ".odp", ".rtf", ".html", ".htm", ".xml",
-    ".txt", ".csv", ".json", ".md", ".log",
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff",
-    ".zip", ".tar", ".gz", ".7z", ".rar",
-    ".wav", ".mp3", ".m4a", ".webm", ".ogg", ".flac", ".aac", ".opus", ".wma",
-    ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs", ".rb", ".php",
-    ".c", ".cpp", ".h", ".cs", ".swift", ".kt", ".sql", ".sh", ".ps1",
-    ".css", ".scss", ".vue", ".dart", ".lua", ".toml", ".env", ".ipynb",
-    ".yaml", ".yml", ".ini", ".cfg", ".conf", ".svg", ".ico", ".heic", ".avif",
-    ".pages", ".numbers", ".key", ".epub", ".mobi", ".apk", ".dmg", ".iso",
-)
+_UPLOAD_NAME_EXTS = frozenset({
+    # 1. Documents and Office Files
+    ".pdf", ".doc", ".docx", ".dot", ".dotx", ".dotm", ".odt", ".rtf", ".txt",
+    ".md", ".markdown", ".mdown", ".tex", ".latex", ".xls", ".xlsx", ".xlsm",
+    ".xlsb", ".xlt", ".xltx", ".xltm", ".csv", ".tsv", ".ods", ".numbers",
+    ".ppt", ".pptx", ".pptm", ".pot", ".potx", ".potm", ".odp", ".key", ".pub",
+    ".vsd", ".vsdx", ".xps", ".oxps", ".epub", ".azw", ".azw3", ".kfx", ".fb2",
+    ".mobi", ".djvu", ".djv", ".ps", ".eps", ".cbz", ".cbr",
+    # 2. Programming and Source Code Files
+    ".py", ".pyw", ".pyi", ".pyx", ".pyc", ".pyd", ".js", ".mjs", ".cjs",
+    ".ts", ".tsx", ".mts", ".cts", ".html", ".htm", ".css", ".sass", ".scss",
+    ".less", ".java", ".class", ".jar", ".war", ".c", ".h", ".cpp", ".cc",
+    ".cxx", ".hpp", ".hh", ".hxx", ".cs", ".csx", ".fs", ".fsi", ".fsx",
+    ".go", ".rs", ".rlib", ".php", ".phtml", ".phar", ".rb", ".rake", ".gemspec",
+    ".swift", ".kt", ".kts", ".dart", ".r", ".rmd", ".rds", ".rdata",
+    ".m", ".mlx", ".mat", ".jl", ".scala", ".sc", ".pl", ".pm", ".t",
+    ".lua", ".sh", ".bash", ".zsh", ".fish", ".bat", ".cmd", ".ps1", ".psm1",
+    ".psd1", ".asm", ".s", ".f", ".for", ".f90", ".f95", ".cbl", ".cob",
+    ".cpy", ".mm", ".ex", ".exs", ".erl", ".hrl", ".hs", ".lhs", ".clj",
+    ".cljs", ".cljc", ".edn", ".lisp", ".lsp", ".cl", ".pro", ".sol", ".sql",
+    ".graphql", ".gql", ".proto", ".wasm", ".wat", ".ipynb",
+    # 3. Web Development, Configuration and Project Files
+    ".json", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml", ".toml", ".ini",
+    ".conf", ".config", ".cfg", ".env", ".properties", ".editorconfig", ".map",
+    ".vue", ".svelte", ".aspx", ".ascx", ".cshtml", ".razor", ".manifest",
+    ".webmanifest", ".tf", ".tfvars", ".tfstate", ".j2", ".jinja", ".jinja2",
+    ".cmake", ".gradle", ".pom", ".sln", ".slnx", ".csproj", ".vcxproj",
+    ".fsproj", ".lock",
+    # 4. Images and Graphics
+    ".jpg", ".jpeg", ".jpe", ".png", ".gif", ".webp", ".avif", ".heif", ".heic",
+    ".bmp", ".dib", ".tif", ".tiff", ".svg", ".ico", ".cur", ".psd", ".psb",
+    ".ai", ".indd", ".idml", ".cdr", ".xcf", ".kra", ".afphoto", ".afdesign",
+    ".raw", ".dng", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".raf",
+    ".jp2", ".j2k", ".pbm", ".pgm", ".ppm", ".pnm", ".exr", ".hdr", ".tga",
+    ".dds", ".ktx", ".ktx2", ".blend", ".ora", ".wmf", ".emf", ".jxl",
+    # 5. Audio Files
+    ".mp3", ".wav", ".aac", ".m4a", ".flac", ".ogg", ".opus", ".wma", ".aiff",
+    ".aif", ".mid", ".midi", ".amr", ".ra", ".ram", ".au", ".caf", ".ape",
+    ".ac3", ".dts", ".weba", ".pcm", ".sf2", ".sfz", ".aup3", ".band", ".als",
+    ".flp", ".logicx", ".ptx",
+    # 6. Video and Animation
+    ".mp4", ".m4v", ".mpeg", ".mpg", ".mov", ".avi", ".mkv", ".webm", ".wmv",
+    ".flv", ".3gp", ".3g2", ".mts", ".m2ts", ".vob", ".ogv", ".qtl", ".lottie",
+    ".aep", ".aepx", ".prproj", ".drp", ".fcpxml", ".avp", ".srt", ".vtt",
+    ".ass", ".ssa", ".ttml", ".dfxp", ".ts", ".m3u8", ".mpd", ".m4s",
+    # 7. Compressed Files and Archives
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".gzip", ".tar.gz", ".tgz", ".bz2",
+    ".tar.bz2", ".tbz2", ".xz", ".tar.xz", ".txz", ".zst", ".tar.zst", ".cab",
+    ".iso", ".dmg", ".img", ".wim", ".msi", ".ear", ".apk", ".aab", ".deb",
+    ".rpm", ".appimage", ".pkg", ".app", ".sfx", ".lzh", ".lha", ".z", ".par2",
+    # 8. Database and Data Storage Files
+    ".db", ".sqlite", ".sqlite3", ".dump", ".backup", ".mdb", ".accdb", ".bak",
+    ".trn", ".dmp", ".exp", ".dat", ".duckdb", ".ldb", ".sst", ".parquet",
+    ".orc", ".avro", ".feather", ".arrow", ".arrows", ".h5", ".hdf5", ".nc",
+    ".pkl", ".pickle", ".joblib", ".pb", ".protobuf", ".msgpack", ".mpk",
+    ".bson", ".cbor", ".sas7bdat", ".sas7bcat", ".xpt", ".sav", ".zsav",
+    ".por", ".dta", ".wal", ".ibd",
+    # 9. AI, Machine Learning and Deep Learning Files
+    ".pt", ".pth", ".jit", ".tflite", ".keras", ".weights.h5", ".onnx",
+    ".blob", ".engine", ".plan", ".mlmodel", ".mlpackage", ".gguf", ".ggml",
+    ".safetensors", ".spm", ".ckpt", ".checkpoint", ".npz", ".npy", ".ubj",
+    ".model", ".cbm", ".dvc", ".faiss", ".index", ".ann", ".lance",
+    ".onnx_data",
+    # 10. Executable, Installer and Binary Files
+    ".exe", ".dll", ".sys", ".cpl", ".scr", ".msp", ".msix", ".appx",
+    ".appxbundle", ".so", ".dylib", ".kext", ".dex", ".odex", ".vdex", ".elf",
+    ".bin", ".hex", ".fw", ".obj", ".o", ".pdb", ".dsym", ".core",
+    # 11. Security, Certificates and Cryptographic Files
+    ".pem", ".crt", ".cer", ".cert", ".csr", ".der", ".p7b", ".p7c", ".p12",
+    ".pfx", ".key", ".pub", ".asc", ".gpg", ".pgp", ".jks", ".keystore",
+    ".pk8", ".p7s", ".sig", ".sha256", ".sha512", ".md5", ".sha1", ".hc",
+    ".spdx",
+    # 12. Email, Messaging and Contact Files
+    ".eml", ".msg", ".pst", ".ost", ".mbox", ".emlx", ".vcf", ".ics", ".ical",
+    # 13. Fonts and Typography
+    ".ttf", ".otf", ".woff", ".woff2", ".eot", ".pfa", ".pfb", ".afm",
+    ".pfm", ".ttc", ".otc", ".sfd",
+    # 14. CAD, 3D Models, Engineering and Manufacturing
+    ".dwg", ".dxf", ".step", ".stp", ".iges", ".igs", ".stl", ".obj",
+    ".gltf", ".glb", ".fbx", ".3ds", ".sldprt", ".sldasm", ".slddrw", ".f3d",
+    ".f3z", ".fcstd", ".skp", ".rvt", ".rfa", ".ifc", ".x_t", ".x_b",
+    ".scad", ".gcode", ".nc", ".tap", ".kicad_sch", ".kicad_pcb", ".gbr",
+    ".ger", ".gtl", ".gbl", ".brd", ".sch", ".pcbdoc", ".schdoc", ".vi",
+    ".lvproj", ".slx", ".mdl", ".cnc", ".stpnc",
+    # 15. GIS, Maps and Geographic Data
+    ".shp", ".shx", ".dbf", ".prj", ".geojson", ".kml", ".kmz", ".gpkg",
+    ".gpx", ".tab", ".mif", ".mid", ".fgb", ".topojson", ".las", ".laz",
+    ".grib", ".grb", ".grb2", ".mbtiles", ".pmtiles", ".osm", ".pbf", ".wkt",
+    # 16. Operating System and System Files
+    ".lnk", ".reg", ".evtx", ".pf", ".service", ".socket", ".timer", ".cron",
+    ".plist", ".crash", ".ips", ".swp", ".swo", ".vmdk", ".vdi", ".vhd",
+    ".vhdx", ".qcow2", ".vmx", ".vbox", ".ovf", ".ova", ".rom", ".cap", ".fd",
+    # 17. Scientific, Mathematical and Research Files
+    ".bib", ".ris", ".enl", ".enlx", ".rdf", ".nb", ".wl", ".fits", ".fit",
+    ".fts", ".dcm", ".nii", ".fa", ".fasta", ".fna", ".fq", ".fastq",
+    ".bam", ".sam", ".pdb", ".cif", ".zarr",
+    # 18. E-commerce, Payments and Business Data
+    ".ofx", ".qfx", ".qif", ".qbb", ".qbm", ".qbw", ".edi", ".x12",
+    # 19. Gaming, Virtual Reality and Digital Assets
+    ".unity", ".prefab", ".asset", ".unitypackage", ".uproject", ".uasset",
+    ".umap", ".godot", ".tscn", ".tres", ".mcworld", ".mca", ".save", ".pak",
+    ".pck", ".bundle", ".wrl", ".x3d", ".x3db", ".x3dv", ".usd", ".usda",
+    ".usdc", ".usdz", ".bvh", ".3mf", ".amf", ".shader", ".hlsl", ".glsl",
+    # 20. Miscellaneous and Specialized Formats
+    ".warc", ".wacz", ".mhtml", ".mht", ".har", ".po", ".pot", ".mo",
+    ".xliff", ".xlf", ".strings", ".stringsdict", ".arb", ".rc", ".res",
+    ".storyboard", ".xib", ".asice", ".asics",
+})
+
+_STANDALONE_UPLOAD_FILENAMES = frozenset({
+    "dockerfile", ".dockerignore", "makefile", "jenkinsfile", "procfile",
+    "gemfile", "rakefile", "justfile", "brewfile", "vagrantfile", "license",
+    "license.txt", "licence", "readme", "readme.txt", "readme.md", "changelog",
+    "contributing", "codeowners", "notice", ".gitignore", ".gitattributes",
+    ".editorconfig", ".env", ".env.local", ".env.production", ".env.development",
+    ".npmrc", ".pypirc", ".bashrc", ".zshrc", ".profile", ".nvmrc", ".node-version",
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "requirements.txt", "pyproject.toml", "setup.py", "setup.cfg", "cargo.toml",
+    "go.mod", "go.sum", "pom.xml", "cmakelists.txt", "config", "authorized_keys",
+    "known_hosts", "id_rsa", "id_ed25519", "robots.txt", "sitemap.xml",
+    "manifest.json", "site.webmanifest", "compose.yaml", "compose.yml",
+    "docker-compose.yml", "chart.yaml", "values.yaml", "mlmodel",
+})
 
 # ChatGPT wire sometimes leaks site host / chat tab titles as "filenames".
 _AI_SITE_LABEL_RE = re.compile(
@@ -147,14 +257,17 @@ def _has_any_file_extension(name: str) -> bool:
     base = (name or "").strip().rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     if not base:
         return False
-    # Single-dot dotfiles (.env, .gitignore)
+    base_l = base.lower()
+    if base_l in _STANDALONE_UPLOAD_FILENAMES:
+        return True
+    # Single-dot dotfiles (.env, .gitignore, etc.)
     if base.startswith(".") and base.count(".") == 1:
-        return base.lower() in {".env", ".gitignore", ".dockerignore", ".npmrc", ".editorconfig"}
+        return True
     if "." not in base:
         return False
     ext = "." + base.rsplit(".", 1)[-1].lower()
-    # "5.3" is a version, not a file extension. Real extensions start with a letter.
-    if not re.fullmatch(r"\.[a-z][a-z0-9]{0,7}", ext):
+    # Real extensions start with a letter or digit
+    if not re.fullmatch(r"\.[a-z0-9][a-z0-9_+-]{0,15}", ext):
         return False
     if ext in _UPLOAD_NAME_EXTS:
         return True
@@ -179,6 +292,9 @@ def _looks_like_site_or_tab_label_not_file(name: str) -> bool:
     n = (name or "").strip()
     if not n:
         return True
+    base = n.replace("\\", "/").rsplit("/", 1)[-1].strip().lower()
+    if base in _STANDALONE_UPLOAD_FILENAMES:
+        return False
     compact = n.replace(" ", "")
     if _AI_SITE_LABEL_RE.fullmatch(compact) or _HOSTNAME_LABEL_RE.fullmatch(compact):
         return True

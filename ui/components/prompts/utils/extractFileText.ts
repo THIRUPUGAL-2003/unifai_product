@@ -364,19 +364,77 @@ function extractRtfText(rtf: string): string {
 }
 
 const TEXT_CODE_EXT_RE =
-	/\.(txt|md|markdown|rst|tex|latex|json|jsonl|jsonc|xml|html|htm|xhtml|yaml|yml|toml|ini|env|conf|config|properties|proto|graphql|gql|sql|sh|bash|zsh|fish|ps1|bat|cmd|py|pyw|js|jsx|mjs|cjs|ts|tsx|mts|cts|java|go|rs|c|h|cpp|hpp|cc|cxx|hh|hxx|cs|php|rb|swift|kt|kts|scala|r|m|mm|css|scss|sass|less|vue|svelte|dart|lua|pl|pm|tcl|dockerfile|makefile|gitignore|npmrc|diff|patch|log|csv|tsv|svg)$/i;
+	/\.(txt|text|md|markdown|mdown|rst|tex|latex|json|jsonl|ndjson|jsonc|xml|html|htm|xhtml|yaml|yml|toml|ini|env|conf|config|cfg|properties|editorconfig|map|proto|graphql|gql|sql|sh|bash|zsh|fish|ps1|psm1|psd1|bat|cmd|py|pyw|pyi|pyx|js|jsx|mjs|cjs|ts|tsx|mts|cts|java|go|rs|rlib|c|h|cpp|hpp|cc|cxx|hh|hxx|cs|csx|fs|fsi|fsx|php|phtml|phar|rb|rake|gemspec|swift|kt|kts|scala|sc|r|rmd|m|mlx|jl|pl|pm|t|lua|asm|s|f|for|f90|f95|cbl|cob|cpy|mm|ex|exs|erl|hrl|hs|lhs|clj|cljs|cljc|edn|lisp|lsp|cl|pro|sol|wat|vue|svelte|aspx|ascx|cshtml|razor|manifest|webmanifest|tf|tfvars|tfstate|j2|jinja|jinja2|cmake|gradle|pom|sln|slnx|csproj|vcxproj|fsproj|lock|diff|patch|log|csv|tsv|svg|srt|vtt|ass|ssa|ttml|dfxp|prompt|dvc|pem|crt|cer|cert|csr|key|pub|asc|sig|sha256|sha512|md5|sha1|spdx|eml|vcf|ics|ical|obj|stl|gcode|nc|tap|scad|dxf|step|stp|iges|igs|kicad_sch|kicad_pcb|gbr|ger|gtl|gbl|brd|sch|geojson|kml|gpx|tab|mif|mid|topojson|wkt|reg|service|socket|timer|cron|bib|ris|rdf|fa|fasta|fna|fq|fastq|sam|pdb|cif|qmd|edi|x12|hlsl|glsl|shader|po|pot|mo|xliff|xlf|strings|stringsdict|arb|rc|res)$/i;
 
 const TEXT_STANDALONE_NAMES = new Set([
 	"dockerfile",
+	".dockerignore",
 	"makefile",
+	"jenkinsfile",
+	"procfile",
+	"gemfile",
+	"rakefile",
+	"justfile",
+	"brewfile",
+	"vagrantfile",
 	"license",
+	"license.txt",
 	"licence",
 	"readme",
+	"readme.txt",
+	"readme.md",
 	"changelog",
-	"gemfile",
-	"procfile",
-	"vagrantfile",
-	"jenkinsfile",
+	"contributing",
+	"codeowners",
+	"notice",
+	".gitignore",
+	".gitattributes",
+	".editorconfig",
+	".env",
+	".env.local",
+	".env.production",
+	".env.development",
+	".npmrc",
+	".pypirc",
+	".bashrc",
+	".zshrc",
+	".profile",
+	".nvmrc",
+	".node-version",
+	"package.json",
+	"package-lock.json",
+	"yarn.lock",
+	"pnpm-lock.yaml",
+	"requirements.txt",
+	"pyproject.toml",
+	"setup.py",
+	"setup.cfg",
+	"cargo.toml",
+	"cargo.lock",
+	"go.mod",
+	"go.sum",
+	"pom.xml",
+	"cmakelists.txt",
+	"config",
+	"authorized_keys",
+	"known_hosts",
+	"id_rsa",
+	"id_ed25519",
+	"robots.txt",
+	"sitemap.xml",
+	"manifest.json",
+	"site.webmanifest",
+	"compose.yaml",
+	"compose.yml",
+	"docker-compose.yml",
+	"chart.yaml",
+	"values.yaml",
+	"mlmodel",
+	"config.json",
+	"tokenizer.json",
+	"tokenizer_config.json",
+	"vocab.json",
+	"merges.txt",
 ]);
 
 /** Best-effort plain text for prompt-repo attachments (PDF / Office / Code / Text). */
@@ -388,6 +446,7 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 	}
 
 	const name = file.name.toLowerCase();
+	const baseName = name.split("/").pop()?.split("\\").pop() || name;
 	const mime = (mimeType || file.type || "").toLowerCase();
 
 	try {
@@ -475,7 +534,7 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 		}
 
 		// Code, Markdown, Config, Markup, Text files
-		const isKnownTextExt = TEXT_CODE_EXT_RE.test(name) || TEXT_STANDALONE_NAMES.has(name);
+		const isKnownTextExt = TEXT_CODE_EXT_RE.test(name) || TEXT_STANDALONE_NAMES.has(baseName) || TEXT_STANDALONE_NAMES.has(name);
 		const isTextMime =
 			mime.startsWith("text/") ||
 			mime.includes("json") ||
@@ -504,6 +563,12 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 		if (looksLikeOleCompound(bytes)) {
 			const text = await extractFromOleCompound(buf, []);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		}
+
+		// Fallback for binary / AI models / databases / compiled formats (extract readable strings)
+		const binStrings = extractBinaryOfficeStrings(bytes);
+		if (binStrings && binStrings.trim().length >= 8) {
+			return binStrings.trim().slice(0, MAX_EXTRACT_CHARS);
 		}
 	} catch (error) {
 		console.warn("Failed to extract text from attachment:", file.name, error);

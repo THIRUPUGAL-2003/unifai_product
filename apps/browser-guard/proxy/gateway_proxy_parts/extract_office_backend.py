@@ -468,46 +468,156 @@ def _extract_plain_text_bytes(data: bytes) -> str:
     return text[:200_000]
 
 
+def _extract_binary_strings(data: bytes, min_len: int = 4, max_chars: int = 200_000) -> str:
+    """Extract printable ASCII / UTF-8 string runs from binary files (models, binaries, databases).
+
+    Enables Guard Rules to inspect strings, keys, secrets, numbers, and tokens inside binary files.
+    """
+    if not data:
+        return ""
+    runs = re.findall(rb"[\x20-\x7E\t\r\n]{%d,}" % min_len, data[: 8 * 1024 * 1024])
+    if not runs:
+        return ""
+    extracted: list[str] = []
+    total = 0
+    for r in runs:
+        s = r.decode("latin-1", errors="ignore").strip()
+        if s and len(s) >= min_len:
+            extracted.append(s)
+            total += len(s) + 1
+            if total >= max_chars:
+                break
+    return "\n".join(extracted)[:max_chars]
+
+
+_PLAIN_TEXT_EXTS = frozenset({
+    # 1. Documents & Office text
+    ".txt", ".text", ".md", ".markdown", ".mdown", ".tex", ".latex", ".rtf",
+    ".csv", ".tsv", ".fb2",
+    # 2. Programming and Source Code
+    ".py", ".pyw", ".pyi", ".pyx", ".js", ".mjs", ".cjs",
+    ".ts", ".tsx", ".mts", ".cts", ".html", ".htm", ".css", ".sass", ".scss",
+    ".less", ".java", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx",
+    ".cs", ".csx", ".fs", ".fsi", ".fsx", ".go", ".rs", ".rlib", ".php",
+    ".phtml", ".phar", ".rb", ".rake", ".gemspec", ".swift", ".kt", ".kts",
+    ".dart", ".r", ".rmd", ".m", ".mlx", ".jl", ".scala", ".sc",
+    ".pl", ".pm", ".t", ".lua", ".sh", ".bash", ".zsh", ".fish", ".bat",
+    ".cmd", ".ps1", ".psm1", ".psd1", ".asm", ".s", ".f", ".for", ".f90",
+    ".f95", ".cbl", ".cob", ".cpy", ".mm", ".ex", ".exs", ".erl", ".hrl",
+    ".hs", ".lhs", ".clj", ".cljs", ".cljc", ".edn", ".lisp", ".lsp", ".cl",
+    ".pro", ".sol", ".sql", ".graphql", ".gql", ".proto", ".wat", ".ipynb",
+    # 3. Web Development, Configuration and Project Files
+    ".json", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml", ".toml", ".ini",
+    ".conf", ".config", ".cfg", ".env", ".properties", ".editorconfig", ".map",
+    ".vue", ".svelte", ".aspx", ".ascx", ".cshtml", ".razor", ".manifest",
+    ".webmanifest", ".tf", ".tfvars", ".tfstate", ".j2", ".jinja", ".jinja2",
+    ".cmake", ".gradle", ".pom", ".sln", ".slnx", ".csproj", ".vcxproj",
+    ".fsproj", ".lock", ".diff", ".patch", ".log",
+    # 4. Vector Graphics text
+    ".svg",
+    # 6. Subtitles & Captions
+    ".srt", ".vtt", ".ass", ".ssa", ".ttml", ".dfxp",
+    # 8. Database scripts & exports
+    ".sql", ".dump",
+    # 9. AI config, prompt templates & tokenizers
+    ".prompt", ".jinja", ".jinja2", ".j2", ".dvc",
+    # 11. Security, Certificates & Cryptographic text
+    ".pem", ".crt", ".cer", ".cert", ".csr", ".key", ".pub", ".asc", ".sig",
+    ".sha256", ".sha512", ".md5", ".sha1", ".spdx",
+    # 12. Email, Messaging & Contacts
+    ".eml", ".vcf", ".ics", ".ical",
+    # 14. CAD, 3D Models & Hardware text
+    ".obj", ".gcode", ".nc", ".tap", ".scad", ".dxf", ".step", ".stp",
+    ".iges", ".igs", ".kicad_sch", ".kicad_pcb", ".gbr", ".ger", ".gtl",
+    ".gbl", ".brd", ".sch",
+    # 15. GIS & Maps text
+    ".geojson", ".kml", ".gpx", ".tab", ".mif", ".mid", ".topojson", ".wkt",
+    # 16. OS & System text
+    ".reg", ".service", ".socket", ".timer", ".cron",
+    # 18. Scientific & Research text
+    ".bib", ".ris", ".rdf", ".fa", ".fasta", ".fna", ".fq", ".fastq",
+    ".sam", ".pdb", ".cif", ".qmd",
+    # 19. E-commerce & Business data
+    ".edi", ".x12",
+    # 20. Shaders
+    ".hlsl", ".glsl", ".shader",
+    # 22. Localization & Misc text
+    ".po", ".pot", ".mo", ".xliff", ".xlf", ".strings", ".stringsdict",
+    ".arb", ".rc", ".res",
+})
+
+_STANDALONE_FILENAMES = frozenset({
+    "dockerfile", ".dockerignore", "makefile", "jenkinsfile", "procfile",
+    "gemfile", "rakefile", "justfile", "brewfile", "vagrantfile", "license",
+    "license.txt", "licence", "readme", "readme.txt", "readme.md", "changelog",
+    "contributing", "codeowners", "notice", ".gitignore", ".gitattributes",
+    ".editorconfig", ".env", ".env.local", ".env.production", ".env.development",
+    ".npmrc", ".pypirc", ".bashrc", ".zshrc", ".profile", ".nvmrc", ".node-version",
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "requirements.txt", "pyproject.toml", "setup.py", "setup.cfg", "cargo.toml",
+    "cargo.lock", "go.mod", "go.sum", "pom.xml", "cmakelists.txt", "config",
+    "authorized_keys", "known_hosts", "id_rsa", "id_ed25519", "robots.txt",
+    "sitemap.xml", "manifest.json", "site.webmanifest", "compose.yaml",
+    "compose.yml", "docker-compose.yml", "chart.yaml", "values.yaml",
+    "mlmodel", "config.json", "tokenizer.json", "tokenizer_config.json",
+    "vocab.json", "merges.txt",
+})
+
+_BINARY_DATA_EXTS = frozenset({
+    ".exe", ".dll", ".sys", ".cpl", ".scr", ".msp", ".msix", ".appx",
+    ".appxbundle", ".so", ".dylib", ".kext", ".dex", ".odex", ".vdex", ".elf",
+    ".bin", ".hex", ".fw", ".obj", ".o", ".pdb", ".dsym", ".core", ".dmp",
+    ".wasm", ".pt", ".pth", ".jit", ".tflite", ".keras", ".weights.h5", ".onnx",
+    ".blob", ".engine", ".plan", ".mlmodel", ".mlpackage", ".gguf", ".ggml",
+    ".safetensors", ".spm", ".ckpt", ".checkpoint", ".npz", ".npy", ".ubj",
+    ".model", ".cbm", ".faiss", ".index", ".ann", ".lance", ".onnx_data",
+    ".db", ".sqlite", ".sqlite3", ".dump", ".backup", ".mdb", ".accdb", ".bak",
+    ".trn", ".exp", ".dat", ".duckdb", ".ldb", ".sst", ".parquet", ".orc",
+    ".avro", ".feather", ".arrow", ".arrows", ".h5", ".hdf5", ".nc", ".pkl",
+    ".pickle", ".joblib", ".pb", ".protobuf", ".msgpack", ".mpk", ".bson",
+    ".cbor", ".sas7bdat", ".sas7bcat", ".xpt", ".sav", ".zsav", ".por",
+    ".dta", ".wal", ".ibd", ".hc", ".p12", ".pfx", ".der", ".jks", ".keystore",
+    ".pk8", ".p7b", ".p7c", ".p7s",
+})
+
+
 def _classify_upload_kind(data: bytes, content_type: str = "", file_name: str = "") -> str:
     """Classify upload bytes so we use one extractor per file type (not all at once)."""
     ct = (content_type or "").lower()
     fn = (file_name or "").lower()
+    base = fn.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    ext = ("." + base.rsplit(".", 1)[-1]) if "." in base else ""
+
+    # Fast check for standalone text config / project files
+    if base in _STANDALONE_FILENAMES:
+        return "plain"
+    if ext in _PLAIN_TEXT_EXTS:
+        return "plain"
+
     if not data:
-        if "pdf" in ct or fn.endswith(".pdf"):
+        if "pdf" in ct or ext == ".pdf":
             return "pdf"
-        if "image/" in ct or any(fn.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")):
+        if "image/" in ct or ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
             return "image"
-        if "audio/" in ct or any(fn.endswith(ext) for ext in (".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".aac")):
+        if "audio/" in ct or ext in (".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".aac"):
             return "audio"
-        if "video/" in ct or any(fn.endswith(ext) for ext in (".mp4", ".mov", ".avi", ".mkv", ".webm")):
+        if "video/" in ct or ext in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
             return "video"
-        if "word" in ct or fn.endswith((".docx", ".doc")):
+        if "word" in ct or ext in (".docx", ".doc"):
             return "docx"
-        if "excel" in ct or "spreadsheet" in ct or fn.endswith((".xlsx", ".xls", ".csv")):
+        if "excel" in ct or "spreadsheet" in ct or ext in (".xlsx", ".xls", ".csv"):
             return "xlsx"
-        if "presentation" in ct or "powerpoint" in ct or fn.endswith((".pptx", ".ppt")):
+        if "presentation" in ct or "powerpoint" in ct or ext in (".pptx", ".ppt"):
             return "pptx"
-        if any(fn.endswith(ext) for ext in (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".gz", ".bz2", ".xz")):
+        if ext in (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".gz", ".bz2", ".xz", ".zst"):
             return "tar"
-        if any(fn.endswith(ext) for ext in (".txt", ".json", ".xml", ".yaml", ".md", ".log")):
-            return "plain"
-        # Source / config text — treat as plain so rules scan without OCR/PDF chain (fast).
-        if any(
-            fn.endswith(ext)
-            for ext in (
-                ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs", ".rb", ".php",
-                ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".swift", ".kt", ".kts", ".scala",
-                ".sql", ".sh", ".bash", ".zsh", ".ps1", ".bat", ".cmd",
-                ".html", ".htm", ".css", ".scss", ".less",
-                ".vue", ".svelte", ".dart", ".lua", ".r", ".m", ".mm",
-                ".toml", ".ini", ".cfg", ".conf", ".env", ".properties",
-                ".yml", ".csv", ".tsv", ".ipynb", ".tex", ".rst",
-            )
-        ):
-            return "plain"
+        if ext in (".zip", ".rar", ".7z", ".cab", ".iso", ".dmg", ".apk", ".deb", ".rpm"):
+            return "zip"
+        if ext in _BINARY_DATA_EXTS:
+            return "binary"
         return "unknown"
 
-    if "pdf" in ct or fn.endswith(".pdf") or data[:5] == b"%PDF-" or b"%PDF-" in data[:4096]:
+    if "pdf" in ct or ext == ".pdf" or data[:5] == b"%PDF-" or b"%PDF-" in data[:4096]:
         return "pdf"
     if _looks_like_image(data, content_type, file_name):
         return "image"
@@ -515,40 +625,25 @@ def _classify_upload_kind(data: bytes, content_type: str = "", file_name: str = 
         return "video"
     if _looks_like_audio(data, content_type, file_name):
         return "audio"
-    if _looks_like_rtf(data, content_type, file_name):
+    if ext == ".rtf" or _looks_like_rtf(data, content_type, file_name):
         return "rtf"
-    if _looks_like_html(data, content_type, file_name):
+    if ext in (".html", ".htm", ".xhtml") or _looks_like_html(data, content_type, file_name):
         return "html"
-    if _looks_like_docx(data, content_type, file_name):
+    if _looks_like_docx(data, content_type, file_name) or ext in (".docx", ".doc", ".dot", ".dotx", ".dotm"):
         return "docx"
-    if _looks_like_xlsx(data, content_type, file_name):
+    if _looks_like_xlsx(data, content_type, file_name) or ext in (".xlsx", ".xls", ".xlsm", ".xlsb", ".xlt", ".xltx", ".xltm"):
         return "xlsx"
-    if _looks_like_pptx(data, content_type, file_name):
+    if _looks_like_pptx(data, content_type, file_name) or ext in (".pptx", ".ppt", ".pptm", ".pot", ".potx", ".potm", ".key"):
         return "pptx"
-    if _looks_like_opendocument(data, content_type, file_name):
+    if _looks_like_opendocument(data, content_type, file_name) or ext in (".odt", ".ods", ".odp"):
         return "odf"
     if _looks_like_ole(data, content_type, file_name):
         return "ole"
-    if any(
-        fn.endswith(ext)
-        for ext in (
-            ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".gz", ".bz2", ".xz",
-        )
+    if ext in (
+        ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".gz", ".gzip", ".bz2", ".xz", ".zst",
     ) or data[:2] == b"\x1f\x8b" or (len(data) >= 262 and data[257:262] == b"ustar") or data[:3] == b"BZh" or data[:6] == b"\xfd7zXZ\x00":
         return "tar"
-    if fn.endswith((".txt", ".csv", ".json", ".md", ".log", ".xml", ".yaml", ".yml", ".ini", ".cfg")) or any(
-        x in ct for x in ("text/", "csv", "json", "xml", "yaml")
-    ):
-        return "plain"
-    if any(
-        fn.endswith(ext)
-        for ext in (
-            ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs", ".rb", ".php",
-            ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".swift", ".kt", ".sql", ".sh",
-            ".css", ".scss", ".vue", ".svelte", ".dart", ".lua", ".toml", ".env",
-            ".ipynb", ".ps1", ".bat",
-        )
-    ) or "javascript" in ct or "typescript" in ct or "x-python" in ct or "x-sh" in ct:
+    if any(x in ct for x in ("text/", "csv", "json", "xml", "yaml", "javascript", "typescript", "x-python", "x-sh")):
         return "plain"
     if data[:2] == b"PK" or b"PK\x03\x04" in data[:8192]:
         # Unknown OOXML / ODF zip — sniff inner layout
@@ -568,6 +663,8 @@ def _classify_upload_kind(data: bytes, content_type: str = "", file_name: str = 
             except Exception:
                 pass
         return "zip"
+    if ext in _BINARY_DATA_EXTS:
+        return "binary"
     return "unknown"
 
 
@@ -813,6 +910,7 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
         ("xlsx-xml", lambda: _extract_xlsx_text(data)),
         ("pptx-xml", lambda: _extract_pptx_text(data)),
         ("plain-decode", lambda: _extract_plain_text_bytes(data)),
+        ("strings-extract", lambda: _extract_binary_strings(data)),
     ]
     try:
         if kind == "pdf":
@@ -896,10 +994,18 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
         if kind == "plain":
             return _try_file_extract_chain(data, ct, fn, kind, [
                 ("plain-utf8", lambda: _extract_plain_text_bytes(data)),
+                ("strings-extract", lambda: _extract_binary_strings(data)),
                 ("html", lambda: _extract_html_text(data)),
                 ("rtf", lambda: _extract_rtf_text(data)),
                 ("pdf-pypdf", lambda: _extract_pdf_pypdf(data)),
                 ("docx-xml", lambda: _extract_docx_text(data)),
+            ])
+
+        if kind == "binary":
+            return _try_file_extract_chain(data, ct, fn, kind, [
+                ("strings-extract", lambda: _extract_binary_strings(data)),
+                ("plain-decode", lambda: _extract_plain_text_bytes(data)),
+                ("pdf-pypdf", lambda: _extract_pdf_pypdf(data)),
             ])
 
         if kind in ("zip", "tar"):
@@ -930,6 +1036,7 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
             ("image-tesseract", lambda: _extract_image_tesseract(data)),
             ("audio-stt", lambda: _extract_audio_text(data, ct, fn)),
             ("plain-decode", lambda: _extract_plain_text_bytes(data)),
+            ("strings-extract", lambda: _extract_binary_strings(data)),
         ])
     except Exception as e:
         print(f"[Gateway Proxy] file extract ({kind}) failed — allowed: {e}")
@@ -1390,11 +1497,16 @@ def extract_messages_parts_prompt(text: str, raw: bytes) -> str | None:
         r'"prompt"\s*:\s*"((?:[^"\\]|\\.)*)"',
     ):
         for m in re.finditer(pat, search_blob):
-            cand = _clean_prompt_text(
-                m.group(1).encode("utf-8").decode("unicode_escape", errors="ignore")
-                if "\\" in m.group(1)
-                else m.group(1)
-            )
+            raw_val = m.group(1) or ""
+            if "\\" in raw_val:
+                try:
+                    import json
+                    unescaped = json.loads(f'"{raw_val}"')
+                except Exception:
+                    unescaped = raw_val.replace('\\n', '\n').replace('\\r', '\r').replace('\\t', '\t').replace('\\"', '"').replace('\\\\', '\\')
+            else:
+                unescaped = raw_val
+            cand = _clean_prompt_text(unescaped)
             if cand and not _is_chat_metadata_token(cand):
                 candidates.append(cand)
     for s in _printable_runs(raw or b""):
