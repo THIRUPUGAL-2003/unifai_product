@@ -17,12 +17,12 @@ import (
 	"time"
 
 	"github.com/fasthttp/router"
-	"github.com/google/uuid"
 	"github.com/gateway/gateway/core/schemas"
 	"github.com/gateway/gateway/framework/configstore"
 	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/gateway/gateway/framework/encrypt"
 	"github.com/gateway/gateway/transports/gateway-http/lib"
+	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
 	"gorm.io/gorm"
 )
@@ -195,6 +195,7 @@ func (h *SessionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.POST("/api/session/reset-password", lib.ChainMiddlewares(h.resetPassword, middlewares...))
 	r.POST("/api/session/forgot-username", lib.ChainMiddlewares(h.forgotUsername, middlewares...))
 	r.GET("/api/session/users", lib.ChainMiddlewares(h.getUsers, middlewares...))
+	r.GET("/api/session/users/quota", lib.ChainMiddlewares(h.getProductUserQuota, middlewares...))
 	r.POST("/api/session/users", lib.ChainMiddlewares(h.createUser, middlewares...))
 	r.PUT("/api/session/users/{id}", lib.ChainMiddlewares(h.updateUser, middlewares...))
 	r.DELETE("/api/session/users/{id}", lib.ChainMiddlewares(h.deleteUser, middlewares...))
@@ -997,6 +998,9 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	payload.Role = role
+	if h.rejectIfProductUsersFull(ctx) {
+		return
+	}
 	// Admin and sub-admin accounts are not billed or rate-limited as end users.
 	if role == "admin" || role == "sub_admin" {
 		payload.Budget = 0
@@ -2024,6 +2028,9 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 	}
 
 	if !h.assertEmailAvailable(ctx, payload.Email, "") {
+		return
+	}
+	if h.rejectIfProductUsersFull(ctx) {
 		return
 	}
 

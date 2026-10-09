@@ -18,6 +18,17 @@ export interface SessionUser {
 	email_error?: string;
 }
 
+export interface ProductUserQuota {
+	users: number;
+	admins: number;
+	sub_admins: number;
+	others: number;
+	used: number;
+	max: number;
+	remaining: number;
+	limited: boolean;
+}
+
 export interface SessionUserPayload {
 	username: string;
 	email?: string;
@@ -38,6 +49,10 @@ export const sessionUsersApi = baseApi.injectEndpoints({
 			query: () => ({ url: "/session/users" }),
 			// Keep Governance → Users in sync when sign-ups land while the page is open.
 			keepUnusedDataFor: 30,
+			providesTags: ["Users"],
+		}),
+		getProductUserQuota: builder.query<ProductUserQuota, void>({
+			query: () => ({ url: "/session/users/quota" }),
 			providesTags: ["Users"],
 		}),
 		createSessionUser: builder.mutation<SessionUser, SessionUserPayload>({
@@ -65,6 +80,7 @@ export const sessionUsersApi = baseApi.injectEndpoints({
 
 export const {
 	useGetSessionUsersQuery,
+	useGetProductUserQuotaQuery,
 	useCreateSessionUserMutation,
 	useUpdateSessionUserMutation,
 	useDeleteSessionUserMutation,

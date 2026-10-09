@@ -189,6 +189,9 @@ func (m *BrowserAIManager) finishLicenseStatus(ctx context.Context, info *Licens
 	if payload != nil && payload.Revision > 0 {
 		info.Revision = payload.Revision
 	}
+	if payload != nil {
+		info.MaxProductUsers = payload.MaxProductUsers
+	}
 	if payload != nil && info.IsActive {
 		if err := m.assertLicenseBinding(ctx, payload); err != nil {
 			info.IsActive = false
@@ -456,6 +459,53 @@ func (m *BrowserAIManager) markAuthorityOK(ctx context.Context) error {
 	return db.WithContext(ctx).Model(&BrowserAIInstallRecord{}).
 		Where("id = ?", BrowserAIInstallRowID).
 		Updates(map[string]any{"last_authority_ok": now, "updated_at": now}).Error
+}
+
+// ProductUserUsage is the dashboard account cap. User, admin, and sub-admin share one total.
+type ProductUserUsage struct {
+	Users     int  `json:"users"`
+	Admins    int  `json:"admins"`
+	SubAdmins int  `json:"sub_admins"`
+	Others    int  `json:"others"`
+	Used      int  `json:"used"`
+	Max       int  `json:"max"`
+	Remaining int  `json:"remaining"`
+	Limited   bool `json:"limited"`
+}
+
+// ProductUserUsageFromRoles counts dashboard accounts against one license total.
+// max <= 0 means the license does not cap product users.
+func ProductUserUsageFromRoles(roles []string, max int) ProductUserUsage {
+	var usage ProductUserUsage
+	for _, role := range roles {
+		switch strings.ToLower(strings.TrimSpace(role)) {
+		case "admin":
+			usage.Admins++
+		case "sub_admin":
+			usage.SubAdmins++
+		case "", "user":
+			usage.Users++
+		default:
+			usage.Others++
+		}
+	}
+	usage.Used = usage.Users + usage.Admins + usage.SubAdmins + usage.Others
+	usage.Max = max
+	usage.Limited = max > 0
+	if usage.Limited {
+		usage.Remaining = max - usage.Used
+		if usage.Remaining < 0 {
+			usage.Remaining = 0
+		}
+	}
+	return usage
+}
+
+func (u ProductUserUsage) BlockReason() string {
+	if !u.Limited || u.Used < u.Max {
+		return ""
+	}
+	return fmt.Sprintf("PRODUCT_USER_LIMIT: license allows %d dashboard users and %d are already in use (user %d, admin %d, sub-admin %d). Contact YesPanchi to raise the license.", u.Max, u.Used, u.Users, u.Admins, u.SubAdmins)
 }
 
 func timePtr(t time.Time) *time.Time {

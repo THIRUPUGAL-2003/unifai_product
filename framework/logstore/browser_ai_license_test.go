@@ -234,6 +234,20 @@ func TestLicenseLockedToOneDatabaseAndRevision(t *testing.T) {
 	}
 }
 
+func TestProductUsersShareOneTotal(t *testing.T) {
+	usage := ProductUserUsageFromRoles([]string{"user", "user", "admin", "sub_admin", "auditor"}, 100)
+	if usage.Users != 2 || usage.Admins != 1 || usage.SubAdmins != 1 || usage.Others != 1 {
+		t.Fatalf("counts = %+v", usage)
+	}
+	if usage.Used != 5 || usage.Remaining != 95 || usage.BlockReason() != "" {
+		t.Fatalf("usage = %+v reason=%q", usage, usage.BlockReason())
+	}
+	full := ProductUserUsageFromRoles([]string{"user", "admin", "sub_admin"}, 3)
+	if full.Remaining != 0 || full.BlockReason() == "" {
+		t.Fatal("full quota should block the next account")
+	}
+}
+
 func TestAuthorityRejectsReplacedRevision(t *testing.T) {
 	registry := []byte(`{"licenses":{"YP-1":{"license_id":"YP-1","install_id":"DB-1","server_hardware_id":"SRV-1","max_seats":1500,"revision":2,"expires_at":"2099-01-01T00:00:00Z","status":"active"}}}`)
 	old := DecideLicenseAuthority(registry, "YP-1", "DB-1", "SRV-1", 1)

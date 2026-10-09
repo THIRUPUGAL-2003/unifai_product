@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/gateway/gateway/framework/configstore"
 	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/gateway/gateway/framework/encrypt"
+	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
 )
 
@@ -369,10 +369,10 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	var body struct {
-		UserName    string `json:"userName"`
-		DisplayName string `json:"displayName"`
-		ExternalID  string `json:"externalId"`
-		Emails scimFlexEmails `json:"emails"`
+		UserName    string         `json:"userName"`
+		DisplayName string         `json:"displayName"`
+		ExternalID  string         `json:"externalId"`
+		Emails      scimFlexEmails `json:"emails"`
 		// Omitted "active" means active (RFC 7643). A string or boolean both count.
 		Active scimFlexBool `json:"active"`
 		Roles  []struct {
@@ -475,6 +475,17 @@ func (h *WorkspaceHandler) scimCreateUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	active := !body.Active.Set || body.Active.Value
+	if h.store != nil && h.store.ConfigStore != nil {
+		usage, usageErr := loadProductUserUsage(ctx, h.store.ConfigStore)
+		if usageErr != nil {
+			scimError(ctx, fasthttp.StatusInternalServerError, "failed to read license user limit")
+			return
+		}
+		if msg := usage.BlockReason(); msg != "" {
+			scimError(ctx, fasthttp.StatusForbidden, msg)
+			return
+		}
+	}
 	now := time.Now().UTC()
 	user := &tables.TableUser{
 		ID:                 uuid.NewString(),

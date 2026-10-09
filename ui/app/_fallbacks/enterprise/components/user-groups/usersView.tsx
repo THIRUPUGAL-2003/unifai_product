@@ -40,6 +40,7 @@ import {
 	useDeleteSessionUserMutation,
 	useGetPromptsQuery,
 	useGetSessionUsersQuery,
+	useGetProductUserQuotaQuery,
 	useRejectSessionUserMutation,
 	useUpdateSessionUserMutation,
 	useGetTeamsQuery,
@@ -180,6 +181,7 @@ export default function UsersView() {
 		error: usersErrorDetail,
 		refetch: refetchUsers,
 	} = useGetSessionUsersQuery(undefined, { pollingInterval: usersPollMs, refetchOnFocus: true });
+	const { data: userQuota } = useGetProductUserQuotaQuery(undefined, { pollingInterval: usersPollMs, refetchOnFocus: true });
 	useEffect(() => {
 		setUsersPollMs(usersError ? 0 : 15_000);
 	}, [usersError]);
@@ -917,6 +919,22 @@ export default function UsersView() {
 					<Plus className="h-4 w-4" /> Add New User
 				</Button>
 			</div>
+
+			{userQuota ? (
+				<div className="flex flex-wrap items-center gap-2 text-sm" data-testid="product-user-quota">
+					<span className="bg-muted/40 border-border rounded-md border px-2.5 py-1">User {userQuota.users}{userQuota.limited ? `/${userQuota.max}` : ""}</span>
+					<span className="bg-muted/40 border-border rounded-md border px-2.5 py-1">Admin {userQuota.admins}{userQuota.limited ? `/${userQuota.max}` : ""}</span>
+					<span className="bg-muted/40 border-border rounded-md border px-2.5 py-1">Sub-admin {userQuota.sub_admins}{userQuota.limited ? `/${userQuota.max}` : ""}</span>
+					<span className="rounded-md border border-teal-500/40 bg-teal-500/10 px-2.5 py-1 font-medium text-teal-700 dark:text-teal-200">
+						Total {userQuota.used}{userQuota.limited ? `/${userQuota.max}` : ""}
+					</span>
+					{userQuota.limited ? (
+						<span className="text-muted-foreground">{userQuota.remaining} left. User, admin, and sub-admin share this total.</span>
+					) : (
+						<span className="text-muted-foreground">No dashboard user cap on the current license.</span>
+					)}
+				</div>
+			) : null}
 
 			{helperQueryFailed ? (
 				<QueryErrorBanner

@@ -68,6 +68,7 @@ type EnterpriseLicensePayload struct {
 	ClientName       string   `json:"client_name"`
 	Tier             string   `json:"tier"`
 	MaxSeats         int      `json:"max_seats"`
+	MaxProductUsers  int      `json:"max_product_users,omitempty"`
 	ServerHardwareID string   `json:"server_hardware_id,omitempty"`
 	InstallID        string   `json:"install_id,omitempty"`
 	Revision         int      `json:"revision,omitempty"`
@@ -95,6 +96,7 @@ type LicenseStatusInfo struct {
 	ClientName       string   `json:"client_name"`
 	Tier             string   `json:"tier"`
 	MaxSeats         int      `json:"max_seats"`
+	MaxProductUsers  int      `json:"max_product_users,omitempty"`
 	ActiveSeats      int      `json:"active_seats"`
 	RemainingSeats   int      `json:"remaining_seats"`
 	ServerHardwareID string   `json:"server_hardware_id,omitempty"`

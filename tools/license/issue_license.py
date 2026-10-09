@@ -52,6 +52,7 @@ def issue_license(
     server_id: str,
     install_id: str,
     license_id: str = None,
+    product_users: int = 0,
     issuer: str = DEFAULT_ISSUER,
     product: str = DEFAULT_PRODUCT,
     tier: str = "Enterprise On-Premise",
@@ -135,6 +136,8 @@ def issue_license(
         "issued_at": now_iso,
         "expires_at": expiry_iso,
     }
+    if int(product_users) > 0:
+        payload_data["max_product_users"] = int(product_users)
 
     # Deterministic JSON bytes
     canonical_json = json.dumps(payload_data, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -163,6 +166,7 @@ def issue_license(
         "install_id": install_id,
         "server_hardware_id": server_id,
         "max_seats": int(seats),
+        "max_product_users": int(product_users),
         "revision": int(revision),
         "expires_at": expiry_iso,
         "status": "active",
@@ -187,6 +191,7 @@ def main():
     parser.add_argument("--server-id", required=True, help="Server Hardware ID from the client dashboard")
     parser.add_argument("--install-id", required=True, help="Database install ID from the client dashboard")
     parser.add_argument("--license-id", default=None, help="Existing license ID when moving server or changing seats. Omit to issue a new license.")
+    parser.add_argument("--product-users", type=int, default=0, help="Dashboard accounts allowed in total (user + admin + sub-admin). 0 means no cap.")
     parser.add_argument("--registry", default=None, help="Vendor registry JSON updated when a key is issued or replaced")
     parser.add_argument("--out", default=None, help="Output file path (default: license_<client>.lic)")
     parser.add_argument("--key", default=None, help="Custom path to master_private.key")
@@ -201,6 +206,7 @@ def main():
             server_id=args.server_id,
             install_id=args.install_id,
             license_id=args.license_id,
+            product_users=args.product_users,
             issuer=args.issuer,
             product=args.product,
             tier=args.tier,
@@ -217,6 +223,8 @@ def main():
         print(f" License ID:       {p['license_id']}")
         print(f" Issued To Client: {p['client_name']}")
         print(f" Max Seats:        {p['max_seats']} Laptops")
+        if p.get("max_product_users"):
+            print(f" Dashboard Users:  {p['max_product_users']} (user + admin + sub-admin)")
         print(f" Tier:             {p['tier']}")
         print(f" Database Install: {p['install_id']}")
         print(f" Server Hardware:  {p['server_hardware_id']}")
