@@ -28,6 +28,7 @@ def issue_license(
     client_name: str,
     seats: int,
     expiry_date: str,
+    server_id: str = None,
     issuer: str = DEFAULT_ISSUER,
     product: str = DEFAULT_PRODUCT,
     tier: str = "Enterprise On-Premise",
@@ -85,6 +86,9 @@ def issue_license(
         "expires_at": expiry_iso,
     }
 
+    if server_id and server_id.strip():
+        payload_data["server_hardware_id"] = server_id.strip().upper()
+
     # Deterministic JSON bytes
     canonical_json = json.dumps(payload_data, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
@@ -121,6 +125,7 @@ def main():
     parser.add_argument("--issuer", default=DEFAULT_ISSUER, help=f"Vendor Issuer name (default: '{DEFAULT_ISSUER}')")
     parser.add_argument("--product", default=DEFAULT_PRODUCT, help=f"Product name (default: '{DEFAULT_PRODUCT}')")
     parser.add_argument("--tier", default="Enterprise On-Premise", help="License tier name")
+    parser.add_argument("--server-id", default=None, help="Server Hardware ID to lock license to (e.g., 'SRV-D1FB08F6-AC2D7875')")
     parser.add_argument("--out", default=None, help="Output file path (default: license_<client>.lic)")
     parser.add_argument("--key", default=None, help="Custom path to master_private.key")
 
@@ -131,6 +136,7 @@ def main():
             client_name=args.client,
             seats=args.seats,
             expiry_date=args.expiry,
+            server_id=args.server_id,
             issuer=args.issuer,
             product=args.product,
             tier=args.tier,
@@ -147,6 +153,10 @@ def main():
         print(f" Issued To Client: {p['client_name']}")
         print(f" Max Seats:        {p['max_seats']} Laptops")
         print(f" Tier:             {p['tier']}")
+        if p.get("server_hardware_id"):
+            print(f" Node-Locked Host: {p['server_hardware_id']} (Hardware Tied)")
+        else:
+            print(f" Node-Locked Host: None (Floating License)")
         print(f" Expires At:       {p['expires_at']}")
         print(f" File Path:        {res['output_file']}")
         print("=" * 68)

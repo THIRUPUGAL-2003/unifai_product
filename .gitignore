@@ -50,6 +50,10 @@ transports/raksha-http/ui/assets/
 transports/raksha-http/ui/*.js
 transports/raksha-http/ui/*.css
 transports/raksha-http/ui/*.html
+transports/gateway-http/ui/assets/
+transports/gateway-http/ui/*.js
+transports/gateway-http/ui/*.css
+transports/gateway-http/ui/*.html
 
 # Python & Browser Guard builds
 __pycache__/

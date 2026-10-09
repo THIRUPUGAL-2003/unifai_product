@@ -3,11 +3,16 @@ package logstore
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -37,16 +42,17 @@ type BrowserAILicenseRecord struct {
 	LicenseID   string    `json:"license_id"`
 	Issuer      string    `json:"issuer"`
 	Product     string    `json:"product"`
-	ClientName  string    `json:"client_name"`
-	Tier        string    `json:"tier"`
-	MaxSeats    int       `json:"max_seats"`
-	Features    string    `json:"features"`
-	RawEnvelope string    `gorm:"type:text" json:"raw_envelope"`
-	Signature   string    `json:"signature"`
-	IssuedAt    time.Time `json:"issued_at"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	UpdatedBy   string    `json:"updated_by"`
+	ClientName       string    `json:"client_name"`
+	Tier             string    `json:"tier"`
+	MaxSeats         int       `json:"max_seats"`
+	ServerHardwareID string    `json:"server_hardware_id"`
+	Features         string    `json:"features"`
+	RawEnvelope      string    `gorm:"type:text" json:"raw_envelope"`
+	Signature        string    `json:"signature"`
+	IssuedAt         time.Time `json:"issued_at"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+	UpdatedBy        string    `json:"updated_by"`
 }
 
 func (BrowserAILicenseRecord) TableName() string {
@@ -59,12 +65,13 @@ type EnterpriseLicensePayload struct {
 	LicenseID  string   `json:"license_id"`
 	Issuer     string   `json:"issuer"`
 	Product    string   `json:"product"`
-	ClientName string   `json:"client_name"`
-	Tier       string   `json:"tier"`
-	MaxSeats   int      `json:"max_seats"`
-	Features   []string `json:"features"`
-	IssuedAt   string   `json:"issued_at"`
-	ExpiresAt  string   `json:"expires_at"`
+	ClientName       string   `json:"client_name"`
+	Tier             string   `json:"tier"`
+	MaxSeats         int      `json:"max_seats"`
+	ServerHardwareID string   `json:"server_hardware_id,omitempty"`
+	Features         []string `json:"features"`
+	IssuedAt         string   `json:"issued_at"`
+	ExpiresAt        string   `json:"expires_at"`
 }
 
 // EnterpriseLicenseEnvelope represents the exported .lic file structure.
@@ -83,15 +90,18 @@ type LicenseStatusInfo struct {
 	LicenseID      string   `json:"license_id"`
 	Issuer         string   `json:"issuer"`
 	Product        string   `json:"product"`
-	ClientName     string   `json:"client_name"`
-	Tier           string   `json:"tier"`
-	MaxSeats       int      `json:"max_seats"`
-	ActiveSeats    int      `json:"active_seats"`
-	RemainingSeats int      `json:"remaining_seats"`
-	ExpiresAt      string   `json:"expires_at"`
-	IssuedAt       string   `json:"issued_at"`
-	Features       []string `json:"features"`
-	StatusMessage  string   `json:"status_message"`
+	ClientName       string   `json:"client_name"`
+	Tier             string   `json:"tier"`
+	MaxSeats         int      `json:"max_seats"`
+	ActiveSeats      int      `json:"active_seats"`
+	RemainingSeats   int      `json:"remaining_seats"`
+	ServerHardwareID string   `json:"server_hardware_id,omitempty"`
+	HostHardwareID   string   `json:"host_hardware_id"`
+	IsHardwareBound  bool     `json:"is_hardware_bound"`
+	ExpiresAt        string   `json:"expires_at"`
+	IssuedAt         string   `json:"issued_at"`
+	Features         []string `json:"features"`
+	StatusMessage    string   `json:"status_message"`
 }
 
 // VerifyLicenseEnvelope cryptographically validates the given license against the embedded Ed25519 public key.
@@ -156,6 +166,14 @@ func VerifyLicenseEnvelope(raw []byte) (*EnterpriseLicensePayload, *EnterpriseLi
 		}
 	}
 
+	// Check Server Hardware ID (Node-Locking) if specified in license
+	if strings.TrimSpace(payload.ServerHardwareID) != "" {
+		hostID := GetServerHardwareID()
+		if !strings.EqualFold(strings.TrimSpace(payload.ServerHardwareID), strings.TrimSpace(hostID)) {
+			return &payload, &env, fmt.Errorf("LICENSE_SERVER_MISMATCH: license is locked to server hardware [%s], but current host hardware is [%s]", payload.ServerHardwareID, hostID)
+		}
+	}
+
 	return &payload, &env, nil
 }
 
@@ -201,13 +219,16 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 						Product:        firstNonEmpty(payload.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
 						ClientName:     firstNonEmpty(payload.ClientName, "Enterprise Organization"),
 						Tier:           firstNonEmpty(payload.Tier, "Enterprise On-Premise"),
-						MaxSeats:       payload.MaxSeats,
-						ActiveSeats:    allocatedSeats,
-						RemainingSeats: rem,
-						ExpiresAt:      payload.ExpiresAt,
-						IssuedAt:       payload.IssuedAt,
-						Features:       payload.Features,
-						StatusMessage:  fmt.Sprintf("Active (%d/%d seats in use)", allocatedSeats, payload.MaxSeats),
+						MaxSeats:         payload.MaxSeats,
+						ActiveSeats:      allocatedSeats,
+						RemainingSeats:   rem,
+						ServerHardwareID: payload.ServerHardwareID,
+						HostHardwareID:   GetServerHardwareID(),
+						IsHardwareBound:  payload.ServerHardwareID != "",
+						ExpiresAt:        payload.ExpiresAt,
+						IssuedAt:         payload.IssuedAt,
+						Features:         payload.Features,
+						StatusMessage:    fmt.Sprintf("Active (%d/%d seats in use)", allocatedSeats, payload.MaxSeats),
 					}, nil
 				}
 			}
@@ -263,13 +284,16 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 		Product:        firstNonEmpty(payload.Product, record.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
 		ClientName:     payload.ClientName,
 		Tier:           payload.Tier,
-		MaxSeats:       payload.MaxSeats,
-		ActiveSeats:    allocatedSeats,
-		RemainingSeats: rem,
-		ExpiresAt:      payload.ExpiresAt,
-		IssuedAt:       payload.IssuedAt,
-		Features:       payload.Features,
-		StatusMessage:  fmt.Sprintf("Active Enterprise (%d/%d seats in use)", allocatedSeats, payload.MaxSeats),
+		MaxSeats:         payload.MaxSeats,
+		ActiveSeats:      allocatedSeats,
+		RemainingSeats:   rem,
+		ServerHardwareID: payload.ServerHardwareID,
+		HostHardwareID:   GetServerHardwareID(),
+		IsHardwareBound:  payload.ServerHardwareID != "",
+		ExpiresAt:        payload.ExpiresAt,
+		IssuedAt:         payload.IssuedAt,
+		Features:         payload.Features,
+		StatusMessage:    fmt.Sprintf("Active Enterprise (%d/%d seats in use)", allocatedSeats, payload.MaxSeats),
 	}, nil
 }
 
@@ -307,16 +331,17 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 			LicenseID:   payload.LicenseID,
 			Issuer:      firstNonEmpty(payload.Issuer, "YesPanchi Group of Companies"),
 			Product:     firstNonEmpty(payload.Product, "Gateway - Real-time AI Knowledge Screening & Hazard Audit"),
-			ClientName:  payload.ClientName,
-			Tier:        payload.Tier,
-			MaxSeats:    payload.MaxSeats,
-			Features:    string(featuresJSON),
-			RawEnvelope: string(rawEnvBytes),
-			Signature:   env.Signature,
-			IssuedAt:    issTime,
-			ExpiresAt:   expTime,
-			UpdatedAt:   now,
-			UpdatedBy:   strings.TrimSpace(updatedBy),
+			ClientName:       payload.ClientName,
+			Tier:             payload.Tier,
+			MaxSeats:         payload.MaxSeats,
+			ServerHardwareID: payload.ServerHardwareID,
+			Features:         string(featuresJSON),
+			RawEnvelope:      string(rawEnvBytes),
+			Signature:        env.Signature,
+			IssuedAt:         issTime,
+			ExpiresAt:        expTime,
+			UpdatedAt:        now,
+			UpdatedBy:        strings.TrimSpace(updatedBy),
 		}
 
 		if err := db.WithContext(ctx).Save(&rec).Error; err != nil {
@@ -391,4 +416,74 @@ func (m *BrowserAIManager) CheckSeatQuotaEnforcement(ctx context.Context, agentI
 	}
 
 	return nil
+}
+
+var (
+	serverHardwareIDOnce   sync.Once
+	cachedServerHardwareID string
+)
+
+// GetServerHardwareID returns a deterministic unique hardware fingerprint for the server host.
+// Format: SRV-XXXXXXXX-XXXXXXXX
+func GetServerHardwareID() string {
+	serverHardwareIDOnce.Do(func() {
+		cachedServerHardwareID = computeServerHardwareID()
+	})
+	return cachedServerHardwareID
+}
+
+func computeServerHardwareID() string {
+	// 1. Try Linux machine-id (/etc/machine-id, /var/lib/dbus/machine-id, DMI product UUID)
+	for _, p := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id", "/sys/class/dmi/id/product_uuid"} {
+		if b, err := os.ReadFile(p); err == nil {
+			trimmed := strings.TrimSpace(string(b))
+			if len(trimmed) > 0 {
+				return formatHardwareID(trimmed)
+			}
+		}
+	}
+
+	// 2. Try Windows MachineGuid via reg query
+	if runtime.GOOS == "windows" {
+		if guid := readWindowsMachineGuid(); guid != "" {
+			return formatHardwareID(guid)
+		}
+	}
+
+	// 3. Fallback: Hostname + primary MAC addresses
+	var macs []string
+	if ifaces, err := net.Interfaces(); err == nil {
+		for _, iface := range ifaces {
+			if iface.Flags&net.FlagLoopback == 0 && len(iface.HardwareAddr) > 0 {
+				macs = append(macs, iface.HardwareAddr.String())
+			}
+		}
+	}
+	hostname, _ := os.Hostname()
+	combined := fmt.Sprintf("%s|%s|%s", hostname, runtime.GOARCH, strings.Join(macs, ","))
+	return formatHardwareID(combined)
+}
+
+func readWindowsMachineGuid() string {
+	cmd := exec.Command("reg", "query", `HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "MachineGuid") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				return strings.TrimSpace(parts[len(parts)-1])
+			}
+		}
+	}
+	return ""
+}
+
+func formatHardwareID(raw string) string {
+	h := sha256.Sum256([]byte(strings.TrimSpace(raw)))
+	hexStr := strings.ToUpper(hex.EncodeToString(h[:]))
+	return fmt.Sprintf("SRV-%s-%s", hexStr[:8], hexStr[8:16])
 }

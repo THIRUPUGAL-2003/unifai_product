@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import platform
 import socket
+import subprocess
+import sys
 import uuid
 
 import agent_state
@@ -17,6 +19,74 @@ def agent_id_path() -> str:
     return os.path.join(data_dir(), "agent_id.txt")
 
 
+def _read_durable_agent_id() -> str:
+    """ID that survives uninstall of the data folder.
+
+    Windows: HKCU\\Software\\Gateway\\Guard AgentId (cleanup does not delete this key).
+    macOS: ~/Library/Preferences/com.gateway.guard.plist AgentId (cleanup deletes
+    Application Support, not Preferences).
+    """
+    if os.name == "nt":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Gateway\Guard", 0, winreg.KEY_READ) as k:
+                val, _ = winreg.QueryValueEx(k, "AgentId")
+                if val and str(val).strip():
+                    return str(val).strip()
+        except Exception:
+            return ""
+        return ""
+    if sys.platform == "darwin":
+        try:
+            completed = subprocess.run(
+                ["defaults", "read", "com.gateway.guard", "AgentId"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            val = (completed.stdout or "").strip().strip('"')
+            if completed.returncode == 0 and val:
+                return val
+        except Exception:
+            return ""
+    return ""
+
+
+def _write_durable_agent_id(agent_id: str) -> None:
+    agent_id = (agent_id or "").strip()
+    if not agent_id:
+        return
+    if os.name == "nt":
+        try:
+            import winreg
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Gateway\Guard") as k:
+                winreg.SetValueEx(k, "AgentId", 0, winreg.REG_SZ, agent_id)
+        except Exception:
+            pass
+        return
+    if sys.platform == "darwin":
+        try:
+            subprocess.run(
+                ["defaults", "write", "com.gateway.guard", "AgentId", "-string", agent_id],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5,
+                check=False,
+            )
+        except Exception:
+            pass
+
+
+def _write_agent_id_file(path: str, agent_id: str) -> None:
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(agent_id)
+    except Exception as e:
+        print(f"[Gateway Guard WARNING] Could not persist agent_id: {e}")
+
+
 def get_or_create_agent_id() -> str:
     path = agent_id_path()
     try:
@@ -24,43 +94,19 @@ def get_or_create_agent_id() -> str:
             with open(path, "r", encoding="utf-8") as f:
                 existing = f.read().strip()
             if existing:
+                _write_durable_agent_id(existing)
                 return existing
     except Exception:
         pass
 
-    # Check Windows Registry so reinstall on the same device preserves agent identity
-    if os.name == "nt":
-        try:
-            import winreg
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Gateway\Guard", 0, winreg.KEY_READ) as k:
-                val, _ = winreg.QueryValueEx(k, "AgentId")
-                if val and str(val).strip():
-                    new_id = str(val).strip()
-                    try:
-                        with open(path, "w", encoding="utf-8") as f:
-                            f.write(new_id)
-                    except Exception:
-                        pass
-                    return new_id
-        except Exception:
-            pass
+    saved = _read_durable_agent_id()
+    if saved:
+        _write_agent_id_file(path, saved)
+        return saved
 
     new_id = str(uuid.uuid4())
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(new_id)
-    except Exception as e:
-        print(f"[Gateway Guard WARNING] Could not persist agent_id: {e}")
-
-    # Persist in Windows Registry for future reinstalls
-    if os.name == "nt":
-        try:
-            import winreg
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\Gateway\Guard") as k:
-                winreg.SetValueEx(k, "AgentId", 0, winreg.REG_SZ, new_id)
-        except Exception:
-            pass
-
+    _write_agent_id_file(path, new_id)
+    _write_durable_agent_id(new_id)
     return new_id
 
 

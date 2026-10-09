@@ -66,6 +66,7 @@ import (
 
 	gateway "github.com/gateway/gateway/core"
 	schemas "github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/logstore"
 	"github.com/gateway/gateway/transports/gateway-http/handlers"
 	"github.com/gateway/gateway/transports/gateway-http/lib"
 	"github.com/gateway/gateway/transports/gateway-http/profiling"
@@ -79,6 +80,7 @@ var Version string
 
 var logger = gateway.NewDefaultLogger(schemas.LogLevelInfo)
 var server *gatewayServer.GatewayHTTPServer
+var showServerID = flag.Bool("server-id", false, "Print server hardware ID for enterprise node-locking and exit")
 
 // loadDotEnv searches for .env in current and parent directories and loads any unset env vars.
 func loadDotEnv() {
@@ -177,6 +179,11 @@ func init() {
 func main() {
 	// Parse command line flags
 	flag.Parse()
+
+	if *showServerID {
+		fmt.Printf("Server Hardware ID: %s\n", logstore.GetServerHardwareID())
+		os.Exit(0)
+	}
 
 	versionLine := ""
 	if Version != "" {

@@ -164,6 +164,7 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.GET("/api/browser-ai/insights/stats", lib.ChainMiddlewares(h.getInsightStats, middlewares...))
 	r.PUT("/api/browser-ai/agents/{id}/contact-email", lib.ChainMiddlewares(h.updateAgentContactEmail, middlewares...))
 	r.GET("/api/browser-ai/license", lib.ChainMiddlewares(h.getLicense, middlewares...))
+	r.GET("/api/browser-ai/license/server-id", lib.ChainMiddlewares(h.getServerHardwareID, middlewares...))
 	r.POST("/api/browser-ai/license/activate", lib.ChainMiddlewares(h.activateLicense, middlewares...))
 
 	r.POST("/api/browser-ai/intercept", lib.ChainMiddlewares(h.intercept, middlewares...))

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
+	"github.com/gateway/gateway/framework/logstore"
 	"github.com/valyala/fasthttp"
 )
 
@@ -84,5 +85,13 @@ func (h *BrowserAIHandler) activateLicense(ctx *fasthttp.RequestCtx) {
 		"status":  "success",
 		"message": "Enterprise license activated successfully!",
 		"license": info,
+	})
+}
+
+// getServerHardwareID returns the deterministic hardware identifier of this host machine.
+func (h *BrowserAIHandler) getServerHardwareID(ctx *fasthttp.RequestCtx) {
+	SendJSON(ctx, map[string]any{
+		"status":             "success",
+		"server_hardware_id": logstore.GetServerHardwareID(),
 	})
 }
