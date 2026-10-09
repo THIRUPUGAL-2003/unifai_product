@@ -95,26 +95,17 @@ def enforce_file_send_policy(
             caption_peek = ""
         cached_list = _drop_prompt_echo_uploads(cached_list, caption_peek)
 
-    # If Send clearly has N attachments, keep the N most recent distinct caches.
-    # Never drop a file that already has its own real name.
-    if expected_n > 1 and cached_list and len(cached_list) > expected_n:
-        named = [
+    # ChatGPT often under-counts attachments (one wire token like composer_rendered
+    # plus a single id). Never throw away sibling files from the same upload burst.
+    # Only drop caches that are older than 3 minutes — a previous Send's leftovers.
+    if cached_list and len(cached_list) > 1:
+        newest = max(float(e.get("ts") or 0) for e in cached_list)
+        clustered = [
             e for e in cached_list
-            if _is_real_user_upload_name((e.get("file_name") or "").strip())
+            if newest - float(e.get("ts") or 0) <= 180.0
         ]
-        if len({(e.get("file_name") or "").strip().lower() for e in named}) >= expected_n:
-            cached_list = named
-        else:
-            newest = max(float(e.get("ts") or 0) for e in cached_list)
-            clustered = [
-                e for e in cached_list
-                if newest - float(e.get("ts") or 0) <= 180.0
-            ]
-            if len(clustered) >= expected_n:
-                clustered.sort(key=lambda e: float(e.get("ts") or 0))
-                cached_list = clustered[-expected_n:]
-            else:
-                cached_list = sorted(cached_list, key=lambda e: float(e.get("ts") or 0))[-expected_n:]
+        if clustered:
+            cached_list = clustered
 
     if not has_attach and not cached_list:
         return False, "", "", 0, False
@@ -1003,6 +994,11 @@ def _extract_file_send_user_caption(
             t = m.group(1).replace("\\n", "\n").replace('\\"', '"')
         if len((t or "").strip()) <= 2000:
             _accept(t or "")
+    # ChatGPT parts that are a bare number: "parts":[9080808782] or "parts":["9080"]
+    for m in re.finditer(r'"parts"\s*:\s*\[\s*(-?\d+(?:\.\d+)?)', body):
+        _accept(m.group(1))
+    for m in re.finditer(r'"parts"\s*:\s*\[[^\]]{0,8000}?"(\d{1,32})"', body):
+        _accept(m.group(1))
     # ChatGPT parts: "parts":["hello"]
     for m in re.finditer(
         r'"content_type"\s*:\s*"text"\s*,\s*"parts"\s*:\s*\[\s*"((?:[^"\\]|\\.)*)"',
@@ -1106,11 +1102,20 @@ def _extract_file_send_user_caption(
 
     if not candidates:
         return ""
-    # Prefer the shortest non-empty caption that isn't a document dump (typed note),
-    # but if all are short, take the longest among short ones.
+    # The first candidate is the extracted user message. A typed number or symbol
+    # string must not lose to a longer field scraped from the same request.
+    primary = candidates[0].strip()
+    if primary.isdigit() or _is_typed_numeric_prompt(primary) or _is_symbol_prompt(primary):
+        return primary
+    for c in candidates:
+        s = (c or "").strip()
+        if s.isdigit() or _is_typed_numeric_prompt(s):
+            return s
+    if primary and looks_like_user_prompt(primary) and len(primary) <= 500 and not _looks_like_document_body_dump(primary):
+        return primary
     short = [c for c in candidates if len(c) <= 500]
     pool = short or candidates
-    pool.sort(key=lambda s: (-min(len(s), 200), -len(s)))
+    pool.sort(key=lambda s: (len(s), candidates.index(s)))
     return pool[0].strip()
 
 

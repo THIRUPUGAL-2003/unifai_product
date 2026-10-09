@@ -677,12 +677,6 @@ export default function RBACView() {
 						Hierarchical Access Control: Configure permissions globally (mothavum) or per individual User, Team, and Customer (separate-avum).
 					</p>
 				</div>
-				<div className="flex items-center gap-2">
-					<Button onClick={() => setCreateRoleOpen(true)} className="gap-1.5 shadow-sm text-xs h-9">
-						<Plus className="h-4 w-4" />
-						New Role
-					</Button>
-				</div>
 			</div>
 
 			{rbacListQueryFailed ? (
@@ -706,7 +700,7 @@ export default function RBACView() {
 						<div className="relative">
 							<Search className="text-muted-foreground absolute top-2.5 left-2.5 h-3.5 w-3.5" />
 							<Input
-								placeholder="Search roles, users, teams…"
+								placeholder="Search users, teams, customers…"
 								value={treeSearch}
 								onChange={(e) => setTreeSearch(e.target.value)}
 								className="h-8 pl-8 text-xs"
@@ -716,68 +710,6 @@ export default function RBACView() {
 
 					{/* Navigation Tree Accordions */}
 					<div className="no-scrollbar flex-1 space-y-2 overflow-y-auto p-2">
-						{/* 1. ROLES SECTION */}
-						<div className="rounded-lg border bg-muted/20">
-							<button
-								type="button"
-								onClick={() => toggleSection("roles")}
-								className="flex w-full items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground hover:text-foreground"
-							>
-								<div className="flex items-center gap-1.5">
-									{expandedSections.roles ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-									<Shield className="h-3.5 w-3.5 text-emerald-500" />
-									<span>Roles</span>
-								</div>
-								<Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-									{filteredRoles.length}
-								</Badge>
-							</button>
-
-							{expandedSections.roles && (
-								<div className="space-y-1 p-1 pt-0">
-									{filteredRoles.map((role) => {
-										const isSelected = target.type === "role" && target.role.id === role.id;
-										const isSys = Boolean(
-											role.is_system_role ||
-												role.name?.toLowerCase() === "admin" ||
-												role.name?.toLowerCase() === "user",
-										);
-
-										return (
-											<div
-												key={role.id}
-												onClick={() => setTarget({ type: "role", role })}
-												className={`flex cursor-pointer items-center justify-between rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-													isSelected
-														? "bg-emerald-500/15 font-semibold text-emerald-900 dark:text-emerald-200"
-														: "hover:bg-muted text-muted-foreground hover:text-foreground"
-												}`}
-											>
-												<div className="flex items-center gap-2 truncate">
-													<span className="truncate">{role.name}</span>
-													{isSys && <span className="bg-muted text-muted-foreground rounded px-1 text-[9px]">system</span>}
-												</div>
-
-												{!isSys && (
-													<Button
-														size="icon"
-														variant="ghost"
-														className="h-5 w-5 text-muted-foreground hover:text-destructive"
-														onClick={(e) => {
-															e.stopPropagation();
-															void handleDeleteRole(role);
-														}}
-													>
-														<Trash2 className="h-3 w-3" />
-													</Button>
-												)}
-											</div>
-										);
-									})}
-								</div>
-							)}
-						</div>
-
 						{/* ADMINS SECTION (role policy + individual admins) */}
 						<div className="rounded-lg border bg-muted/20">
 							<button

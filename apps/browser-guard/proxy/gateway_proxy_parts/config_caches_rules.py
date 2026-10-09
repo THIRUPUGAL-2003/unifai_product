@@ -420,7 +420,7 @@ _UPLOAD_FILE_QUEUES: dict[str, list[dict]] = {}
 _UPLOAD_FILE_CACHE_LOCK = threading.Lock()
 _UPLOAD_FILE_CACHE_TTL = 15 * 60  # 15 minutes — keep bytes for View/Download
 _UPLOAD_FILE_CACHE_MAX = 80
-_UPLOAD_FILE_QUEUE_MAX = 32  # any count of files on one Send (images/docs/zips)
+_UPLOAD_FILE_QUEUE_MAX = 128  # one Send may attach 100+ files; keep each one until Send
 # Only treat "latest upload" as this Send's file if the upload was this recent.
 # Prevents typed prompts from becoming "[FILE UPLOAD] attachment" after an old pick.
 _UPLOAD_LATEST_MATCH_TTL = 10 * 60  # align with temp file View TTL / upload cache (was 5m)
@@ -1464,9 +1464,9 @@ def _is_typed_numeric_prompt(text: str) -> bool:
 
 
 def _is_symbol_prompt(text: str) -> bool:
-    """Typed symbols / code / math — predict on every added domain."""
+    """Typed symbols / code / math — predict on every added domain, any length."""
     t = (text or "").strip()
-    if not t or len(t) > 400:
+    if not t or len(t) > 200_000:
         return False
     if "://" in t or t.lower().startswith("www."):
         return False
@@ -1630,10 +1630,7 @@ def _looks_like_document_body_dump(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
-    if len(t) >= 500:
-        return True
-    if t.count("\n") >= 4:
-        return True
+    # Length alone is not a file dump. A long ChatGPT paste is still the prompt.
     low = t.lower()
     # PDF / doc dumps often embed credentials or multiple emails — not a user caption.
     if re.search(r"password\s*[:=]", low) and re.search(r"@\S+\.\S+", t):

@@ -75,23 +75,26 @@ export function DataTablePagination({
 
 	return (
 		<div
-			className={`flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border mt-4 text-xs text-muted-foreground select-none ${className}`}
+			className={`flex flex-col sm:flex-row items-center justify-between gap-4 pt-3.5 pb-1 border-t border-border/50 mt-3 text-xs text-muted-foreground select-none ${className}`}
 			data-testid={dataTestId}
 		>
 			{/* Left section: Page size selector and item range counter */}
-			<div className="flex flex-wrap items-center gap-2.5">
+			<div className="flex flex-wrap items-center gap-3">
 				{onLimitChange && (
-					<div className="flex items-center gap-2">
-						<span className="whitespace-nowrap font-medium">{perPageLabel}</span>
+					<div className="inline-flex items-center gap-2">
+						<span className="whitespace-nowrap text-xs font-medium text-muted-foreground leading-none">
+							{perPageLabel}
+						</span>
 						<Select value={String(safeLimit)} onValueChange={handleLimitChange}>
 							<SelectTrigger
-								className="h-8 w-[72px] bg-background border-border text-xs focus:ring-1"
+								size="sm"
+								className="h-7 min-h-7 w-[64px] rounded-md border-border/70 bg-background/60 hover:bg-background text-xs font-semibold text-foreground px-2 py-0 focus:ring-1 focus:ring-teal-500/30 transition-all cursor-pointer shadow-2xs"
 								aria-label={perPageLabel}
 								data-testid={`${dataTestId}-limit-select`}
 							>
 								<SelectValue />
 							</SelectTrigger>
-							<SelectContent>
+							<SelectContent className="min-w-[64px]">
 								{pageSizeOptions.map((sz) => (
 									<SelectItem key={sz} value={String(sz)} className="text-xs">
 										{sz}
@@ -101,7 +104,10 @@ export function DataTablePagination({
 						</Select>
 					</div>
 				)}
-				<span className="whitespace-nowrap">
+				{onLimitChange && (
+					<span className="text-muted-foreground/30 font-bold select-none">•</span>
+				)}
+				<span className="whitespace-nowrap text-xs text-muted-foreground leading-none">
 					Showing <span className="font-semibold text-foreground">{startItem.toLocaleString()}</span> to{" "}
 					<span className="font-semibold text-foreground">{endItem.toLocaleString()}</span> of{" "}
 					<span className="font-semibold text-foreground">{totalCount.toLocaleString()}</span> {itemLabel}
@@ -109,8 +115,8 @@ export function DataTablePagination({
 			</div>
 
 			{/* Right section: Page status and navigation buttons */}
-			<div className="flex items-center gap-2">
-				<span className="whitespace-nowrap">
+			<div className="flex items-center gap-3">
+				<span className="whitespace-nowrap text-xs text-muted-foreground leading-none">
 					Page <span className="font-semibold text-foreground">{currentPage}</span> of{" "}
 					<span className="font-semibold text-foreground">{totalPages}</span>
 				</span>
@@ -121,11 +127,11 @@ export function DataTablePagination({
 							size="icon"
 							disabled={currentPage <= 1}
 							onClick={() => handlePageChange(1)}
-							className="h-8 w-8 border-border hover:bg-muted"
+							className="h-7 w-7 rounded-md border-border/70 hover:bg-muted/60 transition-colors shadow-2xs"
 							title="First page"
 							aria-label="First page"
 						>
-							<ChevronsLeft className="h-4 w-4" />
+							<ChevronsLeft className="h-3.5 w-3.5" />
 						</Button>
 					)}
 					<Button
@@ -133,25 +139,25 @@ export function DataTablePagination({
 						size="icon"
 						disabled={currentPage <= 1}
 						onClick={() => handlePageChange(currentPage - 1)}
-						className="h-8 w-8 border-border hover:bg-muted"
+						className="h-7 w-7 rounded-md border-border/70 hover:bg-muted/60 transition-colors shadow-2xs"
 						data-testid={`${dataTestId}-prev-btn`}
 						title="Previous page"
 						aria-label="Previous page"
 					>
-						<ChevronLeft className="h-4 w-4" />
+						<ChevronLeft className="h-3.5 w-3.5" />
 					</Button>
 
 					{/* Numerical Quick Jump buttons when totalPages is moderate */}
 					{totalPages <= 7 && totalPages > 1 && (
-						<div className="hidden md:flex items-center gap-1 mx-1">
+						<div className="hidden md:flex items-center gap-1 mx-0.5">
 							{Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
 								<Button
 									key={p}
 									variant={p === currentPage ? "default" : "outline"}
 									size="sm"
 									onClick={() => handlePageChange(p)}
-									className={`h-8 w-8 p-0 text-xs ${
-										p === currentPage ? "font-bold shadow-sm" : "border-border hover:bg-muted"
+									className={`h-7 w-7 p-0 rounded-md text-xs transition-colors shadow-2xs ${
+										p === currentPage ? "bg-teal-500 hover:bg-teal-600 text-white font-bold" : "border-border/70 hover:bg-muted/60"
 									}`}
 								>
 									{p}
@@ -165,12 +171,12 @@ export function DataTablePagination({
 						size="icon"
 						disabled={currentPage >= totalPages}
 						onClick={() => handlePageChange(currentPage + 1)}
-						className="h-8 w-8 border-border hover:bg-muted"
+						className="h-7 w-7 rounded-md border-border/70 hover:bg-muted/60 transition-colors shadow-2xs"
 						data-testid={`${dataTestId}-next-btn`}
 						title="Next page"
 						aria-label="Next page"
 					>
-						<ChevronRight className="h-4 w-4" />
+						<ChevronRight className="h-3.5 w-3.5" />
 					</Button>
 					{showFirstLast && (
 						<Button
@@ -178,11 +184,11 @@ export function DataTablePagination({
 							size="icon"
 							disabled={currentPage >= totalPages}
 							onClick={() => handlePageChange(totalPages)}
-							className="h-8 w-8 border-border hover:bg-muted"
+							className="h-7 w-7 rounded-md border-border/70 hover:bg-muted/60 transition-colors shadow-2xs"
 							title="Last page"
 							aria-label="Last page"
 						>
-							<ChevronsRight className="h-4 w-4" />
+							<ChevronsRight className="h-3.5 w-3.5" />
 						</Button>
 					)}
 				</div>

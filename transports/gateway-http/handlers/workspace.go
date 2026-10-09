@@ -104,6 +104,10 @@ func (h *WorkspaceHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.GET("/api/scim/config", wrap(h.getSCIMConfig))
 	r.PUT("/api/scim/config", wrap(h.updateSCIMConfig))
 	r.GET("/api/scim/providers", wrap(h.listSCIMProviders))
+	r.GET("/api/scim/ad/config", wrap(h.getActiveDirectoryConfig))
+	r.PUT("/api/scim/ad/config", wrap(h.updateActiveDirectoryConfig))
+	r.POST("/api/scim/ad/test", wrap(h.testActiveDirectoryConnection))
+	r.POST("/api/scim/ad/sync", wrap(h.syncActiveDirectoryUsers))
 	// OAuth discovery/logout are auth-middleware whitelisted (browser popup + logout).
 	r.GET("/api/scim/oauth/config", lib.ChainMiddlewares(h.getSCIMOAuthConfig, middlewares...))
 	r.POST("/api/scim/oauth/callback", lib.ChainMiddlewares(h.scimOAuthCallback, middlewares...))

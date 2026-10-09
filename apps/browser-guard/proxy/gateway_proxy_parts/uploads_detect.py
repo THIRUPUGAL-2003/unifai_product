@@ -161,6 +161,19 @@ def _has_any_file_extension(name: str) -> bool:
     return True
 
 
+def _is_snake_case_wire_filename(name: str) -> bool:
+    """True for ChatGPT JSON keys leaked as names: composer_rendered, asset_pointer.
+
+    A real upload has an extension (UnifAI_Competitive_Position_and_Gaps.docx) or a
+    human label (Gateway Product (1)). All-lowercase snake_case with no extension
+    is a wire field, not the file the user picked.
+    """
+    n = (name or "").strip()
+    if not n or _has_any_file_extension(n):
+        return False
+    return bool(re.fullmatch(r"[a-z][a-z0-9]*(_[a-z0-9]+)+", n))
+
+
 def _looks_like_site_or_tab_label_not_file(name: str) -> bool:
     """Reject hostnames / AI site labels that ChatGPT sometimes leaks as file names."""
     n = (name or "").strip()
@@ -238,6 +251,9 @@ def _is_real_user_upload_name(name: str) -> bool:
     if _is_wire_junk_filename(n):
         return False
     if _looks_like_site_or_tab_label_not_file(n):
+        return False
+    # ChatGPT wire keys (composer_rendered) are not user-picked file names.
+    if _is_snake_case_wire_filename(n):
         return False
     # Reject opaque ids mistaken for names
     if re.fullmatch(r"(?:file-)?[A-Za-z0-9_-]{20,}", n):
@@ -1152,7 +1168,7 @@ def _walk_json_file_id_names(obj, out: dict[str, str] | None = None, depth: int 
             if isinstance(v, (dict, list)):
                 _walk_json_file_id_names(v, out, depth + 1)
     elif isinstance(obj, list):
-        for v in obj[:80]:
+        for v in obj[:400]:
             if isinstance(v, (dict, list)):
                 _walk_json_file_id_names(v, out, depth + 1)
     return out
@@ -1176,6 +1192,10 @@ def extract_file_id_name_map(raw_text: str) -> dict[str, str]:
         if not _has_any_file_extension(name) and not re.search(r"[\d()]", name):
             return
         prev = out.get(fid)
+        # First real filename for this id wins. A later .pdf must not replace
+        # notes.txt just because ".pdf" scores higher (that swapped names).
+        if prev and _has_any_file_extension(prev):
+            return
         if prev and _upload_name_quality(prev) >= _upload_name_quality(name):
             return
         out[fid] = name
@@ -1187,28 +1207,28 @@ def extract_file_id_name_map(raw_text: str) -> dict[str, str]:
     # Wider window — id/name may be far apart in JSON.
     # Prefer explicit file_* keys; bare name/title only when value has an extension.
     for m in re.finditer(
-        r'(?:file_id|fileId|id)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"[^\n]{0,2500}?'
+        r'(?:file_id|fileId|id)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"[^}]{0,800}?'
         r'(?:file_name|fileName|filename|original_name|originalName|display_name|displayName)\s*"?\s*:\s*"([^"]+)"',
         raw_text,
         re.I,
     ):
         _put(m.group(1), m.group(2))
     for m in re.finditer(
-        r'(?:file_name|fileName|filename|original_name|originalName|display_name|displayName)\s*"?\s*:\s*"([^"]+)"[^\n]{0,2500}?'
+        r'(?:file_name|fileName|filename|original_name|originalName|display_name|displayName)\s*"?\s*:\s*"([^"]+)"[^}]{0,800}?'
         r'(?:file_id|fileId|id)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"',
         raw_text,
         re.I,
     ):
         _put(m.group(2), m.group(1))
     for m in re.finditer(
-        r'(?:file_id|fileId|id)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"[^\n]{0,2500}?'
+        r'(?:file_id|fileId|id)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"[^}]{0,800}?'
         r'(?:name|title)\s*"?\s*:\s*"([^"]+\.[A-Za-z0-9]{1,8})"',
         raw_text,
         re.I,
     ):
         _put(m.group(1), m.group(2))
     for m in re.finditer(
-        r'(?:name|title)\s*"?\s*:\s*"([^"]+\.[A-Za-z0-9]{1,8})"[^\n]{0,2500}?'
+        r'(?:name|title)\s*"?\s*:\s*"([^"]+\.[A-Za-z0-9]{1,8})"[^}]{0,800}?'
         r'(?:file_id|fileId|id)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"',
         raw_text,
         re.I,
@@ -1311,7 +1331,7 @@ def _dedupe_cached_uploads_by_bytes(cached_list: list[dict]) -> list[dict]:
 
 
 _UPLOAD_BURST_WINDOW = 60.0   # files of ONE Send are uploaded within this many seconds
-_UPLOAD_SEND_MAX_FILES = 12   # hard cap of file rows per Send
+_UPLOAD_SEND_MAX_FILES = 128   # one Send may attach 100+ files; do not drop the rest
 
 
 def _has_known_file_magic(data: bytes) -> bool:
@@ -1525,13 +1545,13 @@ def _trim_phantom_upload_caches(
     if send_names or expected > 1:
         target = max(len(send_names), expected, 1)
         uniq_real: list[dict] = []
-        seen_names: set[str] = set()
+        seen_fp: set[str] = set()
         for e in realish:
-            nk = ((e.get("file_name") or "").strip()).lower()
-            if nk and nk in seen_names:
+            # Same display name must not drop a different file (5 uploads → 4 rows).
+            fp = _upload_content_fingerprint(e) or str(e.get("cache_uid") or id(e))
+            if fp in seen_fp:
                 continue
-            if nk:
-                seen_names.add(nk)
+            seen_fp.add(fp)
             uniq_real.append(e)
         if len(uniq_real) >= target:
             # Prefer exact target count but never collapse multi distinct bytes.
@@ -1579,7 +1599,8 @@ def _bind_real_filenames_to_cached_uploads(cached_list: list[dict], raw_text: st
         key = cur.lower()
         uid = str(entry.get("cache_uid") or id(entry))
         if key in seen_name_uid and seen_name_uid[key] != uid:
-            entry["file_name"] = "attachment"
+            # Two different files must keep their own names. Blanking the
+            # second one let the next file's name get assigned here.
             continue
         seen_name_uid[key] = uid
         used_names.add(key)
@@ -1617,7 +1638,10 @@ def _bind_real_filenames_to_cached_uploads(cached_list: list[dict], raw_text: st
             if by_bytes and by_bytes.lower() not in used_names:
                 entry["file_name"] = by_bytes
                 cur = by_bytes
-        if fid and fid in id_map and _is_real_user_upload_name(id_map[fid]):
+        if (
+            fid and fid in id_map and _is_real_user_upload_name(id_map[fid])
+            and _needs_real_upload_filename(cur)
+        ):
             incoming = id_map[fid]
             if _name_fits_upload_bytes(incoming, bytes(raw), entry.get("content_type") or "") and (
                 _needs_real_upload_filename(cur)
@@ -1630,7 +1654,10 @@ def _bind_real_filenames_to_cached_uploads(cached_list: list[dict], raw_text: st
                     remember_upload_name_by_bytes(bytes(raw), incoming)
             used_names.add((entry.get("file_name") or cur).lower())
             continue
-        if fid.startswith("file-") and fid[5:] in id_map and _is_real_user_upload_name(id_map[fid[5:]]):
+        if (
+            fid.startswith("file-") and fid[5:] in id_map and _is_real_user_upload_name(id_map[fid[5:]])
+            and _needs_real_upload_filename(cur)
+        ):
             incoming = id_map[fid[5:]]
             if _name_fits_upload_bytes(incoming, bytes(raw), entry.get("content_type") or "") and (
                 _needs_real_upload_filename(cur)

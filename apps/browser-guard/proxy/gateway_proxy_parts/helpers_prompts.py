@@ -550,6 +550,9 @@ def _is_internal_wire_text(text: str) -> bool:
         "turn exchange complete", "fetch socket url", "ping", "pong",
         "heartbeat", "keepalive", "keep alive", "connection established",
         "stream complete", "message complete", "typing", "presence",
+        "composer_rendered", "asset_pointer", "content_type", "multimodal_text",
+        "image_asset_pointer", "audio_asset_pointer", "mime_type", "file_id",
+        "serialization_metadata", "custom_symbol_offsets",
     }:
         return True
     # pubsub.fetch-socket-url, client.create, etc.
@@ -668,7 +671,9 @@ def _body_has_user_send_payload(data) -> bool:
     if isinstance(content, dict):
         parts = content.get("parts")
         if isinstance(parts, list) and any(
-            isinstance(p, str) and p.strip() for p in parts
+            (isinstance(p, str) and p.strip())
+            or (isinstance(p, (int, float)) and not isinstance(p, bool))
+            for p in parts
         ):
             return True
         for ck in ("text", "input_text", "message"):
@@ -786,7 +791,6 @@ _TIMEZONE_RE = re.compile(
     re.IGNORECASE,
 )
 _SESSION_ID_RE = re.compile(r"^(?:sess|session|sid|device|req|msg)_[0-9a-zA-Z_-]+$", re.IGNORECASE)
-_TIMESTAMP_SEQ_RE = re.compile(r"^\d{10,}(?:-\d+)?$")
 _UUID_LIKE_RE = re.compile(r"(\$a?|\$)?[0-9a-fA-F]{4,16}(?:-[0-9a-fA-F]{4,16}){2,6}", re.I)
 
 
@@ -810,8 +814,9 @@ def _is_chat_metadata_token(text: str) -> bool:
         return True
     if _SESSION_ID_RE.match(t):
         return True
-    if _TIMESTAMP_SEQ_RE.match(t):
-        return True
+    # 10-digit strings are phone numbers / typed IDs, not unix timestamps.
+    if t.isdigit():
+        return False
     if _UUID_LIKE_RE.search(t):
         return True
     return False
@@ -843,9 +848,9 @@ def _pick_best_user_text(candidates: list[str]) -> str | None:
             score += 60
         if " " in got:
             score += 24
-        if got.isdigit():
-            # Keep the number if it is the only text. Do not let a long id beat a short word.
-            score += 20 if len(got) < 10 else -30
+        if got.isdigit() or _is_typed_numeric_prompt(got) or _is_symbol_prompt(got):
+            # Phone numbers, OTPs, and symbol strings are the prompt, not a worse score.
+            score += 40
         if 2 <= len(got) <= 4 and got.isalpha():
             score += 12
         if re.search(r"[a-zA-Z]", got) and re.search(r"\d", got):
@@ -860,13 +865,25 @@ def _pick_best_user_text(candidates: list[str]) -> str | None:
 
 
 def _extract_messages_parts_prompt(blob: str) -> str | None:
-    """Last ChatGPT/OpenAI parts[] slot — the finished user Send text."""
+    """Last ChatGPT/OpenAI user parts[] slot — the finished user Send text."""
     if not blob:
         return None
+    # JSON walk keeps the last user message (numbers, symbols, long paste).
+    # A later assistant "parts" string must not replace it.
+    try:
+        data = json.loads(blob)
+    except Exception:
+        data = None
+    if isinstance(data, (dict, list)):
+        got = _extract_from_json(data)
+        if got:
+            return got
     last: str | None = None
     patterns = (
         r'"parts"\s*:\s*\[\s*"((?:[^"\\]|\\.)*)"',
+        r'"parts"\s*:\s*\[\s*(-?\d+(?:\.\d+)?)',
         r'"content"\s*:\s*\{\s*"content_type"\s*:\s*"text"\s*,\s*"parts"\s*:\s*\[\s*"((?:[^"\\]|\\.)*)"',
+        r'"content"\s*:\s*\{\s*"content_type"\s*:\s*"text"\s*,\s*"parts"\s*:\s*\[\s*(-?\d+(?:\.\d+)?)',
         r'"input_text"\s*:\s*"((?:[^"\\]|\\.)*)"',
     )
     for pat in patterns:
@@ -950,10 +967,13 @@ def _should_intercept_extracted_prompt(
     confident = _is_confident_chat_send(path, raw_text, raw_bytes)
 
     if confident:
-        # Document body dump must NEVER become a user prompt when an upload exists
-        if _looks_like_document_body_dump(text):
+        # File body stays off this row. A long typed Send (numbers, symbols, paste) still predicts.
+        if (
+            (_send_carries_attachment(raw_text) or (domain and _domain_has_pending_upload_cache(domain)))
+            and _looks_like_document_body_dump(text)
+        ):
             return False
-        # Exact user Send — do not drop number/symbol/short text via wire heuristics.
+        # Exact user Send — do not drop number/symbol/short/long text via wire heuristics.
         if _is_clear_protocol_junk(text) or _is_google_wire_blob(text) or _is_opaque_wire_blob(text):
             return False
         # ChatGPT attach JSON often exposes "document.pdf" as content — that is the
@@ -1769,6 +1789,10 @@ def _unwrap_json_prompt(text: str | None) -> str | None:
     if not inner or inner.strip() == t:
         return text
     inner_s = inner.strip()
+    # A typed number must stay the prompt. Other JSON leaves (model, ids, sizes)
+    # were forcing the whole request body back, and the number then disappeared.
+    if inner_s.isdigit() or _is_typed_numeric_prompt(inner_s) or _is_symbol_prompt(inner_s):
+        return inner_s
     others = [leaf for leaf in _json_scalar_leaves(data) if leaf.strip() and leaf.strip() not in inner_s]
     if any(not _is_ignorable_json_leaf(leaf) for leaf in others):
         return text
@@ -2225,9 +2249,13 @@ def _filter_and_pick_claude_prompt(candidates: list[str]) -> str | None:
     # When a document is attached, protobuf payload contains both the extracted document
     # and the user-typed prompt. Prioritize non-dump strings (the actual user prompt).
     non_dumps = [c for c in valid if not _looks_like_document_body_dump(c)]
-    if non_dumps:
-        return _pick_best_user_text(non_dumps) or non_dumps[-1]
-    return _pick_best_user_text(valid) or valid[-1]
+    # The newest string in the frame is the Send. A 10-digit phone number must
+    # not lose to an older longer line ("hi", "see this") in the same request.
+    pool = non_dumps or valid
+    last = pool[-1]
+    if last.isdigit() or _is_typed_numeric_prompt(last):
+        return last
+    return _pick_best_user_text(pool) or last
 
 
 def extract_connect_rpc_prompt(body_bytes: bytes, content_type: str = "", host: str = "", url: str = "") -> str | None:
@@ -2554,8 +2582,47 @@ def _extract_from_binary_stream_heuristics(body_bytes: bytes) -> str | None:
     return None
 
 
+def _latest_typed_number_in_body(text: str) -> str | None:
+    """Last user parts/prompt/text value when that value is only a number.
+
+    ChatGPT and Claude send the whole chat in one request. A longer older line
+    ("hi", "see this") was winning, so 9080578529 never reached Prompt Logs.
+    """
+    if not text:
+        return None
+    last = ""
+    last_at = -1
+    for pat in (
+        r'"parts"\s*:\s*\[\s*"((?:[^"\\]|\\.)*)"',
+        r'"prompt"\s*:\s*"((?:[^"\\]|\\.)*)"',
+        r'"text"\s*:\s*"((?:[^"\\]|\\.)*)"',
+        r'"query"\s*:\s*"((?:[^"\\]|\\.)*)"',
+        r'"message"\s*:\s*"((?:[^"\\]|\\.)*)"',
+    ):
+        for m in re.finditer(pat, text):
+            if m.start() < last_at:
+                continue
+            raw = m.group(1) or ""
+            cand = raw.encode("utf-8").decode("unicode_escape", errors="ignore") if "\\" in raw else raw
+            cand = cand.strip()
+            if cand:
+                last = cand
+                last_at = m.start()
+    if last.isdigit() or _is_typed_numeric_prompt(last):
+        return last
+    return None
+
+
 def extract_prompt_universal(body_bytes: bytes, content_type: str = "", host: str = "", url: str = "") -> str | None:
-    return _unwrap_json_prompt(_extract_prompt_universal_raw(body_bytes, content_type, host, url))
+    got = _unwrap_json_prompt(_extract_prompt_universal_raw(body_bytes, content_type, host, url))
+    try:
+        body = body_bytes.decode("utf-8", errors="ignore") if body_bytes else ""
+    except Exception:
+        body = ""
+    number = _latest_typed_number_in_body(body)
+    if number and (not got or not str(got).strip().isdigit()):
+        return number
+    return got
 
 
 def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", host: str = "", url: str = "") -> str | None:

@@ -19,10 +19,26 @@ import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives import serialization
 
 DEFAULT_ISSUER = "YesPanchi Group of Companies"
 DEFAULT_PRODUCT = "Gateway - Real-time AI Knowledge Screening & Hazard Audit"
+
+# Must match framework/logstore/license_wrap.go licenseFileKey.
+_LICENSE_FILE_KEY = bytes([
+    0x91, 0x3C, 0xE7, 0x4A, 0x18, 0xB2, 0x5D, 0x06,
+    0xCF, 0x77, 0x21, 0x9E, 0x44, 0xD8, 0x0B, 0x63,
+    0xAA, 0x15, 0x6F, 0x82, 0x39, 0xC4, 0x5E, 0x10,
+    0x7B, 0xE1, 0x48, 0x9A, 0x2D, 0xF6, 0x53, 0x0C,
+])
+
+
+def seal_license_file(inner: bytes) -> str:
+    """Return a single GWLIC1 key. The client file does not contain readable seat or client fields."""
+    nonce = os.urandom(12)
+    sealed = AESGCM(_LICENSE_FILE_KEY).encrypt(nonce, inner, b"GWLIC1.")
+    return "GWLIC1." + base64.b64encode(nonce + sealed).decode("ascii")
 
 def _registry_path(script_dir: Path, registry_path: str = None) -> Path:
     return Path(registry_path) if registry_path else script_dir / "license_registry.json"
@@ -56,6 +72,7 @@ def issue_license(
     issuer: str = DEFAULT_ISSUER,
     product: str = DEFAULT_PRODUCT,
     tier: str = "Enterprise On-Premise",
+    revision: int = None,
     features: list = None,
     private_key_path: str = None,
     output_path: str = None,
@@ -106,13 +123,18 @@ def issue_license(
     registry = _load_registry(reg_file)
     licenses = registry.setdefault("licenses", {})
 
-    if license_id and str(license_id).strip():
+    if revision is not None and revision > 0:
+        revision = int(revision)
+        if not license_id:
+            license_id = f"YP-{now_dt.strftime('%Y%m')}-{uuid.uuid4().hex[:8].upper()}"
+    elif license_id and str(license_id).strip():
         license_id = str(license_id).strip()
         previous = licenses.get(license_id) or {}
         revision = int(previous.get("revision") or 0) + 1
     else:
         license_id = f"YP-{now_dt.strftime('%Y%m')}-{uuid.uuid4().hex[:8].upper()}"
-        revision = 1
+        matching_revs = [int(row.get("revision") or 0) for row in licenses.values() if str(row.get("install_id") or "").strip().upper() == install_id.upper()]
+        revision = (max(matching_revs) + 1) if matching_revs else 1
 
     for other_id, row in list(licenses.items()):
         if other_id == license_id:
@@ -147,19 +169,26 @@ def issue_license(
     signature_b64 = base64.b64encode(signature_bytes).decode("utf-8")
     payload_b64 = base64.b64encode(canonical_json).decode("utf-8")
 
+    inner = json.dumps({
+        "format": "gateway_enterprise_license_v1",
+        "payload_b64": payload_b64,
+        "signature": signature_b64,
+    }, separators=(",", ":")).encode("utf-8")
+    license_token = seal_license_file(inner)
     license_envelope = {
         "format": "gateway_enterprise_license_v1",
         "payload": payload_data,
         "payload_b64": payload_b64,
-        "signature": signature_b64
+        "signature": signature_b64,
+        "license_key": license_token,
     }
 
-    # Default output path
+    # Default output path. The file is only the opaque key.
     safe_name = "".join(c if c.isalnum() else "_" for c in client_name.lower())
     out_file = Path(output_path) if output_path else script_dir / f"license_{safe_name}.lic"
 
     with open(out_file, "w", encoding="utf-8") as f:
-        json.dump(license_envelope, f, indent=2)
+        f.write(license_token + "\n")
 
     licenses[license_id] = {
         "license_id": license_id,

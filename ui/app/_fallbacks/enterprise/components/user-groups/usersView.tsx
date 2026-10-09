@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	Users,
+	User,
 	Plus,
 	Search,
 	Edit2,
 	Trash2,
 	Shield,
+	ShieldCheck,
 	Check,
 	X,
 	Clock,
@@ -165,9 +167,11 @@ function UserVirtualKeysCell({ userId, allVirtualKeys }: { userId: string; allVi
 	);
 }
 
+export type TabFilter = "allowed" | "all" | "user" | "admin" | "sub_admin" | "pending";
+
 export default function UsersView() {
 	const [searchQuery, setSearchQuery] = useState("");
-	const [roleFilter, setRoleFilter] = useState<"all" | "user" | "admin">("all");
+	const [roleFilter, setRoleFilter] = useState<TabFilter>("all");
 	const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 	const hasCreateAccess = useRbac(RbacResource.Users, RbacOperation.Create);
 	const hasUpdateAccess = useRbac(RbacResource.Users, RbacOperation.Update);
@@ -853,35 +857,58 @@ export default function UsersView() {
 		);
 	};
 
-	const isAdminRole = (u: SessionUser) => {
-		const r = (u.role || "user").trim();
-		return r === "admin" || r === "sub_admin";
+	const isUserRoleOnly = (u: SessionUser) => {
+		const r = (u.role || "user").trim().toLowerCase();
+		return r === "user" || (r !== "admin" && r !== "sub_admin" && r !== "sub-admin");
+	};
+
+	const isAdminRoleOnly = (u: SessionUser) => {
+		const r = (u.role || "user").trim().toLowerCase();
+		return r === "admin";
+	};
+
+	const isSubAdminRoleOnly = (u: SessionUser) => {
+		const r = (u.role || "user").trim().toLowerCase();
+		return r === "sub_admin" || r === "sub-admin";
 	};
 
 	const matchesRole = (u: SessionUser) => {
-		if (roleFilter === "admin") return isAdminRole(u);
-		if (roleFilter === "user") return !isAdminRole(u);
+		if (roleFilter === "admin") return isAdminRoleOnly(u);
+		if (roleFilter === "sub_admin") return isSubAdminRoleOnly(u);
+		if (roleFilter === "user") return isUserRoleOnly(u);
 		return true;
 	};
 
 	// Disabled = deactivated by the identity provider (SCIM); listed with a badge, cannot sign in.
 	const approvedUsers = users.filter((u) => ["approved", "disabled"].includes(u.status || "approved"));
-	const roleCounts = {
+	const unapprovedUsers = users.filter((u) => ["pending", "email_unverified"].includes(u.status || "approved"));
+
+	const allowedDisplay = userQuota
+		? userQuota.limited
+			? userQuota.max
+			: "Unlimited"
+		: "—";
+
+	const roleCounts: Record<TabFilter, string | number> = {
+		allowed: allowedDisplay,
 		all: approvedUsers.length,
-		user: approvedUsers.filter((u) => !isAdminRole(u)).length,
-		admin: approvedUsers.filter(isAdminRole).length,
+		user: approvedUsers.filter(isUserRoleOnly).length,
+		admin: approvedUsers.filter(isAdminRoleOnly).length,
+		sub_admin: approvedUsers.filter(isSubAdminRoleOnly).length,
+		pending: unapprovedUsers.length,
 	};
-	const roleFilterOptions: { value: "all" | "user" | "admin"; label: string }[] = [
-		{ value: "all", label: "All" },
-		{ value: "user", label: "User" },
-		{ value: "admin", label: "Admin" },
+
+	const roleFilterOptions: { value: TabFilter; label: string; icon: React.ReactNode }[] = [
+		{ value: "allowed", label: "Allowed Users", icon: <Key className="h-3.5 w-3.5 text-emerald-400" /> },
+		{ value: "all", label: "Active Users", icon: <Users className="h-3.5 w-3.5" /> },
+		{ value: "user", label: "User", icon: <User className="h-3.5 w-3.5" /> },
+		{ value: "admin", label: "Admin", icon: <Shield className="h-3.5 w-3.5" /> },
+		{ value: "sub_admin", label: "Sub Admin", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
+		{ value: "pending", label: "Pending Approvals", icon: <Clock className="h-3.5 w-3.5" /> },
 	];
 
-	// Pending queue ignores role filter — every sign-up still needs Accept/Deny regardless of Admin/User toggle.
-	// email_unverified rows stay visible (badged) so admins can deny stuck requests.
-	const pendingUsers = users.filter(
-		(u) => ["pending", "email_unverified"].includes(u.status || "approved") && matchesSearch(u),
-	);
+	// Pending queue matches search
+	const pendingUsers = unapprovedUsers.filter(matchesSearch);
 	const activeUsers = approvedUsers.filter((u) => matchesSearch(u) && matchesRole(u));
 	const [activeUsersOffset, setActiveUsersOffset] = useState(0);
 	const [activeUsersLimit, setActiveUsersLimit] = useState(10);
@@ -894,9 +921,6 @@ export default function UsersView() {
 		() => activeUsers.slice(activeUsersOffset, activeUsersOffset + activeUsersLimit),
 		[activeUsers, activeUsersOffset, activeUsersLimit],
 	);
-
-	const activeUsersTitle =
-		roleFilter === "admin" ? "Active admins" : roleFilter === "user" ? "Active users (role: User)" : "Active users";
 
 	return (
 		<div className="text-foreground bg-background border-border/40 flex w-full flex-col gap-6 rounded-lg border p-6 shadow-xl backdrop-blur-sm">
@@ -920,22 +944,6 @@ export default function UsersView() {
 				</Button>
 			</div>
 
-			{userQuota ? (
-				<div className="flex flex-wrap items-center gap-2 text-sm" data-testid="product-user-quota">
-					<span className="bg-muted/40 border-border rounded-md border px-2.5 py-1">User {userQuota.users}{userQuota.limited ? `/${userQuota.max}` : ""}</span>
-					<span className="bg-muted/40 border-border rounded-md border px-2.5 py-1">Admin {userQuota.admins}{userQuota.limited ? `/${userQuota.max}` : ""}</span>
-					<span className="bg-muted/40 border-border rounded-md border px-2.5 py-1">Sub-admin {userQuota.sub_admins}{userQuota.limited ? `/${userQuota.max}` : ""}</span>
-					<span className="rounded-md border border-teal-500/40 bg-teal-500/10 px-2.5 py-1 font-medium text-teal-700 dark:text-teal-200">
-						Total {userQuota.used}{userQuota.limited ? `/${userQuota.max}` : ""}
-					</span>
-					{userQuota.limited ? (
-						<span className="text-muted-foreground">{userQuota.remaining} left. User, admin, and sub-admin share this total.</span>
-					) : (
-						<span className="text-muted-foreground">No dashboard user cap on the current license.</span>
-					)}
-				</div>
-			) : null}
-
 			{helperQueryFailed ? (
 				<QueryErrorBanner
 					testId="users-helper-query-error"
@@ -948,7 +956,11 @@ export default function UsersView() {
 				<div className="relative w-full max-w-sm">
 					<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
 					<Input
-						placeholder="Search by name, email or role..."
+						placeholder={
+							roleFilter === "pending"
+								? "Search pending requests by name, email or role..."
+								: "Search by name, email or role..."
+						}
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						className="bg-muted/30 border-border/50 rounded-lg pl-9 pr-9 focus:border-teal-500/50"
@@ -968,10 +980,13 @@ export default function UsersView() {
 				<div
 					role="group"
 					aria-label="Filter by role"
-					className="bg-muted/30 border-border/50 inline-flex shrink-0 items-center gap-1 rounded-lg border p-1"
+					className="bg-muted/30 border-border/50 inline-flex flex-wrap shrink-0 items-center gap-1 rounded-lg border p-1"
 				>
 					{roleFilterOptions.map((opt) => {
 						const active = roleFilter === opt.value;
+						const isPendingTab = opt.value === "pending";
+						const isAllowedTab = opt.value === "allowed";
+						const hasPendingAlert = isPendingTab && (Number(roleCounts.pending) || 0) > 0;
 						return (
 							<button
 								key={opt.value}
@@ -979,17 +994,38 @@ export default function UsersView() {
 								onClick={() => setRoleFilter(opt.value)}
 								aria-pressed={active}
 								data-testid={`users-role-filter-${opt.value}`}
+								title={
+									isAllowedTab && userQuota
+										? userQuota.limited
+											? `License Key Limit: ${userQuota.used}/${userQuota.max} users (${userQuota.remaining} seats left)`
+											: "Unlimited users allowed by license"
+										: undefined
+								}
 								className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
 									active
-										? "bg-teal-500 text-white shadow-sm"
-										: "text-muted-foreground hover:bg-muted hover:text-foreground"
+										? isPendingTab
+											? "bg-amber-500 text-white shadow-sm"
+											: isAllowedTab
+												? "bg-emerald-600 text-white shadow-sm"
+												: "bg-teal-500 text-white shadow-sm"
+										: hasPendingAlert
+											? "text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 font-semibold"
+											: isAllowedTab
+												? "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+												: "text-muted-foreground hover:bg-muted hover:text-foreground"
 								}`}
 							>
-								{opt.value === "admin" ? <Shield className="h-3.5 w-3.5" /> : opt.value === "user" ? <Users className="h-3.5 w-3.5" /> : null}
+								{opt.icon}
 								{opt.label}
 								<span
 									className={`rounded-full px-1.5 text-[10px] font-semibold ${
-										active ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
+										active
+											? "bg-white/20 text-white"
+											: hasPendingAlert
+												? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+												: isAllowedTab
+													? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+													: "bg-muted text-muted-foreground"
 									}`}
 								>
 									{roleCounts[opt.value]}
@@ -999,6 +1035,15 @@ export default function UsersView() {
 					})}
 				</div>
 			</div>
+
+			{roleFilter === "allowed" && userQuota ? (
+				<div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300">
+					<Key className="h-4 w-4 text-emerald-400 shrink-0" />
+					<span>
+						<strong>License Key Capacity:</strong> {userQuota.limited ? `${userQuota.max} users allowed` : "Unlimited users allowed"} — Currently {userQuota.used} active ({userQuota.remaining} remaining seats available).
+					</span>
+				</div>
+			) : null}
 
 			{loading ? (
 				<div className="flex items-center justify-center py-20">
@@ -1015,116 +1060,124 @@ export default function UsersView() {
 						Retry
 					</Button>
 				</div>
-			) : (
-				<>
-					{/* Pending registrations */}
-					<div className="space-y-3">
-						<div className="flex items-center gap-2">
-							<Clock className="h-4 w-4 text-amber-400" />
-							<h2 className="text-sm font-semibold text-amber-300">
-								Pending approvals ({pendingUsers.length})
-							</h2>
-						</div>
-						<p className="text-muted-foreground pl-6 text-xs">
-							Accept activates the account (after email verification). Deny blocks sign-in and removes the request from this list.
-							Admins also receive Accept/Deny email links when SMTP is enabled.
-						</p>
-						{pendingUsers.length === 0 ? (
-							<p className="text-muted-foreground text-sm pl-6">No registration requests waiting.</p>
-						) : (
-							<div className="border-amber-500/20 bg-amber-500/5 overflow-hidden rounded-xl border shadow-sm">
-								<Table>
-									<TableHeader className="bg-muted/30">
-										<TableRow>
-											<TableHead className="text-foreground/90 font-semibold">ID</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Username</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Email</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Requested role</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Requested At</TableHead>
-											<TableHead className="text-foreground/90 text-right font-semibold">Actions</TableHead>
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{pendingUsers.map((user) => (
-											<TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
-												<TableCell className="font-mono text-[11px] text-muted-foreground max-w-[140px] truncate" title={user.id}>
-													{user.id}
-												</TableCell>
-												<TableCell className="font-medium">{user.username}</TableCell>
-												<TableCell className="text-sm text-muted-foreground">
-													{user.email || "—"}
-													{user.status === "email_unverified" && (
-														<span className="ml-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
-															Email not verified
-														</span>
-													)}
-												</TableCell>
-												<TableCell>
-													<span
-														className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-															user.role === "admin"
-																? "border-teal-500/20 bg-teal-500/10 text-teal-400"
-																: "border-blue-500/20 bg-blue-500/10 text-blue-400"
-														}`}
-													>
-														<Shield className="h-3 w-3" />
-														{user.role}
-													</span>
-												</TableCell>
-												<TableCell className="text-muted-foreground text-xs">
-													{new Date(user.created_at).toLocaleString()}
-												</TableCell>
-												<TableCell className="text-right">
-													<div className="flex justify-end gap-2">
-														<Button
-															size="sm"
-															disabled={
-																actionBusyId === user.id ||
-																!hasUpdateAccess ||
-																user.status === "email_unverified"
-															}
-															title={
-																user.status === "email_unverified"
-																	? "Applicant must verify email before Accept"
-																	: "Accept — activate account"
-															}
-															onClick={() => handleApprove(user)}
-															className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-500 text-white"
-															data-testid="user-registration-accept"
-														>
-															<Check className="h-3.5 w-3.5" />
-															Accept
-														</Button>
-														<Button
-															size="sm"
-															variant="outline"
-															disabled={actionBusyId === user.id || !hasUpdateAccess}
-															onClick={() => handleReject(user)}
-															className="h-8 gap-1 border-red-500/40 text-red-400 hover:bg-red-950/40"
-															data-testid="user-registration-deny"
-														>
-															<X className="h-3.5 w-3.5" />
-															Deny
-														</Button>
-													</div>
-												</TableCell>
-											</TableRow>
-										))}
-									</TableBody>
-								</Table>
+			) : roleFilter === "pending" ? (
+				/* Pending registrations view only when Pending Approvals tab is active */
+				<div className="space-y-4">
+					<div className="flex flex-col gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+						<div className="space-y-1">
+							<div className="flex items-center gap-2">
+								<Clock className="h-5 w-5 text-amber-400" />
+								<h2 className="text-base font-semibold text-amber-300">
+									Pending Approvals ({pendingUsers.length}{searchQuery && pendingUsers.length !== unapprovedUsers.length ? ` of ${unapprovedUsers.length}` : ""})
+								</h2>
 							</div>
-						)}
+							<p className="text-muted-foreground text-xs">
+								Accept activates the account (after email verification). Deny blocks sign-in and removes the request from this list. Admins also receive Accept/Deny email links when SMTP is enabled.
+							</p>
+						</div>
 					</div>
 
-					{/* Active users */}
-					<div className="space-y-3">
-						<h2 className="text-sm font-semibold text-foreground/90">
-							{activeUsersTitle} ({activeUsers.length})
-						</h2>
-						{activeUsers.length === 0 ? (
-							<div className="border-border/40 bg-muted/10 flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
-								<Users className="text-muted-foreground/60 mb-3 h-12 w-12" />
-								<p className="text-foreground/80 text-base font-medium">No Active Users</p>
+					{pendingUsers.length === 0 ? (
+						<div className="border-border/40 bg-muted/10 flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
+							<Clock className="text-muted-foreground/60 mb-3 h-12 w-12" />
+							<p className="text-foreground/80 text-base font-medium">No Pending Requests</p>
+							<p className="text-muted-foreground mt-1 max-w-xs text-sm">
+								{searchQuery ? "No pending requests match your search query." : "No registration requests waiting."}
+							</p>
+						</div>
+					) : (
+						<div className="border-amber-500/20 bg-amber-500/5 overflow-hidden rounded-xl border shadow-sm">
+							<Table>
+								<TableHeader className="bg-muted/30">
+									<TableRow>
+										<TableHead className="text-foreground/90 font-semibold">ID</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Username</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Email</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Requested role</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Requested At</TableHead>
+										<TableHead className="text-foreground/90 text-right font-semibold">Actions</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{pendingUsers.map((user) => (
+										<TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
+											<TableCell className="font-mono text-[11px] text-muted-foreground max-w-[140px] truncate" title={user.id}>
+												{user.id}
+											</TableCell>
+											<TableCell className="font-medium">{user.username}</TableCell>
+											<TableCell className="text-sm text-muted-foreground">
+												{user.email || "—"}
+												{user.status === "email_unverified" && (
+													<span className="ml-2 inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+														Email not verified
+													</span>
+												)}
+											</TableCell>
+											<TableCell>
+												<span
+													className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+														user.role === "admin"
+															? "border-teal-500/20 bg-teal-500/10 text-teal-400"
+															: user.role === "sub_admin"
+																? "border-purple-500/20 bg-purple-500/10 text-purple-400"
+																: "border-blue-500/20 bg-blue-500/10 text-blue-400"
+													}`}
+												>
+													{user.role === "admin" ? <Shield className="h-3 w-3" /> : user.role === "sub_admin" ? <ShieldCheck className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+													{roleLabel(user.role)}
+												</span>
+											</TableCell>
+											<TableCell className="text-muted-foreground text-xs">
+												{new Date(user.created_at).toLocaleString()}
+											</TableCell>
+											<TableCell className="text-right">
+												<div className="flex justify-end gap-2">
+													<Button
+														size="sm"
+														disabled={
+															actionBusyId === user.id ||
+															!hasUpdateAccess ||
+															user.status === "email_unverified"
+														}
+														title={
+															user.status === "email_unverified"
+																? "Applicant must verify email before Accept"
+																: "Accept — activate account"
+														}
+														onClick={() => handleApprove(user)}
+														className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-500 text-white"
+														data-testid="user-registration-accept"
+													>
+														<Check className="h-3.5 w-3.5" />
+														Accept
+													</Button>
+													<Button
+														size="sm"
+														variant="outline"
+														disabled={actionBusyId === user.id || !hasUpdateAccess}
+														onClick={() => handleReject(user)}
+														className="h-8 gap-1 border-red-500/40 text-red-400 hover:bg-red-950/40"
+														data-testid="user-registration-deny"
+													>
+														<X className="h-3.5 w-3.5" />
+														Deny
+													</Button>
+												</div>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</div>
+					)}
+				</div>
+			) : (
+				/* Active users */
+				<div className="space-y-3">
+					{activeUsers.length === 0 ? (
+						<div className="border-border/40 bg-muted/10 flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
+							<Users className="text-muted-foreground/60 mb-3 h-12 w-12" />
+							<p className="text-foreground/80 text-base font-medium">No Users Found</p>
 								<p className="text-muted-foreground mt-1 max-w-xs text-sm">
 									{searchQuery
 										? "No users match your search query."
@@ -1285,7 +1338,6 @@ export default function UsersView() {
 							</div>
 						)}
 					</div>
-				</>
 			)}
 
 			{/* Create User Dialog */}

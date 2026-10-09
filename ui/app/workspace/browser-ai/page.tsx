@@ -227,7 +227,8 @@ export default function BrowserAiPage() {
 	const [pdfLoading, setPdfLoading] = useState(false);
 	const [pdfError, setPdfError] = useState("");
 	const [copiedPrompt, setCopiedPrompt] = useState(false);
-	const [downloadingPlatform, setDownloadingPlatform] = useState<"windows" | "mac" | null>(null);
+	const [downloadingWindows, setDownloadingWindows] = useState(false);
+	const [downloadingMac, setDownloadingMac] = useState(false);
 	const [rebuildingPackages, setRebuildingPackages] = useState(false);
 	const [setupPackageError, setSetupPackageError] = useState("");
 	const [uninstallKeyInput, setUninstallKeyInput] = useState("");
@@ -265,7 +266,6 @@ export default function BrowserAiPage() {
 	const [copiedServerID, setCopiedServerID] = useState(false);
 	const [copiedInstallID, setCopiedInstallID] = useState(false);
 	const [loadingLicense, setLoadingLicense] = useState(false);
-	const [licenseInput, setLicenseInput] = useState("");
 	const [activatingLicense, setActivatingLicense] = useState(false);
 	const [licenseMessage, setLicenseMessage] = useState("");
 	const [licenseError, setLicenseError] = useState("");
@@ -1813,7 +1813,11 @@ export default function BrowserAiPage() {
 	};
 
 	const handleDownloadSetupPackage = async (platform: "windows" | "mac") => {
-		setDownloadingPlatform(platform);
+		if (platform === "windows") {
+			setDownloadingWindows(true);
+		} else {
+			setDownloadingMac(true);
+		}
 		setSetupPackageError("");
 		try {
 			const res = await fetch(`${getApiBaseUrl()}/browser-ai/setup/download.zip?platform=${platform}`, {
@@ -1845,7 +1849,11 @@ export default function BrowserAiPage() {
 		} catch (error) {
 			setSetupPackageError(error instanceof Error ? error.message : `Failed to download ${platform} setup package`);
 		} finally {
-			setDownloadingPlatform(null);
+			if (platform === "windows") {
+				setDownloadingWindows(false);
+			} else {
+				setDownloadingMac(false);
+			}
 		}
 	};
 
@@ -1950,10 +1958,10 @@ export default function BrowserAiPage() {
 		}
 	}, [activeTab, fetchLicense]);
 
-	const handleActivateLicense = async () => {
-		const key = licenseInput.trim();
+	const handleActivateLicense = async (rawKey: string) => {
+		const key = rawKey.trim();
 		if (!key) {
-			setLicenseError("Please upload a .lic file or paste the signed license text.");
+			setLicenseError("Choose a .lic file to activate.");
 			return;
 		}
 		setActivatingLicense(true);
@@ -1972,7 +1980,6 @@ export default function BrowserAiPage() {
 				if (json.license) {
 					setLicenseInfo(json.license);
 				}
-				setLicenseInput("");
 				toast({
 					title: "License Activated",
 					description: `Enabled ${json.license?.max_seats ?? 0} seats for ${json.license?.client_name || "the licensed organization"}.`,
@@ -5268,9 +5275,9 @@ export default function BrowserAiPage() {
 							{/* Upload / Enter License Key Section */}
 							<div className="space-y-3 pt-2 border-t border-border">
 								<div className="flex items-center justify-between">
-									<Label className="text-sm font-medium">Update / Activate License Key</Label>
+									<Label className="text-sm font-medium">Activate license</Label>
 									<span className="text-xs text-muted-foreground">
-										Upload your issued <code>.lic</code> file or paste key JSON
+										Upload the issued <code>.lic</code> file. A new file replaces the saved one.
 									</span>
 								</div>
 
@@ -5324,48 +5331,30 @@ export default function BrowserAiPage() {
 									</div>
 								) : null}
 
-								<div className="flex flex-col sm:flex-row gap-2">
-									<Textarea
-										placeholder='Paste signed license JSON (e.g. { "payload": ..., "signature": "..." })'
-										value={licenseInput}
-										onChange={(e) => setLicenseInput(e.target.value)}
-										className="font-mono text-xs min-h-[72px] resize-y flex-1"
-									/>
-								</div>
-
 								<div className="flex flex-wrap items-center gap-2">
 									<label className="cursor-pointer">
 										<input
 											type="file"
-											accept=".lic,.json"
+											accept=".lic"
 											className="hidden"
+											disabled={activatingLicense}
 											onChange={(e) => {
 												const file = e.target.files?.[0];
-												if (file) {
-													const reader = new FileReader();
-													reader.onload = (evt) => {
-														const text = evt.target?.result as string;
-														if (text) setLicenseInput(text);
-													};
-													reader.readAsText(file);
-												}
+												e.target.value = "";
+												if (!file) return;
+												const reader = new FileReader();
+												reader.onload = (evt) => {
+													const text = evt.target?.result;
+													if (typeof text === "string") void handleActivateLicense(text);
+												};
+												reader.readAsText(file);
 											}}
 										/>
-										<Button variant="outline" size="sm" type="button" className="gap-2 pointer-events-none text-xs">
+										<Button variant="outline" size="sm" type="button" disabled={activatingLicense} className="gap-2 pointer-events-none text-xs">
 											<Upload className="h-3.5 w-3.5" />
-											Upload .lic File
+											{activatingLicense ? "Verifying..." : "Upload .lic file"}
 										</Button>
 									</label>
-
-									<Button
-										size="sm"
-										onClick={handleActivateLicense}
-										disabled={activatingLicense || !licenseInput.trim()}
-										className="gap-2 text-xs bg-sky-600 hover:bg-sky-500 text-white"
-									>
-										<KeyRound className="h-3.5 w-3.5" />
-										{activatingLicense ? "Verifying..." : "Verify & Activate License"}
-									</Button>
 								</div>
 
 								{licenseMessage ? <p className="text-sm text-emerald-400 font-medium">{licenseMessage}</p> : null}
@@ -5523,43 +5512,41 @@ export default function BrowserAiPage() {
 									<div className="min-w-0">
 										<CardTitle className="text-lg">Employee Setup Packages</CardTitle>
 										<CardDescription>
-											Installers for employee laptops. Auto-updates after Rebuild and Publish.
+											Download installers for employee laptops.
 										</CardDescription>
 									</div>
 								</div>
 								<div className="flex shrink-0 flex-wrap lg:flex-nowrap items-center gap-2">
 									<Button
-										onClick={handleRebuildPackages}
-										disabled={rebuildingPackages}
-										variant="outline"
-										size="sm"
-										className="h-9 gap-1.5 text-xs border-emerald-500/40 hover:border-emerald-500 hover:bg-emerald-500/10 text-emerald-400 transition-colors"
-									>
-										<RefreshCw className={`h-4 w-4 ${rebuildingPackages ? "animate-spin" : ""}`} />
-										{rebuildingPackages ? "Rebuilding..." : "Rebuild & Publish"}
-									</Button>
-									<Button
 										onClick={() => handleDownloadSetupPackage("windows")}
-										disabled={downloadingPlatform !== null}
+										disabled={downloadingWindows}
 										variant="outline"
 										size="sm"
-										className="h-9 gap-1.5 text-xs border-border hover:border-sky-500/60 hover:bg-sky-500/10 transition-colors"
+										className="h-9 gap-1.5 text-xs border-sky-500/30 hover:border-sky-500 hover:bg-sky-500/10 text-sky-400 transition-colors"
 									>
-										<svg className="h-4 w-4 fill-current text-sky-400" viewBox="0 0 24 24">
-											<path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.95" />
-										</svg>
-										{downloadingPlatform === "windows" ? "Preparing..." : "Windows"}
+										{downloadingWindows ? (
+											<RefreshCw className="h-4 w-4 animate-spin text-sky-400" />
+										) : (
+											<svg className="h-4 w-4 fill-current text-sky-400" viewBox="0 0 24 24">
+												<path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.949-1.95" />
+											</svg>
+										)}
+										{downloadingWindows ? "Loading..." : "Windows"}
 									</Button>
 									<Button
 										onClick={() => handleDownloadSetupPackage("mac")}
-										disabled={downloadingPlatform !== null}
+										disabled={downloadingMac}
 										size="sm"
 										className="h-9 gap-1.5 text-xs bg-primary hover:bg-primary/90 text-primary-foreground"
 									>
-										<svg className="h-4 w-4 fill-current" viewBox="0 0 170 170">
-											<path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.7-3.04-7.7-7.9-11.99-14.57-6.09-9.46-10.9-20.2-14.42-32.22-3.52-12.01-5.28-23.23-5.28-33.64 0-14.78 3.82-27.17 11.45-37.19 7.63-10.01 17.1-15.13 28.4-15.35 4.35 0 9.29 1.14 14.81 3.42 5.53 2.29 9.38 3.48 11.56 3.59 1.74 0 5.86-1.25 12.38-3.76 6.52-2.5 12.16-3.6 16.92-3.3 12.51.98 22.37 5.76 29.57 14.34-11.09 6.74-16.53 16.09-16.32 28.05.22 9.57 3.91 17.61 11.09 24.13 7.18 6.52 15.66 10.11 25.44 10.76-2.28 7.07-5.22 14.67-8.81 22.8zM119.22 31.84c0-7.18 2.61-13.91 7.83-20.19 5.22-6.28 11.52-10.22 18.91-11.83 1.09 6.74-.22 13.48-3.91 20.22-3.7 6.74-9.35 11.3-16.96 13.7-1.09-.76-2.93-1.3-5.52-1.63-.22-.11-.35-.27-.35-.27z" />
-										</svg>
-										{downloadingPlatform === "mac" ? "Preparing..." : "macOS"}
+										{downloadingMac ? (
+											<RefreshCw className="h-4 w-4 animate-spin text-primary-foreground" />
+										) : (
+											<svg className="h-4 w-4 fill-current" viewBox="0 0 170 170">
+												<path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.7-3.04-7.7-7.9-11.99-14.57-6.09-9.46-10.9-20.2-14.42-32.22-3.52-12.01-5.28-23.23-5.28-33.64 0-14.78 3.82-27.17 11.45-37.19 7.63-10.01 17.1-15.13 28.4-15.35 4.35 0 9.29 1.14 14.81 3.42 5.53 2.29 9.38 3.48 11.56 3.59 1.74 0 5.86-1.25 12.38-3.76 6.52-2.5 12.16-3.6 16.92-3.3 12.51.98 22.37 5.76 29.57 14.34-11.09 6.74-16.53 16.09-16.32 28.05.22 9.57 3.91 17.61 11.09 24.13 7.18 6.52 15.66 10.11 25.44 10.76-2.28 7.07-5.22 14.67-8.81 22.8zM119.22 31.84c0-7.18 2.61-13.91 7.83-20.19 5.22-6.28 11.52-10.22 18.91-11.83 1.09 6.74-.22 13.48-3.91 20.22-3.7 6.74-9.35 11.3-16.96 13.7-1.09-.76-2.93-1.3-5.52-1.63-.22-.11-.35-.27-.35-.27z" />
+											</svg>
+										)}
+										{downloadingMac ? "Loading..." : "macOS"}
 									</Button>
 								</div>
 							</div>
@@ -5641,6 +5628,18 @@ export default function BrowserAiPage() {
 								</p>
 							) : null}
 							{setupPackageError ? <p className="text-sm text-destructive">{setupPackageError}</p> : null}
+							<div className="flex items-center justify-between pt-1">
+								<Button
+									onClick={handleRebuildPackages}
+									disabled={rebuildingPackages}
+									variant="outline"
+									size="sm"
+									className="h-8 gap-1.5 text-xs border-emerald-500/40 hover:border-emerald-500 hover:bg-emerald-500/10 text-emerald-400 transition-colors"
+								>
+									<RefreshCw className={`h-3.5 w-3.5 ${rebuildingPackages ? "animate-spin" : ""}`} />
+									{rebuildingPackages ? "Rebuilding Guard fleet..." : "Rebuild & Publish Guard Fleet"}
+								</Button>
+							</div>
 							<details className="rounded-md border border-border bg-card px-3 py-2.5">
 								<summary className="cursor-pointer select-none text-xs font-medium text-foreground">
 									Rebuild history ({rebuildHistory.length}

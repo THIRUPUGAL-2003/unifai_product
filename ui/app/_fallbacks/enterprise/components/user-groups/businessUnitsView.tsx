@@ -25,13 +25,14 @@ import {
 } from "@enterprise/lib/store/apis/businessUnitsApi";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { BusinessUnit } from "@enterprise/lib/types/workspace";
-import { Building2, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Building2, Plus, Search, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 
 export function BusinessUnitsView() {
 	const [selected, setSelected] = useState<BusinessUnit | null>(null);
+	const [search, setSearch] = useState("");
 	const [name, setName] = useState("");
 	const [open, setOpen] = useState(false);
 	const [teamId, setTeamId] = useState("");
@@ -60,7 +61,17 @@ export function BusinessUnitsView() {
 	const customers = customersData?.customers || [];
 	const assigned = assignedData?.teams || [];
 
-	const pagedUnits = useMemo(() => units.slice(offset, offset + limit), [units, offset, limit]);
+	const filteredUnits = useMemo(() => {
+		const q = search.trim().toLowerCase();
+		if (!q) return units;
+		return units.filter((u) => u.name.toLowerCase().includes(q) || u.id.toLowerCase().includes(q));
+	}, [units, search]);
+
+	useEffect(() => {
+		setOffset(0);
+	}, [search]);
+
+	const pagedUnits = useMemo(() => filteredUnits.slice(offset, offset + limit), [filteredUnits, offset, limit]);
 
 	const assignedIds = useMemo(() => new Set(assigned.map((t) => t.id)), [assigned]);
 	const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
@@ -140,6 +151,29 @@ export function BusinessUnitsView() {
 						message={getErrorMessage(listQueryError) || "Failed to load business units, teams, or customers."}
 					/>
 				) : null}
+
+				{/* Search Bar */}
+				<div className="relative max-w-sm w-full">
+					<Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+					<Input
+						placeholder="Search business units by name..."
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+						className="pl-9 pr-9 bg-muted/20 border-border/60 focus:border-teal-500/50"
+						data-testid="business-units-search-input"
+					/>
+					{search ? (
+						<button
+							type="button"
+							onClick={() => setSearch("")}
+							className="text-muted-foreground hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2"
+							aria-label="Clear search"
+						>
+							<X className="h-4 w-4" />
+						</button>
+					) : null}
+				</div>
+
 				<Table>
 					<TableHeader>
 						<TableRow>
@@ -149,31 +183,44 @@ export function BusinessUnitsView() {
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{pagedUnits.map((unit) => (
-							<TableRow key={unit.id} className={selected?.id === unit.id ? "bg-muted/40" : ""} onClick={() => setSelected(unit)}>
-								<TableCell className="font-medium">{unit.name}</TableCell>
-								<TableCell>{unit.team_count}</TableCell>
-								<TableCell className="text-right">
-									<Button
-										size="icon"
-										variant="ghost"
-										disabled={!hasDeleteAccess}
-										onClick={(e) => {
-											e.stopPropagation();
-											setUnitToDelete(unit);
-										}}
-									>
-										<Trash2 className="h-4 w-4" />
-									</Button>
+						{filteredUnits.length === 0 ? (
+							<TableRow>
+								<TableCell colSpan={3} className="text-center py-10 text-muted-foreground text-sm">
+									{search ? `No business units match "${search}"` : "No business units found."}
 								</TableCell>
 							</TableRow>
-						))}
+						) : (
+							pagedUnits.map((unit) => (
+								<TableRow
+									key={unit.id}
+									className={`cursor-pointer transition-colors hover:bg-muted/30 ${selected?.id === unit.id ? "bg-muted/50 font-medium" : ""}`}
+									onClick={() => setSelected(unit)}
+								>
+									<TableCell className="font-medium">{unit.name}</TableCell>
+									<TableCell>{unit.team_count}</TableCell>
+									<TableCell className="text-right">
+										<Button
+											size="icon"
+											variant="ghost"
+											disabled={!hasDeleteAccess}
+											onClick={(e) => {
+												e.stopPropagation();
+												setUnitToDelete(unit);
+											}}
+											className="h-8 w-8 text-muted-foreground hover:text-red-400"
+										>
+											<Trash2 className="h-4 w-4" />
+										</Button>
+									</TableCell>
+								</TableRow>
+							))
+						)}
 					</TableBody>
 				</Table>
 				<DataTablePagination
 					offset={offset}
 					limit={limit}
-					totalCount={units.length}
+					totalCount={filteredUnits.length}
 					onOffsetChange={setOffset}
 					onLimitChange={(newLimit) => {
 						setLimit(newLimit);

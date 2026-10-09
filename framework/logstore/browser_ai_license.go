@@ -117,6 +117,13 @@ func VerifyLicenseEnvelope(raw []byte) (*EnterpriseLicensePayload, *EnterpriseLi
 	if trimmed == "" {
 		return nil, nil, fmt.Errorf("empty license content")
 	}
+	if strings.HasPrefix(trimmed, licenseTokenPrefix) {
+		opened, openErr := openLicenseFile(trimmed)
+		if openErr != nil {
+			return nil, nil, openErr
+		}
+		trimmed = strings.TrimSpace(string(opened))
+	}
 
 	// Try parsing envelope JSON
 	var env EnterpriseLicenseEnvelope
@@ -334,7 +341,11 @@ func (m *BrowserAIManager) ActivateLicense(ctx context.Context, rawLicense []byt
 	}
 
 	featuresJSON, _ := json.Marshal(payload.Features)
-	rawEnvBytes, _ := json.MarshalIndent(env, "", "  ")
+	// Keep the uploaded key as-is. A GWLIC1 token must not be rewritten into readable JSON.
+	rawEnvBytes := []byte(strings.TrimSpace(string(rawLicense)))
+	if !strings.HasPrefix(string(rawEnvBytes), licenseTokenPrefix) {
+		rawEnvBytes, _ = json.MarshalIndent(env, "", "  ")
+	}
 
 	db := m.GetDB()
 	if db != nil {

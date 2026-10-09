@@ -234,6 +234,43 @@ func TestLicenseLockedToOneDatabaseAndRevision(t *testing.T) {
 	}
 }
 
+func TestOpaqueLicenseKeyHidesPayload(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := MasterPublicKeyBytes
+	MasterPublicKeyBytes = pub
+	defer func() { MasterPublicKeyBytes = orig }()
+
+	payload := EnterpriseLicensePayload{
+		Version: "1.0", LicenseID: "YP-OPAQUE", ClientName: "Hidden Client", MaxSeats: 1000,
+		InstallID: "DB-1", ServerHardwareID: GetServerHardwareID(), Revision: 1,
+		IssuedAt: time.Now().UTC().Format(time.RFC3339), ExpiresAt: time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
+	}
+	rawPayload, _ := json.Marshal(payload)
+	sig := ed25519.Sign(priv, rawPayload)
+	inner, _ := json.Marshal(map[string]string{
+		"format":      "gateway_enterprise_license_v1",
+		"payload_b64": base64.StdEncoding.EncodeToString(rawPayload),
+		"signature":   base64.StdEncoding.EncodeToString(sig),
+	})
+	token, err := SealLicenseFile(inner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(token, "Hidden Client") || strings.Contains(token, "max_seats") || !strings.HasPrefix(token, "GWLIC1.") {
+		t.Fatalf("token still exposes license fields: %s", token[:40])
+	}
+	parsed, _, err := VerifyLicenseEnvelope([]byte(token))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.MaxSeats != 1000 || parsed.ClientName != "Hidden Client" {
+		t.Fatalf("opened payload = %+v", parsed)
+	}
+}
+
 func TestProductUsersShareOneTotal(t *testing.T) {
 	usage := ProductUserUsageFromRoles([]string{"user", "user", "admin", "sub_admin", "auditor"}, 100)
 	if usage.Users != 2 || usage.Admins != 1 || usage.SubAdmins != 1 || usage.Others != 1 {

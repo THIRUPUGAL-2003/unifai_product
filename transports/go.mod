@@ -8,6 +8,18 @@ require (
 	github.com/bytedance/sonic v1.15.1
 	github.com/fasthttp/router v1.5.4
 	github.com/fasthttp/websocket v1.5.12
+	github.com/gateway/gateway/core v1.6.2
+	github.com/gateway/gateway/framework v1.4.2
+	github.com/gateway/gateway/plugins/compat v0.1.24
+	github.com/gateway/gateway/plugins/connectors v0.1.0
+	github.com/gateway/gateway/plugins/governance v1.6.2
+	github.com/gateway/gateway/plugins/logging v1.5.25
+	github.com/gateway/gateway/plugins/maxim v1.6.25
+	github.com/gateway/gateway/plugins/modelcatalogresolver v1.0.6
+	github.com/gateway/gateway/plugins/otel v1.3.2
+	github.com/gateway/gateway/plugins/prompts v1.0.25
+	github.com/gateway/gateway/plugins/semanticcache v1.5.25
+	github.com/gateway/gateway/plugins/telemetry v1.5.25
 	github.com/go-git/go-billy/v5 v5.9.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -22,22 +34,10 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.11.1
 	github.com/tidwall/gjson v1.18.0
-	github.com/gateway/gateway/core v1.6.2
-	github.com/gateway/gateway/framework v1.4.2
-	github.com/gateway/gateway/plugins/compat v0.1.24
-	github.com/gateway/gateway/plugins/connectors v0.1.0
-	github.com/gateway/gateway/plugins/governance v1.6.2
-	github.com/gateway/gateway/plugins/logging v1.5.25
-	github.com/gateway/gateway/plugins/maxim v1.6.25
-	github.com/gateway/gateway/plugins/modelcatalogresolver v1.0.6
-	github.com/gateway/gateway/plugins/otel v1.3.2
-	github.com/gateway/gateway/plugins/prompts v1.0.25
-	github.com/gateway/gateway/plugins/semanticcache v1.5.25
-	github.com/gateway/gateway/plugins/telemetry v1.5.25
 	github.com/valyala/fasthttp v1.71.0
 	go.uber.org/automaxprocs v1.6.0
-	golang.org/x/sync v0.20.0
-	golang.org/x/text v0.37.0
+	golang.org/x/sync v0.22.0
+	golang.org/x/text v0.40.0
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.1
 )
@@ -56,6 +56,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.2 // indirect
+	github.com/Azure/go-ntlmssp v0.1.1 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.31.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.55.0 // indirect
@@ -101,10 +102,13 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/gateway/gateway/plugins/mocker v1.5.25 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/glebarez/sqlite v1.11.0 // indirect
+	github.com/go-asn1-ber/asn1-ber v1.5.8 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-ldap/ldap/v3 v3.4.15 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.24.2 // indirect
@@ -192,7 +196,6 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
-	github.com/gateway/gateway/plugins/mocker v1.5.25 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/weaviate/weaviate v1.36.5 // indirect
 	github.com/weaviate/weaviate-go-client/v5 v5.7.1 // indirect
@@ -217,11 +220,11 @@ require (
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.23.0 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.282.0 // indirect
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
