@@ -537,11 +537,10 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 
 	updatedConfig.EnforceAuthOnInference = payload.ClientConfig.EnforceAuthOnInference
 	// Sync deprecated columns to match new field so they stay consistent in the DB
-	// Only update MaxRequestBodySizeMB if explicitly provided (> 0) to avoid clearing stored value
+	// Only update MaxRequestBodySizeMB if explicitly provided (> 0) to avoid clearing stored value.
+	// No restart: ReloadClientConfigFromConfigStore writes the new limit, and the HTTP
+	// server reads it on every request, including connections that were already open.
 	if payload.ClientConfig.MaxRequestBodySizeMB > 0 {
-		if payload.ClientConfig.MaxRequestBodySizeMB != currentConfig.MaxRequestBodySizeMB {
-			restartReasons = append(restartReasons, "Max request body size")
-		}
 		updatedConfig.MaxRequestBodySizeMB = payload.ClientConfig.MaxRequestBodySizeMB
 	}
 
@@ -926,7 +925,10 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 		// Note: AuthMiddleware is updated via ServerCallbacks.UpdateAuthConfig (handled by GatewayHTTPServer)
 	}
 
-	// Set restart required flag if any restart-requiring configs changed
+	// Set restart required flag if any restart-requiring configs changed.
+	// Performance tuning (pool size and max request body) is applied live, so a
+	// banner left over from an older body-size save is cleared on the next save
+	// that does not itself need a restart.
 	if len(restartReasons) > 0 {
 		reason := fmt.Sprintf("%s settings have been updated. A restart is required for changes to take full effect.", strings.Join(restartReasons, ", "))
 		if err := h.store.ConfigStore.SetRestartRequiredConfig(ctx, &configstoreTables.RestartRequiredConfig{
@@ -934,6 +936,10 @@ func (h *ConfigHandler) updateConfig(ctx *fasthttp.RequestCtx) {
 			Reason:   reason,
 		}); err != nil {
 			logger.Warn("failed to set restart required config: %v", err)
+		}
+	} else if existing, err := h.store.ConfigStore.GetRestartRequiredConfig(ctx); err == nil && existing != nil && existing.Required && strings.HasPrefix(existing.Reason, "Max request body size ") {
+		if err := h.store.ConfigStore.ClearRestartRequiredConfig(ctx); err != nil {
+			logger.Warn("failed to clear restart required config: %v", err)
 		}
 	}
 

@@ -1,11 +1,8 @@
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getErrorMessage, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
 import { CoreConfig, DefaultCoreConfig } from "@/lib/types/config";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
-import { AlertTriangle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -15,7 +12,6 @@ export default function PerformanceTuningView() {
 	const config = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [localConfig, setLocalConfig] = useState<CoreConfig>(DefaultCoreConfig);
-	const [needsRestart, setNeedsRestart] = useState<boolean>(false);
 
 	const [localValues, setLocalValues] = useState<{
 		initial_pool_size: string;
@@ -48,7 +44,6 @@ export default function PerformanceTuningView() {
 		if (!isNaN(numValue) && numValue > 0) {
 			setLocalConfig((prev) => ({ ...prev, initial_pool_size: numValue }));
 		}
-		setNeedsRestart(true);
 	}, []);
 
 	const handleMaxRequestBodySizeMBChange = useCallback((value: string) => {
@@ -57,7 +52,6 @@ export default function PerformanceTuningView() {
 		if (!isNaN(numValue) && numValue > 0) {
 			setLocalConfig((prev) => ({ ...prev, max_request_body_size_mb: numValue }));
 		}
-		setNeedsRestart(true);
 	}, []);
 
 	const handleSave = useCallback(async () => {
@@ -93,14 +87,6 @@ export default function PerformanceTuningView() {
 				<p className="text-muted-foreground text-sm">Configure performance-related settings.</p>
 			</div>
 
-			<Alert variant="destructive">
-				<AlertTriangle className="h-4 w-4" />
-				<AlertDescription>
-					These settings require a {PRODUCT_NAME} service restart to take effect. Current connections will continue with existing settings until
-					restart.
-				</AlertDescription>
-			</Alert>
-
 			<div className="space-y-4">
 				{/* Initial Pool Size */}
 				<div>
@@ -122,7 +108,6 @@ export default function PerformanceTuningView() {
 							disabled={!hasSettingsUpdateAccess}
 						/>
 					</div>
-					{needsRestart && <RestartWarning />}
 				</div>
 
 				{/* Max Request Body Size */}
@@ -145,7 +130,6 @@ export default function PerformanceTuningView() {
 							disabled={!hasSettingsUpdateAccess}
 						/>
 					</div>
-					{needsRestart && <RestartWarning />}
 				</div>
 			</div>
 			<div className="flex justify-end pt-2">
@@ -156,9 +140,3 @@ export default function PerformanceTuningView() {
 		</div>
 	);
 }
-
-const RestartWarning = () => {
-	return (
-		<div className="text-muted-foreground mt-2 pl-4 text-xs font-semibold">Need to restart {PRODUCT_NAME} to apply changes.</div>
-	);
-};

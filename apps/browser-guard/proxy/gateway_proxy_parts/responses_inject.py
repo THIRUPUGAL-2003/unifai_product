@@ -352,7 +352,7 @@ def inject_websocket_reply(flow: http.HTTPFlow, host: str, reply_text: str) -> N
     host_l = (host or "").lower()
     path_l = (getattr(flow.request, "path", "") or "").lower()
     # SignalR records end with \x1e (handshake included); blocked frames are already emptied.
-    is_signalr = any(x in path_l for x in ("signalr", "chathub")) or any(
+    is_signalr = any(x in path_l for x in ("signalr", "chathub", "sydney", "edgesvc", "/c/api/chat")) or any(
         "\x1e" in (websocket_frame_text(m) or "")
         for m in list(flow.websocket.messages or [])[-40:]
     )
@@ -567,7 +567,10 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
 
     # ── Microsoft Copilot / Bing (request shape) ──
-    if is_event_send_chat_submit(path, raw_body):
+    if is_event_send_chat_submit(path, raw_body) or (
+        any(x in host_l for x in ("copilot", "sydney", "edgeservices"))
+        and ("/chat" in path or "/conversation" in path)
+    ):
         copilot_card = {
             "type": "AdaptiveCard",
             "version": "1.5",

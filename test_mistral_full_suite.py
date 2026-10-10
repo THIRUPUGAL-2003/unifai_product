@@ -433,8 +433,134 @@ print(f"[{'PASS' if s6_ok else 'FAIL'}] Multi-File 3 Files Simultaneous | Status
 print(f"         Preserved filenames: meeting_notes.txt, financials.csv, sorting_algorithm.py")
 print(f"         Violation pinned to: financials.csv | Security bubble emitted.")
 
+# >>> [SECTION 7] LIVE MISTRAL LE CHAT ENDPOINTS (tRPC UPLOAD, MODEL NAME FILTERING, tRPC CONFIG)
+print("\n>>> [SECTION 7] LIVE MISTRAL LE CHAT FIXES (tRPC UPLOAD & MODEL FILTERING)")
+s7_tests = []
+
+# 1. Live tRPC upload endpoint (/api/trpc/file.uploadFile?batch=1)
+boundary_trpc = "----WebKitFormBoundaryTrpc" + uuid.uuid4().hex[:12]
+py_content_trpc = b'BRANCH_KEY = "600028"\nprint("Verified")\n'
+body_trpc = (
+    f"--{boundary_trpc}\r\n"
+    f'Content-Disposition: form-data; name="file"; filename="verify_license.py"\r\n'
+    f"Content-Type: text/x-python\r\n\r\n"
+).encode("utf-8") + py_content_trpc + f"\r\n--{boundary_trpc}--\r\n".encode("utf-8")
+
+clear_dedupe()
+f_trpc_up = tflow.tflow(
+    req=http.Request.make("POST", "https://chat.mistral.ai/api/trpc/file.uploadFile?batch=1", body_trpc, {
+        "Host": "chat.mistral.ai",
+        "Content-Type": f"multipart/form-data; boundary={boundary_trpc}",
+        "Origin": "https://chat.mistral.ai",
+    })
+)
+addon.request(f_trpc_up)
+
+# Send chat referencing verify_license.py -> must be BLOCKED via cached file bytes
+f_trpc_send = tflow.tflow(
+    req=http.Request.make(
+        "POST",
+        "https://chat.mistral.ai/api/chat",
+        json.dumps({
+            "chatId": "chat-trpc-" + uuid.uuid4().hex[:8],
+            "mode": "append",
+            "model": "mistral-large-latest",
+            "messageInput": {
+                "content": "Please analyze this uploaded license file",
+                "attachments": [{"name": "verify_license.py", "id": "trpc-file-1"}]
+            }
+        }).encode("utf-8"),
+        {
+            "Host": "chat.mistral.ai",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "Origin": "https://chat.mistral.ai",
+        }
+    )
+)
+addon.request(f_trpc_send)
+trpc_blocked = f_trpc_send.response is not None and f_trpc_send.response.status_code == 200
+print(f"[{'PASS' if trpc_blocked else 'FAIL'}] 1. Live Le Chat tRPC File Upload (/api/trpc/file.uploadFile) | Status: {'BLOCKED' if trpc_blocked else 'ALLOWED'} | Expected: BLOCKED")
+s7_tests.append(trpc_blocked)
+
+# 2. GLM 5.3 model / agent name must NOT be treated as a file attachment
+clear_dedupe()
+f_glm_clean = tflow.tflow(
+    req=http.Request.make(
+        "POST",
+        "https://chat.mistral.ai/api/chat",
+        json.dumps({
+            "chatId": "chat-glm-" + uuid.uuid4().hex[:8],
+            "mode": "append",
+            "agent": {"name": "GLM 5.3", "description": "General Language Model"},
+            "messageInput": {
+                "text": "Hello GLM, please explain quantum physics."
+            }
+        }).encode("utf-8"),
+        {
+            "Host": "chat.mistral.ai",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "Origin": "https://chat.mistral.ai",
+        }
+    )
+)
+addon.request(f_glm_clean)
+glm_clean_ok = f_glm_clean.response is None  # clean prompt -> allowed
+names_glm = ns["extract_all_attachment_filenames_from_send"](f_glm_clean.request.text)
+glm_not_file = "GLM 5.3" not in names_glm
+print(f"[{'PASS' if (glm_clean_ok and glm_not_file) else 'FAIL'}] 2. Model Name 'GLM 5.3' Filtered (NOT File Upload) | Status: {'ALLOWED' if glm_clean_ok else 'BLOCKED'} | Extracted Files: {names_glm}")
+s7_tests.append(glm_clean_ok and glm_not_file)
+
+# 3. GLM 5.3 prompt with violation (600028) must be BLOCKED as regular prompt, not [FILE UPLOAD] GLM 5.3
+clear_dedupe()
+f_glm_viol = tflow.tflow(
+    req=http.Request.make(
+        "POST",
+        "https://chat.mistral.ai/api/chat",
+        json.dumps({
+            "chatId": "chat-glm-v-" + uuid.uuid4().hex[:8],
+            "mode": "append",
+            "agent": {"name": "GLM 5.3", "description": "General Language Model"},
+            "messageInput": {
+                "text": "My secret code is 600028"
+            }
+        }).encode("utf-8"),
+        {
+            "Host": "chat.mistral.ai",
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "Origin": "https://chat.mistral.ai",
+        }
+    )
+)
+addon.request(f_glm_viol)
+glm_viol_blocked = f_glm_viol.response is not None and f_glm_viol.response.status_code == 200
+names_glm_v = ns["extract_all_attachment_filenames_from_send"](f_glm_viol.request.text)
+print(f"[{'PASS' if (glm_viol_blocked and 'GLM 5.3' not in names_glm_v) else 'FAIL'}] 3. Violation with Model 'GLM 5.3' Blocked as Prompt   | Status: {'BLOCKED' if glm_viol_blocked else 'ALLOWED'} | Extracted Files: {names_glm_v}")
+s7_tests.append(glm_viol_blocked and "GLM 5.3" not in names_glm_v)
+
+# 4. tRPC config query (chat.getNewChatConfig) must NOT be captured as prompt
+f_trpc_cfg = tflow.tflow(
+    req=http.Request.make(
+        "GET",
+        "https://chat.mistral.ai/api/trpc/chat.getNewChatConfig?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%22productType%22%3A%22work%22%7D%7D%7D",
+        b"",
+        {
+            "Host": "chat.mistral.ai",
+            "Origin": "https://chat.mistral.ai",
+        }
+    )
+)
+addon.request(f_trpc_cfg)
+trpc_cfg_ok = f_trpc_cfg.response is None
+print(f"[{'PASS' if trpc_cfg_ok else 'FAIL'}] 4. tRPC Config Query (/api/trpc/chat.getNewChatConfig) | Ignored: {trpc_cfg_ok} | Logged As Prompt: {not trpc_cfg_ok}")
+s7_tests.append(trpc_cfg_ok)
+
+s7_ok = all(s7_tests)
+
 # FINAL SUMMARY
-all_passed = s1_ok and s2_ok and s3_ok and s4_ok and s5_ok and s6_ok
+all_passed = s1_ok and s2_ok and s3_ok and s4_ok and s5_ok and s6_ok and s7_ok
 print("\n" + "=" * 85)
 if all_passed:
     print(" ALL MISTRAL AI CHECKS PASSED (100% SUCCESS)!")

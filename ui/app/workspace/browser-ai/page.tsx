@@ -2354,7 +2354,7 @@ export default function BrowserAiPage() {
 					browser: log.browser || "",
 					privacy: log.is_incognito ? "Incognito / InPrivate" : "Normal",
 					query: log.query || "",
-					clicked: log.clicked_url || "",
+					clicked: log.clicked_url || "—",
 					threat: [
 						log.predictive_risk || "",
 						log.risk_score != null ? `(${log.risk_score}%)` : "",
@@ -2559,6 +2559,16 @@ export default function BrowserAiPage() {
 									</Select>
 								) : null}
 							</div>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => setClearLogsDialogOpen(true)}
+								className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+								data-testid="browser-ai-clear-logs"
+							>
+								<Trash2 className="h-3.5 w-3.5" />
+								Clear Logs
+							</Button>
 							{selectedLogIds.size > 0 ? (
 								<Button
 									variant="outline"
@@ -2622,6 +2632,16 @@ export default function BrowserAiPage() {
 									</Select>
 								) : null}
 							</div>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => setClearSearchLogsDialogOpen(true)}
+								className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+								data-testid="browser-ai-clear-search-logs"
+							>
+								<Trash2 className="h-3.5 w-3.5" />
+								Clear Logs
+							</Button>
 						</div>
 					) : null}
 
@@ -3310,7 +3330,7 @@ export default function BrowserAiPage() {
 																	<span className="truncate">{log.clicked_title || log.clicked_url}</span>
 																</a>
 															) : (
-																<span className="text-xs text-muted-foreground">—</span>
+																<span className="text-xs text-muted-foreground">—</span>
 															)}
 														</TableCell>
 														<TableCell>
@@ -6694,10 +6714,9 @@ export default function BrowserAiPage() {
 								</p>
 							</div>
 
-							{/* Clicked link if any */}
-							{selectedSearchLog.clicked_url && (
-								<div className="rounded-md border border-border bg-background p-3 space-y-1">
-									<p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Clicked Destination Link</p>
+							<div className="rounded-md border border-border bg-background p-3 space-y-1">
+								<p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Clicked Destination Link</p>
+								{selectedSearchLog.clicked_url ? (
 									<a
 										href={selectedSearchLog.clicked_url}
 										target="_blank"
@@ -6707,8 +6726,10 @@ export default function BrowserAiPage() {
 										<ExternalLink className="h-3 w-3 shrink-0" />
 										{selectedSearchLog.clicked_url}
 									</a>
-								</div>
-							)}
+								) : (
+									<p className="text-sm text-muted-foreground">—</p>
+								)}
+							</div>
 
 							{/* Threat Assessment */}
 							<div className="grid grid-cols-2 gap-3">

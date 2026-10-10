@@ -438,6 +438,8 @@ def looks_like_user_prompt(text: str) -> bool:
         or "/contrib service" in t
         or (t.startswith('{"type":"action"') and "_dd" in t)
         or (t.startswith("{") and '"_dd":' in t)
+        or t.startswith(('{"0":{"json"', '{"0": {"json"', '{"0":{'))
+        or bool(re.match(r'^\s*\{\s*"0"\s*:\s*\{\s*"json"\s*:', t))
         or bool(re.match(r'^\d+(?:/[^,]*,\s*)?[\[\{]', t))
     ):
         return False
@@ -1252,7 +1254,7 @@ def _path_looks_like_upload(path: str) -> bool:
         return False
     if any(m in p for m in _GENERIC_UPLOAD_PATH_MARKERS):
         return True
-    return any(x in p for x in ("/files", "/file/", "/upload", "/attachments", "/attachment", "/media/upload", "/convert_document", "/documents", "/document", "/storage", "/import", "/blob", "/blobs"))
+    return any(x in p for x in ("/files", "/file/", "/upload", "/attachments", "/attachment", "/media/upload", "/convert_document", "/documents", "/document", "/storage", "/import", "/blob", "/blobs", "file.upload", "uploadfile", "/file."))
 
 
 def is_unsubmitted_chat_body(path: str, body: str) -> bool:

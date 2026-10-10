@@ -848,8 +848,10 @@ class BrowserAIInterceptor:
         if method == "GET":
             if host_role == "file":
                 return
-            qs_prompt = extract_prompt_from_query_string(flow.request.url)
             path_q = (path or "").lower().split("?", 1)[0]
+            if "/trpc/" in path_q or "trpc." in path_q or "/api/trpc" in path_q:
+                return
+            qs_prompt = extract_prompt_from_query_string(flow.request.url)
             if (
                 qs_prompt
                 and looks_like_user_prompt(qs_prompt)

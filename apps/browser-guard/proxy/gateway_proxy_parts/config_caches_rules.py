@@ -195,6 +195,9 @@ UPLOAD_ENDPOINTS = [
     "/upload/", "/media/upload", "/resumable", "/filepush", "/pushfile",
     "/convert_document", "/upload_document", "/api/attachments",
     "/rest/uploads", "/file/upload",
+    # Mistral / tRPC / generic RPC file uploads
+    "/api/trpc/file.uploadFile", "/api/trpc/file.upload", "file.uploadFile", "file.upload",
+    "/file.upload", "/file.uploadFile", "/file.initUpload", "/file.uploadAttachment",
     # Claude / Anthropic / Gemini / DeepSeek / Perplexity / Copilot / generic AIs
     "/api/files", "/api/file", "/api/v1/files", "/v1/file",
     "/document", "/documents", "/doc/upload", "/media/files",
@@ -211,6 +214,7 @@ _GENERIC_UPLOAD_PATH_MARKERS = (
     "/asset", "/assets", "/blob", "/blobs", "/presigned",
     "/storage", "/import", "/import_file", "/fife",
     "/voice", "/audio/upload", "/speech", "/transcribe",
+    "file.upload", "file.uploadfile", "uploadfile", "/file.",
 )
 
 # Binary / document content-types used for local file attachments
@@ -1724,18 +1728,20 @@ def is_event_send_chat_submit(path: str, body: str = "") -> bool:
     path_l = (path or "").lower().split("?", 1)[0]
     body_l = (body or "").lower()
     # Persistent chat WS: body already decided above.
-    if _is_persistent_chat_websocket(path):
+    if _is_persistent_chat_websocket(path) and ("\x1e" in (body or "") or '"target":' in body_l or '"invocationid"' in body_l):
         return False
     if not path_l:
         return False
     markers = (
         "getresponse", "createconversation", "/api/copilot",
-        "edgesvc", "edgechat",
+        "edgesvc", "edgechat", "/c/api/chat",
     )
     if any(m in path_l for m in markers) and body_l:
         return True
     if "/chat" in path_l and "telemetry" not in path_l and "analytics" not in path_l and body_l:
         if '"event":"send"' in body_l or '"target":"chat"' in body_l:
+            return True
+        if _is_confident_chat_send(path, body):
             return True
     return False
 

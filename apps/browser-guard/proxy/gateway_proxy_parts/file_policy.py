@@ -69,7 +69,7 @@ def enforce_file_send_policy(
     # uses placeholder names — still bind recent uploads so predict + rules run.
     # Copilot long-lived WS: never consume cache unless this frame is a finished Send.
     if not cached_list and domain and _domain_has_pending_upload_cache(domain):
-        if _is_persistent_chat_websocket(path) and not (
+        if _is_persistent_chat_websocket(path) and ("\x1e" in (raw_text or "") or '"target":' in (raw_text or "").lower() or '"invocationid"' in (raw_text or "").lower()) and not (
             _copilot_frame_is_user_send(raw_text or "")
             or _is_confident_chat_send(path, raw_text or "")
         ):

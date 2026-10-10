@@ -1020,8 +1020,8 @@ func (s *GatewayHTTPServer) ReloadClientConfigFromConfigStore(ctx context.Contex
 			logger.Warn("failed to sync MCP tool manager config during client config reload: %v", err)
 		}
 	}
-	if s.Server != nil && s.Config.ClientConfig.MaxRequestBodySizeMB > 0 {
-		s.Server.MaxRequestBodySize = s.Config.ClientConfig.MaxRequestBodySizeMB * 1024 * 1024
+	if s.Server != nil {
+		s.Server.MaxRequestBodySize = s.currentMaxRequestBodyBytes()
 	}
 	s.syncLoggingPlugin(ctx)
 	if s.LogsCleaner == nil && s.Config != nil && s.Config.LogsStore != nil {
@@ -1040,6 +1040,16 @@ func (s *GatewayHTTPServer) ReloadClientConfigFromConfigStore(ctx context.Contex
 		}
 	}
 	return nil
+}
+
+// currentMaxRequestBodyBytes is the live request-body limit from client config.
+// Performance Tuning saves write this value; the next request uses it.
+func (s *GatewayHTTPServer) currentMaxRequestBodyBytes() int {
+	const fallback = 100 * 1024 * 1024
+	if s == nil || s.Config == nil || s.Config.ClientConfig == nil || s.Config.ClientConfig.MaxRequestBodySizeMB <= 0 {
+		return fallback
+	}
+	return s.Config.ClientConfig.MaxRequestBodySizeMB * 1024 * 1024
 }
 
 // syncLoggingPlugin turns the logging plugin on or off from the saved client config
@@ -2117,8 +2127,14 @@ func (s *GatewayHTTPServer) Bootstrap(ctx context.Context) error {
 	// Create fasthttp server instance
 	s.Server = &fasthttp.Server{
 		Handler:            handlers.SecurityHeadersMiddleware()(s.CORSMiddleware.Middleware()(handlers.RequestDecompressionMiddleware(s.Config)(s.Router.Handler))),
-		MaxRequestBodySize: s.Config.ClientConfig.MaxRequestBodySizeMB * 1024 * 1024,
+		MaxRequestBodySize: s.currentMaxRequestBodyBytes(),
 		ReadBufferSize:     s.Config.ServerConfig.ReadBufferSize,
+		// fasthttp copies MaxRequestBodySize once per connection. This callback
+		// runs on every request so a saved Performance Tuning value applies on
+		// the next request, including keep-alive connections, with no restart.
+		HeaderReceived: func(_ *fasthttp.RequestHeader) fasthttp.RequestConfig {
+			return fasthttp.RequestConfig{MaxRequestBodySize: s.currentMaxRequestBodyBytes()}
+		},
 	}
 	startSkillsOrphanCleanupWorker(s.Ctx, s.Config)
 	return nil

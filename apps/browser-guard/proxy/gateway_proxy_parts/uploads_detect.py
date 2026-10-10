@@ -271,12 +271,15 @@ def _has_any_file_extension(name: str) -> bool:
     if "." not in base:
         return False
     ext = "." + base.rsplit(".", 1)[-1].lower()
+    # Reject pure numbers after a dot (e.g. .3, .0, .5 in "GLM 5.3", "GPT 4.0", "v2.0")
+    if ext[1:].isdigit():
+        return False
     # Real extensions start with a letter or digit
     if not re.fullmatch(r"\.[a-z0-9][a-z0-9_+-]{0,15}", ext):
         return False
     if ext in _UPLOAD_NAME_EXTS:
         return True
-    return True
+    return False
 
 
 def _is_snake_case_wire_filename(name: str) -> bool:
@@ -303,6 +306,10 @@ def _looks_like_site_or_tab_label_not_file(name: str) -> bool:
     compact = n.replace(" ", "")
     if _AI_SITE_LABEL_RE.fullmatch(compact) or _HOSTNAME_LABEL_RE.fullmatch(compact):
         return True
+    # Model / agent names like "GLM 5.3", "GPT-4", "Claude 3.5 Sonnet", "Mistral Large"
+    if re.match(r"^(?:glm|gpt|claude|gemini|mistral|mixtral|llama|deepseek|qwen|grok|yi|command-r)\b", n.strip(), re.I):
+        if not any(ext in n.lower() for ext in _UPLOAD_NAME_EXTS):
+            return True
     # Extensionless chat-tab / product titles — not user file picks.
     # Keep Gemini-style extensionless names that include digits/parens (e.g. 'Gateway Product (1)').
     if not _has_any_file_extension(n):
@@ -786,6 +793,9 @@ def _nested_json_send_names(raw_text: str) -> list[str]:
             return
         if isinstance(obj, dict):
             for k, v in obj.items():
+                k_l = str(k).lower()
+                if k_l in ("agent", "model", "assistant", "author", "user", "creator", "system_prompt"):
+                    continue
                 if nested and isinstance(v, str) and str(k).lower() in _NESTED_NAME_KEYS:
                     _add(v, str(k))
                 _walk(v, nested, depth + 1)
@@ -2473,10 +2483,10 @@ def _is_finished_user_file_send(
         return False
     if _is_file_metadata_handshake(raw_bytes or b"", body, path):
         return False
-    if _is_persistent_chat_websocket(path):
-        return _copilot_frame_is_user_send(body)
     if _copilot_frame_is_user_send(body):
         return True
+    if _is_persistent_chat_websocket(path) and ("\x1e" in body or '"target":' in body.lower() or '"invocationid"' in body.lower()):
+        return False
     if is_batchexecute_chat_submit(path, body):
         return True
     if is_event_send_chat_submit(path, body):
@@ -3478,7 +3488,7 @@ def _file_policy_applies_on_send(
         or _path_has_chat_marker(path)
     )
     # Long-lived Copilot WS URL is always /c/api/chat — path chatish is not a Send.
-    if _is_persistent_chat_websocket(path) and not confident:
+    if _is_persistent_chat_websocket(path) and ("\x1e" in body or '"target":' in body.lower() or '"invocationid"' in body.lower()) and not confident:
         chatish = False
 
     # Pure file-API picks (/files, /upload, …) wait for a later chat Send.
@@ -3511,7 +3521,7 @@ def _file_policy_applies_on_send(
         except Exception:
             peek = ""
         has_user_text = bool(peek and looks_like_user_prompt(peek))
-        if confident and has_user_text and not _is_persistent_chat_websocket(path):
+        if confident and has_user_text and not (_is_persistent_chat_websocket(path) and ("\x1e" in body or '"target":' in body.lower() or '"invocationid"' in body.lower())):
             return True
         return False
     return False
