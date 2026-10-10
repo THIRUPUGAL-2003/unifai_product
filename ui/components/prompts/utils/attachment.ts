@@ -855,10 +855,8 @@ export async function filesToAttachments(files: FileList | File[]): Promise<Mess
 				attachments.push(...fromZip);
 				continue;
 			}
-			const attachment = await fileToAttachment(file);
-			if (attachment) {
-				attachments.push(attachment);
-			}
+			const expanded = await expandFileAttachments(file);
+			attachments.push(...expanded);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : `Failed to import "${file.name}"`;
 			toast.error(message);
@@ -885,8 +883,12 @@ async function attachmentsFromZip(zipFile: File): Promise<MessageContent[]> {
 			continue;
 		}
 		try {
-			const attachment = await fileToAttachment(inner);
-			if (attachment) out.push(attachment);
+			if (isImageFile(inner)) {
+				out.push(...(await imageFileAttachments(inner, resolveFileMimeType(inner))));
+			} else {
+				const attachment = await fileToAttachment(inner);
+				if (attachment) out.push(attachment);
+			}
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : `Failed to import "${inner.name}"`);
 		}
@@ -919,6 +921,68 @@ async function tryPdfOcr(file: File): Promise<MessageContent | null> {
 	return null;
 }
 
+function isVideoFile(file: File, mimeType: string): boolean {
+	if (mimeType.startsWith("video/")) return true;
+	return /\.(mp4|mov|mkv|avi|m4v|wmv|mpeg|mpg|webm)$/i.test(file.name) && !mimeType.startsWith("audio/");
+}
+
+/** Image import keeps the picture for vision models and always extracts readable text (OCR / SVG). */
+async function imageFileAttachments(file: File, mimeType: string): Promise<MessageContent[]> {
+	const out: MessageContent[] = [];
+	const dataUrl = await normalizeImageForModel(file, mimeType);
+	const ocrSource = dataUrl || (await fileToBase64(file));
+	let extracted = "";
+	if (ocrSource.startsWith("data:image/") || ocrSource.startsWith("data:application/")) {
+		toast.message(`Extracting text from image ${file.name}…`);
+		const ocr = await ocrImageFile(ocrSource);
+		if (ocr?.text?.trim()) extracted = ocr.text.trim();
+	}
+	if (!extracted && (file.name.toLowerCase().endsWith(".svg") || mimeType.includes("svg"))) {
+		const svgText = await extractPromptFileText(file, mimeType);
+		if (svgText?.trim()) extracted = svgText.trim();
+	}
+	if (dataUrl) {
+		out.push({
+			type: "image_url",
+			image_url: { url: dataUrl, detail: "auto", filename: file.name },
+		});
+	}
+	if (extracted) {
+		out.push(ocrTextAttachment(file.name, extracted));
+	}
+	if (out.length === 0) {
+		out.push(
+			textAttachmentFromExtract(
+				file.name,
+				`[Image: ${file.name} (${mimeType || "image"}, ${(file.size / 1024).toFixed(1)} KB) — visual content attached]`,
+			),
+		);
+	}
+	if (dataUrl && extracted) {
+		toast.success(`Image and extracted text attached: ${file.name}`);
+	} else if (extracted) {
+		toast.success(`Extracted text from image ${file.name}`);
+	} else if (dataUrl) {
+		toast.success(`Image attached: ${file.name}`);
+	} else {
+		toast.message(`Attached "${file.name}" (image reference)`);
+	}
+	return out;
+}
+
+/** One picked file can become several message parts (image + extracted text, zip members, etc.). */
+async function expandFileAttachments(file: File): Promise<MessageContent[]> {
+	const mimeType = resolveFileMimeType(file);
+	if (isZipFile(file, mimeType)) {
+		return attachmentsFromZip(file);
+	}
+	if (isImageFile(file, mimeType)) {
+		return imageFileAttachments(file, mimeType);
+	}
+	const one = await fileToAttachment(file);
+	return one ? [one] : [];
+}
+
 export async function fileToAttachment(file: File): Promise<MessageContent | null> {
 	const mimeType = resolveFileMimeType(file);
 
@@ -944,36 +1008,11 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 	}
 
 	if (isImageFile(file, mimeType)) {
-		const dataUrl = await normalizeImageForModel(file, mimeType);
-		if (dataUrl) {
-			toast.success(`Image attached: ${file.name}`);
-			return {
-				type: "image_url",
-				image_url: { url: dataUrl, detail: "auto", filename: file.name },
-			};
-		}
-		const raw = await fileToBase64(file);
-		const ocr = await ocrImageFile(raw);
-		if (ocr?.text) {
-			toast.message(`"${file.name}" attached with OCR extracted text`);
-			return ocrTextAttachment(file.name, ocr.text);
-		}
-		// If SVG, extract XML text directly so model can read the vector markup
-		if (file.name.toLowerCase().endsWith(".svg") || mimeType.includes("svg")) {
-			const svgText = await extractPromptFileText(file, mimeType);
-			if (svgText) {
-				toast.success(`Attached SVG markup: ${file.name}`);
-				return textAttachmentFromExtract(file.name, svgText);
-			}
-		}
-		toast.message(`Attached "${file.name}" (image reference)`);
-		return textAttachmentFromExtract(
-			file.name,
-			`[Image: ${file.name} (${mimeType || "image"}, ${(file.size / 1024).toFixed(1)} KB) — visual content attached]`,
-		);
+		const parts = await imageFileAttachments(file, mimeType);
+		return parts[0] ?? null;
 	}
 
-	if (mimeType.startsWith("audio/")) {
+	if (mimeType.startsWith("audio/") || isVideoFile(file, mimeType)) {
 		const normalized = (await normalizeAudioToWavFile(file)) || file;
 		toast.message("Transcribing voice with Whisper…");
 		const transcript = await transcribeAudioFile(normalized);

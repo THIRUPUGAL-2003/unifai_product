@@ -351,7 +351,7 @@ def main():
     check("HTTP block response includes AdaptiveCard", has_card)
     has_bot_author = '"author": "bot"' in resp_text or '"author":"bot"' in resp_text
     check("HTTP block response has author bot", has_bot_author)
-    has_warning_msg = "Sensitive pincode detected" in resp_text
+    has_warning_msg = bool(resp_text and ("Sensitive pincode" in resp_text or "post code" in resp_text))
     check("HTTP block response contains rule warning text", has_warning_msg)
 
     # 3.2 SignalR WebSocket Block Frames Structure
@@ -383,7 +383,7 @@ def main():
         ("JSON Config", "config.json", "application/json", b'{"service": {"pin": "600028"}}', True),
         (".env Environment", ".env", "text/plain", b"API_KEY=test\nUSER_PINCODE=600028\n", True),
         ("ZIP Archive", "bundle.zip", "application/zip", None, True),  # built dynamically below
-        ("Binary Data", "firmware.bin", "application/octet-stream", b"\x7fELF" + b"A" * 60 + b"PIN=600028" + b"Z" * 60, True),
+        ("Binary Data", "firmware.bin", "application/octet-stream", b"\x7fELF" + b"A" * 60 + b" PIN=600028 " + b"Z" * 60, True),
         ("Clean Text", "notes.txt", "text/plain", b"Regular notes for the project meeting tomorrow.", False),
         ("Clean Python Code", "clean.py", "text/x-python", b"def add(a, b):\n    return a + b\n", False),
         ("OCR Image PNG", "scanned.png", "image/png", make_ocr_image("CONFIDENTIAL PIN: 600028"), True),

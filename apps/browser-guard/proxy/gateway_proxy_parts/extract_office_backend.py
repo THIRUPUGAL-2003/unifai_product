@@ -601,7 +601,10 @@ def _classify_upload_kind(data: bytes, content_type: str = "", file_name: str = 
     if not data:
         if "pdf" in ct or ext == ".pdf":
             return "pdf"
-        if "image/" in ct or ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
+        if "image/" in ct or ext in (
+            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff",
+            ".heic", ".heif", ".avif", ".jfif", ".ico",
+        ):
             return "image"
         if "audio/" in ct or ext in (".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".aac"):
             return "audio"

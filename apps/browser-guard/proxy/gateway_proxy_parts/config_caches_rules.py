@@ -1741,8 +1741,6 @@ def is_event_send_chat_submit(path: str, body: str = "") -> bool:
     if "/chat" in path_l and "telemetry" not in path_l and "analytics" not in path_l and body_l:
         if '"event":"send"' in body_l or '"target":"chat"' in body_l:
             return True
-        if _is_confident_chat_send(path, body):
-            return True
     return False
 
 

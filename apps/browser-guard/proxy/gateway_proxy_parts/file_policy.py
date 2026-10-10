@@ -2026,7 +2026,10 @@ def _looks_like_image(data: bytes, content_type: str = "", file_name: str = "") 
     fn = (file_name or "").lower()
     if ct.startswith("image/"):
         return True
-    if any(fn.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff")):
+    if any(fn.endswith(ext) for ext in (
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff",
+        ".heic", ".heif", ".avif", ".jfif", ".ico",
+    )):
         return True
     if not data:
         return False
@@ -2035,6 +2038,10 @@ def _looks_like_image(data: bytes, content_type: str = "", file_name: str = "") 
     if data.startswith(b"BM") and len(data) > 30:
         return True
     if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return True
+    if len(data) >= 12 and data[4:8] == b"ftyp" and data[8:12] in (
+        b"heic", b"heix", b"heif", b"mif1", b"avif", b"avis",
+    ):
         return True
     return False
 

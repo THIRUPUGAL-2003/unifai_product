@@ -363,6 +363,24 @@ function extractRtfText(rtf: string): string {
 		.trim();
 }
 
+async function extractEpubText(buf: ArrayBuffer): Promise<string> {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const JSzipMod: any = await import("jszip");
+	const JSZip = JSzipMod.default ?? JSzipMod;
+	const zip = await JSZip.loadAsync(buf);
+	const names = Object.keys(zip.files)
+		.filter((n: string) => /\.(xhtml|html|htm)$/i.test(n) && !zip.files[n].dir)
+		.sort();
+	const parts: string[] = [];
+	for (const name of names.slice(0, 80)) {
+		const html = await zip.files[name].async("string");
+		const text = htmlToPlainText(html);
+		if (text) parts.push(text);
+		if (parts.join("\n\n").length > MAX_EXTRACT_CHARS) break;
+	}
+	return parts.join("\n\n").trim();
+}
+
 const TEXT_CODE_EXT_RE =
 	/\.(txt|text|md|markdown|mdown|rst|tex|latex|json|jsonl|ndjson|jsonc|xml|html|htm|xhtml|yaml|yml|toml|ini|env|conf|config|cfg|properties|editorconfig|map|proto|graphql|gql|sql|sh|bash|zsh|fish|ps1|psm1|psd1|bat|cmd|py|pyw|pyi|pyx|js|jsx|mjs|cjs|ts|tsx|mts|cts|java|go|rs|rlib|c|h|cpp|hpp|cc|cxx|hh|hxx|cs|csx|fs|fsi|fsx|php|phtml|phar|rb|rake|gemspec|swift|kt|kts|scala|sc|r|rmd|m|mlx|jl|pl|pm|t|lua|asm|s|f|for|f90|f95|cbl|cob|cpy|mm|ex|exs|erl|hrl|hs|lhs|clj|cljs|cljc|edn|lisp|lsp|cl|pro|sol|wat|vue|svelte|aspx|ascx|cshtml|razor|manifest|webmanifest|tf|tfvars|tfstate|j2|jinja|jinja2|cmake|gradle|pom|sln|slnx|csproj|vcxproj|fsproj|lock|diff|patch|log|csv|tsv|svg|srt|vtt|ass|ssa|ttml|dfxp|prompt|dvc|pem|crt|cer|cert|csr|key|pub|asc|sig|sha256|sha512|md5|sha1|spdx|eml|vcf|ics|ical|obj|stl|gcode|nc|tap|scad|dxf|step|stp|iges|igs|kicad_sch|kicad_pcb|gbr|ger|gtl|gbl|brd|sch|geojson|kml|gpx|tab|mif|mid|topojson|wkt|reg|service|socket|timer|cron|bib|ris|rdf|fa|fasta|fna|fq|fastq|sam|pdb|cif|qmd|edi|x12|hlsl|glsl|shader|po|pot|mo|xliff|xlf|strings|stringsdict|arb|rc|res)$/i;
 
@@ -530,6 +548,12 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 		if (name.endsWith(".rtf") || mime.includes("rtf")) {
 			const raw = new TextDecoder().decode(bytes);
 			const text = extractRtfText(raw);
+			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		}
+
+		// EPUB is a zip of HTML/XHTML chapters.
+		if (name.endsWith(".epub") || mime.includes("epub")) {
+			const text = await extractEpubText(buf);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
