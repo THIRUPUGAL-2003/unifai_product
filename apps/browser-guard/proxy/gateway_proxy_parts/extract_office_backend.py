@@ -127,10 +127,12 @@ def _looks_like_video(data: bytes, content_type: str = "", file_name: str = "") 
     fn = (file_name or "").lower()
     if ct.startswith("video/"):
         return True
-    if fn.endswith((".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".wmv", ".mpeg", ".mpg")):
+    if ct.startswith("audio/"):
+        return False
+    if fn.endswith((".mp4", ".mov", ".mkv", ".avi", ".m4v", ".wmv", ".mpeg", ".mpg")):
         return True
     if not data or len(data) < 12:
-        return False
+        return fn.endswith(".webm")
     head = data[:32]
     if head[4:8] == b"ftyp":
         brand = head[8:12]
@@ -139,8 +141,9 @@ def _looks_like_video(data: bytes, content_type: str = "", file_name: str = "") 
             return True
     if head[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"AVI ":
         return True
-    if head[:4] == b"\x1aE\xdf\xa3":  # EBML / Matroska / webm
-        return True
+    if head[:4] == b"\x1aE\xdf\xa3":
+        # Matroska/WebM: video only when a video track codec is present (mic recordings are audio-only).
+        return bool(re.search(rb"V_(?:VP[89]|AV1|MPEG|MS/|THEORA|UNCOMPRESSED)", data[:65536]))
     return False
 
 
@@ -456,14 +459,15 @@ def _extract_plain_text_bytes(data: bytes) -> str:
             text = sample.decode("latin-1", errors="ignore")
         except Exception:
             return ""
-    # Heuristic: enough printable ratio
+    # Heuristic: enough printable ratio (sample 4KB for ultra-fast check on large files)
     if not text or not text.strip():
         return ""
-    printable = sum(1 for ch in text if ch.isprintable() or ch in "\r\n\t")
-    total_len = max(1, len(text))
-    if len(text) >= 8 and (printable / total_len) < 0.65:
+    sample_chk = text[:4096]
+    printable = sum(1 for ch in sample_chk if ch.isprintable() or ch in "\r\n\t")
+    total_len = max(1, len(sample_chk))
+    if len(sample_chk) >= 8 and (printable / total_len) < 0.65:
         return ""
-    if len(text) < 8 and (printable / total_len) < 0.8:
+    if len(sample_chk) < 8 and (printable / total_len) < 0.8:
         return ""
     return text[:200_000]
 
@@ -1353,7 +1357,7 @@ def extract_batchexecute_prompt(content: str) -> str:
         good.sort(key=lambda s: (1 if (" " in s or "\n" in s) else 0, len(s)), reverse=True)
         return good[0]
 
-    def _from_stream_inner(inner) -> str:
+    def _from_stream_inner(inner, trusted: bool = False) -> str:
         """StreamGenerate: typed prompt is ONLY the first [prompt, 0, ...] slot — not locale."""
         if not isinstance(inner, list) or not inner:
             return ""
@@ -1371,6 +1375,10 @@ def extract_batchexecute_prompt(content: str) -> str:
                 cands.append(first[0][0])
             elif len(first) > 1 and isinstance(first[0], str) and first[1] == 0:
                 cands.append(first[0])
+        if trusted and cands:
+            slot = cands[0].strip()
+            if slot and _struct_value_ok(slot) and not _is_google_wire_blob(slot):
+                return slot
         return _pick_user_prompt(cands)
 
     try:
@@ -1379,7 +1387,7 @@ def extract_batchexecute_prompt(content: str) -> str:
         if isinstance(data, list) and len(data) >= 2 and isinstance(data[1], str):
             try:
                 inner = json.loads(data[1])
-                got = _from_stream_inner(inner)
+                got = _from_stream_inner(inner, trusted=True)
                 if got:
                     return got
             except Exception:

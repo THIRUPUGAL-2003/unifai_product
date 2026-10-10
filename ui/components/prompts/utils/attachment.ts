@@ -932,7 +932,7 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 				if (a.type === "text" && a.text) return a.text;
 				if (a.type === "image_url") return "[Image attachment]";
 				if (a.type === "input_audio") return "[Audio attachment]";
-				if (a.type === "file") return `[File: ${a.file?.filename || "unknown"}]`;
+				if (a.type === "file") return a.file?.filename ? `[File: ${a.file.filename}]` : "[File]";
 				return "";
 			})
 			.filter(Boolean)
@@ -1023,18 +1023,19 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 }
 
 export function getAttachmentDisplayName(attachment: MessageContent): string {
-	if (attachment.type === "image_url") return attachment.image_url?.filename || "Image";
-	if (attachment.type === "input_audio") return attachment.input_audio?.format?.toUpperCase() || "Voice";
+	if (attachment.type === "image_url") return attachment.image_url?.filename || "";
+	if (attachment.type === "input_audio") return attachment.input_audio?.format?.toUpperCase() || "";
 	if (attachment.type === "text" && attachment.text?.startsWith("Voice transcript")) return "Voice transcript";
 	if (attachment.type === "text" && attachment.text?.includes("--- OCR extracted content ---")) {
 		const firstLine = attachment.text.split("\n")[0] || "";
-		return `OCR: ${firstLine.replace(/^Attached file:\s*/i, "").trim() || "Image"}`;
+		const parsed = firstLine.replace(/^Attached file:\s*/i, "").trim();
+		return parsed ? `OCR: ${parsed}` : "";
 	}
 	if (attachment.type === "text" && attachment.text?.startsWith("Attached file:")) {
 		const firstLine = attachment.text.split("\n")[0] || "";
-		return firstLine.replace(/^Attached file:\s*/i, "").trim() || "File";
+		return firstLine.replace(/^Attached file:\s*/i, "").trim();
 	}
-	return attachment.file?.filename || "File";
+	return attachment.file?.filename || "";
 }
 
 export function attachmentNeedsVision(attachments: MessageContent[]): boolean {

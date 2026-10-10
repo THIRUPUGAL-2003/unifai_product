@@ -48,7 +48,7 @@ export async function transcribeAudioFile(
 	for (const model of models) {
 		try {
 			const form = new FormData();
-			form.append("file", file, file.name || "voice.wav");
+			form.append("file", file, file.name);
 			form.append("model", model);
 			form.append("response_format", "json");
 

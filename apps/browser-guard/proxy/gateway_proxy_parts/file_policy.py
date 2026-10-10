@@ -565,22 +565,25 @@ def enforce_file_send_policy(
             "cached": cached,
         })
 
-    # ALWAYS one row per distinct bytes (even when all have real names).
+    # One row per distinct file: same bytes collapse unless both carry different real names.
     unique_prep: list[dict] = []
-    seen_fps: set[str] = set()
+    seen_fps: dict[str, set[str]] = {}
     seen_names: set[str] = set()
     for p in prepared:
         b = p.get("cached_bytes") or b""
         fp = _bytes_name_fingerprint(b)
         lbl = (p.get("store_name") or p.get("file_label") or "").strip()
         lbl_key = lbl.lower()
+        real = bool(lbl_key) and _is_real_user_upload_name(lbl)
         if fp and fp in seen_fps:
-            continue
-        if lbl_key and _is_real_user_upload_name(lbl) and lbl_key in seen_names and (not b or len(b) < 96):
+            names_for_fp = seen_fps[fp]
+            if not real or lbl_key in names_for_fp or "" in names_for_fp:
+                continue
+        if real and lbl_key in seen_names and (not b or len(b) < 96):
             continue
         if fp:
-            seen_fps.add(fp)
-        if lbl_key and _is_real_user_upload_name(lbl):
+            seen_fps.setdefault(fp, set()).add(lbl_key if real else "")
+        if real:
             seen_names.add(lbl_key)
         unique_prep.append(p)
     if unique_prep:

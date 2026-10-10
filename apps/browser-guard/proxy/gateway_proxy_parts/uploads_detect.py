@@ -1,5 +1,10 @@
 # Part of Gateway browser_ai_proxy — do not import directly.
 import hashlib
+import re
+import io
+import time
+import json
+import zipfile
 
 
 
@@ -495,7 +500,7 @@ def _needs_real_upload_filename(name: str) -> bool:
 def _worth_binding_upload_bytes(stored: bytes) -> bool:
     """Only consume pending real names when we have real file bytes (not tiny probes)."""
     data = stored or b""
-    if len(data) < 64:
+    if len(data) < 32:
         return False
     if data[:5] == b"%PDF-" or data[:2] == b"PK":
         return True
@@ -505,7 +510,7 @@ def _worth_binding_upload_bytes(stored: bytes) -> bool:
         return True
     if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
         return True
-    return len(data) >= 256
+    return len(data) >= 48
 
 
 def _filename_from_url(url_or_path: str) -> str:
@@ -605,6 +610,26 @@ def _filename_from_multipart_or_headers(raw: bytes = b"", headers=None, raw_text
                     got = _sanitize_upload_filename(raw_name)
                     if got:
                         return got
+        # No filename= on the file part: many sites send the name as a sibling text field.
+        if is_multipart_body:
+            for fm in re.finditer(
+                rb'content-disposition:\s*form-data;\s*name="([^"]{1,64})"\s*\r?\n(?:[^\r\n]+\r?\n)*\r?\n([^\r\n]{1,255})\r?\n--',
+                sample[:65536],
+                re.I,
+            ):
+                field = fm.group(1).decode("latin-1", errors="ignore").lower().replace("-", "_")
+                if field.replace("_", "") not in (
+                    "filename", "name", "title", "originalname", "originalfilename",
+                    "displayname", "documentname", "uploadname", "filetitle",
+                ):
+                    continue
+                try:
+                    val = fm.group(2).decode("utf-8", errors="ignore").strip()
+                except Exception:
+                    continue
+                got = _sanitize_upload_filename(val)
+                if got and "." in got and _is_real_user_upload_name(got):
+                    return got
 
     text = raw_text or ""
     if text:
@@ -622,21 +647,10 @@ def _filename_from_multipart_or_headers(raw: bytes = b"", headers=None, raw_text
 
 
 def _default_name_from_bytes(raw: bytes, content_type: str = "", idx: int = 0, total_count: int = 1) -> str:
-    """Fallback label only when the wire completely omits any user filename.
-    Never invents fake filenames like document.pdf or spreadsheet.xlsx.
-    Defaults cleanly to Document, Image, or Voice Note.
+    """Never invent fake filenames like document.pdf, image.png, or Voice Note.
+    Returns empty string when no user filename is provided.
     """
-    kind = ""
-    try:
-        kind = _classify_upload_kind(raw or b"", content_type, "")
-    except Exception:
-        kind = ""
-    suffix = f" {idx + 1}" if (idx > 0 or total_count > 1) else ""
-    if kind == "audio" or (raw and raw[:4] == b"RIFF"):
-        return f"Voice Note{suffix}"
-    if kind == "image" or (raw and (raw[:3] == b"\xff\xd8\xff" or raw[:8] == b"\x89PNG\r\n\x1a\n" or raw[:4] == b"GIF8")):
-        return f"image{suffix}.png" if suffix else "image.png"
-    return f"document{suffix}.pdf" if suffix else "document.pdf"
+    return ""
 
 
 def _list_zip_member_basenames(data: bytes, max_names: int = 24) -> list[str]:
@@ -1428,7 +1442,8 @@ def _dedupe_cached_uploads_by_bytes(cached_list: list[dict]) -> list[dict]:
     """One row per distinct file bytes — ChatGPT often caches the same PDF as name + attachment."""
     if not cached_list or len(cached_list) <= 1:
         return cached_list
-    by_fp: dict[str, dict] = {}
+    # Same bytes + same/placeholder name = duplicate; two distinct real names = two files.
+    groups: dict[str, list[dict]] = {}
     no_fp: list[dict] = []
     for e in cached_list:
         fp = _upload_content_fingerprint(e)
@@ -1438,9 +1453,25 @@ def _dedupe_cached_uploads_by_bytes(cached_list: list[dict]) -> list[dict]:
                 continue
             no_fp.append(e)
             continue
-        prev = by_fp.get(fp)
-        by_fp[fp] = e if prev is None else _prefer_named_upload(prev, e)
-    out = list(by_fp.values())
+        groups.setdefault(fp, []).append(e)
+    out: list[dict] = []
+    for members in groups.values():
+        named: dict[str, dict] = {}
+        unnamed: list[dict] = []
+        for e in members:
+            n = (e.get("file_name") or "").strip()
+            if _is_real_user_upload_name(n):
+                k = n.lower()
+                named[k] = e if k not in named else _prefer_named_upload(named[k], e)
+            else:
+                unnamed.append(e)
+        if named:
+            out.extend(named.values())
+        else:
+            best = unnamed[0]
+            for e in unnamed[1:]:
+                best = _prefer_named_upload(best, e)
+            out.append(best)
     if out:
         return out
     return no_fp or cached_list
@@ -1829,16 +1860,13 @@ def _bind_real_filenames_to_cached_uploads(cached_list: list[dict], raw_text: st
             ui += 1
             continue
         if _is_fake_upload_name(cur) or not cur:
-            entry["file_name"] = cur or f"attachment-{i + 1}"
+            entry["file_name"] = cur
     return _dedupe_cached_uploads_by_bytes(cached_list)
 
 
 def _display_label_for_upload(name: str, raw: bytes, content_type: str = "") -> str:
     """Human label for Prompt Logs — real name + ZIP member preview when useful."""
-    label = (name or "").strip() or "attachment"
-    # Never show ChatGPT paste placeholders (screenshot) or brand/PDF-title leaks.
-    if _is_fake_upload_name(label) or not _is_real_user_upload_name(label):
-        label = _default_name_from_bytes(raw or b"", content_type) or "attachment"
+    label = (name or "").strip()
     kind = ""
     try:
         kind = _classify_upload_kind(raw or b"", content_type, label)
@@ -2049,19 +2077,22 @@ def _extract_bytes_from_json_upload(raw: bytes, file_name: str = "") -> tuple[by
     Tiny metadata handshakes (file_id only, no payload) return (None, "", name).
     """
     if not raw:
-        return None, "", file_name or "attachment"
+        return None, "", file_name or ""
     stripped = raw.lstrip()
     if stripped[:1] not in (b"{", b"[") or raw[:2] == b"PK":
-        return None, "", file_name or "attachment"
+        return None, "", file_name or ""
     if len(raw) < 120:
-        return None, "", file_name or "attachment"
+        return None, "", file_name or ""
+    # Fast path: real JSON data files without base64 wrappers skip regex scan in microseconds
+    if not any(k in raw for k in (b"base64", b"inline_data", b"inlineData", b"fileData", b"file_data", b"extracted_content", b"extractedContent", b"data:", b'"source"')):
+        return None, "", file_name or ""
 
     try:
         text = raw.decode("utf-8", errors="ignore")
     except Exception:
-        return None, "", file_name or "attachment"
+        return None, "", file_name or ""
 
-    name = _sanitize_upload_filename(file_name) or (file_name or "").strip() or "attachment"
+    name = _sanitize_upload_filename(file_name) or (file_name or "").strip()
     for m in re.finditer(
         r'"(?:file_name|fileName|filename|original_name|originalName|display_name|displayName)"\s*:\s*"([^"]{1,240})"',
         text,
@@ -2091,7 +2122,7 @@ def _extract_bytes_from_json_upload(raw: bytes, file_name: str = "") -> tuple[by
             if _is_fake_upload_name(out_name) and inline_name and not _is_fake_upload_name(inline_name):
                 out_name = inline_name
             ctype = mime or _sniff_upload_content_type(data, out_name)
-            return data, ctype, out_name or "attachment"
+            return data, ctype, out_name
 
     m_data_url = re.search(
         r'data:([a-zA-Z0-9.+/-]+);base64,([A-Za-z0-9+/=\s]{80,})',
@@ -2108,7 +2139,7 @@ def _extract_bytes_from_json_upload(raw: bytes, file_name: str = "") -> tuple[by
             data = b""
         if len(data) >= 32:
             ctype = mime or _sniff_upload_content_type(data, name)
-            return data, ctype, name or "attachment"
+            return data, ctype, name
 
     return None, "", name
 
@@ -2148,11 +2179,41 @@ def iter_multipart_named_files(raw: bytes) -> list[tuple[str, bytes]]:
     return out if len(out) >= 2 else []
 
 
+def multipart_text_fields(raw: bytes, content_type: str = "") -> dict[str, str]:
+    """Non-file form fields (name -> text) of a multipart body; file parts are skipped."""
+    m = re.search(r'boundary="?([^";]+)"?', content_type or "", re.I)
+    if not raw or not m:
+        return {}
+    out: dict[str, str] = {}
+    for part in raw.split(b"--" + m.group(1).strip().encode("latin-1", errors="ignore")):
+        sep = part.find(b"\r\n\r\n")
+        sep_len = 4
+        if sep < 0:
+            sep, sep_len = part.find(b"\n\n"), 2
+        if sep < 0:
+            continue
+        hdr = part[:sep].decode("utf-8", errors="ignore")
+        if re.search(r"filename\*?=", hdr, re.I):
+            continue
+        nm = re.search(r'content-disposition:[^\r\n]*?\bname="([^"]*)"', hdr, re.I)
+        if not nm:
+            continue
+        body = part[sep + sep_len:]
+        if body.endswith(b"\r\n"):
+            body = body[:-2]
+        elif body.endswith(b"\n"):
+            body = body[:-1]
+        if len(body) > 64 * 1024 or b"\x00" in body[:1024]:
+            continue
+        out[nm.group(1)] = body.decode("utf-8", errors="ignore")
+    return out
+
+
 def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: str = "") -> tuple[bytes | None, str, str]:
     """Best-effort file bytes from upload body. Returns (bytes, content_type, name)."""
     if not raw:
-        return None, "", file_name or "attachment"
-    name = _sanitize_upload_filename(file_name) or (file_name or "").strip() or "attachment"
+        return None, "", file_name or ""
+    name = _sanitize_upload_filename(file_name) or (file_name or "").strip()
     # Prefer multipart / header filename when caller only had a placeholder.
     mp_name = _filename_from_multipart_or_headers(raw, None, "")
     if mp_name and _is_fake_upload_name(name):
@@ -2167,7 +2228,7 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
         if not (name or "").lower().endswith(".pdf") and _is_real_user_upload_name(name):
             name = f"{name}.pdf"
         elif _is_fake_upload_name(name) or not name:
-            name = "attachment"
+            name = ""
         return pdf, "application/pdf", name
 
     # JSON base64 file wrappers (Claude/Gemini/DeepSeek).
@@ -2183,6 +2244,12 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
     low_prefix = raw[: min(len(raw), 64 * 1024)].lower()
     if b"filename=" in low_prefix or b"webkitformboundary" in low_prefix or b"multipart" in (content_type or "").lower().encode():
         idx = low_prefix.find(b"filename=")
+        if idx < 0:
+            # File part without filename=: the part that declares its own Content-Type.
+            m_part = re.search(rb"content-disposition:[^\r\n]*\r?\ncontent-type:", low_prefix)
+            if m_part:
+                idx = m_part.start()
+        part_ct = ""
         if idx >= 0:
             rest = raw[idx:]
             # Capture filename= value from this part header
@@ -2192,8 +2259,11 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
                 hm = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';\r\n]+)["\']?', hdr, re.I)
                 if hm:
                     got = _sanitize_upload_filename(hm.group(1))
-                    if got:
+                    if got and not (_is_fake_upload_name(got) and _is_real_user_upload_name(name)):
                         name = got
+                cm = re.search(r"content-type:\s*([^\r\n;]+)", hdr, re.I)
+                if cm:
+                    part_ct = cm.group(1).strip().lower()
             except Exception:
                 pass
             sep = b"\r\n\r\n"
@@ -2215,15 +2285,15 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
                         if not name.lower().endswith(".pdf"):
                             if _is_fake_upload_name(name):
                                 # Keep placeholder — Send/registry can still bind the real name.
-                                name = name or "attachment"
+                                name = name or ""
                             else:
                                 name = f"{name}.pdf"
                         return pdf2, "application/pdf", name
-                    ctype = _sniff_upload_content_type(part, name, content_type)
+                    ctype = _sniff_upload_content_type(part, name, part_ct or content_type)
                     if len(part) > 20 * 1024 * 1024:
                         part = part[: 20 * 1024 * 1024]
                     # Do not invent document.pdf here — that becomes a fake "prompt" in logs.
-                    return part, ctype, name or "attachment"
+                    return part, ctype, name
 
     # Direct binary body (resumable / octet-stream / plain files)
     if len(raw) >= 32 or (len(raw) >= 1 and (_has_any_file_extension(name) or (content_type or "").lower().startswith("text/"))):
@@ -2236,7 +2306,7 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
         # Keep placeholder — inventing document.pdf creates fake Prompt Log rows
         # that never get replaced by the real name from create-file / Send.
         if _is_fake_upload_name(name):
-            name = "attachment"
+            name = ""
         return data, ctype, name
     return None, "", name
 
@@ -2331,11 +2401,15 @@ def _is_file_metadata_handshake(raw_bytes: bytes = b"", raw_text: str = "", path
     if not low:
         return False
     # Never treat a chat Send as create-file (Send also embeds file_name + file_size).
+    path_l = (path or "").lower()
+    if any(x in path_l for x in ("/completion", "/chat_conversations", "/conversation/", "/conversations/")):
+        return False
     if any(
         k in low
         for k in (
             '"conversation_id"', '"parent_message_id"', '"messages"',
             '"contents"', '"action":"next"', '"author"',
+            '"prompt"', '"extracted_content"', '"extractedcontent"',
         )
     ):
         return False
@@ -2478,7 +2552,7 @@ def wait_bind_real_upload_names(
         if not isinstance(raw, (bytes, bytearray)):
             raw = b""
         new_name = _ensure_name_has_extension(got, bytes(raw), entry.get("content_type") or "")
-        old = (entry.get("file_name") or "").strip() or "attachment"
+        old = (entry.get("file_name") or "").strip()
         entry["file_name"] = new_name
         fid = (entry.get("file_id") or "").strip()
         if fid:
@@ -2574,14 +2648,31 @@ def cache_upload_file(
         if j_bytes:
             payload, ctype, name = j_bytes, j_ct or content_type, j_name or name
         else:
-            return
+            cand_name = file_name or ""
+            if not cand_name:
+                for d in (domain, "chatgpt.com"):
+                    try:
+                        cand_name = peek_pending_upload_name_for_domain(d) or (lookup_upload_filename(file_id) if file_id else "") or ""
+                    except Exception:
+                        cand_name = ""
+                    if cand_name:
+                        break
+            fn_l = cand_name.lower()
+            if (
+                fn_l.endswith((".json", ".jsonl", ".geojson", ".ndjson", ".manifest", ".har"))
+                or (cand_name and _is_real_user_upload_name(cand_name))
+                or (content_type and "json" in content_type.lower())
+            ):
+                payload = fallback
+            else:
+                return
     stored = payload if payload else fallback
     if not stored:
         return
     if len(stored) > 20 * 1024 * 1024:
         stored = stored[: 20 * 1024 * 1024]
     final_ct = ctype or content_type or "application/octet-stream"
-    final_name = (name or file_name or "").strip() or "attachment"
+    final_name = (name or file_name or "").strip()
     # Prefer remembered real name (ChatGPT often uploads bytes with only file_id).
     if file_id:
         remembered = lookup_upload_filename(file_id)
@@ -2620,7 +2711,7 @@ def cache_upload_file(
                 if pdf_name:
                     final_name = pdf_name
                 else:
-                    final_name = _default_name_from_bytes(stored, final_ct) or "attachment"
+                    final_name = (final_name or "").strip()
     elif "." not in final_name.rsplit("/", 1)[-1]:
         final_name = _ensure_name_has_extension(final_name, stored, final_ct)
         if _is_real_user_upload_name(final_name):
@@ -2641,7 +2732,7 @@ def cache_upload_file(
         "rule_action": (rule_action or "").upper(),
         "file_id": file_id or "",
     }
-    fname_key = (entry["file_name"] or "attachment").lower()
+    fname_key = (entry["file_name"] or "").lower()
     entry["cache_uid"] = f"{entry['ts']:.6f}|{fname_key}|{len(stored)}"
     keys: list[str] = []
     aliases = upload_domain_aliases(domain)
@@ -2675,9 +2766,9 @@ def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
     ids: list[str] = []
     if not raw_text:
         return ids
-    # 1. String arrays: "files": ["uuid-1", "uuid-2"], "file_uuids": [...]
+    # 1. String arrays: "files": ["uuid-1", "uuid-2"], "file_uuids": [...], "ref_file_ids": [...]
     for m in re.finditer(
-        r'"(?:files|file_uuids|fileuuids|file_ids|fileids|attachment_ids|attachmentids|document_ids|documentids|documents|uploads)"\s*:\s*\[([\s\S]{0,10000}?)\]',
+        r'"(?:files|file_uuids|fileuuids|file_ids|fileids|attachment_ids|attachmentids|document_ids|documentids|documents|uploads|ref_file_ids|ref_files)"\s*:\s*\[([\s\S]{0,10000}?)\]',
         raw_text,
         re.I,
     ):
@@ -2814,7 +2905,7 @@ def chat_carries_attachment(raw_text: str) -> bool:
         return True
 
     # Non-empty attachment / files arrays (objects or string IDs)
-    if re.search(r'"(?:attachments|files|documents|fileattachments|imageattachments|file_list|filelist|uploadedfiles|uploaded_files|file_uuids|file_ids|attachment_ids|assets|sources|media|docs|messageinput)"\s*:\s*\[\s*(?:\{|["\'][a-zA-Z0-9_\-\.]{4,})', low):
+    if re.search(r'"(?:attachments|files|documents|fileattachments|imageattachments|file_list|filelist|uploadedfiles|uploaded_files|file_uuids|file_ids|attachment_ids|assets|sources|media|docs|messageinput|ref_file_ids|ref_files)"\s*:\s*\[\s*(?:\{|["\'][a-zA-Z0-9_\-\.]{4,})', low):
         return True
 
     # Any confirmed file_ids from payload
@@ -2889,7 +2980,7 @@ def chat_carries_attachment(raw_text: str) -> bool:
     # DeepSeek / Perplexity / generic file lists with uuid or url (non-empty)
     if re.search(r'"(?:file_uuid|fileUuid|file_id|fileId|documentId|document_id|docId|doc_id)"\s*:\s*"(?!null)[^"]{4,}"', low):
         return True
-    if re.search(r'"files"\s*:\s*\[[\s\S]{0,4000}?"(?:url|uri|path|name)"\s*:\s*"(?!null)[^"]+"', low):
+    if re.search(r'"(?:files|attachments|file_list|attachment_list)"\s*:\s*\[[\s\S]{0,4000}?"(?:url|uri|path|name|file_id|id)"\s*:\s*"(?!null)[^"]+"', low):
         return True
 
     # Voice / audio attachment markers. Flag keys count only with a real value:
@@ -2982,7 +3073,7 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
 
     out: list[tuple[bytes, str, str]] = []
     seen: set[str] = set()
-    fname_base = extract_attachment_filename_from_send(raw_text) or "attachment"
+    fname_base = extract_attachment_filename_from_send(raw_text) or ""
 
     # 1. Claude in-browser extracted_content inside attachments array:
     # attachments: [{"file_name": "x.csv", "extracted_content": "...", "file_type": "text/csv"}]
@@ -3000,7 +3091,7 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
         nm = re.search(r'"(?:file_name|fileName|filename|name|title)"\s*:\s*"([^"]+)"', block)
         fname = _sanitize_upload_filename(nm.group(1).strip()) if nm else ""
         if not fname or not _is_real_user_upload_name(fname):
-            fname = f"document_{len(out) + 1}.txt"
+            fname = fname_base or ""
         tm = re.search(r'"(?:file_type|fileType|content_type|contentType|mime_type|media_type)"\s*:\s*"([^"]+)"', block)
         ctype = tm.group(1).strip() if tm else "text/plain"
         doc_bytes = content_str.encode("utf-8")
@@ -3034,8 +3125,9 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
             else: mime = "application/octet-stream"
         ext = {"application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(mime, "bin")
         if not fname or not _is_real_user_upload_name(fname):
-            is_img = mime.startswith("image/")
-            fname = f"image_{len(out)+1}.{ext}" if is_img else f"document_{len(out)+1}.{ext}"
+            fname = fname_base or ""
+            if fname and "." not in fname:
+                fname = f"{fname}.{ext}"
         sig = f"{fname.lower()}|{len(data)}"
         if sig not in seen:
             seen.add(sig)
@@ -3095,11 +3187,9 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
                 "image/gif": "gif",
                 "application/pdf": "pdf",
             }.get(mime.lower().split(";")[0].strip(), "bin")
-            fname = fname_base if len(out) == 0 and fname_base not in ("attachment", "file", "") else f"image_{len(out) + 1}.{ext}"
-            if len(out) == 0 and "." not in fname_base and fname_base not in ("attachment", "file", ""):
-                fname = f"{fname_base}.{ext}"
-            elif len(out) == 0 and fname_base in ("attachment", "file", ""):
-                fname = f"image_1.{ext}"
+            fname = fname_base or ""
+            if fname and "." not in fname:
+                fname = f"{fname}.{ext}"
             out.append((data[:20 * 1024 * 1024], mime, fname))
             if len(out) >= _UPLOAD_FILE_QUEUE_MAX:
                 return out
@@ -3179,6 +3269,18 @@ def _monitored_domain_set():
         _DOMAIN_SET_MEMO["set"] = frozenset(src)
         _DOMAIN_SET_MEMO["key"] = key
     return _DOMAIN_SET_MEMO["set"]
+
+
+def _origin_target(flow: http.HTTPFlow) -> tuple[str, str]:
+    """(domain, platform) of the admin Target page that sent this request, via Origin/Referer."""
+    for hdr in ("origin", "referer"):
+        ref_host = _host_from_url_header(flow.request.headers.get(hdr, "") or "")
+        if not ref_host:
+            continue
+        ok, domain, plat = detect_target(ref_host)
+        if ok and domain:
+            return domain, plat
+    return "", ""
 
 
 def _resolve_upload_bind_domain(flow: http.HTTPFlow, upload_host: str) -> str:

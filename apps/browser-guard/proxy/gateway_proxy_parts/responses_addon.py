@@ -671,7 +671,7 @@ class BrowserAIInterceptor:
                     file_ids = _extract_file_ids_from_chat(raw_text_n)
                     cache_upload_file(
                         bind,
-                        file_name=fname_n or "attachment",
+                        file_name=fname_n or "",
                         raw_bytes=raw_bytes_n,
                         content_type=content_type_n,
                         upload_reason=upload_reason_n or "",
@@ -679,7 +679,7 @@ class BrowserAIInterceptor:
                     )
                     print(
                         f"[Gateway Proxy] FILE CACHED via noise CDN bind | upload_host={host} -> "
-                        f"target={bind} | {fname_n or 'attachment'} | {len(raw_bytes_n)} bytes"
+                        f"target={bind} | {fname_n or ''} | {len(raw_bytes_n)} bytes"
                     )
             return
 
@@ -746,6 +746,7 @@ class BrowserAIInterceptor:
         if not is_target:
             # File CDNs are often NOT the chat Target Website. Bind via Referer/Origin
             # to the admin-added domain so extract→rules still run on Send (any AI site).
+            is_upload_nt = False
             if method in ("POST", "PUT", "PATCH"):
                 raw_bytes_nt = flow.request.content or b""
                 content_type_nt = flow.request.headers.get("content-type", "")
@@ -814,7 +815,7 @@ class BrowserAIInterceptor:
                         file_ids = _extract_file_ids_from_chat(raw_text_nt)
                         cache_upload_file(
                             bind,
-                            file_name=fname_nt or "attachment",
+                            file_name=fname_nt or "",
                             raw_bytes=raw_bytes_nt,
                             content_type=content_type_nt,
                             upload_reason=upload_reason_nt or "",
@@ -822,9 +823,18 @@ class BrowserAIInterceptor:
                         )
                         print(
                             f"[Gateway Proxy] FILE CACHED via Referer bind | upload_host={host} -> "
-                            f"target={bind} | {fname_nt or 'attachment'} | {len(raw_bytes_nt)} bytes"
+                            f"target={bind} | {fname_nt or ''} | {len(raw_bytes_nt)} bytes"
                         )
-            return
+            # Chat API on another domain, sent from an admin Target page (Origin/Referer).
+            origin_domain, origin_platform = ("", "")
+            if method in ("POST", "PUT", "PATCH") and not is_upload_nt:
+                origin_domain, origin_platform = _origin_target(flow)
+            if not origin_domain or not _structural_user_text(
+                raw_text_nt, content_type_nt, min_score=STRUCT_STRONG_SCORE,
+            ):
+                return
+            is_target, domain, platform = True, origin_domain, origin_platform
+            print(f"[Gateway Proxy] Cross-domain chat | {host} -> target={domain} (Origin/Referer)")
 
         host_role = get_target_host_role(domain) if domain else ""
         # ui = static/CDN UI host — skip only for pure static GETs with no body
@@ -957,7 +967,7 @@ class BrowserAIInterceptor:
                 multi_parts = iter_multipart_named_files(raw_bytes)
             except Exception:
                 multi_parts = []
-            cached_label = fname or "attachment"
+            cached_label = fname or ""
             for cache_dom in cache_domains:
                 if len(multi_parts) >= 2:
                     for i, (pname, pbytes) in enumerate(multi_parts):
@@ -973,7 +983,7 @@ class BrowserAIInterceptor:
                 else:
                     cache_upload_file(
                         cache_dom,
-                        file_name=fname or "attachment",
+                        file_name=fname or "",
                         raw_bytes=raw_bytes,
                         content_type=content_type,
                         upload_reason=upload_reason or "upload_endpoint",
@@ -987,12 +997,30 @@ class BrowserAIInterceptor:
             )
             # Upload/attach = cache only. Type detect → extract → Guard Rules →
             # Block/Allow/Warn runs on chat Send (any Target Website).
+            # Exception: file + typed prompt in ONE multipart POST is itself the Send.
+            if "multipart/" in (content_type or "").lower():
+                fields = multipart_text_fields(raw_bytes, content_type)
+                fields_json = json.dumps(fields, ensure_ascii=False) if fields else ""
+                typed = (
+                    _structural_user_text(fields_json, "application/json", min_score=STRUCT_STRONG_SCORE)
+                    if fields_json else None
+                )
+                if typed:
+                    blocked, n_processed, _ = self._file_send_maybe_block(
+                        flow, domain, platform, client_ip, fields_json, "application/json", path,
+                    )
+                    if blocked or n_processed > 0:
+                        return
+                    self._apply_http_prompt(flow, domain, platform, typed, client_ip, fields_json)
             return
 
-        # host_role=file: this host is upload/CDN only — skip pure chat DLP
-        if host_role == "file" and not _file_policy_applies_on_send(
-            path, raw_text, raw_bytes, domain=domain, host=host
-        ) and not attachment_send:
+        # host_role=file: this host is upload/CDN only — skip pure chat DLP unless path is a real chat endpoint
+        if (
+            host_role == "file"
+            and not is_chat_path(path, host, raw_text)
+            and not _file_policy_applies_on_send(path, raw_text, raw_bytes, domain=domain, host=host)
+            and not attachment_send
+        ):
             return
 
         # ── File Send: scan cached bytes; then still apply caption Guard Rules ──
@@ -1256,7 +1284,13 @@ class BrowserAIInterceptor:
             return
         is_target, domain, platform = detect_target(host)
         if not is_target:
-            return
+            # WS chat hub on another domain, opened from an admin Target page.
+            domain, platform = _origin_target(flow)
+            if not domain or not _structural_user_text(
+                websocket_frame_text(msg) or "", "application/json", min_score=STRUCT_STRONG_SCORE,
+            ):
+                return
+            is_target = True
 
         host_role = get_target_host_role(domain) if domain else ""
         if host_role == "file":

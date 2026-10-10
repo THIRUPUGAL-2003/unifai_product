@@ -31,6 +31,31 @@ from mitmproxy import http
 # Configuration
 # ─────────────────────────────────────────────
 
+def _load_dotenv() -> None:
+	d = os.path.abspath(os.getcwd())
+	for _ in range(6):
+		env_file = os.path.join(d, ".env")
+		if os.path.isfile(env_file):
+			try:
+				with open(env_file, "r", encoding="utf-8-sig") as f:
+					for line in f:
+						line = line.strip()
+						if not line or line.startswith("#") or "=" not in line:
+							continue
+						k, v = line.split("=", 1)
+						k, v = k.strip(), v.strip().strip("'\"")
+						if k and k not in os.environ:
+							os.environ[k] = v
+				break
+			except Exception:
+				pass
+		parent = os.path.dirname(d)
+		if parent == d:
+			break
+		d = parent
+
+_load_dotenv()
+
 def _env(*names: str, default: str = "") -> str:
 	"""Prefer GATEWAY_* then legacy GATEWAY_* / alternate keys."""
 	for name in names:
@@ -49,6 +74,8 @@ if not _env_backend:
 		_env_backend = f"http://{_env_host}:{_env_port}"
 	elif _env_host:
 		_env_backend = f"http://{_env_host}"
+	else:
+		_env_backend = "http://127.0.0.1:8080"
 
 GATEWAY_BACKEND_URL = _env_backend
 if GATEWAY_BACKEND_URL and not GATEWAY_BACKEND_URL.startswith("http://") and not GATEWAY_BACKEND_URL.startswith("https://"):
@@ -198,6 +225,16 @@ UPLOAD_CONTENT_TYPES = (
     "text/csv",
     "text/tab-separated-values",
     "application/csv",
+    "text/plain",
+    "text/x-",
+    "application/sql",
+    "application/javascript",
+    "application/x-javascript",
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-tar",
+    "application/gzip",
+    "application/x-7z-compressed",
     "image/",
     "video/",
     "audio/",
@@ -235,6 +272,8 @@ IGNORE_PATH_PATTERNS = [
     "/search/v2/navigate", "/rest/rate_limits", "/api/event",
     "/api/telemetry", "/api/analytics", "/api/stats",
     "/streamtimeline", "/reportviewing", "/report_viewing", "/event_logging",
+    "/read_state", "/clear_state", "/current_account", "/recent_conversations",
+    "/starred_conversations",
     # Grok/xAI typeahead — /rest/suggestions/stream contains the /stream chat marker.
     "/suggestions",
     "/getconversation", "/listconversations", "/recordaction",
@@ -1704,19 +1743,19 @@ def is_event_send_chat_submit(path: str, body: str = "") -> bool:
 def is_rest_sse_ask_submit(path: str, body: str = "") -> bool:
     """True only for Perplexity chat submit — not feed, auth, or telemetry."""
     path_l = (path or "").lower().split("?", 1)[0]
+    body_l = (body or "").lower()
     if any(
         marker in path_l
         for marker in (
             "perplexity_ask", "/rest/sse", "/rest/thread", "/rest/entrypoint",
-            "/rest/search", "/rest/chat",
+            "/rest/search", "/rest/chat", "/api/perplexity_ask",
             "/server-sent-events",
         )
     ):
         return True
-    if path_l.endswith("/chat") or "/api/chat" in path_l:
+    if "perplexity_ask" in body_l:
         return True
-    body_l = (body or "").lower()
-    if body_l and any(k in body_l for k in ('"query_str"', '"query"', '"user_query"', '"last_query"')):
+    if body_l and any(k in body_l for k in ('"query_str"', '"query"', '"user_query"', '"last_query"', '"search_query"')):
         if not any(x in body_l for x in ('"event":"ping"', '"type":"ping"', '"heartbeat"')):
             return True
     if body and body.lstrip().startswith("{"):
@@ -1733,4 +1772,7 @@ def is_rest_sse_ask_submit(path: str, body: str = "") -> bool:
                     val = params.get(key)
                     if isinstance(val, str) and val.strip():
                         return True
+    if ("socket.io" in path_l or "/socket.io" in path_l) and re.match(r'^\d+(?:/[^,]*,\s*)?[\[\{]', body.strip()):
+        return True
     return False
+

@@ -220,7 +220,7 @@ function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
 	if (text.includes("--- OCR extracted content ---")) {
 		const lines = text.split("\n");
 		const fileLine = lines.find((l) => l.startsWith("Attached file:")) || "";
-		const filename = fileLine.replace(/^Attached file:\s*/i, "").trim() || "image_ocr";
+		const filename = fileLine.replace(/^Attached file:\s*/i, "").trim() || "";
 		const splitIdx = text.indexOf("--- OCR extracted content ---");
 		const content = text.slice(splitIdx + "--- OCR extracted content ---".length).trim();
 		return { filename, category: "Image OCR", content, kind: "ocr" };
@@ -230,7 +230,7 @@ function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
 	if (text.startsWith("Attached file:") && text.includes("--- extracted content ---")) {
 		const splitIdx = text.indexOf("--- extracted content ---");
 		const header = text.slice(0, splitIdx).trim();
-		const filename = header.replace(/^Attached file:\s*/i, "").trim() || "file";
+		const filename = header.replace(/^Attached file:\s*/i, "").trim() || "";
 		const content = text.slice(splitIdx + "--- extracted content ---".length).trim();
 		const ext = filename.split(".").pop()?.toLowerCase() || "";
 		const lang = detectLanguageFromExt(ext);
@@ -241,7 +241,7 @@ function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
 	// Check Voice transcript
 	if (text.startsWith("Voice transcript") || text.includes("voice recording attached") || text.includes("[Voice Audio:")) {
 		const match = text.match(/^Voice transcript\s*(?:\(([^)]+)\))?:\s*([\s\S]*)$/i);
-		const filename = match?.[1] || "voice_recording.wav";
+		const filename = match?.[1]?.trim() || "";
 		const content = (match?.[2] || text).trim();
 		return { filename, category: "Voice Recording", content, kind: "voice" };
 	}
@@ -249,7 +249,7 @@ function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
 	// Check Attached zip
 	if (text.startsWith("Attached zip:")) {
 		const match = text.match(/^Attached zip:\s*([^\n]+)\n\n([\s\S]*)$/i);
-		const filename = match?.[1]?.trim() || "archive.zip";
+		const filename = match?.[1]?.trim() || "";
 		const content = (match?.[2] || "").trim();
 		return { filename, category: "Zip Archive", content, kind: "zip" };
 	}
@@ -258,7 +258,7 @@ function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
 	if (text.startsWith("Attached file:") || text.startsWith("Attached image:") || text.startsWith("[File:")) {
 		const lines = text.split("\n");
 		const first = lines[0];
-		let filename = "attachment";
+		let filename = "";
 		const m = first.match(/^(?:Attached file|Attached image|\[File):\s*([^()\n]+)/i);
 		if (m?.[1]) filename = m[1].trim();
 		const content = lines.slice(1).join("\n").trim() || text;
@@ -305,7 +305,8 @@ function formatUnifiedMultiFileContent(
 			idx++;
 		}
 		for (const img of images) {
-			manifestLines.push(`• Item ${idx}: "${img.filename || "Image"}" (Image - visual content attached below)`);
+			const imgLabel = img.filename ? `"${img.filename}"` : "";
+			manifestLines.push(`• Item ${idx}: ${imgLabel} (Image - visual content attached below)`);
 			idx++;
 		}
 		sections.push(manifestLines.join("\n"));
@@ -334,7 +335,7 @@ ${fence}${f.content}${closeFence}
 		imgLines.push(`[ATTACHED IMAGES FOR VISUAL ANALYSIS]`);
 		imgLines.push(`The following ${images.length} visual image(s) are attached in order:`);
 		images.forEach((img, i) => {
-			imgLines.push(`  - Image ${i + 1}: "${img.filename || `Image ${i + 1}`}"`);
+			imgLines.push(`  - Image ${i + 1}: ${img.filename ? `"${img.filename}"` : ""}`);
 		});
 		imgLines.push(`Please analyze these images in combination with the prompt and any text files above.`);
 		sections.push(imgLines.join("\n"));
@@ -691,7 +692,7 @@ export class Message {
 
 					// If it's a file attachment, keep extracted text or metadata only - purge raw file_data
 					if (item.type === "file") {
-						const filename = item.file?.filename || "file";
+						const filename = item.file?.filename || "";
 						return {
 							type: "text",
 							text: `Attached file: ${filename}\n\n[Extracted text preserved — raw binary file purged]`,
@@ -700,7 +701,7 @@ export class Message {
 
 					// If it's an image, keep filename and note - purge giant base64 data URL
 					if (item.type === "image_url") {
-						const filename = item.image_url?.filename || "image";
+						const filename = item.image_url?.filename || "";
 						return {
 							type: "text",
 							text: `Attached image: ${filename}\n\n[Extracted visual text preserved — raw image binary purged]`,
@@ -796,7 +797,7 @@ export class Message {
 								userTextParts.push(part.text.trim());
 							}
 						} else if (part.type === "image_url" && part.image_url) {
-							const filename = part.image_url.filename || "image";
+							const filename = part.image_url.filename || "";
 							imageInfos.push({ filename });
 							cleanedImageParts.push({
 								type: "image_url" as const,

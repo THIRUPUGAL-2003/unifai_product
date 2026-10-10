@@ -32,9 +32,11 @@ def _is_anthropic_messages_api_shape(path: str, body: str) -> bool:
     parent_message_uuid / max_tokens+messages.
     """
     path_l = (path or "").lower()
-    if _path_has_ignore_pattern(path_l):
+    if _path_has_ignore_pattern(path_l) or "read_state" in path_l or "clear_state" in path_l:
         return False
-    if any(x in path_l for x in ("/v1/messages", "chat_conversations", "append_message", "performaction")):
+    if any(x in path_l for x in ("/v1/messages", "append_message", "performaction")):
+        return True
+    if "chat_conversations" in path_l and any(x in path_l for x in ("completion", "message", "retry")):
         return True
     if not body or not body.lstrip().startswith("{"):
         return False
@@ -979,12 +981,29 @@ def _should_intercept_extracted_prompt(
         return False
     if is_noise(path, raw_text):
         return False
-    # File Send: keep short captions only in Prompt Logs (never document body dumps).
+    # File Send: keep user prompts only (never document body dumps).
     if _send_carries_attachment(raw_text) or (domain and _domain_has_pending_upload_cache(domain)):
-        if _looks_like_document_body_dump(text) or len(text) > 320:
+        if _looks_like_document_body_dump(text):
             return False
 
     confident = _is_confident_chat_send(path, raw_text, raw_bytes)
+
+    if not confident:
+        try:
+            structural = _structural_user_text(raw_text or "", "")
+        except Exception:
+            structural = None
+        if structural and structural.strip() == text and not is_event_sync_noise_content(raw_text or ""):
+            confident = True
+        elif (
+            (raw_text or "").strip() == text
+            and text[:1] not in "{[<"
+            and "\x00" not in text
+            and _struct_value_ok(text)
+            and not _looks_like_binary_or_wire_garbage(text)
+        ):
+            # text/plain Send: the whole body is the typed message.
+            confident = True
 
     if confident:
         # File body stays off this row. A long typed Send (numbers, symbols, paste) still predicts.
@@ -1214,7 +1233,7 @@ def detect_messages_parts_file_upload(
         if body_len >= 8:
             return True, f"File API ({path_l[:80]})"
     if "/backend-api/" in path_l:
-        if any(x in path_l for x in ("/sentinel/", "/prepare", "/autocomplet", "/me", "/settings")):
+        if any(x in path_l for x in ("/conversation", "/sentinel/", "/prepare", "/autocomplet", "/me", "/settings")):
             return False, ""
         if body_len >= 64 and (
             any(p in ct for p in UPLOAD_CONTENT_TYPES)
@@ -1877,8 +1896,8 @@ def _extract_from_urlencoded(text: str) -> str | None:
         if "f.req" in qs:
             for v in qs["f.req"]:
                 batchexecute_prompt = extract_batchexecute_prompt("f.req=" + v)
-                if batchexecute_prompt and looks_like_user_prompt(batchexecute_prompt) and not _is_opaque_wire_blob(batchexecute_prompt):
-                    return _clean_prompt_text(batchexecute_prompt)
+                if batchexecute_prompt and not _is_opaque_wire_blob(batchexecute_prompt):
+                    return batchexecute_prompt.strip()
         # Fallback: long user-like text (skip wire tokens).
         for k, vals in qs.items():
             if k in ("f.req", "req0___data__", "___data__", "soc-app", "soc-platform", "at", "f.sid"):
@@ -2209,8 +2228,10 @@ def _is_claude_wire_noise(s: str) -> bool:
     # Lone model identifiers (e.g. claude-3-5-sonnet-20241022)
     if re.fullmatch(r"claude-[0-9a-z\.\-]+", t, re.IGNORECASE) or re.fullmatch(r"anthropic\.[0-9a-z\.\-]+", t, re.IGNORECASE):
         return True
-    # Claude internal entity IDs: org_..., chat_..., msg_...
-    if re.fullmatch(r"(?:org|chat|msg|user)_[0-9a-zA-Z]{12,}", t):
+    # Claude internal entity / session / action IDs: org_..., chat_..., msg_..., sess_..., etc.
+    if re.fullmatch(r"(?:org|chat|msg|user|sess|session|sid|req|action|conv|batch|device)_[0-9a-zA-Z_\-]+", t, re.IGNORECASE):
+        return True
+    if _SESSION_ID_RE.match(t):
         return True
     # Standard role and MIME tokens (numbers like '0', '1', '42' are real user inputs, never noise)
     if t.lower() in ("text/plain", "application/json", "application/connect+proto"):
@@ -2622,7 +2643,7 @@ def _latest_typed_number_in_body(text: str) -> str | None:
         for m in re.finditer(pat, text):
             if m.start() < last_at:
                 continue
-            cand = _safe_unescape_prompt_str(raw).strip()
+            cand = _safe_unescape_prompt_str(m.group(1)).strip()
             if cand:
                 last = cand
                 last_at = m.start()
@@ -2631,15 +2652,197 @@ def _latest_typed_number_in_body(text: str) -> str | None:
     return None
 
 
+# Generic chat vocabulary (not per-site): value under these keys IS the typed text.
+_STRUCT_INTENT_KEYS = (
+    "prompt", "query", "query_str", "message", "input", "question", "user_input", "userinput",
+    "usermessage", "user_message", "user_prompt", "userprompt", "user_query", "userquery",
+    "rawuserquery", "last_query", "utterance", "transcript", "transcription", "q", "ask",
+    "instruction", "chat_input", "chatinput", "messageinput", "message_input", "input_text",
+    "prompt_text", "follow_up_input", "msg", "text", "content", "parts", "body", "value",
+)
+_STRUCT_KEY_RANK = {k: i for i, k in enumerate(_STRUCT_INTENT_KEYS)}
+_STRUCT_ROLE_KEYS = ("role", "author", "sender", "from", "speaker", "participant", "type")
+_STRUCT_USER_ROLES = frozenset({"user", "human", "customer", "me", "end_user", "enduser"})
+_STRUCT_OTHER_ROLES = frozenset({
+    "assistant", "system", "model", "bot", "ai", "tool", "function", "developer", "agent",
+})
+_GRAPHQL_DOC_RE = re.compile(r"^\s*(?:mutation|query|subscription|fragment)\b[^{]*\{", re.I)
+_BASE64ISH_RE = re.compile(r"[A-Za-z0-9+/=_-]{40,}")
+
+
+def _struct_value_ok(s: str) -> bool:
+    t = (s or "").strip()
+    if not t or len(t) > 200_000:
+        return False
+    if " " not in t:
+        if _UUID_LIKE_RE.fullmatch(t) or _BASE64ISH_RE.fullmatch(t):
+            return False
+        if re.fullmatch(r"(?:https?|wss?|blob|file-service|sediment)://\S*|data:\S+", t, re.I):
+            return False
+    if _GRAPHQL_DOC_RE.match(t):
+        return False
+    if t[:1] in "{[" and t[-1:] in "}]":
+        try:
+            json.loads(t)
+            return False
+        except Exception:
+            pass
+    return True
+
+
+def _struct_role(d: dict) -> str:
+    for k in _STRUCT_ROLE_KEYS:
+        v = d.get(k)
+        if isinstance(v, dict):
+            v = v.get("role") or v.get("type") or ""
+        if isinstance(v, str):
+            low = v.strip().lower()
+            if low in _STRUCT_USER_ROLES:
+                return "user"
+            if low in _STRUCT_OTHER_ROLES:
+                return "other"
+    return ""
+
+
+def _struct_text_of(v) -> str:
+    """String, list of strings, or list/dict of {type:text,text:...} blocks → text."""
+    if isinstance(v, str):
+        return v if _struct_value_ok(v) else ""
+    if isinstance(v, bool):
+        return ""
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, list):
+        chunks = []
+        for item in v:
+            if isinstance(item, str):
+                if _struct_value_ok(item):
+                    chunks.append(item)
+            elif isinstance(item, dict):
+                kind = str(item.get("type") or "").lower()
+                if kind and "text" not in kind and kind not in ("input", "message", "paragraph"):
+                    continue
+                for k in ("text", "input_text", "value", "content"):
+                    if isinstance(item.get(k), str) and _struct_value_ok(item[k]):
+                        chunks.append(item[k])
+                        break
+        return "\n".join(c.strip() for c in chunks if c.strip())
+    if isinstance(v, dict):
+        for k in ("parts", "text", "content", "value", "body"):
+            if k in v:
+                got = _struct_text_of(v[k])
+                if got:
+                    return got
+    return ""
+
+
+def _struct_walk(node, depth: int, out: list, counter: list) -> None:
+    if depth > 10:
+        return
+    if isinstance(node, str):
+        s = node.strip()
+        if s[:1] in "{[" and len(s) < 500_000:
+            try:
+                _struct_walk(json.loads(s), depth + 1, out, counter)
+            except Exception:
+                pass
+        return
+    if isinstance(node, list):
+        for item in node:
+            _struct_walk(item, depth + 1, out, counter)
+        return
+    if not isinstance(node, dict):
+        return
+    role = _struct_role(node)
+    if role == "other":
+        return
+    if role == "user":
+        for k in ("content", "parts", "text", "message", "body", "value", "input", "prompt"):
+            if k in node:
+                got = _struct_text_of(node[k])
+                if got:
+                    counter[0] += 1
+                    out.append((1000, counter[0], got))
+                    return
+    for k, v in node.items():
+        rank = _STRUCT_KEY_RANK.get(str(k).lower())
+        if rank is not None and not isinstance(v, dict):
+            got = _struct_text_of(v)
+            if got:
+                counter[0] += 1
+                out.append((500 - rank * 5 - depth, counter[0], got))
+                continue
+        if isinstance(v, (dict, list)) or (isinstance(v, str) and v.lstrip()[:1] in "{["):
+            _struct_walk(v, depth + 1, out, counter)
+
+
+def _structural_user_text(body: str, content_type: str = "", min_score: int = 0) -> str | None:
+    """Typed user text taken from the body's structure (any site, any domain).
+
+    Last user-role message wins; otherwise the best-ranked chat key. The value is
+    trusted as-is (numbers, symbols, emoji, 1 char, snake_case, any language).
+    min_score > 0 keeps only strong evidence (user-role message / top-level prompt key).
+    """
+    text = (body or "").strip()
+    if not text:
+        return None
+    ct = (content_type or "").lower()
+    data = None
+    if text[:1] in "{[":
+        try:
+            data = json.loads(text)
+        except Exception:
+            data = None
+    if data is None and ("x-www-form-urlencoded" in ct or (
+        "=" in text and "\n" not in text and " " not in text and text[:1] not in "{[<"
+    )):
+        try:
+            from urllib.parse import parse_qsl
+            pairs = parse_qsl(text, keep_blank_values=False)
+        except Exception:
+            pairs = []
+        if pairs:
+            data = {}
+            for k, v in pairs:
+                data.setdefault(k, v)
+    if data is None:
+        if min_score <= 0 and ct.startswith("text/plain") and "\x00" not in text and not _looks_like_binary_or_wire_garbage(text):
+            return text if _struct_value_ok(text) else None
+        return None
+    out: list = []
+    _struct_walk(data, 0, out, [0])
+    if not out:
+        return None
+    best = max(out, key=lambda c: (c[0], c[1]))
+    if best[0] < min_score:
+        return None
+    return best[2].strip() or None
+
+
+STRUCT_STRONG_SCORE = 395
+
+
 def extract_prompt_universal(body_bytes: bytes, content_type: str = "", host: str = "", url: str = "") -> str | None:
-    got = _unwrap_json_prompt(_extract_prompt_universal_raw(body_bytes, content_type, host, url))
     try:
         body = body_bytes.decode("utf-8", errors="ignore") if body_bytes else ""
     except Exception:
         body = ""
-    number = _latest_typed_number_in_body(body)
-    if number and (not got or not str(got).strip().isdigit()):
-        return number
+    try:
+        structural = _structural_user_text(body, content_type)
+    except Exception:
+        structural = None
+    if structural:
+        return structural
+    try:
+        got = _unwrap_json_prompt(_extract_prompt_universal_raw(body_bytes, content_type, host, url))
+    except Exception:
+        got = None
+    try:
+        number = _latest_typed_number_in_body(body)
+        if number and (not got or not str(got).strip().isdigit()):
+            return number
+    except Exception:
+        pass
     return got
 
 
@@ -2901,6 +3104,11 @@ def detect_file_upload(flow: http.HTTPFlow, raw_content: str) -> tuple[bool, str
             if body_len < 8192:
                 return False, ""
 
+    # Cloud Blob / AI CDN upload (e.g. Azure BlockBlob, ChatGPT files.oaiusercontent.com, Claude CDN)
+    ms_blob = ((headers.get("x-ms-blob-type") or headers.get("x-ms-blob-content-type")) or "").lower()
+    if (ms_blob or "/file-" in path_only or "oaiusercontent.com" in host or "claudeusercontent.com" in host) and body_len >= 32:
+        return True, f"Cloud Blob Storage Upload ({host})"
+
     # Google resumable: only real byte transfer / finalize — not session "start"/"query"
     goog_cmd = (headers.get("x-goog-upload-command", "") or "").lower()
     if goog_cmd:
@@ -2962,10 +3170,20 @@ def detect_file_upload(flow: http.HTTPFlow, raw_content: str) -> tuple[bool, str
     chat_submit = is_chat_path(path, host, raw)
     if not chat_submit:
         for prefix in UPLOAD_CONTENT_TYPES:
-            if prefix in content_type and body_len >= 64:
-                # Skip generic application/json mistaken as upload
-                if prefix in ("application/pdf", "image/", "audio/", "video/", "application/octet-stream",
-                              "application/msword", "application/vnd.", "text/csv", "text/tab-separated-values", "application/csv"):
+            if prefix in content_type and body_len >= 32:
+                # Skip generic application/json mistaken as upload unless on upload endpoint/cdn
+                if prefix == "application/json" and not ("/file" in path_only or "oaiusercontent" in host or "claudeusercontent" in host):
+                    continue
+                if (
+                    prefix in (
+                        "application/pdf", "image/", "audio/", "video/", "application/octet-stream",
+                        "application/msword", "application/vnd.", "text/csv", "text/tab-separated-values", "application/csv",
+                        "text/", "application/javascript", "application/x-javascript", "application/sql",
+                        "application/xml", "text/xml", "application/zip", "application/x-zip-compressed",
+                        "application/x-tar", "application/gzip", "application/x-7z-compressed"
+                    )
+                    or "text/" in prefix
+                ):
                     return True, f"File content-type ({content_type.split(';')[0]})"
 
     # JSON attachment heuristics: NEVER on chat submit

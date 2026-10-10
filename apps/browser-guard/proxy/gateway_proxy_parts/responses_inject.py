@@ -260,6 +260,46 @@ def _ws_frames_universal(reply: str) -> list[bytes]:
     return frames
 
 
+def _ws_frames_socketio(reply: str, last_client_msg: str = "") -> list[bytes]:
+    """
+    Socket.IO / Engine.IO protocol frames (Perplexity, OpenWebUI, LibreChat, custom bots).
+    Engine.IO packet 4 = message; Socket.IO packet 2 = event.
+    Must start with 42[...] or 43<id>[...] so the browser socket.io client parses them cleanly.
+    """
+    ask_evt = {
+        "text": reply,
+        "answer": reply,
+        "status": "completed",
+        "final": True,
+        "step_type": "FINAL",
+        "display_model": "Gateway Guard",
+        "blocks": [{
+            "intended_usage": "ask_text",
+            "markdown_block": {"answer": reply, "chunks": [reply]},
+        }],
+        "text_chunks": [reply],
+        "message": reply,
+        "content": reply,
+        "error": None,
+        "gateway_blocked": True,
+    }
+    evt_json = json.dumps(ask_evt, ensure_ascii=False)
+    frames = [
+        f'42["query_progress",{evt_json}]'.encode("utf-8"),
+        f'42["query_answered",{evt_json}]'.encode("utf-8"),
+        f'42["perplexity_ask",{evt_json}]'.encode("utf-8"),
+        f'42["message",{evt_json}]'.encode("utf-8"),
+        f'42["chat",{{"message":{json.dumps(reply)},"text":{json.dumps(reply)},"content":{json.dumps(reply)}}}]'.encode("utf-8"),
+        f'42["response",{{"message":{json.dumps(reply)},"text":{json.dumps(reply)},"content":{json.dumps(reply)}}}]'.encode("utf-8"),
+    ]
+    if last_client_msg:
+        m = re.match(r"^42(\d+)", last_client_msg.strip())
+        if m:
+            ack_id = m.group(1)
+            frames.append(f'43{ack_id}[{evt_json}]'.encode("utf-8"))
+    return frames
+
+
 def _drop_websocket_outbound(msg) -> None:
     """Stop a client WebSocket Send from reaching the site. Empty payload if drop is late."""
     try:
@@ -297,7 +337,7 @@ def _run_on_event_loop(fn) -> None:
 def inject_websocket_reply(flow: http.HTTPFlow, host: str, reply_text: str) -> None:
     """
     Push an in-chat assistant reply over WebSocket for ANY monitored Target Website.
-    Uses universal frame shapes — prioritizing SignalR if Copilot/Sydney.
+    Uses universal frame shapes — prioritizing SignalR if Copilot/Sydney, Socket.IO if Perplexity.
     """
     reply = (reply_text or "").strip()
     if not reply or not flow.websocket:
@@ -316,9 +356,24 @@ def inject_websocket_reply(flow: http.HTTPFlow, host: str, reply_text: str) -> N
         "\x1e" in (websocket_frame_text(m) or "")
         for m in list(flow.websocket.messages or [])[-40:]
     )
+    is_socketio = (
+        any(x in path_l for x in ("socket.io", "engine.io"))
+        or any(x in host_l for x in ("perplexity.ai", "openwebui", "librechat"))
+        or any(
+            re.match(r"^\d+(?:/[^,]*,\s*)?[\[\{]", (websocket_frame_text(m) or "").strip())
+            for m in list(flow.websocket.messages or [])[-30:]
+        )
+    )
 
     if is_signalr:
         frames = _ws_frames_signalr(reply) + _ws_frames_universal(reply)
+    elif is_socketio:
+        last_client_text = ""
+        for m in reversed(flow.websocket.messages or []):
+            if getattr(m, "from_client", False):
+                last_client_text = (websocket_frame_text(m) or "").strip()
+                break
+        frames = _ws_frames_socketio(reply, last_client_text)
     else:
         frames = _ws_frames_universal(reply)
 
@@ -574,24 +629,56 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
 
     # ── Perplexity (request shape) ──
     if is_rest_sse_ask_submit(path, raw_body):
-        # Ask-text UIs read text, or a markdown block. Same reply, both shapes.
+        # Ask-text UIs read text, answer, or a markdown block. Same reply across all shapes.
         ask_evt = {
             "text": msg,
             "answer": msg,
             "status": "completed",
             "final": True,
+            "step_type": "FINAL",
+            "display_model": "Gateway Guard",
             "blocks": [{
                 "intended_usage": "ask_text",
                 "markdown_block": {"answer": msg, "chunks": [msg]},
             }],
+            "text_chunks": [msg],
+            "message": msg,
+            "content": msg,
+            "error": None,
+            "gateway_blocked": True,
         }
-        pplx = (
-            f"event: message\ndata: {json.dumps(ask_evt, ensure_ascii=False)}\n\n"
+        ask_json = json.dumps(ask_evt, ensure_ascii=False)
+
+        # Socket.io polling transport
+        if "/socket.io" in path:
+            sio_poll = (
+                f'42["query_progress",{ask_json}]\n'
+                f'42["query_answered",{ask_json}]\n'
+                f'42["perplexity_ask",{ask_json}]'
+            )
+            flow.response = http.Response.make(
+                200,
+                sio_poll.encode("utf-8"),
+                {**common_headers, "Content-Type": "text/plain; charset=UTF-8"},
+            )
+            return
+
+        pplx_sse = (
+            f"data: {ask_json}\n\n"
+            f"event: message\ndata: {ask_json}\n\n"
             "data: [DONE]\n\n"
         )
+        if "application/json" in accept and "event-stream" not in accept and "/sse" not in path:
+            flow.response = http.Response.make(
+                200,
+                ask_json.encode("utf-8"),
+                {**common_headers, "Content-Type": "application/json; charset=utf-8"},
+            )
+            return
+
         flow.response = http.Response.make(
             200,
-            pplx.encode("utf-8"),
+            pplx_sse.encode("utf-8"),
             {**common_headers, "Content-Type": "text/event-stream; charset=utf-8"},
         )
         return
@@ -634,23 +721,26 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
 
     # ── OpenAI-compatible SSE (Accept/path/body stream flag — any admin-added domain) ──
     raw_low = (raw_body or "").lower()
-    wants_stream = (
+    is_explicit_non_stream = '"stream":false' in raw_low.replace(" ", "") or '"stream": false' in raw_low
+    wants_stream = not is_explicit_non_stream and (
         "event-stream" in accept
         or "chat/completions" in path
+        or "/api/chat" in path
         or "/stream" in path
         or path.endswith("/stream")
+        or ("mistral" in host_l and ("/chat" in path or "/api" in path))
         or "stream" in path and ("completion" in path or "chat" in path or "generate" in path)
         or '"stream":true' in raw_low.replace(" ", "")
         or '"stream": true' in raw_low
     )
-    if wants_stream or "completion" in path:
+    if wants_stream:
         # Session-completion pages read delta.content, a plain "v" string, or "text".
         chunk = {
             "id": "gateway-reply",
             "object": "chat.completion.chunk",
             "choices": [{
                 "index": 0,
-                "delta": {"role": "assistant", "content": msg},
+                "delta": {"role": "assistant", "content": msg, "text": msg, "type": "text"},
                 "finish_reason": None,
             }],
             "v": msg,
@@ -729,7 +819,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             "conversation", "thread", "query", "agent", "llm", "ai/",
         )
     )
-    if chatty_path:
+    if chatty_path and not is_explicit_non_stream and not ("application/json" in accept and "event-stream" not in accept):
         sse_lines = (
             f"data: {json.dumps({'text': msg, 'message': msg, 'content': msg, 'role': 'assistant'}, ensure_ascii=False)}\n\n"
             f"data: {json.dumps({'choices': [{'delta': {'content': msg}, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
