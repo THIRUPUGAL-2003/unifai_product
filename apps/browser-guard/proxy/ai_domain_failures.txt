@@ -1,2 +1,0 @@
-Domains with prompt capture FAIL:
-
