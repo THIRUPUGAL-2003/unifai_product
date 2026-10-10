@@ -2677,10 +2677,15 @@ func (s *RDBConfigStore) GetUserByID(ctx context.Context, id string) (*tables.Ta
 	return &user, nil
 }
 
-// GetUserByUsername retrieves a specific user by username.
+// GetUserByUsername retrieves a user by username. Match is case-insensitive so
+// "Sakth" and "sakth" are the same account at login and forgot-password.
 func (s *RDBConfigStore) GetUserByUsername(ctx context.Context, username string) (*tables.TableUser, error) {
 	var user tables.TableUser
-	if err := s.DB().WithContext(ctx).First(&user, "username = ?", username).Error; err != nil {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, ErrNotFound
+	}
+	if err := s.DB().WithContext(ctx).Where("LOWER(username) = LOWER(?)", username).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}

@@ -332,6 +332,11 @@ func (h *SessionHandler) getAdminCredentials(ctx *fasthttp.RequestCtx) (adminUse
 	return adminCredentialsFromStore(ctx, h.configStore)
 }
 
+// isUserLookupMiss is a missing account. Any other error is a database failure.
+func isUserLookupMiss(err error) bool {
+	return errors.Is(err, configstore.ErrNotFound) || errors.Is(err, gorm.ErrRecordNotFound)
+}
+
 // isMatchingAdminIdentity checks whether an entered identifier (username or email)
 // corresponds to the built-in super admin account.
 func isMatchingAdminIdentity(identity, adminUsername, adminEmail string) bool {
@@ -448,14 +453,32 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 
 	if !authenticated {
 		dbUser, dbErr := h.configStore.GetUserByUsername(ctx, payload.Username)
+		if dbErr != nil && !isUserLookupMiss(dbErr) {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Could not look up the account. Try again shortly.")
+			return
+		}
 		if (dbErr != nil || dbUser == nil) && strings.Contains(payload.Username, "@") {
 			byEmail, emailErr := h.configStore.GetUserByEmail(ctx, strings.ToLower(payload.Username))
+			if emailErr != nil && !isUserLookupMiss(emailErr) {
+				SendError(ctx, fasthttp.StatusInternalServerError, "Could not look up the account. Try again shortly.")
+				return
+			}
 			if emailErr == nil && byEmail != nil {
 				dbUser = byEmail
 				dbErr = nil
 			}
 		}
 		if dbErr == nil && dbUser != nil {
+			// One lockout counter for the stored username, whatever case was typed.
+			lockoutKey = dbUser.Username
+			if locked, retryAfter, err := checkLoginLockout(h.configStore, ctx, lockoutKey); err != nil {
+				SendError(ctx, fasthttp.StatusInternalServerError, "Failed to check login lockout")
+				return
+			} else if locked {
+				mins := lockoutRetryMinutes(ctx, retryAfter)
+				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Try again in about %d minutes", mins))
+				return
+			}
 			compare, cmpErr := encrypt.CompareHash(dbUser.Password, payload.Password)
 			if cmpErr != nil || !compare {
 				h.recordAuthAudit(ctx, "login", "failure", payload.Username, "/api/session/login", start)
@@ -473,8 +496,9 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 				return
 			}
 			if !dbUser.IsApproved() {
+				// Password was correct. Pending, rejected, disabled, and unverified
+				// accounts are not credential failures and must not lock the office IP.
 				h.recordAuthAudit(ctx, "login", "failure", payload.Username, "/api/session/login", start)
-				_, _ = recordLoginIPFailure(h.configStore, ctx)
 				switch strings.ToLower(strings.TrimSpace(dbUser.Status)) {
 				case tables.UserStatusPending:
 					SendError(ctx, fasthttp.StatusForbidden, "Your registration is waiting for admin approval")
@@ -1198,12 +1222,22 @@ func (h *SessionHandler) forgotPassword(ctx *fasthttp.RequestCtx) {
 
 	var user *tables.TableUser
 	if payload.Username != "" {
-		if u, err := h.configStore.GetUserByUsername(ctx, payload.Username); err == nil {
+		u, err := h.configStore.GetUserByUsername(ctx, payload.Username)
+		if err != nil && !isUserLookupMiss(err) {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Could not look up the account. Try again shortly.")
+			return
+		}
+		if err == nil {
 			user = u
 		}
 	}
 	if user == nil && payload.Email != "" {
-		if u, err := h.configStore.GetUserByEmail(ctx, payload.Email); err == nil {
+		u, err := h.configStore.GetUserByEmail(ctx, payload.Email)
+		if err != nil && !isUserLookupMiss(err) {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Could not look up the account. Try again shortly.")
+			return
+		}
+		if err == nil {
 			user = u
 		}
 	}
