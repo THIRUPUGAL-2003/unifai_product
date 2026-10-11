@@ -840,7 +840,9 @@ function isPdfFile(file: File, mimeType: string): boolean {
  * Convert one or more files into message attachments.
  * Zip archives are expanded and each supported inner file is imported.
  */
-export async function filesToAttachments(files: FileList | File[]): Promise<MessageContent[]> {
+export type AttachmentImportOptions = { apiKeyId?: string };
+
+export async function filesToAttachments(files: FileList | File[], opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	const attachments: MessageContent[] = [];
 	for (const file of Array.from(files)) {
 		const error = validatePromptAttachmentFile(file);
@@ -851,11 +853,11 @@ export async function filesToAttachments(files: FileList | File[]): Promise<Mess
 		try {
 			const mimeType = resolveFileMimeType(file);
 			if (isZipFile(file, mimeType)) {
-				const fromZip = await attachmentsFromZip(file);
+				const fromZip = await attachmentsFromZip(file, opts);
 				attachments.push(...fromZip);
 				continue;
 			}
-			const expanded = await expandFileAttachments(file);
+			const expanded = await expandFileAttachments(file, opts);
 			attachments.push(...expanded);
 		} catch (err) {
 			const message = err instanceof Error ? err.message : `Failed to import "${file.name}"`;
@@ -865,7 +867,7 @@ export async function filesToAttachments(files: FileList | File[]): Promise<Mess
 	return attachments;
 }
 
-async function attachmentsFromZip(zipFile: File): Promise<MessageContent[]> {
+async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	toast.message(`Unpacking ${zipFile.name}…`);
 	const { files, skipped, errors } = await extractZipInnerFiles(zipFile);
 	if (files.length === 0) {
@@ -884,9 +886,9 @@ async function attachmentsFromZip(zipFile: File): Promise<MessageContent[]> {
 		}
 		try {
 			if (isImageFile(inner)) {
-				out.push(...(await imageFileAttachments(inner, resolveFileMimeType(inner))));
+				out.push(...(await imageFileAttachments(inner, resolveFileMimeType(inner), opts)));
 			} else {
-				const attachment = await fileToAttachment(inner);
+				const attachment = await fileToAttachment(inner, opts);
 				if (attachment) out.push(attachment);
 			}
 		} catch (err) {
@@ -910,10 +912,10 @@ function textAttachmentFromExtract(fileName: string, extracted: string): Message
 	};
 }
 
-async function tryPdfOcr(file: File): Promise<MessageContent | null> {
+async function tryPdfOcr(file: File, opts?: AttachmentImportOptions): Promise<MessageContent | null> {
 	toast.message(`Running OCR on scanned PDF ${file.name}…`);
 	const dataUrl = await fileToBase64(file);
-	const ocr = await ocrPdfFile(dataUrl);
+	const ocr = await ocrPdfFile(dataUrl, { apiKeyId: opts?.apiKeyId });
 	if (ocr?.text) {
 		toast.success(`OCR extracted text from ${file.name} (${ocr.model})`);
 		return ocrTextAttachment(file.name, ocr.text);
@@ -927,14 +929,14 @@ function isVideoFile(file: File, mimeType: string): boolean {
 }
 
 /** Image import keeps the picture for vision models and always extracts readable text (OCR / SVG). */
-async function imageFileAttachments(file: File, mimeType: string): Promise<MessageContent[]> {
+async function imageFileAttachments(file: File, mimeType: string, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	const out: MessageContent[] = [];
 	const dataUrl = await normalizeImageForModel(file, mimeType);
 	const ocrSource = dataUrl || (await fileToBase64(file));
 	let extracted = "";
 	if (ocrSource.startsWith("data:image/") || ocrSource.startsWith("data:application/")) {
 		toast.message(`Extracting text from image ${file.name}…`);
-		const ocr = await ocrImageFile(ocrSource);
+		const ocr = await ocrImageFile(ocrSource, { apiKeyId: opts?.apiKeyId });
 		if (ocr?.text?.trim()) extracted = ocr.text.trim();
 	}
 	if (!extracted && (file.name.toLowerCase().endsWith(".svg") || mimeType.includes("svg"))) {
@@ -971,24 +973,24 @@ async function imageFileAttachments(file: File, mimeType: string): Promise<Messa
 }
 
 /** One picked file can become several message parts (image + extracted text, zip members, etc.). */
-async function expandFileAttachments(file: File): Promise<MessageContent[]> {
+async function expandFileAttachments(file: File, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	const mimeType = resolveFileMimeType(file);
 	if (isZipFile(file, mimeType)) {
-		return attachmentsFromZip(file);
+		return attachmentsFromZip(file, opts);
 	}
 	if (isImageFile(file, mimeType)) {
-		return imageFileAttachments(file, mimeType);
+		return imageFileAttachments(file, mimeType, opts);
 	}
-	const one = await fileToAttachment(file);
+	const one = await fileToAttachment(file, opts);
 	return one ? [one] : [];
 }
 
-export async function fileToAttachment(file: File): Promise<MessageContent | null> {
+export async function fileToAttachment(file: File, opts?: AttachmentImportOptions): Promise<MessageContent | null> {
 	const mimeType = resolveFileMimeType(file);
 
 	if (isZipFile(file, mimeType)) {
 		// Prefer filesToAttachments (keeps each inner file separate). Single-return path combines text.
-		const many = await attachmentsFromZip(file);
+		const many = await attachmentsFromZip(file, opts);
 		if (many.length === 0) return null;
 		if (many.length === 1) return many[0];
 		const combined = many
@@ -1008,25 +1010,23 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 	}
 
 	if (isImageFile(file, mimeType)) {
-		const parts = await imageFileAttachments(file, mimeType);
+		const parts = await imageFileAttachments(file, mimeType, opts);
 		return parts[0] ?? null;
 	}
 
 	if (mimeType.startsWith("audio/") || isVideoFile(file, mimeType)) {
 		const normalized = (await normalizeAudioToWavFile(file)) || file;
 		toast.message("Transcribing voice with Whisper…");
-		const transcript = await transcribeAudioFile(normalized);
-		if (transcript?.text) {
+		const transcript = await transcribeAudioFile(normalized, { apiKeyId: opts?.apiKeyId });
+		if (transcript && transcript.text) {
 			toast.success(`Voice transcribed (${transcript.model})`);
 			return voiceTranscriptAttachment(file.name, transcript.text);
 		}
-		toast.message("Whisper unavailable — voice transcribed as text reference", {
-			description: "Configure an OpenAI Whisper key/model for speech-to-text.",
+		const reason = transcript && "error" in transcript ? transcript.error : "no transcript";
+		toast.error(`Voice was not transcribed: ${reason}`, {
+			description: "The recording was not sent as the prompt. Check the selected key and a Whisper model, then record again.",
 		});
-		return textAttachmentFromExtract(
-			file.name,
-			`[Voice Audio: ${file.name} (${normalized.type || mimeType}) — voice recording attached]`,
-		);
+		return null;
 	}
 
 	const extracted = await extractPromptFileText(file, mimeType);
@@ -1034,7 +1034,7 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 
 	// Scanned / image-only PDF: text layer empty or thin → OCR document_url
 	if (pdf && isThinExtractedText(extracted)) {
-		const ocrAtt = await tryPdfOcr(file);
+		const ocrAtt = await tryPdfOcr(file, opts);
 		if (ocrAtt) return ocrAtt;
 		if (extracted && extracted.trim()) {
 			toast.message(`Using thin PDF text layer for ${file.name}`, {
@@ -1053,12 +1053,10 @@ export async function fileToAttachment(file: File): Promise<MessageContent | nul
 		return textAttachmentFromExtract(file.name, extracted);
 	}
 
-	// Always store as extracted text representation — never store heavy raw binary files
-	toast.message(`Attached "${file.name}" (text extract)`);
-	return textAttachmentFromExtract(
-		file.name,
-		`[File: ${file.name} (${mimeType || "document"}, ${(file.size / 1024).toFixed(1)} KB) — plain text extraction completed]`,
-	);
+	toast.error(`No text extractor for "${file.name}"`, {
+		description: "This format is not PDF, Office, OpenDocument, spreadsheet, image, audio, or plain text. It was not added to the prompt.",
+	});
+	return null;
 }
 
 export function getAttachmentDisplayName(attachment: MessageContent): string {

@@ -260,11 +260,11 @@ export function NewMessageInputView() {
 		if (pastedFiles.length === 0) return;
 
 		e.preventDefault();
-		const newAttachments = await filesToAttachments(pastedFiles);
+		const newAttachments = await filesToAttachments(pastedFiles, { apiKeyId });
 		if (newAttachments.length > 0) {
 			handleAddAttachments(newAttachments);
 		}
-	}, [canAttach, handleAddAttachments]);
+	}, [apiKeyId, canAttach, handleAddAttachments]);
 
 	const [isDragging, setIsDragging] = useState(false);
 	const dragCounterRef = useRef(0);
@@ -307,12 +307,12 @@ export function NewMessageInputView() {
 			const files = e.dataTransfer.files;
 			if (!files || files.length === 0) return;
 
-			const newAttachments = await filesToAttachments(files);
+			const newAttachments = await filesToAttachments(files, { apiKeyId });
 			if (newAttachments.length > 0) {
 				handleAddAttachments(newAttachments);
 			}
 		},
-		[canAttach, handleAddAttachments],
+		[apiKeyId, canAttach, handleAddAttachments],
 	);
 
 	const hasImageAttachment = attachmentNeedsVision(attachments);

@@ -37,10 +37,14 @@ function parseTranscriptionText(data: unknown): string {
  * Transcribe audio via gateway `/v1/audio/transcriptions` (Whisper-compatible).
  * Tries a few common model ids until one succeeds.
  */
+export type TranscriptionResult =
+	| { text: string; model: string }
+	| { text: ""; model: ""; error: string };
+
 export async function transcribeAudioFile(
 	file: File,
 	opts?: { apiKeyId?: string; models?: string[]; signal?: AbortSignal },
-): Promise<{ text: string; model: string } | null> {
+): Promise<TranscriptionResult | null> {
 	const models = (opts?.models?.length ? opts.models : DEFAULT_TRANSCRIPTION_MODELS).filter(Boolean);
 	const auth = buildAuthHeaders(opts?.apiKeyId);
 	let lastError = "";
@@ -96,6 +100,7 @@ export async function transcribeAudioFile(
 
 	if (lastError) {
 		console.warn("Whisper transcription failed:", lastError);
+		return { text: "", model: "", error: lastError };
 	}
 	return null;
 }

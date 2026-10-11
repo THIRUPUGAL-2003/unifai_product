@@ -4,6 +4,7 @@ import type { MessageContent } from "@/lib/message";
 import { Check, Mic, Paperclip, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { usePromptContext } from "../context";
 import { fileToAttachment, filesToAttachments, PROMPT_FILE_ACCEPT, PROMPT_FILE_ACCEPT_LABEL } from "../utils/attachment";
 import { transcribeAudioFile, voiceTranscriptAttachment } from "../utils/transcribeAudio";
 
@@ -66,6 +67,7 @@ export function PromptFileImportBar({
 	onRecordingCancel,
 	className = "",
 }: PromptFileImportBarProps) {
+	const { apiKeyId } = usePromptContext();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [isRecording, setIsRecording] = useState(false);
 	const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -98,12 +100,12 @@ export function PromptFileImportBar({
 
 	const addFiles = useCallback(
 		async (files: FileList | File[]) => {
-			const attachments = await filesToAttachments(files);
+			const attachments = await filesToAttachments(files, { apiKeyId });
 			if (attachments.length > 0) {
 				onAttachmentsAdded(attachments);
 			}
 		},
-		[onAttachmentsAdded],
+		[apiKeyId, onAttachmentsAdded],
 	);
 
 	const cleanupStream = useCallback(() => {
@@ -332,7 +334,13 @@ export function PromptFileImportBar({
 				const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: recordedMimeType });
 
 				toast.message("Transcribing voice audio…");
-				const whisperResult = await transcribeAudioFile(file);
+				const whisperResult = await transcribeAudioFile(file, { apiKeyId });
+				if (whisperResult && "error" in whisperResult) {
+					toast.error(`Voice was not transcribed: ${whisperResult.error}`, {
+						description: "Check the selected key and a Whisper model, then record again.",
+					});
+					return;
+				}
 				if (whisperResult?.text?.trim()) {
 					const text = whisperResult.text.trim();
 					if (onTextExtractedRef.current) {
@@ -347,7 +355,7 @@ export function PromptFileImportBar({
 				}
 
 				// Option C: Raw audio attachment fallback
-				const attachment = await fileToAttachment(file);
+				const attachment = await fileToAttachment(file, { apiKeyId });
 				if (attachment) {
 					onAttachmentsAdded([attachment]);
 					toast.success("Voice recording attached");

@@ -1517,56 +1517,26 @@ export default function BrowserAiPage() {
 			setRuleError("Rule name is required.");
 			return;
 		}
-		if (newRuleType === "ai_bot") {
-			if (!newRuleBotPrompt.trim() && !newRuleBotReferenceImage.trim()) {
-				setRuleError("Security policy prompt or reference template image is required for AI Guard Bot.");
-				return;
-			}
-			if (newRuleBotEvalMode === "ai" && newRuleBotPrompt.trim() && newRuleBotPrompt.trim().split(/\s+/).length < 2) {
-				setRuleError("Security policy is too short. Describe clearly what should be blocked.");
-				return;
-			}
-			if (newRuleBotEvalMode === "regex" && !newRuleGeneratedPattern.trim()) {
-				setRuleError("Generate or enter a regex pattern, or switch to AI Prompt evaluate mode.");
-				return;
-			}
-			if (newRuleBotEvalMode === "ai") {
-				if (!newRuleBotProvider.trim() || newRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER) {
-					setRuleError("Select a Model Provider for AI Guard Bot.");
-					return;
-				}
-				if (!newRuleBotModel.trim()) {
-					setRuleError("Select a model for AI Guard Bot.");
-					return;
-				}
-			}
-		} else {
-			if (!newRulePattern.trim()) {
-				setRuleError("Regex pattern is required for Regex rule.");
-				return;
-			}
+		if (!newRulePattern.trim()) {
+			setRuleError("Regex pattern is required. Type one, or describe the policy and generate the pattern.");
+			return;
 		}
 		try {
-			const saveAsGeneratedRegex = newRuleType === "ai_bot" && newRuleBotEvalMode === "regex";
 			const policyNote = newRuleBotPrompt.trim()
 				? `Generated from policy: ${newRuleBotPrompt.trim().slice(0, 500)}`
 				: "";
 			await createRule({
 				name: newRuleName.trim(),
-				rule_type: saveAsGeneratedRegex ? "regex" : newRuleType,
-				pattern: saveAsGeneratedRegex
-					? newRuleGeneratedPattern.trim()
-					: newRuleType === "regex"
-						? newRulePattern.trim()
-						: newRuleGeneratedPattern.trim(),
-				bot_provider: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotProvider.trim() : "",
-				bot_model: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotModel.trim() : "",
-				bot_prompt: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotPrompt.trim() : "",
-				bot_reference_image: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotReferenceImage : "",
-				bot_reference_image_type: newRuleType === "ai_bot" && !saveAsGeneratedRegex ? newRuleBotReferenceImageType : "",
+				rule_type: "regex",
+				pattern: newRulePattern.trim(),
+				bot_provider: "",
+				bot_model: "",
+				bot_prompt: "",
+				bot_reference_image: "",
+				bot_reference_image_type: "",
 				severity: newRuleSeverity,
 				action: newRuleAction,
-				description: (newRuleDescription.trim() || (saveAsGeneratedRegex ? policyNote : "")).trim(),
+				description: (newRuleDescription.trim() || policyNote).trim(),
 				warning_message: newRuleWarningMessage.trim(),
 				active: true,
 			}).unwrap();
@@ -1585,6 +1555,37 @@ export default function BrowserAiPage() {
 			setNewRuleGenerateError("");
 		} catch (e: any) {
 			setRuleError(e?.data?.message || "Failed to create rule");
+		}
+	};
+
+	const generatePatternIntoNewRule = async () => {
+		const prompt = newRuleBotPrompt.trim();
+		setNewRuleGenerateError("");
+		if (!prompt) {
+			setNewRuleGenerateError("Describe what the regex should catch.");
+			return;
+		}
+		if (!newRuleBotProvider.trim() || newRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !newRuleBotModel.trim()) {
+			setNewRuleGenerateError("Select a Model Provider and model. The model only writes the regex.");
+			return;
+		}
+		try {
+			const res = await generateRegexFromPolicy({
+				bot_provider: newRuleBotProvider.trim(),
+				bot_model: newRuleBotModel.trim(),
+				bot_prompt: prompt,
+			}).unwrap();
+			const pat = (res.pattern || "").trim();
+			if (!pat) {
+				setNewRuleGenerateError("Model returned an empty pattern.");
+				return;
+			}
+			setNewRulePattern(pat);
+			setNewRuleGenerateError("");
+		} catch (e: any) {
+			setNewRuleGenerateError(
+				e?.data?.error?.message || e?.data?.message || e?.message || "Failed to generate regex from policy.",
+			);
 		}
 	};
 
@@ -3581,56 +3582,13 @@ export default function BrowserAiPage() {
 												Create Guard Rule
 											</DialogTitle>
 											<DialogDescription className="text-xs">
-												Add your own regex or AI policy. {PRODUCT_NAME} does not ship default guard patterns — only what you save here is enforced.
+												Save one regex. A model can write that pattern from a short description. Paste a prompt below the pattern to see BLOCK, REDACT, or WARN before you save.
 											</DialogDescription>
 										</DialogHeader>
 
 										{ruleError && <div className="mx-5 mt-3 p-3 bg-red-950/60 border border-red-800 text-red-400 rounded-md text-xs">{ruleError}</div>}
 
 										<div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-4 space-y-4 min-w-0 no-scrollbar">
-											{/* Rule Engine Type Toggle */}
-											<div className="space-y-1.5">
-												<Label>Rule Engine Type</Label>
-												<div className="grid grid-cols-2 gap-2 p-1 bg-muted/40 rounded-lg border border-border">
-													<button
-														type="button"
-														onClick={() => {
-															setNewRuleType("regex");
-														}}
-														className={`flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-semibold transition-all ${newRuleType === "regex"
-																? "bg-primary text-primary-foreground shadow-sm"
-																: "text-muted-foreground hover:text-foreground"
-															}`}
-													>
-														<Zap className="h-3.5 w-3.5" />
-														Regex Pattern Rule
-													</button>
-													<button
-														type="button"
-														onClick={() => {
-															setNewRuleType("ai_bot");
-															setNewRuleBotProvider((current) =>
-																current.trim() && current.trim().toLowerCase() !== GUARD_BOT_OLLAMA_PROVIDER
-																	? current
-																	: outsourceProviderOptions[0]?.value || "",
-															);
-															setNewRuleBotModel((current) =>
-																newRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !newRuleBotProvider.trim()
-																	? ""
-																	: current,
-															);
-														}}
-														className={`flex items-center justify-center gap-2 py-2 px-3 rounded-md text-xs font-semibold transition-all ${newRuleType === "ai_bot"
-																? "bg-purple-600 text-white shadow-sm"
-																: "text-muted-foreground hover:text-foreground"
-															}`}
-													>
-														<Bot className="h-3.5 w-3.5" />
-														AI Guard Bot (Prompt Rule)
-													</button>
-												</div>
-											</div>
-
 											<div className="space-y-1.5">
 												<Label>Rule Name</Label>
 												<Input
@@ -3672,58 +3630,67 @@ export default function BrowserAiPage() {
 												</div>
 											</div>
 
-											{newRuleType === "regex" ? (
-												<div className="space-y-1.5">
-													<Label>Regex Pattern</Label>
-													<Input
-														placeholder="Enter the regex you want to match"
-														value={newRulePattern}
-														onChange={(e) => setNewRulePattern(e.target.value)}
-													/>
-													<p className="text-[11px] text-muted-foreground">
-														One RE2 regex per rule. Empty form = no rule. Only patterns you save here are enforced (no built-in list).
-													</p>
-													<RegexLiveTestPanel pattern={newRulePattern} />
-												</div>
-											) : (
-												<GuardRuleAIEvaluatorFields
-													botProvider={newRuleBotProvider}
-													botModel={newRuleBotModel}
-													botPrompt={newRuleBotPrompt}
-													referenceImagePreview={newRuleBotReferenceImagePreview}
-													evalMode={newRuleBotEvalMode}
-													generatedPattern={newRuleGeneratedPattern}
-													generateError={newRuleGenerateError}
-													generating={generatingRegex}
-													outsourceProviderOptions={outsourceProviderOptions}
-													onProviderChange={setNewRuleBotProvider}
-													onModelChange={setNewRuleBotModel}
-													onPromptChange={setNewRuleBotPrompt}
-													onEvalModeChange={setNewRuleBotEvalMode}
-													onGeneratedPatternChange={setNewRuleGeneratedPattern}
-													onGenerateRegex={() => runGenerateRegex("new")}
-													onTestEvaluate={() => runTestEvaluate("new")}
-													testSample={newRuleTestSample}
-													onTestSampleChange={setNewRuleTestSample}
-													testResult={newRuleTestResult}
-													testing={testingGuardBot}
-													onReferenceImageClear={() => {
-														setNewRuleBotReferenceImage("");
-														setNewRuleBotReferenceImageType("");
-														setNewRuleBotReferenceImagePreview("");
-													}}
-													onReferenceImageChange={async (file) => {
-														try {
-															const { data, type } = await readReferenceImageFile(file);
-															setNewRuleBotReferenceImage(data);
-															setNewRuleBotReferenceImageType(type);
-															setNewRuleBotReferenceImagePreview(referenceImageDataUrl(data, type));
-														} catch (err: any) {
-															setRuleError(err?.message || "Failed to load reference image.");
-														}
-													}}
+											<div className="space-y-3 rounded-lg border border-border bg-muted/10 p-3">
+												<Label>Describe the rule (optional)</Label>
+												<Textarea
+													placeholder="Example: block post codes and 6-digit PINs"
+													value={newRuleBotPrompt}
+													onChange={(e) => setNewRuleBotPrompt(e.target.value)}
+													rows={2}
+													className="text-xs"
 												/>
-											)}
+												<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+													<Select
+														value={newRuleBotProvider}
+														onValueChange={(v) => {
+															setNewRuleBotProvider(v);
+															setNewRuleBotModel("");
+														}}
+													>
+														<SelectTrigger>
+															<SelectValue placeholder="Provider for pattern only" />
+														</SelectTrigger>
+														<SelectContent>
+															{outsourceProviderOptions.length === 0 ? (
+																<SelectItem value="__none" disabled>
+																	No providers configured
+																</SelectItem>
+															) : (
+																outsourceProviderOptions.map((opt) => (
+																	<SelectItem key={opt.value} value={opt.value}>
+																		{opt.label}
+																	</SelectItem>
+																))
+															)}
+														</SelectContent>
+													</Select>
+													<Input
+														placeholder="Model id, e.g. gpt-4o-mini"
+														value={newRuleBotModel}
+														onChange={(e) => setNewRuleBotModel(e.target.value)}
+													/>
+												</div>
+												<Button type="button" variant="outline" size="sm" disabled={generatingRegex} onClick={() => void generatePatternIntoNewRule()}>
+													{generatingRegex ? "Writing regex…" : "Write regex from this description"}
+												</Button>
+												{newRuleGenerateError ? <p className="text-[11px] text-red-400">{newRuleGenerateError}</p> : null}
+												<p className="text-[11px] text-muted-foreground">
+													The model only fills the regex below. The saved rule is that regex. Live traffic is not sent to the model.
+												</p>
+											</div>
+
+											<div className="space-y-1.5">
+												<Label>Regex Pattern</Label>
+												<Input
+													placeholder="Enter the regex you want to match"
+													value={newRulePattern}
+													onChange={(e) => setNewRulePattern(e.target.value)}
+												/>
+												<p className="text-[11px] text-muted-foreground">
+													One RE2 regex per rule. Only this pattern is enforced.
+												</p>
+												<RegexLiveTestPanel pattern={newRulePattern} action={newRuleAction} />
+											</div>
 
 											<div className="space-y-1.5">
 												<Label>Description</Label>
@@ -4552,7 +4519,7 @@ export default function BrowserAiPage() {
 									<p className="text-[11px] text-muted-foreground">
 										Evaluated in microseconds using Golang RE2 regular expressions. BLOCK wins over REDACT, REDACT wins over WARN if both match.
 									</p>
-									<RegexLiveTestPanel pattern={editRulePattern} />
+									<RegexLiveTestPanel pattern={editRulePattern} action={editRuleAction} />
 								</div>
 							) : (
 								<GuardRuleAIEvaluatorFields

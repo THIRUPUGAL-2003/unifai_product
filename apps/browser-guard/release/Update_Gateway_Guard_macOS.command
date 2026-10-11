@@ -22,7 +22,7 @@ if [ -f "$CONFIG_FILE" ]; then
 fi
 
 if [ -z "$BACKEND_URL" ]; then
-    echo -e "${YELLOW}Enter server URL (e.g. http://127.0.0.1:8080):${RESET}"
+    echo -e "${YELLOW}Enter server URL (e.g. https://unifai.yespanchi.com):${RESET}"
     read -r BACKEND_URL
     BACKEND_URL="${BACKEND_URL%/}"
 fi

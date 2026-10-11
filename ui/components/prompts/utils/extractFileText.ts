@@ -474,56 +474,60 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
-		// Word .docx
-		if (mime.includes("wordprocessingml") || name.endsWith(".docx") || (looksLikeZipOffice(bytes) && name.endsWith(".docx"))) {
+		const wordOoxml = /\.(docx|docm|dotx|dotm)$/i.test(name) || mime.includes("wordprocessingml");
+		const sheetOoxml =
+			/\.(xlsx|xlsm|xlsb|xltx|xltm|xlt|xls|ods|ots)$/i.test(name) ||
+			mime.includes("spreadsheetml") ||
+			mime.includes("opendocument.spreadsheet") ||
+			mime.includes("excel");
+		const pptOoxml =
+			/\.(pptx|pptm|ppsx|ppsm|potx|potm)$/i.test(name) ||
+			mime.includes("presentationml") ||
+			(looksLikeZipOffice(bytes) && mime.includes("ms-powerpoint"));
+		const odfText =
+			/\.(odt|ott|odg|odp|otp)$/i.test(name) ||
+			mime.includes("opendocument.text") ||
+			mime.includes("opendocument.presentation") ||
+			mime.includes("opendocument.graphics");
+
+		// Word OOXML: .docx .docm .dotx .dotm — mammoth reads the document XML.
+		if (wordOoxml || (looksLikeZipOffice(bytes) && /\.(docx|docm|dotx|dotm)$/i.test(name))) {
 			const text = await extractDocxText(buf);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
-		// Legacy Word .doc (OLE)
-		if (mime.includes("msword") || name.endsWith(".doc") || (looksLikeOleCompound(bytes) && name.endsWith(".doc"))) {
+		// Legacy Word .doc is an OLE compound file, not a zip.
+		if (!looksLikeZipOffice(bytes) && (name.endsWith(".doc") || mime.includes("msword") || (looksLikeOleCompound(bytes) && name.endsWith(".doc")))) {
 			const text = await extractDocText(buf);
 			if (text && isUsefulExtractedText(text)) return text.slice(0, MAX_EXTRACT_CHARS);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
-		// PowerPoint OOXML (.pptx, .ppsx)
-		if (
-			mime.includes("presentationml") ||
-			name.endsWith(".pptx") ||
-			name.endsWith(".ppsx") ||
-			(looksLikeZipOffice(bytes) && (name.endsWith(".pptx") || name.endsWith(".ppsx")))
-		) {
+		// PowerPoint OOXML, including macro and template packages.
+		if (pptOoxml) {
 			const text = await extractPptxText(buf);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
-		// Legacy PowerPoint .ppt (OLE)
-		if (mime.includes("ms-powerpoint") || name.endsWith(".ppt") || name.endsWith(".pps") || (looksLikeOleCompound(bytes) && name.endsWith(".ppt"))) {
+		// Legacy PowerPoint .ppt / .pps is OLE. A zip package must not take this path.
+		if (
+			!looksLikeZipOffice(bytes) &&
+			(name.endsWith(".ppt") || name.endsWith(".pps") || (mime.includes("ms-powerpoint") && !mime.includes("macroenabled")))
+		) {
 			const text = await extractPptBinaryText(buf);
 			if (text && isUsefulExtractedText(text)) return text.slice(0, MAX_EXTRACT_CHARS);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
-		// OpenDocument Text (.odt)
-		if (name.endsWith(".odt") || mime.includes("opendocument.text")) {
+		// OpenDocument text, presentation, and drawing share content.xml.
+		if (odfText) {
 			const text = await extractOdfText(buf);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
-		// OpenDocument Presentation (.odp)
-		if (name.endsWith(".odp") || mime.includes("opendocument.presentation")) {
-			const text = await extractOdfText(buf);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
-		}
-
-		// Spreadsheets (.xlsx, .xls, .ods, .csv, .tsv)
+		// Spreadsheets: SheetJS for workbooks, plain decode for CSV/TSV.
 		if (
-			mime.includes("spreadsheetml") ||
-			mime.includes("excel") ||
-			name.endsWith(".xlsx") ||
-			name.endsWith(".xls") ||
-			name.endsWith(".ods") ||
+			sheetOoxml ||
 			name.endsWith(".csv") ||
 			name.endsWith(".tsv") ||
 			mime.includes("csv") ||
@@ -568,7 +572,8 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			mime.includes("typescript") ||
 			mime.includes("markdown");
 
-		if (isKnownTextExt || isTextMime || isTextBytes(bytes)) {
+		const hasNul = bytes.subarray(0, Math.min(bytes.length, 8192)).includes(0);
+		if (!hasNul && (isKnownTextExt || isTextMime || isTextBytes(bytes))) {
 			let text = new TextDecoder().decode(bytes);
 			if (name.endsWith(".json") || name.endsWith(".jsonc") || mime.includes("json")) {
 				try {
@@ -583,16 +588,10 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
-		// Generic OLE fallback (unknown extension but compound file)
+		// Unknown OLE compound files (old Office without a matching extension).
 		if (looksLikeOleCompound(bytes)) {
 			const text = await extractFromOleCompound(buf, []);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
-		}
-
-		// Fallback for binary / AI models / databases / compiled formats (extract readable strings)
-		const binStrings = extractBinaryOfficeStrings(bytes);
-		if (binStrings && binStrings.trim().length >= 8) {
-			return binStrings.trim().slice(0, MAX_EXTRACT_CHARS);
 		}
 	} catch (error) {
 		console.warn("Failed to extract text from attachment:", file.name, error);

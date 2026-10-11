@@ -5,6 +5,7 @@ import { JINJA_VAR_HIGHLIGHT_PATTERNS, JINJA_VAR_REGEX } from "@/lib/message/con
 import { isJson } from "@/lib/utils/validation";
 import { Paperclip, PencilIcon, XIcon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { usePromptContext } from "../../context";
 import { filesToAttachments, PROMPT_FILE_ACCEPT } from "../../utils/attachment";
 import { AttachmentDisplay } from "./attachmentViews";
 import MessageRoleSwitcher from "./messageRoleSwitcher";
@@ -39,6 +40,7 @@ export function UserMessageView({
 	onChange: (serialized: SerializedMessage) => void;
 	onRemove?: () => void;
 }) {
+	const { apiKeyId } = usePromptContext();
 	const [editMode, setEditMode] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -120,11 +122,11 @@ export function UserMessageView({
 		async (e: React.ChangeEvent<HTMLInputElement>) => {
 			const files = e.target.files;
 			if (!files) return;
-			const attachments = await filesToAttachments(files);
+			const attachments = await filesToAttachments(files, { apiKeyId });
 			if (attachments.length > 0) addAttachments(attachments);
 			e.target.value = "";
 		},
-		[addAttachments],
+		[addAttachments, apiKeyId],
 	);
 
 	// Drag & drop state
@@ -158,10 +160,10 @@ export function UserMessageView({
 			setIsDragging(false);
 			const files = e.dataTransfer.files;
 			if (!files || files.length === 0) return;
-			const attachments = await filesToAttachments(files);
+			const attachments = await filesToAttachments(files, { apiKeyId });
 			if (attachments.length > 0) addAttachments(attachments);
 		},
-		[addAttachments],
+		[addAttachments, apiKeyId],
 	);
 
 	const handleReadOnlyClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {

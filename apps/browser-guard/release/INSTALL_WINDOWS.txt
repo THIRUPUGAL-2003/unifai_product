@@ -1,7 +1,7 @@
 Gateway Guard — Windows Install (turn ON)
 =======================================
 
-Company server: http://127.0.0.1:8080
+Company server: https://unifai.yespanchi.com
 (If IT gave you a different URL, use the config packaged in this ZIP.)
 
 1. Extract Gateway_Guard_Windows.zip completely (do not run Setup from inside the ZIP).
