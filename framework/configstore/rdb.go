@@ -3420,6 +3420,7 @@ func preloadVirtualKeyBaseRelations(db *gorm.DB) *gorm.DB {
 		Preload("Teams.Budgets").
 		Preload("Customers").
 		Preload("Customers.Budgets").
+		Preload("BusinessUnits").
 		Preload("Users")
 }
 

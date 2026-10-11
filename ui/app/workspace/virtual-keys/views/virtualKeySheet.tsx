@@ -48,6 +48,7 @@ import {
 import { useGetSessionUsersQuery } from "@/lib/store/apis/sessionUsersApi";
 import { KnownProvider } from "@/lib/types/config";
 import { CreateVirtualKeyRequest, Customer, Team, UpdateVirtualKeyRequest, VirtualKey } from "@/lib/types/governance";
+import { useGetBusinessUnitsQuery } from "@enterprise/lib/store/apis/businessUnitsApi";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
@@ -118,6 +119,7 @@ const formSchema = z
 		customerId: z.string().optional(),
 		customerIds: z.array(z.string()).optional(),
 		userIds: z.array(z.string()).optional(),
+		businessUnitIds: z.array(z.string()).optional(),
 		isActive: z.boolean(),
 		expiresAt: z.string().nullable().optional(), // ISO 8601 datetime-local string, or null to clear
 		// Budget
@@ -278,6 +280,13 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 	const mcpClientsData = mcpClientsResponse?.clients || [];
 	const isLoading = isCreating || isUpdating || isRotating;
 
+	const { data: businessUnitsData, isError: businessUnitsFailed, error: businessUnitsError } = useGetBusinessUnitsQuery();
+	const businessUnits = businessUnitsData?.business_units || [];
+	const businessUnitOptions = businessUnits.map((unit) => ({
+		value: unit.id,
+		label: unit.team_count ? `${unit.name} (${unit.team_count} teams)` : unit.name,
+	}));
+
 	const availableKeys = keysData || [];
 	const availableProviders = providersData || [];
 	const sheetSearchQuery = sheetSearch.trim().toLowerCase();
@@ -363,6 +372,10 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					: virtualKey?.users && virtualKey.users.length > 0
 						? virtualKey.users.map((u) => u.user_id)
 						: directUsers.map((u) => u.id),
+			businessUnitIds:
+				virtualKey?.business_unit_ids && virtualKey.business_unit_ids.length > 0
+					? virtualKey.business_unit_ids
+					: virtualKey?.business_units?.map((unit) => unit.id) || [],
 			isActive: virtualKey?.is_active ?? true,
 			expiresAt: virtualKey?.expires_at
 				? (() => {
@@ -816,6 +829,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 			const selectedTeamIds = data.teamIds?.length ? data.teamIds : data.teamId ? [data.teamId] : [];
 			const selectedCustomerIds = data.customerIds?.length ? data.customerIds : data.customerId ? [data.customerId] : [];
 			const selectedUserIds = data.userIds || [];
+			const selectedBusinessUnitIds = data.businessUnitIds || [];
 			// Without assign rights the key's user links are left as they are.
 			const userIdsPayload = canAssignUser ? { user_ids: selectedUserIds } : {};
 
@@ -843,6 +857,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					team_ids: selectedTeamIds,
 					customer_id: selectedCustomerIds.length > 0 ? selectedCustomerIds[0] : null,
 					customer_ids: selectedCustomerIds,
+					business_unit_ids: selectedBusinessUnitIds,
 					...userIdsPayload,
 					is_active: data.isActive,
 					calendar_aligned: data.budgetCalendarAligned,
@@ -894,6 +909,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 					team_ids: selectedTeamIds,
 					customer_id: selectedCustomerIds.length > 0 ? selectedCustomerIds[0] : undefined,
 					customer_ids: selectedCustomerIds,
+					business_unit_ids: selectedBusinessUnitIds,
 					...userIdsPayload,
 					is_active: data.isActive,
 					// VK-level setting that governs both budget and rate-limit calendar alignment.
@@ -1954,16 +1970,15 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 										</AlertDialogFooter>
 									</AlertDialogContent>
 								</AlertDialog>
-								{(teams?.length > 0 || customers?.length > 0 || userMultiSelectOptions?.length > 0) && (
-									<>
-										<DottedSeparator className="my-6" />
+								<>
+									<DottedSeparator className="my-6" />
 
 										{/* Entity Assignment */}
 										<div className="space-y-4">
 											<div>
 												<Label className="text-sm font-medium">Entity Assignment</Label>
 												<p className="text-muted-foreground text-xs mt-1">
-													Attach this key to Teams, Customers, and/or Users. You can assign to multiple teams, customers, and users simultaneously, or leave unassigned.
+													Attach this key to Teams, Customers, Users, and Business units. Leave a field empty when that link is not needed.
 												</p>
 												<ul className="text-muted-foreground mt-1.5 list-disc space-y-0.5 pl-4 text-xs">
 													<li>
@@ -1977,10 +1992,14 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 													<li>
 														<span className="text-foreground font-medium">User</span> — only the selected users.
 													</li>
+													<li>
+														<span className="text-foreground font-medium">Business unit</span> — every team inside that unit, and every
+														user in those teams, gets this key. Usage counts against that user&apos;s budget and their team&apos;s budget.
+													</li>
 												</ul>
 											</div>
 
-											<div className="grid grid-cols-1 gap-4 md:grid-cols-3 [&>*]:min-w-0">
+											<div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
 												{teams?.length > 0 && (
 													<FormField
 														control={form.control}
@@ -2074,10 +2093,37 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 														)}
 													/>
 												)}
+
+												<FormField
+													control={form.control}
+													name="businessUnitIds"
+													render={({ field }) => (
+														<FormItem>
+															<FormLabel className="font-normal">
+																Business units {field.value && field.value.length > 0 ? `(${field.value.length})` : ""}
+															</FormLabel>
+															<MultiSelect
+																options={businessUnitOptions}
+																defaultValue={field.value || []}
+																resetOnDefaultValueChange
+																onValueChange={(vals) => field.onChange(vals)}
+																placeholder="Select business units..."
+																emptyIndicator="No business units found."
+																maxCount={2}
+																className="border-input text-foreground hover:bg-accent min-h-9 rounded-sm bg-transparent font-normal"
+																popoverClassName="w-[var(--radix-popover-trigger-width)]"
+																data-testid="vk-business-units-multiselect"
+															/>
+															{businessUnitsFailed ? (
+																<p className="text-destructive text-xs">{getErrorMessage(businessUnitsError) || "Failed to load business units."}</p>
+															) : null}
+															<FormMessage />
+														</FormItem>
+													)}
+												/>
 											</div>
 										</div>
-									</>
-								)}
+								</>
 							</fieldset>
 						</div>
 						<AlertDialog open={showRotateWarning} onOpenChange={setShowRotateWarning}>

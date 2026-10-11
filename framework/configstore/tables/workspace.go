@@ -308,6 +308,18 @@ type TableVirtualKeyCustomer struct {
 
 func (TableVirtualKeyCustomer) TableName() string { return "governance_virtual_key_customers" }
 
+// TableVirtualKeyBusinessUnit links a virtual key to a business unit.
+// Teams listed on that unit, and the users in those teams, can use the key.
+type TableVirtualKeyBusinessUnit struct {
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	VirtualKeyID   string    `gorm:"type:varchar(255);not null;index:idx_vk_bu_pair,unique;index:idx_vkbu_vk_id" json:"virtual_key_id"`
+	BusinessUnitID string    `gorm:"type:varchar(255);not null;index:idx_vk_bu_pair,unique;index:idx_vkbu_bu_id" json:"business_unit_id"`
+	CreatedAt      time.Time `gorm:"not null" json:"created_at"`
+	UpdatedAt      time.Time `gorm:"not null" json:"updated_at"`
+}
+
+func (TableVirtualKeyBusinessUnit) TableName() string { return "governance_virtual_key_business_units" }
+
 // TableAuditLog records administrative mutations.
 type TableAuditLog struct {
 	ID         uint      `gorm:"primaryKey" json:"id"`
@@ -338,6 +350,7 @@ func WorkspaceModels() []any {
 		&TableVirtualKeyUser{},
 		&TableVirtualKeyTeam{},
 		&TableVirtualKeyCustomer{},
+		&TableVirtualKeyBusinessUnit{},
 		&TableTeamMember{},
 		&TableWorkspaceSetting{},
 		&TableAuditLog{},

@@ -212,6 +212,23 @@ export default function VirtualKeyDetailSheet({
 								</div>
 							)}
 
+							{(virtualKey.business_units?.length || 0) > 0 && (
+								<div className="grid grid-cols-3 items-center gap-4">
+									<span className="text-muted-foreground text-sm">
+										{(virtualKey.business_units?.length || 0) > 1
+											? `Business units (${virtualKey.business_units?.length})`
+											: "Business unit"}
+									</span>
+									<div className="col-span-2 flex flex-wrap items-center gap-1.5">
+										{virtualKey.business_units?.map((unit) => (
+											<Badge key={unit.id} variant="secondary">
+												{unit.name}
+											</Badge>
+										))}
+									</div>
+								</div>
+							)}
+
 							{entityInfo.customersList.length > 0 && (
 								<div className="grid grid-cols-3 items-center gap-4">
 									<span className="text-muted-foreground text-sm">

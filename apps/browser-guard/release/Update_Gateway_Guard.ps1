@@ -22,7 +22,7 @@ if (Test-Path $ConfigFile) {
 }
 
 if (-not $BackendURL) {
-    $BackendURL = Read-Host "Enter server URL (e.g. https://unifai.yespanchi.com)"
+    $BackendURL = Read-Host "Enter server URL (e.g. http://127.0.0.1:8080)"
     $BackendURL = $BackendURL.TrimEnd("/")
 }
 

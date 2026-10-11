@@ -2982,6 +2982,25 @@ func vkCustomerIDs(vk *configstoreTables.TableVirtualKey) []string {
 	return ids
 }
 
+// vkBusinessUnitIDs returns the business units linked to a virtual key, without duplicates.
+func vkBusinessUnitIDs(vk *configstoreTables.TableVirtualKey) []string {
+	if vk == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(vk.BusinessUnits)+len(vk.BusinessUnitIDs))
+	for _, id := range vk.BusinessUnitIDs {
+		if id != "" && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	for _, unit := range vk.BusinessUnits {
+		if unit.ID != "" && !slices.Contains(ids, unit.ID) {
+			ids = append(ids, unit.ID)
+		}
+	}
+	return ids
+}
+
 // billedTeamID returns the single team a VK request is attributed to. Linking a key to several
 // teams shares the key between them; it must not multiply the cost of one request. The first
 // VK team the requesting user is a member of wins. When the user is known but not on any of
@@ -3005,15 +3024,16 @@ func billedTeamID(ctx context.Context, vk *configstoreTables.TableVirtualKey) st
 	return teams[0]
 }
 
-// billedTeam is billedTeamID plus the customer-key case: a key assigned to a customer (not to a
-// team) bills the requesting user's own team under that customer, so one request meters
-// user → team → customer.
+// billedTeam is billedTeamID plus the customer-key and business-unit cases. A key assigned to a
+// business unit bills the requesting user's own team inside that unit, so one request meters
+// user → team. A customer-assigned key bills the user's team under that customer.
 func (gs *LocalGovernanceStore) billedTeam(ctx context.Context, vk *configstoreTables.TableVirtualKey) string {
 	if tid := billedTeamID(ctx, vk); tid != "" || ctx == nil {
 		return tid
 	}
 	customers := vkCustomerIDs(vk)
-	if len(customers) == 0 {
+	unitIDs := vkBusinessUnitIDs(vk)
+	if len(customers) == 0 && len(unitIDs) == 0 {
 		return ""
 	}
 	member, _ := ctx.Value(governanceUserTeamIDsContextKey).([]string)
@@ -3040,9 +3060,31 @@ func (gs *LocalGovernanceStore) billedTeam(ctx context.Context, vk *configstoreT
 			}
 		}
 	}
+	if tid := gs.teamInLinkedBusinessUnit(member, unitIDs); tid != "" {
+		return tid
+	}
 	for _, tid := range member {
 		if cid := gs.teamCustomerID(nil, tid); cid != "" && slices.Contains(customers, cid) {
 			return tid
+		}
+	}
+	return ""
+}
+
+// teamInLinkedBusinessUnit returns the first of teamIDs that belongs to one of unitIDs.
+func (gs *LocalGovernanceStore) teamInLinkedBusinessUnit(teamIDs, unitIDs []string) string {
+	if len(teamIDs) == 0 || len(unitIDs) == 0 {
+		return ""
+	}
+	index := gs.businessUnitsByTeam.Load()
+	if index == nil {
+		return ""
+	}
+	for _, tid := range teamIDs {
+		for _, unit := range (*index)[tid] {
+			if slices.Contains(unitIDs, unit.ID) {
+				return tid
+			}
 		}
 	}
 	return ""

@@ -171,6 +171,7 @@ type CreateVirtualKeyRequest struct {
 	TeamIDs         []string                `json:"team_ids,omitempty"`
 	CustomerIDs     []string                `json:"customer_ids,omitempty"`
 	UserIDs         []string                `json:"user_ids,omitempty"`
+	BusinessUnitIDs []string                `json:"business_unit_ids,omitempty"`
 	TeamID          *string                 `json:"team_id,omitempty"`     // Legacy single team
 	CustomerID      *string                 `json:"customer_id,omitempty"` // Legacy single customer
 	Budgets         []CreateBudgetRequest   `json:"budgets,omitempty"`     // Multi-budget: each must have a unique reset_duration
@@ -202,6 +203,7 @@ type UpdateVirtualKeyRequest struct {
 	TeamIDs          *[]string                    `json:"team_ids,omitempty"`
 	CustomerIDs      *[]string                    `json:"customer_ids,omitempty"`
 	UserIDs          *[]string                    `json:"user_ids,omitempty"`
+	BusinessUnitIDs  *[]string                    `json:"business_unit_ids,omitempty"`
 	TeamID           schemas.OptionalJSON[string] `json:"team_id,omitempty"`
 	CustomerID       schemas.OptionalJSON[string] `json:"customer_id,omitempty"`
 	Budgets          []CreateBudgetRequest        `json:"budgets,omitempty"` // Multi-budget: replaces all VK-level budgets
@@ -985,6 +987,25 @@ func sendEntityAssignmentError(ctx *fasthttp.RequestCtx, err error) {
 	SendError(ctx, 500, fmt.Sprintf("Failed to validate team/customer assignment: %v", err))
 }
 
+func (h *GovernanceHandler) validateBusinessUnitIDs(ctx context.Context, ids []string) error {
+	if len(ids) == 0 || h.configStore == nil {
+		return nil
+	}
+	ws, ok := configstore.AsWorkspaceStore(h.configStore)
+	if !ok || ws == nil {
+		return fmt.Errorf("business units are not available")
+	}
+	for _, id := range ids {
+		if _, err := ws.GetBusinessUnit(ctx, id); err != nil {
+			if errors.Is(err, configstore.ErrNotFound) {
+				return fmt.Errorf("business unit not found")
+			}
+			return fmt.Errorf("failed to load business unit")
+		}
+	}
+	return nil
+}
+
 // populateVKEntityIDs populates TeamIDs, CustomerIDs, and UserIDs slices from relations
 func populateVKEntityIDs(vk *configstoreTables.TableVirtualKey) {
 	if vk == nil {
@@ -1019,6 +1040,15 @@ func populateVKEntityIDs(vk *configstoreTables.TableVirtualKey) {
 		}
 	} else {
 		vk.UserIDs = []string{}
+	}
+
+	if len(vk.BusinessUnits) > 0 {
+		vk.BusinessUnitIDs = make([]string, len(vk.BusinessUnits))
+		for i, unit := range vk.BusinessUnits {
+			vk.BusinessUnitIDs[i] = unit.ID
+		}
+	} else {
+		vk.BusinessUnitIDs = []string{}
 	}
 }
 
@@ -1591,6 +1621,11 @@ func (h *GovernanceHandler) createVirtualKey(ctx *fasthttp.RequestCtx) {
 	req.TeamIDs = uniqueIDs(req.TeamIDs)
 	req.CustomerIDs = uniqueIDs(req.CustomerIDs)
 	req.UserIDs = uniqueIDs(req.UserIDs)
+	req.BusinessUnitIDs = uniqueIDs(req.BusinessUnitIDs)
+	if err := h.validateBusinessUnitIDs(ctx, req.BusinessUnitIDs); err != nil {
+		SendError(ctx, 400, err.Error())
+		return
+	}
 	if len(req.TeamIDs) > 0 && req.TeamID == nil {
 		req.TeamID = &req.TeamIDs[0]
 	} else if req.TeamID != nil && len(req.TeamIDs) == 0 {
@@ -1682,6 +1717,11 @@ func (h *GovernanceHandler) createVirtualKey(ctx *fasthttp.RequestCtx) {
 			}
 			if len(req.UserIDs) > 0 {
 				if err := ws.SetVirtualKeyUsers(ctx, vk.ID, req.UserIDs, tx); err != nil {
+					return err
+				}
+			}
+			if len(req.BusinessUnitIDs) > 0 {
+				if err := ws.SetVirtualKeyBusinessUnits(ctx, vk.ID, req.BusinessUnitIDs, tx); err != nil {
 					return err
 				}
 			}
@@ -1906,6 +1946,12 @@ func (h *GovernanceHandler) updateVirtualKey(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, 500, "Failed to retrieve virtual key")
 		return
 	}
+	if unitIDs := uniqueIDsPtr(req.BusinessUnitIDs); unitIDs != nil {
+		if err := h.validateBusinessUnitIDs(ctx, *unitIDs); err != nil {
+			SendError(ctx, 400, err.Error())
+			return
+		}
+	}
 	if req.TeamIDs != nil || req.TeamID.Set || req.CustomerIDs != nil || req.CustomerID.Set {
 		populateVKEntityIDs(vk)
 		nextTeamIDs, nextCustomerIDs := vk.TeamIDs, vk.CustomerIDs
@@ -2017,6 +2063,11 @@ func (h *GovernanceHandler) updateVirtualKey(ctx *fasthttp.RequestCtx) {
 			}
 			if userIDs := uniqueIDsPtr(req.UserIDs); userIDs != nil {
 				if err := ws.SetVirtualKeyUsers(ctx, vk.ID, *userIDs, tx); err != nil {
+					return err
+				}
+			}
+			if unitIDs := uniqueIDsPtr(req.BusinessUnitIDs); unitIDs != nil {
+				if err := ws.SetVirtualKeyBusinessUnits(ctx, vk.ID, *unitIDs, tx); err != nil {
 					return err
 				}
 			}

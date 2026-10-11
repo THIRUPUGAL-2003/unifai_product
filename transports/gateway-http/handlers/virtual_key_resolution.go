@@ -84,7 +84,36 @@ func ResolveAllowedVirtualKeyIDsForUser(ctx context.Context, store configstore.C
 		}
 	}
 
-	// 3. Check legacy single-column fields (vk.team_id, vk.customer_id) in database
+	// 3. Business units that contain one of the user's teams.
+	// Teams inside the unit, and the users in those teams, can use the key.
+	if len(seenTeams) > 0 {
+		units, err := ws.ListBusinessUnits(ctx)
+		if err == nil {
+			for _, unit := range units {
+				member := false
+				for _, teamID := range unit.ParsedTeamIDs {
+					if seenTeams[teamID] {
+						member = true
+						break
+					}
+				}
+				if !member {
+					continue
+				}
+				links, err := ws.ListVirtualKeysForBusinessUnit(ctx, unit.ID)
+				if err != nil {
+					continue
+				}
+				for _, link := range links {
+					if link.VirtualKeyID != "" {
+						allowed[link.VirtualKeyID] = true
+					}
+				}
+			}
+		}
+	}
+
+	// 4. Check legacy single-column fields (vk.team_id, vk.customer_id) in database
 	if store.DB() != nil {
 		db := store.DB().WithContext(ctx)
 		if len(teamIDs) > 0 {

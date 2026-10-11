@@ -235,12 +235,14 @@ type TableVirtualKey struct {
 	// Relationships
 	Team        *TableTeam            `gorm:"foreignKey:TeamID" json:"team,omitempty"`
 	Customer    *TableCustomer        `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
-	Teams       []TableTeam           `gorm:"many2many:governance_virtual_key_teams;foreignKey:ID;joinForeignKey:VirtualKeyID;references:ID;joinReferences:TeamID" json:"teams,omitempty"`
-	Customers   []TableCustomer       `gorm:"many2many:governance_virtual_key_customers;foreignKey:ID;joinForeignKey:VirtualKeyID;references:ID;joinReferences:CustomerID" json:"customers,omitempty"`
-	Users       []TableVirtualKeyUser `gorm:"foreignKey:VirtualKeyID;constraint:OnDelete:CASCADE" json:"users,omitempty"`
-	TeamIDs     []string              `gorm:"-" json:"team_ids,omitempty"`
-	CustomerIDs []string              `gorm:"-" json:"customer_ids,omitempty"`
-	UserIDs     []string              `gorm:"-" json:"user_ids,omitempty"`
+	Teams         []TableTeam           `gorm:"many2many:governance_virtual_key_teams;foreignKey:ID;joinForeignKey:VirtualKeyID;references:ID;joinReferences:TeamID" json:"teams,omitempty"`
+	Customers     []TableCustomer       `gorm:"many2many:governance_virtual_key_customers;foreignKey:ID;joinForeignKey:VirtualKeyID;references:ID;joinReferences:CustomerID" json:"customers,omitempty"`
+	BusinessUnits []TableBusinessUnit   `gorm:"many2many:governance_virtual_key_business_units;foreignKey:ID;joinForeignKey:VirtualKeyID;references:ID;joinReferences:BusinessUnitID" json:"business_units,omitempty"`
+	Users         []TableVirtualKeyUser `gorm:"foreignKey:VirtualKeyID;constraint:OnDelete:CASCADE" json:"users,omitempty"`
+	TeamIDs         []string `gorm:"-" json:"team_ids,omitempty"`
+	CustomerIDs     []string `gorm:"-" json:"customer_ids,omitempty"`
+	UserIDs         []string `gorm:"-" json:"user_ids,omitempty"`
+	BusinessUnitIDs []string `gorm:"-" json:"business_unit_ids,omitempty"`
 	RateLimit   *TableRateLimit       `gorm:"foreignKey:RateLimitID;onDelete:CASCADE" json:"rate_limit,omitempty"`
 	Budgets     []TableBudget         `gorm:"foreignKey:VirtualKeyID;constraint:OnDelete:CASCADE" json:"budgets,omitempty"` // Multiple budgets with different reset intervals
 

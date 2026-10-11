@@ -87,6 +87,7 @@ export interface VirtualKey {
 	team_ids?: string[];
 	customer_ids?: string[];
 	user_ids?: string[];
+	business_unit_ids?: string[];
 	rate_limit_id?: string;
 	is_active: boolean;
 	expires_at?: string | null; // ISO 8601 UTC timestamp; null or absent means never expires
@@ -98,6 +99,7 @@ export interface VirtualKey {
 	customer?: Customer;
 	teams?: Team[];
 	customers?: Customer[];
+	business_units?: { id: string; name: string }[];
 	users?: VirtualKeyUserLink[]; // Link rows only; resolve names via user_id
 	budgets?: Budget[];
 	rate_limit?: RateLimit;
@@ -188,6 +190,7 @@ export interface CreateVirtualKeyRequest {
 	team_ids?: string[];
 	customer_ids?: string[];
 	user_ids?: string[];
+	business_unit_ids?: string[];
 	budgets?: CreateBudgetRequest[];
 	rate_limit?: CreateRateLimitRequest;
 	is_active?: boolean;
@@ -205,6 +208,7 @@ export interface UpdateVirtualKeyRequest {
 	team_ids?: string[];
 	customer_ids?: string[];
 	user_ids?: string[];
+	business_unit_ids?: string[];
 	budgets?: CreateBudgetRequest[];
 	rate_limit?: UpdateRateLimitRequest;
 	is_active?: boolean;

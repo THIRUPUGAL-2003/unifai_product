@@ -146,6 +146,10 @@ type WorkspaceStore interface {
 	SetVirtualKeyCustomers(ctx context.Context, virtualKeyID string, customerIDs []string, tx ...*gorm.DB) error
 	ListVirtualKeysForCustomer(ctx context.Context, customerID string) ([]tables.TableVirtualKeyCustomer, error)
 
+	ListVirtualKeyBusinessUnits(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyBusinessUnit, error)
+	SetVirtualKeyBusinessUnits(ctx context.Context, virtualKeyID string, businessUnitIDs []string, tx ...*gorm.DB) error
+	ListVirtualKeysForBusinessUnit(ctx context.Context, businessUnitID string) ([]tables.TableVirtualKeyBusinessUnit, error)
+
 	ListTeamMembers(ctx context.Context, teamID string) ([]tables.TableTeamMember, error)
 	AddTeamMember(ctx context.Context, teamID, userID string) error
 	RemoveTeamMember(ctx context.Context, teamID, userID string) error
@@ -642,6 +646,50 @@ func (s *RDBConfigStore) SetVirtualKeyTeams(ctx context.Context, virtualKeyID st
 		row := tables.TableVirtualKeyTeam{VirtualKeyID: virtualKeyID, TeamID: tid, CreatedAt: now, UpdatedAt: now}
 		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
 			return fmt.Errorf("link virtual key %s to team %s: %w", virtualKeyID, tid, err)
+		}
+	}
+	return nil
+}
+
+func (s *RDBConfigStore) ensureVirtualKeyBusinessUnitsTable(ctx context.Context) {
+	s.ensureTableOnce("vk_business_units", func() {
+		db := s.DB().WithContext(ctx)
+		if !db.Migrator().HasTable(&tables.TableVirtualKeyBusinessUnit{}) {
+			_ = db.AutoMigrate(&tables.TableVirtualKeyBusinessUnit{})
+		}
+	})
+}
+
+func (s *RDBConfigStore) ListVirtualKeyBusinessUnits(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyBusinessUnit, error) {
+	s.ensureVirtualKeyBusinessUnitsTable(ctx)
+	var rows []tables.TableVirtualKeyBusinessUnit
+	err := s.DB().WithContext(ctx).Where("virtual_key_id = ?", virtualKeyID).Find(&rows).Error
+	return rows, err
+}
+
+func (s *RDBConfigStore) ListVirtualKeysForBusinessUnit(ctx context.Context, businessUnitID string) ([]tables.TableVirtualKeyBusinessUnit, error) {
+	s.ensureVirtualKeyBusinessUnitsTable(ctx)
+	var rows []tables.TableVirtualKeyBusinessUnit
+	err := s.DB().WithContext(ctx).Where("business_unit_id = ?", businessUnitID).Find(&rows).Error
+	return rows, err
+}
+
+// SetVirtualKeyBusinessUnits replaces the VK's business-unit links. See SetVirtualKeyTeams for tx.
+func (s *RDBConfigStore) SetVirtualKeyBusinessUnits(ctx context.Context, virtualKeyID string, businessUnitIDs []string, tx ...*gorm.DB) error {
+	s.ensureVirtualKeyBusinessUnitsTable(ctx)
+	db := s.linkDB(ctx, tx)
+	businessUnitIDs = uniqueNonEmpty(businessUnitIDs)
+	if len(businessUnitIDs) == 0 {
+		return db.Where("virtual_key_id = ?", virtualKeyID).Delete(&tables.TableVirtualKeyBusinessUnit{}).Error
+	}
+	if err := db.Where("virtual_key_id = ? AND business_unit_id NOT IN ?", virtualKeyID, businessUnitIDs).Delete(&tables.TableVirtualKeyBusinessUnit{}).Error; err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, id := range businessUnitIDs {
+		row := tables.TableVirtualKeyBusinessUnit{VirtualKeyID: virtualKeyID, BusinessUnitID: id, CreatedAt: now, UpdatedAt: now}
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+			return fmt.Errorf("link virtual key %s to business unit %s: %w", virtualKeyID, id, err)
 		}
 	}
 	return nil
