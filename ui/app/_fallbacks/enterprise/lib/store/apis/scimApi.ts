@@ -35,6 +35,8 @@ export interface ADSyncResponse {
 	discovered_count?: number;
 	created_count?: number;
 	existing_count?: number;
+	teams_created_count?: number;
+	emails_sent_count?: number;
 	quota_reached?: boolean;
 }
 

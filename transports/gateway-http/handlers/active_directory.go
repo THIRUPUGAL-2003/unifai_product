@@ -410,11 +410,13 @@ func (h *WorkspaceHandler) syncActiveDirectoryUsers(ctx *fasthttp.RequestCtx) {
 			}
 		}
 
-		// Generate random internal secret for the user
+		// Generate a temporary password so the user can log in for the first time.
+		// MustChangePassword=true forces a reset on first login.
 		tempPass, _ := generateTemporaryPassword()
 		hashedPassword, hashErr := encrypt.Hash(tempPass)
 		if hashErr != nil {
 			hashedPassword = "ad-managed-account"
+			tempPass = ""
 		}
 
 		role := cfg.DefaultRole
@@ -430,7 +432,7 @@ func (h *WorkspaceHandler) syncActiveDirectoryUsers(ctx *fasthttp.RequestCtx) {
 			Role:               role,
 			Status:             tables.UserStatusApproved,
 			ExternalID:         "ad:" + username,
-			MustChangePassword: false,
+			MustChangePassword: true,
 			CreatedAt:          now,
 			UpdatedAt:          now,
 		}
@@ -443,6 +445,14 @@ func (h *WorkspaceHandler) syncActiveDirectoryUsers(ctx *fasthttp.RequestCtx) {
 		if h.promptLifecycle != nil {
 			_ = h.promptLifecycle.OnUserCreated(ctx, newUser, true)
 		}
+
+		// Send welcome email with temporary password (same as SCIM provisioning flow).
+		if tempPass != "" {
+			trySendProvisionedEmail(h.store.ConfigStore, ctx, newUser.Username, newUser.Email, tempPass)
+		}
+
+		// Assign to the default team configured in SCIM settings, if any.
+		h.scimAssignDefaultTeam(ctx, newUser.ID)
 
 		createdCount++
 	}
