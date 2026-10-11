@@ -599,10 +599,11 @@ type Config struct {
 	EnvLabel string
 
 	// StreamingDecompressThreshold overrides the default threshold (10MB) for
-	// switching from buffered to streaming request decompression. Set by
-	// enterprise from LargePayloadConfig.RequestThresholdBytes. Zero means
+	// switching from buffered to streaming request decompression. Set from
+	// Client Settings → Large payload. Zero means
 	// use schemas.DefaultLargePayloadRequestThresholdBytes.
 	StreamingDecompressThreshold int64
+	largePayload                 atomic.Pointer[LargePayloadRuntime]
 	// WebSocket configuration for WS gateway features (Responses WS mode, Realtime API).
 	WebSocketConfig *schemas.WebSocketConfig
 
@@ -912,6 +913,7 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 	}
 	// 4. Client config (store → file → defaults)
 	loadClientConfig(ctx, config, &configData)
+	config.applyStoredLargePayload(ctx)
 	// Reject an out-of-range client config (e.g. auth_code_ttl above the cap)
 	// loudly at startup instead of silently correcting it, so in-memory, core,
 	// and DB state cannot diverge.
@@ -4855,6 +4857,7 @@ func initFeatureFlags(ctx context.Context, config *Config, configData *ConfigDat
 		return fmt.Errorf("failed to initialize feature flags: %w", err)
 	}
 	config.FeatureFlags = store
+	featureflags.SetActive(store)
 
 	if config.ConfigStore != nil {
 		rows, err := config.ConfigStore.ListFeatureFlags(ctx)

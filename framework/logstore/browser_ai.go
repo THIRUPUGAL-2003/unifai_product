@@ -1065,6 +1065,40 @@ func (m *BrowserAIManager) DeleteRule(ctx context.Context, id string) error {
 	return db.WithContext(ctx).Where("id = ?", id).Delete(&BrowserGuardRule{}).Error
 }
 
+// unifySharedLogAutoDelete keeps Prompt Logs and Search Logs on one auto-delete
+// switch and one retention period. Returns true when the stored fields differed.
+func unifySharedLogAutoDelete(ctrl *BrowserControlSettings) bool {
+	if ctrl == nil {
+		return false
+	}
+	on := ctrl.PromptLogAutoDelete || ctrl.SearchLogAutoDelete
+	retention := ctrl.PromptLogRetention
+	if ctrl.PromptLogAutoDelete && strings.TrimSpace(ctrl.PromptLogRetention) != "" {
+		retention = ctrl.PromptLogRetention
+	} else if ctrl.SearchLogAutoDelete && strings.TrimSpace(ctrl.SearchLogRetention) != "" {
+		retention = ctrl.SearchLogRetention
+	} else if strings.TrimSpace(retention) == "" {
+		retention = ctrl.SearchLogRetention
+	}
+	retention = normalizeLogRetention(retention)
+	changed := ctrl.PromptLogAutoDelete != on || ctrl.SearchLogAutoDelete != on ||
+		ctrl.PromptLogRetention != retention || ctrl.SearchLogRetention != retention
+	ctrl.PromptLogAutoDelete = on
+	ctrl.SearchLogAutoDelete = on
+	ctrl.PromptLogRetention = retention
+	ctrl.SearchLogRetention = retention
+	return changed
+}
+
+func normalizeLogRetention(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1d", "7d", "30d", "90d", "180d", "365d":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return "7d"
+	}
+}
+
 func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSettings, error) {
 	db := m.GetDB()
 	if db == nil {
@@ -1106,6 +1140,14 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 	}
 	if ctrl.PromptLogRetention == "" {
 		ctrl.PromptLogRetention = "7d"
+	}
+	if unifySharedLogAutoDelete(&ctrl) {
+		_ = db.WithContext(ctx).Model(&BrowserControlSettings{}).Where("id = ?", BrowserControlSettingsID).Updates(map[string]any{
+			"prompt_log_auto_delete": ctrl.PromptLogAutoDelete,
+			"search_log_auto_delete": ctrl.SearchLogAutoDelete,
+			"prompt_log_retention":   ctrl.PromptLogRetention,
+			"search_log_retention":   ctrl.SearchLogRetention,
+		}).Error
 	}
 	return &ctrl, nil
 }
@@ -1180,6 +1222,26 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 			}
 		}
 		filtered[k] = v
+	}
+	if _, ok := filtered["prompt_log_auto_delete"]; ok || filtered["search_log_auto_delete"] != nil ||
+		filtered["prompt_log_retention"] != nil || filtered["search_log_retention"] != nil {
+		on := ctrl.PromptLogAutoDelete || ctrl.SearchLogAutoDelete
+		if v, ok := filtered["prompt_log_auto_delete"].(bool); ok {
+			on = v
+		} else if v, ok := filtered["search_log_auto_delete"].(bool); ok {
+			on = v
+		}
+		retention := ctrl.PromptLogRetention
+		if s, ok := filtered["prompt_log_retention"].(string); ok && s != "" {
+			retention = s
+		} else if s, ok := filtered["search_log_retention"].(string); ok && s != "" {
+			retention = s
+		}
+		retention = normalizeLogRetention(retention)
+		filtered["prompt_log_auto_delete"] = on
+		filtered["search_log_auto_delete"] = on
+		filtered["prompt_log_retention"] = retention
+		filtered["search_log_retention"] = retention
 	}
 	filtered["updated_at"] = time.Now()
 

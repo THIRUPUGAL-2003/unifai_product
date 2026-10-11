@@ -1,8 +1,9 @@
 package featureflags
 
-// Section flags gate the workspace menus that already exist. They start
+// Section flags gate workspace menus and the APIs behind them. They start
 // enabled so a fresh install shows every section. Turning one off in
-// Settings → Feature Flags hides that menu and its pages.
+// Settings → Feature Flags hides that menu and rejects its /api calls
+// until the flag is turned back on.
 func init() {
 	defs := []FlagDef{
 		{ID: "section.observability", DisplayName: "Observability", Description: "Dashboard, LLM logs, MCP logs, connectors, and log settings.", Default: true},

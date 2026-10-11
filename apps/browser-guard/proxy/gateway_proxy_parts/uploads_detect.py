@@ -388,6 +388,15 @@ def _is_real_user_upload_name(name: str) -> bool:
         return False
     if re.fullmatch(r"[0-9a-f]{8,}(?:-[0-9a-f]{4,})+", n, re.I):
         return False
+    # Reject code snippets / Python syntax / invalid filesystem characters
+    if any(c in n for c in (':', '<', '>', '"', '|', '?', '*', ';', '{', '}', '\n', '\r', '\t')):
+        return False
+    if n.startswith(('in ', 'or ', 'and ', 'if ', 'def ', 'return ', 'import ', 'from ', 'with ')):
+        return False
+    if n.endswith((' or', ' and', ' in', ' if')):
+        return False
+    if '[:' in n or '()]' in n or '.lower()' in n or '.strip()' in n or '==' in n or '!=' in n:
+        return False
     return True
 
 
@@ -1969,11 +1978,11 @@ def is_confident_file_upload(
                 return True
 
     # Multipart with non-empty real filename=
-    if "filename=" in raw.lower() or "filename*=" in raw.lower():
-        m = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';\r\n]+)["\']?', raw[:16000], re.I)
+    if ("content-disposition" in raw[:4096].lower() and ("filename=" in raw[:4096].lower() or "filename*=" in raw[:4096].lower())):
+        m = re.search(r'content-disposition:[^\r\n]*?filename\*?=(?:UTF-8\'\')?["\']?([^"\';\r\n]+)["\']?', raw[:16000], re.I)
         if m:
             got = (m.group(1) or "").strip().strip('"\'')
-            if got and got.lower() not in _FAKE_UPLOAD_NAMES:
+            if got and _is_real_user_upload_name(got):
                 return True
 
     # Binary content-type alone is NOT enough (media-sync noise).
@@ -2038,6 +2047,9 @@ def extract_pdf_bytes(raw: bytes) -> bytes | None:
         while end < len(data) and data[end] in (10, 13):
             end += 1
         data = data[:end]
+    else:
+        if not raw.startswith(b"%PDF-"):
+            return None
     if len(data) > 20 * 1024 * 1024:
         return None
     return data
@@ -3502,28 +3514,7 @@ def _file_policy_applies_on_send(
     if has_file and chatish:
         return finished
 
-    # Pending upload cache: ONLY on a finished user Send — never on intermediate
-    # ChatGPT JSON calls or telemetry (those used to consume cache as "attachment" and log a
-    # phantom Blocked row 1–2s before the real named Send).
-    if domain and _domain_has_pending_upload_cache(domain):
-        if not chatish:
-            return False
-        if finished:
-            return True
-        peek = ""
-        try:
-            peek = extract_prompt_universal(
-                (raw_text or "").encode("utf-8", errors="ignore") if isinstance(raw_text, str) else (raw_bytes or b""),
-                "",
-                host or "",
-                "",
-            ) or ""
-        except Exception:
-            peek = ""
-        has_user_text = bool(peek and looks_like_user_prompt(peek))
-        if confident and has_user_text and not (_is_persistent_chat_websocket(path) and ("\x1e" in body or '"target":' in body.lower() or '"invocationid"' in body.lower())):
-            return True
-        return False
+    # A pure text chat Send (has_file == False) MUST NEVER be treated as a file upload.
     return False
 
 
@@ -3585,7 +3576,7 @@ def take_all_cached_uploads_for_send(
                     entry = _UPLOAD_FILE_CACHE.pop(key)
                     add_entry(entry)
                     _remove_cache_keys_for_entry(entry, aliases)
-        if allow_latest:
+        if allow_latest and not found:
             now = time.time()
             for alias in aliases:
                 qkey = _upload_queue_key(alias)
@@ -3604,6 +3595,25 @@ def take_all_cached_uploads_for_send(
                     add_entry(latest)
                     _remove_cache_keys_for_entry(latest, aliases)
     return _dedupe_cached_uploads_by_bytes(found)
+
+
+def clear_domain_upload_caches(domain: str) -> None:
+    """Clear all pending upload caches and queues for domain after a finished Send."""
+    aliases = upload_domain_aliases(domain)
+    with _UPLOAD_FILE_CACHE_LOCK:
+        for alias in aliases:
+            _UPLOAD_FILE_QUEUES.pop(_upload_queue_key(alias), None)
+            _UPLOAD_FILE_CACHE.pop(f"{alias}|latest", None)
+            keys_to_del = [k for k in _UPLOAD_FILE_CACHE if k.startswith(f"{alias}|")]
+            for k in keys_to_del:
+                _UPLOAD_FILE_CACHE.pop(k, None)
+    with _DOMAIN_PENDING_NAMES_LOCK:
+        for alias in aliases:
+            _DOMAIN_PENDING_NAMES.pop(alias, None)
+            for k in list(_DOMAIN_PENDING_TS.keys()):
+                if k[0] == alias:
+                    _DOMAIN_PENDING_TS.pop(k, None)
+
 
 
 def take_recent_confident_caches_for_send(domain: str) -> list[dict]:

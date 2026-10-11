@@ -8,12 +8,21 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
+	"github.com/gateway/gateway/framework/featureflags"
 	"github.com/gateway/gateway/framework/logstore"
 	"github.com/valyala/fasthttp"
 )
 
 func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	if !h.verifyGuardSecurity(ctx) {
+		return
+	}
+	if !featureflags.ActiveEnabled(featureflags.FlagBrowserPromptGuard) {
+		var skipped struct {
+			Prompt string `json:"prompt"`
+		}
+		_ = sonic.Unmarshal(ctx.PostBody(), &skipped)
+		writeGuardFeatureOff(ctx, skipped.Prompt)
 		return
 	}
 	h.ensureDB(ctx)
@@ -726,8 +735,25 @@ func (h *BrowserAIHandler) runAIBotOnLogEntry(ctx *fasthttp.RequestCtx, logEntry
 // interceptFile accepts multipart metadata + optional file bytes from Guard/proxy.
 // Filename + extracted text are permanent in Prompt Logs.
 // File bytes are stored temporarily (~10 minutes) for View/Download, then deleted.
+func writeGuardFeatureOff(ctx *fasthttp.RequestCtx, prompt string) {
+	SendJSON(ctx, map[string]any{
+		"status":           "success",
+		"allowed":          true,
+		"action":           "Allowed",
+		"rule_triggered":   "",
+		"warning_message":  "",
+		"forward_prompt":   prompt,
+		"redacted_prompt":  prompt,
+		"feature_disabled": true,
+	})
+}
+
 func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 	if !h.verifyGuardSecurity(ctx) {
+		return
+	}
+	if !featureflags.ActiveEnabled(featureflags.FlagBrowserFileScan) {
+		writeGuardFeatureOff(ctx, "")
 		return
 	}
 	h.ensureDB(ctx)

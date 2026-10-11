@@ -273,6 +273,9 @@ func (h *ConfigHandler) updateMetadata(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("failed to update metadata: %v", err))
 		return
 	}
+	if raw, ok := patch["large_payload"]; ok {
+		h.store.ApplyLargePayloadMetadata(raw)
+	}
 	SendJSON(ctx, map[string]any{"success": true})
 }
 
@@ -1051,12 +1054,17 @@ func (h *ConfigHandler) updateVectorStoreConfig(ctx *fasthttp.RequestCtx) {
 		_, loadedErr := lib.FindPluginAs[*semanticcache.Plugin](h.store, semanticcache.PluginName)
 		pluginLoaded := loadedErr == nil
 		if h.store.VectorStore == nil {
-			if pluginLoaded {
-				if err := h.configManager.RemovePlugin(ctx, semanticcache.PluginName); err != nil {
-					logger.Warn("failed to pause semantic cache after vector store disconnect: %v", err)
+			pluginRow, err := h.store.ConfigStore.GetPlugin(ctx, semanticcache.PluginName)
+			if err == nil && pluginRow != nil && pluginRow.Enabled {
+				if err := h.configManager.ReloadPlugin(ctx, semanticcache.PluginName, pluginRow.Path, pluginRow.Config, pluginRow.Placement, pluginRow.Order); err != nil {
+					logger.Warn("failed to move cache onto in-memory store: %v", err)
 				}
 				if warning == "" {
-					warning = "Semantic cache is paused until a vector store is connected."
+					warning = "External vector store disconnected. Cache is using process memory until you reconnect."
+				}
+			} else if pluginLoaded {
+				if err := h.configManager.RemovePlugin(ctx, semanticcache.PluginName); err != nil {
+					logger.Warn("failed to pause semantic cache after vector store disconnect: %v", err)
 				}
 			}
 		} else {

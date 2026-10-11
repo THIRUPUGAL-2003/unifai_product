@@ -243,6 +243,12 @@ func (c *CorsMiddleware) Middleware() schemas.GatewayHTTPMiddleware {
 func RequestDecompressionMiddleware(config *lib.Config) schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
+			if lp := config.LargePayload(); lp != nil && lp.Enabled && lp.MaxPayload > 0 {
+				if cl := ctx.Request.Header.ContentLength(); cl > int(lp.MaxPayload) {
+					SendError(ctx, fasthttp.StatusRequestEntityTooLarge, fmt.Sprintf("request body exceeds large-payload max of %d bytes", lp.MaxPayload))
+					return
+				}
+			}
 			if len(ctx.Request.Header.ContentEncoding()) == 0 {
 				next(ctx)
 				return

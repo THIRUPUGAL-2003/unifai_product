@@ -95,7 +95,9 @@ export default function PerformanceTuningView() {
 							<label htmlFor="initial-pool-size" className="text-sm font-medium">
 								Initial Pool Size
 							</label>
-							<p className="text-muted-foreground text-sm">The initial connection pool size.</p>
+							<p className="text-muted-foreground text-sm">
+								Connection pool used for request objects. Raising or lowering this replaces the pool on save.
+							</p>
 						</div>
 						<Input
 							id="initial-pool-size"
@@ -117,7 +119,9 @@ export default function PerformanceTuningView() {
 							<label htmlFor="max-request-body-size-mb" className="text-sm font-medium">
 								Max Request Body Size (MB)
 							</label>
-							<p className="text-muted-foreground text-sm">Maximum size of request body in megabytes.</p>
+							<p className="text-muted-foreground text-sm">
+								Largest request body the gateway accepts. The new limit applies on the next request.
+							</p>
 						</div>
 						<Input
 							id="max-request-body-size-mb"

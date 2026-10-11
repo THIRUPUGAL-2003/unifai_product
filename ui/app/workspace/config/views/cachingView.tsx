@@ -401,8 +401,8 @@ export default function CachingView() {
 		}
 	};
 
-	const cachingActive = enabledOnServer && isVectorStoreEnabled;
-	const canToggleOn = isVectorStoreEnabled;
+	const cachingActive = enabledOnServer;
+	const canToggleOn = mode === "direct" || isVectorStoreEnabled;
 	const canToggleOff = enabledOnServer;
 	const isLoading = configLoading || pluginsLoading || vectorStoreLoading;
 
@@ -444,9 +444,11 @@ export default function CachingView() {
 					</div>
 
 					{isVectorStoreEnabled || vectorStoreData?.connected ? (
-						<p className="text-xs font-medium text-emerald-600">Connected — Local Cache Enable is available below.</p>
+						<p className="text-xs font-medium text-emerald-600">Connected — cache entries are stored in this vector database.</p>
 					) : (
-						<p className="text-xs text-amber-700 dark:text-amber-200">Not connected — save a valid store to unlock Enable Caching.</p>
+						<p className="text-xs text-amber-700 dark:text-amber-200">
+							No external store yet. Direct cache still runs in this process&apos;s memory. Connect a store to keep entries across restarts. Semantic mode also needs an embedding provider.
+						</p>
 					)}
 
 					<div className="grid gap-4 sm:grid-cols-2">
@@ -649,8 +651,7 @@ export default function CachingView() {
 						<>
 							{!cachingActive && (
 								<p className="text-muted-foreground text-xs">
-									Configure settings below, then enable caching when the vector store is connected
-									{enabledOnServer && !isVectorStoreEnabled ? " (plugin is on but store is disconnected — disable or reconnect)." : "."}
+									Direct cache works in process memory without an external store. Connect a vector store to keep entries after restart. Semantic mode also needs an embedding provider.
 								</p>
 							)}
 							<div className="space-y-4">

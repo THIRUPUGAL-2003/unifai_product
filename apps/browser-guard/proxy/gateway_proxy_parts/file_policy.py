@@ -42,6 +42,11 @@ def enforce_file_send_policy(
         or event_send_carries_binary_attach(raw_text)
     )
     cached_list = take_all_cached_uploads_for_send(domain, raw_text, allow_latest=False)
+    # A pure text prompt (no attachment markers and no cached upload matched by file id)
+    # must NEVER be treated as a file upload or consume pending upload cache.
+    if not has_attach and not cached_list:
+        return False, "", "", 0, False
+
     expected_n = 0
     try:
         expected_n = _expected_send_attachment_count(raw_text or "")
@@ -66,9 +71,9 @@ def enforce_file_send_policy(
     if not cached_list and has_attach and is_chat_path(path or "", host, raw_text or ""):
         cached_list = take_recent_confident_caches_for_send(domain)
     # Claude/Gemini/Perplexity/DeepSeek: attach-time cache exists but Send omits file ids /
-    # uses placeholder names — still bind recent uploads so predict + rules run.
+    # uses placeholder names — only bind recent uploads when Send actually carries attachment markers!
     # Copilot long-lived WS: never consume cache unless this frame is a finished Send.
-    if not cached_list and domain and _domain_has_pending_upload_cache(domain):
+    if not cached_list and has_attach and domain and _domain_has_pending_upload_cache(domain):
         if _is_persistent_chat_websocket(path) and ("\x1e" in (raw_text or "") or '"target":' in (raw_text or "").lower() or '"invocationid"' in (raw_text or "").lower()) and not (
             _copilot_frame_is_user_send(raw_text or "")
             or _is_confident_chat_send(path, raw_text or "")
@@ -439,41 +444,56 @@ def enforce_file_send_policy(
         if _is_real_user_upload_name(n)
     ]
     if send_real_names:
-        # Send names MUST bind onto rows. If a row has a name not in send_real_names,
-        # it was a stale guess/pending name and must yield to send_real_names.
+        # Strict multi-file alignment: user attached these EXACT files in this Send.
+        # Match each cached entry to send_real_names, and discard all unrelated/stale files!
         send_names_lower = {s.lower(): s for s in send_real_names}
+        matched: list[dict] = []
         used: set[str] = set()
         for e in cached_list:
             cur = (e.get("file_name") or "").strip()
             if cur.lower() in send_names_lower and cur.lower() not in used:
                 e["file_name"] = send_names_lower[cur.lower()]
+                matched.append(e)
                 used.add(cur.lower())
         leftover = [n for n in send_real_names if n.lower() not in used]
-        li = 0
-        for e in cached_list:
-            cur = (e.get("file_name") or "").strip()
-            if cur.lower() in used:
-                continue
-            if li < len(leftover):
-                e["file_name"] = leftover[li]
-                used.add(leftover[li].lower())
-                li += 1
-    # Pending names → nameless upload caches.
-    still_fake = [e for e in cached_list if not _is_real_user_upload_name((e.get("file_name") or "").strip())]
-    if still_fake:
-        try:
-            pending_names = list_pending_upload_names_for_domain(domain)
-        except Exception:
-            pending_names = []
-        already = {
-            (e.get("file_name") or "").strip().lower()
-            for e in cached_list
-            if _is_real_user_upload_name((e.get("file_name") or "").strip())
-        }
-        leftover_p = [n for n in pending_names if n.lower() not in already]
-        for i, e in enumerate(still_fake):
-            if i < len(leftover_p):
-                e["file_name"] = leftover_p[i]
+        remaining = [e for e in cached_list if e not in matched]
+        remaining.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
+        for e in remaining:
+            if not leftover:
+                break
+            n = leftover.pop(0)
+            e["file_name"] = n
+            matched.append(e)
+            used.add(n.lower())
+        for n in leftover:
+            matched.append({
+                "file_name": n,
+                "content_type": content_type or "application/octet-stream",
+                "raw_bytes": b"",
+                "ts": time.time(),
+                "cache_uid": f"send-name|{time.time():.6f}|{n}",
+            })
+        cached_list = matched
+    elif expected_n > 0 and len(cached_list) > expected_n:
+        cached_list = sorted(cached_list, key=lambda x: float(x.get("ts") or 0), reverse=True)[:expected_n]
+        cached_list.reverse()
+    else:
+        # Pending names → nameless upload caches.
+        still_fake = [e for e in cached_list if not _is_real_user_upload_name((e.get("file_name") or "").strip())]
+        if still_fake:
+            try:
+                pending_names = list_pending_upload_names_for_domain(domain)
+            except Exception:
+                pending_names = []
+            already = {
+                (e.get("file_name") or "").strip().lower()
+                for e in cached_list
+                if _is_real_user_upload_name((e.get("file_name") or "").strip())
+            }
+            leftover_p = [n for n in pending_names if n.lower() not in already]
+            for i, e in enumerate(still_fake):
+                if i < len(leftover_p):
+                    e["file_name"] = leftover_p[i]
 
     # ChatGPT/Gemini/Copilot: create-file name often lands a beat after bytes.
     # Wait + bind before any Prompt Log so we never write "attachment" on Send.
@@ -507,12 +527,10 @@ def enforce_file_send_policy(
 
         if is_audio:
             if _is_fake_upload_name(fname) or fname.lower() in ("attachment", "audio.bin"):
-                suffix = f" {i + 1}" if n_cached > 1 else ""
-                fname = f"Voice Note{suffix}"
+                fname = "Voice Note"
         elif _looks_like_image(bytes(cached_bytes), cached_ct, fname):
             if _is_fake_upload_name(fname) or fname.lower() in ("attachment", "image.png", "image.jpg"):
-                suffix = f" {i + 1}" if n_cached > 1 else ""
-                fname = f"Image{suffix}"
+                fname = "Image"
         elif _is_fake_upload_name(fname) or not fname:
             send_real = _prefer_real_filenames(
                 n for n in extract_all_attachment_filenames_from_send(raw_text or "")
@@ -538,8 +556,7 @@ def enforce_file_send_policy(
                         fname = pending
                     else:
                         is_img = _looks_like_image(bytes(cached_bytes), cached_ct, fname)
-                        suffix = f" {i + 1}" if n_cached > 1 else ""
-                        fname = f"Image{suffix}" if is_img else f"Document{suffix}"
+                        fname = "Image" if is_img else "Document"
             cached["file_name"] = fname
             if _is_real_user_upload_name(fname) and cached_bytes:
                 try:
@@ -548,14 +565,11 @@ def enforce_file_send_policy(
                     pass
         display_label = _display_label_for_upload(fname, bytes(cached_bytes), cached_ct)
         if is_audio and display_label.lower() in ("attachment", "audio.bin"):
-            suffix = f" {i + 1}" if n_cached > 1 else ""
-            display_label = f"Voice Note{suffix}"
+            display_label = "Voice Note"
         elif _looks_like_image(bytes(cached_bytes), cached_ct, fname) and display_label.lower() in ("attachment", "image.png"):
-            suffix = f" {i + 1}" if n_cached > 1 else ""
-            display_label = f"Image{suffix}"
+            display_label = "Image"
         elif display_label.lower() in ("attachment", "document.pdf", "unknown"):
-            suffix = f" {i + 1}" if n_cached > 1 else ""
-            display_label = f"Document{suffix}"
+            display_label = "Document"
         prepared.append({
             "file_label": display_label,
             "store_name": fname,
@@ -905,6 +919,11 @@ def enforce_file_send_policy(
             ids=_extract_file_ids_from_chat(raw_text or ""),
             message=block_msg,
         )
+    try:
+        from uploads_detect import clear_domain_upload_caches
+        clear_domain_upload_caches(domain)
+    except Exception:
+        pass
     return should_block, block_msg, redact_notice, n_files, bool(caption) or n_files > 0
 
 

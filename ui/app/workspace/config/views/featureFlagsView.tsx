@@ -35,8 +35,10 @@ export default function FeatureFlagsView() {
 			<div>
 				<h2 className="text-lg font-semibold tracking-tight">Feature Flags</h2>
 				<p className="text-muted-foreground text-sm">
-					Toggle in-process feature flags. Flags are declared in code; values can also be set via{" "}
-					<code className="text-xs">config.json</code> or Helm, in which case they appear here as locked.
+					These switches change the running product on the next request. Section flags hide that menu and
+					reject its APIs. Behavior flags turn off prompt guard, file scan, or the response cache without
+					deleting the saved settings. Values pinned in <code className="text-xs">config.json</code> or Helm
+					show as locked.
 				</p>
 			</div>
 

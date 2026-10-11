@@ -12,6 +12,7 @@ import (
 
 	gateway "github.com/gateway/gateway/core"
 	"github.com/gateway/gateway/core/schemas"
+	"github.com/gateway/gateway/framework/featureflags"
 	"github.com/gateway/gateway/framework/vectorstore"
 )
 
@@ -342,6 +343,9 @@ func (plugin *Plugin) PreRequestHook(_ *schemas.GatewayContext, _ *schemas.Gatew
 // state on the plugin keyed by request ID for PostLLMHook to consume when
 // the upstream response arrives.
 func (plugin *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (*schemas.GatewayRequest, *schemas.LLMPluginShortCircuit, error) {
+	if !featureflags.ActiveEnabled(featureflags.FlagCacheResponses) {
+		return req, nil, nil
+	}
 	cacheKey, ok := plugin.resolveCacheKey(ctx)
 	if !ok {
 		return req, nil, nil
@@ -507,6 +511,9 @@ func (plugin *Plugin) setPlaceholderVectorIfRequired(state *cacheState) {
 // after the response is delivered doesn't drop the cache write. Returns the
 // response unmodified — caching never alters the request flow.
 func (plugin *Plugin) PostLLMHook(ctx *schemas.GatewayContext, res *schemas.GatewayResponse, gatewayErr *schemas.GatewayError) (*schemas.GatewayResponse, *schemas.GatewayError, error) {
+	if !featureflags.ActiveEnabled(featureflags.FlagCacheResponses) {
+		return res, gatewayErr, nil
+	}
 	if gatewayErr != nil {
 		// We rely on errors always arriving as the final chunk for streams, so
 		// we abort caching here without further bookkeeping. Any partial

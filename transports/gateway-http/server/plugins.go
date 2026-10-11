@@ -9,6 +9,7 @@ import (
 
 	"github.com/gateway/gateway/core/schemas"
 	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/vectorstore"
 	"github.com/gateway/gateway/plugins/compat"
 	"github.com/gateway/gateway/plugins/connectors"
 	"github.com/gateway/gateway/plugins/governance"
@@ -110,7 +111,11 @@ func loadBuiltinPlugin(ctx context.Context, name string, pluginConfig any, gatew
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal semantic cache plugin config: %w", err)
 		}
-		return semanticcache.Init(ctx, semanticConfig, logger, gatewayConfig.VectorStore)
+		cacheStore := gatewayConfig.VectorStore
+		if cacheStore == nil {
+			cacheStore = vectorstore.NewMemoryStore()
+		}
+		return semanticcache.Init(ctx, semanticConfig, logger, cacheStore)
 
 	case otel.PluginName:
 		otelConfig, err := MarshalPluginConfig[otel.Config](pluginConfig)

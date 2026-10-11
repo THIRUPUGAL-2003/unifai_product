@@ -91,7 +91,8 @@ type Gateway struct {
 	mcpCredStore        schemas.MCPCredentialStore          // Per-call credential resolver for MCP tool execution (wraps oauth2Provider for OAuth-flavored auth types)
 	mcpInitOnce         sync.Once                           // Ensures MCP manager is initialized only once
 	dropExcessRequests  atomic.Bool                         // If true, in cases where the queue is full, requests will not wait for the queue to be empty and will be dropped instead.
-	prewarmedPool       int                                 // How many objects were placed in each sync.Pool. Grows when InitialPoolSize is raised.
+	poolMu              sync.RWMutex                        // Serializes pool replacement when Performance Tuning changes the size.
+	prewarmedPool       int                                 // How many objects were placed in each sync.Pool.
 	keySelector         schemas.KeySelector                 // Custom key selector function
 	keyPoolFilter       schemas.KeyPoolFilter               // optional hook to veto keys before selection (nil = all eligible)
 	kvStore             schemas.KVStore                     // optional KV store for session stickiness (nil = disabled)
@@ -384,8 +385,8 @@ func (gateway *Gateway) getTracer() schemas.Tracer {
 // We will keep on adding other aspects as required
 func (gateway *Gateway) ReloadConfig(config schemas.GatewayConfig) error {
 	gateway.dropExcessRequests.Store(config.DropExcessRequests)
-	if config.InitialPoolSize > gateway.prewarmedPool {
-		gateway.prewarmPools(config.InitialPoolSize - gateway.prewarmedPool)
+	if config.InitialPoolSize > 0 {
+		gateway.resizePools(config.InitialPoolSize)
 	}
 	return nil
 }
@@ -406,6 +407,33 @@ func (gateway *Gateway) prewarmPools(n int) {
 		gateway.gatewayRequestPool.Put(&schemas.GatewayRequest{})
 	}
 	gateway.prewarmedPool += n
+}
+
+// resizePools grows or replaces the object pools so a smaller Performance Tuning
+// value takes effect without waiting for a process restart.
+func (gateway *Gateway) resizePools(n int) {
+	if gateway == nil || n <= 0 {
+		return
+	}
+	gateway.poolMu.Lock()
+	defer gateway.poolMu.Unlock()
+	if n == gateway.prewarmedPool {
+		return
+	}
+	if n > gateway.prewarmedPool {
+		gateway.prewarmPools(n - gateway.prewarmedPool)
+		return
+	}
+	gateway.channelMessagePool = sync.Pool{New: func() any { return &ChannelMessage{} }}
+	gateway.responseChannelPool = sync.Pool{New: func() any { return make(chan *schemas.GatewayResponse, 1) }}
+	gateway.errorChannelPool = sync.Pool{New: func() any { return make(chan schemas.GatewayError, 1) }}
+	gateway.responseStreamPool = sync.Pool{New: func() any { return make(chan chan *schemas.GatewayStreamChunk, 1) }}
+	gateway.pluginPipelinePool = sync.Pool{New: func() any {
+		return &PluginPipeline{preHookErrors: make([]error, 0), postHookErrors: make([]error, 0)}
+	}}
+	gateway.gatewayRequestPool = sync.Pool{New: func() any { return &schemas.GatewayRequest{} }}
+	gateway.prewarmedPool = 0
+	gateway.prewarmPools(n)
 }
 
 // PUBLIC API METHODS
@@ -7882,7 +7910,9 @@ func (p *PluginPipeline) GetChunkCount() int {
 
 // getPluginPipeline gets a PluginPipeline from the pool and configures it
 func (gateway *Gateway) getPluginPipeline() *PluginPipeline {
+	gateway.poolMu.RLock()
 	pipeline := gateway.pluginPipelinePool.Get().(*PluginPipeline)
+	gateway.poolMu.RUnlock()
 	pipeline.llmPlugins = *gateway.llmPlugins.Load()
 	pipeline.mcpPlugins = *gateway.mcpPlugins.Load()
 	pipeline.logger = gateway.logger
@@ -7895,7 +7925,9 @@ func (gateway *Gateway) getPluginPipeline() *PluginPipeline {
 // associated GatewayContext before calling this method.
 func (gateway *Gateway) releasePluginPipeline(pipeline *PluginPipeline) {
 	pipeline.resetPluginPipeline()
+	gateway.poolMu.RLock()
 	gateway.pluginPipelinePool.Put(pipeline)
+	gateway.poolMu.RUnlock()
 }
 
 // POOL & RESOURCE MANAGEMENT
@@ -7903,9 +7935,16 @@ func (gateway *Gateway) releasePluginPipeline(pipeline *PluginPipeline) {
 // getChannelMessage gets a ChannelMessage from the pool and configures it with the request.
 // It also gets response and error channels from their respective pools.
 func (gateway *Gateway) getChannelMessage(req schemas.GatewayRequest) *ChannelMessage {
-	// Get channels from pool
+	gateway.poolMu.RLock()
 	responseChan := gateway.responseChannelPool.Get().(chan *schemas.GatewayResponse)
 	errorChan := gateway.errorChannelPool.Get().(chan schemas.GatewayError)
+	msg := gateway.channelMessagePool.Get().(*ChannelMessage)
+	var responseStreamChan chan chan *schemas.GatewayStreamChunk
+	needStream := IsStreamRequestType(req.RequestType)
+	if needStream {
+		responseStreamChan = gateway.responseStreamPool.Get().(chan chan *schemas.GatewayStreamChunk)
+	}
+	gateway.poolMu.RUnlock()
 
 	// Clear any previous values to avoid leaking between requests
 	select {
@@ -7917,16 +7956,11 @@ func (gateway *Gateway) getChannelMessage(req schemas.GatewayRequest) *ChannelMe
 	default:
 	}
 
-	// Get message from pool and configure it
-	msg := gateway.channelMessagePool.Get().(*ChannelMessage)
 	msg.GatewayRequest = req
 	msg.Response = responseChan
 	msg.Err = errorChan
 
-	// Conditionally allocate ResponseStream for streaming requests only
-	if IsStreamRequestType(req.RequestType) {
-		responseStreamChan := gateway.responseStreamPool.Get().(chan chan *schemas.GatewayStreamChunk)
-		// Clear any previous values to avoid leaking between requests
+	if needStream {
 		select {
 		case <-responseStreamChan:
 		default:
@@ -7980,27 +8014,21 @@ func (gateway *Gateway) drainQueueWithErrors(pq *ProviderQueue) {
 
 // releaseChannelMessage returns a ChannelMessage and its channels to their respective pools.
 func (gateway *Gateway) releaseChannelMessage(msg *ChannelMessage) {
-	// Put channels back in pools
+	gateway.poolMu.RLock()
 	gateway.responseChannelPool.Put(msg.Response)
 	gateway.errorChannelPool.Put(msg.Err)
-
-	// Return ResponseStream to pool if it was used
 	if msg.ResponseStream != nil {
-		// Drain any remaining channels to prevent memory leaks
 		select {
 		case <-msg.ResponseStream:
 		default:
 		}
 		gateway.responseStreamPool.Put(msg.ResponseStream)
 	}
-
-	// Release of Gateway Request is handled in handle methods as they are required for fallbacks
-
-	// Clear references and return to pool
 	msg.Response = nil
 	msg.ResponseStream = nil
 	msg.Err = nil
 	gateway.channelMessagePool.Put(msg)
+	gateway.poolMu.RUnlock()
 }
 
 // resetGatewayRequest resets a GatewayRequest instance for reuse
@@ -8060,14 +8088,18 @@ func resetGatewayRequest(req *schemas.GatewayRequest) {
 
 // getGatewayRequest gets a GatewayRequest from the pool
 func (gateway *Gateway) getGatewayRequest() *schemas.GatewayRequest {
+	gateway.poolMu.RLock()
 	req := gateway.gatewayRequestPool.Get().(*schemas.GatewayRequest)
+	gateway.poolMu.RUnlock()
 	return req
 }
 
 // releaseGatewayRequest returns a GatewayRequest to the pool
 func (gateway *Gateway) releaseGatewayRequest(req *schemas.GatewayRequest) {
 	resetGatewayRequest(req)
+	gateway.poolMu.RLock()
 	gateway.gatewayRequestPool.Put(req)
+	gateway.poolMu.RUnlock()
 }
 
 // filterKeysByID returns the subset of keys whose ID equals target. Used to

@@ -1087,6 +1087,9 @@ def is_noise(path: str, content: str = "") -> bool:
             return True
         if '{"prepare_token":' in content or '"prepare_token"' in content:
             return True
+        # ChatGPT turn analytics / client telemetry — not user text
+        if '"turn_analytics"' in content or '"turn_session_id"' in content or '"turn_exchange_id"' in content:
+            return True
         # ChatGPT encrypted sentinel / challenge blobs — not user text
         if '"p":"gAAAA' in content or content.strip().startswith('{"p":"gAAAA'):
             return True

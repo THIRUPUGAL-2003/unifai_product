@@ -1458,6 +1458,25 @@ export default function BrowserAiPage() {
 		}
 	};
 
+	const sharedLogAutoDelete = !!(controls.prompt_log_auto_delete || controls.search_log_auto_delete);
+	const sharedLogRetention = ["1d", "7d", "30d", "90d", "180d", "365d"].includes(controls.prompt_log_retention || "")
+		? controls.prompt_log_retention
+		: ["1d", "7d", "30d", "90d", "180d", "365d"].includes(controls.search_log_retention || "")
+			? controls.search_log_retention
+			: "7d";
+
+	const patchSharedLogAutoDelete = (on: boolean, retention?: string) => {
+		const period = retention || sharedLogRetention || "7d";
+		void patchControl({
+			prompt_log_auto_delete: on,
+			search_log_auto_delete: on,
+			prompt_log_retention: period,
+			search_log_retention: period,
+		});
+		void refetchLogs();
+		void refetchSearchLogs();
+	};
+
 	const saveUploadWarning = async () => {
 		setUploadWarningError("");
 		setUploadWarningSaving(true);
@@ -2515,35 +2534,17 @@ export default function BrowserAiPage() {
 						<div className="flex items-center gap-2">
 							<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
 								<Switch
-									checked={!!controls.prompt_log_auto_delete}
-									onCheckedChange={(on) => {
-										void patchControl({
-											prompt_log_auto_delete: on,
-											prompt_log_retention: controls.prompt_log_retention || "7d",
-										});
-										if (on) {
-											void refetchLogs();
-										}
-									}}
+									checked={sharedLogAutoDelete}
+									onCheckedChange={(on) => patchSharedLogAutoDelete(on)}
 									id="prompt-log-auto-delete"
 								/>
 								<Label htmlFor="prompt-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
 									Auto-delete
 								</Label>
-								{controls.prompt_log_auto_delete ? (
+								{sharedLogAutoDelete ? (
 									<Select
-										value={
-											["1d", "7d", "30d", "90d", "180d", "365d"].includes(controls.prompt_log_retention || "")
-												? controls.prompt_log_retention
-												: "7d"
-										}
-										onValueChange={(v) => {
-											void patchControl({
-												prompt_log_auto_delete: true,
-												prompt_log_retention: v,
-											});
-											void refetchLogs();
-										}}
+										value={sharedLogRetention}
+										onValueChange={(v) => patchSharedLogAutoDelete(true, v)}
 									>
 										<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
 											<SelectValue />
@@ -2588,35 +2589,17 @@ export default function BrowserAiPage() {
 						<div className="flex items-center gap-2">
 							<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
 								<Switch
-									checked={!!controls.search_log_auto_delete}
-									onCheckedChange={(on) => {
-										void patchControl({
-											search_log_auto_delete: on,
-											search_log_retention: controls.search_log_retention || "7d",
-										});
-										if (on) {
-											void refetchSearchLogs();
-										}
-									}}
+									checked={sharedLogAutoDelete}
+									onCheckedChange={(on) => patchSharedLogAutoDelete(on)}
 									id="search-log-auto-delete"
 								/>
 								<Label htmlFor="search-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
 									Auto-delete
 								</Label>
-								{controls.search_log_auto_delete ? (
+								{sharedLogAutoDelete ? (
 									<Select
-										value={
-											["1d", "7d", "30d", "90d", "180d", "365d"].includes(controls.search_log_retention || "")
-												? controls.search_log_retention
-												: "7d"
-										}
-										onValueChange={(v) => {
-											void patchControl({
-												search_log_auto_delete: true,
-												search_log_retention: v,
-											});
-											void refetchSearchLogs();
-										}}
+										value={sharedLogRetention}
+										onValueChange={(v) => patchSharedLogAutoDelete(true, v)}
 									>
 										<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
 											<SelectValue />

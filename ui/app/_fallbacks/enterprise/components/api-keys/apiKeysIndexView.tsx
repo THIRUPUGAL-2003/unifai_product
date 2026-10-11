@@ -4,12 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 import { useCopyToClipboard } from "@/hooks/useCopyToClipboard";
-import { getErrorMessage, useGetCoreConfigQuery, useGetGovernanceHealthQuery, useGetVirtualKeysQuery } from "@/lib/store";
+import { getErrorMessage, useGetCoreConfigQuery, useGetGovernanceHealthQuery, useGetVirtualKeysQuery, useCreateVirtualKeyMutation } from "@/lib/store";
 import { getExampleBaseUrl } from "@/lib/utils/port";
 import { Link } from "@tanstack/react-router";
 import { CheckCircle2, Copy, ExternalLink, InfoIcon, Key, Shield } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 export default function APIKeysView() {
 	const { data: gatewayConfig, isLoading, isError: configFailed, error: configError, refetch: refetchConfig } = useGetCoreConfigQuery({
@@ -30,6 +32,9 @@ export default function APIKeysView() {
 		error: healthError,
 	} = useGetGovernanceHealthQuery();
 	const { copy: copyToClipboard } = useCopyToClipboard();
+	const [keyName, setKeyName] = useState("");
+	const [createdSecret, setCreatedSecret] = useState("");
+	const [createVirtualKey, { isLoading: creatingKey }] = useCreateVirtualKeyMutation();
 
 	const isAuthConfigured = useMemo(() => gatewayConfig?.auth_config?.is_enabled, [gatewayConfig]);
 	const isInferenceAuthDisabled = !(gatewayConfig?.client_config?.enforce_auth_on_inference ?? false);
@@ -162,7 +167,7 @@ curl --location '${baseUrl}/api/governance/virtual-keys' \\
 				<CardHeader className="flex flex-row items-center justify-between">
 					<div>
 						<CardTitle className="text-base">Virtual Keys (inference)</CardTitle>
-						<CardDescription>Issue and rotate keys under Governance → Virtual Keys.</CardDescription>
+						<CardDescription>Create a key here, or open Governance to rotate and scope it.</CardDescription>
 					</div>
 					<Button asChild variant="outline" size="sm">
 						<Link to="/workspace/governance/virtual-keys">
@@ -172,6 +177,43 @@ curl --location '${baseUrl}/api/governance/virtual-keys' \\
 					</Button>
 				</CardHeader>
 				<CardContent>
+					<div className="mb-4 flex flex-col gap-2 sm:flex-row">
+						<Input
+							value={keyName}
+							onChange={(e) => setKeyName(e.target.value)}
+							placeholder="Key name"
+							aria-label="New virtual key name"
+						/>
+						<Button
+							type="button"
+							disabled={creatingKey || !keyName.trim()}
+							onClick={() => {
+								void (async () => {
+									try {
+										const result = await createVirtualKey({ name: keyName.trim(), is_active: true }).unwrap();
+										const secret = result.virtual_key?.value || "";
+										setCreatedSecret(secret);
+										setKeyName("");
+										toast.success("Virtual key created");
+									} catch (error) {
+										toast.error(getErrorMessage(error));
+									}
+								})();
+							}}
+						>
+							{creatingKey ? "Creating…" : "Create key"}
+						</Button>
+					</div>
+					{createdSecret ? (
+						<Alert className="mb-4">
+							<AlertDescription className="flex items-center justify-between gap-2">
+								<span className="truncate font-mono text-xs">{createdSecret}</span>
+								<Button type="button" size="sm" variant="outline" onClick={() => copyToClipboard(createdSecret)}>
+									Copy
+								</Button>
+							</AlertDescription>
+						</Alert>
+					) : null}
 					{loadingKeys ? (
 						<p className="text-muted-foreground text-sm">Loading virtual keys…</p>
 					) : virtualKeys.length === 0 ? (

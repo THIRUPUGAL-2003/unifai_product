@@ -209,13 +209,9 @@ export default function ClientSettingsView() {
 			}
 		}
 
-		if (coreConfigSaved || largePayloadSaved) {
-			if (largePayloadSaved) {
-				toast.success("Settings updated. Large payload changes require a restart to apply.");
-			} else {
-				toast.success("Client settings updated successfully.");
+			if (coreConfigSaved || largePayloadSaved) {
+				toast.success("Client settings updated. Changes apply on the next request.");
 			}
-		}
 	}, [
 		gatewayConfig,
 		hasSecurityHeaderError,

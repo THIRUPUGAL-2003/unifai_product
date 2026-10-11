@@ -984,6 +984,9 @@ func (s *GatewayHTTPServer) ReloadClientConfigFromConfigStore(ctx context.Contex
 		return fmt.Errorf("client config not found")
 	}
 	*s.Config.ClientConfig = *config
+	if meta, err := s.Config.ConfigStore.GetClientMetadata(ctx); err == nil {
+		s.Config.ApplyLargePayloadMetadata(meta["large_payload"])
+	}
 	// Reloading whitelisted routes from the client config
 	if s.AuthMiddleware != nil {
 		s.AuthMiddleware.UpdateWhitelistedRoutes(config.WhitelistedRoutes)
@@ -2045,6 +2048,8 @@ func (s *GatewayHTTPServer) Bootstrap(ctx context.Context) error {
 		apiMiddlewares = append(apiMiddlewares, handlers.WorkspaceAuditMiddleware(s.Config.ConfigStore))
 		// Enforce workspace RBAC permissions on all /api/* routes
 		apiMiddlewares = append(apiMiddlewares, handlers.RBACMiddleware(s.Config.ConfigStore))
+		// Feature Flags → section toggles stop the matching APIs on the next request.
+		apiMiddlewares = append(apiMiddlewares, handlers.SectionFlagMiddleware())
 	}
 	// Add semantic cache plugin embedding request executor if it exists
 	semanticCachePlugin, err := lib.FindPluginAs[*semanticcache.Plugin](s.Config, semanticcache.PluginName)

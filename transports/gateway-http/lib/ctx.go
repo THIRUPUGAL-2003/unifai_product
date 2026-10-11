@@ -211,6 +211,10 @@ func ConvertToGatewayContext(ctx *fasthttp.RequestCtx, store HandlerStore) (*sch
 		ctx.SetUserValue(FastHTTPUserValueGatewayCancel, cancel)
 	}
 
+	if cfg, ok := store.(*Config); ok {
+		StampLargePayload(cfg, gatewayCtx)
+	}
+
 	// Preserve existing request-id if already present on the shared context.
 	if existingRequestID, ok := gatewayCtx.Value(schemas.GatewayContextKeyRequestID).(string); !ok || existingRequestID == "" {
 		// First, check if x-request-id header exists
