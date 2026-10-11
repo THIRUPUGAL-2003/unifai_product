@@ -1790,26 +1790,9 @@ export default function BrowserAiPage() {
 			}
 		}
 
-		// 3. Keep currently selected value if valid and not yet in map
+		// Keep the current filter value if it is not in the configured list yet.
 		if (selectedPlatform && selectedPlatform !== "all" && !map.has(selectedPlatform)) {
 			map.set(selectedPlatform, selectedPlatform);
-		}
-
-		// 4. Common standard AI platforms
-		const defaults = [
-			{ value: "ChatGPT", label: "ChatGPT" },
-			{ value: "Claude", label: "Claude" },
-			{ value: "Gemini", label: "Gemini" },
-			{ value: "Copilot", label: "Copilot" },
-			{ value: "Perplexity", label: "Perplexity" },
-			{ value: "DeepSeek", label: "DeepSeek" },
-			{ value: "Mistral AI", label: "Mistral AI" },
-			{ value: "Grok", label: "Grok" },
-		];
-		for (const def of defaults) {
-			if (!map.has(def.value)) {
-				map.set(def.value, def.label);
-			}
 		}
 
 		return Array.from(map.entries())

@@ -148,12 +148,7 @@ _STANDALONE_UPLOAD_FILENAMES = frozenset({
     "docker-compose.yml", "chart.yaml", "values.yaml", "mlmodel",
 })
 
-# ChatGPT wire sometimes leaks site host / chat tab titles as "filenames".
-_AI_SITE_LABEL_RE = re.compile(
-    r"^(?:www\.)?(?:chatgpt|chat\.openai|openai|claude|anthropic|gemini|bard|"
-    r"copilot|perplexity|grok|x\.ai|deepseek|poe|you\.com)(?:\.(?:com|ai|google\.com))?$",
-    re.I,
-)
+# Upload metadata sometimes leaks the site host as a "filename". Any hostname, not a product list.
 _HOSTNAME_LABEL_RE = re.compile(
     r"^(?:[a-z0-9-]+\.)+(?:com|ai|org|net|io|dev|app|co|info|me|gg)(?:\.[a-z]{2})?$",
     re.I,
@@ -304,7 +299,7 @@ def _looks_like_site_or_tab_label_not_file(name: str) -> bool:
     if base in _STANDALONE_UPLOAD_FILENAMES:
         return False
     compact = n.replace(" ", "")
-    if _AI_SITE_LABEL_RE.fullmatch(compact) or _HOSTNAME_LABEL_RE.fullmatch(compact):
+    if _HOSTNAME_LABEL_RE.fullmatch(compact):
         return True
     # Model / agent names like "GLM 5.3", "GPT-4", "Claude 3.5 Sonnet", "Mistral Large"
     if re.match(r"^(?:glm|gpt|claude|gemini|mistral|mixtral|llama|deepseek|qwen|grok|yi|command-r)\b", n.strip(), re.I):
@@ -313,7 +308,7 @@ def _looks_like_site_or_tab_label_not_file(name: str) -> bool:
     # Extensionless chat-tab / product titles — not user file picks.
     # Keep Gemini-style extensionless names that include digits/parens (e.g. 'Gateway Product (1)').
     if not _has_any_file_extension(n):
-        if _AI_SITE_LABEL_RE.fullmatch(n.strip()):
+        if _HOSTNAME_LABEL_RE.fullmatch(n.strip()):
             return True
         words = [w for w in re.split(r"\s+", n.strip()) if w]
         # Single brand/chat token ("Gateway", "Greeting") with no digits/parens.
@@ -396,6 +391,19 @@ def _is_real_user_upload_name(name: str) -> bool:
     if n.endswith((' or', ' and', ' in', ' if')):
         return False
     if '[:' in n or '()]' in n or '.lower()' in n or '.strip()' in n or '==' in n or '!=' in n:
+        return False
+
+    low = n.lower()
+    # Reject AI model names / versions mistakenly extracted as files
+    if any(m in low for m in ("opus", "sonnet", "haiku", "fable", "dall-e", "gpt-", "gemini-", "claude-", "llama-", "mistral-")):
+        return False
+    # Reject language names (e.g. English (India), Chinese (Mandarin), Spanish (Latin America))
+    if any(lang in low for lang in ("english", "chinese", "mandarin", "french", "german", "portuguese", "spanish", "japanese", "korean", "hindi", "tamil", "russian", "arabic")) and (
+        "(" in low or ")" in low or any(c in low for c in ("brazil", "portugal", "austria", "canada", "india", "latin"))
+    ):
+        return False
+    # Reject web server script endpoints
+    if low.endswith((".aspx", ".ascx", ".php", ".jsp", ".cgi", ".axd", ".ashx", ".do", ".action")):
         return False
     return True
 
@@ -526,7 +534,19 @@ def _worth_binding_upload_bytes(stored: bytes) -> bool:
         return True
     if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
         return True
-    return len(data) >= 48
+    if data.startswith(b"RIFF") or data.startswith(b"ID3") or data[:4] == b"\x1a\x45\xdf\xa3":
+        return True
+    s = data.lstrip()
+    if s[:1] in (b"{", b"["):
+        low = data[:2048].lower()
+        if any(k in low for k in (b'"base64"', b'"file_data"', b'"inline_data"', b'"bytes"', b'"content":')):
+            return True
+        return False
+    if s.lower().startswith((b"<!doctype", b"<html", b"<?xml")):
+        return False
+    if b"=" in s[:64] and b"&" in s[:128] and b"\n" not in s[:64]:
+        return False
+    return len(data) >= 64
 
 
 def _filename_from_url(url_or_path: str) -> str:
@@ -1224,9 +1244,9 @@ def ingest_upload_filenames_from_body(raw_text: str, domain: str = "") -> None:
                 rename_recent_nameless_caches(domain, name, fid)
             except Exception:
                 pass
-    # Standalone create-file payloads / display names without an id
+    # Standalone create-file payloads without an id
     for m in re.finditer(
-        r'["\'](?:file_name|fileName|filename|original_name|originalName|original_filename|originalFilename|display_name|displayName)["\']\s*:\s*["\']([^"\']+)["\']',
+        r'["\'](?:file_name|fileName|filename|original_name|originalName|original_filename|originalFilename)["\']\s*:\s*["\']([^"\']+)["\']',
         raw_text,
         re.I,
     ):
@@ -1280,27 +1300,16 @@ def _walk_json_file_id_names(obj, out: dict[str, str] | None = None, depth: int 
         name_field = ""
         for k in (
             "filename", "file_name", "fileName", "original_filename", "originalFilename",
-            "original_name", "originalName", "display_name", "displayName",
-            "document_name", "documentName", "doc_name", "docName", "name", "title",
-            "file", "path", "label",
+            "original_name", "originalName",
+            "document_name", "documentName", "doc_name", "docName",
+            "file", "path",
         ):
             v = obj.get(k)
             if isinstance(v, str) and v.strip():
                 cand = _sanitize_upload_filename(v)
-                if not cand:
-                    continue
-                # ChatGPT puts chat/product titles in bare name/title — ignore those.
-                if not _json_name_field_ok(cand, k):
+                if not cand or not _is_real_user_upload_name(cand):
                     continue
                 q = _upload_name_quality(cand)
-                # Prefer explicit file_name/filename keys over bare name/title.
-                if k.lower() in {
-                    "filename", "file_name",
-                    "original_filename", "originalfilename",
-                    "original_name", "originalname",
-                    "display_name", "displayname",
-                }:
-                    q += 2
                 if q > name_q:
                     name = cand
                     name_q = q
@@ -1356,15 +1365,15 @@ def extract_file_id_name_map(raw_text: str) -> dict[str, str]:
     # Wider window — id/name may be far apart in JSON.
     # Prefer explicit file_* keys; bare name/title only when value has an extension.
     for m in re.finditer(
-        r'(?:file_id|fileId|id)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"[^}]{0,800}?'
-        r'(?:file_name|fileName|filename|original_name|originalName|display_name|displayName)\s*"?\s*:\s*"([^"]+)"',
+        r'(?:file_id|fileId)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"[^}]{0,800}?'
+        r'(?:file_name|fileName|filename|original_name|originalName|original_filename|originalFilename)\s*"?\s*:\s*"([^"]+)"',
         raw_text,
         re.I,
     ):
         _put(m.group(1), m.group(2))
     for m in re.finditer(
-        r'(?:file_name|fileName|filename|original_name|originalName|display_name|displayName)\s*"?\s*:\s*"([^"]+)"[^}]{0,800}?'
-        r'(?:file_id|fileId|id)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"',
+        r'(?:file_name|fileName|filename|original_name|originalName|original_filename|originalFilename)\s*"?\s*:\s*"([^"]+)"[^}]{0,800}?'
+        r'(?:file_id|fileId)\s*"?\s*:\s*"((?:file-)?[A-Za-z0-9_-]{6,})"',
         raw_text,
         re.I,
     ):
@@ -2671,20 +2680,15 @@ def cache_upload_file(
             payload, ctype, name = j_bytes, j_ct or content_type, j_name or name
         else:
             cand_name = file_name or ""
-            if not cand_name:
-                for d in (domain, "chatgpt.com"):
-                    try:
-                        cand_name = peek_pending_upload_name_for_domain(d) or (lookup_upload_filename(file_id) if file_id else "") or ""
-                    except Exception:
-                        cand_name = ""
-                    if cand_name:
-                        break
+            if not cand_name and domain:
+                try:
+                    cand_name = peek_pending_upload_name_for_domain(domain) or (lookup_upload_filename(file_id) if file_id else "") or ""
+                except Exception:
+                    cand_name = ""
             fn_l = cand_name.lower()
-            if (
-                fn_l.endswith((".json", ".jsonl", ".geojson", ".ndjson", ".manifest", ".har"))
-                or (cand_name and _is_real_user_upload_name(cand_name))
-                or (content_type and "json" in content_type.lower())
-            ):
+            is_json_file = fn_l.endswith((".json", ".jsonl", ".geojson", ".ndjson", ".manifest", ".har"))
+            is_telemetry = any(x in fallback[:1024].lower() for x in (b"turn_analytics", b"intended_use_case", b"client_event", b"ces/v1", b"logger", b"telemetry", b"analytics"))
+            if is_json_file and not is_telemetry:
                 payload = fallback
             else:
                 return
@@ -2779,9 +2783,7 @@ def cache_upload_file(
         f"magic={bytes(entry['raw_bytes'][:6])!r} | evidence={_upload_evidence(entry)} | "
         f"rule_hit={rule_hit} | aliases={len(keys)}"
     )
-    if _is_real_user_upload_name(entry["file_name"]):
-        # Queue after the cache row exists so a second file cannot take this name.
-        remember_pending_upload_name_for_domain(domain, entry["file_name"])
+    # Do NOT re-queue real name into pending — that caused duplicate entries on subsequent chunks.
 
 
 def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
@@ -3353,11 +3355,13 @@ def _resolve_upload_bind_domain(flow: http.HTTPFlow, upload_host: str) -> str:
             pass
         return best
 
-    # Sticky: last admin Target Website this client used (any added domain).
+    # Sticky: last admin Target Website this client used — ONLY for known cloud storage / AI CDN hosts.
     try:
-        sticky = lookup_client_target_domain(get_client_ip(flow))
-        if sticky:
-            return sticky
+        _cloud_storage_hosts = ("oaiusercontent.com", "claudeusercontent.com", "googleapis.com", "blob.core.windows.net", "amazonaws.com", "digitaloceanspaces.com", "storage.live.com")
+        if any(cs in (upload_host or "").lower() for cs in _cloud_storage_hosts):
+            sticky = lookup_client_target_domain(get_client_ip(flow))
+            if sticky:
+                return sticky
     except Exception:
         pass
     return ""

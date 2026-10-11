@@ -20,34 +20,9 @@ const targetHeaders = [
 ];
 
 const targetRows = [
-	// ChatGPT (Main UI & Subdomains)
-	["chatgpt.com", "ChatGPT", "ui", "TRUE", "FALSE"],
-	["ab.chatgpt.com", "ChatGPT", "chat", "TRUE", "FALSE"],
-	["chat.openai.com", "ChatGPT", "chat", "TRUE", "FALSE"],
-	["api.openai.com", "ChatGPT", "chat", "TRUE", "FALSE"],
-	["files.oaiusercontent.com", "ChatGPT", "file", "TRUE", "FALSE"],
-	["oaiusercontent.com", "ChatGPT", "file", "TRUE", "FALSE"],
-	["oaistatic.com", "ChatGPT", "file", "TRUE", "FALSE"],
-	["cdn.oaistatic.com", "ChatGPT", "file", "TRUE", "FALSE"],
-	["ws.chatgpt.com", "ChatGPT", "chat", "TRUE", "FALSE"],
-	["ws-api.chatgpt.com", "ChatGPT", "chat", "TRUE", "FALSE"],
-	["realtime.chatgpt.com", "ChatGPT", "chat", "TRUE", "FALSE"],
-	["openai.com", "ChatGPT", "chat", "TRUE", "FALSE"],
-	["browser-gateway-openai.livekit.cloud", "ChatGPT", "chat", "TRUE", "FALSE"],
-
-	// Claude (Main UI & Subdomains)
-	["claude.ai", "Claude", "ui", "TRUE", "FALSE"],
-	["api.anthropic.com", "Claude", "chat", "TRUE", "FALSE"],
-	["files.claudeusercontent.com", "Claude", "file", "TRUE", "FALSE"],
-	["cdn.claude.ai", "Claude", "file", "TRUE", "FALSE"],
-	["anthropic.com", "Claude", "ui", "TRUE", "FALSE"],
-
-	// Gemini (Main UI & Subdomains)
-	["gemini.google.com", "Gemini", "ui", "TRUE", "FALSE"],
-	["clients6.google.com", "Gemini", "chat", "TRUE", "FALSE"],
-	["generativelanguage.googleapis.com", "Gemini", "chat", "TRUE", "FALSE"],
-	["aistudio.google.com", "Gemini", "ui", "TRUE", "FALSE"],
-	["bard.google.com", "Gemini", "ui", "TRUE", "FALSE"],
+	["chat.example.com", "Example AI", "ui", "TRUE", "FALSE"],
+	["api.chat.example.com", "Example AI", "chat", "TRUE", "FALSE"],
+	["files.chat.example.com", "Example AI", "file", "TRUE", "FALSE"],
 ];
 
 const targetWs = XLSX.utils.aoa_to_sheet([targetHeaders, ...targetRows]);

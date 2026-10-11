@@ -1264,8 +1264,8 @@ def is_noise_host(host: str) -> bool:
     """Skip analytics / CDN / challenge hosts that are not under an admin Target.
 
     cdn./assets./static. prefixes are noise only when the host is not the
-    domain the admin added and not a subdomain of one. Otherwise adding
-    claude.ai / chatgpt.com drops the real upload and API hosts.
+    domain the admin added and not a subdomain of one. Otherwise a parent
+    domain would hide its real upload and API hosts.
     """
     h = (host or "").lower().strip(".")
     if not h:

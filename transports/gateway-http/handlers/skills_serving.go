@@ -3,7 +3,6 @@ package handlers
 import (
 	"archive/zip"
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -13,46 +12,31 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"os/exec"
 	"path"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/fasthttp/router"
-	billy "github.com/go-git/go-billy/v5"
-	"github.com/go-git/go-billy/v5/memfs"
-	"github.com/go-git/go-billy/v5/osfs"
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/go-git/go-git/v5/plumbing/cache"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/storage/filesystem"
-	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/gateway/gateway/core/schemas"
 	"github.com/gateway/gateway/framework/configstore"
 	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/gateway/gateway/framework/objectstore"
+	billy "github.com/go-git/go-billy/v5"
+	"github.com/go-git/go-billy/v5/memfs"
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/valyala/fasthttp"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
 
-// ============================================================================
-// Git binary availability check
-// ============================================================================
-
-// gitBinaryPath holds the resolved path to the git binary, or empty if unavailable.
-var gitBinaryPath string
-
-func init() {
-	gitBinaryPath, _ = exec.LookPath("git")
-}
-
-// CheckGitAvailability returns true if the git binary is available on PATH.
+// CheckGitAvailability reports that marketplace git clone is available.
+// Serving is done in-process, so a system git binary is not required.
 func CheckGitAvailability() bool {
-	return gitBinaryPath != ""
+	return true
 }
 
 // maxSkillGitRepoSize caps assembled git repo payloads before they are materialized into memfs.
@@ -142,9 +126,8 @@ func fetchURLSafe(ctx context.Context, rawURL string) ([]byte, error) {
 // composed SKILL.md files, individual file content, and zip archives.
 // All routes are public — intentionally NOT wrapped with auth middlewares.
 type SkillsServingHandler struct {
-	store        configstore.ConfigStore
-	objectStore  objectstore.ObjectStore // nullable — may not be configured
-	gitAvailable bool
+	store       configstore.ConfigStore
+	objectStore objectstore.ObjectStore // nullable — may not be configured
 }
 
 // NewSkillsServingHandler creates a new SkillsServingHandler.
@@ -153,32 +136,26 @@ func NewSkillsServingHandler(store configstore.ConfigStore, objectStore objectst
 	if store == nil {
 		return nil
 	}
-	return &SkillsServingHandler{store: store, objectStore: objectStore, gitAvailable: CheckGitAvailability()}
+	return &SkillsServingHandler{store: store, objectStore: objectStore}
 }
 
 // RegisterRoutes registers public serving endpoints.
 // These routes are intentionally NOT wrapped with auth middlewares — marketplace
 // URLs cannot carry credentials securely.
 func (h *SkillsServingHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
-	// Git-based marketplace routes only registered when git binary is available,
-	// since Claude Code and Codex require git clone support.
-	if h.gitAvailable {
-		// Claude Code marketplace
-		r.GET("/api/skills/serve/claude-code/.claude-plugin/marketplace.json", h.claudeCodeMarketplace)
+	// Claude Code and Codex clone these URLs over git smart HTTP. The protocol
+	// is served in-process, so the routes stay up without a system git binary.
+	r.GET("/api/skills/serve/claude-code/.claude-plugin/marketplace.json", h.claudeCodeMarketplace)
 
-		// Codex marketplace — Codex expects .agents/plugins/marketplace.json
-		r.GET("/api/skills/serve/codex/.agents/plugins/marketplace.json", h.codexMarketplace)
-		// Codex marketplace git routes (Codex clones the marketplace URL itself)
-		codexMktBase := "/api/skills/serve/codex"
-		r.GET(codexMktBase+"/info/refs", h.codexMarketplaceGit())
-		r.POST(codexMktBase+"/git-upload-pack", h.codexMarketplaceGit())
+	// Codex marketplace — Codex expects .agents/plugins/marketplace.json
+	r.GET("/api/skills/serve/codex/.agents/plugins/marketplace.json", h.codexMarketplace)
+	// Codex marketplace git routes (Codex clones the marketplace URL itself)
+	codexMktBase := "/api/skills/serve/codex"
+	r.GET(codexMktBase+"/info/refs", h.codexMarketplaceGit())
+	r.POST(codexMktBase+"/git-upload-pack", h.codexMarketplaceGit())
 
-		// Git smart HTTP serving (shared by both Claude Code and Codex)
-		for _, harness := range configstore.SkillHarnessNames {
-			h.registerGitRoutes(r, harness)
-		}
-	} else {
-		logger.Warn("git binary not found — Claude Code / Codex marketplace routes disabled")
+	for _, harness := range configstore.SkillHarnessNames {
+		h.registerGitRoutes(r, harness)
 	}
 
 	// Generic download (always available, no git required)
@@ -621,8 +598,8 @@ func (h *SkillsServingHandler) codexMarketplaceGit() fasthttp.RequestHandler {
 	}
 }
 
-// serveGitRepo builds a git repo from a spec and serves it via direct git
-// upload-pack calls (inspired by go-git-http pattern). No CGI layer needed.
+// serveGitRepo builds a git repo from a spec and serves it over git smart HTTP
+// without calling the system git binary.
 func serveGitRepo(ctx *fasthttp.RequestCtx, spec *GitRepoSpec, repoBase string) {
 	storage, err := buildGitRepo(spec)
 	if err != nil {
@@ -631,54 +608,33 @@ func serveGitRepo(ctx *fasthttp.RequestCtx, spec *GitRepoSpec, repoBase string) 
 		return
 	}
 
-	tempDir, err := exportToTempBareRepo(storage)
-	if err != nil {
-		logger.Error("%s: failed to export bare repo: %v", spec.Label, err)
-		SendError(ctx, fasthttp.StatusInternalServerError, "failed to prepare git repository")
-		return
-	}
-	defer os.RemoveAll(tempDir)
-
 	pathInfo := strings.TrimPrefix(string(ctx.Path()), repoBase)
+	protocolV2 := strings.Contains(string(ctx.Request.Header.Peek("Git-Protocol")), "version=2")
 	if strings.HasSuffix(pathInfo, "/info/refs") {
-		serveInfoRefs(ctx, tempDir, spec.Label)
+		serveInfoRefs(ctx, storage, protocolV2)
 	} else if strings.HasSuffix(pathInfo, "/git-upload-pack") {
-		serveUploadPack(ctx, tempDir, spec.Label)
+		if err := serveUploadPack(ctx, storage, protocolV2); err != nil {
+			logger.Error("%s: git upload-pack failed: %v", spec.Label, err)
+			SendError(ctx, fasthttp.StatusInternalServerError, "git upload-pack failed")
+		}
 	} else {
 		SendError(ctx, fasthttp.StatusNotFound, "unknown git endpoint")
 	}
 }
 
-// serveInfoRefs handles GET /info/refs?service=git-upload-pack by running
-// `git upload-pack --stateless-rpc --advertise-refs` and wrapping the output
-// in the git smart HTTP advertisement format.
-func serveInfoRefs(ctx *fasthttp.RequestCtx, repoDir, label string) {
+// serveInfoRefs handles GET /info/refs?service=git-upload-pack.
+func serveInfoRefs(ctx *fasthttp.RequestCtx, storage *memory.Storage, protocolV2 bool) {
 	serviceName := string(ctx.QueryArgs().Peek("service"))
 	if serviceName == "" {
 		serviceName = "git-upload-pack"
 	}
-
-	// Only upload-pack is supported (read-only serving).
 	if serviceName != "git-upload-pack" {
 		SendError(ctx, fasthttp.StatusForbidden, "service not available")
 		return
 	}
 
-	// Bind to request context with a timeout so stalled git processes
-	// don't outlive a client disconnect or server shutdown. 30s is generous —
-	// upload-pack on these in-memory repos completes in <1s normally, but we
-	// allow headroom for large all-skills repos under load.
-	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, gitBinaryPath, "upload-pack", "--stateless-rpc", "--advertise-refs", ".") //nolint:gosec // gitBinaryPath is from exec.LookPath
-	cmd.Dir = repoDir
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		logger.Error("%s: git upload-pack --advertise-refs failed: %v, stderr: %s", label, err, stderr.String())
+	head, err := repoHeadHash(storage)
+	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "git info/refs failed")
 		return
 	}
@@ -686,40 +642,26 @@ func serveInfoRefs(ctx *fasthttp.RequestCtx, repoDir, label string) {
 	ctx.Response.Header.Set("Cache-Control", "no-cache")
 	ctx.SetContentType(fmt.Sprintf("application/x-%s-advertisement", serviceName))
 	ctx.SetStatusCode(fasthttp.StatusOK)
-
-	// Write pkt-line service announcement header, then the advertised refs.
 	ctx.Write(pktLine("# service=" + serviceName + "\n")) //nolint:errcheck
 	ctx.Write(pktFlush())                                 //nolint:errcheck
-	ctx.Write(stdout.Bytes())                             //nolint:errcheck
-}
-
-// serveUploadPack handles POST /git-upload-pack by piping the request body
-// into `git upload-pack --stateless-rpc` and streaming the output back.
-func serveUploadPack(ctx *fasthttp.RequestCtx, repoDir, label string) {
-	// Bind to request context with a timeout so stalled git processes
-	// don't outlive a client disconnect or server shutdown. 30s is generous —
-	// upload-pack on these in-memory repos completes in <1s normally, but we
-	// allow headroom for large all-skills repos under load.
-	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, gitBinaryPath, "upload-pack", "--stateless-rpc", ".") //nolint:gosec // gitBinaryPath is from exec.LookPath
-	cmd.Dir = repoDir
-	cmd.Stdin = bytes.NewReader(ctx.PostBody())
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		logger.Error("%s: git upload-pack failed: %v, stderr: %s", label, err, stderr.String())
-		SendError(ctx, fasthttp.StatusInternalServerError, "git upload-pack failed")
+	if protocolV2 {
+		ctx.Write(advertiseRefsV2()) //nolint:errcheck
 		return
 	}
+	ctx.Write(advertiseRefsV1(head)) //nolint:errcheck
+}
 
+// serveUploadPack handles POST /git-upload-pack.
+func serveUploadPack(ctx *fasthttp.RequestCtx, storage *memory.Storage, protocolV2 bool) error {
+	body, err := uploadPackResponse(storage, ctx.PostBody(), protocolV2)
+	if err != nil {
+		return err
+	}
 	ctx.Response.Header.Set("Cache-Control", "no-cache")
 	ctx.SetContentType("application/x-git-upload-pack-result")
 	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.SetBody(stdout.Bytes())
+	ctx.SetBody(body)
+	return nil
 }
 
 // pktLine encodes a string as a git pkt-line (4-hex-digit length prefix + data).
@@ -730,66 +672,6 @@ func pktLine(s string) []byte {
 // pktFlush returns the git pkt-line flush packet.
 func pktFlush() []byte {
 	return []byte("0000")
-}
-
-// exportToTempBareRepo exports an in-memory go-git storage to a temporary bare
-// git repository on disk, suitable for use with `git http-backend`.
-func exportToTempBareRepo(memStorage *memory.Storage) (string, error) {
-	tempDir, err := os.MkdirTemp("", "gateway-skill-*")
-	if err != nil {
-		return "", fmt.Errorf("create temp dir: %w", err)
-	}
-
-	// Create a bare repo on disk.
-	fs := osfs.New(tempDir)
-	dot, err := fs.Chroot(".")
-	if err != nil {
-		os.RemoveAll(tempDir)
-		return "", fmt.Errorf("chroot: %w", err)
-	}
-	diskStorage := filesystem.NewStorage(dot, cache.NewObjectLRUDefault())
-
-	if err := diskStorage.Init(); err != nil {
-		os.RemoveAll(tempDir)
-		return "", fmt.Errorf("init bare repo: %w", err)
-	}
-
-	// Copy all objects from memory to disk storage.
-	for _, objType := range []plumbing.ObjectType{plumbing.CommitObject, plumbing.TreeObject, plumbing.BlobObject, plumbing.TagObject} {
-		iter, err := memStorage.IterEncodedObjects(objType)
-		if err != nil {
-			continue
-		}
-		if err := iter.ForEach(func(obj plumbing.EncodedObject) error {
-			_, err := diskStorage.SetEncodedObject(obj)
-			return err
-		}); err != nil {
-			os.RemoveAll(tempDir)
-			return "", fmt.Errorf("copy %s objects: %w", objType, err)
-		}
-	}
-
-	// Copy all references from memory to disk storage.
-	refIter, err := memStorage.IterReferences()
-	if err == nil {
-		if err := refIter.ForEach(func(ref *plumbing.Reference) error {
-			return diskStorage.SetReference(ref)
-		}); err != nil {
-			os.RemoveAll(tempDir)
-			return "", fmt.Errorf("copy references: %w", err)
-		}
-	}
-
-	// Also copy HEAD.
-	head, err := memStorage.Reference(plumbing.HEAD)
-	if err == nil {
-		if err := diskStorage.SetReference(head); err != nil {
-			os.RemoveAll(tempDir)
-			return "", fmt.Errorf("copy HEAD: %w", err)
-		}
-	}
-
-	return tempDir, nil
 }
 
 // writeBillyFile writes data to a file in a billy in-memory filesystem,

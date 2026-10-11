@@ -3176,8 +3176,10 @@ def detect_file_upload(flow: http.HTTPFlow, raw_content: str) -> tuple[bool, str
     if not chat_submit:
         for prefix in UPLOAD_CONTENT_TYPES:
             if prefix in content_type and body_len >= 32:
-                # Skip generic application/json mistaken as upload unless on upload endpoint/cdn
+                # Skip generic application/json or text/plain mistaken as upload unless on upload endpoint/cdn
                 if prefix == "application/json" and not ("/file" in path_only or "oaiusercontent" in host or "claudeusercontent" in host):
+                    continue
+                if prefix.startswith("text/plain") and not ("/file" in path_only or "upload" in path_only or "filename=" in raw.lower()):
                     continue
                 if (
                     prefix in (

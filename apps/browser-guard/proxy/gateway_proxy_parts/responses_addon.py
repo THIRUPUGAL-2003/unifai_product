@@ -210,8 +210,7 @@ class BrowserAIInterceptor:
             content_type=content_type,
             file_name_hint=(
                 extract_filename_from_upload(flow, raw_text)
-                if chat_carries_attachment(raw_text)
-                else extract_attachment_filename_from_send(raw_text)
+                or extract_attachment_filename_from_send(raw_text)
             ),
             path=path,
         )
@@ -944,7 +943,7 @@ class BrowserAIInterceptor:
                 return
             self._apply_http_prompt(flow, domain, platform, voice_transcript, client_ip, raw_text)
             return
-        if is_upload or is_upload_endpoint:
+        if is_upload:
             if remember_file_create_handshake(raw_text, domain or "", raw_bytes, path):
                 return
             fname = extract_filename_from_upload(flow, raw_text)
@@ -957,7 +956,7 @@ class BrowserAIInterceptor:
             file_ids = _extract_file_ids_from_chat(raw_text)
             cache_domains = [domain]
             # File CDN Target (e.g. files.claudeusercontent.com) must also land in the
-            # chat Target queue (claude.ai) so Send can extract + rule-check quickly.
+            # chat Target queue so Send can extract + rule-check quickly.
             try:
                 bind = _resolve_upload_bind_domain(flow, host)
                 if bind and _normalize_domain(bind) != _normalize_domain(domain):
@@ -1007,9 +1006,11 @@ class BrowserAIInterceptor:
                     _structural_user_text(fields_json, "application/json", min_score=STRUCT_STRONG_SCORE)
                     if fields_json else None
                 )
+                if not typed and fields:
+                    typed = fields.get("prompt") or fields.get("message") or fields.get("text") or fields.get("q") or peek_prompt
                 if typed:
                     blocked, n_processed, _ = self._file_send_maybe_block(
-                        flow, domain, platform, client_ip, fields_json, "application/json", path,
+                        flow, domain, platform, client_ip, fields_json or raw_text, "application/json", path,
                     )
                     if blocked or n_processed > 0:
                         return

@@ -593,7 +593,12 @@ def enforce_file_send_policy(
             names_for_fp = seen_fps[fp]
             if not real or lbl_key in names_for_fp or "" in names_for_fp:
                 continue
-        if real and lbl_key in seen_names and (not b or len(b) < 96):
+        if real and lbl_key in seen_names:
+            for idx, existing in enumerate(unique_prep):
+                if (existing.get("store_name") or existing.get("file_label") or "").strip().lower() == lbl_key:
+                    if len(b) > len(existing.get("cached_bytes") or b""):
+                        unique_prep[idx] = p
+                    break
             continue
         if fp:
             seen_fps.setdefault(fp, set()).add(lbl_key if real else "")

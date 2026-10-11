@@ -129,9 +129,6 @@ export function logAttachmentLabel(log: BrowserAILogEntry): string {
 		const n = (label || "").trim();
 		if (!n) return true;
 		const compact = n.replace(/\s+/g, "");
-		if (/^(?:www\.)?(?:chatgpt|chat\.openai|openai|claude|gemini|copilot|perplexity)(?:\.(?:com|ai|google\.com))?$/i.test(compact)) {
-			return true;
-		}
 		if (/^(?:[a-z0-9-]+\.)+(?:com|ai|org|net|io|dev|app)$/i.test(compact)) {
 			return true;
 		}
