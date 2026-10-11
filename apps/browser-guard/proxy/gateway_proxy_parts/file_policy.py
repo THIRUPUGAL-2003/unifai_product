@@ -1,5 +1,226 @@
 # Part of Gateway browser_ai_proxy — do not import directly.
 
+_FILE_LOG_COALESCE: dict = {}
+_FILE_LOG_COALESCE_LOCK = threading.Lock()
+_FILE_LOG_COALESCE_SEC = 5.0
+
+
+_RECENT_FILE_LOGS: dict[str, float] = {}
+_RECENT_FILE_LOGS_LOCK = threading.Lock()
+_POSTED_FILE_LOGS: dict[str, float] = {}
+_POSTED_FILE_LOGS_LOCK = threading.Lock()
+
+
+def _file_logged_recently(name: str, ttl: float = 20.0) -> bool:
+    key = (name or "").strip().lower()
+    if not key:
+        return False
+    now = time.time()
+    with _RECENT_FILE_LOGS_LOCK:
+        ts = _RECENT_FILE_LOGS.get(key)
+        if ts and (now - ts) < ttl:
+            return True
+    return False
+
+
+def _file_row_posted_recently(name: str, ttl: float = 20.0) -> bool:
+    key = (name or "").strip().lower()
+    if not key:
+        return False
+    now = time.time()
+    with _POSTED_FILE_LOGS_LOCK:
+        ts = _POSTED_FILE_LOGS.get(key)
+        return bool(ts and (now - ts) < ttl)
+
+
+def _mark_file_row_posted(name: str) -> None:
+    key = (name or "").strip().lower()
+    if not key:
+        return
+    with _POSTED_FILE_LOGS_LOCK:
+        _POSTED_FILE_LOGS[key] = time.time()
+
+
+def _mark_file_logged(name: str) -> None:
+    key = (name or "").strip().lower()
+    if not key:
+        return
+    now = time.time()
+    with _RECENT_FILE_LOGS_LOCK:
+        _RECENT_FILE_LOGS[key] = now
+        if len(_RECENT_FILE_LOGS) > 400:
+            cutoff = now - 60.0
+            for k, ts in list(_RECENT_FILE_LOGS.items()):
+                if ts < cutoff:
+                    _RECENT_FILE_LOGS.pop(k, None)
+
+
+def _looks_like_file_syntax(text: str) -> bool:
+    """Spreadsheet XML, CSV rows, and build-file lines are file body, not a typed note."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    low = t.lower()
+    if "xmlns" in low or "</" in t or (t.startswith("<") and (">" in t or ":" in t[:48])):
+        return True
+    if "$(" in t:
+        return True
+    if t.count(",") >= 3 and "\n" not in t:
+        return True
+    if "\\b" in t:
+        return True
+    return False
+
+
+def _usable_file_caption(text: str) -> str:
+    """Typed note beside a file. Filenames and file-body dumps are not captions."""
+    t = (text or "").strip()
+    if not t or len(t) > 2000:
+        return ""
+    if _looks_like_file_syntax(t):
+        return ""
+    if not looks_like_user_prompt(t):
+        return ""
+    if _looks_like_filename_only(t) or _looks_like_document_body_dump(t):
+        return ""
+    if _is_chat_metadata_token(t) or _is_opaque_wire_blob(t) or _is_claude_wire_noise(t):
+        return ""
+    return t
+
+
+def _caption_echoes_uploaded_file(caption: str, file_rows: list) -> bool:
+    """True when the supposed caption is a slice of an uploaded file."""
+    cap = " ".join((caption or "").split())
+    if len(cap) < 12:
+        return False
+    needle = cap[:120].lower()
+    for row in file_rows or []:
+        for blob in _file_body_blobs(row):
+            if needle in " ".join(blob.split()).lower():
+                return True
+    return False
+
+
+def _file_body_blobs(row: dict) -> list[str]:
+    blobs: list[str] = []
+    scanned = (row.get("scanned") or "")
+    if scanned:
+        blobs.append(scanned[:30000])
+    raw = row.get("cached_bytes") or b""
+    if not isinstance(raw, (bytes, bytearray)) or not raw:
+        return blobs
+    if raw[:2] == b"PK":
+        try:
+            import io
+            import zipfile
+            with zipfile.ZipFile(io.BytesIO(bytes(raw))) as zf:
+                for info in zf.infolist()[:40]:
+                    if info.file_size <= 0 or info.file_size > 400_000:
+                        continue
+                    blobs.append(zf.read(info).decode("utf-8", errors="ignore")[:20000])
+        except Exception:
+            pass
+    else:
+        blobs.append(bytes(raw)[:80000].decode("utf-8", errors="ignore"))
+    return blobs
+
+
+def _caption_strings_from_body(raw_text: str, raw_bytes: bytes = b"") -> list[str]:
+    """Short user lines from a chat Send, any wire shape. Explicit prompt fields first."""
+    found: list[str] = []
+
+    def add(val: str) -> None:
+        t = _usable_file_caption(val)
+        if t and t not in found:
+            found.append(t)
+
+    body = raw_text or ""
+    for m in re.finditer(
+        r'"(?:prompt|user_message|userMessage|message|query|input_text|rawUserQuery)"\s*:\s*"((?:[^"\\]|\\.){1,2000})"',
+        body,
+        re.I,
+    ):
+        try:
+            add(json.loads(f'"{m.group(1)}"'))
+        except Exception:
+            add(m.group(1))
+    blobs = []
+    if raw_bytes:
+        blobs.append(raw_bytes)
+        data = raw_bytes
+        idx = 0
+        while idx + 5 <= len(data):
+            flag = data[idx]
+            if flag not in (0, 1, 2):
+                break
+            frame_len = int.from_bytes(data[idx + 1:idx + 5], "big")
+            if frame_len <= 0 or idx + 5 + frame_len > len(data):
+                break
+            frame = data[idx + 5:idx + 5 + frame_len]
+            idx += 5 + frame_len
+            if flag == 1:
+                try:
+                    import gzip
+                    frame = gzip.decompress(frame)
+                except Exception:
+                    pass
+            blobs.append(frame)
+    if body:
+        blobs.append(body.encode("utf-8", errors="ignore"))
+    for blob in blobs:
+        try:
+            strings = extract_protobuf_strings(blob)
+        except Exception:
+            strings = []
+        for s in strings:
+            if " " in (s or "") and len(s.strip()) <= 240:
+                add(s)
+    return found
+
+
+def _pick_file_caption(*sources: str, extra: list[str] | None = None) -> str:
+    """Prefer an explicit prompt field. Scraped file-body lines are only a fallback."""
+    for src in sources:
+        t = _usable_file_caption(src)
+        if t:
+            return t
+    pool: list[str] = []
+    for src in extra or []:
+        t = _usable_file_caption(src)
+        if t and t not in pool:
+            pool.append(t)
+    if not pool:
+        return ""
+    short = [c for c in pool if len(c) <= 240]
+    return (short or pool)[-1]
+
+
+def _coalesce_file_log(domain: str, file_label: str, *, has_caption: bool, post) -> None:
+    """One Prompt Log row per file. A later Send within a few seconds can add the caption."""
+    key = f"{(domain or '').strip().lower()}|{(file_label or '').strip().lower()}"
+    _mark_file_logged(file_label)
+
+    def _fire(k=key) -> None:
+        time.sleep(_FILE_LOG_COALESCE_SEC)
+        with _FILE_LOG_COALESCE_LOCK:
+            item = _FILE_LOG_COALESCE.pop(k, None)
+        if not item:
+            return
+        try:
+            item["post"]()
+        except Exception as e:
+            print(f"[Gateway Proxy WARNING] File log async failed | {k}: {e}")
+
+    with _FILE_LOG_COALESCE_LOCK:
+        prev = _FILE_LOG_COALESCE.get(key)
+        now = time.time()
+        if prev is not None and (now - float(prev.get("ts") or 0)) < _FILE_LOG_COALESCE_SEC:
+            if has_caption and not prev.get("has_caption"):
+                prev["post"] = post
+                prev["has_caption"] = True
+            return
+        _FILE_LOG_COALESCE[key] = {"post": post, "has_caption": has_caption, "ts": now}
+        threading.Thread(target=_fire, daemon=True, name="gateway-file-log").start()
 
 
 def enforce_file_send_policy(
@@ -14,6 +235,8 @@ def enforce_file_send_policy(
     content_type: str = "",
     file_name_hint: str = "",
     path: str = "",
+    raw_bytes: bytes = b"",
+    user_prompt_hint: str = "",
 ) -> tuple[bool, str, str, int, bool]:
     """
     On chat Send with a real attached file (any monitored AI domain):
@@ -161,10 +384,6 @@ def enforce_file_send_policy(
         hint = (file_name_hint or "").strip() or extract_attachment_filename_from_send(raw_text or "") or ""
         if not _is_real_user_upload_name(hint):
             try:
-                wait_bind_real_upload_names([], raw_text or "", domain, retries=6, delay=0.20)
-            except Exception:
-                pass
-            try:
                 hint = peek_pending_upload_name_for_domain(domain) or hint
             except Exception:
                 pass
@@ -188,7 +407,6 @@ def enforce_file_send_policy(
         ) or _looks_like_audio(b"", content_type, hint))
         if is_voice and (_is_fake_upload_name(hint) or hint.lower() in ("attachment", "file")):
             hint = "Voice Note"
-        tag = "[VOICE UPLOAD]" if is_voice else "[FILE UPLOAD]"
         if controls_active("block_upload"):
             warn = (get_control_settings().get("upload_warning") or "").strip() or "File/voice uploads are blocked by admin policy."
             msg = warn
@@ -197,7 +415,7 @@ def enforce_file_send_policy(
                 print(f"[Gateway Proxy] FILE/VOICE SEND BLOCKED (no cache, Block Upload ON) | {client_ip} -> {host}")
                 ok = post_upload_intercept(
                     platform=platform,
-                    prompt=f"{tag} {hint} — Blocked (Block Upload)",
+                    prompt=_user_prompt_log_text(voice=is_voice, file_label=hint),
                     client_ip=client_ip,
                     domain=domain,
                     url=url,
@@ -259,7 +477,7 @@ def enforce_file_send_policy(
                     print(f"[Gateway Proxy] FILE/VOICE SEND BLOCKED (transcript/caption) | {rule_name}")
                     ok = post_upload_intercept(
                         platform=platform,
-                        prompt=f"{tag} {hint} — Blocked ({rule_name})",
+                        prompt=_user_prompt_log_text(voice=is_voice, file_label=hint, caption=(caption or transcript or "")[:500]),
                         client_ip=client_ip,
                         domain=domain,
                         url=url,
@@ -290,7 +508,7 @@ def enforce_file_send_policy(
                 if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
                     post_upload_intercept(
                         platform=platform,
-                        prompt=f"{tag} {hint} — Redacted ({rule_name})",
+                        prompt=_user_prompt_log_text(voice=is_voice, file_label=hint, caption=(caption or transcript or "")[:500]),
                         client_ip=client_ip,
                         domain=domain,
                         url=url,
@@ -310,7 +528,7 @@ def enforce_file_send_policy(
             if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
                 post_upload_intercept(
                     platform=platform,
-                    prompt=f"{tag} {hint} — Allowed",
+                    prompt=_user_prompt_log_text(voice=is_voice, file_label=hint, caption=(caption or transcript or "")[:500]),
                     client_ip=client_ip,
                     domain=domain,
                     url=url,
@@ -329,26 +547,28 @@ def enforce_file_send_policy(
         # Cache miss + real attachment markers, but no caption/transcript text
         # (Claude/Gemini often attach-then-auto-read with empty user text).
         # Still log the file so Prompt Logs + rules are not silent.
+        # A second wire for the same file must not add another row.
         dedupe_key = f"upload-send-allow-nocache-empty|{hint}"
-        if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
-            print(f"[Gateway Proxy] FILE/VOICE SEND (cache miss, no caption) | {hint} | {client_ip} -> {host}")
-            ok = post_upload_intercept(
-                platform=platform,
-                prompt=f"{tag} {hint} — Allowed",
-                client_ip=client_ip,
-                domain=domain,
-                url=url,
-                method=method,
-                file_name=hint,
-                scan_guard={
-                    "cache_miss": True,
-                    "scan_guard_decided": True,
-                    "scan_guard_action": "Allowed",
-                    "empty_caption": True,
-                },
-            )
-            if ok:
-                mark_duplicate_event(domain, dedupe_key)
+        if _file_logged_recently(hint) or is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
+            return False, "", "", 1, False
+        print(f"[Gateway Proxy] FILE/VOICE SEND (cache miss, no caption) | {hint} | {client_ip} -> {host}")
+        ok = post_upload_intercept(
+            platform=platform,
+            prompt=_user_prompt_log_text(voice=is_voice, file_label=hint),
+            client_ip=client_ip,
+            domain=domain,
+            url=url,
+            method=method,
+            file_name=hint,
+            scan_guard={
+                "cache_miss": True,
+                "scan_guard_decided": True,
+                "scan_guard_action": "Allowed",
+                "empty_caption": True,
+            },
+        )
+        if ok:
+            mark_duplicate_event(domain, dedupe_key)
         return False, "", "", 1, False
 
     # Dedup by cache_uid ONLY — many ChatGPT/Claude images share name "attachment".
@@ -374,32 +594,37 @@ def enforce_file_send_policy(
         )
     except Exception:
         caption = ""
-    # Any Target: typed note often lives in composer traffic — join like Claude.
-    if not (caption or "").strip():
-        try:
-            caption = peek_recent_composer_caption(domain, max_age=120.0) or ""
-        except Exception:
-            caption = ""
-        if caption:
-            print(
-                f"[Gateway Proxy] FILE CAPTION from composer | {domain} | "
-                f"{caption[:80]!r}"
+    composer_caption = ""
+    try:
+        composer_caption = peek_recent_composer_caption(domain, max_age=120.0) or ""
+    except Exception:
+        composer_caption = ""
+    from_body = ""
+    try:
+        from_body = extract_prompt_universal(
+            raw_bytes or (raw_text or "").encode("utf-8", errors="ignore"),
+            content_type or "",
+            host,
+            url,
+        ) or ""
+    except Exception:
+        from_body = ""
+    parts_caption = ""
+    form_caption = ""
+    try:
+        fields = multipart_text_fields(raw_bytes or b"", content_type or "")
+        if fields:
+            form_caption = (
+                fields.get("prompt")
+                or fields.get("message")
+                or fields.get("text")
+                or fields.get("query")
+                or fields.get("q")
+                or ""
             )
-    if not (caption or "").strip():
-        try:
-            from_body = extract_prompt_universal(
-                (raw_text or "").encode("utf-8", errors="ignore"),
-                content_type or "",
-                host,
-                url,
-            )
-            if from_body and looks_like_user_prompt(from_body) and not _looks_like_filename_only(from_body):
-                if not _looks_like_document_body_dump(from_body) and not _is_opaque_wire_blob(from_body):
-                    caption = from_body.strip()
-        except Exception:
-            pass
-    # ChatGPT often puts short captions like "anlayse this" only in parts[] strings.
-    if not (caption or "").strip() and (raw_text or ""):
+    except Exception:
+        form_caption = ""
+    if raw_text:
         for m in re.finditer(
             r'"parts"\s*:\s*\[[^\]]{0,80000}?"((?:[^"\\]|\\.){1,400})"',
             raw_text or "",
@@ -417,20 +642,23 @@ def enforce_file_send_policy(
             if "." in t and len(t) < 180 and re.search(r"\.[A-Za-z0-9]{2,5}$", t):
                 continue
             if looks_like_user_prompt(t) and not _looks_like_filename_only(t):
-                caption = t
+                parts_caption = t
                 break
-
+    try:
+        extra_caps = _caption_strings_from_body(raw_text or "", raw_bytes or b"")
+    except Exception:
+        extra_caps = []
+    caption = _pick_file_caption(
+        form_caption,
+        user_prompt_hint,
+        caption,
+        composer_caption,
+        from_body,
+        parts_caption,
+        extra=extra_caps,
+    )
     if caption:
-        c_clean = caption.strip()
-        if (
-            not looks_like_user_prompt(c_clean)
-            or _is_chat_metadata_token(c_clean)
-            or _UUID_LIKE_RE.search(c_clean)
-            or (c_clean.startswith("$") and (len(c_clean) >= 12 or "-" in c_clean))
-            or _looks_like_filename_only(c_clean)
-            or _is_opaque_wire_blob(c_clean)
-        ):
-            caption = ""
+        print(f"[Gateway Proxy] FILE CAPTION | {domain} | {caption[:80]!r}")
 
     cached_list = _trim_phantom_upload_caches(
         cached_list,
@@ -606,7 +834,7 @@ def enforce_file_send_policy(
             seen_names.add(lbl_key)
         unique_prep.append(p)
     if unique_prep:
-        prepared = unique_prep
+        prepared = [p for p in unique_prep if _keep_logged_upload(p)]
         n_cached = len(prepared)
 
     def _scan_one(prep: dict) -> dict:
@@ -653,6 +881,10 @@ def enforce_file_send_policy(
             for fut in as_completed(futs):
                 ordered[futs[fut]] = fut.result()
             file_rows = [r for r in ordered if r is not None]
+
+    if caption and (_looks_like_file_syntax(caption) or _caption_echoes_uploaded_file(caption, file_rows)):
+        print(f"[Gateway Proxy] FILE CAPTION dropped (file body) | {caption[:60]!r}")
+        caption = ""
 
     # Optional AI bot pass on combined extract (skip if regex-only).
     plat = (platform or domain or "Browser AI").strip()
@@ -797,12 +1029,12 @@ def enforce_file_send_policy(
             or _is_opaque_wire_blob(c_clean)
         ):
             caption = ""
-    caption_bit = f" -- {caption}" if caption else ""
+    caption_bit = caption
 
     for idx, row in enumerate(file_rows):
         if " -- $" in row.get("file_label", ""):
             row["file_label"] = row["file_label"].split(" -- $", 1)[0].strip()
-        tag = _upload_log_tag(row["file_label"], row["cached_ct"], row["cached_bytes"])
+        voice = _upload_is_voice(row["file_label"], row["cached_ct"], row["cached_bytes"])
         row_text = (row.get("scanned") or "").strip()
         row_imgs = row.get("upload_images") or []
         row_hit = bool(row.get("rule_hit"))
@@ -859,10 +1091,13 @@ def enforce_file_send_policy(
             this_scan_guard["scan_guard_action"] = "Allowed"
             this_scan_guard["scan_rule_triggered"] = ""
 
-        if n_files > 1:
-            prompt_log = f"{tag} {row['file_label']} ({idx + 1}/{n_files}){caption_bit} — {file_status}"
-        else:
-            prompt_log = f"{tag} {row['file_label']}{caption_bit} — {file_status}"
+        prompt_log = _user_prompt_log_text(
+            voice=voice,
+            file_label=row["file_label"],
+            caption=caption_bit,
+            index=idx + 1,
+            total=n_files,
+        )
 
         dedupe_key = f"upload-send-{dedupe_type}|{row['cache_uid']}"
         if is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
@@ -886,7 +1121,13 @@ def enforce_file_send_policy(
             _sg=this_scan_guard,
             _dedupe=dedupe_key,
             _label=row["file_label"],
+            _has_caption=bool(caption_bit),
         ) -> None:
+            # Same filename already logged in this send window, and this pass adds no caption.
+            if not _has_caption and _file_row_posted_recently(_label):
+                return
+            if not _has_caption:
+                _mark_file_row_posted(_label)
             try:
                 ok = post_upload_intercept(
                     platform=platform,
@@ -911,8 +1152,14 @@ def enforce_file_send_policy(
             except Exception as e:
                 print(f"[Gateway Proxy WARNING] File log async failed | {_label}: {e}")
 
-        # Do not block the chat Send on Prompt Log upload — fire-and-forget.
-        threading.Thread(target=_post_row, daemon=True, name="gateway-file-log").start()
+        # Do not block the chat Send. Hold a few seconds so a second wire
+        # for the same file can attach the typed caption instead of a second row.
+        _coalesce_file_log(
+            domain,
+            row["file_label"],
+            has_caption=bool(caption_bit),
+            post=_post_row,
+        )
 
     if should_block:
         remember_file_send_block(
@@ -1146,14 +1393,36 @@ def _extract_file_send_user_caption(
     return pool[0].strip()
 
 
-def _upload_log_tag(file_name: str = "", content_type: str = "", raw_bytes: bytes = b"") -> str:
-    """Prompt Log prefix: VOICE vs FILE."""
+def _keep_logged_upload(prep: dict) -> bool:
+    """Log only a real upload. UI labels and empty placeholders are not files."""
+    name = (prep.get("store_name") or prep.get("file_label") or "").strip()
+    raw = prep.get("cached_bytes") or b""
+    if not isinstance(raw, (bytes, bytearray)):
+        raw = b""
+    ct = prep.get("cached_ct") or ""
+    if _upload_is_voice(name, ct, bytes(raw)):
+        return True
+    if name.lower() in ("document", "image", "attachment", "file", "unknown", "voice note"):
+        return False
+    return _is_real_user_upload_name(name)
+
+
+def _user_prompt_log_text(*, voice: bool = False, file_label: str = "", caption: str = "", index: int = 1, total: int = 1) -> str:
+    """Prompt Log text. Uniform across all AI domains: name -- prompt, name(1/2) -- prompt, voice."""
+    cap = (caption or "").strip()
+    if voice:
+        return f"voice -- {cap}" if cap else "voice"
+    name = (file_label or "file").strip()
+    if total > 1:
+        name = f"{name}({index}/{total})"
+    return f"{name} -- {cap}" if cap else name
+
+
+def _upload_is_voice(file_name: str = "", content_type: str = "", raw_bytes: bytes = b"") -> bool:
     if _looks_like_audio(raw_bytes or b"", content_type, file_name):
-        return "[VOICE UPLOAD]"
+        return True
     fn = (file_name or "").lower()
-    if fn.endswith((".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".aac", ".opus", ".wma")):
-        return "[VOICE UPLOAD]"
-    return "[FILE UPLOAD]"
+    return fn.endswith((".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".aac", ".opus", ".wma"))
 
 
 def post_upload_intercept(
@@ -1191,6 +1460,7 @@ def post_upload_intercept(
 
     if "[FILE UPLOAD] attachment" in prompt:
         prompt = prompt.replace("[FILE UPLOAD] attachment", f"[FILE UPLOAD] {safe_name}")
+    _mark_file_logged(safe_name)
 
     metadata = {
         "domain": domain,

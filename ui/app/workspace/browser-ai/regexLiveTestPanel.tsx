@@ -5,7 +5,7 @@ import { re2ToJsRegExp } from "@/lib/utils/re2";
 
 /** Live-test admin regex against a sample prompt before save (JS RegExp ≈ RE2 for common DLP). */
 export function RegexLiveTestPanel({ pattern }: { pattern: string }) {
-	const [sample, setSample] = useState("613002");
+	const [sample, setSample] = useState("");
 	const result = useMemo(() => {
 		const p = (pattern || "").trim();
 		const s = sample;
@@ -29,16 +29,12 @@ export function RegexLiveTestPanel({ pattern }: { pattern: string }) {
 		<div className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
 			<Label className="text-xs">Test pattern before save</Label>
 			<Input
-				placeholder="Sample employee prompt (e.g. 613002 or pin 613002)"
+				placeholder="Sample text to test"
 				value={sample}
 				onChange={(e) => setSample(e.target.value)}
 				className="h-8 text-xs"
 			/>
 			<p className={`text-[11px] font-medium ${result.ok ? "text-emerald-700 dark:text-emerald-400" : "text-amber-800 dark:text-amber-300"}`}>{result.msg}</p>
-			<p className="text-[10px] text-muted-foreground">
-				Bare digits like <code className="text-[10px]">613002</code> need a pattern that matches digits alone (e.g.{" "}
-				<code className="text-[10px]">{"\\b[1-9][0-9]{5}\\b"}</code>), not only “pin/otp …”.
-			</p>
 		</div>
 	);
 }

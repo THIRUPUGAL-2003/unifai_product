@@ -77,9 +77,9 @@ export function logUserCaption(log: BrowserAILogEntry): string {
 	}
 
 	const full = (log.user_prompt_full || log.user_prompt_preview || "").trim();
-	// Proxy embeds Claude-style: "[FILE UPLOAD] name.pdf -- caption — Allowed"
+	// Proxy embeds modern style: "name.pdf -- caption" / "name.pdf--caption" or legacy: "[FILE UPLOAD] name.pdf -- caption — Allowed"
 	const dashCaption = full.match(
-		/^\[(?:FILE|VOICE) UPLOAD\]\s+.+?\s+--\s+(.+?)(?:\s+[—–-]\s+(?:Allowed|Blocked|Redacted|Warned).*)?$/i,
+		/^(?:\[(?:FILE|VOICE) UPLOAD\]\s+)?.+?\s*--\s*(.+?)(?:\s+[—–-]\s+(?:Allowed|Blocked|Redacted|Warned).*)?$/i,
 	);
 	if (dashCaption?.[1]) {
 		let after = dashCaption[1].trim();

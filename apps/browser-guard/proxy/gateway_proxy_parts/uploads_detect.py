@@ -394,8 +394,12 @@ def _is_real_user_upload_name(name: str) -> bool:
         return False
 
     low = n.lower()
-    # Reject AI model names / versions mistakenly extracted as files
-    if any(m in low for m in ("opus", "sonnet", "haiku", "fable", "dall-e", "gpt-", "gemini-", "claude-", "llama-", "mistral-")):
+    has_ext = bool(re.search(r"\.[A-Za-z0-9]{1,8}$", n))
+    # Extensionless "Name 1.2" labels are UI chrome (model pickers, tabs), not uploads.
+    if not has_ext and re.search(r"\d+\.\d+", n):
+        return False
+    # Reject AI model names only when the string is not an actual filename.
+    if not has_ext and any(m in low for m in ("opus", "sonnet", "haiku", "fable", "dall-e", "gpt-", "gemini-", "claude-", "llama-", "mistral-")):
         return False
     # Reject language names (e.g. English (India), Chinese (Mandarin), Spanish (Latin America))
     if any(lang in low for lang in ("english", "chinese", "mandarin", "french", "german", "portuguese", "spanish", "japanese", "korean", "hindi", "tamil", "russian", "arabic")) and (
@@ -2630,16 +2634,10 @@ def wait_bind_real_upload_names(
     _try_bind()
     if all(_named(e) for e in cached_list):
         return cached_list
-    # Send body already names the files (Claude/Gemini JSON) — one short retry only.
-    # Long waits made Prompt Logs feel stuck even when extract already finished.
-    send_has_names = any(
-        _is_real_user_upload_name(n)
-        for n in extract_all_attachment_filenames_from_send(raw_text or "")
-    )
-    max_retries = 2 if send_has_names else max(1, int(retries))
-    sleep_s = 0.08 if send_has_names else max(0.05, float(delay))
-    for _ in range(max_retries):
-        time.sleep(sleep_s)
+    # One short retry only when a file is attached and still nameless.
+    # Plain prompts never reach this loop (empty cache returns above).
+    for _ in range(1):
+        time.sleep(0.05)
         try:
             ingest_upload_filenames_from_body(raw_text or "", domain or "")
         except Exception:

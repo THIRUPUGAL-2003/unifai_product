@@ -100,7 +100,47 @@ def _search_browser_label(user_agent: str, sec_ch_ua: str) -> str:
     return "Browser"
 
 
+def _should_stream_without_inspection(flow: http.HTTPFlow) -> bool:
+    """True when this request is page/script/settings traffic, not a send.
+
+    The browser still uses the proxy. The body is not read and the gateway is
+    not called, so opening the site stays as fast as a direct connection.
+    """
+    method = (flow.request.method or "").upper()
+    if method not in ("POST", "PUT", "PATCH"):
+        return True
+    path = (flow.request.path or "").lower().split("?", 1)[0]
+    if _path_looks_like_upload(path) or _path_has_chat_marker(path):
+        return False
+    if is_batchexecute_chat_submit(path, "") or is_event_send_chat_submit(path, "") or is_rest_sse_ask_submit(path, ""):
+        return False
+    if _path_has_ignore_pattern(path) or is_noise(path):
+        return True
+    host = flow.request.pretty_host or ""
+    is_target, _domain, _platform = detect_target(host)
+    if is_target:
+        # Unknown POST on a monitored host may be a custom chat API. Keep the body.
+        return False
+    if is_noise_host(host):
+        ct = (flow.request.headers.get("content-type") or "").lower()
+        if any(x in ct for x in ("multipart", "octet-stream", "pdf", "image/", "audio/", "video/", "officedocument", "msword")):
+            return False
+        length = (flow.request.headers.get("content-length") or "").strip()
+        if length.isdigit() and int(length) >= 4096:
+            return False
+        return True
+    return True
+
+
 class BrowserAIInterceptor:
+
+    def requestheaders(self, flow: http.HTTPFlow) -> None:
+        """Let page, script, and settings calls pass through without buffering."""
+        try:
+            if _should_stream_without_inspection(flow):
+                flow.request.stream = True
+        except Exception:
+            return
 
     def __init__(self):
         print(f"[Gateway Proxy] Started. Backend: {GATEWAY_BACKEND_URL}")
@@ -197,6 +237,8 @@ class BrowserAIInterceptor:
         raw_text: str,
         content_type: str,
         path: str,
+        user_prompt_hint: str = "",
+        raw_bytes: bytes = b"",
     ) -> tuple[bool, int, bool]:
         """Scan attached/cached files on Send. Returns (blocked, files_processed, caption_consumed)."""
         should_block_file, file_block_msg, redact_notice, n_processed, caption_consumed = enforce_file_send_policy(
@@ -207,6 +249,8 @@ class BrowserAIInterceptor:
             url=flow.request.url,
             method=flow.request.method,
             raw_text=raw_text,
+            raw_bytes=raw_bytes if raw_bytes else (flow.request.content or b""),
+            user_prompt_hint=user_prompt_hint,
             content_type=content_type,
             file_name_hint=(
                 extract_filename_from_upload(flow, raw_text)
@@ -627,6 +671,11 @@ class BrowserAIInterceptor:
         # Search engine query / result interception.
         self._maybe_record_search_engine(flow, host)
 
+        # requestheaders already marked page/script/settings calls to stream.
+        # Do not read the body — that would hold the site again.
+        if getattr(flow.request, "stream", False):
+            return
+
         # CDN / noise hosts (cdn.*, static.*) often carry file uploads. Cache via Referer
         # BEFORE noise early-return — otherwise extract→rules never see the bytes.
         if method in ("POST", "PUT", "PATCH") and is_noise_host(host):
@@ -898,6 +947,8 @@ class BrowserAIInterceptor:
         peek_prompt = extract_prompt_universal(
             raw_bytes, content_type, host=host, url=flow.request.url,
         )
+        if peek_prompt and looks_like_user_prompt(peek_prompt):
+            note_composer_observation(domain, peek_prompt)
         has_prompt = _should_intercept_extracted_prompt(
             peek_prompt, path, raw_text, domain, host=host, raw_bytes=raw_bytes,
         )
@@ -1007,10 +1058,11 @@ class BrowserAIInterceptor:
                     if fields_json else None
                 )
                 if not typed and fields:
-                    typed = fields.get("prompt") or fields.get("message") or fields.get("text") or fields.get("q") or peek_prompt
-                if typed:
+                    typed = fields.get("prompt") or fields.get("message") or fields.get("text") or fields.get("q")
+                if typed and not _looks_like_document_body_dump(typed) and looks_like_user_prompt(typed):
                     blocked, n_processed, _ = self._file_send_maybe_block(
                         flow, domain, platform, client_ip, fields_json or raw_text, "application/json", path,
+                        user_prompt_hint=typed, raw_bytes=raw_bytes,
                     )
                     if blocked or n_processed > 0:
                         return
@@ -1031,6 +1083,7 @@ class BrowserAIInterceptor:
         if _file_policy_applies_on_send(path, raw_text, raw_bytes, domain=domain, host=host):
             blocked, n_processed, caption_consumed = self._file_send_maybe_block(
                 flow, domain, platform, client_ip, raw_text, content_type, path,
+                user_prompt_hint=peek_prompt, raw_bytes=raw_bytes,
             )
             if blocked:
                 return
@@ -1071,6 +1124,7 @@ class BrowserAIInterceptor:
         if _file_policy_applies_on_send(path, raw_text, raw_bytes, domain=domain, host=host):
             blocked, n_processed, caption_consumed = self._file_send_maybe_block(
                 flow, domain, platform, client_ip, raw_text, content_type, path,
+                user_prompt_hint=peek_prompt, raw_bytes=raw_bytes,
             )
             if blocked:
                 return
@@ -1302,6 +1356,8 @@ class BrowserAIInterceptor:
         content = websocket_frame_text(msg)
         if not content or len(content.strip()) < 1:
             return
+        if _is_transport_ping(content):
+            return
 
         ws_path = flow.request.path or ""
         if "gateway-reply" in ws_path.lower() or _is_gateway_inject_frame(content):
@@ -1346,6 +1402,8 @@ class BrowserAIInterceptor:
                 url=flow.request.url,
                 method="WS",
                 raw_text=content,
+                raw_bytes=ws_bytes,
+                user_prompt_hint=ws_prompt,
                 content_type="application/json",
                 path=ws_path,
             )
@@ -1449,6 +1507,8 @@ class BrowserAIInterceptor:
                 url=flow.request.url,
                 method="WS",
                 raw_text=content,
+                raw_bytes=content.encode("utf-8", errors="ignore"),
+                user_prompt_hint=ws_prompt if ws_has_prompt else "",
                 content_type="application/json",
                 path=flow.request.path or "",
             )

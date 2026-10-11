@@ -819,9 +819,9 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 	}
 	if prompt == "" {
 		if fileName != "" {
-			prompt = "[FILE UPLOAD] " + fileName
+			prompt = fileName
 		} else {
-			prompt = "[FILE UPLOAD] attachment"
+			prompt = "file"
 		}
 	}
 

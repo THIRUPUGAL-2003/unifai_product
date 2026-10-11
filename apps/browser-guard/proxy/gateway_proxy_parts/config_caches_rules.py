@@ -1061,25 +1061,31 @@ def rule_matches_prompt(rule: dict, prompt: str) -> bool:
     try:
         # Cap matching prompt length to 300,000 chars to avoid CPU denial of service
         eval_text = prompt if len(prompt) <= 300000 else prompt[:300000]
-        return bool(regex.search(eval_text))
+        # Inspect matches to prevent CSS hex colors (#111827) / hex literals (0x...) from falsely matching numeric DLP rules
+        for m in regex.finditer(eval_text):
+            tok = m.group(0)
+            if tok.isdigit():
+                start = m.start()
+                if start > 0 and eval_text[start - 1] in ("#", "&"):
+                    continue
+                if start >= 2 and eval_text[start - 2:start].lower() == "0x":
+                    continue
+            return True
+        return False
     except Exception as e:
         print(f"[Gateway Proxy] Evaluation failed: {e}")
         return False
 
 
 def _redacted_forward(prompt: str, warning_message: str = "", rule: dict | None = None) -> str:
-    """Mask matching sensitive words with [REDACTED], append notice. Logs keep original only."""
+    """Mask matching words. The rule reason stays in the log, not in the site request."""
     text = prompt or ""
     if rule and rule.get("regex") and text:
         try:
             text = rule["regex"].sub("[REDACTED]", text)
         except Exception:
             pass
-    w = (warning_message or "").strip() or "This prompt triggered a Gateway Guard redaction policy."
-    body = (text or "").rstrip()
-    if body:
-        return f"{body}\n\n[GATEWAY REDACTED] {w}"
-    return f"[GATEWAY REDACTED] {w}"
+    return text
 
 
 def _redact_notice_for_rule(rule_name: str) -> str:
@@ -1242,12 +1248,8 @@ def decide_prompt_locally(prompt: str) -> tuple[bool, str, str, str, str]:
 
 
 def _warning_forward(prompt: str, warning_message: str = "") -> str:
-    """ChatGPT receives full original prompt + warning notice. Logs keep original only."""
-    w = (warning_message or "").strip() or "This prompt triggered a Gateway Guard warning policy."
-    body = (prompt or "").rstrip()
-    if body:
-        return f"{body}\n\n[GATEWAY WARNING] {w}"
-    return f"[GATEWAY WARNING] {w}"
+    """Leave the typed prompt unchanged. The warning stays in the log, not in the site request."""
+    return prompt or ""
 
 
 def log_prompt_async(platform: str, domain: str, prompt: str, client_ip: str, url: str, method: str) -> None:
@@ -1569,10 +1571,20 @@ def _is_clear_protocol_junk(text: str) -> bool:
     return False
 
 
+def _is_session_token_text(text: str) -> bool:
+    """Long hex session/file tokens are not a typed prompt. Digit-only text still is."""
+    t = (text or "").strip()
+    if not t or any(ch.isspace() for ch in t) or len(t) < 24 or t.isdigit():
+        return False
+    return bool(re.match(r"^[0-9a-fA-F]{32,}=", t))
+
+
 def _is_opaque_wire_blob(text: str) -> bool:
     """Encoded wire/session tokens (Copilot/Bing base64url, Gemini blobs) — not typed chat."""
     t = (text or "").strip()
     if not t:
+        return True
+    if _is_session_token_text(t):
         return True
     if _is_google_wire_blob(t):
         return True

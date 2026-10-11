@@ -2390,12 +2390,15 @@ export default function BrowserAiPage() {
 			}
 		}
 		const promptPreviewForExport = (log: (typeof logs)[number]) => {
+			const stored = (log.user_prompt_full || log.user_prompt_preview || "").trim();
+			const legacyUpload = stored.startsWith("[FILE UPLOAD]") || stored.startsWith("[VOICE UPLOAD]");
+			if (isFileUploadLog(log) && stored && !legacyUpload) return stored.slice(0, 500);
 			if (isFileUploadLog(log)) {
 				const label = logAttachmentLabel(log);
 				const caption = logUserCaption(log);
-				return caption ? `${label} · ${caption}` : label;
+				return caption ? `${label}--${caption}` : label;
 			}
-			return (log.user_prompt_preview || log.user_prompt_full || "").slice(0, 500);
+			return stored.slice(0, 500);
 		};
 		const promptDetailsForExport = (log: (typeof logs)[number]) => {
 			const parts: string[] = [];
@@ -3360,10 +3363,6 @@ export default function BrowserAiPage() {
 											<Badge variant="destructive">
 												Block all uploads
 											</Badge>
-										) : controls.enabled && !controls.block_upload ? (
-											<Badge variant="success">
-												Rules-based DLP
-											</Badge>
 										) : (
 											<Badge variant="outline" className="border-border text-muted-foreground">
 												Paused
@@ -3371,7 +3370,7 @@ export default function BrowserAiPage() {
 										)}
 									</div>
 									<CardDescription>
-										Choose how file attachments are controlled on monitored AI sites. Select whether to block all files or enforce rules-based DLP inspection.
+										When this is on, every file or attachment sent to a monitored AI site is blocked.
 									</CardDescription>
 								</div>
 							</div>
@@ -3420,51 +3419,6 @@ export default function BrowserAiPage() {
 											}
 										}}
 										aria-label="Block all uploads"
-									/>
-								</div>
-
-								{/* Option 2: Rules-based upload block */}
-								<div
-									className={`flex items-center justify-between gap-4 px-4 py-3.5 transition-colors ${controls.enabled && !controls.block_upload ? "bg-emerald-950/20" : "bg-card"
-										}`}
-								>
-									<div className="min-w-0 flex items-start gap-3">
-										<div
-											className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${controls.enabled && !controls.block_upload
-													? "border-emerald-800/60 bg-emerald-950/50 text-emerald-400"
-													: "border-border bg-background text-muted-foreground"
-												}`}
-										>
-											<ShieldCheck className="h-4 w-4" />
-										</div>
-										<div className="min-w-0 space-y-1">
-											<div className="flex flex-wrap items-center gap-2">
-												<p className="text-sm font-semibold">Rules-based upload block</p>
-												{controls.enabled && !controls.block_upload ? (
-													<Badge className="bg-emerald-950/80 text-emerald-300 border-emerald-800/70 text-[10px] px-2 py-0.5">
-														Active: Guard Rules DLP
-													</Badge>
-												) : (
-													<Badge variant="outline" className="text-[10px] px-2 py-0.5 text-muted-foreground">
-														Disabled
-													</Badge>
-												)}
-											</div>
-											<p className="text-xs text-muted-foreground leading-relaxed">
-												Allow clean files. Inspect uploaded files (PDF, Word, Excel, text, OCR) against active Guard Rules and block or redact only policy violations.
-											</p>
-										</div>
-									</div>
-									<Switch
-										checked={!!(controls.enabled && !controls.block_upload)}
-										onCheckedChange={(val) => {
-											if (val) {
-												patchControl({ enabled: true, block_upload: false });
-											} else {
-												patchControl({ enabled: false, block_upload: false });
-											}
-										}}
-										aria-label="Rules-based upload block"
 									/>
 								</div>
 

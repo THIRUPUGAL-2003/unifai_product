@@ -124,15 +124,75 @@ def _copilot_frame_is_user_send(body: str) -> bool:
     return False
 
 
+def _signalr_control_frame(obj) -> bool:
+    """Handshake, ping, and Metrics frames are not a typed chat Send."""
+    if not isinstance(obj, dict):
+        return False
+    if not obj:
+        return True
+    keys = {str(k).lower() for k in obj.keys()}
+    if keys <= {"protocol", "version"}:
+        return True
+    target = str(obj.get("target") or "").lower()
+    if target in ("metrics", "ping", "pong"):
+        return True
+    raw_type = obj.get("type")
+    try:
+        type_num = int(raw_type) if raw_type is not None and not isinstance(raw_type, bool) else None
+    except (TypeError, ValueError):
+        type_num = None
+    if type_num in (6, 7):
+        return True
+    return False
+
+
+def _signalr_user_frame(obj) -> bool:
+    """A Copilot/Bing chat invocation. Does not call the noise filter (that recurses)."""
+    if not isinstance(obj, dict) or _signalr_control_frame(obj):
+        return False
+    event = str(obj.get("event") or "").lower()
+    target = str(obj.get("target") or "").lower()
+    if event == "send" or target == "chat":
+        return True
+    return False
+
+
+def _signalr_dicts(content: str) -> list:
+    """JSON objects in one WebSocket payload, including 0x1e-joined SignalR frames."""
+    frames = _parse_signalr_frames(content) if content else []
+    dicts = [frame for frame in frames if isinstance(frame, dict)]
+    if dicts:
+        return dicts
+    raw = (content or "").strip().rstrip("\x1e")
+    if raw[:1] not in "{[":
+        return []
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        return [data]
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    return []
+
+
 def is_event_sync_noise_content(content: str) -> bool:
-    """Copilot SignalR / Sydney frames that are not a user chat submit."""
+    """Copilot SignalR / Sydney frames that are not a user chat submit.
+
+    M365 sends the chat invocation and a Metrics frame in the same WebSocket
+    message. A Metrics or ping sibling must not hide the typed prompt.
+    """
     if not content:
         return True
+    frames = _signalr_dicts(content)
+    if frames:
+        for frame in frames:
+            if _signalr_user_frame(frame):
+                return False
+        if all(_signalr_control_frame(frame) for frame in frames):
+            return True
     cl = content.lower()
-    if '"target":"metrics"' in cl or '"target": "metrics"' in cl:
-        return True
-    if '"type":6' in cl or '"type": 6' in cl:
-        return True
     if '"event":"typing"' in cl or '"event": "typing"' in cl:
         return True
     if '"event":"ping"' in cl or '"event": "ping"' in cl:
@@ -393,6 +453,28 @@ def _send_carries_attachment(raw_text: str) -> bool:
     )
 
 
+def _is_transport_ping(text: str) -> bool:
+    """Heartbeat frames are not prompts on any domain."""
+    t = (text or "").strip()
+    if not t or len(t) > 120:
+        return False
+    low = t.lower()
+    if low in ("ping", "pong", "heartbeat"):
+        return True
+    if low.startswith("{") and ("ping" in low or "pong" in low):
+        try:
+            data = json.loads(t)
+        except Exception:
+            data = None
+        if isinstance(data, dict):
+            kind = str(data.get("type") or data.get("event") or "").lower()
+            if kind in ("ping", "pong", "heartbeat"):
+                return True
+            if set(data.keys()) <= {"type", "event"} and kind in ("ping", "pong", "heartbeat"):
+                return True
+    return False
+
+
 def looks_like_user_prompt(text: str) -> bool:
     """
     Accept ANY user-typed prompt: 1 char to 100k+, any language (Tamil, Arabic,
@@ -403,6 +485,9 @@ def looks_like_user_prompt(text: str) -> bool:
         return False
     t = text.strip()
     if len(t) < 1:
+        return False
+    # Site bootstrap tokens ("set", "true", …) are not typed prompts.
+    if t.lower() in _CONTROL_PLANE_PROMPT_TOKENS:
         return False
 
     # ── Non-Latin / Unicode scripts → ALWAYS a user prompt ──────────────────
@@ -445,12 +530,29 @@ def looks_like_user_prompt(text: str) -> bool:
         return False
     if any(rpc in t for rpc in ("xyhAld", "umJEY", "k06x8e", "wrb.fr", "batchexecute", "GmailHttp")):
         return False
+    if _is_transport_ping(t):
+        return False
+    if t[:1] == "{":
+        try:
+            handshake = json.loads(t.rstrip("\x1e"))
+        except Exception:
+            handshake = None
+        if isinstance(handshake, dict) and _signalr_control_frame(handshake):
+            return False
     if _is_opaque_wire_blob(t):
         return False
     if _is_internal_wire_text(t):
         return False
     # Claude Connect-RPC / protobuf crumbs must never become Prompt Logs mid-send.
     if _is_claude_wire_noise(t):
+        return False
+    # Pure hex hash tokens (SHA256, MD5, action tokens e.g. 89721075028dcbd210651b465dc1...)
+    if re.fullmatch(r"[0-9a-fA-F]{32,128}", t):
+        return False
+    # Cloudflare Turnstile / Bot challenge tokens
+    if "=" in t and any(tok in t for tok in ("-1.2.1.1-", "-1.0.1.1-", "-2.0.1.1-")):
+        return False
+    if any(cf in t for cf in ("cf-turnstile-response", "cf_challenge", "turnstile")):
         return False
     if "what would you like to do with this file?" in t.lower():
         return False
@@ -965,6 +1067,13 @@ def _should_intercept_extracted_prompt(
     text = prompt.strip()
     if len(text) < 1:
         return False
+    # Bootstrap crumbs must not become Prompt Logs, even on a chat-shaped path.
+    if text.lower() in _CONTROL_PLANE_PROMPT_TOKENS or _is_transport_ping(text):
+        return False
+    # Never intercept login, authentication, SSO, or bot challenge pages as prompts
+    path_l = (path or "").lower().split("?", 1)[0]
+    if any(auth_sub in path_l for auth_sub in ("/login", "/logout", "/auth", "/challenge", "/cdn-cgi", "/turnstile", "/sso", "/saml", "/oauth")):
+        return False
 
     # ── Non-ASCII / Unicode scripts (Tamil, Arabic, Chinese, Hindi, etc.) ────
     # Non-Latin prompts are always real user text.
@@ -1445,7 +1554,7 @@ def clear_composer_state(domain: str) -> None:
             _composer_draft.pop(domain, None)
 
 
-def peek_recent_composer_caption(domain: str, max_age: float = 15.0) -> str:
+def peek_recent_composer_caption(domain: str, max_age: float = 180.0) -> str:
     """
     Latest typed composer text for this Target family.
     Used when file Send body omits the caption (ChatGPT/Copilot/Perplexity often
@@ -1905,9 +2014,15 @@ def _extract_from_urlencoded(text: str) -> str | None:
                     return batchexecute_prompt.strip()
         # Fallback: long user-like text (skip wire tokens).
         for k, vals in qs.items():
-            if k in ("f.req", "req0___data__", "___data__", "soc-app", "soc-platform", "at", "f.sid"):
+            if k in ("f.req", "req0___data__", "___data__", "soc-app", "soc-platform", "at", "f.sid", "cf-turnstile-response"):
+                continue
+            if re.fullmatch(r"[0-9a-fA-F]{32,128}", k):
                 continue
             for v in vals:
+                if re.fullmatch(r"[0-9a-fA-F]{32,128}", v):
+                    continue
+                if any(tok in v for tok in ("-1.2.1.1-", "-1.0.1.1-", "-2.0.1.1-")):
+                    continue
                 got = _prompt_from_json_string(v) or _clean_prompt_text(v)
                 if got and len(got) >= 3 and looks_like_user_prompt(got) and not _is_opaque_wire_blob(got):
                     if len(got) > best_len:
@@ -2322,7 +2437,7 @@ def extract_connect_rpc_prompt(body_bytes: bytes, content_type: str = "", host: 
         or "proto" in ct_l
         or (len(body_bytes) >= 5 and body_bytes[0] in (0, 1) and 0 < int.from_bytes(body_bytes[1:5], "big") <= len(body_bytes) - 5)
     )
-    if not is_rpc and not ("claude" in (host or "").lower()):
+    if not is_rpc and not ("claude" in (host or "").lower()) and not (len(body_bytes) >= 8 and body_bytes[0] in (0, 1, 2)):
         return None
 
     data = body_bytes
