@@ -121,6 +121,36 @@ def bump_versions(bg: str) -> str:
             print(f"[publish] Inno MyAppVersion → {new_ver}")
         else:
             print("[publish] WARNING: MyAppVersion define not found in Gateway_Guard.iss", file=sys.stderr)
+    plist_path = os.path.join(bg, "release", "Gateway_Guard.app", "Contents", "Info.plist")
+    if os.path.isfile(plist_path):
+        plist_content = read_text(plist_path)
+        plist_content = re.sub(
+            r"(<key>CFBundleShortVersionString</key>\s*<string>)[^<]+(</string>)",
+            rf"\g<1>{new_ver}\g<2>",
+            plist_content,
+        )
+        plist_content = re.sub(
+            r"(<key>CFBundleVersion</key>\s*<string>)[^<]+(</string>)",
+            rf"\g<1>{new_ver}\g<2>",
+            plist_content,
+        )
+        write_text(plist_path, plist_content)
+        print(f"[publish] macOS Info.plist → {new_ver}")
+    mac_spec_path = os.path.join(bg, "Gateway_Guard.macos.spec")
+    if os.path.isfile(mac_spec_path):
+        spec_content = read_text(mac_spec_path)
+        spec_content = re.sub(
+            r'("CFBundleShortVersionString":\s*")[^"]*(")',
+            rf"\g<1>{new_ver}\g<2>",
+            spec_content,
+        )
+        spec_content = re.sub(
+            r'("CFBundleVersion":\s*")[^"]*(")',
+            rf"\g<1>{new_ver}\g<2>",
+            spec_content,
+        )
+        write_text(mac_spec_path, spec_content)
+        print(f"[publish] macOS spec → {new_ver}")
     print(f"[publish] version {current} → {new_ver}")
     return new_ver
 
