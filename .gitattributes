@@ -2,3 +2,7 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.iss text eol=crlf
+
+# Preserve Unix line endings for macOS and Linux shell scripts
+*.sh text eol=lf
+*.command text eol=lf
