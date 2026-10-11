@@ -23,22 +23,19 @@ def _file_logged_recently(name: str, ttl: float = 20.0) -> bool:
     return False
 
 
-def _file_row_posted_recently(name: str, ttl: float = 20.0) -> bool:
+def _claim_file_row_post(name: str, has_caption: bool, ttl: float = 20.0) -> bool:
+    """One Prompt Log row per filename. A later real caption may replace a caption-less claim."""
     key = (name or "").strip().lower()
     if not key:
-        return False
+        return True
     now = time.time()
     with _POSTED_FILE_LOGS_LOCK:
-        ts = _POSTED_FILE_LOGS.get(key)
-        return bool(ts and (now - ts) < ttl)
-
-
-def _mark_file_row_posted(name: str) -> None:
-    key = (name or "").strip().lower()
-    if not key:
-        return
-    with _POSTED_FILE_LOGS_LOCK:
-        _POSTED_FILE_LOGS[key] = time.time()
+        prev = _POSTED_FILE_LOGS.get(key)
+        if isinstance(prev, tuple) and (now - float(prev[0])) < ttl:
+            if prev[1] or not has_caption:
+                return False
+        _POSTED_FILE_LOGS[key] = (now, bool(has_caption))
+        return True
 
 
 def _mark_file_logged(name: str) -> None:
@@ -56,11 +53,17 @@ def _mark_file_logged(name: str) -> None:
 
 
 def _looks_like_file_syntax(text: str) -> bool:
-    """Spreadsheet XML, CSV rows, and build-file lines are file body, not a typed note."""
+    """Spreadsheet XML, CSV rows, MIME headers, and build-file lines are file body, not a typed note."""
     t = (text or "").strip()
     if not t:
         return False
     low = t.lower()
+    if low.startswith(("content-type:", "content-disposition:", "content-transfer-encoding:", "mime-version:")):
+        return True
+    if "application/vnd." in low or "application/octet-stream" in low or "multipart/" in low:
+        return True
+    if re.match(r"^(?:application|image|audio|video|text)/[a-z0-9.+-]+$", low):
+        return True
     if "xmlns" in low or "</" in t or (t.startswith("<") and (">" in t or ":" in t[:48])):
         return True
     if "$(" in t:
@@ -76,6 +79,22 @@ def _usable_file_caption(text: str) -> str:
     """Typed note beside a file. Filenames and file-body dumps are not captions."""
     t = (text or "").strip()
     if not t or len(t) > 2000:
+        return ""
+    low = t.lower()
+    if (
+        low.startswith((
+            "content-type:", "content-disposition:", "content-length:",
+            "content-transfer-encoding:", "boundary=", "host:", "accept:",
+            "user-agent:", "authorization:", "cookie:", "x-",
+        ))
+        or "application/vnd." in low
+        or "application/octet-stream" in low
+        or "spreadsheetml" in low
+        or "wordprocessingml" in low
+        or "presentationml" in low
+        or "multipart/form-data" in low
+        or ("text/plain" in low and ("charset=" in low or "boundary=" in low))
+    ):
         return ""
     if _looks_like_file_syntax(t):
         return ""
@@ -440,8 +459,7 @@ def enforce_file_send_policy(
         caption = ""
         try:
             from_body = extract_prompt_universal((raw_text or "").encode("utf-8", errors="ignore"), content_type or "", host, url)
-            if from_body and looks_like_user_prompt(from_body):
-                caption = from_body.strip()
+            caption = _usable_file_caption(from_body or "")
         except Exception:
             caption = ""
         scan_text = "\n".join(x for x in (transcript, caption) if x).strip()
@@ -524,16 +542,24 @@ def enforce_file_send_policy(
                     )
                     mark_duplicate_event(domain, dedupe_key)
                 return False, "", notice, 1, cap_done
-            dedupe_key = f"upload-send-allow-nocache|{hint}|{scan_text[:40]}"
-            if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
+            log_caption = (caption or "")[:500]
+            prompt_log = _user_prompt_log_text(voice=is_voice, file_label=hint, caption=log_caption)
+
+            def _post_nocache(
+                _prompt=prompt_log,
+                _caption=log_caption,
+                _hint=hint,
+            ) -> None:
+                if not _claim_file_row_post(_hint, bool(_caption)):
+                    return
                 post_upload_intercept(
                     platform=platform,
-                    prompt=_user_prompt_log_text(voice=is_voice, file_label=hint, caption=(caption or transcript or "")[:500]),
+                    prompt=_prompt,
                     client_ip=client_ip,
                     domain=domain,
                     url=url,
                     method=method,
-                    file_name=hint,
+                    file_name=_hint,
                     extracted_text=scan_text[:50_000],
                     scan_guard={
                         "cache_miss": True,
@@ -541,34 +567,36 @@ def enforce_file_send_policy(
                         "scan_guard_action": "Allowed",
                     },
                 )
-                mark_duplicate_event(domain, dedupe_key)
+
+            _coalesce_file_log(domain, hint, has_caption=bool(log_caption), post=_post_nocache)
             return False, "", "", 1, cap_done
 
         # Cache miss + real attachment markers, but no caption/transcript text
         # (Claude/Gemini often attach-then-auto-read with empty user text).
         # Still log the file so Prompt Logs + rules are not silent.
         # A second wire for the same file must not add another row.
-        dedupe_key = f"upload-send-allow-nocache-empty|{hint}"
-        if _file_logged_recently(hint) or is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
-            return False, "", "", 1, False
         print(f"[Gateway Proxy] FILE/VOICE SEND (cache miss, no caption) | {hint} | {client_ip} -> {host}")
-        ok = post_upload_intercept(
-            platform=platform,
-            prompt=_user_prompt_log_text(voice=is_voice, file_label=hint),
-            client_ip=client_ip,
-            domain=domain,
-            url=url,
-            method=method,
-            file_name=hint,
-            scan_guard={
-                "cache_miss": True,
-                "scan_guard_decided": True,
-                "scan_guard_action": "Allowed",
-                "empty_caption": True,
-            },
-        )
-        if ok:
-            mark_duplicate_event(domain, dedupe_key)
+
+        def _post_empty(_hint=hint) -> None:
+            if not _claim_file_row_post(_hint, False):
+                return
+            post_upload_intercept(
+                platform=platform,
+                prompt=_user_prompt_log_text(voice=is_voice, file_label=_hint),
+                client_ip=client_ip,
+                domain=domain,
+                url=url,
+                method=method,
+                file_name=_hint,
+                scan_guard={
+                    "cache_miss": True,
+                    "scan_guard_decided": True,
+                    "scan_guard_action": "Allowed",
+                    "empty_caption": True,
+                },
+            )
+
+        _coalesce_file_log(domain, hint, has_caption=False, post=_post_empty)
         return False, "", "", 1, False
 
     # Dedup by cache_uid ONLY — many ChatGPT/Claude images share name "attachment".
@@ -1123,11 +1151,9 @@ def enforce_file_send_policy(
             _label=row["file_label"],
             _has_caption=bool(caption_bit),
         ) -> None:
-            # Same filename already logged in this send window, and this pass adds no caption.
-            if not _has_caption and _file_row_posted_recently(_label):
+            # Same filename already logged in this window. A real caption may follow a bare row.
+            if not _claim_file_row_post(_label, _has_caption):
                 return
-            if not _has_caption:
-                _mark_file_row_posted(_label)
             try:
                 ok = post_upload_intercept(
                     platform=platform,

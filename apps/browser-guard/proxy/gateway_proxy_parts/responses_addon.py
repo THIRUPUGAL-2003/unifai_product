@@ -1049,8 +1049,8 @@ class BrowserAIInterceptor:
             )
             # Upload/attach = cache only. Type detect → extract → Guard Rules →
             # Block/Allow/Warn runs on chat Send (any Target Website).
-            # Exception: file + typed prompt in ONE multipart POST is itself the Send.
-            if "multipart/" in (content_type or "").lower():
+            # Exception: file + typed prompt in ONE multipart POST on a chat endpoint (not upload URL) is itself the Send.
+            if not is_upload_endpoint and not _path_looks_like_upload(path) and "multipart/" in (content_type or "").lower():
                 fields = multipart_text_fields(raw_bytes, content_type)
                 fields_json = json.dumps(fields, ensure_ascii=False) if fields else ""
                 typed = (

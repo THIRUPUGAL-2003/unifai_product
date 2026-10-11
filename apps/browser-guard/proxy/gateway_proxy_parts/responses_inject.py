@@ -433,15 +433,17 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
     is_upload_ep = _path_looks_like_upload(path_l_early) or any(
         x in path_l_early for x in ("/files", "/upload", "/attachments")
     )
-    if not is_upload_ep:
-        dedupe_domain, dedupe_key = _block_ui_dedupe_key(host_l, msg)
-        if is_duplicate_event(dedupe_domain, dedupe_key, ttl=_BLOCK_UI_DEDUPE_TTL, mark=False):
-            _silent_block_response(
-                flow, common_headers, path=path, raw_body=raw_body, accept=accept,
-            )
-            print(f"[Gateway Proxy] BLOCK UI deduped (silent) | {dedupe_domain} | {msg[:80]!r}")
-            return
-        mark_duplicate_event(dedupe_domain, dedupe_key)
+    # Wire-format routing: detect from REQUEST SHAPE (path/body/Accept) — not hostname lists.
+    messages_parts_body = None
+    try:
+        parsed = json.loads(raw_body or "")
+        if isinstance(parsed, dict) and isinstance(parsed.get("messages"), list):
+            if "conversation_id" in parsed or "parent_message_id" in parsed:
+                messages_parts_body = parsed
+            elif any(isinstance(m, dict) and isinstance(m.get("author"), dict) for m in parsed["messages"]):
+                messages_parts_body = parsed
+    except Exception:
+        messages_parts_body = None
 
     # Dedicated upload-endpoint response: return proper JSON error so SPA shows block message instead of network error
     path_l = path_l_early
@@ -465,20 +467,15 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         )
         return
 
-    # Wire-format routing: detect from REQUEST SHAPE (path/body/Accept) — not hostname lists.
-    messages_parts_body = None
-    try:
-        parsed = json.loads(raw_body or "")
-        if isinstance(parsed, dict) and isinstance(parsed.get("messages"), list):
-            if "conversation_id" in parsed or "parent_message_id" in parsed:
-                messages_parts_body = parsed
-            elif any(isinstance(m, dict) and isinstance(m.get("author"), dict) for m in parsed["messages"]):
-                messages_parts_body = parsed
-    except Exception:
-        messages_parts_body = None
-
-    # ── ChatGPT-shaped conversation APIs (body shape, any monitored domain) ──
-    if messages_parts_body is not None:
+    # ── ChatGPT-shaped conversation APIs (body shape or host/path, any monitored domain) ──
+    is_chatgpt_conv = (
+        messages_parts_body is not None
+        or "chatgpt.com" in host_l
+        or "openai.com" in host_l
+        or "/backend-api/f/conversation" in path
+        or "/backend-api/conversation" in path
+    )
+    if is_chatgpt_conv:
         user_msg_id = ""
         conv_id = None
         req_data = messages_parts_body if isinstance(messages_parts_body, dict) else {}
@@ -505,6 +502,20 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         reply_msg_id = str(uuid.uuid4())
         now_ts = time.time()
 
+        in_prog_obj = {
+            "message": {
+                "id": reply_msg_id,
+                "author": {"role": "assistant", "name": None, "metadata": {}},
+                "create_time": now_ts,
+                "content": {"content_type": "text", "parts": [msg]},
+                "status": "in_progress",
+                "end_turn": False,
+                "metadata": {"parent_id": user_msg_id or None},
+                "recipient": "all",
+            },
+            "conversation_id": conv_id,
+            "error": None,
+        }
         messages_parts_resp_obj = {
             "message": {
                 "id": reply_msg_id,
@@ -526,7 +537,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             "conversation_id": conv_id,
             "error": None,
         }
-        sse_payload = f"data: {json.dumps(messages_parts_resp_obj)}\n\ndata: [DONE]\n\n"
+        sse_payload = f"data: {json.dumps(in_prog_obj, ensure_ascii=False)}\n\ndata: {json.dumps(messages_parts_resp_obj, ensure_ascii=False)}\n\ndata: [DONE]\n\n"
         flow.response = http.Response.make(
             200,
             sse_payload.encode("utf-8"),
@@ -535,9 +546,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
 
     # ── Claude / Anthropic chat APIs (path/body shape) ──
-    # Single content_block only — do NOT also emit legacy `completion` (that painted
-    # the same block text twice, and with 3 parallel Sends looked like 3 bubbles).
-    if _is_anthropic_messages_api_shape(path, raw_body):
+    if _is_anthropic_messages_api_shape(path, raw_body) or "claude.ai" in host_l or "anthropic.com" in host_l:
         anthropic_sse = (
             'event: message_start\n'
             'data: {"type":"message_start","message":{"id":"msg_gateway_block","type":"message",'
@@ -552,6 +561,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             'data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}\n\n'
             'event: message_stop\n'
             'data: {"type":"message_stop"}\n\n'
+            f'event: completion\ndata: {{"completion":{msg_json},"stop_reason":"stop_sequence","model":"gateway-guard"}}\n\n'
         )
         flow.response = http.Response.make(
             200,

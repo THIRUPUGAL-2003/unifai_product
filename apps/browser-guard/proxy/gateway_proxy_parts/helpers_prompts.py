@@ -511,6 +511,8 @@ def looks_like_user_prompt(text: str) -> bool:
         or t.startswith("------")
         or "content-disposition: form-data" in t[:500].lower()
         or "multipart/form-data" in t[:200].lower()
+        or low_head.startswith(("content-type:", "content-disposition:", "content-transfer-encoding:"))
+        or ("application/vnd." in t[:180].lower() and len(t) <= 240)
     ):
         return False
     if _is_ai_chrome_url(t):
@@ -1264,6 +1266,10 @@ def _clean_prompt_text(text: str) -> str | None:
     return cleaned
 
 
+DEDUPE_TTL = 1.2
+BLOCK_DEDUPE_TTL = 30.0
+
+
 def is_duplicate_event(domain: str, event_key: str, ttl: float = DEDUPE_TTL, *, mark: bool = True) -> bool:
     """Return True if the same event was already logged for this domain recently.
 
@@ -1366,7 +1372,16 @@ def _path_looks_like_upload(path: str) -> bool:
         return False
     if any(m in p for m in _GENERIC_UPLOAD_PATH_MARKERS):
         return True
-    return any(x in p for x in ("/files", "/file/", "/upload", "/attachments", "/attachment", "/media/upload", "/convert_document", "/documents", "/document", "/storage", "/import", "/blob", "/blobs", "file.upload", "uploadfile", "/file."))
+    return any(
+        x in p
+        for x in (
+            "/files", "/file/", "/upload", "/attachments", "/attachment",
+            "/media/upload", "/convert_document", "/documents", "/document",
+            "/storage", "/import", "/blob", "/blobs", "file.upload", "uploadfile",
+            "/file.", "/upload-file", "/upload_file", "upload-file", "upload_file",
+            "wiggle/upload",
+        )
+    )
 
 
 def is_unsubmitted_chat_body(path: str, body: str) -> bool:
