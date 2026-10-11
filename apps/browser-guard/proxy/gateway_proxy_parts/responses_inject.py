@@ -429,9 +429,6 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
     }
 
     raw_body = (flow.request.content or b"").decode("utf-8", errors="ignore")
-    # Stop the send without painting the rule reason inside Claude, ChatGPT, or Gemini.
-    _silent_block_response(flow, common_headers, path=path, raw_body=raw_body, accept=accept)
-    return
     path_l_early = (path or "").lower().split("?", 1)[0]
     is_upload_ep = _path_looks_like_upload(path_l_early) or any(
         x in path_l_early for x in ("/files", "/upload", "/attachments")

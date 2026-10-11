@@ -19,18 +19,28 @@ conn = psycopg2.connect(
 )
 cur = conn.cursor()
 
-# 1. List browser_ai tables
-cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name LIKE '%browser_ai%';")
-tables = [r[0] for r in cur.fetchall()]
-print("Tables:", tables)
+# Check browser_target_websites
+cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'browser_target_websites' ORDER BY ordinal_position;")
+cols = cur.fetchall()
+print("browser_target_websites columns:", cols)
 
-for t in tables:
-    cur.execute(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{t}';")
-    cols = [r[0] for r in cur.fetchall()]
-    print(f"\nTable: {t}")
-    print("Columns:", cols)
-    cur.execute(f"SELECT count(*) FROM {t};")
-    cnt = cur.fetchone()[0]
-    print(f"Row count: {cnt}")
+cur.execute("SELECT count(*) FROM browser_target_websites;")
+print("browser_target_websites count:", cur.fetchone()[0])
+
+cur.execute("SELECT domain, platform_name, host_role, monitored, block_site FROM browser_target_websites LIMIT 5;")
+for r in cur.fetchall():
+    print(" ", r)
+
+# Check browser_guard_rules
+cur.execute("SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'browser_guard_rules' ORDER BY ordinal_position;")
+cols_rules = cur.fetchall()
+print("\nbrowser_guard_rules columns:", cols_rules)
+
+cur.execute("SELECT count(*) FROM browser_guard_rules;")
+print("browser_guard_rules count:", cur.fetchone()[0])
+
+cur.execute("SELECT id, name, pattern, action, active, rule_type FROM browser_guard_rules LIMIT 10;")
+for r in cur.fetchall():
+    print(" ", r)
 
 conn.close()
