@@ -359,16 +359,8 @@ export default function RBACView() {
 			const allowed = new Set(userSections);
 
 			if (uRole === "admin") {
-				if (userSections.length > 0) {
-					const adminPermIds: number[] = [];
-					for (const p of permissions) {
-						const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
-						if (sections.some((s) => sectionGranted(allowed, s))) {
-							adminPermIds.push(p.id);
-						}
-					}
-					setSelectedPerms(adminPermIds);
-				} else if (permissions.length > 0) {
+				// Admin has unrestricted full access to all permissions across the entire platform
+				if (permissions.length > 0) {
 					setSelectedPerms(permissions.map((p) => p.id));
 				}
 				setLastSyncedKey(activeTargetKey);
@@ -376,7 +368,7 @@ export default function RBACView() {
 			}
 
 			if (isSubAdminRole(uRole)) {
-				// Sub-admin: automatically pre-tick all operations (View, Edit, Delete, Full Access) for their granted workspace sections!
+				// Sub-admin: Full access (View, Edit, Delete) for their selected features only!
 				if (userSections.length > 0) {
 					const subAdminPermIds: number[] = [];
 					for (const p of permissions) {
@@ -396,17 +388,21 @@ export default function RBACView() {
 			}
 
 			// Regular User:
+			// Pre-tick VIEW ONLY (Read / View) for their selected features!
 			if (userSections.length > 0) {
 				const userPermIds: number[] = [];
 				for (const p of permissions) {
 					const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
 					if (sections.some((s) => sectionGranted(allowed, s))) {
-						userPermIds.push(p.id);
+						if (p.operation === "Read" || p.operation === "View") {
+							userPermIds.push(p.id);
+						}
 					}
 				}
 				setSelectedPerms(userPermIds);
 			} else if (rolePermData?.permissions) {
-				setSelectedPerms(rolePermData.permissions.map((p) => p.id));
+				const viewPerms = rolePermData.permissions.filter((p) => p.operation === "Read" || p.operation === "View");
+				setSelectedPerms(viewPerms.map((p) => p.id));
 			} else {
 				setSelectedPerms([]);
 			}
@@ -558,7 +554,7 @@ export default function RBACView() {
 			if (target.type === "user") {
 				const user = targetUser ?? target.user;
 				const uRole = (user.role || "").toLowerCase();
-				const sectionsStr = computeAllowedSections(selectedPerms);
+				const sectionsStr = uRole === "admin" ? "" : computeAllowedSections(selectedPerms);
 				await updateSessionUser({
 					id: user.id,
 					updates: {

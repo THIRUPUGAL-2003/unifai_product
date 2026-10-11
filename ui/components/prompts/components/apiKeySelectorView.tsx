@@ -61,7 +61,7 @@ export function ApiKeySelectorView({
 			if (isInactive) suffix = " (Inactive)";
 			else if (isExpired) suffix = " (Expired)";
 			else if (block) {
-				const scopeLabel = block.scope === "vk" ? "Key" : block.scope === "team" ? "Team" : "Customer";
+				const scopeLabel = block.scope === "vk" ? "Key" : block.scope === "team" ? "Team" : isRegularUser ? "Key" : "Customer";
 				suffix = ` (${scopeLabel} budget used up)`;
 			} else if (vk.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit)) {
 				suffix = " (Key budget used up)";
@@ -87,6 +87,7 @@ export function ApiKeySelectorView({
 	const fmt = (v?: number) => `$${(v ?? 0).toFixed(2)}`;
 
 	const isMember = authStatus?.role !== "admin";
+	const isRegularUser = (authStatus?.role || "").trim().toLowerCase() === "user";
 	const userBudget = authStatus?.budget;
 	const userUsage = authStatus?.budget_current_usage ?? 0;
 	// Members always see their personal budget. Users with a configured budget also see their meter.
@@ -109,7 +110,9 @@ export function ApiKeySelectorView({
 					<Label className="text-muted-foreground text-xs font-medium uppercase">Virtual key / API Key</Label>
 					<p className="text-muted-foreground text-[11px] leading-snug">
 						{isMember
-							? "Keys already assigned to you (user, team, or customer). Pick one to chat — its models and budgets apply."
+							? isRegularUser
+								? "Keys already assigned to you (user or team). Pick one to chat — its models and budgets apply."
+								: "Keys already assigned to you (user, team, or customer). Pick one to chat — its models and budgets apply."
 							: "Uses Models providers & Governance virtual keys. Routing, budgets, and pricing overrides apply when you pick a VK or provider key."}
 					</p>
 					{isMember ? (
@@ -223,8 +226,17 @@ export function ApiKeySelectorView({
 			{showVKBudget && selectedVK && (() => {
 				const customerName = selectedVK.customer?.name || selectedVK.customers?.[0]?.name;
 				const teamName = selectedVK.team?.name || selectedVK.teams?.[0]?.name;
-				const scopeLabel = customerName ? `Customer: ${customerName}` : teamName ? `Team: ${teamName}` : null;
-				const customerBudgets = selectedVK.customer?.budgets || selectedVK.customers?.[0]?.budgets || [];
+				const scopeLabel = isRegularUser
+					? teamName
+						? `Team: ${teamName}`
+						: null
+					: customerName
+						? `Customer: ${customerName}`
+						: teamName
+							? `Team: ${teamName}`
+							: null;
+				// Never expose customer budget to regular user accounts
+				const customerBudgets = isRegularUser ? [] : (selectedVK.customer?.budgets || selectedVK.customers?.[0]?.budgets || []);
 				const teamBudgets = selectedVK.team?.budgets || selectedVK.teams?.[0]?.budgets || [];
 				const vkBudgets = selectedVK.budgets || [];
 

@@ -459,14 +459,23 @@ export default function UsersView() {
 		});
 	}, [workspaceSearch]);
 
-	const workspaceAccessPicker =
-		sectionGrantsApply(role) ? (
-			<div className="space-y-2">
-				<label className="text-muted-foreground text-sm font-medium">Workspace Access</label>
-				<p className="text-muted-foreground text-xs">
-					Pages this user may open (view-only). They appear in their sidebar after login. Parent tick = whole section. Nothing is granted by default —
-					unchecked sections stay hidden for this user.
-				</p>
+	const isSubAdmin = role === "sub_admin";
+	const isAdmin = role === "admin";
+
+	const workspaceAccessPicker = isAdmin ? (
+		<div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
+			<span className="font-semibold text-emerald-200">Admin Full Access:</span> Administrators automatically have unrestricted full access (View, Edit, Delete) across all workspace pages, features, and settings.
+		</div>
+	) : sectionGrantsApply(role) ? (
+		<div className="space-y-2">
+			<label className="text-muted-foreground text-sm font-medium">
+				Workspace Access {isSubAdmin ? "(Full Access for Selected Features)" : "(View Only for Selected Features)"}
+			</label>
+			<p className="text-muted-foreground text-xs">
+				{isSubAdmin
+					? "Select workspace sections for this Sub-Admin. In Roles & Permissions (RBAC), they will automatically have Full Access (View, Edit, Delete) to these selected features."
+					: "Select workspace sections for this User. In Roles & Permissions (RBAC), they will have View-only access to these selected features by default (can be modified in RBAC)."}
+			</p>
 				<div className="relative">
 					<Search className="text-muted-foreground absolute left-2.5 top-2.5 size-3.5" />
 					<Input
@@ -622,7 +631,7 @@ export default function UsersView() {
 		budget: isUserRole(role) ? budget : 0,
 		rate_limit: isUserRole(role) ? rateLimit : 0,
 		allowed_prompt_repos: isUserRole(role) ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
-		allowed_sections: sectionGrantsApply(role) ? allowedSectionsToString(allowedSections) : "",
+		allowed_sections: role === "admin" ? "" : (sectionGrantsApply(role) ? allowedSectionsToString(allowedSections) : ""),
 		auto_create_prompt: isUserRole(role) ? autoCreatePrompt : false,
 	});
 
@@ -827,9 +836,8 @@ export default function UsersView() {
 		setRateLimit(user.rate_limit);
 		setAllowedPromptRepos(sanitizeAllowedPromptRepos(user.allowed_prompt_repos || ""));
 		const grants = adminSectionsFromStorage(user.allowed_sections);
-		if (nextRole === "admin" && grants.size === 0) {
-			// Admins default to all sections selected
-			setAllowedSections(new Set(WORKSPACE_ACCESS_SECTIONS.map((s) => s.key)));
+		if (nextRole === "admin") {
+			setAllowedSections(new Set());
 		} else {
 			setAllowedSections(grants);
 		}
@@ -1403,8 +1411,6 @@ export default function UsersView() {
 										setVirtualKeyId("");
 									}
 									if (nextRole === "admin") {
-										setAllowedSections(new Set(WORKSPACE_ACCESS_SECTIONS.map((s) => s.key)));
-									} else if (role === "admin") {
 										setAllowedSections(new Set());
 									}
 								}}
@@ -1579,8 +1585,8 @@ export default function UsersView() {
 										setTeamId("");
 										setVirtualKeyId("");
 									}
-									if (nextRole === "admin" && allowedSections.size === 0) {
-										setAllowedSections(new Set(WORKSPACE_ACCESS_SECTIONS.map((s) => s.key)));
+									if (nextRole === "admin") {
+										setAllowedSections(new Set());
 									}
 								}}
 								className="bg-muted/20 border-border/50 text-foreground w-full rounded-lg border p-2.5 text-sm focus:border-teal-500/50 focus:outline-none"

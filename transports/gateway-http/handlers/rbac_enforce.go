@@ -118,14 +118,7 @@ func sessionSectionsAllow(ctx context.Context, store configstore.ConfigStore, ro
 		return true
 	}
 	if r == "admin" {
-		if username == "" {
-			return true
-		}
-		user, err := store.GetUserByUsername(ctx, username)
-		if err != nil || user == nil || strings.TrimSpace(user.AllowedSections) == "" {
-			return true
-		}
-		return rbac.SectionsAllow(user.AllowedSections, required)
+		return true
 	}
 	if username == "" {
 		return false

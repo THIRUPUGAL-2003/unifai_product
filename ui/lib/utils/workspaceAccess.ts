@@ -89,10 +89,7 @@ export function getScopedWorkspaceSections(
 		return null;
 	}
 	if (auth.role === "admin") {
-		// Admins default to unrestricted full access. If specific allowed_sections are customized, enforce them.
-		if (auth.allowed_sections && auth.allowed_sections.trim().length > 0) {
-			return parseAdminAllowedSections(auth.allowed_sections);
-		}
+		// Admins always have unrestricted full access to all workspace pages.
 		return null;
 	}
 	if (auth.role === "user") {
