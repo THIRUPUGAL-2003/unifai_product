@@ -989,7 +989,8 @@ func (gs *LocalGovernanceStore) deleteVirtualKeyByValue(value string) {
 
 // CheckRateLimit checks rate limits for tokens and requests across categories
 func (gs *LocalGovernanceStore) CheckRateLimit(ctx context.Context, entityWiseRateLimits EntityWiseRateLimits, tokensBaselines map[string]int64, requestsBaselines map[string]int64) (Decision, error) {
-	for entity, rateLimits := range entityWiseRateLimits {
+	for _, entity := range orderedGovernanceEntities(entityWiseRateLimits) {
+		rateLimits := entityWiseRateLimits[entity]
 		for _, rateLimit := range rateLimits {
 			var violations []string
 			// Expired-but-not-yet-reset counters skip only their own check. Uses the same
@@ -1064,11 +1065,45 @@ func (e *BudgetExceededError) Level() string {
 	return level
 }
 
+// governanceEntityRank is the stable check order. A Go map has no order, so without
+// this the block message can name a random level when several budgets are already spent.
+func governanceEntityRank(entity string) int {
+	switch entity {
+	case "VK":
+		return 0
+	case "Team":
+		return 1
+	case "Customer":
+		return 2
+	default:
+		if strings.HasPrefix(entity, "User") {
+			return 3
+		}
+		return 4
+	}
+}
+
+func orderedGovernanceEntities[T any](entityWise map[string]T) []string {
+	keys := make([]string, 0, len(entityWise))
+	for key := range entityWise {
+		keys = append(keys, key)
+	}
+	sort.SliceStable(keys, func(i, j int) bool {
+		left, right := governanceEntityRank(keys[i]), governanceEntityRank(keys[j])
+		if left != right {
+			return left < right
+		}
+		return keys[i] < keys[j]
+	})
+	return keys
+}
+
 // Generic check budget method
 // The idea is to keep this as a common method for checking all budgets. The entire business logic resides in here
 func (gs *LocalGovernanceStore) CheckBudget(ctx context.Context, entityWiseBudgets EntityWiseBudgets, baselines map[string]float64) (Decision, error) {
 	// Check each budget in hierarchy order using in-memory data
-	for entity, budgets := range entityWiseBudgets {
+	for _, entity := range orderedGovernanceEntities(entityWiseBudgets) {
+		budgets := entityWiseBudgets[entity]
 		for _, budget := range budgets { // Check if budget needs reset (in-memory check)
 			// Calendar-aware: a "1M" calendar budget is not expired on day 31 just because
 			// ParseDuration treats a month as 30 days.

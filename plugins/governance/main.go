@@ -795,7 +795,7 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.GatewayContext, req *s
 	if err != nil {
 		p.logger.Error("failed to evaluate routing rules: %v", err)
 		ctx.AppendRoutingEngineLog(schemas.RoutingEngineRoutingRule, schemas.LogLevelError, fmt.Sprintf("Routing rule evaluation error: %v", err))
-		return nil, nil
+		return nil, err
 	}
 	if decision == nil {
 		return nil, nil

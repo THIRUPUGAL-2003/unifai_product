@@ -1,25 +1,15 @@
-import os
 import psycopg2
 
-env_vars = {}
-with open('d:/unifai_project/.env', 'r', encoding='utf-8') as f:
-    for line in f:
-        line = line.strip()
-        if line and not line.startswith('#') and '=' in line:
-            k, v = line.split('=', 1)
-            env_vars[k.strip()] = v.strip().strip('\'"')
-
 conn = psycopg2.connect(
-    dbname=env_vars.get('DB_NAME', 'unifai'),
-    user=env_vars.get('DB_USER', 'postgres'),
-    password=env_vars.get('DB_PASSWORD', 'postgres'),
-    host=env_vars.get('DB_HOST', 'localhost'),
-    port=env_vars.get('DB_PORT', '5432')
+    dbname='Unifai_test',
+    user='Unifai_test',
+    password='YP2025-2026yp',
+    host='76.13.243.253',
+    port=32768
 )
 cur = conn.cursor()
-cur.execute("SELECT COUNT(*), platform_name FROM browser_target_websites GROUP BY platform_name ORDER BY count DESC;")
-for row in cur.fetchall():
-    print(row)
-cur.execute("SELECT COUNT(*) FROM browser_target_websites;")
-print("Total target websites:", cur.fetchone()[0])
-conn.close()
+cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='browser_target_websites'")
+print('Columns:', [r[0] for r in cur.fetchall()])
+cur.execute("SELECT * FROM browser_target_websites")
+for r in cur.fetchall():
+    print(r)

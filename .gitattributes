@@ -1,0 +1,4 @@
+# Preserve Windows line endings for batch scripts and Inno Setup files
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.iss text eol=crlf

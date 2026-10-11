@@ -230,7 +230,7 @@ func (r *BudgetResolver) EvaluateUserRequest(ctx *schemas.GatewayContext, userID
 		if decision, err := r.store.CheckScopedModelBudget(ctx, configstoreTables.ModelConfigScopeUser, userID, request, nil); err != nil || isBudgetViolation(decision) {
 			return &EvaluationResult{
 				Decision: decision,
-				Reason:   fmt.Sprintf("Warning: User-level model budget exceeded: %s", reasonFromErr(err, decision)),
+				Reason:   budgetExhaustedReason(err, decision),
 			}
 		}
 	}
@@ -360,7 +360,7 @@ func (r *BudgetResolver) EvaluateVirtualKeyRequest(ctx *schemas.GatewayContext, 
 		if decision, err := r.store.CheckScopedModelBudget(ctx, configstoreTables.ModelConfigScopeVirtualKey, vk.ID, evaluationRequest, nil); err != nil || isBudgetViolation(decision) {
 			return &EvaluationResult{
 				Decision:   decision,
-				Reason:     fmt.Sprintf("Warning: Model-level budget exceeded (virtual key scope): %s", reasonFromErr(err, decision)),
+				Reason:     budgetExhaustedReason(err, decision),
 				VirtualKey: vk,
 			}
 		}

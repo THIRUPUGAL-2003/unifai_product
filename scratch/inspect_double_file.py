@@ -20,17 +20,13 @@ conn = psycopg2.connect(
 cur = conn.cursor()
 
 cur.execute("""
-    SELECT id, timestamp, platform, user_prompt_preview, attachment_name, metadata
+    SELECT id, attachment_content_type, metadata
     FROM browser_ai_logs 
-    WHERE user_prompt_preview LIKE '%UnifAI_3_Day_Task_Plan%' OR attachment_name LIKE '%UnifAI_3_Day_Task_Plan%'
-    ORDER BY timestamp DESC LIMIT 5;
+    WHERE id = 'bb671eef-73fa-46fd-aec7-3b54443a1cd2';
 """)
-rows = cur.fetchall()
-for r in rows:
-    print("=" * 60)
-    print(f"ID: {r[0]} | Time: {r[1]} | Plat: {r[2]}")
-    print(f"Preview: {r[3]}")
-    print(f"Attach: {r[4]}")
-    print(f"Metadata: {json.dumps(r[5], indent=2)}")
+r = cur.fetchone()
+print("ID:", r[0])
+print("Content-Type:", repr(r[1]))
+print("Meta:", repr(r[2]))
 
 conn.close()
