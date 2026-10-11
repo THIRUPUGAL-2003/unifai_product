@@ -1,8 +1,7 @@
 # UnifAI & Gateway Enterprise — Complete System & Administrator Guide
 
 **Version:** 1.1.16  
-**Audience:** Platform Administrators, Security Engineers, DevOps, Compliance Teams  
-**Platform URL:** `https://unifai.yespanchi.com`  
+**Platform URL:** Configured via `SERVER_DOMAIN` in `.env` (e.g. `https://<your-server-domain>`)  
 
 ---
 
@@ -83,7 +82,7 @@ d:/unifai_project/
 ## 2. Administrator Access & Authentication
 
 ### 2.1 Sign-In Portal
-* **URL:** `https://unifai.yespanchi.com/login`
+* **URL:** `<SERVER_DOMAIN>/login` (configured in `.env`)
 * **Default Admin Credentials:**
   * **Email:** `admin@yespanchi.com`
   * **Password:** Configured via `ADMIN_PASSWORD` in `.env` (Default: `YP2025-2026yp`)

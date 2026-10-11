@@ -26,10 +26,9 @@ function getPortConfig(): PortConfig {
 		// Development mode: Vite dev server connects to configured backend
 		const configuredBackendUrl = (
 			process.env.GATEWAY_BACKEND_URL ||
-			process.env.GATEWAY_BACKEND_URL ||
 			""
 		).trim();
-		const port = process.env.GATEWAY_PORT || process.env.GATEWAY_PORT || "8001";
+		const port = process.env.GATEWAY_PORT || process.env.APP_PORT || "6000";
 		const baseUrl = configuredBackendUrl || `http://localhost:${port}`;
 		const isHttps = baseUrl.startsWith("https:");
 		const wsProtocol = isHttps ? "wss:" : "ws:";
@@ -44,7 +43,7 @@ function getPortConfig(): PortConfig {
 			host,
 		};
 	} else {
-		// Production mode: UI is served by the same Go server
+		// Production mode: UI is served by the same Go server or under SERVER_DOMAIN
 		// Use current window location for automatic port detection
 		if (typeof window !== "undefined") {
 			const protocol = window.location.protocol === "https:" ? "https:" : "http:";
@@ -58,16 +57,38 @@ function getPortConfig(): PortConfig {
 				host: window.location.host,
 			};
 		} else {
-			// Server-side rendering fallback - use relative URLs
+			// Server-side rendering fallback
+			const serverDomain = (process.env.SERVER_DOMAIN || "").trim().replace(/\/+$/, "");
 			return {
-				port: "unknown",
+				port: process.env.APP_PORT || "6000",
 				isDevelopment: false,
-				baseUrl: "",
+				baseUrl: serverDomain || "",
 				wsUrl: "",
 				host: "",
 			};
 		}
 	}
+}
+
+/**
+ * Gets the deployment origin for remote installers, agent scripts, and curl one-liners.
+ * Precedence:
+ * 1. SERVER_DOMAIN from .env (e.g. https://unifai.yespanchi.com)
+ * 2. GATEWAY_BACKEND_URL from .env
+ * 3. window.location.origin in browser
+ * 4. getPortConfig().baseUrl
+ */
+export function getDeploymentOrigin(): string {
+	if (typeof process !== "undefined" && process.env) {
+		const domain = (process.env.SERVER_DOMAIN || "").trim().replace(/\/+$/, "");
+		if (domain) return domain;
+		const backend = (process.env.GATEWAY_BACKEND_URL || "").trim().replace(/\/+$/, "");
+		if (backend) return backend;
+	}
+	if (typeof window !== "undefined" && window.location?.origin) {
+		return window.location.origin;
+	}
+	return getPortConfig().baseUrl || "";
 }
 
 /**
@@ -105,13 +126,17 @@ export function getWebSocketUrl(path: string = ""): string {
  * Get the full base URL (for example code snippets)
  */
 export function getExampleBaseUrl(): string {
-	return getPortConfig().baseUrl;
+	return getDeploymentOrigin() || getPortConfig().baseUrl;
 }
 
 /**
  * Get the host (hostname:port) for example code
  */
 export function getExampleHost(): string {
+	const origin = getDeploymentOrigin();
+	if (origin) {
+		return origin.replace(/^https?:\/\//, "");
+	}
 	return getPortConfig().host;
 }
 

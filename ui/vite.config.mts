@@ -25,9 +25,11 @@ export default defineConfig(({ mode }) => {
 	const rootDir = path.resolve(__dirname, "..");
 	const env = loadEnv(mode, rootDir, "");
 
-	const backendPort = env.APP_PORT || gatewayEnv(env, "PORT") || "8001";
-	const backendTarget = gatewayEnv(env, "BACKEND_URL") || `http://localhost:${backendPort}`;
-	const uiPort = Number(env.UI_PORT || process.env.UI_PORT || 3000);
+	const backendPort = env.APP_PORT || gatewayEnv(env, "PORT") || "6000";
+	const backendTarget = gatewayEnv(env, "BACKEND_URL") || env.GATEWAY_BACKEND_URL || `http://localhost:${backendPort}`;
+	const serverDomain = (env.SERVER_DOMAIN || gatewayEnv(env, "SERVER_DOMAIN") || "").trim();
+	const brandName = gatewayEnv(env, "BRAND_NAME") || env.GATEWAY_BRAND_NAME || "Raksha";
+	const uiPort = Number(env.UI_PORT || process.env.UI_PORT || 3100);
 	const companyName = gatewayEnv(env, "COMPANY_NAME") || "YesPanchi Group of Companies";
 	const companyShortName = gatewayEnv(env, "COMPANY_SHORT_NAME") || "YesPanchi";
 	const companyLogo = gatewayEnv(env, "COMPANY_LOGO") || "/yes-panchi-logo.png";
@@ -80,30 +82,22 @@ export default defineConfig(({ mode }) => {
 	},
 	define: {
 		"process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"),
-		"process.env.GATEWAY_IS_ENTERPRISE": JSON.stringify(isEnterpriseBuild ? "true" : isEnterprise || "false"),
+		"process.env.SERVER_DOMAIN": JSON.stringify(serverDomain),
+		"process.env.GATEWAY_BRAND_NAME": JSON.stringify(brandName),
 		"process.env.GATEWAY_IS_ENTERPRISE": JSON.stringify(isEnterpriseBuild ? "true" : isEnterprise || "false"),
 		"process.env.GATEWAY_DISABLE_PROFILER": JSON.stringify(disableProfiler),
-		"process.env.GATEWAY_DISABLE_PROFILER": JSON.stringify(disableProfiler),
-		"process.env.GATEWAY_ENTERPRISE_TRIAL_EXPIRY": JSON.stringify(trialExpiry),
 		"process.env.GATEWAY_ENTERPRISE_TRIAL_EXPIRY": JSON.stringify(trialExpiry),
 		"process.env.GATEWAY_PRODUCT_NAME": JSON.stringify(productName),
-		"process.env.GATEWAY_PRODUCT_NAME": JSON.stringify(productName),
-		"process.env.GATEWAY_PRODUCT_FULL_NAME": JSON.stringify(productFullName),
 		"process.env.GATEWAY_PRODUCT_FULL_NAME": JSON.stringify(productFullName),
 		"process.env.GATEWAY_COMPANY_NAME": JSON.stringify(companyName),
-		"process.env.GATEWAY_COMPANY_NAME": JSON.stringify(companyName),
-		"process.env.GATEWAY_COMPANY_SHORT_NAME": JSON.stringify(companyShortName),
 		"process.env.GATEWAY_COMPANY_SHORT_NAME": JSON.stringify(companyShortName),
 		"process.env.GATEWAY_COMPANY_LOGO": JSON.stringify(companyLogo),
-		"process.env.GATEWAY_COMPANY_LOGO": JSON.stringify(companyLogo),
-		"process.env.GATEWAY_FOOTER_COPYRIGHT": JSON.stringify(footerCopyright),
 		"process.env.GATEWAY_FOOTER_COPYRIGHT": JSON.stringify(footerCopyright),
 		"process.env.GATEWAY_FOOTER_SUBTITLE": JSON.stringify(footerSubtitle),
-		"process.env.GATEWAY_FOOTER_SUBTITLE": JSON.stringify(footerSubtitle),
 		"process.env.GATEWAY_PORT": JSON.stringify(backendPort),
-		"process.env.GATEWAY_PORT": JSON.stringify(backendPort),
+		"process.env.APP_PORT": JSON.stringify(backendPort),
 		"process.env.GATEWAY_BACKEND_URL": JSON.stringify(backendTarget),
-		"process.env.GATEWAY_BACKEND_URL": JSON.stringify(backendTarget),
+		"process.env.UI_PORT": JSON.stringify(String(uiPort)),
 	},
 	server: {
 		port: uiPort,

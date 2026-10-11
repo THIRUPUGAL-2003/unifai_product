@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 import { toast } from "sonner";
 import {
@@ -61,7 +62,6 @@ import {
 } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
 import { cn } from "@/lib/utils";
 import { describeTeamVirtualKey, virtualKeysForTeam } from "@/lib/utils/governance";
-import type { VirtualKey } from "@/lib/types/governance";
 
 function IndeterminateCheckbox({
 	checked,
@@ -124,8 +124,25 @@ function UserTeamCell({ userId }: { userId: string }) {
 	);
 }
 
-// Direct, team and customer keys: team/customer keys reach the user without a direct assignment.
-function UserVirtualKeysCell({ userId, allVirtualKeys }: { userId: string; allVirtualKeys: VirtualKey[] }) {
+function virtualKeySourceLabel(vk: { origin?: string; origin_name?: string }) {
+	if ((vk.origin === "team" || vk.origin === "customer") && vk.origin_name) {
+		return `${vk.origin === "team" ? "Team" : "Customer"}: ${vk.origin_name}`;
+	}
+	return null;
+}
+
+function VirtualKeyName({ vk }: { vk: { name: string; origin?: string; origin_name?: string } }) {
+	const source = virtualKeySourceLabel(vk);
+	return (
+		<span className="text-sm">
+			{vk.name}
+			{source ? <span className="text-muted-foreground text-xs"> ({source})</span> : null}
+		</span>
+	);
+}
+
+// One key stays on the row. Several keys open a scrollable list of name and customer/team only.
+function UserVirtualKeysCell({ userId }: { userId: string }) {
 	const { data, isError } = useGetUserVirtualKeysQuery(userId);
 	if (isError) {
 		return <span className="text-destructive text-xs italic">Failed to load</span>;
@@ -134,36 +151,30 @@ function UserVirtualKeysCell({ userId, allVirtualKeys }: { userId: string; allVi
 	if (keys.length === 0) {
 		return <span className="text-muted-foreground text-xs italic">No key</span>;
 	}
+	if (keys.length === 1) {
+		return <VirtualKeyName vk={keys[0]} />;
+	}
 	return (
-		<div className="flex flex-col gap-1">
-			{keys.map((vk) => {
-				const budgets = (allVirtualKeys.find((k) => k.id === vk.id)?.budgets ?? []).filter((b) => b.max_limit > 0);
-				return (
-					<div key={vk.id} className="flex flex-col">
-						<span className="text-sm">
-							{vk.name}
-							{vk.origin === "team" || vk.origin === "customer" ? (
-								<span className="text-muted-foreground text-xs">
-									{" "}
-									({vk.origin === "team" ? "Team" : "Customer"}: {vk.origin_name})
-								</span>
-							) : null}
-						</span>
-						{budgets.map((b) => (
-							<span
-								key={b.id || b.reset_duration}
-								className={cn(
-									"font-mono text-[11px]",
-									(b.current_usage ?? 0) >= b.max_limit ? "text-rose-500" : "text-muted-foreground",
-								)}
-							>
-								${(b.current_usage ?? 0).toFixed(2)} / ${b.max_limit.toFixed(2)} ({b.reset_duration})
-							</span>
-						))}
-					</div>
-				);
-			})}
-		</div>
+		<Popover>
+			<PopoverTrigger asChild>
+				<button
+					type="button"
+					className="text-foreground hover:text-teal-500 cursor-pointer text-sm underline-offset-2 hover:underline"
+					data-testid={`user-vk-list-${userId}`}
+				>
+					{keys.length} keys
+				</button>
+			</PopoverTrigger>
+			<PopoverContent align="start" className="w-80 p-2">
+				<div className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
+					{keys.map((vk) => (
+						<div key={vk.id} className="px-1 py-1">
+							<VirtualKeyName vk={vk} />
+						</div>
+					))}
+				</div>
+			</PopoverContent>
+		</Popover>
 	);
 }
 
@@ -1245,7 +1256,7 @@ export default function UsersView() {
 													{isWorkspaceAdminRole(user.role) ? (
 														<span className="text-muted-foreground text-sm">—</span>
 													) : (
-														<UserVirtualKeysCell userId={user.id} allVirtualKeys={virtualKeys} />
+														<UserVirtualKeysCell userId={user.id} />
 													)}
 												</TableCell>
 												<TableCell className="font-mono text-xs">

@@ -1,3 +1,5 @@
+from db_config import get_base_url
+base_url = get_base_url()
 import urllib.request
 import json
 import http.cookiejar
@@ -7,7 +9,7 @@ opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
 # Admin login
 login_req = urllib.request.Request(
-    'http://127.0.0.1:8080/api/session/login',
+    f'{base_url}/api/session/login',
     data=json.dumps({'username': 'admin@yespanchi.com', 'password': 'YP2025-2026yp'}).encode(),
     headers={'Content-Type': 'application/json'}
 )
@@ -31,7 +33,7 @@ endpoints = [
 
 print("=== SMOKE TESTING GET ENDPOINTS ===")
 for method, path in endpoints:
-    url = f"http://127.0.0.1:8080{path}"
+    url = ff"{base_url}{path}"
     req = urllib.request.Request(url, method=method)
     try:
         with opener.open(req) as resp:

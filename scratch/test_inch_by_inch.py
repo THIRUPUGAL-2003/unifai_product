@@ -1,3 +1,4 @@
+from db_config import get_db_connection
 import urllib.request, json, ssl, time, psycopg2
 
 ctx = ssl.create_default_context()
@@ -91,13 +92,7 @@ print("  => Upload staging handled cleanly without premature logging!")
 
 # Check DB: ensure NO row was created for Test_Document_Audit.xlsx yet
 time.sleep(1)
-conn = psycopg2.connect(
-    dbname='Unifai_test',
-    user='Unifai_test',
-    password='YP2025-2026yp',
-    host='76.13.243.253',
-    port=32768
-)
+conn = get_db_connection()
 cur = conn.cursor()
 cur.execute("SELECT count(*) FROM browser_ai_logs WHERE attachment_name ILIKE '%Test_Document_Audit%';")
 staged_count = cur.fetchone()[0]

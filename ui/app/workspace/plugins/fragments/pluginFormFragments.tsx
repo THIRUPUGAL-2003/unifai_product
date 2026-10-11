@@ -3,14 +3,16 @@ import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/codeEditor";
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { DOCS } from "@/lib/constants/docs";
 import { Info, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { UseFormReturn } from "react-hook-form";
 
-interface PluginFormData {
+export interface PluginFormData {
 	name: string;
 	path: string;
+	enabled: boolean;
 	config?: string;
 	hasConfig: boolean;
 }
@@ -30,7 +32,7 @@ export function PluginFormFragment({ form, isEditMode = false }: PluginFormFragm
 				<p className="text-muted-foreground text-sm">
 					{isEditMode
 						? "Update your plugin configuration. Plugin name and path are read-only."
-						: "Install a custom plugin by providing an absolute file path or HTTP URL accessible to {PRODUCT_NAME} deployment (.so)."}{" "}
+						: `Install a custom plugin by providing an absolute file path or HTTP URL accessible to ${PRODUCT_NAME} deployment (.so).`}{" "}
 					<a
 						href={DOCS.plugins}
 						target="_blank"
@@ -70,6 +72,29 @@ export function PluginFormFragment({ form, isEditMode = false }: PluginFormFragm
 					</FormItem>
 				)}
 			/>
+
+			{!isEditMode && (
+				<FormField
+					control={form.control}
+					name="enabled"
+					render={({ field }) => (
+						<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+							<div className="space-y-0.5">
+								<FormLabel>Enable on Install</FormLabel>
+								<div className="text-muted-foreground text-xs">
+									Start plugin immediately (Keep disabled on Windows where Go .so shared libraries are not supported).
+								</div>
+							</div>
+							<FormControl>
+								<Switch
+									checked={field.value}
+									onCheckedChange={field.onChange}
+								/>
+							</FormControl>
+						</FormItem>
+					)}
+				/>
+			)}
 
 			{!showConfig ? (
 				<Button

@@ -1,3 +1,4 @@
+from db_config import get_db_connection
 import urllib.request
 import ssl
 import json
@@ -19,13 +20,7 @@ ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 opener = urllib.request.build_opener(proxy_handler, urllib.request.HTTPSHandler(context=ctx))
 
-conn = psycopg2.connect(
-    dbname='Unifai_test',
-    user='Unifai_test',
-    password='YP2025-2026yp',
-    host='76.13.243.253',
-    port=32768
-)
+conn = get_db_connection()
 cur = conn.cursor()
 
 def fetch_latest_log(limit=6):

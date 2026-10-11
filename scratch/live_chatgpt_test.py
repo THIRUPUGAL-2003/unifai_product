@@ -89,17 +89,22 @@ def main():
 
     # Step 5: Wait 1 second and check backend logs
     time.sleep(2)
-    print("\n--> Authenticating to backend to fetch Prompt Logs...")
+    from db_config import get_base_url, _CONFIG
+    base_url = _CONFIG.get("SERVER_DOMAIN") or get_base_url()
+    admin_user = _CONFIG.get("ADMIN_EMAIL", "")
+    admin_pass = _CONFIG.get("ADMIN_PASSWORD", "")
+
+    print(f"\n--> Authenticating to backend ({base_url}) to fetch Prompt Logs...")
     login_req = urllib.request.Request(
-        "https://unifai.yespanchi.com/api/session/login",
-        data=json.dumps({"username": "admin@yespanchi.com", "password": "YP2025-2026yp"}).encode(),
+        f"{base_url}/api/session/login",
+        data=json.dumps({"username": admin_user, "password": admin_pass}).encode(),
         headers={"Content-Type": "application/json"}
     )
     with urllib.request.urlopen(login_req, timeout=10) as l_resp:
         cookie = l_resp.headers.get("Set-Cookie", "").split(";")[0]
 
-    print("--> Fetching Prompt Logs from https://unifai.yespanchi.com/api/browser-ai/logs?limit=8 ...")
-    req = urllib.request.Request("https://unifai.yespanchi.com/api/browser-ai/logs?limit=8", headers={"Cookie": cookie})
+    print(f"--> Fetching Prompt Logs from {base_url}/api/browser-ai/logs?limit=8 ...")
+    req = urllib.request.Request(f"{base_url}/api/browser-ai/logs?limit=8", headers={"Cookie": cookie})
     with urllib.request.urlopen(req, timeout=10) as resp:
         logs_data = json.loads(resp.read().decode())
     

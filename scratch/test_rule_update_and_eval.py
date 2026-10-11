@@ -1,3 +1,5 @@
+from db_config import get_base_url
+base_url = get_base_url()
 import urllib.request
 import json
 import http.cookiejar
@@ -7,7 +9,7 @@ cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
 login_req = urllib.request.Request(
-    'http://127.0.0.1:8080/api/session/login',
+    f'{base_url}/api/session/login',
     data=json.dumps({'username': 'admin@yespanchi.com', 'password': 'YP2025-2026yp'}).encode(),
     headers={'Content-Type': 'application/json'}
 )
@@ -16,7 +18,7 @@ opener.open(login_req)
 rule_id = '898d275c-4181-40a9-8945-816632f7443f'
 
 # 2. Get current rule
-get_req = urllib.request.Request(f'http://127.0.0.1:8080/api/governance/routing-rules/{rule_id}')
+get_req = urllib.request.Request(ff'{base_url}/api/governance/routing-rules/{rule_id}')
 with opener.open(get_req) as resp:
     curr_rule = json.loads(resp.read().decode())
     print('Current rule before update:', curr_rule.get('name'), '| CEL:', curr_rule.get('cel_expression'), '| Scope:', curr_rule.get('scope'))
@@ -28,7 +30,7 @@ update_payload = {
     'scope_id': '059738dc-e1ff-4914-ab19-e311d1973d1a'
 }
 put_req = urllib.request.Request(
-    f'http://127.0.0.1:8080/api/governance/routing-rules/{rule_id}',
+    ff'{base_url}/api/governance/routing-rules/{rule_id}',
     data=json.dumps(update_payload).encode(),
     headers={'Content-Type': 'application/json'},
     method='PUT'
@@ -38,7 +40,7 @@ with opener.open(put_req) as resp:
     print('Updated rule:', updated.get('name'), '| CEL:', updated.get('cel_expression'))
 
 # 4. Get DEVELOPER KEY value
-req = urllib.request.Request('http://127.0.0.1:8080/api/governance/virtual-keys')
+req = urllib.request.Request(f'{base_url}/api/governance/virtual-keys')
 with opener.open(req) as resp:
     data = json.loads(resp.read().decode())
     vks = data.get('virtual_keys', data)
@@ -52,7 +54,7 @@ chat_payload = {
     'max_tokens': 5
 }
 chat_req = urllib.request.Request(
-    'http://127.0.0.1:8080/v1/chat/completions',
+    f'{base_url}/v1/chat/completions',
     data=json.dumps(chat_payload).encode(),
     headers={
         'Content-Type': 'application/json',

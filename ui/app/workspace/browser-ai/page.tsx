@@ -52,6 +52,7 @@ import {
 	Building2,
 } from "lucide-react";
 import { PRODUCT_NAME } from "@/lib/constants/config";
+import { getDeploymentOrigin } from "@/lib/utils/port";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { Badge } from "@/components/ui/badge";
@@ -6805,7 +6806,7 @@ export default function BrowserAiPage() {
 									variant="ghost"
 									className="h-7 text-xs gap-1 text-blue-400 hover:text-blue-300"
 									onClick={() => {
-										const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:8080";
+										const origin = getDeploymentOrigin();
 										const script = `curl.exe -fSL -o "$env:TEMP\\Gateway_Guard_Setup.exe" "${origin}/api/browser-ai/setup/Gateway_Guard_Setup.exe"; Start-Process "$env:TEMP\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Gateway_Guard_Setup.exe"`;
 										navigator.clipboard.writeText(script);
 										setNetworkDeployCopied("ps");
@@ -6820,7 +6821,7 @@ export default function BrowserAiPage() {
 								Downloads the installer and runs silently in the background (no popups, no restart). Ideal for remote terminal or local PowerShell.
 							</p>
 							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`curl.exe -fSL -o "$env:TEMP\\Gateway_Guard_Setup.exe" "${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Gateway_Guard_Setup.exe"; Start-Process "$env:TEMP\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Gateway_Guard_Setup.exe"`}
+								{`curl.exe -fSL -o "$env:TEMP\\Gateway_Guard_Setup.exe" "${getDeploymentOrigin()}/api/browser-ai/setup/Gateway_Guard_Setup.exe"; Start-Process "$env:TEMP\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Gateway_Guard_Setup.exe"`}
 							</pre>
 						</div>
 
@@ -6836,7 +6837,7 @@ export default function BrowserAiPage() {
 									variant="ghost"
 									className="h-7 text-xs gap-1 text-purple-400 hover:text-purple-300"
 									onClick={() => {
-										const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:8080";
+										const origin = getDeploymentOrigin();
 										const ip = targetAgentForDeploy?.ip_address || "<laptop-ip>";
 										const script = `psexec \\\\${ip} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${origin}/api/browser-ai/setup/Gateway_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`;
 										navigator.clipboard.writeText(script);
@@ -6852,7 +6853,7 @@ export default function BrowserAiPage() {
 								Push directly from your admin machine across the office LAN/VPN to this laptop without touching the employee screen.
 							</p>
 							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-purple-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`psexec \\\\${targetAgentForDeploy?.ip_address || "<laptop-ip>"} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Gateway_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`}
+								{`psexec \\\\${targetAgentForDeploy?.ip_address || "<laptop-ip>"} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${getDeploymentOrigin()}/api/browser-ai/setup/Gateway_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`}
 							</pre>
 						</div>
 
@@ -6868,7 +6869,7 @@ export default function BrowserAiPage() {
 									variant="ghost"
 									className="h-7 text-xs gap-1 text-emerald-400 hover:text-emerald-300"
 									onClick={() => {
-										const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:8080";
+										const origin = getDeploymentOrigin();
 										const script = `$InstallerUrl = "${origin}/api/browser-ai/setup/Gateway_Guard_Setup.exe"\n$TempPath = "$env:TEMP\\Gateway_Guard_Setup.exe"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    Invoke-WebRequest -Uri $InstallerUrl -OutFile $TempPath -UseBasicParsing\n    Start-Process $TempPath -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n    Remove-Item -Force $TempPath -ErrorAction SilentlyContinue\n}`;
 										navigator.clipboard.writeText(script);
 										setNetworkDeployCopied("gpo");
@@ -6883,7 +6884,7 @@ export default function BrowserAiPage() {
 								Link this in <strong>Active Directory Group Policy (gpmc.msc) &gt; Computer Configuration &gt; Windows Settings &gt; Scripts &gt; Startup</strong>. All 1,000 domain computers silently install on next boot without employee interaction.
 							</p>
 							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`$InstallerUrl = "${typeof window !== "undefined" ? window.location.origin : "http://localhost:8080"}/api/browser-ai/setup/Gateway_Guard_Setup.exe"\n$TempPath = "$env:TEMP\\Gateway_Guard_Setup.exe"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    Invoke-WebRequest -Uri $InstallerUrl -OutFile $TempPath -UseBasicParsing\n    Start-Process $TempPath -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n    Remove-Item -Force $TempPath -ErrorAction SilentlyContinue\n}`}
+								{`$InstallerUrl = "${getDeploymentOrigin()}/api/browser-ai/setup/Gateway_Guard_Setup.exe"\n$TempPath = "$env:TEMP\\Gateway_Guard_Setup.exe"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    Invoke-WebRequest -Uri $InstallerUrl -OutFile $TempPath -UseBasicParsing\n    Start-Process $TempPath -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n    Remove-Item -Force $TempPath -ErrorAction SilentlyContinue\n}`}
 							</pre>
 						</div>
 

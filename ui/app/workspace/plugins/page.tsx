@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { getErrorMessage, setSelectedPlugin, useAppDispatch, useAppSelector, useGetPluginsQuery } from "@/lib/store";
+import { getErrorMessage, setSelectedPlugin, useAppDispatch, useAppSelector, useGetBuiltinPluginsQuery, useGetLoadedPluginsQuery, useGetPluginsQuery } from "@/lib/store";
+import { Plugin } from "@/lib/types/plugins";
 import { cn } from "@/lib/utils";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { ListOrdered, PlusIcon, Puzzle } from "lucide-react";
@@ -10,14 +11,67 @@ import PluginSequenceSheet from "./sheets/pluginSequenceSheet";
 import { PluginsEmptyState } from "./views/pluginsEmptyState";
 import PluginsView from "./views/pluginsView";
 
+/** These start inside the gateway process. The page shows them, and they stay on. */
+const ALWAYS_ON_PLUGINS = new Set([
+	"governance",
+	"logging",
+	"prompts",
+	"guardrails",
+	"connectors",
+	"compat",
+	"model-catalog-resolver",
+]);
+
+function mergePluginCatalog(stored: Plugin[] | undefined, builtins: string[] | undefined, loaded: string[] | undefined): Plugin[] {
+	const loadedSet = new Set(loaded ?? []);
+	const storedByName = new Map((stored ?? []).map((plugin) => [plugin.name, plugin]));
+	const order: string[] = [];
+	const seen = new Set<string>();
+	const addName = (name: string) => {
+		if (!name || seen.has(name)) return;
+		seen.add(name);
+		order.push(name);
+	};
+	for (const name of builtins ?? []) addName(name);
+	for (const name of loaded ?? []) addName(name);
+	for (const plugin of stored ?? []) addName(plugin.name);
+
+	return order.map((name) => {
+		const storedPlugin = storedByName.get(name);
+		const running = loadedSet.has(name);
+		if (!storedPlugin) {
+			return {
+				name,
+				enabled: running,
+				config: {},
+				isCustom: false,
+				status: { name, status: running ? "active" : "disabled", logs: [], types: [] },
+			};
+		}
+		const runtime = !storedPlugin.enabled ? "disabled" : running || storedPlugin.status?.status === "active" ? "active" : storedPlugin.status?.status || "error";
+		return {
+			...storedPlugin,
+			status: {
+				name,
+				status: runtime,
+				logs: storedPlugin.status?.logs ?? [],
+				types: storedPlugin.status?.types ?? [],
+			},
+		};
+	});
+}
+
 export default function PluginsPage() {
 	const dispatch = useAppDispatch();
 	const hasCreatePluginAccess = useRbac(RbacResource.Plugins, RbacOperation.Create);
 	const hasUpdatePluginAccess = useRbac(RbacResource.Plugins, RbacOperation.Update);
 	const { data: plugins, isLoading, isError, error, refetch } = useGetPluginsQuery();
+	const { data: builtinNames, isLoading: builtinsLoading, isError: builtinsError, refetch: refetchBuiltins } = useGetBuiltinPluginsQuery();
+	const { data: loadedNames, refetch: refetchLoaded } = useGetLoadedPluginsQuery();
 	const selectedPlugin = useAppSelector((state) => state.plugin.selectedPlugin);
 	const [selectedPluginId, setSelectedPluginId] = useQueryState("plugin");
-	const customPlugins = useMemo(() => plugins?.filter((plugin) => plugin.isCustom), [plugins]);
+	const visiblePlugins = useMemo(() => mergePluginCatalog(plugins, builtinNames, loadedNames), [plugins, builtinNames, loadedNames]);
+	const customPlugins = useMemo(() => visiblePlugins.filter((plugin) => plugin.isCustom), [visiblePlugins]);
 	const [isSheetOpen, setIsSheetOpen] = useState(false);
 	const [isSequenceSheetOpen, setIsSequenceSheetOpen] = useState(false);
 
@@ -31,34 +85,47 @@ export default function PluginsPage() {
 
 	useEffect(() => {
 		if (!selectedPluginId) return;
-		const plugin = customPlugins?.find((plugin) => plugin.name === selectedPluginId);
+		const plugin = visiblePlugins.find((plugin) => plugin.name === selectedPluginId);
 		if (plugin) {
 			dispatch(setSelectedPlugin(plugin));
 		}
-	}, [selectedPluginId, customPlugins]);
+	}, [selectedPluginId, visiblePlugins]);
 
 	useEffect(() => {
 		if (selectedPluginId) return;
 		if (!selectedPlugin) {
-			setSelectedPluginId(customPlugins?.[0]?.name ?? "");
+			setSelectedPluginId(visiblePlugins[0]?.name ?? "");
 			return;
 		}
 		setSelectedPluginId(selectedPlugin?.name ?? "");
-	}, [customPlugins]);
+	}, [visiblePlugins]);
 
-	if (isError && !isLoading) {
+	const catalogLoading = isLoading && builtinsLoading;
+	const catalogError = isError && builtinsError && visiblePlugins.length === 0;
+
+	if (catalogError && !catalogLoading) {
 		return (
 			<div className="mx-auto flex min-h-[50vh] w-full max-w-7xl flex-col items-center justify-center gap-3 text-center">
 				<p className="text-destructive text-sm font-medium">Failed to load plugins</p>
 				{error ? <p className="text-muted-foreground max-w-md text-xs">{getErrorMessage(error)}</p> : null}
-				<Button type="button" variant="outline" size="sm" onClick={() => refetch()} data-testid="plugins-retry-btn">
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					onClick={() => {
+						refetch();
+						refetchBuiltins();
+						refetchLoaded();
+					}}
+					data-testid="plugins-retry-btn"
+				>
 					Retry
 				</Button>
 			</div>
 		);
 	}
 
-	if (customPlugins?.length === 0 && !isLoading) {
+	if (visiblePlugins.length === 0 && !catalogLoading) {
 		return (
 			<div className="mx-auto w-full max-w-7xl">
 				<PluginsEmptyState onCreateClick={handleAddNew} canCreate={hasCreatePluginAccess} />
@@ -80,7 +147,7 @@ export default function PluginsPage() {
 					<div className="rounded-md bg-zinc-50/50 p-4 dark:bg-zinc-800/20">
 						<div className="mb-4">
 							<div className="text-muted-foreground mb-2 text-xs font-medium">Plugins</div>
-							{customPlugins?.map((plugin) => (
+							{visiblePlugins.map((plugin) => (
 								<button
 									type="button"
 									key={plugin.name}
@@ -99,6 +166,7 @@ export default function PluginsPage() {
 									<div className="flex min-w-0 flex-row items-center gap-2">
 										<Puzzle className="text-muted-foreground size-3.5 shrink-0" />
 										<span className="truncate">{plugin.name}</span>
+										<span className="text-muted-foreground text-[10px]">{plugin.isCustom ? "custom" : "built-in"}</span>
 									</div>
 									<div
 										className={cn(
@@ -142,8 +210,9 @@ export default function PluginsPage() {
 					</div>
 				</div>
 				<PluginsView
+					runtimeLocked={!selectedPlugin?.isCustom && ALWAYS_ON_PLUGINS.has(selectedPlugin?.name ?? "")}
 					onDelete={() => {
-						setSelectedPluginId(customPlugins?.[0]?.name ?? "");
+						setSelectedPluginId(visiblePlugins.find((plugin) => plugin.isCustom)?.name ?? visiblePlugins[0]?.name ?? "");
 					}}
 					onCreate={(pluginName) => {
 						setSelectedPluginId(pluginName ?? "");

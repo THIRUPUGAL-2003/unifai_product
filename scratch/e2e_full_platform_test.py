@@ -29,8 +29,12 @@ import psycopg2
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-BASE_URL = "http://127.0.0.1:8080"
-DB_URL = "postgresql://Unifai_test:YP2025-2026yp@76.13.243.253:32768/Unifai_test"
+from db_config import get_db_url, get_base_url, _CONFIG
+
+BASE_URL = get_base_url()
+DB_URL = get_db_url()
+ADMIN_EMAIL = _CONFIG.get("ADMIN_EMAIL", "")
+ADMIN_PASSWORD = _CONFIG.get("ADMIN_PASSWORD", "")
 
 # Global Test Registry
 tests_run = 0

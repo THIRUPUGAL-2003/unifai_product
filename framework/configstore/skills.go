@@ -15,10 +15,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/google/uuid"
 	"github.com/gateway/gateway/core/schemas"
 	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/gateway/gateway/framework/objectstore"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -102,10 +102,9 @@ const (
 	SkillObjectPrefix = "skills/"
 )
 
-// SkillHarnessNames lists the supported agent harness identifiers
-// (e.g. "claude-code", "codex"). Used for Git smart HTTP route
-// registration and reserved-name validation.
-var SkillHarnessNames = []string{"claude-code", "codex"}
+// SkillHarnessNames lists the supported agent harness identifiers.
+// Used for Git smart HTTP route registration and reserved-name validation.
+var SkillHarnessNames = []string{"claude-code", "codex", "cursor", "antigravity"}
 
 // SkillReservedNames lists skill names that are reserved by the serving
 // layer (static routes that would shadow dynamic skill-name routes).

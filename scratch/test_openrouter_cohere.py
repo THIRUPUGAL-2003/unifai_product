@@ -1,3 +1,5 @@
+from db_config import get_base_url
+base_url = get_base_url()
 import urllib.request
 import json
 import http.cookiejar
@@ -6,7 +8,7 @@ cj = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
 login_req = urllib.request.Request(
-    'http://127.0.0.1:8080/api/session/login',
+    f'{base_url}/api/session/login',
     data=json.dumps({'username': 'admin@yespanchi.com', 'password': 'YP2025-2026yp'}).encode(),
     headers={'Content-Type': 'application/json'}
 )
@@ -18,7 +20,7 @@ payload = {
     'max_tokens': 10
 }
 req = urllib.request.Request(
-    'http://127.0.0.1:8080/v1/chat/completions',
+    f'{base_url}/v1/chat/completions',
     data=json.dumps(payload).encode(),
     headers={'Content-Type': 'application/json'}
 )

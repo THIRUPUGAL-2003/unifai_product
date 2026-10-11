@@ -729,6 +729,24 @@ func userCreateFailureMessage(err error) string {
 	return "Failed to create user"
 }
 
+// userUpdateFailureMessage maps DB/update errors into a clear admin-facing toast.
+func userUpdateFailureMessage(err error) string {
+	if err == nil {
+		return "Failed to update user"
+	}
+	errLower := strings.ToLower(err.Error())
+	if strings.Contains(errLower, "duplicate") || strings.Contains(errLower, "unique") {
+		if strings.Contains(errLower, "email") {
+			return "This email is already registered with another account"
+		}
+		return "Username is already registered"
+	}
+	if strings.Contains(errLower, "column") || strings.Contains(errLower, "does not exist") {
+		return "Database is missing user columns (budget/rate limit); restart the gateway to apply migrations"
+	}
+	return "Failed to update user: " + err.Error()
+}
+
 // isValidEmail validates an email address syntax.
 func isValidEmail(email string) bool {
 	email = strings.TrimSpace(email)
@@ -1826,7 +1844,8 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	existingUser.UpdatedAt = time.Now()
 
 	if err := h.persistUserWithGovernance(ctx, existingUser, false); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, userCreateFailureMessage(err))
+		logger.Error("failed to update governance user username=%s: %v", existingUser.Username, err)
+		SendError(ctx, fasthttp.StatusInternalServerError, userUpdateFailureMessage(err))
 		return
 	}
 

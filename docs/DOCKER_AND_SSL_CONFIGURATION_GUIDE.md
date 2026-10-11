@@ -125,7 +125,7 @@ docker compose logs gateway_tech | grep -E "successfully started|plugin status:"
 docker exec -it gateway_tech /bin/sh
 
 # Test backend healthcheck directly from inside the container
-docker exec -it gateway_tech curl -v http://localhost:6000/health
+docker exec -it gateway_tech curl -v http://localhost:$APP_PORT/health
 
 # Verify environment variables loaded inside the container
 docker exec -it gateway_tech env | grep -E "APP_PORT|DB_HOST|SERVER_DOMAIN"

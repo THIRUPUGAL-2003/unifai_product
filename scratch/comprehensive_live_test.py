@@ -511,9 +511,12 @@ pxy._cached_controls = old_ctrl_cache
 
 # 4. Target Websites count via backend API
 import urllib.request
+from db_config import get_base_url, _CONFIG
+base_url = get_base_url()
+guard_sec = _CONFIG.get("GATEWAY_GUARD_SECRET", "")
 req = urllib.request.Request(
-    "http://localhost:8080/api/browser-ai/targets?for=agent",
-    headers={"X-Gateway-Guard-Key": "ycsKvD5uWlL1ymRZZW/3ePHqMe7sab4ZiG9L1VRMAFo="}
+    f"{base_url}/api/browser-ai/targets?for=agent",
+    headers={"X-Gateway-Guard-Key": guard_sec}
 )
 with urllib.request.urlopen(req) as resp:
     data = json.loads(resp.read().decode())

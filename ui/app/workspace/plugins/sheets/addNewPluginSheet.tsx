@@ -22,12 +22,13 @@ const pluginFormSchema = z.object({
 		.refine(
 			(val) => {
 				// Accept either absolute file paths or HTTP/HTTPS URLs
-				return val.startsWith("/") || val.startsWith("http://") || val.startsWith("https://");
+				return val.startsWith("/") || val.startsWith("http://") || val.startsWith("https://") || /^[A-Za-z]:[\\/]/.test(val) || val.startsWith("\\\\");
 			},
 			{
-				message: "Please enter a valid absolute file path (starting with /) or HTTP/HTTPS URL",
+				message: "Enter an absolute path (/ or C:\\) or an HTTP/HTTPS URL",
 			},
 		),
+	enabled: z.boolean(),
 	hasConfig: z.boolean(),
 	config: z
 		.string()
@@ -72,6 +73,7 @@ export default function AddNewPluginSheet({ open, onClose, onCreate, plugin }: A
 		defaultValues: {
 			name: "",
 			path: "",
+			enabled: false,
 			hasConfig: false,
 			config: undefined,
 		},
@@ -84,6 +86,7 @@ export default function AddNewPluginSheet({ open, onClose, onCreate, plugin }: A
 			form.reset({
 				name: plugin.name,
 				path: plugin.path || "",
+				enabled: plugin.enabled,
 				hasConfig,
 				config: hasConfig ? JSON.stringify(plugin.config, null, 2) : undefined,
 			});
@@ -91,6 +94,7 @@ export default function AddNewPluginSheet({ open, onClose, onCreate, plugin }: A
 			form.reset({
 				name: "",
 				path: "",
+				enabled: false,
 				hasConfig: false,
 				config: undefined,
 			});
@@ -125,7 +129,7 @@ export default function AddNewPluginSheet({ open, onClose, onCreate, plugin }: A
 				await createPlugin({
 					name: data.name,
 					path: data.path,
-					enabled: true,
+					enabled: data.enabled ?? false,
 					config: parsedConfig,
 				}).unwrap();
 				toast.success("Plugin created successfully");
@@ -155,7 +159,7 @@ export default function AddNewPluginSheet({ open, onClose, onCreate, plugin }: A
 					<SheetDescription>
 						{isEditMode
 							? "Update the plugin configuration. Note: Plugin name and path cannot be changed."
-							: "Add a custom plugin by providing its name, path/URL, and optional configuration."}
+							: "Add a custom plugin by providing its name, path or URL, and optional configuration. On this Windows gateway a .so file does not start. Turn on a built-in plugin from the list instead."}
 					</SheetDescription>
 				</SheetHeader>
 

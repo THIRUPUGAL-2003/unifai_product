@@ -5,7 +5,7 @@ import { CodeEditor } from "@/components/ui/codeEditor";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { setPluginFormDirtyState, useAppDispatch, useAppSelector, useUpdatePluginMutation } from "@/lib/store";
+import { getErrorMessage, setPluginFormDirtyState, useAppDispatch, useAppSelector, useUpdatePluginMutation } from "@/lib/store";
 import { PluginType } from "@/lib/types/plugins";
 import { cn } from "@/lib/utils";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
@@ -19,6 +19,8 @@ import * as z from "zod";
 interface Props {
 	onDelete: () => void;
 	onCreate: (pluginName: string) => void;
+	/** Built-in plugins that start with the gateway and must stay on. */
+	runtimeLocked?: boolean;
 }
 
 const pluginFormSchema = z.object({
@@ -103,14 +105,14 @@ export default function PluginsView(props: Props) {
 				name: selectedPlugin.name,
 				data: {
 					enabled: values.enabled,
-					path: values.path ?? undefined,
+					...(selectedPlugin.isCustom ? { path: values.path ?? undefined } : {}),
 					...(config !== undefined && { config }),
 				},
 			}).unwrap();
 			toast.success("Plugin updated successfully");
 			form.reset(values);
-		} catch {
-			toast.error("Failed to update plugin");
+		} catch (error) {
+			toast.error(getErrorMessage(error));
 		}
 	};
 
@@ -193,29 +195,41 @@ export default function PluginsView(props: Props) {
 									<FormItem className="flex flex-row items-center justify-between">
 										<div className="space-y-0.5">
 											<FormLabel>Enabled</FormLabel>
-											<FormDescription>Enable or disable this plugin</FormDescription>
+											<FormDescription>
+											{props.runtimeLocked
+												? "This plugin starts with the gateway. It stays on."
+												: selectedPlugin.isCustom
+													? "A .so file does not start on this Windows gateway."
+													: "Turn this on to connect the built-in plugin. No file path is required."}
+										</FormDescription>
 										</div>
 										<FormControl>
-											<Switch checked={field.value} onCheckedChange={field.onChange} />
+											<Switch
+												checked={field.value}
+												onCheckedChange={field.onChange}
+												disabled={props.runtimeLocked || !hasUpdatePluginAccess}
+											/>
 										</FormControl>
 									</FormItem>
 								)}
 							/>
 
-							<FormField
-								control={form.control}
-								name="path"
-								render={({ field }) => (
-									<FormItem>
-										<FormLabel>Path</FormLabel>
-										<FormControl>
-											<Input placeholder="Plugin path" {...field} value={field.value || ""} />
-										</FormControl>
-										<FormDescription>The file system path to the plugin</FormDescription>
-										<FormMessage />
-									</FormItem>
-								)}
-							/>
+							{selectedPlugin.isCustom ? (
+								<FormField
+									control={form.control}
+									name="path"
+									render={({ field }) => (
+										<FormItem>
+											<FormLabel>Path</FormLabel>
+											<FormControl>
+												<Input placeholder="Plugin path" {...field} value={field.value || ""} />
+											</FormControl>
+											<FormDescription>The file system path to the plugin. Windows cannot load a Go .so plugin.</FormDescription>
+											<FormMessage />
+										</FormItem>
+									)}
+								/>
+							) : null}
 
 							{!showConfig ? (
 								<Button
@@ -306,16 +320,18 @@ export default function PluginsView(props: Props) {
 					</div>
 
 					<div className="flex flex-wrap justify-end gap-2">
-						<Button
-							className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
-							type="button"
-							variant="outline"
-							onClick={handleDeleteClick}
-							disabled={!hasDeletePluginAccess}
-						>
-							<Trash2Icon className="h-4 w-4" />
-							Delete Plugin
-						</Button>
+						{selectedPlugin.isCustom ? (
+							<Button
+								className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+								type="button"
+								variant="outline"
+								onClick={handleDeleteClick}
+								disabled={!hasDeletePluginAccess}
+							>
+								<Trash2Icon className="h-4 w-4" />
+								Delete Plugin
+							</Button>
+						) : null}
 						<Button
 							type="button"
 							variant="outline"

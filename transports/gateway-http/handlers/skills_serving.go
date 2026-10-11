@@ -154,6 +154,13 @@ func (h *SkillsServingHandler) RegisterRoutes(r *router.Router, middlewares ...s
 	r.GET(codexMktBase+"/info/refs", h.codexMarketplaceGit())
 	r.POST(codexMktBase+"/git-upload-pack", h.codexMarketplaceGit())
 
+	// Cursor marketplace — one git repo with .cursor-plugin/marketplace.json
+	// and a directory per plugin. Cursor reads skills from those directories.
+	r.GET("/api/skills/serve/cursor/.cursor-plugin/marketplace.json", h.cursorMarketplace)
+	cursorMktBase := "/api/skills/serve/cursor"
+	r.GET(cursorMktBase+"/info/refs", h.cursorMarketplaceGit())
+	r.POST(cursorMktBase+"/git-upload-pack", h.cursorMarketplaceGit())
+
 	for _, harness := range configstore.SkillHarnessNames {
 		h.registerGitRoutes(r, harness)
 	}
@@ -301,6 +308,62 @@ func (h *SkillsServingHandler) buildCodexMarketplaceJSON(ctx *fasthttp.RequestCt
 		"plugins": plugins,
 	}
 
+	return json.MarshalIndent(result, "", "  ")
+}
+
+// cursorMarketplace generates GET /api/skills/serve/cursor/.cursor-plugin/marketplace.json
+func (h *SkillsServingHandler) cursorMarketplace(ctx *fasthttp.RequestCtx) {
+	marketplaceJSON, err := h.buildCursorMarketplaceJSON(ctx)
+	if err != nil {
+		return
+	}
+	ctx.SetContentType("application/json")
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.SetBody(marketplaceJSON)
+}
+
+// buildCursorMarketplaceJSON lists each skill as a directory inside the same repo.
+// Cursor resolves "source" as a path, not a remote git URL.
+func (h *SkillsServingHandler) buildCursorMarketplaceJSON(ctx *fasthttp.RequestCtx) ([]byte, error) {
+	skills, err := h.listAllSkills(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	plugins := make([]map[string]any, 0, len(skills)+1)
+	for _, skillSummary := range skills {
+		plugins = append(plugins, map[string]any{
+			"name":        pluginNamePrefix + skillSummary.Name,
+			"source":      pluginNamePrefix + skillSummary.Name,
+			"description": skillSummary.Description,
+			"version":     skillSummary.LatestVersion,
+		})
+	}
+	if len(skills) > 0 {
+		allSkillsVersion, versionErr := h.store.GetAllSkillsVersion(ctx)
+		if versionErr != nil {
+			logger.Error("all-skills: failed to get version: %v", versionErr)
+			SendError(ctx, fasthttp.StatusInternalServerError, "failed to get all-skills version")
+			return nil, versionErr
+		}
+		plugins = append(plugins, map[string]any{
+			"name":        allSkillsPluginName,
+			"source":      allSkillsPluginName,
+			"description": "All Gateway skills bundled in a single plugin.",
+			"version":     allSkillsVersion,
+		})
+	}
+
+	result := map[string]any{
+		"name": "gateway-skills",
+		"owner": map[string]any{
+			"name": "Gateway",
+		},
+		"metadata": map[string]any{
+			"description": "Gateway skills",
+		},
+		"plugins": plugins,
+	}
 	return json.MarshalIndent(result, "", "  ")
 }
 
@@ -500,9 +563,84 @@ func (h *SkillsServingHandler) assembleAllSkillsRepoSpec(ctx context.Context, ha
 	return &GitRepoSpec{Files: repoFiles, Label: "all-skills"}, nil
 }
 
+// assembleCursorMarketplaceRepoSpec builds one git repo Cursor can clone.
+// Layout:
+//
+//	.cursor-plugin/marketplace.json
+//	gateway-<skill>/.cursor-plugin/plugin.json
+//	gateway-<skill>/skills/<skill>/SKILL.md
+//	gateway-all-skills/...
+func (h *SkillsServingHandler) assembleCursorMarketplaceRepoSpec(ctx *fasthttp.RequestCtx) (*GitRepoSpec, error) {
+	skills, err := h.listAllSkills(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var repoFiles []GitRepoFile
+	var totalSize int64
+	addRepoFile := func(repoFile GitRepoFile) error {
+		totalSize += int64(len(repoFile.Content))
+		if totalSize > maxSkillGitRepoSize {
+			return fmt.Errorf("cursor marketplace exceeds %d MB size limit", maxSkillGitRepoSize/(1024*1024))
+		}
+		repoFiles = append(repoFiles, repoFile)
+		return nil
+	}
+
+	for i := range skills {
+		full, getErr := h.store.GetSkillByName(ctx, skills[i].Name)
+		if getErr != nil {
+			logger.Error("cursor marketplace: failed to get skill %s: %v", skills[i].Name, getErr)
+			continue
+		}
+		spec, specErr := h.assemblePluginRepoSpec(ctx, full, "cursor")
+		if specErr != nil {
+			return nil, specErr
+		}
+		prefix := pluginNamePrefix + full.Name
+		for _, repoFile := range spec.Files {
+			if err := addRepoFile(GitRepoFile{
+				Path:    path.Join(prefix, repoFile.Path),
+				Content: repoFile.Content,
+			}); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if len(skills) > 0 {
+		allSpec, allErr := h.assembleAllSkillsRepoSpec(ctx, "cursor")
+		if allErr != nil {
+			return nil, allErr
+		}
+		for _, repoFile := range allSpec.Files {
+			if err := addRepoFile(GitRepoFile{
+				Path:    path.Join(allSkillsPluginName, repoFile.Path),
+				Content: repoFile.Content,
+			}); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	marketplaceJSON, err := h.buildCursorMarketplaceJSON(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := addRepoFile(GitRepoFile{
+		Path:    ".cursor-plugin/marketplace.json",
+		Content: marketplaceJSON,
+	}); err != nil {
+		return nil, err
+	}
+
+	return &GitRepoSpec{Files: repoFiles, Label: "cursor-marketplace"}, nil
+}
+
 // assembleMarketplaceRepoSpec builds a GitRepoSpec for a marketplace git repo.
 // Claude Code: .claude-plugin/marketplace.json
 // Codex:       .agents/plugins/marketplace.json
+// Cursor:      .cursor-plugin/marketplace.json (plugins are embedded separately)
 func assembleMarketplaceRepoSpec(marketplaceJSON []byte, harness string) *GitRepoSpec {
 	var manifestPath string
 	switch harness {
@@ -594,6 +732,23 @@ func (h *SkillsServingHandler) codexMarketplaceGit() fasthttp.RequestHandler {
 		}
 
 		spec := assembleMarketplaceRepoSpec(marketplaceJSON, "codex")
+		serveGitRepo(ctx, spec, repoBase)
+	}
+}
+
+// cursorMarketplaceGit serves the Cursor marketplace as one git repo.
+// The clone contains marketplace.json plus one directory per plugin.
+func (h *SkillsServingHandler) cursorMarketplaceGit() fasthttp.RequestHandler {
+	repoBase := "/api/skills/serve/cursor"
+	return func(ctx *fasthttp.RequestCtx) {
+		spec, err := h.assembleCursorMarketplaceRepoSpec(ctx)
+		if err != nil {
+			logger.Error("cursor marketplace: failed to assemble repo spec: %v", err)
+			if ctx.Response.StatusCode() == 0 || ctx.Response.StatusCode() == fasthttp.StatusOK {
+				SendError(ctx, fasthttp.StatusInternalServerError, "failed to prepare cursor marketplace")
+			}
+			return
+		}
 		serveGitRepo(ctx, spec, repoBase)
 	}
 }
@@ -700,13 +855,18 @@ func writeBillyFile(fs billy.Filesystem, filePath string, data []byte) error {
 // ============================================================================
 
 // manifestDirName returns the plugin manifest directory name for a harness.
-// Claude Code uses ".claude-plugin", Codex uses ".codex-plugin".
+// Claude Code uses ".claude-plugin", Codex uses ".codex-plugin",
+// Cursor uses ".cursor-plugin". Antigravity expects plugin.json at the repo root.
 func manifestDirName(harness string) string {
 	switch harness {
 	case "claude-code":
 		return ".claude-plugin"
 	case "codex":
 		return ".codex-plugin"
+	case "cursor":
+		return ".cursor-plugin"
+	case "antigravity":
+		return "."
 	default:
 		return "." + harness + "-plugin"
 	}
@@ -719,14 +879,21 @@ func buildPluginManifest(skill *tables.TableSkill, harness string) map[string]an
 		"description": skill.Description,
 		"version":     skill.LatestVersion,
 	}
-	if harness == "codex" {
+	switch harness {
+	case "codex":
 		// Format name for display: replace hyphens with spaces, title case
 		displayName := strings.ReplaceAll(skill.Name, "-", " ")
-		displayName = cases.Title(language.English).String(displayName) // simple title case is fine here
+		displayName = cases.Title(language.English).String(displayName)
 		manifest["interface"] = map[string]any{
 			"displayName":      displayName,
 			"shortDescription": skill.Description,
 			"category":         "Productivity",
+		}
+	case "antigravity":
+		// Antigravity plugin.json allows only name and description.
+		return map[string]any{
+			"name":        pluginNamePrefix + skill.Name,
+			"description": skill.Description,
 		}
 	}
 	return manifest

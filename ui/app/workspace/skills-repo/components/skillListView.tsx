@@ -75,6 +75,16 @@ function MarketplacePopover() {
 			label: "Codex",
 			command: `codex plugin marketplace add ${marketplaceBaseUrl}/skills/serve/codex`,
 		},
+		{
+			key: "cursor",
+			label: "Cursor",
+			command: `git clone ${marketplaceBaseUrl}/skills/serve/cursor`,
+		},
+		{
+			key: "antigravity",
+			label: "Antigravity",
+			command: `agy plugin install ${marketplaceBaseUrl}/skills/serve/antigravity/plugins/gateway-all-skills`,
+		},
 	];
 
 	const handleCopy = (key: string, text: string) => {
@@ -425,8 +435,8 @@ export function SkillsListView({
 							</TooltipTrigger>
 							<TooltipContent side="bottom">
 								<p className="max-w-xs text-xs">
-									Git is not available on the server. Install git and restart {PRODUCT_NAME} to enable marketplace registration for Claude Code and
-									Codex.
+									Git is not available on the server. Install git and restart {PRODUCT_NAME} to enable marketplace registration for Claude Code,
+									Codex, Cursor, and Antigravity.
 								</p>
 							</TooltipContent>
 						</Tooltip>

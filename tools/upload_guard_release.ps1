@@ -81,5 +81,5 @@ foreach ($f in $files) {
 Write-Host "Syncing into running Docker container (unifai_version)..."
 & ssh @sshArgs $Server "docker cp '$remote/.' unifai_version:/app/release/ 2>/dev/null; docker cp '$remote/.' unifai_version:/app/apps/browser-guard/release/ 2>/dev/null; ls -la '$remote'"
 $dashUrl = if ($envLines) { ($envLines | Where-Object { $_ -match '^\s*SERVER_DOMAIN\s*=\s*(.+)$' } | ForEach-Object { $matches[1].Trim("'`" ") }) } else { "your server dashboard" }
-if (-not $dashUrl) { $dashUrl = "https://unifai.yespanchi.com" }
+if (-not $dashUrl) { $dashUrl = "https://<your-server-domain>" }
 Write-Host "Done! Open Browser AI > Setup ($dashUrl), confirm Windows and macOS show Ready, then click 'Rebuild & Publish'."

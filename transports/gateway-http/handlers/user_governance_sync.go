@@ -89,6 +89,9 @@ func (h *SessionHandler) materializeUserGovernanceLimits(ctx context.Context, us
 				existing.RequestMaxLimit = &maxReq
 				existing.RequestResetDuration = &reset
 				existing.UpdatedAt = now
+				if existing.TokenMaxLimit != nil && existing.TokenResetDuration == nil {
+					existing.TokenResetDuration = &reset
+				}
 				if err := h.configStore.UpdateRateLimit(ctx, existing, txArgs...); err != nil {
 					return err
 				}

@@ -1,14 +1,9 @@
+from db_config import get_db_connection
 import psycopg2
 import time
 import sys
 
-conn = psycopg2.connect(
-    dbname='Unifai_test',
-    user='Unifai_test',
-    password='YP2025-2026yp',
-    host='76.13.243.253',
-    port=32768
-)
+conn = get_db_connection()
 cur = conn.cursor()
 
 print("=" * 60)

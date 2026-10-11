@@ -1,8 +1,10 @@
+from db_config import get_base_url
+base_url = get_base_url()
 import urllib.request
 import json
 
 # Let's check available providers and models from Gateway API
-req = urllib.request.Request('http://127.0.0.1:8080/api/models')
+req = urllib.request.Request(f'{base_url}/api/models')
 try:
     with urllib.request.urlopen(req) as resp:
         data = json.loads(resp.read())

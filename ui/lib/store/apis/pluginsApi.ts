@@ -40,6 +40,7 @@ export const pluginsApi = baseApi.injectEndpoints({
 				body: data,
 			}),
 			transformResponse: (response: { message: string; plugin: Plugin }) => response.plugin,
+			invalidatesTags: ["Plugins"],
 			async onQueryStarted(arg, { dispatch, queryFulfilled }) {
 				try {
 					const { data: newPlugin } = await queryFulfilled;
@@ -62,6 +63,7 @@ export const pluginsApi = baseApi.injectEndpoints({
 				body: data,
 			}),
 			transformResponse: (response: { message: string; plugin: Plugin }) => response.plugin,
+			invalidatesTags: ["Plugins"],
 			async onQueryStarted(arg, { dispatch, queryFulfilled }) {
 				try {
 					const { data: updatedPlugin } = await queryFulfilled;
@@ -87,6 +89,7 @@ export const pluginsApi = baseApi.injectEndpoints({
 				url: `/plugins/${name}`,
 				method: "DELETE",
 			}),
+			invalidatesTags: ["Plugins"],
 			async onQueryStarted(pluginName, { dispatch, queryFulfilled }) {
 				try {
 					await queryFulfilled;

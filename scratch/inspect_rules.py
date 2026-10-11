@@ -1,12 +1,7 @@
+from db_config import get_db_connection
 import psycopg2
 
-conn = psycopg2.connect(
-    dbname='Unifai_test',
-    user='Unifai_test',
-    password='YP2025-2026yp',
-    host='76.13.243.253',
-    port=32768
-)
+conn = get_db_connection()
 cur = conn.cursor()
 cur.execute("SELECT id, name, rule_type, pattern, action, active FROM browser_guard_rules WHERE active=true")
 rows = cur.fetchall()

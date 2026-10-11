@@ -1,7 +1,8 @@
+from db_config import get_db_connection
 import psycopg2
 import json
 
-conn = psycopg2.connect('postgresql://Unifai_test:YP2025-2026yp@76.13.243.253:32768/Unifai_test')
+conn = get_db_connection()
 cur = conn.cursor()
 
 cur.execute("""

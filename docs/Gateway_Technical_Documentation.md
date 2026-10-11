@@ -249,7 +249,7 @@ cat gateway-ca.key gateway-ca.crt > mitmproxy-ca.pem
 
 ```bash
 # 1. Verify Go Backend Healthcheck Endpoint
-curl -i http://localhost:6000/health
+curl -i http://localhost:$APP_PORT/health
 # Expected: HTTP/1.1 200 OK {"status":"healthy"}
 
 # 2. Verify Container Process Status

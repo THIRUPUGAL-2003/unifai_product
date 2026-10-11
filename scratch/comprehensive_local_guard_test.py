@@ -1,3 +1,4 @@
+from db_config import get_db_connection
 import urllib.request
 import ssl
 import json
@@ -16,13 +17,7 @@ ctx.verify_mode = ssl.CERT_NONE
 opener = urllib.request.build_opener(proxy_handler, urllib.request.HTTPSHandler(context=ctx))
 
 # Connect to DB to check rows before/after
-conn = psycopg2.connect(
-    dbname='Unifai_test',
-    user='Unifai_test',
-    password='YP2025-2026yp',
-    host='76.13.243.253',
-    port=32768
-)
+conn = get_db_connection()
 cur = conn.cursor()
 
 def get_latest_log_for(query_str):
