@@ -44,6 +44,7 @@ Thumbs.db
 # Plugin / test artifacts
 plugins/*/dist/
 test-reports/
+scratch/
 
 # Compiled UI assets (built by `npm run build` — not source files)
 transports/raksha-http/ui/assets/
