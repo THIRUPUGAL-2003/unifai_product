@@ -62,7 +62,7 @@ export function ApiKeySelectorView({
 			}
 			return { label: `${vk.name}${suffix}`, value: vk.value, group: "virtual" as const };
 		});
-		return [{ label: "Auto (default)", value: "__auto__", group: "api" as const }, ...apiKeyOpts, ...vkOpts];
+		return [{ label: "All (Auto - All Providers & Keys)", value: "__auto__", group: "api" as const }, ...apiKeyOpts, ...vkOpts];
 	}, [providerKeys, virtualKeys, blocks, isRegularUser]);
 
 	const selectedVK = useMemo(() => virtualKeys.find((vk) => vk.value === value), [virtualKeys, value]);
@@ -80,8 +80,11 @@ export function ApiKeySelectorView({
 			if (providerKeys.some((k) => k.key_id === value)) return value;
 			if (virtualKeys.some((vk) => vk.value === value)) return value;
 		}
+		if (value === "__auto__") {
+			return "__auto__";
+		}
 		if (isMember) {
-			return virtualKeys[0]?.value ?? "__none__";
+			return virtualKeys[0]?.value ?? "__auto__";
 		}
 		return "__auto__";
 	}, [value, providerKeys, virtualKeys, isMember]);
@@ -120,7 +123,10 @@ export function ApiKeySelectorView({
 						</SelectTrigger>
 						<SelectContent className="max-h-72">
 							{!isMember && (
-								<SelectItem value="__auto__">Auto (default)</SelectItem>
+								<SelectItem value="__auto__">All (Auto - All Providers & Keys)</SelectItem>
+							)}
+							{isMember && virtualKeys.length > 1 && (
+								<SelectItem value="__auto__">All (Auto - Assigned Keys)</SelectItem>
 							)}
 							{!isMember && providerKeys.length > 0 && (
 								<SelectGroup>

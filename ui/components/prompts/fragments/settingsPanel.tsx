@@ -86,8 +86,9 @@ export function SettingsPanel() {
 	const onApiKeyIdChange = useCallback(
 		(id: string) => {
 			setApiKeyId(id);
+			onModelChange("");
 		},
-		[setApiKeyId],
+		[setApiKeyId, onModelChange],
 	);
 	// Dynamic providers
 	const { data: providers, isLoading: isLoadingProviders, isError: providersFailed, error: providersError } = useGetProvidersQuery();
@@ -181,12 +182,21 @@ export function SettingsPanel() {
 		return (allKeys ?? []).filter((k) => k.provider === provider);
 	}, [allKeys, provider, isMemberOnly]);
 
-	// Virtual keys: show all active virtual keys so any assigned or available key can be selected,
-	// driving provider and model filtering.
+	// Virtual keys: show active virtual keys that serve the selected provider (or are wildcard keys).
+	// When no provider is selected, show all active keys.
 	const providerVirtualKeys = useMemo(() => {
-		const vks = virtualKeysData?.virtual_keys ?? [];
-		return vks.filter((vk) => vk.is_active !== false);
-	}, [virtualKeysData]);
+		const vks = (virtualKeysData?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
+		if (!provider) return vks;
+		const targetProvider = provider.toLowerCase();
+		return vks.filter((vk) => {
+			// Wildcard virtual keys (empty or no provider_configs) serve all providers
+			if (!vk.provider_configs || vk.provider_configs.length === 0) return true;
+			// Explicit provider matching (case-insensitive or wildcard)
+			return vk.provider_configs.some(
+				(pc) => pc.provider === "*" || pc.provider.toLowerCase() === targetProvider,
+			);
+		});
+	}, [virtualKeysData, provider]);
 
 	// Auto-bind first assigned VK for members so usage hits the correct budget meter,
 	// skipping keys whose team or customer budget is used up.
@@ -207,17 +217,14 @@ export function SettingsPanel() {
 	const filterKeys = useMemo(() => {
 		const isProviderKey = providerKeys.some((k) => k.key_id === apiKeyId);
 		if (isProviderKey) return [apiKeyId];
-		const isVirtualKey = providerVirtualKeys.some((vk) => vk.value === apiKeyId);
-		if (isVirtualKey) return undefined;
-		// Auto: pass all provider key IDs
-		return providerKeys.map((k) => k.key_id);
-	}, [apiKeyId, providerKeys, providerVirtualKeys]);
+		return undefined;
+	}, [apiKeyId, providerKeys]);
 
 	const filterVks = useMemo(() => {
-		const virtualKey = providerVirtualKeys.find((vk) => vk.value === apiKeyId);
+		const virtualKey = (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId);
 		if (virtualKey) return [virtualKey.id];
 		return undefined;
-	}, [apiKeyId, providerVirtualKeys]);
+	}, [apiKeyId, virtualKeysData]);
 
 	const handleModelParamsChange = useCallback(
 		(params: Record<string, any>) => {
@@ -344,10 +351,10 @@ export function SettingsPanel() {
 										onChange={(v) => onModelChange(v)}
 										isSingleSelect
 										placeholder={
-											!provider ? "Select a provider first" : filterVks ? "Select a model from this key" : "Select model"
+											!provider ? "Select a provider first" : filterVks ? "Select a model allowed on this key" : "Select model"
 										}
 										disabled={!provider}
-										unfiltered={true}
+										unfiltered={!filterVks && (!filterKeys || filterKeys.length === 0)}
 									/>
 								</div>
 
