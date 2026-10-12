@@ -220,12 +220,24 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			if (vk.expires_at && new Date(vk.expires_at).getTime() < now) return false;
 			return typeof vk.value === "string" && vk.value.startsWith("sk-uf-");
 		});
-		const withBudget = validKeys.find((vk) => {
+
+		// Priority resolution: Direct User VK > Team VK > Business Unit VK > Customer VK
+		const getVkPriority = (vk: (typeof validKeys)[0]) => {
+			if ((vk.user_ids && vk.user_ids.length > 0) || (vk.users && vk.users.length > 0)) return 1;
+			if (vk.team_id || (vk.team_ids && vk.team_ids.length > 0) || (vk.teams && vk.teams.length > 0)) return 2;
+			if ((vk.business_unit_ids && vk.business_unit_ids.length > 0) || (vk.business_units && vk.business_units.length > 0)) return 3;
+			if (vk.customer_id || (vk.customer_ids && vk.customer_ids.length > 0) || (vk.customers && vk.customers.length > 0)) return 4;
+			return 5;
+		};
+
+		const sortedKeys = [...validKeys].sort((a, b) => getVkPriority(a) - getVkPriority(b));
+
+		const withBudget = sortedKeys.find((vk) => {
 			if (billingBlocks?.blocks?.[vk.id]) return false;
 			if (!vk.budgets || vk.budgets.length === 0) return true;
 			return !vk.budgets.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit);
 		});
-		return withBudget?.value ?? validKeys[0]?.value ?? "";
+		return withBudget?.value ?? sortedKeys[0]?.value ?? "";
 	}, [isUserRole, virtualKeysData, billingBlocks]);
 
 	// UI state — persisted in URL query params

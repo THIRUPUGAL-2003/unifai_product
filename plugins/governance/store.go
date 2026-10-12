@@ -71,8 +71,9 @@ type LocalGovernanceStore struct {
 
 // buStamp is a lightweight business-unit identity used when stamping request context.
 type buStamp struct {
-	ID   string
-	Name string
+	ID         string
+	Name       string
+	CustomerID *string
 }
 
 type GovernanceData struct {
@@ -1073,13 +1074,15 @@ func governanceEntityRank(entity string) int {
 		return 0
 	case "Team":
 		return 1
-	case "Customer":
+	case "BusinessUnit":
 		return 2
+	case "Customer":
+		return 3
 	default:
 		if strings.HasPrefix(entity, "User") {
-			return 3
+			return 4
 		}
-		return 4
+		return 5
 	}
 }
 
@@ -2802,14 +2805,18 @@ func (gs *LocalGovernanceStore) rebuildInMemoryStructures(ctx context.Context, c
 	for i := range routingRules {
 		rule := &routingRules[i]
 
-		// Build key
-		key := rule.Scope + ":"
-		if rule.ScopeID != nil {
-			key += *rule.ScopeID
+		// Build keys (supports comma-separated scope IDs, e.g. "vk1,vk2", or "*" wildcard)
+		if rule.Scope == "global" || rule.ScopeID == nil || *rule.ScopeID == "" {
+			rulesMap["global:"] = append(rulesMap["global:"], rule)
+		} else {
+			for _, id := range strings.Split(*rule.ScopeID, ",") {
+				id = strings.TrimSpace(id)
+				if id != "" {
+					key := rule.Scope + ":" + id
+					rulesMap[key] = append(rulesMap[key], rule)
+				}
+			}
 		}
-
-		// Group rules by key
-		rulesMap[key] = append(rulesMap[key], rule)
 	}
 
 	// Sort each group by priority ASC (0 is highest priority, higher numbers are lower priority)
@@ -2896,6 +2903,19 @@ func (gs *LocalGovernanceStore) collectRateLimitsFromHierarchy(ctx context.Conte
 			}
 		}
 		addRateLimit("Team", teamRateLimitID)
+
+		if index := gs.businessUnitsByTeam.Load(); index != nil {
+			if units, ok := (*index)[teamID]; ok {
+				for _, bu := range units {
+					buRateLimitID := "bu_rl_" + bu.ID
+					addRateLimit("BusinessUnit", &buRateLimitID)
+				}
+			}
+		}
+	}
+	for _, buID := range vkBusinessUnitIDs(vk) {
+		buRateLimitID := "bu_rl_" + buID
+		addRateLimit("BusinessUnit", &buRateLimitID)
 	}
 	for _, cid := range gs.billedCustomerIDs(ctx, vk, teamID) {
 		var customerRateLimitID *string
@@ -2977,6 +2997,11 @@ func vkCustomerIDs(vk *configstoreTables.TableVirtualKey) []string {
 	for _, cid := range vk.CustomerIDs {
 		if cid != "" && !slices.Contains(ids, cid) {
 			ids = append(ids, cid)
+		}
+	}
+	for _, bu := range vk.BusinessUnits {
+		if bu.CustomerID != nil && *bu.CustomerID != "" && !slices.Contains(ids, *bu.CustomerID) {
+			ids = append(ids, *bu.CustomerID)
 		}
 	}
 	return ids
@@ -3068,6 +3093,10 @@ func (gs *LocalGovernanceStore) billedTeam(ctx context.Context, vk *configstoreT
 			return tid
 		}
 	}
+	// If the user belongs to exactly one team, attribute the request to that team.
+	if len(member) == 1 {
+		return member[0]
+	}
 	return ""
 }
 
@@ -3132,6 +3161,15 @@ func (gs *LocalGovernanceStore) teamCustomerID(vk *configstoreTables.TableVirtua
 		}
 		if vk.Team.Customer != nil && vk.Team.Customer.ID != "" {
 			return vk.Team.Customer.ID
+		}
+	}
+	if index := gs.businessUnitsByTeam.Load(); index != nil {
+		if units, ok := (*index)[teamID]; ok {
+			for _, bu := range units {
+				if bu.CustomerID != nil && *bu.CustomerID != "" {
+					return *bu.CustomerID
+				}
+			}
 		}
 	}
 	if gs.configStore != nil {
@@ -3307,6 +3345,27 @@ func (gs *LocalGovernanceStore) collectBudgetsFromHierarchy(ctx context.Context,
 		}
 		if len(teamBudgets) > 0 {
 			addBudgets("Team", teamBudgets)
+		}
+
+		if index := gs.businessUnitsByTeam.Load(); index != nil {
+			if units, ok := (*index)[teamID]; ok {
+				for _, bu := range units {
+					buBudgetID := "bu_" + bu.ID
+					if bVal, exists := gs.budgets.Load(buBudgetID); exists && bVal != nil {
+						if b, ok := bVal.(*configstoreTables.TableBudget); ok && b != nil {
+							addBudgets("BusinessUnit", []configstoreTables.TableBudget{*b})
+						}
+					}
+				}
+			}
+		}
+	}
+	for _, buID := range vkBusinessUnitIDs(vk) {
+		buBudgetID := "bu_" + buID
+		if bVal, exists := gs.budgets.Load(buBudgetID); exists && bVal != nil {
+			if b, ok := bVal.(*configstoreTables.TableBudget); ok && b != nil {
+				addBudgets("BusinessUnit", []configstoreTables.TableBudget{*b})
+			}
 		}
 	}
 	for _, cid := range gs.billedCustomerIDs(ctx, vk, teamID) {
@@ -4190,12 +4249,45 @@ func (gs *LocalGovernanceStore) reloadBusinessUnitTeamIndex(ctx context.Context)
 	}
 	for i := range rows {
 		row := rows[i]
-		stamp := buStamp{ID: row.ID, Name: row.Name}
+		stamp := buStamp{ID: row.ID, Name: row.Name, CustomerID: row.CustomerID}
 		for _, teamID := range row.ParsedTeamIDs {
 			if teamID == "" {
 				continue
 			}
 			index[teamID] = append(index[teamID], stamp)
+		}
+
+		// Index Business Unit budget into gs.budgets if configured
+		if row.ParsedBudget != nil {
+			var maxLimit float64
+			if ml, ok := row.ParsedBudget["max_limit"].(float64); ok {
+				maxLimit = ml
+			} else if ml, ok := row.ParsedBudget["max_limit"].(int); ok {
+				maxLimit = float64(ml)
+			}
+			resetDur, _ := row.ParsedBudget["reset_duration"].(string)
+			if resetDur == "" {
+				resetDur = "1M"
+			}
+			if maxLimit > 0 {
+				buBudgetID := "bu_" + row.ID
+				var curUsage float64
+				if cu, ok := row.ParsedBudget["current_usage"].(float64); ok {
+					curUsage = cu
+				}
+				if existingRaw, exists := gs.budgets.Load(buBudgetID); exists && existingRaw != nil {
+					if existing, ok := existingRaw.(*configstoreTables.TableBudget); ok && existing != nil {
+						curUsage = existing.CurrentUsage
+					}
+				}
+				gs.budgets.Store(buBudgetID, &configstoreTables.TableBudget{
+					ID:            buBudgetID,
+					MaxLimit:      maxLimit,
+					ResetDuration: resetDur,
+					CurrentUsage:  curUsage,
+					LastReset:     time.Now(),
+				})
+			}
 		}
 	}
 }
@@ -4630,7 +4722,19 @@ func (gs *LocalGovernanceStore) GetScopedRoutingRules(ctx context.Context, scope
 
 	enabledRules := gs.enabledRoutingRules(key)
 	if scope != "global" && scopeID != "" && scopeID != "*" {
-		enabledRules = append(enabledRules, gs.enabledRoutingRules(scope+":*")...)
+		wildcardRules := gs.enabledRoutingRules(scope + ":*")
+		if len(wildcardRules) > 0 {
+			seen := make(map[string]bool, len(enabledRules)+len(wildcardRules))
+			for _, r := range enabledRules {
+				seen[r.ID] = true
+			}
+			for _, r := range wildcardRules {
+				if !seen[r.ID] {
+					enabledRules = append(enabledRules, r)
+					seen[r.ID] = true
+				}
+			}
+		}
 		sort.SliceStable(enabledRules, func(i, j int) bool {
 			return enabledRules[i].Priority < enabledRules[j].Priority
 		})
@@ -4894,32 +4998,44 @@ func (gs *LocalGovernanceStore) UpdateRoutingRuleInMemory(ctx context.Context, r
 		}
 		return true
 	})
-	// Build cache key for the new scope
-	var key string
+	// Build cache keys for the new scope (supports comma-separated scope IDs or "*")
+	var keys []string
 	if rule.Scope == "global" {
-		key = "global:"
+		keys = []string{"global:"}
 	} else {
 		scopeID := ""
 		if rule.ScopeID != nil {
 			scopeID = *rule.ScopeID
 		}
-		key = fmt.Sprintf("%s:%s", rule.Scope, scopeID)
-	}
-	// Load existing rules for this scope
-	var rules []*configstoreTables.TableRoutingRule
-	if value, ok := gs.routingRules.Load(key); ok {
-		if existing, ok := value.([]*configstoreTables.TableRoutingRule); ok {
-			rules = existing
+		if scopeID == "" || scopeID == "*" {
+			keys = []string{fmt.Sprintf("%s:%s", rule.Scope, scopeID)}
+		} else {
+			for _, id := range strings.Split(scopeID, ",") {
+				id = strings.TrimSpace(id)
+				if id != "" {
+					keys = append(keys, fmt.Sprintf("%s:%s", rule.Scope, id))
+				}
+			}
 		}
 	}
-	// Add the rule to the new scope
-	rules = append(rules, rule)
-	// Sort by priority ASC (0 is highest priority, higher numbers are lower priority)
-	sort.Slice(rules, func(i, j int) bool {
-		return rules[i].Priority < rules[j].Priority
-	})
-	// Store back in cache
-	gs.routingRules.Store(key, rules)
+
+	for _, key := range keys {
+		// Load existing rules for this scope
+		var rules []*configstoreTables.TableRoutingRule
+		if value, ok := gs.routingRules.Load(key); ok {
+			if existing, ok := value.([]*configstoreTables.TableRoutingRule); ok {
+				rules = existing
+			}
+		}
+		// Add the rule to the scope
+		rules = append(rules, rule)
+		// Sort by priority ASC (0 is highest priority, higher numbers are lower priority)
+		sort.Slice(rules, func(i, j int) bool {
+			return rules[i].Priority < rules[j].Priority
+		})
+		// Store back in cache
+		gs.routingRules.Store(key, rules)
+	}
 	// Invalidate compiled program cache for this rule (expression may have changed)
 	gs.compiledRoutingPrograms.Delete(rule.ID)
 	// Recompile the program immediately to update cache with fresh compilation

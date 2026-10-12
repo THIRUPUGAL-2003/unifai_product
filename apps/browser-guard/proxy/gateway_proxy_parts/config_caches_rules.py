@@ -462,11 +462,11 @@ _UPLOAD_FILE_CACHE: dict[str, dict] = {}
 _UPLOAD_FILE_QUEUES: dict[str, list[dict]] = {}
 _UPLOAD_FILE_CACHE_LOCK = threading.Lock()
 _UPLOAD_FILE_CACHE_TTL = 15 * 60  # 15 minutes — keep bytes for View/Download
-_UPLOAD_FILE_CACHE_MAX = 80
+_UPLOAD_FILE_CACHE_MAX = 500
 _UPLOAD_FILE_QUEUE_MAX = 128  # one Send may attach 100+ files; keep each one until Send
 # Only treat "latest upload" as this Send's file if the upload was this recent.
 # Prevents typed prompts from becoming "[FILE UPLOAD] attachment" after an old pick.
-_UPLOAD_LATEST_MATCH_TTL = 30  # 30 seconds match window for pending uploads on Send
+_UPLOAD_LATEST_MATCH_TTL = 180  # 180 seconds match window for pending uploads on Send (supports multi-file & typing time)
 _MULTI_FILE_VISION_MAX = 12  # images sent together to Guard Bot on one Send
 
 # Sticky map: client IP → last admin Target Website (CDN uploads often omit Referer).

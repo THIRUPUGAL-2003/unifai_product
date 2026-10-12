@@ -106,6 +106,8 @@ func (r *TableRBACRole) AfterFind(tx *gorm.DB) error {
 type TableBusinessUnit struct {
 	ID              string         `gorm:"primaryKey;type:varchar(36)" json:"id"`
 	Name            string         `gorm:"type:varchar(255);not null;uniqueIndex" json:"name"`
+	CustomerID      *string        `gorm:"type:varchar(255);index" json:"customer_id,omitempty"`
+	Customer        *TableCustomer `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
 	TeamIDsJSON     *string        `gorm:"type:text" json:"-"`
 	ParsedTeamIDs   []string       `gorm:"-" json:"team_ids,omitempty"`
 	BudgetJSON      *string        `gorm:"type:text" json:"-"`

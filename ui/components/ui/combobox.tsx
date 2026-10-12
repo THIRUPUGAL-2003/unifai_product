@@ -512,6 +512,8 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 						<div className="flex flex-1 flex-wrap gap-1 overflow-hidden">
 							{selectedValues.length === 0 ? (
 								<span>{placeholder}</span>
+							) : options.length > 0 && options.every((option) => selectedValues.includes(option.value)) && selectAllTriggerLabel ? (
+								<span className="text-foreground truncate text-sm font-medium">{selectAllTriggerLabel}</span>
 							) : compactTrigger ? (
 								<span className="text-foreground truncate text-sm">{selectedValues.length} selected</span>
 							) : (
@@ -553,8 +555,15 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 							{selectAllValue && !query && (
 								<CommandPrimitive.Item
 									value={selectAllValue}
-									className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
+									className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
 									onSelect={() => {
+										const all = options.map((option) => option.value);
+										const everySelected = all.length > 0 && all.every((value) => selectedValues.includes(value));
+										props.onValueChange?.(everySelected ? [] : all);
+									}}
+									onClick={(e) => {
+										e.preventDefault();
+										e.stopPropagation();
 										const all = options.map((option) => option.value);
 										const everySelected = all.length > 0 && all.every((value) => selectedValues.includes(value));
 										props.onValueChange?.(everySelected ? [] : all);
@@ -584,8 +593,14 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 									<CommandPrimitive.Item
 										key={option.value}
 										value={option.value}
-										className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
+										className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
 										onSelect={() => {
+											const next = isSelected ? selectedValues.filter((v) => v !== option.value) : [...selectedValues, option.value];
+											props.onValueChange?.(next);
+										}}
+										onClick={(e) => {
+											e.preventDefault();
+											e.stopPropagation();
 											const next = isSelected ? selectedValues.filter((v) => v !== option.value) : [...selectedValues, option.value];
 											props.onValueChange?.(next);
 										}}
@@ -683,9 +698,17 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 						{selectAllValue && !query && (
 							<CommandPrimitive.Item
 								value={selectAllValue}
-								className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
+								className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
 								onSelect={() => {
-									props.onValueChange?.(selectAllValue);
+									const next = props.value === selectAllValue ? "" : selectAllValue;
+									props.onValueChange?.(next);
+									setOpen(false);
+								}}
+								onClick={(e) => {
+									e.preventDefault();
+									e.stopPropagation();
+									const next = props.value === selectAllValue ? "" : selectAllValue;
+									props.onValueChange?.(next);
 									setOpen(false);
 								}}
 							>
@@ -704,8 +727,14 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 							<CommandPrimitive.Item
 								key={option.value}
 								value={option.value}
-								className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
+								className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
 								onSelect={() => {
+									props.onValueChange?.(option.value);
+									setOpen(false);
+								}}
+								onClick={(e) => {
+									e.preventDefault();
+									e.stopPropagation();
 									props.onValueChange?.(option.value);
 									setOpen(false);
 								}}

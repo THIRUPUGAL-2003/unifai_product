@@ -327,26 +327,26 @@ func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayReq
 		return req, nil, nil
 	}
 
-	// Skills injection works with or without a prompt id (API + playground).
-	p.injectSkillSystemMessage(ctx, req)
-
 	promptID, versionNumber, err := p.resolver.Resolve(ctx, req)
 	if err != nil {
 		p.logger.Warn("prompts plugin: failed to resolve prompt: %v", err)
 		return req, nil, nil
 	}
 	if promptID == "" {
+		p.injectSkillSystemMessage(ctx, req)
 		return req, nil, nil
 	}
 
 	prompt, version, found := p.resolveVersion(promptID, versionNumber)
 	if !found {
 		p.logger.Warn("prompts plugin: prompt or version not found: promptID=%s versionNumber=%d", promptID, versionNumber)
+		p.injectSkillSystemMessage(ctx, req)
 		return req, nil, nil
 	}
 
 	if version == nil {
 		p.logger.Warn("prompts plugin: prompt has no resolved version: promptID=%s", promptID)
+		p.injectSkillSystemMessage(ctx, req)
 		return req, nil, nil
 	}
 
@@ -357,6 +357,7 @@ func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayReq
 	ctx.SetValue(schemas.GatewayContextKeySelectedPromptVersion, strconv.Itoa(version.VersionNumber))
 
 	if strings.EqualFold(strings.TrimSpace(gateway.GetStringFromContext(ctx, PromptInjectKey)), "false") {
+		p.injectSkillSystemMessage(ctx, req)
 		return req, nil, nil
 	}
 
@@ -371,27 +372,37 @@ func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayReq
 	template, err := chatMessagesFromVersionMessages(version.Messages)
 	if err != nil {
 		p.logger.Warn("prompts plugin: failed to convert version messages to chat messages: %v", err)
-		return req, nil, nil
-	}
-	if len(template) == 0 {
-		p.logger.Warn("prompts plugin: no template messages found for prompt %s version %d", promptID, version.VersionNumber)
-		return req, nil, nil
+	} else if len(template) > 0 {
+		switch {
+		case req.ChatRequest != nil:
+			mergeChatMessages(&req.ChatRequest.Input, template)
+		case req.ResponsesRequest != nil:
+			mergeResponsesMessages(&req.ResponsesRequest.Input, template)
+		}
 	}
 
-	switch {
-	case req.ChatRequest != nil:
-		mergeChatMessages(&req.ChatRequest.Input, template)
-	case req.ResponsesRequest != nil:
-		mergeResponsesMessages(&req.ResponsesRequest.Input, template)
+	// Prepend skill system message so it sits at the very top (index 0).
+	// Prefers explicit header; falls back to prompt version's configured skill_id.
+	var versionSkillID string
+	if version.ModelParams != nil {
+		if rawSkill, ok := version.ModelParams["skill_id"]; ok {
+			if skillStr, ok := rawSkill.(string); ok {
+				versionSkillID = strings.TrimSpace(skillStr)
+			}
+		}
 	}
+	p.injectSkillSystemMessage(ctx, req, versionSkillID)
 
 	return req, nil, nil
 }
 
 // injectSkillSystemMessage prepends Skills Repository skill_md_body when
-// x-uf-skill-id (or skill name) is present on the request context.
-func (p *Plugin) injectSkillSystemMessage(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) {
+// x-uf-skill-id (or skill name) is present on the request context, or supplied via skillRefOverride.
+func (p *Plugin) injectSkillSystemMessage(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, skillRefOverride ...string) {
 	skillRef := strings.TrimSpace(gateway.GetStringFromContext(ctx, SkillIDKey))
+	if skillRef == "" && len(skillRefOverride) > 0 {
+		skillRef = strings.TrimSpace(skillRefOverride[0])
+	}
 	if skillRef == "" {
 		return
 	}

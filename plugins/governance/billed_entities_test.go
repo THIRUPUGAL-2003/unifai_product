@@ -328,3 +328,76 @@ func TestKeyOnTeamAndCustomerPrefersTeamsOwnCustomer(t *testing.T) {
 		t.Fatalf("billed customers = %v, want [cust-b]", customers)
 	}
 }
+
+func TestSharedTeamMultiCustomerScoping(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team-shared", "b-cust-a", "b-cust-b", "b-vk-a", "b-vk-b"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	// User belongs to single team: team-shared
+	gs.users.Store("user-shared", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-shared"}})
+	// Shared team has NO single customer owning it (CustomerID = nil)
+	gs.teams.Store("team-shared", &configstoreTables.TableTeam{
+		ID: "team-shared", Name: "Shared Multi-Customer Team", CustomerID: nil,
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team-shared"}},
+	})
+	gs.customers.Store("cust-a", &configstoreTables.TableCustomer{
+		ID: "cust-a", Name: "Customer A", Budgets: []configstoreTables.TableBudget{{ID: "b-cust-a"}},
+	})
+	gs.customers.Store("cust-b", &configstoreTables.TableCustomer{
+		ID: "cust-b", Name: "Customer B", Budgets: []configstoreTables.TableBudget{{ID: "b-cust-b"}},
+	})
+
+	// VK-A: Scoped to Customer A, accessible by team-shared
+	vkA := &configstoreTables.TableVirtualKey{
+		ID:         "vk-a",
+		CustomerID: strPtr("cust-a"),
+		Teams:      []configstoreTables.TableTeam{{ID: "team-shared"}},
+		Budgets:    []configstoreTables.TableBudget{{ID: "b-vk-a"}},
+	}
+	gs.virtualKeys.Store("sk-vk-a", vkA)
+
+	// VK-B: Scoped to Customer B, accessible by team-shared
+	vkB := &configstoreTables.TableVirtualKey{
+		ID:         "vk-b",
+		CustomerID: strPtr("cust-b"),
+		Teams:      []configstoreTables.TableTeam{{ID: "team-shared"}},
+		Budgets:    []configstoreTables.TableBudget{{ID: "b-vk-b"}},
+	}
+	gs.virtualKeys.Store("sk-vk-b", vkB)
+
+	tracker := &UsageTracker{store: gs, logger: NewMockLogger(), billed: make(map[string]time.Time)}
+
+	// 1. User performs action for Customer A
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-vk-a", UserID: "user-shared", Success: true, Cost: 10,
+		UserTeamIDs: []string{"team-shared"},
+	})
+
+	checkBudget := func(id string, want float64) {
+		raw, _ := gs.budgets.Load(id)
+		if got := raw.(*configstoreTables.TableBudget).CurrentUsage; got != want {
+			t.Errorf("budget %s usage = %v, want %v", id, got, want)
+		}
+	}
+
+	checkBudget("b-vk-a", 10)
+	checkBudget("b-user", 10)
+	checkBudget("b-team-shared", 10)
+	checkBudget("b-cust-a", 10)
+	checkBudget("b-cust-b", 0) // Customer B completely unaffected!
+
+	// 2. User performs action for Customer B
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-vk-b", UserID: "user-shared", Success: true, Cost: 25,
+		UserTeamIDs: []string{"team-shared"},
+	})
+
+	checkBudget("b-vk-a", 10)
+	checkBudget("b-vk-b", 25)
+	checkBudget("b-user", 35)        // 10 + 25
+	checkBudget("b-team-shared", 35) // 10 + 25
+	checkBudget("b-cust-a", 10)      // Unchanged!
+	checkBudget("b-cust-b", 25)      // Customer B metered accurately!
+}
+

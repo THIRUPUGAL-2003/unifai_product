@@ -100,6 +100,21 @@ func ResolveAllowedVirtualKeyIDsForUser(ctx context.Context, store configstore.C
 				if !member {
 					continue
 				}
+				// If business unit has a Customer owning it, also inherit customer VKs
+				if unit.CustomerID != nil && *unit.CustomerID != "" {
+					custID := strings.TrimSpace(*unit.CustomerID)
+					if custID != "" && !seenCustomers[custID] {
+						seenCustomers[custID] = true
+						custIDs = append(custIDs, custID)
+						if custLinks, err := ws.ListVirtualKeysForCustomer(ctx, custID); err == nil {
+							for _, cl := range custLinks {
+								if cl.VirtualKeyID != "" {
+									allowed[cl.VirtualKeyID] = true
+								}
+							}
+						}
+					}
+				}
 				links, err := ws.ListVirtualKeysForBusinessUnit(ctx, unit.ID)
 				if err != nil {
 					continue

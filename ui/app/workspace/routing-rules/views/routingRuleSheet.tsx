@@ -213,6 +213,32 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 		[setValue],
 	);
 
+	const getMultiScopeValues = useCallback((currentScopeId: string | undefined, allIds: string[]): string[] => {
+		if (!currentScopeId || !currentScopeId.trim()) return [];
+		if (currentScopeId.trim() === "*") {
+			return allIds;
+		}
+		return currentScopeId
+			.split(",")
+			.map((s) => s.trim())
+			.filter(Boolean);
+	}, []);
+
+	const handleMultiScopeChange = useCallback(
+		(selected: string[], allIds: string[]) => {
+			if (!selected || selected.length === 0) {
+				setValue("scope_id", "");
+				return;
+			}
+			if (allIds.length > 0 && allIds.every((id) => selected.includes(id))) {
+				setValue("scope_id", ROUTING_RULE_ALL_SCOPE_ID);
+				return;
+			}
+			setValue("scope_id", selected.join(","));
+		},
+		[setValue],
+	);
+
 	const addTarget = () => {
 		const remaining = 1 - targets.reduce((sum, t) => sum + (t.weight || 0), 0);
 		setTargets((prev) => [...prev, { ...DEFAULT_ROUTING_TARGET, weight: Math.max(0, parseFloat(remaining.toFixed(4))) }]);
@@ -443,10 +469,11 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 								</Label>
 								{scope === "team" && (
 									<ComboboxSelect
+										multiple
 										options={teams.map((team) => ({ label: team.name || team.id || "Unnamed Team", value: team.id }))}
-										value={scopeId || null}
-										onValueChange={(value) => setValue("scope_id", value ?? "")}
-										placeholder="Select a team..."
+										value={getMultiScopeValues(scopeId, teams.map((t) => t.id))}
+										onValueChange={(values: string[]) => handleMultiScopeChange(values, teams.map((t) => t.id))}
+										placeholder="Select teams..."
 										selectAllValue={ROUTING_RULE_ALL_SCOPE_ID}
 										selectAllLabel="(Select All)"
 										selectAllTriggerLabel="All teams"
@@ -455,10 +482,11 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 								)}
 								{scope === "customer" && (
 									<ComboboxSelect
+										multiple
 										options={customers.map((customer) => ({ label: customer.name || customer.id || "Unnamed Customer", value: customer.id }))}
-										value={scopeId || null}
-										onValueChange={(value) => setValue("scope_id", value ?? "")}
-										placeholder="Select a customer..."
+										value={getMultiScopeValues(scopeId, customers.map((c) => c.id))}
+										onValueChange={(values: string[]) => handleMultiScopeChange(values, customers.map((c) => c.id))}
+										placeholder="Select customers..."
 										selectAllValue={ROUTING_RULE_ALL_SCOPE_ID}
 										selectAllLabel="(Select All)"
 										selectAllTriggerLabel="All customers"
@@ -467,10 +495,11 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 								)}
 								{scope === "virtual_key" && (
 									<ComboboxSelect
+										multiple
 										options={virtualKeys.map((vk) => ({ label: vk.name || vk.id || "Unnamed Key", value: vk.id }))}
-										value={scopeId || null}
-										onValueChange={(value) => setValue("scope_id", value ?? "")}
-										placeholder="Select a virtual key..."
+										value={getMultiScopeValues(scopeId, virtualKeys.map((v) => v.id))}
+										onValueChange={(values: string[]) => handleMultiScopeChange(values, virtualKeys.map((v) => v.id))}
+										placeholder="Select virtual keys..."
 										selectAllValue={ROUTING_RULE_ALL_SCOPE_ID}
 										selectAllLabel="(Select All)"
 										selectAllTriggerLabel="All virtual keys"
@@ -479,10 +508,11 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 								)}
 								{scope === "user" && (
 									<ComboboxSelect
+										multiple
 										options={(usersData || []).map((user) => ({ label: user.username || user.email || user.id, value: user.id }))}
-										value={scopeId || null}
-										onValueChange={(value) => setValue("scope_id", value ?? "")}
-										placeholder="Select a user..."
+										value={getMultiScopeValues(scopeId, (usersData || []).map((u) => u.id))}
+										onValueChange={(values: string[]) => handleMultiScopeChange(values, (usersData || []).map((u) => u.id))}
+										placeholder="Select users..."
 										selectAllValue={ROUTING_RULE_ALL_SCOPE_ID}
 										selectAllLabel="(Select All)"
 										selectAllTriggerLabel="All users"

@@ -149,7 +149,9 @@ export function ApiKeySelectorView({
 			} else if (vk.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit)) {
 				suffix = " (Key budget used up)";
 			}
-			opts.push({ label: `${vk.name}${suffix}`, value: vk.value });
+			const custName = vk.customer?.name || (vk.customers && vk.customers.length > 0 ? vk.customers[0].name : "");
+			const prefix = custName ? `[${custName}] ` : "";
+			opts.push({ label: `${prefix}${vk.name}${suffix}`, value: vk.value });
 		}
 		return opts;
 	}, [virtualKeys, blocks, isRegularUser]);

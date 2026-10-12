@@ -590,22 +590,21 @@ export function SettingsPanel() {
 									</div>
 								)}
 
-								{skillOptions.length > 1 && (
-									<div className="flex flex-col gap-2" data-testid="settings-skill">
-										<Label className="text-muted-foreground text-xs font-medium uppercase">Skill (optional)</Label>
-										<p className="text-muted-foreground text-xs">
-											Injects the skill markdown as a system message for this playground run.
-										</p>
-										<ComboboxSelect
-											options={skillOptions}
-											value={skillId || null}
-											onValueChange={(v) => setSkillId(v && v !== "*" ? v : "")}
-											placeholder="Select skill"
-											searchPlaceholder="Search..."
-											data-testid="settings-skill-select"
-										/>
-									</div>
-								)}
+								<div className="flex flex-col gap-2" data-testid="settings-skill">
+									<Label className="text-muted-foreground text-xs font-medium uppercase">Skill (optional)</Label>
+									<p className="text-muted-foreground text-xs">
+										Injects the skill markdown as a system message for this playground run.
+									</p>
+									<ComboboxSelect
+										options={skillOptions}
+										value={skillId || null}
+										onValueChange={(v) => setSkillId(v && v !== "*" ? v : "")}
+										placeholder={skillOptions.length <= 1 ? "No skills available" : "Select skill"}
+										searchPlaceholder="Search..."
+										disabled={skillOptions.length <= 1 && !skillId}
+										data-testid="settings-skill-select"
+									/>
+								</div>
 
 								{Object.keys(variables).length > 0 && (
 									<>

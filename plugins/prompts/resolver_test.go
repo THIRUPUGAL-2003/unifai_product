@@ -88,3 +88,138 @@ func TestBuildMergedParamsMapDropsPlaygroundKeys(t *testing.T) {
 		t.Fatalf("temperature lost: %v", merged["temperature"])
 	}
 }
+
+type fakeSkillAndPromptStore struct {
+	prompts  []configstoreTables.TablePrompt
+	versions []configstoreTables.TablePromptVersion
+	skills   map[string]*configstoreTables.TableSkill
+}
+
+func (f *fakeSkillAndPromptStore) GetPrompts(_ context.Context, _ *string) ([]configstoreTables.TablePrompt, error) {
+	return f.prompts, nil
+}
+
+func (f *fakeSkillAndPromptStore) GetAllPromptVersions(_ context.Context) ([]configstoreTables.TablePromptVersion, error) {
+	return f.versions, nil
+}
+
+func (f *fakeSkillAndPromptStore) GetSkillLean(_ context.Context, id string) (*configstoreTables.TableSkill, error) {
+	return f.skills[id], nil
+}
+
+func (f *fakeSkillAndPromptStore) GetSkillByName(_ context.Context, name string) (*configstoreTables.TableSkill, error) {
+	return f.skills[name], nil
+}
+
+func TestSkillInjection(t *testing.T) {
+	skill1Body := "# Skill 1: Code Reviewer Guidelines"
+	skill2Body := "# Skill 2: Python Expert Persona"
+
+	store := &fakeSkillAndPromptStore{
+		prompts: []configstoreTables.TablePrompt{
+			{ID: "p1", Name: "Prompt One"},
+		},
+		versions: []configstoreTables.TablePromptVersion{
+			{
+				PromptID:      "p1",
+				VersionNumber: 1,
+				ModelParams: configstoreTables.ModelParams{
+					"skill_id": "skill-1",
+				},
+				Messages: []configstoreTables.TablePromptVersionMessage{
+					{
+						Message: []byte(`{"role":"system","content":"Template system prompt"}`),
+					},
+				},
+			},
+		},
+		skills: map[string]*configstoreTables.TableSkill{
+			"skill-1": {ID: "skill-1", Name: "Code Reviewer", SkillMDBody: skill1Body},
+			"skill-2": {ID: "skill-2", Name: "Python Expert", SkillMDBody: skill2Body},
+		},
+	}
+
+	p, err := Init(context.Background(), store, nil)
+	if err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	userMsg := "Help me write code"
+	mkChatReq := func() *schemas.GatewayRequest {
+		return &schemas.GatewayRequest{
+			ChatRequest: &schemas.GatewayChatRequest{
+				Input: []schemas.ChatMessage{
+					{
+						Role:    schemas.ChatMessageRoleUser,
+						Content: &schemas.ChatMessageContent{ContentStr: &userMsg},
+					},
+				},
+			},
+		}
+	}
+
+	// Case 1: Standalone execution with explicit x-uf-skill-id header (no prompt id)
+	t.Run("explicit_skill_header_alone", func(t *testing.T) {
+		req := mkChatReq()
+		ctx := newResolverCtx(map[schemas.GatewayContextKey]any{
+			SkillIDKey: "skill-2",
+		})
+		resReq, _, err := p.PreLLMHook(ctx, req)
+		if err != nil {
+			t.Fatalf("PreLLMHook: %v", err)
+		}
+		if len(resReq.ChatRequest.Input) != 2 {
+			t.Fatalf("expected 2 messages (skill system + user), got %d", len(resReq.ChatRequest.Input))
+		}
+		if resReq.ChatRequest.Input[0].Role != schemas.ChatMessageRoleSystem ||
+			*resReq.ChatRequest.Input[0].Content.ContentStr != skill2Body {
+			t.Fatalf("expected skill-2 body at index 0, got %v", resReq.ChatRequest.Input[0])
+		}
+	})
+
+	// Case 2: Prompt execution without skill header - should fallback to version's configured skill_id!
+	t.Run("prompt_fallback_to_version_skill_id", func(t *testing.T) {
+		req := mkChatReq()
+		ctx := newResolverCtx(map[schemas.GatewayContextKey]any{
+			PromptIDKey:      "p1",
+			PromptVersionKey: "1",
+		})
+		resReq, _, err := p.PreLLMHook(ctx, req)
+		if err != nil {
+			t.Fatalf("PreLLMHook: %v", err)
+		}
+		// Expect 3 messages: [Skill System, Template System, User Message]
+		if len(resReq.ChatRequest.Input) != 3 {
+			t.Fatalf("expected 3 messages, got %d: %+v", len(resReq.ChatRequest.Input), resReq.ChatRequest.Input)
+		}
+		if *resReq.ChatRequest.Input[0].Content.ContentStr != skill1Body {
+			t.Errorf("expected skill-1 body at top, got %q", *resReq.ChatRequest.Input[0].Content.ContentStr)
+		}
+		if *resReq.ChatRequest.Input[1].Content.ContentStr != "Template system prompt" {
+			t.Errorf("expected template system prompt at index 1, got %q", *resReq.ChatRequest.Input[1].Content.ContentStr)
+		}
+		if *resReq.ChatRequest.Input[2].Content.ContentStr != userMsg {
+			t.Errorf("expected user message at index 2, got %q", *resReq.ChatRequest.Input[2].Content.ContentStr)
+		}
+	})
+
+	// Case 3: Explicit header overrides prompt version's configured skill
+	t.Run("explicit_header_overrides_version_skill", func(t *testing.T) {
+		req := mkChatReq()
+		ctx := newResolverCtx(map[schemas.GatewayContextKey]any{
+			PromptIDKey:      "p1",
+			PromptVersionKey: "1",
+			SkillIDKey:       "skill-2",
+		})
+		resReq, _, err := p.PreLLMHook(ctx, req)
+		if err != nil {
+			t.Fatalf("PreLLMHook: %v", err)
+		}
+		if len(resReq.ChatRequest.Input) != 3 {
+			t.Fatalf("expected 3 messages, got %d", len(resReq.ChatRequest.Input))
+		}
+		if *resReq.ChatRequest.Input[0].Content.ContentStr != skill2Body {
+			t.Errorf("expected skill-2 override at top, got %q", *resReq.ChatRequest.Input[0].Content.ContentStr)
+		}
+	})
+}

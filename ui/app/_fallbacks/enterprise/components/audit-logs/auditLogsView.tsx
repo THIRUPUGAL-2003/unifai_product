@@ -3,6 +3,7 @@ import { ExportFormatsDropdown } from "@/components/exportFormatsDropdown";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getErrorMessage } from "@/lib/store";
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { useGetAuditLogsQuery, useLazyExportAuditLogsQuery } from "@enterprise/lib/store/apis/auditLogsApi";
 import { ScrollText } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -31,7 +32,13 @@ export default function AuditLogsView() {
 		[search, action, outcome],
 	);
 	useEffect(() => setPage(0), [filters]);
-	const { data, isLoading: loading, isFetching } = useGetAuditLogsQuery({ ...filters, limit: pageSize, offset: page * pageSize });
+	const {
+		data,
+		isLoading: loading,
+		isFetching,
+		isError,
+		error,
+	} = useGetAuditLogsQuery({ ...filters, limit: pageSize, offset: page * pageSize });
 	const [exportAuditLogs] = useLazyExportAuditLogsQuery();
 	const logs = data?.logs || [];
 	const total = data?.total_count ?? 0;
@@ -106,6 +113,12 @@ export default function AuditLogsView() {
 					<option value="failure">failure</option>
 				</select>
 			</div>
+			{isError ? (
+				<QueryErrorBanner
+					message={getErrorMessage(error) || "Failed to load audit logs"}
+					testId="audit-logs-query-error"
+				/>
+			) : null}
 			<div className="min-h-0 flex-1 overflow-auto rounded-xl border">
 				{loading ? (
 					<p className="text-muted-foreground p-6 text-sm">Loading audit logs…</p>

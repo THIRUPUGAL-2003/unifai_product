@@ -14,10 +14,11 @@ import {
 	useUpdateMCPToolGroupMutation,
 } from "@enterprise/lib/store/apis/mcpToolGroupsApi";
 import { MCPToolGroup } from "@enterprise/lib/types/workspace";
-import { Boxes, Pencil, Plus, Trash2 } from "lucide-react";
+import { Boxes, Pencil, Plus, Trash2, Key, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
+import { MultiItemScrollPopover } from "@/components/ui/multiItemScrollPopover";
 
 /** Build runtime tool patterns: clientName-toolName (governance format). */
 function buildToolEntries(clientId: string, clientName: string, toolNamesRaw: string): { mcp_client_id: string; mcp_client_name: string; tool_names?: string[]; name: string }[] {
@@ -84,6 +85,14 @@ export default function MCPToolGroups() {
 	const [offset, setOffset] = useState(0);
 	const [limit, setLimit] = useState(10);
 	const pagedGroups = useMemo(() => groups.slice(offset, offset + limit), [groups, offset, limit]);
+
+	const vkNameById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const vk of virtualKeys) {
+			map.set(vk.id, vk.name || vk.id);
+		}
+		return map;
+	}, [virtualKeys]);
 	const [open, setOpen] = useState(false);
 	const [editing, setEditing] = useState<MCPToolGroup | null>(null);
 	const [name, setName] = useState("");
@@ -237,12 +246,28 @@ export default function MCPToolGroups() {
 										<div className="text-muted-foreground text-xs">{group.description}</div>
 									</TableCell>
 									<TableCell>
-										<Badge variant="secondary">{group.tools?.length || 0} tool pattern(s)</Badge>
+										<MultiItemScrollPopover
+											items={(group.tools || []).map((t, idx) => ({
+												id: t.id || t.name || idx,
+												label: t.name || t.tool_name || t.tool_names?.join(", ") || t.mcp_client_name || `Tool #${idx + 1}`,
+											}))}
+											pluralLabel="Tool Patterns"
+											emptyText="0 tool patterns"
+											popoverTitle="Tool Patterns"
+											icon={<Wrench className="h-3 w-3 text-muted-foreground shrink-0" />}
+										/>
 									</TableCell>
 									<TableCell>
-										<Badge variant="outline">
-											{group.virtual_key_ids?.length ? `${group.virtual_key_ids.length} key(s)` : "No keys (restricted)"}
-										</Badge>
+										<MultiItemScrollPopover
+											items={(group.virtual_key_ids || []).map((id) => ({
+												id,
+												label: vkNameById.get(id) || id,
+											}))}
+											pluralLabel="Virtual Keys"
+											emptyText="No keys (restricted)"
+											popoverTitle="Associated Virtual Keys"
+											icon={<Key className="h-3 w-3 text-muted-foreground shrink-0" />}
+										/>
 									</TableCell>
 									<TableCell>
 										<Switch checked={group.enabled} onCheckedChange={() => void toggle(group)} />

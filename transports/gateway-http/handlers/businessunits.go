@@ -12,17 +12,18 @@ import (
 
 type businessUnitPayload struct {
 	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	TeamIDs   []string       `json:"team_ids,omitempty"`
-	Budget    map[string]any `json:"budget,omitempty"`
-	RateLimit map[string]any `json:"rate_limit,omitempty"`
-	CreatedAt time.Time      `json:"created_at"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	Name       string         `json:"name"`
+	CustomerID *string        `json:"customer_id,omitempty"`
+	TeamIDs    []string       `json:"team_ids,omitempty"`
+	Budget     map[string]any `json:"budget,omitempty"`
+	RateLimit  map[string]any `json:"rate_limit,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
 }
 
 func businessUnitFromRow(row tables.TableBusinessUnit) businessUnitPayload {
 	return businessUnitPayload{
-		ID: row.ID, Name: row.Name, TeamIDs: row.ParsedTeamIDs,
+		ID: row.ID, Name: row.Name, CustomerID: row.CustomerID, TeamIDs: row.ParsedTeamIDs,
 		Budget: row.ParsedBudget, RateLimit: row.ParsedRateLimit,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
@@ -56,7 +57,7 @@ func (h *WorkspaceHandler) listBusinessUnits(ctx *fasthttp.RequestCtx) {
 			continue
 		}
 		items = append(items, map[string]any{
-			"id": row.ID, "name": row.Name, "team_count": len(row.ParsedTeamIDs),
+			"id": row.ID, "name": row.Name, "customer_id": row.CustomerID, "team_count": len(row.ParsedTeamIDs),
 			"team_ids":   row.ParsedTeamIDs,
 			"created_at": row.CreatedAt, "updated_at": row.UpdatedAt,
 		})
@@ -92,7 +93,8 @@ func (h *WorkspaceHandler) createBusinessUnit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	var body struct {
-		Name string `json:"name"`
+		Name       string  `json:"name"`
+		CustomerID *string `json:"customer_id"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil || strings.TrimSpace(body.Name) == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "name is required")
@@ -110,8 +112,13 @@ func (h *WorkspaceHandler) createBusinessUnit(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	now := time.Now().UTC()
+	var custID *string
+	if body.CustomerID != nil && strings.TrimSpace(*body.CustomerID) != "" {
+		trimmed := strings.TrimSpace(*body.CustomerID)
+		custID = &trimmed
+	}
 	row := tables.TableBusinessUnit{
-		ID: newEntityID(), Name: strings.TrimSpace(body.Name),
+		ID: newEntityID(), Name: strings.TrimSpace(body.Name), CustomerID: custID,
 		ParsedTeamIDs: []string{}, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := store.CreateBusinessUnit(ctx, &row); err != nil {
@@ -138,7 +145,8 @@ func (h *WorkspaceHandler) updateBusinessUnit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	var body struct {
-		Name string `json:"name"`
+		Name       string  `json:"name"`
+		CustomerID *string `json:"customer_id"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil || strings.TrimSpace(body.Name) == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "name is required")
@@ -155,6 +163,14 @@ func (h *WorkspaceHandler) updateBusinessUnit(ctx *fasthttp.RequestCtx) {
 		}
 	}
 	row.Name = name
+	if body.CustomerID != nil {
+		if strings.TrimSpace(*body.CustomerID) != "" {
+			trimmed := strings.TrimSpace(*body.CustomerID)
+			row.CustomerID = &trimmed
+		} else {
+			row.CustomerID = nil
+		}
+	}
 	row.UpdatedAt = time.Now().UTC()
 	if err := store.UpdateBusinessUnit(ctx, row); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update business unit")
@@ -179,7 +195,7 @@ func (h *WorkspaceHandler) getBusinessUnit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	SendJSON(ctx, map[string]any{
-		"id": row.ID, "name": row.Name, "team_count": len(row.ParsedTeamIDs),
+		"id": row.ID, "name": row.Name, "customer_id": row.CustomerID, "team_count": len(row.ParsedTeamIDs),
 		"team_ids": row.ParsedTeamIDs,
 		"budget":   row.ParsedBudget, "rate_limit": row.ParsedRateLimit,
 		"created_at": row.CreatedAt, "updated_at": row.UpdatedAt,

@@ -12,6 +12,7 @@ import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { getErrorMessage } from "@/lib/store";
 import { useGetCustomersQuery, useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store/apis/governanceApi";
+import { useGetSessionUsersQuery, SessionUser } from "@/lib/store/apis/sessionUsersApi";
 import { RoutingRule } from "@/lib/types/routingRules";
 import { getScopeLabel } from "@/lib/utils/labels";
 import { formatDistanceToNow } from "date-fns";
@@ -52,23 +53,45 @@ function useScopeLookup(scope: string, scopeId?: string): { scopeName?: string; 
 	const { data: vksData, isError: vksFailed, error: vksError } = useGetVirtualKeysQuery(undefined, {
 		skip: scope !== "virtual_key" || !scopeId,
 	});
+	const { data: usersData, isError: usersFailed, error: usersError } = useGetSessionUsersQuery(undefined, {
+		skip: scope !== "user" || !scopeId,
+	});
 
 	const scopeName = useMemo(() => {
 		if (!scopeId) return undefined;
 		if (scopeId === "*") return "All";
-		if (scope === "team") return (teamsData?.teams ?? []).find((t) => t.id === scopeId)?.name;
-		if (scope === "customer") return (customersData?.customers ?? []).find((c) => c.id === scopeId)?.name;
-		if (scope === "virtual_key") return (vksData?.virtual_keys ?? []).find((v) => v.id === scopeId)?.name;
-		return undefined;
-	}, [scope, scopeId, teamsData, customersData, vksData]);
+		const ids = scopeId.split(",").map((s) => s.trim()).filter(Boolean);
+		if (ids.length === 0) return undefined;
+
+		let names: string[] = [];
+		if (scope === "team") {
+			const map = new Map((teamsData?.teams ?? []).map((t) => [t.id, t.name || t.id]));
+			names = ids.map((id) => map.get(id) || id);
+		} else if (scope === "customer") {
+			const map = new Map((customersData?.customers ?? []).map((c) => [c.id, c.name || c.id]));
+			names = ids.map((id) => map.get(id) || id);
+		} else if (scope === "virtual_key") {
+			const map = new Map((vksData?.virtual_keys ?? []).map((v) => [v.id, v.name || v.id]));
+			names = ids.map((id) => map.get(id) || id);
+		} else if (scope === "user") {
+			const usersList: SessionUser[] = usersData ?? [];
+			const map = new Map<string, string>(usersList.map((u: SessionUser) => [u.id, u.username || u.email || u.id]));
+			names = ids.map((id) => map.get(id) || id);
+		}
+
+		if (names.length === 0) return undefined;
+		if (names.length > 2) return `${names.length} ${scope === "virtual_key" ? "keys" : scope + "s"} selected`;
+		return names.join(", ");
+	}, [scope, scopeId, teamsData, customersData, vksData, usersData]);
 
 	const lookupError = useMemo(() => {
 		if (!scopeId) return undefined;
 		if (scope === "team" && teamsFailed) return teamsError;
 		if (scope === "customer" && customersFailed) return customersError;
 		if (scope === "virtual_key" && vksFailed) return vksError;
+		if (scope === "user" && usersFailed) return usersError;
 		return undefined;
-	}, [scope, scopeId, teamsFailed, teamsError, customersFailed, customersError, vksFailed, vksError]);
+	}, [scope, scopeId, teamsFailed, teamsError, customersFailed, customersError, vksFailed, vksError, usersFailed, usersError]);
 
 	return { scopeName, lookupError };
 }

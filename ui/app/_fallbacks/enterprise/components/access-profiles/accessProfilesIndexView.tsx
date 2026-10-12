@@ -19,10 +19,11 @@ import {
 	useUpdateAccessProfileMutation,
 } from "@enterprise/lib/store/apis/accessProfileApi";
 import { AccessProfile } from "@enterprise/lib/types/workspace";
-import { Copy, IdCard, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, IdCard, Pencil, Plus, Trash2, Key, Server, Cpu } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
+import { MultiItemScrollPopover } from "@/components/ui/multiItemScrollPopover";
 
 type ProfileFormState = {
 	name: string;
@@ -431,6 +432,7 @@ export default function AccessProfilesIndexView() {
 			) : (
 				<TableView
 					profiles={profiles}
+					virtualKeys={virtualKeys}
 					onEdit={openEdit}
 					onToggle={async (profile) => {
 						try {
@@ -506,12 +508,14 @@ export default function AccessProfilesIndexView() {
 
 function TableView({
 	profiles,
+	virtualKeys = [],
 	onEdit,
 	onToggle,
 	onClone,
 	onDelete,
 }: {
 	profiles: AccessProfile[];
+	virtualKeys?: Array<{ id: string; name?: string }>;
 	onEdit: (profile: AccessProfile) => void;
 	onToggle: (profile: AccessProfile) => void;
 	onClone: (id: number) => void;
@@ -520,6 +524,14 @@ function TableView({
 	const [offset, setOffset] = useState(0);
 	const [limit, setLimit] = useState(10);
 	const pagedProfiles = useMemo(() => profiles.slice(offset, offset + limit), [profiles, offset, limit]);
+
+	const vkNameById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const vk of virtualKeys) {
+			map.set(vk.id, vk.name || vk.id);
+		}
+		return map;
+	}, [virtualKeys]);
 
 	return (
 		<div className="rounded-md border">
@@ -542,17 +554,37 @@ function TableView({
 								<div className="font-medium">{profile.name}</div>
 								<div className="text-muted-foreground text-xs">{profile.description}</div>
 							</TableCell>
-							<TableCell className="text-xs">{profile.provider_configs?.map((cfg) => cfg.provider_name).join(", ") || "—"}</TableCell>
 							<TableCell className="text-xs">
-								{profile.mcp_servers?.length
-									? profile.mcp_servers
-											.map((s) => String(s.mcp_client_name || s.name || ""))
-											.filter(Boolean)
-											.join(", ") || `${profile.mcp_servers.length} server(s)`
-									: "—"}
+								<MultiItemScrollPopover
+									items={(profile.provider_configs || []).map((cfg) => cfg.provider_name).filter(Boolean)}
+									pluralLabel="Providers"
+									emptyText="—"
+									popoverTitle="Configured Providers"
+									icon={<Cpu className="h-3 w-3 text-muted-foreground shrink-0" />}
+								/>
 							</TableCell>
 							<TableCell className="text-xs">
-								{profile.virtual_key_ids?.length ? `${profile.virtual_key_ids.length} key(s)` : "—"}
+								<MultiItemScrollPopover
+									items={(profile.mcp_servers || [])
+										.map((s) => String(s.mcp_client_name || s.name || ""))
+										.filter(Boolean)}
+									pluralLabel="MCP Servers"
+									emptyText="—"
+									popoverTitle="MCP Servers"
+									icon={<Server className="h-3 w-3 text-muted-foreground shrink-0" />}
+								/>
+							</TableCell>
+							<TableCell className="text-xs">
+								<MultiItemScrollPopover
+									items={(profile.virtual_key_ids || []).map((id) => ({
+										id,
+										label: vkNameById.get(id) || id,
+									}))}
+									pluralLabel="Virtual Keys"
+									emptyText="—"
+									popoverTitle="Associated Virtual Keys"
+									icon={<Key className="h-3 w-3 text-muted-foreground shrink-0" />}
+								/>
 							</TableCell>
 							<TableCell>
 								<Switch checked={profile.is_active} onCheckedChange={() => onToggle(profile)} />

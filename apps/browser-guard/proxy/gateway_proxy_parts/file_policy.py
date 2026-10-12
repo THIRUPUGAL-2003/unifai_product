@@ -700,28 +700,26 @@ def enforce_file_send_policy(
         if _is_real_user_upload_name(n)
     ]
     if send_real_names:
-        # Strict multi-file alignment: user attached these EXACT files in this Send.
-        # Match each cached entry to send_real_names, and discard all unrelated/stale files!
-        send_names_lower = {s.lower(): s for s in send_real_names}
+        # Multi-file alignment: match cached entries to send_real_names without dropping duplicate
+        # filenames or sibling uploads from the same burst.
+        avail_names = list(send_real_names)
         matched: list[dict] = []
-        used: set[str] = set()
-        for e in cached_list:
-            cur = (e.get("file_name") or "").strip()
-            if cur.lower() in send_names_lower and cur.lower() not in used:
-                e["file_name"] = send_names_lower[cur.lower()]
+        for e in list(cached_list):
+            cur = (e.get("file_name") or "").strip().lower()
+            idx = next((i for i, n in enumerate(avail_names) if n.lower() == cur), -1)
+            if idx >= 0:
+                e["file_name"] = avail_names.pop(idx)
                 matched.append(e)
-                used.add(cur.lower())
-        leftover = [n for n in send_real_names if n.lower() not in used]
         remaining = [e for e in cached_list if e not in matched]
         remaining.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
-        for e in remaining:
-            if not leftover:
+        for e in list(remaining):
+            if not avail_names:
                 break
-            n = leftover.pop(0)
+            n = avail_names.pop(0)
             e["file_name"] = n
             matched.append(e)
-            used.add(n.lower())
-        for n in leftover:
+            remaining.remove(e)
+        for n in avail_names:
             matched.append({
                 "file_name": n,
                 "content_type": content_type or "application/octet-stream",
@@ -729,6 +727,15 @@ def enforce_file_send_policy(
                 "ts": time.time(),
                 "cache_uid": f"send-name|{time.time():.6f}|{n}",
             })
+        # If ChatGPT wire payload listed fewer names than files uploaded in this burst,
+        # never discard the real uploaded siblings.
+        if remaining:
+            newest_ts = max((float(e.get("ts") or 0) for e in matched), default=time.time())
+            for e in remaining:
+                raw_b = e.get("raw_bytes") or b""
+                if (isinstance(raw_b, (bytes, bytearray)) and len(raw_b) >= 32) or _is_real_user_upload_name((e.get("file_name") or "").strip()):
+                    if abs(newest_ts - float(e.get("ts") or 0)) <= 180.0:
+                        matched.append(e)
         cached_list = matched
     elif expected_n > 0 and len(cached_list) > expected_n:
         cached_list = sorted(cached_list, key=lambda x: float(x.get("ts") or 0), reverse=True)[:expected_n]

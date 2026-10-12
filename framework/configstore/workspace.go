@@ -231,30 +231,38 @@ func (s *RDBConfigStore) EnsureRBACRoles(ctx context.Context) error {
 			readIDs = append(readIDs, perm.ID)
 		}
 
-		// Sub-Admin permissions:
+		// Sub-Admin permissions (full control over workspace feature resources enabled via allowed_sections):
 		switch perm.Resource {
-		case "Dashboard", "Inference", "Observability", "MCPLogs", "RoutingRules", "Metrics":
+		case "Dashboard", "Inference", "Observability", "MCPLogs", "Metrics":
 			if perm.Operation == "View" || perm.Operation == "Read" {
 				subAdminIDs = append(subAdminIDs, perm.ID)
 			}
 		case "Logs":
 			// Browser AI (rules import, targets, agents, controls) is RBAC-gated as Logs.
 			// Sub-admins need write ops so Guard Rules Import / CRUD works end-to-end.
-			if perm.Operation == "View" || perm.Operation == "Read" ||
-				perm.Operation == "Create" || perm.Operation == "Update" ||
-				perm.Operation == "Delete" || perm.Operation == "Download" {
-				subAdminIDs = append(subAdminIDs, perm.ID)
-			}
-		case "VirtualKeys", "PromptRepository":
-			// Full control over virtual keys and prompts
 			subAdminIDs = append(subAdminIDs, perm.ID)
-		case "Governance":
-			// Can view and update budgets/rate limits
-			if perm.Operation == "View" || perm.Operation == "Read" || perm.Operation == "Update" {
+		case "VirtualKeys", "PromptRepository", "SkillsRepository", "PromptDeploymentStrategy", "AccessProfiles":
+			// Full control over virtual keys, prompts, skills, deployments, and access profiles
+			subAdminIDs = append(subAdminIDs, perm.ID)
+		case "Governance", "Teams", "Customers":
+			// Full control over governance entities: budgets, teams, customers
+			subAdminIDs = append(subAdminIDs, perm.ID)
+		case "GuardrailsConfig", "GuardrailsProviders", "GuardrailRules":
+			// Full control over guardrail rules and providers
+			subAdminIDs = append(subAdminIDs, perm.ID)
+		case "RoutingRules", "CircuitBreaker", "AdaptiveRouter":
+			// Full control over model routing and circuit breakers
+			subAdminIDs = append(subAdminIDs, perm.ID)
+		case "MCPGateway", "MCPToolGroups":
+			// Full control over MCP gateway and tool groups
+			subAdminIDs = append(subAdminIDs, perm.ID)
+		case "Users":
+			// Can view, read, create, and update workspace users
+			if perm.Operation == "View" || perm.Operation == "Read" || perm.Operation == "Create" || perm.Operation == "Update" {
 				subAdminIDs = append(subAdminIDs, perm.ID)
 			}
-		case "MCPGateway", "MCPToolGroups":
-			if perm.Operation == "View" || perm.Operation == "Read" || perm.Operation == "Create" || perm.Operation == "Update" {
+		case "AuditLogs":
+			if perm.Operation == "View" || perm.Operation == "Read" || perm.Operation == "Download" {
 				subAdminIDs = append(subAdminIDs, perm.ID)
 			}
 		case "ModelProvider":
@@ -819,7 +827,12 @@ func (s *RDBConfigStore) AddTeamMember(ctx context.Context, teamID, userID strin
 	var existing tables.TableTeamMember
 	err := s.DB().WithContext(ctx).Where("team_id = ? AND user_id = ?", teamID, userID).First(&existing).Error
 	if err == nil {
-		return nil // already a member
+		return nil // already a member of this team
+	}
+	// Strict Rule: A user can belong to only ONE team across the entire organization.
+	var other tables.TableTeamMember
+	if err := s.DB().WithContext(ctx).Where("user_id = ? AND team_id <> ?", userID, teamID).First(&other).Error; err == nil {
+		return fmt.Errorf("user %s is already assigned to team %s; a user can belong to only one team", userID, other.TeamID)
 	}
 	return s.DB().WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&tables.TableTeamMember{
 		TeamID:    teamID,

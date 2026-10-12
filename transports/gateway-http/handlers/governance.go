@@ -949,10 +949,9 @@ func (h *GovernanceHandler) hydrateVKGovernance(ctx context.Context, vk *configs
 	populateVKEntityIDs(vk)
 }
 
-// validateVKEntityAssignment rejects unknown team/customer IDs, and teams whose customer is
-// not among the key's customers (billing would charge the team under a foreign customer).
+// validateVKEntityAssignment verifies that referenced customer and team IDs exist.
+// Shared teams and multi-customer teams are supported so that teams can serve multiple clients.
 func (h *GovernanceHandler) validateVKEntityAssignment(ctx context.Context, teamIDs, customerIDs []string) error {
-	customerSet := make(map[string]bool, len(customerIDs))
 	for _, id := range customerIDs {
 		if _, err := h.configStore.GetCustomer(ctx, id); err != nil {
 			if errors.Is(err, configstore.ErrNotFound) {
@@ -960,18 +959,13 @@ func (h *GovernanceHandler) validateVKEntityAssignment(ctx context.Context, team
 			}
 			return err
 		}
-		customerSet[id] = true
 	}
 	for _, id := range teamIDs {
-		team, err := h.configStore.GetTeam(ctx, id)
-		if err != nil {
+		if _, err := h.configStore.GetTeam(ctx, id); err != nil {
 			if errors.Is(err, configstore.ErrNotFound) {
 				return &badRequestError{err: fmt.Errorf("team %s not found", id)}
 			}
 			return err
-		}
-		if len(customerSet) > 0 && (team.CustomerID == nil || !customerSet[*team.CustomerID]) {
-			return &badRequestError{err: fmt.Errorf("team %q does not belong to any of the selected customers", team.Name)}
 		}
 	}
 	return nil

@@ -1,7 +1,8 @@
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import React, { useEffect, useMemo, useState } from "react";
-import { Plus, Trash, Edit, ShieldAlert, Key } from "lucide-react";
+import { Plus, Trash, Edit, ShieldAlert, Key, FileText } from "lucide-react";
 import { toast } from "sonner";
+import { MultiItemScrollPopover } from "@/components/ui/multiItemScrollPopover";
 import {
 	useGetGuardrailsConfigQuery,
 	useUpdateGuardrailRulesMutation,
@@ -303,27 +304,70 @@ export default function GuardrailsConfigurationView() {
 									<TableCell className="font-medium">{rule.name}</TableCell>
 									<TableCell>{rule.description}</TableCell>
 									<TableCell className="capitalize">{rule.apply_to}</TableCell>
-									<TableCell>{formatLinkedProviders(rule, providers)}</TableCell>
-									<TableCell className="max-w-[200px]">
-										{rule.virtual_key_ids && rule.virtual_key_ids.length > 0 ? (
-											<div className="flex flex-wrap gap-1">
-												{rule.virtual_key_ids.map((vkId) => (
-													<Badge
-														key={vkId}
-														variant="secondary"
-														className="text-[11px] font-normal py-0 px-1.5 flex items-center gap-1"
-													>
-														<Key className="h-3 w-3 text-muted-foreground shrink-0" />
-														<span className="truncate max-w-[120px]">{virtualKeyNameById.get(vkId) || vkId}</span>
-													</Badge>
-												))}
-											</div>
-										) : (
-											<span className="text-muted-foreground text-xs italic">All Keys</span>
-										)}
+									<TableCell>
+										{(() => {
+											const linkedProviders = (rule.provider_config_ids || [])
+												.map((id) => providers.find((p) => p.id === id))
+												.filter((p): p is (typeof providers)[number] => p != null)
+												.map((p) => ({
+													id: p.id,
+													label: p.policy_name,
+												}));
+											return (
+												<MultiItemScrollPopover
+													items={linkedProviders}
+													pluralLabel="Providers"
+													emptyText="None"
+													popoverTitle="Configured Providers"
+													icon={<ShieldAlert className="h-3 w-3 text-muted-foreground shrink-0" />}
+												/>
+											);
+										})()}
 									</TableCell>
-									<TableCell className="max-w-[280px] truncate text-xs">
-										{formatRuleTriggerSummary(rule.cel_expression, promptNameById)}
+									<TableCell className="max-w-[200px]">
+										{(() => {
+											const linkedVks = (rule.virtual_key_ids || []).map((vkId) => ({
+												id: vkId,
+												label: virtualKeyNameById.get(vkId) || vkId,
+											}));
+											return (
+												<MultiItemScrollPopover
+													items={linkedVks}
+													pluralLabel="Virtual Keys"
+													emptyText="All Keys"
+													popoverTitle="Associated Virtual Keys"
+													icon={<Key className="h-3 w-3 text-muted-foreground shrink-0" />}
+												/>
+											);
+										})()}
+									</TableCell>
+									<TableCell className="max-w-[280px]">
+										{(() => {
+											const parsed = parseCelPromptSelection(rule.cel_expression || "");
+											if (parsed.scope === "all") {
+												return <span className="text-xs">All requests</span>;
+											}
+											if (parsed.scope === "prompts") {
+												const linkedPrompts = parsed.promptIds.map((id) => ({
+													id,
+													label: promptNameById.get(id) || id,
+												}));
+												return (
+													<MultiItemScrollPopover
+														items={linkedPrompts}
+														pluralLabel="Prompts"
+														emptyText="Selected prompts"
+														popoverTitle="Linked Prompts"
+														icon={<FileText className="h-3 w-3 text-muted-foreground shrink-0" />}
+													/>
+												);
+											}
+											return (
+												<span className="max-w-[260px] truncate text-xs font-mono block" title={rule.cel_expression}>
+													{rule.cel_expression || "Custom expression"}
+												</span>
+											);
+										})()}
 									</TableCell>
 									<TableCell className="text-right">
 										<Button

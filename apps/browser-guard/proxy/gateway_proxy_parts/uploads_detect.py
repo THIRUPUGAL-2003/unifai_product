@@ -1511,7 +1511,7 @@ def _dedupe_cached_uploads_by_bytes(cached_list: list[dict]) -> list[dict]:
     return no_fp or cached_list
 
 
-_UPLOAD_BURST_WINDOW = 60.0   # files of ONE Send are uploaded within this many seconds
+_UPLOAD_BURST_WINDOW = 180.0  # files of ONE Send are uploaded within this many seconds (supports 10+ files)
 _UPLOAD_SEND_MAX_FILES = 128   # one Send may attach 100+ files; do not drop the rest
 
 
@@ -3580,7 +3580,7 @@ def take_all_cached_uploads_for_send(
                     entry = _UPLOAD_FILE_CACHE.pop(key)
                     add_entry(entry)
                     _remove_cache_keys_for_entry(entry, aliases)
-        if allow_latest and not found:
+        if allow_latest:
             now = time.time()
             for alias in aliases:
                 qkey = _upload_queue_key(alias)
@@ -3594,10 +3594,11 @@ def take_all_cached_uploads_for_send(
                         e for e in _UPLOAD_FILE_QUEUES[qkey]
                         if e.get("cache_uid") not in seen_uids
                     ]
-                latest = _UPLOAD_FILE_CACHE.get(f"{alias}|latest")
-                if latest and (now - float(latest.get("ts") or 0)) <= _UPLOAD_LATEST_MATCH_TTL:
-                    add_entry(latest)
-                    _remove_cache_keys_for_entry(latest, aliases)
+                if not found:
+                    latest = _UPLOAD_FILE_CACHE.get(f"{alias}|latest")
+                    if latest and (now - float(latest.get("ts") or 0)) <= _UPLOAD_LATEST_MATCH_TTL:
+                        add_entry(latest)
+                        _remove_cache_keys_for_entry(latest, aliases)
     return _dedupe_cached_uploads_by_bytes(found)
 
 

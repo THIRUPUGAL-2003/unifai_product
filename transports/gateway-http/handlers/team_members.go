@@ -106,17 +106,20 @@ func (h *GovernanceHandler) addTeamMember(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusNotFound, "user not found")
 		return
 	}
-	if team.CustomerID != nil && *team.CustomerID != "" {
-		other, err := h.conflictingCustomerTeam(ctx, ws, body.UserID, *team.CustomerID, teamID)
-		if err != nil {
-			SendError(ctx, fasthttp.StatusInternalServerError, "failed to check the user's teams")
-			return
-		}
-		if other != "" {
-			SendError(ctx, fasthttp.StatusConflict, fmt.Sprintf(
-				"This user is already in team %q under the same customer. A user can be in only one team per customer, so budgets are charged to one team — remove them from %q first.",
-				other, other))
-			return
+	// Strict Rule: A user can belong to only ONE team across the organization.
+	existingTeams, err := ws.ListTeamsForUser(ctx, body.UserID)
+	if err == nil && len(existingTeams) > 0 {
+		for _, tm := range existingTeams {
+			if tm.TeamID != "" && tm.TeamID != teamID {
+				otherName := tm.TeamID
+				if otherTeam, err := h.configStore.GetTeam(ctx, tm.TeamID); err == nil && otherTeam != nil {
+					otherName = otherTeam.Name
+				}
+				SendError(ctx, fasthttp.StatusConflict, fmt.Sprintf(
+					"This user is already a member of team %q. A user can belong to only one team — remove them from %q first.",
+					otherName, otherName))
+				return
+			}
 		}
 	}
 	if err := ws.AddTeamMember(ctx, teamID, body.UserID); err != nil {

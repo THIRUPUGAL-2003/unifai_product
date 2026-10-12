@@ -117,17 +117,17 @@ func sessionSectionsAllow(ctx context.Context, store configstore.ConfigStore, ro
 	if r == "" {
 		return true
 	}
-	if r == "admin" {
-		return true
-	}
 	if username == "" {
-		return false
+		return r == "admin"
 	}
 	user, err := store.GetUserByUsername(ctx, username)
 	if err != nil || user == nil {
-		return false
+		return r == "admin"
 	}
 	granted := effectiveAllowedSections(ctx, store, user)
+	if r == "admin" && strings.TrimSpace(granted) == "" {
+		return true
+	}
 	// Empty grants: prompt-repository only (matches UI workspaceAccess for role=user).
 	if strings.TrimSpace(granted) == "" && r == "user" {
 		granted = "prompt-repository"
