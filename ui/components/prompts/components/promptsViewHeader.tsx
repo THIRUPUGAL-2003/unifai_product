@@ -28,6 +28,7 @@ export default function PromptsViewHeader() {
 		setCommitSheet,
 		setDeletePromptDialog,
 		setPromptAccessDialog,
+		virtualKeyId,
 		apiKeyId,
 		skillId,
 		modelParams,
@@ -132,9 +133,12 @@ export default function PromptsViewHeader() {
 		[setUrlState],
 	);
 
-	// Build model_params with api_key_id for persistence
+	// Build model_params with virtual_key_id and api_key_id for persistence
 	const buildSaveParams = useCallback((): ModelParams => {
 		const params = { ...modelParams };
+		if (virtualKeyId && virtualKeyId !== "__auto__") {
+			params.virtual_key_id = virtualKeyId;
+		}
 		if (apiKeyId && apiKeyId !== "__auto__") {
 			params.api_key_id = apiKeyId;
 		}
@@ -142,7 +146,7 @@ export default function PromptsViewHeader() {
 			params.skill_id = skillId.trim();
 		}
 		return params;
-	}, [modelParams, apiKeyId, skillId]);
+	}, [modelParams, virtualKeyId, apiKeyId, skillId]);
 
 	const handleSaveSession = useCallback(async () => {
 		if (!selectedPrompt || !hasChanges || isStreaming) return;

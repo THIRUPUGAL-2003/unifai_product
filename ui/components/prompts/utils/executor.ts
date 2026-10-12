@@ -8,6 +8,7 @@ export interface ExecutionConfig {
 	model: string;
 	modelParams: ModelParams;
 	apiKeyId: string;
+	virtualKeyId?: string;
 	variables?: VariableMap;
 	customHeaders?: Record<string, string>;
 	/** Optional Skills Repository body injected as a system message for this run. */
@@ -24,14 +25,17 @@ function getBaseUrl() {
 	return "";
 }
 
-function buildHeaders(config: Pick<ExecutionConfig, "apiKeyId" | "customHeaders" | "skillId" | "promptId">): Record<string, string> {
+function buildHeaders(config: Pick<ExecutionConfig, "apiKeyId" | "virtualKeyId" | "customHeaders" | "skillId" | "promptId">): Record<string, string> {
 	const headers: Record<string, string> = { "Content-Type": "application/json" };
-	if (config.apiKeyId && config.apiKeyId !== "__auto__") {
-		if (config.apiKeyId.startsWith("sk-uf-")) {
-			headers["Authorization"] = `Bearer ${config.apiKeyId}`;
-		} else {
-			headers["x-uf-api-key-id"] = config.apiKeyId;
+	if (config.virtualKeyId && config.virtualKeyId !== "__auto__") {
+		if (config.virtualKeyId.startsWith("sk-uf-")) {
+			headers["Authorization"] = `Bearer ${config.virtualKeyId}`;
 		}
+	} else if (config.apiKeyId && config.apiKeyId.startsWith("sk-uf-")) {
+		headers["Authorization"] = `Bearer ${config.apiKeyId}`;
+	}
+	if (config.apiKeyId && !config.apiKeyId.startsWith("sk-uf-") && config.apiKeyId !== "__auto__") {
+		headers["x-uf-api-key-id"] = config.apiKeyId;
 	}
 	// Playground always opts into MCP tool injection so it still works when
 	// MCP Settings has "disable auto tool inject" enabled. Virtual-key grants
@@ -383,7 +387,7 @@ export class MCPAuthRequiredError extends Error {
 	}
 }
 
-export async function executeToolCall(toolCall: ToolCall, config: Pick<ExecutionConfig, "apiKeyId" | "customHeaders">): Promise<string> {
+export async function executeToolCall(toolCall: ToolCall, config: Pick<ExecutionConfig, "apiKeyId" | "virtualKeyId" | "customHeaders">): Promise<string> {
 	const headers = buildHeaders(config);
 
 	const response = await fetch(`${getBaseUrl()}/v1/mcp/tool/execute`, {

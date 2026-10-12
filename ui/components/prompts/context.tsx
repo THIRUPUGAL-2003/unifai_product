@@ -66,6 +66,8 @@ interface PromptContextValue {
 	setModel: React.Dispatch<React.SetStateAction<string>>;
 	modelParams: ModelParams;
 	setModelParams: React.Dispatch<React.SetStateAction<ModelParams>>;
+	virtualKeyId: string;
+	setVirtualKeyId: React.Dispatch<React.SetStateAction<string>>;
 	apiKeyId: string;
 	setApiKeyId: React.Dispatch<React.SetStateAction<string>>;
 	/** Optional Skills Repository skill id for playground injection */
@@ -291,6 +293,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const [provider, setProvider] = useState("");
 	const [model, setModel] = useState("");
 	const [modelParams, setModelParams] = useState<ModelParams>({ stream: true, temperature: 0.7, max_tokens: 4096 });
+	const [virtualKeyId, setVirtualKeyId] = useState("__auto__");
 	const [apiKeyId, setApiKeyId] = useState("__auto__");
 	const [skillId, setSkillId] = useState("");
 	const [isStreaming, setIsStreaming] = useState(false);
@@ -304,10 +307,10 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		if (!isUserRole || !assignedMemberVkValue) return;
-		if (apiKeyId === "__auto__" || !String(apiKeyId).startsWith("sk-uf-")) {
-			setApiKeyId(assignedMemberVkValue);
+		if (virtualKeyId === "__auto__" || !String(virtualKeyId).startsWith("sk-uf-")) {
+			setVirtualKeyId(assignedMemberVkValue);
 		}
-	}, [isUserRole, assignedMemberVkValue, apiKeyId]);
+	}, [isUserRole, assignedMemberVkValue, virtualKeyId]);
 
 	const { data: skillData } = useGetSkillQuery(skillId, { skip: !skillId });
 	const skillSystemPrompt = skillData?.skill?.skill_md_body?.trim() || "";
@@ -424,14 +427,21 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					: "empty";
 
 		const loadFromParams = (params: ModelParams, prov: string, mod: string) => {
-			const { api_key_id, skill_id, ...rest } = params || ({} as ModelParams);
+			const { api_key_id, virtual_key_id, skill_id, ...rest } = params || ({} as ModelParams);
 			setModelParams({
 				stream: true,
 				temperature: typeof rest.temperature === "number" ? rest.temperature : 0.7,
 				max_tokens: typeof rest.max_tokens === "number" ? rest.max_tokens : 4096,
 				...rest,
 			});
-			setApiKeyId(api_key_id || "__auto__");
+			let resolvedVk = virtual_key_id || "";
+			let resolvedApi = api_key_id || "";
+			if (!resolvedVk && resolvedApi && resolvedApi.startsWith("sk-uf-")) {
+				resolvedVk = resolvedApi;
+				resolvedApi = "__auto__";
+			}
+			setVirtualKeyId(resolvedVk || "__auto__");
+			setApiKeyId(resolvedApi || "__auto__");
 			setSkillId(typeof skill_id === "string" ? skill_id : "");
 			setProvider(prov || "");
 			setModel(mod || "");
@@ -493,6 +503,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			setProvider("");
 			setModel("");
 			setModelParams({ stream: true, temperature: 0.7, max_tokens: 4096 });
+			setVirtualKeyId("__auto__");
 			setApiKeyId("__auto__");
 			setSkillId("");
 			loadedPlaygroundKeyRef.current = playgroundKey;
@@ -548,9 +559,13 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			if (provider !== refProvider) return true;
 			if (model !== refModel) return true;
 
-			const { api_key_id: refApiKeyId, skill_id: refSkillId, ...refParamsRest } = refParams || ({} as ModelParams);
+			const { api_key_id: refApiKeyId, virtual_key_id: refVkId, skill_id: refSkillId, ...refParamsRest } = refParams || ({} as ModelParams);
+			const currentVkId = virtualKeyId !== "__auto__" ? virtualKeyId : undefined;
 			const currentApiKeyId = apiKeyId !== "__auto__" ? apiKeyId : undefined;
-			if (currentApiKeyId !== (refApiKeyId || undefined)) return true;
+			const expectedRefVk = refVkId || (refApiKeyId?.startsWith("sk-uf-") ? refApiKeyId : undefined);
+			const expectedRefApiKey = !refApiKeyId?.startsWith("sk-uf-") ? refApiKeyId : undefined;
+			if (currentVkId !== (expectedRefVk || undefined)) return true;
+			if (currentApiKeyId !== (expectedRefApiKey || undefined)) return true;
 			if ((skillId || undefined) !== (refSkillId || undefined)) return true;
 
 			// Normalize: treat missing stream/temperature/max_tokens as defaults so legacy params don't appear changed
@@ -576,7 +591,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 			return false;
 		},
-		[provider, model, modelParams, apiKeyId, skillId, messages],
+		[provider, model, modelParams, virtualKeyId, apiKeyId, skillId, messages],
 	);
 
 	// Diff detection — compare current playground state against the loaded session/version
@@ -698,6 +713,9 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	// Persist playground chat to DB for every login (admin + user), keyed by user_id on the server.
 	const buildPersistParams = useCallback((): ModelParams => {
 		const params = { ...modelParams };
+		if (virtualKeyId && virtualKeyId !== "__auto__") {
+			params.virtual_key_id = virtualKeyId;
+		}
 		if (apiKeyId && apiKeyId !== "__auto__") {
 			params.api_key_id = apiKeyId;
 		}
@@ -705,7 +723,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			params.skill_id = skillId.trim();
 		}
 		return params;
-	}, [modelParams, apiKeyId, skillId]);
+	}, [modelParams, virtualKeyId, apiKeyId, skillId]);
 
 	const persistPlaygroundSession = useCallback(
 		async (finalMessages: Message[]) => {
@@ -750,6 +768,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 			let execProvider = provider;
 			let execModel = model;
+			let execVkId = virtualKeyId;
 			let execApiKeyId = apiKeyId;
 			const committed = selectedPrompt?.latest_version;
 			if (!execProvider || !execModel) {
@@ -757,10 +776,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				execModel = committed?.model || execModel;
 			}
 			if (isUserRole) {
-				if (!String(execApiKeyId).startsWith("sk-uf-") && assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
-				// No assigned VK: run with Auto (server provider keys), same as admin Auto.
-				if (!execApiKeyId) {
-					execApiKeyId = "__auto__";
+				if (!String(execVkId).startsWith("sk-uf-") && assignedMemberVkValue) {
+					execVkId = assignedMemberVkValue;
+				}
+				if (!execVkId) {
+					execVkId = "__auto__";
 				}
 			}
 			if (!execProvider || !execModel) {
@@ -781,6 +801,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					model: execModel,
 					modelParams,
 					apiKeyId: execApiKeyId,
+					virtualKeyId: execVkId,
 					variables,
 					customHeaders,
 					skillSystemPrompt,
@@ -883,6 +904,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			// Execute with the updated messages
 			let execProvider = provider;
 			let execModel = model;
+			let execVkId = virtualKeyId;
 			let execApiKeyId = apiKeyId;
 			const committed = selectedPrompt?.latest_version;
 			if (!execProvider || !execModel) {
@@ -890,9 +912,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				execModel = committed?.model || execModel;
 			}
 			if (isUserRole) {
-				if (!String(execApiKeyId).startsWith("sk-uf-") && assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
-				if (!execApiKeyId) {
-					execApiKeyId = "__auto__";
+				if (!String(execVkId).startsWith("sk-uf-") && assignedMemberVkValue) {
+					execVkId = assignedMemberVkValue;
+				}
+				if (!execVkId) {
+					execVkId = "__auto__";
 				}
 			}
 			if (!execProvider || !execModel) {
@@ -912,6 +936,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					model: execModel,
 					modelParams,
 					apiKeyId: execApiKeyId,
+					virtualKeyId: execVkId,
 					variables,
 					customHeaders,
 					skillSystemPrompt,
@@ -965,13 +990,13 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				abortController.signal,
 			);
 		},
-		[messages, provider, model, modelParams, apiKeyId, variables, customHeaders, skillSystemPrompt, skillId, selectedPromptId, selectedPrompt, isUserRole, assignedMemberVkValue, persistPlaygroundSession],
+		[messages, provider, model, modelParams, virtualKeyId, apiKeyId, variables, customHeaders, skillSystemPrompt, skillId, selectedPromptId, selectedPrompt, isUserRole, assignedMemberVkValue, persistPlaygroundSession],
 	);
 
 	const handleExecuteToolCall = useCallback(
 		async (afterIndex: number, toolCall: ToolCall) => {
 			try {
-				const content = await executeToolCall(toolCall, { apiKeyId, customHeaders });
+				const content = await executeToolCall(toolCall, { apiKeyId, virtualKeyId, customHeaders });
 				await handleSubmitToolResult(afterIndex, toolCall.id, content);
 			} catch (err) {
 				if (err instanceof MCPAuthRequiredError) throw err;
@@ -980,7 +1005,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				});
 			}
 		},
-		[apiKeyId, customHeaders, handleSubmitToolResult],
+		[apiKeyId, virtualKeyId, customHeaders, handleSubmitToolResult],
 	);
 
 	const handleSubmitAllToolResults = useCallback(
@@ -1014,6 +1039,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 			let execProvider = provider;
 			let execModel = model;
+			let execVkId = virtualKeyId;
 			let execApiKeyId = apiKeyId;
 			const committed = selectedPrompt?.latest_version;
 			if (!execProvider || !execModel) {
@@ -1021,9 +1047,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				execModel = committed?.model || execModel;
 			}
 			if (isUserRole) {
-				if (!String(execApiKeyId).startsWith("sk-uf-") && assignedMemberVkValue) execApiKeyId = assignedMemberVkValue;
-				if (!execApiKeyId) {
-					execApiKeyId = "__auto__";
+				if (!String(execVkId).startsWith("sk-uf-") && assignedMemberVkValue) {
+					execVkId = assignedMemberVkValue;
+				}
+				if (!execVkId) {
+					execVkId = "__auto__";
 				}
 			}
 			if (!execProvider || !execModel) {
@@ -1044,6 +1072,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					model: execModel,
 					modelParams,
 					apiKeyId: execApiKeyId,
+					virtualKeyId: execVkId,
 					variables,
 					customHeaders,
 					skillSystemPrompt,
@@ -1183,6 +1212,8 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		setModel,
 		modelParams,
 		setModelParams,
+		virtualKeyId,
+		setVirtualKeyId,
 		apiKeyId,
 		setApiKeyId,
 		skillId,

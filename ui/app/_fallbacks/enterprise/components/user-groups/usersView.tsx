@@ -89,9 +89,9 @@ function IndeterminateCheckbox({
 	);
 }
 
-// Server-side: admin/sub_admin see every prompt; all other roles are filtered by allowed_prompt_repos.
+// Server-side: admin sees every prompt; sub_admin and user can have scoped virtual keys and prompt repos.
 function isWorkspaceAdminRole(role: string): boolean {
-	return role === "admin" || role === "sub_admin";
+	return role === "admin";
 }
 
 // Section grants apply to all roles (user, sub_admin, admin)
@@ -101,6 +101,10 @@ function sectionGrantsApply(_role: string): boolean {
 
 function isUserRole(role: string): boolean {
 	return role === "user";
+}
+
+function canAssignTeamAndKey(role: string): boolean {
+	return role !== "admin";
 }
 
 function UserTeamCell({ userId }: { userId: string }) {
@@ -380,7 +384,7 @@ export default function UsersView() {
 	};
 
 	const teamPicker =
-		isUserRole(role) ? (
+		canAssignTeamAndKey(role) ? (
 			<div className="space-y-2">
 				<label className="text-muted-foreground text-sm font-medium">Team</label>
 				<p className="text-muted-foreground text-xs">
@@ -406,7 +410,7 @@ export default function UsersView() {
 		) : null;
 
 	const virtualKeyPicker =
-		isUserRole(role) ? (
+		canAssignTeamAndKey(role) ? (
 			<div className="space-y-2">
 				<label className="text-muted-foreground text-sm font-medium">
 					{inheritedVirtualKeys.length > 0 ? "Direct Virtual Key (optional)" : "Virtual Key (required for Prompt Repository chat)"}
@@ -561,7 +565,7 @@ export default function UsersView() {
 		) : null;
 
 	const promptReposPicker =
-		isUserRole(role) ? (
+		canAssignTeamAndKey(role) ? (
 			<div className="space-y-2">
 				<label className="text-muted-foreground text-sm font-medium">Allowed Prompt Repositories (Optional)</label>
 				<p className="text-muted-foreground text-xs">
@@ -628,9 +632,9 @@ export default function UsersView() {
 		username,
 		email: email.trim() || undefined,
 		role,
-		budget: isUserRole(role) ? budget : 0,
-		rate_limit: isUserRole(role) ? rateLimit : 0,
-		allowed_prompt_repos: isUserRole(role) ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
+		budget: canAssignTeamAndKey(role) ? budget : 0,
+		rate_limit: canAssignTeamAndKey(role) ? rateLimit : 0,
+		allowed_prompt_repos: canAssignTeamAndKey(role) ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
 		allowed_sections: role === "admin" ? "" : (sectionGrantsApply(role) ? allowedSectionsToString(allowedSections) : ""),
 		auto_create_prompt: isUserRole(role) ? autoCreatePrompt : false,
 	});
@@ -654,7 +658,7 @@ export default function UsersView() {
 		try {
 			// The server generates a temporary password, emails it, and forces a change on first login.
 			const created = await createUser(userPayload()).unwrap();
-			if (created?.id && isUserRole(role)) {
+			if (created?.id && canAssignTeamAndKey(role)) {
 				try {
 					await syncUserTeam(created.id, teamId, "");
 				} catch (teamErr) {
@@ -721,7 +725,7 @@ export default function UsersView() {
 					toast.warning("Saved, but the temporary password was not emailed. Check SMTP under Security settings.");
 				}
 			}
-			if (isUserRole(role)) {
+			if (canAssignTeamAndKey(role)) {
 				await syncUserTeam(selectedUser.id, teamId, initialTeamId);
 				await syncUserVirtualKey(selectedUser.id, virtualKeyId, initialVirtualKeyId);
 				if (!virtualKeyId && inheritedVirtualKeys.length === 0) {
@@ -1442,12 +1446,10 @@ export default function UsersView() {
 								onChange={(e) => {
 									const nextRole = e.target.value;
 									setRole(nextRole);
-									if (!isUserRole(nextRole)) {
+									if (nextRole === "admin") {
 										setAllowedPromptRepos("");
 										setTeamId("");
 										setVirtualKeyId("");
-									}
-									if (nextRole === "admin") {
 										setAllowedSections(new Set());
 									}
 								}}
@@ -1479,7 +1481,7 @@ export default function UsersView() {
 						{virtualKeyPicker}
 						{workspaceAccessPicker}
 						{promptReposPicker}
-						{isUserRole(role) ? (
+						{canAssignTeamAndKey(role) ? (
 							<>
 								<div className="grid grid-cols-2 gap-4">
 									<div className="space-y-2">
@@ -1617,12 +1619,10 @@ export default function UsersView() {
 								onChange={(e) => {
 									const nextRole = e.target.value;
 									setRole(nextRole);
-									if (!isUserRole(nextRole)) {
+									if (nextRole === "admin") {
 										setAllowedPromptRepos("");
 										setTeamId("");
 										setVirtualKeyId("");
-									}
-									if (nextRole === "admin") {
 										setAllowedSections(new Set());
 									}
 								}}
@@ -1657,7 +1657,7 @@ export default function UsersView() {
 						{virtualKeyPicker}
 						{workspaceAccessPicker}
 						{promptReposPicker}
-						{isUserRole(role) ? (
+						{canAssignTeamAndKey(role) ? (
 							<div className="grid grid-cols-2 gap-4">
 								<div className="space-y-2">
 									<label className="text-muted-foreground flex items-center gap-1 text-sm font-medium">

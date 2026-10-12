@@ -82,6 +82,54 @@ func TestBuildNowWindowsPackageUsesFreshConfig(t *testing.T) {
 	}
 }
 
+func TestMacZipReplacesEveryGuardConfig(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "in.zip")
+	zw, err := os.Create(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := zip.NewWriter(zw)
+	for _, name := range []string{
+		"gateway_guard_config.json",
+		"Gateway_Guard.app/Contents/Resources/gateway_guard_config.json",
+	} {
+		entry, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = entry.Write([]byte(`{"backend_url":"https://old.example"}`))
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	zw.Close()
+
+	var buf bytes.Buffer
+	fresh := []byte("{\"backend_url\":\"https://this.website\"}\n")
+	if err := writeMacZipWithHelpers(&buf, src, fresh); err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range zr.File {
+		if !isGuardConfigZipName(f.Name) {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(rc)
+		rc.Close()
+		if !bytes.Contains(body, []byte("https://this.website")) {
+			t.Fatalf("%s still has old config: %s", f.Name, body)
+		}
+	}
+}
+
 func TestFindFirstExistingSkipsGitLFSPointer(t *testing.T) {
 	dir := t.TempDir()
 	pointer := filepath.Join(dir, "Gateway_Guard_Setup.exe")

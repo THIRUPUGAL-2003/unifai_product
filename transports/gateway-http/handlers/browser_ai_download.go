@@ -166,8 +166,10 @@ func writeMacZipWithHelpers(w io.Writer, zipPath string, config []byte) error {
 	defer zr.Close()
 	zw := zip.NewWriter(w)
 	present := make(map[string]bool, len(zr.File))
+	var configNames []string
 	for _, f := range zr.File {
-		if config != nil && f.Name == guardConfigFileName {
+		if config != nil && isGuardConfigZipName(f.Name) {
+			configNames = append(configNames, f.Name)
 			continue
 		}
 		present[f.Name] = true
@@ -212,17 +214,46 @@ func writeMacZipWithHelpers(w io.Writer, zipPath string, config []byte) error {
 		}
 	}
 	if config != nil {
-		fh := &zip.FileHeader{Name: guardConfigFileName, Method: zip.Deflate, Modified: time.Now()}
-		fh.SetMode(0o644)
-		entry, err := zw.CreateHeader(fh)
-		if err != nil {
-			return err
+		if len(configNames) == 0 {
+			configNames = []string{guardConfigFileName}
 		}
-		if _, err := entry.Write(config); err != nil {
-			return err
+		seen := map[string]bool{}
+		for _, name := range configNames {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			fh := &zip.FileHeader{Name: name, Method: zip.Deflate, Modified: time.Now()}
+			fh.SetMode(0o644)
+			entry, err := zw.CreateHeader(fh)
+			if err != nil {
+				return err
+			}
+			if _, err := entry.Write(config); err != nil {
+				return err
+			}
+		}
+		if !seen[guardConfigFileName] {
+			fh := &zip.FileHeader{Name: guardConfigFileName, Method: zip.Deflate, Modified: time.Now()}
+			fh.SetMode(0o644)
+			entry, err := zw.CreateHeader(fh)
+			if err != nil {
+				return err
+			}
+			if _, err := entry.Write(config); err != nil {
+				return err
+			}
 		}
 	}
 	return zw.Close()
+}
+
+func isGuardConfigZipName(name string) bool {
+	base := name
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
+		base = name[i+1:]
+	}
+	return strings.EqualFold(base, guardConfigFileName)
 }
 
 func findFirstExisting(candidates []string) (string, bool) {
@@ -437,6 +468,10 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusNotFound, "No macOS Guard installer on server — upload Gateway_Guard_macOS.zip to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
 			return
 		}
+		cfg, ok := guardConfigForDownload(ctx)
+		if !ok {
+			return
+		}
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/zip")
 		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Gateway_Guard_macOS.zip"`)
@@ -444,7 +479,7 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 			setGuardVersionHeaders(ctx, macVer)
 		}
 		ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
-			_ = writeMacZipWithHelpers(w, macZipPath, nil)
+			_ = writeMacZipWithHelpers(w, macZipPath, cfg)
 			_ = w.Flush()
 		})
 		return
@@ -465,7 +500,11 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		if exeOK {
 			winAssets = append(winAssets, zipAsset{name: "Gateway_Guard.exe", path: exePath})
 		}
-		for _, name := range []string{"INSTALL_WINDOWS.txt", "VERSION.txt", "gateway_guard_config.json", "Update_Gateway_Guard.ps1"} {
+		cfg, cfgOK := guardConfigForDownload(ctx)
+		if !cfgOK {
+			return
+		}
+		for _, name := range []string{"INSTALL_WINDOWS.txt", "VERSION.txt", "Update_Gateway_Guard.ps1"} {
 			if p, ok := findFirstExisting(browserAISetupCandidates()[name]); ok {
 				winAssets = append(winAssets, zipAsset{name: name, path: p})
 			}
@@ -492,6 +531,9 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 				if asset.name == "VERSION.txt" {
 					wroteVersion = true
 				}
+			}
+			if entry, err := zw.Create(guardConfigFileName); err == nil {
+				_, _ = entry.Write(cfg)
 			}
 			if !wroteVersion && winVer != "" {
 				if entry, err := zw.Create("VERSION.txt"); err == nil {
@@ -527,13 +569,16 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		"Update_Gateway_Guard_macOS.command",
 		"Update_Gateway_Guard.ps1",
 		"VERSION.txt",
-		"gateway_guard_config.json",
 	} {
 		if path, ok := findFirstExisting(browserAISetupCandidates()[name]); ok {
 			assets = append(assets, zipAsset{name: name, path: path})
 		}
 	}
 
+	cfg, cfgOK := guardConfigForDownload(ctx)
+	if !cfgOK {
+		return
+	}
 	hasWindows := setupOK || exeOK
 	hasMac := macZipOK
 	if !hasWindows && !hasMac {
@@ -574,9 +619,23 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 				_, _ = entry.Write([]byte(winVer + "\n"))
 			}
 		}
+		if entry, err := zw.Create(guardConfigFileName); err == nil {
+			_, _ = entry.Write(cfg)
+		}
 		_ = zw.Close()
 		_ = w.Flush()
 	})
+}
+
+// guardConfigForDownload builds the config the installer copies next to Guard so the
+// laptop connects to this server (SERVER_DOMAIN) with this server's Guard secret.
+func guardConfigForDownload(ctx *fasthttp.RequestCtx) ([]byte, bool) {
+	cfg, err := freshGuardConfig()
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Guard package is missing this website's connection settings: "+err.Error())
+		return nil, false
+	}
+	return cfg, true
 }
 
 // requireGuardAdmin allows only admin/sub_admin sessions when auth is enabled.

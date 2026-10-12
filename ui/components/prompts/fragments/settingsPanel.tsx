@@ -37,6 +37,8 @@ export function SettingsPanel() {
 		setModel: onModelChange,
 		modelParams,
 		setModelParams: onModelParamsChange,
+		virtualKeyId,
+		setVirtualKeyId,
 		apiKeyId,
 		setApiKeyId,
 		skillId,
@@ -69,9 +71,9 @@ export function SettingsPanel() {
 		(p: string) => {
 			setProvider(p);
 			// Keep the picked virtual key when it also serves the new provider (or is a wildcard key).
-			const current = (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId);
-			if (current?.provider_configs && current.provider_configs.length > 0 && !current.provider_configs.some((pc) => pc.provider === p)) {
-				setApiKeyId("__auto__");
+			const current = (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === virtualKeyId);
+			if (current?.provider_configs && current.provider_configs.length > 0 && !current.provider_configs.some((pc) => pc.provider === p || pc.provider === "*")) {
+				setVirtualKeyId("__auto__");
 			}
 			onModelChange("");
 			onModelParamsChange((prev) => ({
@@ -80,7 +82,15 @@ export function SettingsPanel() {
 				max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
 			}));
 		},
-		[setProvider, setApiKeyId, onModelChange, onModelParamsChange, virtualKeysData, apiKeyId],
+		[setProvider, setVirtualKeyId, onModelChange, onModelParamsChange, virtualKeysData, virtualKeyId],
+	);
+
+	const onVirtualKeyChange = useCallback(
+		(id: string) => {
+			setVirtualKeyId(id);
+			onModelChange("");
+		},
+		[setVirtualKeyId, onModelChange],
 	);
 
 	const onApiKeyIdChange = useCallback(
@@ -126,8 +136,8 @@ export function SettingsPanel() {
 
 	// Picking a virtual key narrows Provider to the providers configured on that key.
 	const selectedVirtualKey = useMemo(
-		() => (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId),
-		[virtualKeysData, apiKeyId],
+		() => (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === virtualKeyId),
+		[virtualKeysData, virtualKeyId],
 	);
 	const activeMCPClients = useMemo(() => {
 		if (!selectedVirtualKey) return [];
@@ -152,23 +162,39 @@ export function SettingsPanel() {
 	);
 	useEffect(() => {
 		if (selectedVKProviders.length === 0) return;
-		if (provider && selectedVKProviders.includes(provider)) return;
-		setProvider(selectedVKProviders[0]);
-		onModelChange("");
-		onModelParamsChange((prev) => ({
-			stream: true,
-			temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
-			max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
-		}));
-	}, [selectedVKProviders, provider, setProvider, onModelChange, onModelParamsChange]);
+		if (provider && selectedVKProviders.some((p) => p === "*" || p.toLowerCase() === provider.toLowerCase())) return;
+		const nextProv = selectedVKProviders[0] === "*" ? configuredProviders[0]?.name || "" : selectedVKProviders[0];
+		if (nextProv) {
+			setProvider(nextProv);
+			onModelChange("");
+			onModelParamsChange((prev) => ({
+				stream: true,
+				temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
+				max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
+			}));
+		}
+	}, [selectedVKProviders, provider, configuredProviders, setProvider, onModelChange, onModelParamsChange]);
 
 	// Ensure current provider always has a label-resolved option (even before providers query loads)
 	const providerOptions = useMemo(() => {
 		if (isMemberOnly) {
-			return selectedVKProviders.map((p) => ({ label: getProviderLabel(p), value: p as ModelProviderName }));
+			if (selectedVKProviders.length > 0 && !selectedVKProviders.includes("*")) {
+				const opts = selectedVKProviders.map((p) => ({ label: getProviderLabel(p), value: p as ModelProviderName }));
+				if (provider && !opts.find((o) => o.value === provider)) {
+					opts.unshift({ label: getProviderLabel(provider), value: provider as ModelProviderName });
+				}
+				return opts;
+			}
+			const opts = configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name }));
+			if (provider && !opts.find((o) => o.value === provider)) {
+				opts.unshift({ label: getProviderLabel(provider), value: provider as ModelProviderName });
+			}
+			return opts;
 		}
 		const scoped =
-			selectedVKProviders.length > 0 ? configuredProviders.filter((p) => selectedVKProviders.includes(p.name)) : configuredProviders;
+			selectedVKProviders.length > 0 && !selectedVKProviders.includes("*")
+				? configuredProviders.filter((p) => selectedVKProviders.includes(p.name))
+				: configuredProviders;
 		const opts = scoped.map((p) => ({ label: getProviderLabel(p.name), value: p.name }));
 		if (provider && !opts.find((o) => o.value === provider)) {
 			opts.unshift({ label: getProviderLabel(provider), value: provider as ModelProviderName });
@@ -208,10 +234,10 @@ export function SettingsPanel() {
 		const assignable = providerVirtualKeys.filter((vk) => typeof vk.value === "string" && vk.value.startsWith("sk-uf-"));
 		const first = assignable.find((vk) => !billingBlocks?.blocks?.[vk.id]) ?? assignable[0];
 		if (!first?.value) return;
-		if (apiKeyId === "__auto__" || !providerVirtualKeys.some((vk) => vk.value === apiKeyId)) {
-			setApiKeyId(first.value);
+		if (virtualKeyId === "__auto__" || !providerVirtualKeys.some((vk) => vk.value === virtualKeyId)) {
+			setVirtualKeyId(first.value);
 		}
-	}, [isMemberOnly, providerVirtualKeys, apiKeyId, setApiKeyId, billingBlocks]);
+	}, [isMemberOnly, providerVirtualKeys, virtualKeyId, setVirtualKeyId, billingBlocks]);
 
 	// Separate keys/vks to pass to model fetch for filtering.
 	const filterKeys = useMemo(() => {
@@ -221,10 +247,9 @@ export function SettingsPanel() {
 	}, [apiKeyId, providerKeys]);
 
 	const filterVks = useMemo(() => {
-		const virtualKey = (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId);
-		if (virtualKey) return [virtualKey.id];
+		if (selectedVirtualKey) return [selectedVirtualKey.id];
 		return undefined;
-	}, [apiKeyId, virtualKeysData]);
+	}, [selectedVirtualKey]);
 
 	const handleModelParamsChange = useCallback(
 		(params: Record<string, any>) => {
@@ -244,8 +269,11 @@ export function SettingsPanel() {
 			<ApiKeySelectorView
 				providerKeys={providerKeys}
 				virtualKeys={providerVirtualKeys}
-				value={apiKeyId}
-				onValueChange={(v) => onApiKeyIdChange(v ?? "__auto__")}
+				virtualKeyValue={virtualKeyId}
+				onVirtualKeyChange={(v) => onVirtualKeyChange(v ?? "__auto__")}
+				apiKeyIdValue={apiKeyId}
+				onApiKeyIdChange={(v) => onApiKeyIdChange(v ?? "__auto__")}
+				providerLabel={getProviderLabel(provider)}
 				disabled={false}
 			/>
 		) : null;

@@ -6975,7 +6975,7 @@ export default function BrowserAiPage() {
 									className="h-7 text-xs gap-1 text-blue-400 hover:text-blue-300"
 									onClick={() => {
 										const origin = getDeploymentOrigin();
-										const script = `curl.exe -fSL -o "$env:TEMP\\Gateway_Guard_Setup.exe" "${origin}/api/browser-ai/setup/Gateway_Guard_Setup.exe"; Start-Process "$env:TEMP\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Gateway_Guard_Setup.exe"`;
+										const script = `$d="$env:TEMP\\GatewayGuardInstall"; New-Item -ItemType Directory -Force -Path $d | Out-Null; curl.exe -fSL -o "$d\\Gateway_Guard_Windows.zip" "${origin}/api/browser-ai/setup/download-windows.zip"; Expand-Archive -Path "$d\\Gateway_Guard_Windows.zip" -DestinationPath $d -Force; Start-Process "$d\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait`;
 										navigator.clipboard.writeText(script);
 										setNetworkDeployCopied("ps");
 										setTimeout(() => setNetworkDeployCopied(""), 2500);
@@ -6986,10 +6986,10 @@ export default function BrowserAiPage() {
 								</Button>
 							</div>
 							<p className="text-[11px] text-muted-foreground">
-								Downloads the installer and runs silently in the background (no popups, no restart). Ideal for remote terminal or local PowerShell.
+								Downloads the Windows zip for this website, then installs. The zip contains gateway_guard_config.json so the laptop connects here. Run it from an admin browser session. Do not install Setup.exe on its own.
 							</p>
 							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`curl.exe -fSL -o "$env:TEMP\\Gateway_Guard_Setup.exe" "${getDeploymentOrigin()}/api/browser-ai/setup/Gateway_Guard_Setup.exe"; Start-Process "$env:TEMP\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait; Remove-Item -Force "$env:TEMP\\Gateway_Guard_Setup.exe"`}
+								{`$d="$env:TEMP\\GatewayGuardInstall"; New-Item -ItemType Directory -Force -Path $d | Out-Null; curl.exe -fSL -o "$d\\Gateway_Guard_Windows.zip" "${getDeploymentOrigin()}/api/browser-ai/setup/download-windows.zip"; Expand-Archive -Path "$d\\Gateway_Guard_Windows.zip" -DestinationPath $d -Force; Start-Process "$d\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait`}
 							</pre>
 						</div>
 
@@ -7007,7 +7007,7 @@ export default function BrowserAiPage() {
 									onClick={() => {
 										const origin = getDeploymentOrigin();
 										const ip = targetAgentForDeploy?.ip_address || "<laptop-ip>";
-										const script = `psexec \\\\${ip} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${origin}/api/browser-ai/setup/Gateway_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`;
+										const script = `psexec \\\\${ip} -s powershell -Command "$d='C:\\Windows\\Temp\\GatewayGuardInstall'; New-Item -ItemType Directory -Force -Path $d | Out-Null; curl.exe -fSL -o $d\\Gateway_Guard_Windows.zip '${origin}/api/browser-ai/setup/download-windows.zip'; Expand-Archive -Path $d\\Gateway_Guard_Windows.zip -DestinationPath $d -Force; Start-Process $d\\Gateway_Guard_Setup.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait"`;
 										navigator.clipboard.writeText(script);
 										setNetworkDeployCopied("psexec");
 										setTimeout(() => setNetworkDeployCopied(""), 2500);
@@ -7021,7 +7021,7 @@ export default function BrowserAiPage() {
 								Push directly from your admin machine across the office LAN/VPN to this laptop without touching the employee screen.
 							</p>
 							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-purple-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`psexec \\\\${targetAgentForDeploy?.ip_address || "<laptop-ip>"} -s cmd /c "powershell -Command \\"curl.exe -fSL -o C:\\Windows\\Temp\\guard.exe '${getDeploymentOrigin()}/api/browser-ai/setup/Gateway_Guard_Setup.exe'; Start-Process C:\\Windows\\Temp\\guard.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait; Remove-Item -Force C:\\Windows\\Temp\\guard.exe\\""`}
+								{`psexec \\\\${targetAgentForDeploy?.ip_address || "<laptop-ip>"} -s powershell -Command "$d='C:\\Windows\\Temp\\GatewayGuardInstall'; New-Item -ItemType Directory -Force -Path $d | Out-Null; curl.exe -fSL -o $d\\Gateway_Guard_Windows.zip '${getDeploymentOrigin()}/api/browser-ai/setup/download-windows.zip'; Expand-Archive -Path $d\\Gateway_Guard_Windows.zip -DestinationPath $d -Force; Start-Process $d\\Gateway_Guard_Setup.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait"`}
 							</pre>
 						</div>
 
@@ -7038,7 +7038,7 @@ export default function BrowserAiPage() {
 									className="h-7 text-xs gap-1 text-emerald-400 hover:text-emerald-300"
 									onClick={() => {
 										const origin = getDeploymentOrigin();
-										const script = `$InstallerUrl = "${origin}/api/browser-ai/setup/Gateway_Guard_Setup.exe"\n$TempPath = "$env:TEMP\\Gateway_Guard_Setup.exe"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    Invoke-WebRequest -Uri $InstallerUrl -OutFile $TempPath -UseBasicParsing\n    Start-Process $TempPath -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n    Remove-Item -Force $TempPath -ErrorAction SilentlyContinue\n}`;
+										const script = `$ZipUrl = "${origin}/api/browser-ai/setup/download-windows.zip"\n$Dest = "$env:TEMP\\GatewayGuardInstall"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    New-Item -ItemType Directory -Force -Path $Dest | Out-Null\n    Invoke-WebRequest -Uri $ZipUrl -OutFile "$Dest\\Gateway_Guard_Windows.zip" -UseBasicParsing\n    Expand-Archive -Path "$Dest\\Gateway_Guard_Windows.zip" -DestinationPath $Dest -Force\n    Start-Process "$Dest\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n}`;
 										navigator.clipboard.writeText(script);
 										setNetworkDeployCopied("gpo");
 										setTimeout(() => setNetworkDeployCopied(""), 2500);
@@ -7052,7 +7052,7 @@ export default function BrowserAiPage() {
 								Link this in <strong>Active Directory Group Policy (gpmc.msc) &gt; Computer Configuration &gt; Windows Settings &gt; Scripts &gt; Startup</strong>. All 1,000 domain computers silently install on next boot without employee interaction.
 							</p>
 							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`$InstallerUrl = "${getDeploymentOrigin()}/api/browser-ai/setup/Gateway_Guard_Setup.exe"\n$TempPath = "$env:TEMP\\Gateway_Guard_Setup.exe"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    Invoke-WebRequest -Uri $InstallerUrl -OutFile $TempPath -UseBasicParsing\n    Start-Process $TempPath -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n    Remove-Item -Force $TempPath -ErrorAction SilentlyContinue\n}`}
+								{`$ZipUrl = "${getDeploymentOrigin()}/api/browser-ai/setup/download-windows.zip"\n$Dest = "$env:TEMP\\GatewayGuardInstall"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    New-Item -ItemType Directory -Force -Path $Dest | Out-Null\n    Invoke-WebRequest -Uri $ZipUrl -OutFile "$Dest\\Gateway_Guard_Windows.zip" -UseBasicParsing\n    Expand-Archive -Path "$Dest\\Gateway_Guard_Windows.zip" -DestinationPath $Dest -Force\n    Start-Process "$Dest\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n}`}
 							</pre>
 						</div>
 
@@ -7078,7 +7078,7 @@ export default function BrowserAiPage() {
 								</Button>
 							</div>
 							<p className="text-[11px] text-muted-foreground">
-								If you run the installer from a shared network drive or pen drive:
+								Extract the zip first. gateway_guard_config.json must sit in the same folder as Gateway_Guard_Setup.exe, or the laptop keeps the old website address. Then run:
 							</p>
 							<pre className="p-2 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-amber-300">
 								Gateway_Guard_Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
@@ -7088,12 +7088,12 @@ export default function BrowserAiPage() {
 
 					<DialogFooter className="flex-col sm:flex-row gap-2 justify-between items-center">
 						<a
-							href="/api/browser-ai/setup/Gateway_Guard_Setup.exe"
-							download="Gateway_Guard_Setup.exe"
+							href="/api/browser-ai/setup/download-windows.zip"
+							download="Gateway_Guard_Windows.zip"
 							className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
 						>
 							<HardDriveDownload className="h-3.5 w-3.5" />
-							Direct Download Gateway_Guard_Setup.exe
+							Direct Download Gateway_Guard_Windows.zip
 						</a>
 						<Button variant="outline" size="sm" onClick={() => setNetworkDeployDialogOpen(false)}>
 							Close
