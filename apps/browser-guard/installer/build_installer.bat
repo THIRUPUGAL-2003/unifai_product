@@ -80,6 +80,7 @@ if errorlevel 1 (
   echo Inno compile failed.
   exit /b 1
 )
+if exist installer\output\Gateway_Guard_Setup.exe copy /Y installer\output\Gateway_Guard_Setup.exe release\Gateway_Guard_Setup.exe >nul
 
 echo.
 echo ============================================================

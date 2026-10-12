@@ -40,6 +40,9 @@ if (-not $iscc) {
 Write-Host "Running Inno Setup compiler: $iscc ..."
 & $iscc 'installer\Gateway_Guard.iss'
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
+if (Test-Path 'installer\output\Gateway_Guard_Setup.exe') {
+    Copy-Item -Force 'installer\output\Gateway_Guard_Setup.exe' 'release\Gateway_Guard_Setup.exe'
+}
 
 # 3. Create Windows ZIP
 $zipStage = 'installer\staging-win-zip'
