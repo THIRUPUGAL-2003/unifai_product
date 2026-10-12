@@ -10,14 +10,13 @@ const DEFAULT_TRANSCRIPTION_MODELS = [
 	"openai/gpt-4o-transcribe",
 ];
 
-function buildAuthHeaders(apiKeyId?: string): Record<string, string> {
+function buildAuthHeaders(apiKeyId?: string, virtualKeyId?: string): Record<string, string> {
 	const headers: Record<string, string> = {};
-	if (apiKeyId && apiKeyId !== "__auto__") {
-		if (apiKeyId.startsWith("sk-uf-")) {
-			headers["Authorization"] = `Bearer ${apiKeyId}`;
-		} else {
-			headers["x-uf-api-key-id"] = apiKeyId;
-		}
+	if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId.startsWith("sk-uf-")) {
+		headers["Authorization"] = `Bearer ${virtualKeyId}`;
+	}
+	if (apiKeyId && apiKeyId !== "__auto__" && !apiKeyId.startsWith("sk-uf-")) {
+		headers["x-uf-api-key-id"] = apiKeyId;
 	}
 	return headers;
 }
@@ -43,10 +42,10 @@ export type TranscriptionResult =
 
 export async function transcribeAudioFile(
 	file: File,
-	opts?: { apiKeyId?: string; models?: string[]; signal?: AbortSignal },
+	opts?: { apiKeyId?: string; virtualKeyId?: string; models?: string[]; signal?: AbortSignal },
 ): Promise<TranscriptionResult | null> {
 	const models = (opts?.models?.length ? opts.models : DEFAULT_TRANSCRIPTION_MODELS).filter(Boolean);
-	const auth = buildAuthHeaders(opts?.apiKeyId);
+	const auth = buildAuthHeaders(opts?.apiKeyId, opts?.virtualKeyId);
 	let lastError = "";
 
 	for (const model of models) {

@@ -27,14 +27,10 @@ function getBaseUrl() {
 
 function buildHeaders(config: Pick<ExecutionConfig, "apiKeyId" | "virtualKeyId" | "customHeaders" | "skillId" | "promptId">): Record<string, string> {
 	const headers: Record<string, string> = { "Content-Type": "application/json" };
-	if (config.virtualKeyId && config.virtualKeyId !== "__auto__") {
-		if (config.virtualKeyId.startsWith("sk-uf-")) {
-			headers["Authorization"] = `Bearer ${config.virtualKeyId}`;
-		}
-	} else if (config.apiKeyId && config.apiKeyId.startsWith("sk-uf-")) {
-		headers["Authorization"] = `Bearer ${config.apiKeyId}`;
+	if (config.virtualKeyId && config.virtualKeyId !== "__auto__" && config.virtualKeyId.startsWith("sk-uf-")) {
+		headers["Authorization"] = `Bearer ${config.virtualKeyId}`;
 	}
-	if (config.apiKeyId && !config.apiKeyId.startsWith("sk-uf-") && config.apiKeyId !== "__auto__") {
+	if (config.apiKeyId && config.apiKeyId !== "__auto__" && !config.apiKeyId.startsWith("sk-uf-")) {
 		headers["x-uf-api-key-id"] = config.apiKeyId;
 	}
 	// Playground always opts into MCP tool injection so it still works when

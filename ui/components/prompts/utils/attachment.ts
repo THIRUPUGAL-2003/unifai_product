@@ -840,7 +840,7 @@ function isPdfFile(file: File, mimeType: string): boolean {
  * Convert one or more files into message attachments.
  * Zip archives are expanded and each supported inner file is imported.
  */
-export type AttachmentImportOptions = { apiKeyId?: string };
+export type AttachmentImportOptions = { apiKeyId?: string; virtualKeyId?: string };
 
 export async function filesToAttachments(files: FileList | File[], opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	const attachments: MessageContent[] = [];
@@ -915,7 +915,7 @@ function textAttachmentFromExtract(fileName: string, extracted: string): Message
 async function tryPdfOcr(file: File, opts?: AttachmentImportOptions): Promise<MessageContent | null> {
 	toast.message(`Running OCR on scanned PDF ${file.name}…`);
 	const dataUrl = await fileToBase64(file);
-	const ocr = await ocrPdfFile(dataUrl, { apiKeyId: opts?.apiKeyId });
+	const ocr = await ocrPdfFile(dataUrl, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
 	if (ocr?.text) {
 		toast.success(`OCR extracted text from ${file.name} (${ocr.model})`);
 		return ocrTextAttachment(file.name, ocr.text);
@@ -936,7 +936,7 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 	let extracted = "";
 	if (ocrSource.startsWith("data:image/") || ocrSource.startsWith("data:application/")) {
 		toast.message(`Extracting text from image ${file.name}…`);
-		const ocr = await ocrImageFile(ocrSource, { apiKeyId: opts?.apiKeyId });
+		const ocr = await ocrImageFile(ocrSource, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
 		if (ocr?.text?.trim()) extracted = ocr.text.trim();
 	}
 	if (!extracted && (file.name.toLowerCase().endsWith(".svg") || mimeType.includes("svg"))) {
@@ -1017,7 +1017,7 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 	if (mimeType.startsWith("audio/") || isVideoFile(file, mimeType)) {
 		const normalized = (await normalizeAudioToWavFile(file)) || file;
 		toast.message("Transcribing voice with Whisper…");
-		const transcript = await transcribeAudioFile(normalized, { apiKeyId: opts?.apiKeyId });
+		const transcript = await transcribeAudioFile(normalized, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
 		if (transcript && transcript.text) {
 			toast.success(`Voice transcribed (${transcript.model})`);
 			return voiceTranscriptAttachment(file.name, transcript.text);

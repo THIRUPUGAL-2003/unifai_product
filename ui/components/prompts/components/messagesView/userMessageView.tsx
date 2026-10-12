@@ -40,7 +40,7 @@ export function UserMessageView({
 	onChange: (serialized: SerializedMessage) => void;
 	onRemove?: () => void;
 }) {
-	const { apiKeyId } = usePromptContext();
+	const { apiKeyId, virtualKeyId } = usePromptContext();
 	const [editMode, setEditMode] = useState(false);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -122,11 +122,11 @@ export function UserMessageView({
 		async (e: React.ChangeEvent<HTMLInputElement>) => {
 			const files = e.target.files;
 			if (!files) return;
-			const attachments = await filesToAttachments(files, { apiKeyId });
+			const attachments = await filesToAttachments(files, { apiKeyId, virtualKeyId });
 			if (attachments.length > 0) addAttachments(attachments);
 			e.target.value = "";
 		},
-		[addAttachments, apiKeyId],
+		[addAttachments, apiKeyId, virtualKeyId],
 	);
 
 	// Drag & drop state
@@ -160,10 +160,10 @@ export function UserMessageView({
 			setIsDragging(false);
 			const files = e.dataTransfer.files;
 			if (!files || files.length === 0) return;
-			const attachments = await filesToAttachments(files, { apiKeyId });
+			const attachments = await filesToAttachments(files, { apiKeyId, virtualKeyId });
 			if (attachments.length > 0) addAttachments(attachments);
 		},
-		[addAttachments, apiKeyId],
+		[addAttachments, apiKeyId, virtualKeyId],
 	);
 
 	const handleReadOnlyClick = (e: React.MouseEvent<HTMLTextAreaElement>) => {

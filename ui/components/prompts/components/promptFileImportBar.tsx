@@ -67,7 +67,7 @@ export function PromptFileImportBar({
 	onRecordingCancel,
 	className = "",
 }: PromptFileImportBarProps) {
-	const { apiKeyId } = usePromptContext();
+	const { apiKeyId, virtualKeyId } = usePromptContext();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const [isRecording, setIsRecording] = useState(false);
 	const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -100,12 +100,12 @@ export function PromptFileImportBar({
 
 	const addFiles = useCallback(
 		async (files: FileList | File[]) => {
-			const attachments = await filesToAttachments(files, { apiKeyId });
+			const attachments = await filesToAttachments(files, { apiKeyId, virtualKeyId });
 			if (attachments.length > 0) {
 				onAttachmentsAdded(attachments);
 			}
 		},
-		[apiKeyId, onAttachmentsAdded],
+		[apiKeyId, virtualKeyId, onAttachmentsAdded],
 	);
 
 	const cleanupStream = useCallback(() => {
@@ -334,7 +334,7 @@ export function PromptFileImportBar({
 				const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: recordedMimeType });
 
 				toast.message("Transcribing voice audio…");
-				const whisperResult = await transcribeAudioFile(file, { apiKeyId });
+				const whisperResult = await transcribeAudioFile(file, { apiKeyId, virtualKeyId });
 				if (whisperResult && "error" in whisperResult) {
 					toast.error(`Voice was not transcribed: ${whisperResult.error}`, {
 						description: "Check the selected key and a Whisper model, then record again.",

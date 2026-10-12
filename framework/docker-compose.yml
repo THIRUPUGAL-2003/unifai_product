@@ -1,28 +1,32 @@
 # Gateway Framework Development Services
 #
 # Supported Vector Stores:
-# - Weaviate: Runs locally via this docker-compose (port 9000)
-# - Redis: Runs locally via this docker-compose (port 6379)
-# - Qdrant: Runs locally via this docker-compose (REST: 6333, gRPC: 6334)
-# - Pinecone: Runs locally via Pinecone Local emulator (port 5081)
+# - Weaviate: Runs locally via this docker-compose (port ${WEAVIATE_PORT:-9000})
+# - Redis: Runs locally via this docker-compose (port ${REDIS_PORT:-6379})
+# - Qdrant: Runs locally via this docker-compose (REST: ${QDRANT_PORT:-6333}, gRPC: ${QDRANT_GRPC_PORT:-6334})
+# - Pinecone: Runs locally via Pinecone Local emulator (port ${PINECONE_PORT:-5081})
 #             For production, use cloud service with PINECONE_API_KEY and PINECONE_INDEX_HOST
 #             See: https://docs.pinecone.io/guides/operations/local-development
+#
+# All credentials, container names, ports, and networks are sourced directly from .env (no hardcoded values).
 #
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: gateway-postgres-fw
+    container_name: ${POSTGRES_CONTAINER_NAME:-gateway-postgres-fw}
+    env_file:
+      - ../.env
     environment:
-      POSTGRES_USER: gateway
-      POSTGRES_PASSWORD: gateway_password
-      POSTGRES_DB: gateway
-      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: ${DB_USER:-gateway}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gateway_password}
+      POSTGRES_DB: ${DB_NAME:-gateway}
+      PGDATA: ${PGDATA:-/var/lib/postgresql/data/pgdata}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gateway -d gateway"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,9 +36,11 @@ services:
 
   redis:
     image: redis/redis-stack:latest
-    container_name: gateway-redis
+    container_name: ${REDIS_CONTAINER_NAME:-gateway-redis}
+    env_file:
+      - ../.env
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -46,20 +52,22 @@ services:
 
   weaviate:
     image: cr.weaviate.io/semitechnologies/weaviate:1.25.0
-    container_name: gateway-weaviate
+    container_name: ${WEAVIATE_CONTAINER_NAME:-gateway-weaviate}
+    env_file:
+      - ../.env
     ports:
-      - "9000:8080"
-      - "50051:50051"
+      - "${WEAVIATE_PORT:-9000}:8080"
+      - "${WEAVIATE_GRPC_PORT:-50051}:50051"
     environment:
-      QUERY_DEFAULTS_LIMIT: 25
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
-      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
-      DEFAULT_VECTORIZER_MODULE: 'none'
-      CLUSTER_HOSTNAME: 'node1'
+      QUERY_DEFAULTS_LIMIT: ${WEAVIATE_QUERY_LIMIT:-25}
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: '${WEAVIATE_ANONYMOUS_ACCESS:-true}'
+      PERSISTENCE_DATA_PATH: '${WEAVIATE_DATA_PATH:-/var/lib/weaviate}'
+      DEFAULT_VECTORIZER_MODULE: '${WEAVIATE_DEFAULT_VECTORIZER:-none}'
+      CLUSTER_HOSTNAME: '${WEAVIATE_CLUSTER_HOSTNAME:-node1}'
     volumes:
       - weaviate_data:/var/lib/weaviate
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/v1/.well-known/ready"]
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/v1/.well-known/ready"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -69,18 +77,20 @@ services:
 
   pinecone:
     image: ghcr.io/pinecone-io/pinecone-index:latest
-    container_name: gateway-pinecone
+    container_name: ${PINECONE_CONTAINER_NAME:-gateway-pinecone}
+    env_file:
+      - ../.env
     environment:
-      PORT: 5081
-      INDEX_TYPE: serverless
-      VECTOR_TYPE: dense
-      DIMENSION: 1536  # Matches text-embedding-3-small dimension
-      METRIC: cosine
+      PORT: ${PINECONE_PORT:-5081}
+      INDEX_TYPE: ${PINECONE_INDEX_TYPE:-serverless}
+      VECTOR_TYPE: ${PINECONE_VECTOR_TYPE:-dense}
+      DIMENSION: ${PINECONE_DIMENSION:-1536}
+      METRIC: ${PINECONE_METRIC:-cosine}
     ports:
-      - "5081:5081"
+      - "${PINECONE_PORT:-5081}:${PINECONE_PORT:-5081}"
     platform: linux/amd64
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5081/describe_index_stats"]
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:$$PORT/describe_index_stats"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -90,14 +100,19 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.16.3
-    container_name: gateway-qdrant
+    container_name: ${QDRANT_CONTAINER_NAME:-gateway-qdrant}
+    env_file:
+      - ../.env
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: ${QDRANT_HTTP_PORT:-6333}
+      QDRANT__SERVICE__GRPC_PORT: ${QDRANT_GRPC_PORT:-6334}
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "${QDRANT_PORT:-6333}:${QDRANT_HTTP_PORT:-6333}"
+      - "${QDRANT_GRPC_PORT:-6334}:${QDRANT_GRPC_PORT:-6334}"
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/readyz"]
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:$$QDRANT__SERVICE__HTTP_PORT/readyz"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -107,6 +122,7 @@ services:
 
 networks:
   gateway_network:
+    name: ${DOCKER_NETWORK:-gateway-network}
     driver: bridge
 
 volumes:
@@ -118,4 +134,5 @@ volumes:
     driver: local
   qdrant_data:
     driver: local
+
 

@@ -11,16 +11,15 @@ export type OcrDocumentInput =
 	| { type: "image_url"; image_url: string }
 	| { type: "document_url"; document_url: string };
 
-function buildAuthHeaders(apiKeyId?: string): Record<string, string> {
+function buildAuthHeaders(apiKeyId?: string, virtualKeyId?: string): Record<string, string> {
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
 	};
-	if (apiKeyId && apiKeyId !== "__auto__") {
-		if (apiKeyId.startsWith("sk-uf-")) {
-			headers["Authorization"] = `Bearer ${apiKeyId}`;
-		} else {
-			headers["x-uf-api-key-id"] = apiKeyId;
-		}
+	if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId.startsWith("sk-uf-")) {
+		headers["Authorization"] = `Bearer ${virtualKeyId}`;
+	}
+	if (apiKeyId && apiKeyId !== "__auto__" && !apiKeyId.startsWith("sk-uf-")) {
+		headers["x-uf-api-key-id"] = apiKeyId;
 	}
 	return headers;
 }
@@ -47,7 +46,7 @@ function parseOcrMarkdown(data: unknown): string {
  */
 export async function ocrDocument(
 	document: OcrDocumentInput,
-	opts?: { apiKeyId?: string; models?: string[]; signal?: AbortSignal; pages?: number[] },
+	opts?: { apiKeyId?: string; virtualKeyId?: string; models?: string[]; signal?: AbortSignal; pages?: number[] },
 ): Promise<{ text: string; model: string } | null> {
 	const url =
 		document.type === "image_url"
@@ -58,7 +57,7 @@ export async function ocrDocument(
 	}
 
 	const models = (opts?.models?.length ? opts.models : DEFAULT_OCR_MODELS).filter(Boolean);
-	const auth = buildAuthHeaders(opts?.apiKeyId);
+	const auth = buildAuthHeaders(opts?.apiKeyId, opts?.virtualKeyId);
 	let lastError = "";
 
 	const bodyDocument =
@@ -120,7 +119,7 @@ export async function ocrDocument(
 /** OCR an image data URL. */
 export async function ocrImageFile(
 	dataUrl: string,
-	opts?: { apiKeyId?: string; models?: string[]; signal?: AbortSignal },
+	opts?: { apiKeyId?: string; virtualKeyId?: string; models?: string[]; signal?: AbortSignal },
 ): Promise<{ text: string; model: string } | null> {
 	return ocrDocument({ type: "image_url", image_url: dataUrl }, opts);
 }
@@ -128,7 +127,7 @@ export async function ocrImageFile(
 /** OCR a PDF (or other document) data URL — used for scanned / image-only PDFs. */
 export async function ocrPdfFile(
 	dataUrl: string,
-	opts?: { apiKeyId?: string; models?: string[]; signal?: AbortSignal; pages?: number[] },
+	opts?: { apiKeyId?: string; virtualKeyId?: string; models?: string[]; signal?: AbortSignal; pages?: number[] },
 ): Promise<{ text: string; model: string } | null> {
 	return ocrDocument({ type: "document_url", document_url: dataUrl }, opts);
 }

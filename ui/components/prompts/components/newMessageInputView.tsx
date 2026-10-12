@@ -28,6 +28,7 @@ export function NewMessageInputView() {
 		setVariables,
 		selectedPrompt,
 		apiKeyId,
+		virtualKeyId,
 	} = usePromptContext();
 	const [userInput, setUserInput] = useState("");
 	const [inputRole, setInputRole] = useState<string>("user");
@@ -81,9 +82,9 @@ export function NewMessageInputView() {
 		}
 
 		// 2. Check Selected Virtual Key Budget
-		if (apiKeyId && apiKeyId !== "__auto__" && apiKeyId.startsWith("sk-uf-")) {
+		if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId.startsWith("sk-uf-")) {
 			const vks = virtualKeysData?.virtual_keys ?? [];
-			const currentVk = vks.find((v) => v.value === apiKeyId);
+			const currentVk = vks.find((v) => v.value === virtualKeyId);
 			const block = currentVk ? billingBlocks?.blocks?.[currentVk.id] : undefined;
 			if (currentVk && block) {
 				return {
@@ -113,7 +114,7 @@ export function NewMessageInputView() {
 			}
 		}
 		return null;
-	}, [authStatus, apiKeyId, virtualKeysData, billingBlocks]);
+	}, [authStatus, virtualKeyId, virtualKeysData, billingBlocks]);
 
 	const missingRequiredHeaders = useMemo(
 		() => requiredHeaders.filter((name) => !(customHeaders[name] ?? "").trim()),
@@ -262,11 +263,11 @@ export function NewMessageInputView() {
 		if (pastedFiles.length === 0) return;
 
 		e.preventDefault();
-		const newAttachments = await filesToAttachments(pastedFiles, { apiKeyId });
+		const newAttachments = await filesToAttachments(pastedFiles, { apiKeyId, virtualKeyId });
 		if (newAttachments.length > 0) {
 			handleAddAttachments(newAttachments);
 		}
-	}, [apiKeyId, canAttach, handleAddAttachments]);
+	}, [apiKeyId, virtualKeyId, canAttach, handleAddAttachments]);
 
 	const [isDragging, setIsDragging] = useState(false);
 	const dragCounterRef = useRef(0);
@@ -309,12 +310,12 @@ export function NewMessageInputView() {
 			const files = e.dataTransfer.files;
 			if (!files || files.length === 0) return;
 
-			const newAttachments = await filesToAttachments(files, { apiKeyId });
+			const newAttachments = await filesToAttachments(files, { apiKeyId, virtualKeyId });
 			if (newAttachments.length > 0) {
 				handleAddAttachments(newAttachments);
 			}
 		},
-		[apiKeyId, canAttach, handleAddAttachments],
+		[apiKeyId, virtualKeyId, canAttach, handleAddAttachments],
 	);
 
 	const hasImageAttachment = attachmentNeedsVision(attachments);
