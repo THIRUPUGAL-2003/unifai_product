@@ -234,19 +234,27 @@ def verify_vendor_authorization(args) -> bool:
 
     # 1. Master Secret check (CLI argument or environment variable)
     secret = (getattr(args, "vendor_secret", "") or os.environ.get("YESPANCHI_MASTER_SECRET") or os.environ.get("GUARD_SECRET_KEY") or "").strip()
-    if secret in (DEFAULT_VENDOR_MASTER_SECRET, "ycsKvD5uWlL1ymRZZW/3ePHqMe7sab4ZiG9L1VRMAFo="):
+    if secret and secret == DEFAULT_VENDOR_MASTER_SECRET:
         return True
 
-    # 2. Server IP / hostname check
+    # 2. Server IP / hostname check. Extra host comes from SERVER_DOMAIN, not a baked-in domain.
     import socket
-    allowed_hosts = {"127.0.0.1", "::1", "localhost", "unifai.yespanchi.com"}
+    from urllib.parse import urlparse
+    allowed_hosts = {"127.0.0.1", "::1", "localhost"}
+    host_labels: list[str] = []
+    server_domain = (os.environ.get("SERVER_DOMAIN") or "").strip()
+    if server_domain:
+        domain_host = (urlparse(server_domain).hostname or "").lower()
+        if domain_host:
+            allowed_hosts.add(domain_host)
+            host_labels = [part for part in domain_host.split(".") if part and part not in {"com", "net", "org", "io"}]
     if getattr(args, "authorized_ip", None):
         allowed_hosts.add(args.authorized_ip.strip())
 
     try:
         hostname = socket.gethostname()
         local_ips = socket.gethostbyname_ex(hostname)[2]
-        if any(ip in allowed_hosts for ip in local_ips) or any(h in hostname.lower() for h in ("unifai", "yespanchi", "raksha")):
+        if any(ip in allowed_hosts for ip in local_ips) or any(label and label in hostname.lower() for label in host_labels):
             return True
     except Exception:
         pass

@@ -173,6 +173,14 @@ def update_zip_entry(zip_path: str, entry_name: str, new_bytes: bytes, new_dict:
         return False, []
 
 
+def require_env(env: dict[str, str], key: str) -> str:
+    """Return a non-empty .env value. Deployment hosts and ports have no baked-in fallback."""
+    value = (env.get(key) or "").strip()
+    if not value:
+        print(f"[ERROR] {key} is missing or empty in .env", file=sys.stderr)
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Synchronize all configurations and build artifacts from .env")
     parser.add_argument("--build-ui", "-u", action="store_true", help="Run full npm build in ui directory after sync")
@@ -186,12 +194,17 @@ def main() -> int:
         return 1
 
     env = load_env(env_path)
-    server_domain = (env.get("SERVER_DOMAIN") or "https://unifai.yespanchi.com").rstrip("/")
+    server_domain = require_env(env, "SERVER_DOMAIN").rstrip("/")
+    proxy_addr = require_env(env, "GATEWAY_PROXY_ADDR")
+    pac_http_port_str = require_env(env, "PAC_HTTP_PORT")
+    guard_secret = require_env(env, "GATEWAY_GUARD_SECRET")
+    if not server_domain or not proxy_addr or not pac_http_port_str or not guard_secret:
+        return 1
+    if not pac_http_port_str.isdigit():
+        print(f"[ERROR] PAC_HTTP_PORT must be a number, got {pac_http_port_str!r}", file=sys.stderr)
+        return 1
+    pac_http_port = int(pac_http_port_str)
     backend_url = (env.get("GATEWAY_BACKEND_URL") or server_domain).rstrip("/")
-    proxy_addr = env.get("GATEWAY_PROXY_ADDR") or "127.0.0.1:18103"
-    pac_http_port_str = env.get("PAC_HTTP_PORT") or "18195"
-    pac_http_port = int(pac_http_port_str) if pac_http_port_str.isdigit() else 18195
-    guard_secret = env.get("GATEWAY_GUARD_SECRET") or ""
 
     print("=" * 70)
     print("   UnifAI / Gateway — Master Environment Sync & Rebuild")

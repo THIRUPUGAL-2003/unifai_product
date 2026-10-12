@@ -17,12 +17,12 @@ services:
     env_file:
       - ../.env
     environment:
-      POSTGRES_USER: ${DB_USER:-gateway}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-gateway_password}
-      POSTGRES_DB: ${DB_NAME:-gateway}
+      POSTGRES_USER: ${DB_USER:?set DB_USER in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: ${DB_NAME:?set DB_NAME in .env}
       PGDATA: ${PGDATA:-/var/lib/postgresql/data/pgdata}
     ports:
-      - "${DB_PORT:-5432}:5432"
+      - "${DB_PORT:?set DB_PORT in .env}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
