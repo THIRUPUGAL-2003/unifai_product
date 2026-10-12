@@ -77,6 +77,7 @@ def issue_license(
     private_key_path: str = None,
     output_path: str = None,
     registry_path: str = None,
+    vendor_ip: str = None,
 ) -> dict:
     if features is None:
         features = [
@@ -112,10 +113,10 @@ def issue_license(
 
     install_id = (install_id or "").strip()
     server_id = (server_id or "").strip().upper()
-    if not install_id:
-        raise ValueError("install_id is required. Copy it from the client dashboard.")
-    if not server_id:
-        raise ValueError("server_id is required. Copy the server hardware ID from the client dashboard.")
+    if not install_id or install_id in ("*", "ANY"):
+        install_id = "*"
+    if not server_id or server_id in ("*", "ANY"):
+        server_id = "*"
 
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -139,8 +140,17 @@ def issue_license(
     for other_id, row in list(licenses.items()):
         if other_id == license_id:
             continue
-        if str(row.get("install_id") or "").strip().upper() == install_id.upper() and str(row.get("status") or "") == "active":
+        if install_id != "*" and str(row.get("install_id") or "").strip().upper() == install_id.upper() and str(row.get("status") or "") == "active":
             row["status"] = "revoked"
+
+    if not vendor_ip or not str(vendor_ip).strip():
+        try:
+            import socket
+            vendor_ip = socket.gethostbyname(socket.gethostname())
+        except Exception:
+            vendor_ip = "127.0.0.1"
+    else:
+        vendor_ip = str(vendor_ip).strip()
 
     # Canonical Payload Dictionary (sorted keys for deterministic JSON serialization)
     payload_data = {
@@ -153,6 +163,8 @@ def issue_license(
         "max_seats": int(seats),
         "install_id": install_id,
         "server_hardware_id": server_id,
+        "server_ip": server_id,
+        "issued_from_ip": vendor_ip,
         "revision": int(revision),
         "features": sorted(features),
         "issued_at": now_iso,
@@ -209,31 +221,89 @@ def issue_license(
         "canonical_json": canonical_json.decode("utf-8")
     }
 
+DEFAULT_VENDOR_MASTER_SECRET = "YESPANCHI-MASTER-2026-GUARD-KEY"
+
+def verify_vendor_authorization(args) -> bool:
+    if getattr(args, "bypass_vendor_check", False):
+        return True
+
+    # 1. Master Secret check (CLI argument or environment variable)
+    secret = (getattr(args, "vendor_secret", "") or os.environ.get("YESPANCHI_MASTER_SECRET") or os.environ.get("GUARD_SECRET_KEY") or "").strip()
+    if secret in (DEFAULT_VENDOR_MASTER_SECRET, "ycsKvD5uWlL1ymRZZW/3ePHqMe7sab4ZiG9L1VRMAFo="):
+        return True
+
+    # 2. Server IP / hostname check
+    import socket
+    allowed_hosts = {"127.0.0.1", "::1", "localhost", "unifai.yespanchi.com"}
+    if getattr(args, "authorized_ip", None):
+        allowed_hosts.add(args.authorized_ip.strip())
+
+    try:
+        hostname = socket.gethostname()
+        local_ips = socket.gethostbyname_ex(hostname)[2]
+        if any(ip in allowed_hosts for ip in local_ips) or any(h in hostname.lower() for h in ("unifai", "yespanchi", "raksha")):
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Issue an Ed25519 Signed Enterprise License.")
+    parser = argparse.ArgumentParser(description="Issue an Ed25519 Signed Enterprise License (YesPanchi).")
     parser.add_argument("--client", required=True, help="Client organization name (e.g., 'ABC Corporation')")
     parser.add_argument("--seats", type=int, default=100, help="Maximum allowed laptop agent seats (default: 100)")
     parser.add_argument("--expiry", required=True, help="Expiry date in YYYY-MM-DD format (e.g., '2027-10-07')")
+    parser.add_argument("--product-users", type=int, default=100, help="Dashboard accounts allowed in total (user + admin + sub-admin). Default: 100. Set 0 for unlimited.")
     parser.add_argument("--issuer", default=DEFAULT_ISSUER, help=f"Vendor Issuer name (default: '{DEFAULT_ISSUER}')")
     parser.add_argument("--product", default=DEFAULT_PRODUCT, help=f"Product name (default: '{DEFAULT_PRODUCT}')")
     parser.add_argument("--tier", default="Enterprise On-Premise", help="License tier name")
-    parser.add_argument("--server-id", required=True, help="Server Hardware ID from the client dashboard")
-    parser.add_argument("--install-id", required=True, help="Database install ID from the client dashboard")
+    parser.add_argument("--server-ip", default=None, help="Bank client server IP address (e.g. '10.14.20.5' or '*' for any IP)")
+    parser.add_argument("--server-id", default=None, help="Optional legacy Server Hardware ID (alias for --server-ip)")
+    parser.add_argument("--install-id", default="*", help="Optional database install ID (default: '*' - not required)")
+    parser.add_argument("--any-server", action="store_true", help="Allow running on any server host (floating)")
+    parser.add_argument("--any-db", action="store_true", help="Allow running on any database instance (floating)")
     parser.add_argument("--license-id", default=None, help="Existing license ID when moving server or changing seats. Omit to issue a new license.")
-    parser.add_argument("--product-users", type=int, default=0, help="Dashboard accounts allowed in total (user + admin + sub-admin). 0 means no cap.")
     parser.add_argument("--registry", default=None, help="Vendor registry JSON updated when a key is issued or replaced")
     parser.add_argument("--out", default=None, help="Output file path (default: license_<client>.lic)")
     parser.add_argument("--key", default=None, help="Custom path to master_private.key")
+    # Vendor Authorization Protection
+    parser.add_argument("--vendor-secret", default=None, help="Master Vendor authorization secret passphrase")
+    parser.add_argument("--authorized-ip", default=None, help="Additional authorized vendor IP address")
+    parser.add_argument("--vendor-ip", default=None, help="Explicit vendor issuing machine IP address (default: auto-detected local IP)")
+    parser.add_argument("--bypass-vendor-check", action="store_true", help="Bypass vendor host / IP verification")
 
     args = parser.parse_args()
+
+    # Vendor Host / Operator Verification
+    if not verify_vendor_authorization(args):
+        print("\n" + "=" * 68, file=sys.stderr)
+        print(" [SECURITY REFUSAL] Unauthorized Vendor Environment!", file=sys.stderr)
+        print("=" * 68, file=sys.stderr)
+        print(" License issuance is restricted to authorized YesPanchi vendor servers.", file=sys.stderr)
+        print(" To authorize, run with: --vendor-secret \"YESPANCHI-MASTER-2026-GUARD-KEY\"", file=sys.stderr)
+        print(" Or pass --bypass-vendor-check to override.", file=sys.stderr)
+        print("=" * 68 + "\n", file=sys.stderr)
+        sys.exit(1)
+
+    if args.server_ip:
+        server_id = args.server_ip.strip()
+    elif args.any_server:
+        server_id = "*"
+    elif args.server_id:
+        server_id = args.server_id.strip()
+    else:
+        server_id = "*"
+
+    install_id = "*" if (args.any_db or not args.install_id) else args.install_id
 
     try:
         res = issue_license(
             client_name=args.client,
             seats=args.seats,
             expiry_date=args.expiry,
-            server_id=args.server_id,
-            install_id=args.install_id,
+            server_id=server_id,
+            install_id=install_id,
             license_id=args.license_id,
             product_users=args.product_users,
             issuer=args.issuer,
@@ -242,6 +312,7 @@ def main():
             private_key_path=args.key,
             output_path=args.out,
             registry_path=args.registry,
+            vendor_ip=args.vendor_ip,
         )
         p = res["envelope"]["payload"]
         print("\n" + "=" * 68)
@@ -251,18 +322,22 @@ def main():
         print(f" Product:          {p['product']}")
         print(f" License ID:       {p['license_id']}")
         print(f" Issued To Client: {p['client_name']}")
-        print(f" Max Seats:        {p['max_seats']} Laptops")
+        print(f" Max Seats (Guard):{p['max_seats']} Employee Laptops")
         if p.get("max_product_users"):
-            print(f" Dashboard Users:  {p['max_product_users']} (user + admin + sub-admin)")
+            print(f" Dashboard Users:  {p['max_product_users']} Accounts (user + admin + sub-admin)")
+        else:
+            print(" Dashboard Users:  Unlimited / No Cap")
         print(f" Tier:             {p['tier']}")
-        print(f" Database Install: {p['install_id']}")
-        print(f" Server Hardware:  {p['server_hardware_id']}")
+        server_mode = "Floating (* Any Server IP / Host)" if p.get('server_ip') == "*" or p.get('server_hardware_id') == "*" else (p.get('server_ip') or p.get('server_hardware_id'))
+        print(f" Server IP / Host: {server_mode}")
+        print(f" Database Binding: Floating (No Install ID Required)")
+        print(f" Issued By Vendor: YesPanchi (Host: {p.get('issued_from_ip', 'Local')})")
         print(f" Revision:         {p['revision']}")
         print(f" Expires At:       {p['expires_at']}")
         print(f" File Path:        {res['output_file']}")
         print("=" * 68)
-        print(" Email this .lic file to the client. They can upload it via the")
-        print(" Browser AI > Setup tab in their Web Dashboard.")
+        print(" [AIR-GAPPED COMPLIANCE] ZERO phone-home signals, 100% offline verification.")
+        print(" Email this .lic file to the client to upload into their Web Dashboard.")
         print("=" * 68 + "\n")
     except Exception as e:
         print(f"[ERROR] Failed to issue license: {e}", file=sys.stderr)

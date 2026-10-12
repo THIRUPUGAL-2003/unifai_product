@@ -945,19 +945,43 @@ export default function UsersView() {
 		<div className="text-foreground bg-background border-border/40 flex w-full flex-col gap-6 rounded-lg border p-6 shadow-xl backdrop-blur-sm">
 			{/* Header Section */}
 			<div className="border-border/40 flex flex-col items-start justify-between gap-4 border-b pb-6 md:flex-row md:items-center">
-				<div>
+				<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
 					<h1 className="text-primary flex items-center gap-2 text-2xl font-semibold tracking-tight">
 						<Users className="h-6 w-6 text-teal-400" />
 						User Governance
 					</h1>
+					{userQuota?.limited && (
+						<span
+							className={cn(
+								"inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border shadow-sm",
+								userQuota.remaining <= 0
+									? "border-red-500/40 bg-red-500/10 text-red-400"
+									: "border-teal-500/30 bg-teal-500/10 text-teal-300",
+							)}
+							title={`License allocation: ${userQuota.used}/${userQuota.max} users in use`}
+						>
+							{userQuota.remaining <= 0 ? (
+								<Shield className="h-3.5 w-3.5 text-red-400" />
+							) : (
+								<ShieldCheck className="h-3.5 w-3.5 text-teal-400" />
+							)}
+							License Quota: {userQuota.used}/{userQuota.max} Users
+							{userQuota.remaining <= 0 ? " (Capacity Reached)" : ` (${userQuota.remaining} left)`}
+						</span>
+					)}
 				</div>
 				<Button
-					disabled={!hasCreateAccess}
+					disabled={!hasCreateAccess || (!!userQuota?.limited && userQuota.remaining <= 0)}
 					onClick={() => {
 						resetForm();
 						setIsCreateOpen(true);
 					}}
-					className="flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2 font-medium text-white shadow-lg shadow-teal-500/20 transition-all duration-200 hover:bg-teal-600 active:scale-95"
+					title={
+						userQuota?.limited && userQuota.remaining <= 0
+							? `License limit reached (${userQuota.used}/${userQuota.max} users). Contact YesPanchi to upgrade seats.`
+							: undefined
+					}
+					className="flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2 font-medium text-white shadow-lg shadow-teal-500/20 transition-all duration-200 hover:bg-teal-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
 				>
 					<Plus className="h-4 w-4" /> Add New User
 				</Button>
@@ -1366,6 +1390,19 @@ export default function UsersView() {
 						<DialogTitle className="flex items-center gap-2 text-teal-400">
 							<Users className="h-5 w-5" /> Add New User
 						</DialogTitle>
+						{userQuota?.limited && (
+							<div
+								className={cn(
+									"mt-2 rounded-lg border p-2.5 text-xs",
+									userQuota.remaining <= 0
+										? "border-red-500/40 bg-red-500/10 text-red-400"
+										: "border-teal-500/30 bg-teal-500/10 text-teal-300",
+								)}
+							>
+								<strong>Enterprise License Quota:</strong> {userQuota.used} of {userQuota.max} accounts allocated (
+								{userQuota.remaining > 0 ? `${userQuota.remaining} remaining` : "Capacity full"}).
+							</div>
+						)}
 					</DialogHeader>
 					<form onSubmit={handleCreateUser} className="space-y-4 py-4">
 						<div className="space-y-2">

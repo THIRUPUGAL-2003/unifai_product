@@ -104,19 +104,26 @@ func (m *BrowserAIManager) assertLicenseBinding(ctx context.Context, payload *En
 	if payload == nil {
 		return fmt.Errorf("LICENSE_UNBOUND: empty license")
 	}
-	if strings.TrimSpace(payload.InstallID) == "" || strings.TrimSpace(payload.ServerHardwareID) == "" {
-		return fmt.Errorf("LICENSE_UNBOUND: license must be issued for this database install_id and this server_hardware_id")
+	srv := strings.TrimSpace(payload.ServerHardwareID)
+	inst := strings.TrimSpace(payload.InstallID)
+
+	isFloatingServer := srv == "" || srv == "*" || strings.EqualFold(srv, "ANY")
+	isFloatingDB := inst == "" || inst == "*" || strings.EqualFold(inst, "ANY")
+
+	if !isFloatingDB {
+		installID, err := m.GetOrCreateInstallID(ctx)
+		if err != nil {
+			return err
+		}
+		if !strings.EqualFold(inst, installID) {
+			return fmt.Errorf("LICENSE_DB_MISMATCH: license is locked to database [%s], but this database is [%s]", inst, installID)
+		}
 	}
-	installID, err := m.GetOrCreateInstallID(ctx)
-	if err != nil {
-		return err
-	}
-	if !strings.EqualFold(strings.TrimSpace(payload.InstallID), installID) {
-		return fmt.Errorf("LICENSE_DB_MISMATCH: license is locked to database [%s], but this database is [%s]", payload.InstallID, installID)
-	}
-	hostID := GetServerHardwareID()
-	if !strings.EqualFold(strings.TrimSpace(payload.ServerHardwareID), strings.TrimSpace(hostID)) {
-		return fmt.Errorf("LICENSE_SERVER_MISMATCH: license is locked to server hardware [%s], but current host hardware is [%s]", payload.ServerHardwareID, hostID)
+	if !isFloatingServer {
+		hostID := GetServerHardwareID()
+		if !strings.EqualFold(srv, strings.TrimSpace(hostID)) {
+			return fmt.Errorf("LICENSE_SERVER_MISMATCH: license is locked to server hardware [%s], but current host hardware is [%s]", srv, hostID)
+		}
 	}
 	rev := payload.Revision
 	if rev <= 0 {
@@ -355,6 +362,14 @@ var authorityCache struct {
 }
 
 func (m *BrowserAIManager) applyAuthority(ctx context.Context, payload *EnterpriseLicensePayload, info *LicenseStatusInfo) {
+	// Air-Gapped Offline Guarantee: Enterprise deployments never send phone-home signals or outbound telemetry.
+	if payload != nil && payload.HasFeature("air_gapped_offline") {
+		if info != nil {
+			info.AuthorityStatus = "local"
+		}
+		return
+	}
+
 	authorityURL := strings.TrimSpace(os.Getenv("LICENSE_AUTHORITY_URL"))
 	if authorityURL == "" || payload == nil || info == nil {
 		info.AuthorityStatus = "local"

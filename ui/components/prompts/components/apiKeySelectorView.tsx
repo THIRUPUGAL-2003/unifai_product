@@ -1,14 +1,4 @@
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
-import {
-	Combobox,
-	ComboboxContent,
-	ComboboxGroup,
-	ComboboxInput,
-	ComboboxItem,
-	ComboboxLabel,
-	ComboboxList,
-	ComboboxSeparator,
-} from "@/components/ui/combobox";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getErrorMessage } from "@/lib/store";
@@ -16,7 +6,7 @@ import { useGetVirtualKeyBillingBlocksQuery } from "@/lib/store/apis/governanceA
 import { useIsAuthEnabledQuery } from "@/lib/store/apis/sessionApi";
 import type { DBKey, VirtualKey } from "@/lib/types/governance";
 import { AlertTriangle } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export function ApiKeySelectorView({
 	providerKeys,
@@ -33,13 +23,17 @@ export function ApiKeySelectorView({
 	disabled?: boolean;
 	placeholder?: string;
 }) {
-	const [query, setQuery] = useState("");
 	const POLL_MS = 5000;
 	const [authPollMs, setAuthPollMs] = useState(POLL_MS);
 	const [billingPollMs, setBillingPollMs] = useState(POLL_MS);
 	const { data: authStatus, error: authError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
+
+	const isMember = Boolean(authStatus?.role && authStatus.role !== "admin" && authStatus.role !== "super_admin");
+	const isRegularUser = (authStatus?.role || "").trim().toLowerCase() === "user";
+
 	const { data: billingBlocks, error: billingError, isError: billingFailed } = useGetVirtualKeyBillingBlocksQuery(undefined, {
-		pollingInterval: billingPollMs,
+		pollingInterval: isMember ? billingPollMs : 0,
+		skip: !isMember,
 	});
 
 	useEffect(() => {
@@ -69,43 +63,40 @@ export function ApiKeySelectorView({
 			return { label: `${vk.name}${suffix}`, value: vk.value, group: "virtual" as const };
 		});
 		return [{ label: "Auto (default)", value: "__auto__", group: "api" as const }, ...apiKeyOpts, ...vkOpts];
-	}, [providerKeys, virtualKeys, blocks]);
-
-	const filtered = useMemo(() => {
-		if (!query) return allOptions;
-		const q = query.toLowerCase();
-		return allOptions.filter((o) => o.label.toLowerCase().includes(q));
-	}, [allOptions, query]);
-
-	const filteredApiKeys = useMemo(() => filtered.filter((o) => o.group === "api"), [filtered]);
-	const filteredVirtualKeys = useMemo(() => filtered.filter((o) => o.group === "virtual"), [filtered]);
-
-	const getLabel = useCallback((val: string | null) => allOptions.find((o) => o.value === val)?.label ?? val ?? "", [allOptions]);
+	}, [providerKeys, virtualKeys, blocks, isRegularUser]);
 
 	const selectedVK = useMemo(() => virtualKeys.find((vk) => vk.value === value), [virtualKeys, value]);
 	const selectedBlock = selectedVK ? blocks?.[selectedVK.id] : undefined;
 	const fmt = (v?: number) => `$${(v ?? 0).toFixed(2)}`;
 
-	const isMember = authStatus?.role !== "admin";
-	const isRegularUser = (authStatus?.role || "").trim().toLowerCase() === "user";
 	const userBudget = authStatus?.budget;
 	const userUsage = authStatus?.budget_current_usage ?? 0;
 	// Members always see their personal budget. Users with a configured budget also see their meter.
 	const showUserBudget = isMember || (userBudget !== undefined && userBudget > 0);
-	const hasAssignedKeys = virtualKeys.length > 0 || providerKeys.length > 0;
 	const showVKBudget = Boolean(selectedVK);
 
-	const selectValue = value || "__auto__";
+	const selectValue = useMemo(() => {
+		if (value && value !== "__auto__") {
+			if (providerKeys.some((k) => k.key_id === value)) return value;
+			if (virtualKeys.some((vk) => vk.value === value)) return value;
+		}
+		if (isMember) {
+			return virtualKeys[0]?.value ?? "__none__";
+		}
+		return "__auto__";
+	}, [value, providerKeys, virtualKeys, isMember]);
+
+	const hasKeysToShow = !isMember || virtualKeys.length > 0 || providerKeys.length > 0;
 
 	return (
 		<div className="flex flex-col gap-2">
-			{billingFailed ? (
+			{isMember && billingFailed ? (
 				<QueryErrorBanner
 					testId="api-key-selector-billing-query-error"
 					message={getErrorMessage(billingError) || "Failed to load virtual key billing blocks."}
 				/>
 			) : null}
-			{hasAssignedKeys && (
+			{hasKeysToShow && (
 				<>
 					<Label className="text-muted-foreground text-xs font-medium uppercase">Virtual key / API Key</Label>
 					<p className="text-muted-foreground text-[11px] leading-snug">
@@ -115,68 +106,64 @@ export function ApiKeySelectorView({
 								: "Keys already assigned to you (user, team, or customer). Pick one to chat — its models and budgets apply."
 							: "Uses Models providers & Governance virtual keys. Routing, budgets, and pricing overrides apply when you pick a VK or provider key."}
 					</p>
-					{isMember ? (
-						<Select value={selectValue} onValueChange={(v) => onValueChange(v)} disabled={disabled}>
-							<SelectTrigger className="border-border bg-background h-9 w-full text-sm" data-testid="member-vk-select">
-								<SelectValue placeholder={placeholder ?? "Select virtual key"} />
-							</SelectTrigger>
-							<SelectContent>
-								{filteredVirtualKeys.length > 0 ? (
-									<SelectGroup>
-										<SelectLabel>Your Virtual Keys</SelectLabel>
-										{filteredVirtualKeys.map((o) => (
-											<SelectItem key={o.value} value={o.value}>
-												{o.label}
+					<Select
+						value={selectValue}
+						onValueChange={(v) => {
+							if (v && v !== "__none__") {
+								onValueChange(v);
+							}
+						}}
+						disabled={disabled}
+					>
+						<SelectTrigger className="border-border bg-background h-9 w-full text-sm font-normal" data-testid={isMember ? "member-vk-select" : "admin-vk-select"}>
+							<SelectValue placeholder={placeholder ?? "Select key"} />
+						</SelectTrigger>
+						<SelectContent className="max-h-72">
+							{!isMember && (
+								<SelectItem value="__auto__">Auto (default)</SelectItem>
+							)}
+							{!isMember && providerKeys.length > 0 && (
+								<SelectGroup>
+									<SelectLabel className="text-muted-foreground text-xs font-semibold">API Keys</SelectLabel>
+									{providerKeys.map((k) => (
+										<SelectItem key={k.key_id} value={k.key_id}>
+											{k.name}
+										</SelectItem>
+									))}
+								</SelectGroup>
+							)}
+							<SelectGroup>
+								<SelectLabel className="text-muted-foreground text-xs font-semibold">
+									{isMember ? "Your Virtual Keys" : "Virtual Keys"}
+								</SelectLabel>
+								{virtualKeys.length > 0 ? (
+									virtualKeys.map((vk) => {
+										const isInactive = vk.is_active === false;
+										const isExpired = vk.expires_at ? new Date(vk.expires_at).getTime() < Date.now() : false;
+										const block = blocks?.[vk.id];
+										let suffix = "";
+										if (isInactive) suffix = " (Inactive)";
+										else if (isExpired) suffix = " (Expired)";
+										else if (block) {
+											const scopeLabel = block.scope === "vk" ? "Key" : block.scope === "team" ? "Team" : isRegularUser ? "Key" : "Customer";
+											suffix = ` (${scopeLabel} budget used up)`;
+										} else if (vk.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit)) {
+											suffix = " (Key budget used up)";
+										}
+										return (
+											<SelectItem key={vk.value} value={vk.value}>
+												{vk.name}{suffix}
 											</SelectItem>
-										))}
-									</SelectGroup>
+										);
+									})
 								) : (
 									<SelectItem value="__none__" disabled>
-										No assigned keys
+										{isMember ? "No assigned keys" : "No active virtual keys"}
 									</SelectItem>
 								)}
-							</SelectContent>
-						</Select>
-					) : (
-						<Combobox
-							value={value}
-							onValueChange={(v) => onValueChange(v)}
-							onOpenChange={(open) => {
-								if (open) setQuery("");
-							}}
-							onInputValueChange={(v) => setQuery(v)}
-							filter={null}
-							itemToStringLabel={getLabel}
-						>
-							<ComboboxInput placeholder={placeholder ?? "Select API key"} showClear={value !== "__auto__"} showTrigger disabled={disabled} />
-							<ComboboxContent>
-								<ComboboxList>
-									{filteredApiKeys.length > 0 && (
-										<ComboboxGroup>
-											<ComboboxLabel>API Keys</ComboboxLabel>
-											{filteredApiKeys.map((o) => (
-												<ComboboxItem key={o.value} value={o.value}>
-													{o.label}
-												</ComboboxItem>
-											))}
-										</ComboboxGroup>
-									)}
-									{filteredApiKeys.length > 0 && filteredVirtualKeys.length > 0 && <ComboboxSeparator />}
-									{filteredVirtualKeys.length > 0 && (
-										<ComboboxGroup>
-											<ComboboxLabel>Virtual Keys</ComboboxLabel>
-											{filteredVirtualKeys.map((o) => (
-												<ComboboxItem key={o.value} value={o.value}>
-													{o.label}
-												</ComboboxItem>
-											))}
-										</ComboboxGroup>
-									)}
-									{filtered.length === 0 && <div className="text-muted-foreground py-6 text-center text-sm">No results found.</div>}
-								</ComboboxList>
-							</ComboboxContent>
-						</Combobox>
-					)}
+							</SelectGroup>
+						</SelectContent>
+					</Select>
 				</>
 			)}
 

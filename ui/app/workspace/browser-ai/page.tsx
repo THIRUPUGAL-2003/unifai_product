@@ -5301,7 +5301,7 @@ export default function BrowserAiPage() {
 						</CardHeader>
 						<CardContent className="space-y-6">
 							{/* Quota Progress Bar & Stats */}
-							<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 p-4 rounded-lg bg-muted/40 border border-border">
+							<div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-lg bg-muted/40 border border-border">
 								<div>
 									<p className="text-xs text-muted-foreground font-medium">Vendor / Issuer</p>
 									<p className="text-base font-semibold text-foreground mt-0.5 truncate">
@@ -5366,21 +5366,6 @@ export default function BrowserAiPage() {
 										</>
 									)}
 								</div>
-								<div>
-									<p className="text-xs text-muted-foreground font-medium">Server Hardware Lock</p>
-									<p className="text-base font-semibold font-mono text-foreground mt-0.5 truncate" title={licenseInfo?.host_hardware_id || ""}>
-										{licenseInfo?.host_hardware_id || "—"}
-									</p>
-									<p className="text-[11px] font-medium">
-										{licenseInfo?.is_hardware_bound ? (
-											<span className="text-emerald-400">Locked to this Host</span>
-										) : licenseInfo?.is_licensed ? (
-											<span className="text-amber-400">Floating License</span>
-										) : (
-											<span className="text-muted-foreground">Deterministic Host ID</span>
-										)}
-									</p>
-								</div>
 							</div>
 
 							{/* Visual Progress Bar */}
@@ -5421,56 +5406,6 @@ export default function BrowserAiPage() {
 										Upload the issued <code>.lic</code> file. A new file replaces the saved one.
 									</span>
 								</div>
-
-								{licenseInfo?.host_hardware_id ? (
-									<div className="flex flex-col gap-2 p-2.5 rounded-lg bg-sky-950/20 border border-sky-800/40 text-xs">
-										<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-											<div className="flex items-center gap-2">
-												<span className="text-muted-foreground">Server hardware ID:</span>
-												<code className="font-mono font-semibold text-sky-400 bg-background/80 px-2 py-0.5 rounded border border-border">
-													{licenseInfo.host_hardware_id}
-												</code>
-											</div>
-											<Button
-												type="button"
-												variant="ghost"
-												size="sm"
-												className="h-7 text-xs gap-1.5 text-sky-400 hover:text-sky-300 hover:bg-sky-950/50 self-start sm:self-auto"
-												onClick={() => {
-													navigator.clipboard.writeText(licenseInfo.host_hardware_id || "");
-													setCopiedServerID(true);
-													setTimeout(() => setCopiedServerID(false), 2000);
-												}}
-											>
-												{copiedServerID ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-												{copiedServerID ? "Copied" : "Copy server ID"}
-											</Button>
-										</div>
-										<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-											<div className="flex items-center gap-2">
-												<span className="text-muted-foreground">Database install ID:</span>
-												<code className="font-mono font-semibold text-sky-400 bg-background/80 px-2 py-0.5 rounded border border-border">
-													{licenseInfo.install_id || "—"}
-												</code>
-											</div>
-											<Button
-												type="button"
-												variant="ghost"
-												size="sm"
-												className="h-7 text-xs gap-1.5 text-sky-400 hover:text-sky-300 hover:bg-sky-950/50 self-start sm:self-auto"
-												onClick={() => {
-													navigator.clipboard.writeText(licenseInfo.install_id || "");
-													setCopiedInstallID(true);
-													setTimeout(() => setCopiedInstallID(false), 2000);
-												}}
-											>
-												{copiedInstallID ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-												{copiedInstallID ? "Copied" : "Copy database ID"}
-											</Button>
-										</div>
-										<p className="text-muted-foreground">Send both IDs to YesPanchi. A key works only for this database and this server.</p>
-									</div>
-								) : null}
 
 								<div className="flex flex-wrap items-center gap-2">
 									<label className="cursor-pointer">

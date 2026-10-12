@@ -3448,6 +3448,7 @@ const modelConfigInternalPageSize = 1000
 
 // GetVirtualKeys retrieves all virtual keys from the database.
 func (s *RDBConfigStore) GetVirtualKeys(ctx context.Context) ([]tables.TableVirtualKey, error) {
+	s.EnsureWorkspaceTables(ctx)
 	var allVirtualKeys []tables.TableVirtualKey
 	var lastCreatedAt time.Time
 	var lastID string

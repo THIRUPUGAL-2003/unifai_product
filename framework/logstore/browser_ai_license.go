@@ -70,11 +70,25 @@ type EnterpriseLicensePayload struct {
 	MaxSeats         int      `json:"max_seats"`
 	MaxProductUsers  int      `json:"max_product_users,omitempty"`
 	ServerHardwareID string   `json:"server_hardware_id,omitempty"`
+	ServerIP         string   `json:"server_ip,omitempty"`
 	InstallID        string   `json:"install_id,omitempty"`
 	Revision         int      `json:"revision,omitempty"`
 	Features         []string `json:"features"`
 	IssuedAt         string   `json:"issued_at"`
 	ExpiresAt        string   `json:"expires_at"`
+}
+
+// HasFeature returns true if the license includes the named feature flag (case-insensitive).
+func (p *EnterpriseLicensePayload) HasFeature(name string) bool {
+	if p == nil {
+		return false
+	}
+	for _, f := range p.Features {
+		if strings.EqualFold(strings.TrimSpace(f), strings.TrimSpace(name)) {
+			return true
+		}
+	}
+	return false
 }
 
 // EnterpriseLicenseEnvelope represents the exported .lic file structure.
@@ -100,6 +114,7 @@ type LicenseStatusInfo struct {
 	ActiveSeats      int      `json:"active_seats"`
 	RemainingSeats   int      `json:"remaining_seats"`
 	ServerHardwareID string   `json:"server_hardware_id,omitempty"`
+	ServerIP         string   `json:"server_ip,omitempty"`
 	HostHardwareID   string   `json:"host_hardware_id"`
 	InstallID        string   `json:"install_id"`
 	Revision         int      `json:"revision,omitempty"`
@@ -109,6 +124,76 @@ type LicenseStatusInfo struct {
 	IssuedAt         string   `json:"issued_at"`
 	Features         []string `json:"features"`
 	StatusMessage    string   `json:"status_message"`
+}
+
+// MatchServerIdentifier checks if the target IP, domain, hostname, or hardware ID matches this host.
+func MatchServerIdentifier(target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" || target == "*" || strings.EqualFold(target, "ANY") {
+		return true
+	}
+
+	// Comma-separated allowed IPs/hosts
+	if strings.Contains(target, ",") {
+		for _, part := range strings.Split(target, ",") {
+			if MatchServerIdentifier(part) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 1. Direct match with hardware ID
+	if strings.EqualFold(target, strings.TrimSpace(GetServerHardwareID())) {
+		return true
+	}
+
+	// 2. Check Hostname
+	if host, err := os.Hostname(); err == nil && strings.EqualFold(target, strings.TrimSpace(host)) {
+		return true
+	}
+
+	// 3. Check Network Interface IP addresses
+	if ifaces, err := net.Interfaces(); err == nil {
+		for _, iface := range ifaces {
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				var ip net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip != nil && (ip.String() == target || strings.EqualFold(ip.String(), target)) {
+					return true
+				}
+			}
+		}
+	}
+
+	// 4. Check Environment Variables (SERVER_DOMAIN, SERVER_IP, HOST, APP_HOST)
+	for _, envKey := range []string{"SERVER_DOMAIN", "SERVER_IP", "HOST", "APP_HOST"} {
+		val := strings.TrimSpace(os.Getenv(envKey))
+		if val == "" {
+			continue
+		}
+		cleanVal := strings.TrimPrefix(strings.TrimPrefix(val, "https://"), "http://")
+		if idx := strings.Index(cleanVal, ":"); idx != -1 {
+			cleanVal = cleanVal[:idx]
+		}
+		if idx := strings.Index(cleanVal, "/"); idx != -1 {
+			cleanVal = cleanVal[:idx]
+		}
+		if strings.EqualFold(target, cleanVal) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // VerifyLicenseEnvelope cryptographically validates the given license against the embedded Ed25519 public key.
@@ -181,9 +266,9 @@ func VerifyLicenseEnvelope(raw []byte) (*EnterpriseLicensePayload, *EnterpriseLi
 	}
 
 	// Check Server Hardware ID (Node-Locking) if specified in license
-	if strings.TrimSpace(payload.ServerHardwareID) != "" {
+	if srv := strings.TrimSpace(payload.ServerHardwareID); srv != "" && srv != "*" && !strings.EqualFold(srv, "ANY") {
 		hostID := GetServerHardwareID()
-		if !strings.EqualFold(strings.TrimSpace(payload.ServerHardwareID), strings.TrimSpace(hostID)) {
+		if !strings.EqualFold(srv, strings.TrimSpace(hostID)) {
 			return &payload, &env, fmt.Errorf("LICENSE_SERVER_MISMATCH: license is locked to server hardware [%s], but current host hardware is [%s]", payload.ServerHardwareID, hostID)
 		}
 	}
@@ -238,7 +323,7 @@ func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatus
 						RemainingSeats:   rem,
 						ServerHardwareID: payload.ServerHardwareID,
 						HostHardwareID:   GetServerHardwareID(),
-						IsHardwareBound:  payload.ServerHardwareID != "",
+						IsHardwareBound:  payload.ServerHardwareID != "" && payload.ServerHardwareID != "*" && !strings.EqualFold(payload.ServerHardwareID, "ANY"),
 						ExpiresAt:        payload.ExpiresAt,
 						IssuedAt:         payload.IssuedAt,
 						Features:         payload.Features,

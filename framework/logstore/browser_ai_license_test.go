@@ -300,3 +300,46 @@ func TestAuthorityRejectsReplacedRevision(t *testing.T) {
 		t.Fatal("other database must be rejected")
 	}
 }
+
+func TestFloatingEnterpriseLicenseAnyServerAnyDB(t *testing.T) {
+	ctx := context.Background()
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := MasterPublicKeyBytes
+	MasterPublicKeyBytes = pub
+	defer func() { MasterPublicKeyBytes = orig }()
+
+	db := newLicenseManager(t)
+	floatingLic := EnterpriseLicensePayload{
+		Version:          "1.0",
+		LicenseID:        "YP-FLOAT-100",
+		ClientName:       "Bank of Baroda",
+		Tier:             "Enterprise On-Premise",
+		MaxSeats:         100,
+		MaxProductUsers:  100,
+		InstallID:        "*",
+		ServerHardwareID: "*",
+		Revision:         1,
+		IssuedAt:         time.Now().UTC().Format(time.RFC3339),
+		ExpiresAt:        time.Now().UTC().Add(365 * 24 * time.Hour).Format(time.RFC3339),
+	}
+	raw := signLicensePayload(t, priv, floatingLic)
+	info, err := db.ActivateLicense(ctx, raw, "admin")
+	if err != nil {
+		t.Fatalf("failed to activate floating license: %v", err)
+	}
+	if !info.IsActive || info.MaxSeats != 100 || info.MaxProductUsers != 100 {
+		t.Fatalf("unexpected license state: %+v", info)
+	}
+	if info.IsHardwareBound {
+		t.Fatalf("floating license should not be hardware bound")
+	}
+
+	active, err := db.GetActiveLicense(ctx)
+	if err != nil || !active.IsActive || active.MaxSeats != 100 || active.MaxProductUsers != 100 {
+		t.Fatalf("active license check failed: %+v err=%v", active, err)
+	}
+}
+

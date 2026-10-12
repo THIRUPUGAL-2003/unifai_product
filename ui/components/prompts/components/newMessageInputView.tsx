@@ -42,11 +42,13 @@ export function NewMessageInputView() {
 	const { data: virtualKeysData, error: vkError, isError: vkFailed } = useGetVirtualKeysQuery(undefined, {
 		pollingInterval: vkPollMs,
 	});
+	const isMember = Boolean(authStatus?.role && authStatus.role !== "admin" && authStatus.role !== "super_admin");
 	const { data: billingBlocks, error: billingError, isError: billingFailed } = useGetVirtualKeyBillingBlocksQuery(undefined, {
-		pollingInterval: billingPollMs,
+		pollingInterval: isMember ? billingPollMs : 0,
+		skip: !isMember,
 	});
-	const vkBillingQueryFailed = vkFailed || billingFailed;
-	const vkBillingQueryError = vkError || billingError;
+	const vkBillingQueryFailed = vkFailed || (isMember && billingFailed);
+	const vkBillingQueryError = vkError || (isMember ? billingError : undefined);
 
 	useEffect(() => {
 		setAuthPollMs(authError ? 0 : POLL_MS);

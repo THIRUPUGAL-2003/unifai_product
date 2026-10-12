@@ -660,6 +660,18 @@ func (s *RDBConfigStore) ensureVirtualKeyBusinessUnitsTable(ctx context.Context)
 	})
 }
 
+// EnsureWorkspaceTables ensures all workspace and governance join tables exist in the database.
+func (s *RDBConfigStore) EnsureWorkspaceTables(ctx context.Context) {
+	s.ensureTableOnce("all_workspace_models", func() {
+		db := s.DB().WithContext(ctx)
+		for _, model := range tables.WorkspaceModels() {
+			if !db.Migrator().HasTable(model) {
+				_ = db.AutoMigrate(model)
+			}
+		}
+	})
+}
+
 func (s *RDBConfigStore) ListVirtualKeyBusinessUnits(ctx context.Context, virtualKeyID string) ([]tables.TableVirtualKeyBusinessUnit, error) {
 	s.ensureVirtualKeyBusinessUnitsTable(ctx)
 	var rows []tables.TableVirtualKeyBusinessUnit
