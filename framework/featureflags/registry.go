@@ -98,6 +98,13 @@ func RegisteredDefs() []FlagDef {
 	return defs
 }
 
+// Unregister removes a flag definition from the process-wide registry.
+func Unregister(id string) {
+	registryMu.Lock()
+	delete(registry, id)
+	registryMu.Unlock()
+}
+
 // resetRegistryForTest clears the registry. Tests call this between cases
 // to keep registrations isolated; not exported beyond the package.
 func resetRegistryForTest() {
@@ -105,3 +112,4 @@ func resetRegistryForTest() {
 	registry = map[string]FlagDef{}
 	registryMu.Unlock()
 }
+

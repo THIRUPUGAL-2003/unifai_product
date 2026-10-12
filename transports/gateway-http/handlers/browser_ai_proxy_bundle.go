@@ -60,8 +60,12 @@ func ensureProxyBundleEncrypted(proxyDir string) error {
 		}
 		return fmt.Errorf("python is required to encrypt the proxy bundle")
 	}
-	cmd := exec.Command(pythonBin, script)
-	cmd.Dir = filepath.Dir(filepath.Dir(script))
+	absScript, err := filepath.Abs(script)
+	if err != nil {
+		absScript = script
+	}
+	cmd := exec.Command(pythonBin, absScript)
+	cmd.Dir = filepath.Dir(filepath.Dir(absScript))
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("encrypt proxy bundle: %w: %s", err, strings.TrimSpace(string(out)))

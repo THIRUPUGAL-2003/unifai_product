@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/bytedance/sonic"
 	"github.com/fasthttp/router"
@@ -29,15 +30,15 @@ func NewFeatureFlagsHandler(store *featureflags.Store, configStore configstore.C
 	return &FeatureFlagsHandler{store: store, configStore: configStore}
 }
 
-// RegisterRoutes mounts the feature flag endpoints. Only GET and PUT are
-// exposed: flags are code-declared via featureflags.Register, so there is
-// nothing to "create" or "delete" via the API. Stale DB rows for
-// unregistered flags surface in the list with registered=false so
-// operators can see them, but they cannot be toggled or removed.
+// RegisterRoutes mounts the feature flag endpoints. Supports listing,
+// creating dynamic flags, toggling existing flags, and deleting overrides.
 func (h *FeatureFlagsHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.GatewayHTTPMiddleware) {
 	r.GET("/api/feature-flags", lib.ChainMiddlewares(h.listFlags, middlewares...))
+	r.POST("/api/feature-flags", lib.ChainMiddlewares(h.createFlag, middlewares...))
 	r.PUT("/api/feature-flags/{id}", lib.ChainMiddlewares(h.updateFlag, middlewares...))
+	r.DELETE("/api/feature-flags/{id}", lib.ChainMiddlewares(h.deleteFlag, middlewares...))
 }
+
 
 // featureFlagsListResponse keeps the wire format flexible: wrapping the
 // array in an object lets us add pagination / counts later without breaking
@@ -111,3 +112,102 @@ func (h *FeatureFlagsHandler) updateFlag(ctx *fasthttp.RequestCtx) {
 
 	SendJSON(ctx, status)
 }
+
+type createFlagRequest struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+	Default     bool   `json:"default"`
+	Enabled     *bool  `json:"enabled"`
+}
+
+func (h *FeatureFlagsHandler) createFlag(ctx *fasthttp.RequestCtx) {
+	var req createFlagRequest
+	if err := sonic.Unmarshal(ctx.PostBody(), &req); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
+		return
+	}
+
+	req.ID = strings.TrimSpace(req.ID)
+	if req.ID == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "Feature flag id is required")
+		return
+	}
+
+	if _, exists := featureflags.LookupDef(req.ID); exists {
+		SendError(ctx, fasthttp.StatusConflict, "Feature flag is already registered")
+		return
+	}
+
+	if strings.TrimSpace(req.DisplayName) == "" {
+		req.DisplayName = req.ID
+	}
+
+	def := featureflags.FlagDef{
+		ID:          req.ID,
+		DisplayName: req.DisplayName,
+		Description: req.Description,
+		Default:     req.Default,
+	}
+
+	if err := featureflags.Register(def); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "Invalid flag ID: must contain lowercase letters, numbers, and .-_ separators (e.g. custom.my_feature)")
+		return
+	}
+
+	initialEnabled := req.Default
+	if req.Enabled != nil {
+		initialEnabled = *req.Enabled
+	}
+
+	status, err := h.store.Set(ctx, req.ID, initialEnabled)
+	if err != nil {
+		featureflags.Unregister(req.ID)
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to initialize feature flag: "+err.Error())
+		return
+	}
+
+	if h.configStore != nil {
+		if err := h.configStore.UpsertFeatureFlag(ctx, req.ID, initialEnabled, status.UpdatedAt); err != nil {
+			h.store.Restore(req.ID, featureflags.EntrySnapshot{}, false)
+			featureflags.Unregister(req.ID)
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to persist feature flag: "+err.Error())
+			return
+		}
+	}
+
+	ctx.SetStatusCode(fasthttp.StatusCreated)
+	SendJSON(ctx, status)
+}
+
+func (h *FeatureFlagsHandler) deleteFlag(ctx *fasthttp.RequestCtx) {
+	id, ok := ctx.UserValue("id").(string)
+	if !ok || id == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "Invalid flag id")
+		return
+	}
+
+	priorSnap, _ := h.store.Snapshot(id)
+	status, err := h.store.Status(id)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusNotFound, "Feature flag not found")
+		return
+	}
+	if status.Locked {
+		SendError(ctx, fasthttp.StatusConflict, "Cannot delete feature flag locked by config.json / Helm")
+		return
+	}
+
+	if h.configStore != nil {
+		if err := h.configStore.DeleteFeatureFlag(ctx, id); err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to delete feature flag from database: "+err.Error())
+			return
+		}
+	}
+
+	h.store.Restore(id, priorSnap, false)
+	featureflags.Unregister(id)
+
+	SendJSON(ctx, map[string]any{"status": "deleted", "id": id})
+}
+

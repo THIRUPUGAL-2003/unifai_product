@@ -57,12 +57,18 @@ func (h *BrowserAIHandler) getRules(ctx *fasthttp.RequestCtx) {
 func (h *BrowserAIHandler) getOllamaModels(ctx *fasthttp.RequestCtx) {
 	models, baseURL, err := listOllamaInstalledModels(10 * time.Second)
 	if err != nil {
-		SendError(ctx, fasthttp.StatusBadGateway, err.Error())
+		SendJSON(ctx, map[string]any{
+			"models":    []string{},
+			"base_url":  baseURL,
+			"available": false,
+			"error":     err.Error(),
+		})
 		return
 	}
 	SendJSON(ctx, map[string]any{
-		"models":   models,
-		"base_url": baseURL,
+		"models":    models,
+		"base_url":  baseURL,
+		"available": true,
 	})
 }
 

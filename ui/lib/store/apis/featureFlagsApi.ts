@@ -1,4 +1,4 @@
-import { FeatureFlagStatus, FeatureFlagsListResponse, UpdateFeatureFlagRequest } from "@/lib/types/featureFlag";
+import { CreateFeatureFlagRequest, FeatureFlagStatus, FeatureFlagsListResponse, UpdateFeatureFlagRequest } from "@/lib/types/featureFlag";
 import { baseApi } from "./baseApi";
 
 export const featureFlagsApi = baseApi.injectEndpoints({
@@ -11,10 +11,7 @@ export const featureFlagsApi = baseApi.injectEndpoints({
 			providesTags: ["FeatureFlags"],
 		}),
 
-		// Toggle a single feature flag. The backend returns the updated
-		// FlagStatus so callers can optimistically update the cached list
-		// without a follow-up GET, but we keep this simple by invalidating
-		// the list tag and letting the next render fetch a fresh snapshot.
+		// Toggle a single feature flag.
 		updateFeatureFlag: builder.mutation<FeatureFlagStatus, UpdateFeatureFlagRequest>({
 			query: ({ id, enabled }) => ({
 				url: `/feature-flags/${encodeURIComponent(id)}`,
@@ -23,7 +20,27 @@ export const featureFlagsApi = baseApi.injectEndpoints({
 			}),
 			invalidatesTags: ["FeatureFlags"],
 		}),
+
+		// Create/register a new feature flag.
+		createFeatureFlag: builder.mutation<FeatureFlagStatus, CreateFeatureFlagRequest>({
+			query: (body) => ({
+				url: "/feature-flags",
+				method: "POST",
+				body,
+			}),
+			invalidatesTags: ["FeatureFlags"],
+		}),
+
+		// Delete a feature flag override / dynamically registered flag.
+		deleteFeatureFlag: builder.mutation<{ status: string; id: string }, string>({
+			query: (id) => ({
+				url: `/feature-flags/${encodeURIComponent(id)}`,
+				method: "DELETE",
+			}),
+			invalidatesTags: ["FeatureFlags"],
+		}),
 	}),
 });
 
-export const { useListFeatureFlagsQuery, useUpdateFeatureFlagMutation } = featureFlagsApi;
+export const { useListFeatureFlagsQuery, useUpdateFeatureFlagMutation, useCreateFeatureFlagMutation, useDeleteFeatureFlagMutation } =
+	featureFlagsApi;

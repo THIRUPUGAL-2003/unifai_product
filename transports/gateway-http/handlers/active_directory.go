@@ -76,19 +76,24 @@ func connectLDAP(cfg *ActiveDirectoryConfig) (*ldap.Conn, error) {
 	var conn *ldap.Conn
 	var err error
 
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	isLDAPS := strings.HasPrefix(strings.ToLower(serverURL), "ldaps://")
 	if isLDAPS {
 		addr := strings.TrimPrefix(serverURL, "ldaps://")
 		if !strings.Contains(addr, ":") {
 			addr += ":636"
 		}
-		conn, err = ldap.DialTLS("tcp", addr, tlsConfig)
+		rawConn, dialErr := tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
+		if dialErr != nil {
+			return nil, fmt.Errorf("failed to connect to Active Directory LDAPS server (%s): %w", serverURL, dialErr)
+		}
+		conn = ldap.NewConn(rawConn, true)
+		conn.Start()
 	} else {
 		addr := strings.TrimPrefix(serverURL, "ldap://")
 		if !strings.Contains(addr, ":") {
 			addr += ":389"
 		}
-		dialer := &net.Dialer{Timeout: 10 * time.Second}
 		conn, err = ldap.DialURL(serverURL, ldap.DialWithDialer(dialer))
 		if err != nil {
 			conn, err = ldap.Dial("tcp", addr)
@@ -256,7 +261,7 @@ func (h *WorkspaceHandler) testActiveDirectoryConnection(ctx *fasthttp.RequestCt
 		baseDN,
 		ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 5, 10, false,
 		cfg.UserFilter,
-		[]string{cfg.UsernameAttr, cfg.EmailAttr, cfg.DisplayNameAttr, "userPrincipalName", "cn"},
+		[]string{cfg.UsernameAttr, cfg.EmailAttr, cfg.DisplayNameAttr, "userPrincipalName", "cn", "department", "memberOf"},
 		nil,
 	)
 
@@ -283,6 +288,10 @@ func (h *WorkspaceHandler) testActiveDirectoryConnection(ctx *fasthttp.RequestCt
 			if email != "" {
 				name += " (" + email + ")"
 			}
+			adTeams := extractADTeams(entry)
+			if len(adTeams) > 0 {
+				name += " [Team: " + strings.Join(adTeams, ", ") + "]"
+			}
 			sampleUsers = append(sampleUsers, name)
 		}
 	}
@@ -293,6 +302,143 @@ func (h *WorkspaceHandler) testActiveDirectoryConnection(ctx *fasthttp.RequestCt
 		"discovered_count": len(sr.Entries),
 		"sample_users":     sampleUsers,
 	})
+}
+
+// isSystemADGroup identifies standard Windows built-in or administrative groups that should not become user teams.
+func isSystemADGroup(name string) bool {
+	systemGroups := map[string]bool{
+		"domain users":                            true,
+		"domain guests":                           true,
+		"domain computers":                        true,
+		"domain controllers":                      true,
+		"domain admins":                           true,
+		"enterprise admins":                       true,
+		"schema admins":                           true,
+		"administrators":                          true,
+		"users":                                   true,
+		"guests":                                  true,
+		"account operators":                       true,
+		"server operators":                        true,
+		"print operators":                         true,
+		"backup operators":                        true,
+		"replicator":                              true,
+		"remote desktop users":                    true,
+		"network configuration operators":         true,
+		"performance monitor users":               true,
+		"performance log users":                   true,
+		"distributed com users":                   true,
+		"iis_iusrs":                               true,
+		"cryptographic operators":                 true,
+		"event log readers":                       true,
+		"cert publishers":                         true,
+		"ras and ias servers":                     true,
+		"allowed rodc password replication group": true,
+		"denied rodc password replication group":  true,
+		"read-only domain controllers":            true,
+		"enterprise read-only domain controllers": true,
+		"dnsadmins":                               true,
+		"dnsupdateproxy":                          true,
+		"group policy creator owners":             true,
+		"pre-windows 2000 compatible access":      true,
+		"windows authorization access group":      true,
+	}
+	return systemGroups[strings.ToLower(strings.TrimSpace(name))]
+}
+
+// extractADTeams extracts potential team/group names from an LDAP entry's department and memberOf attributes.
+func extractADTeams(entry *ldap.Entry) []string {
+	var teams []string
+	seen := make(map[string]bool)
+
+	// 1. Department attribute (e.g. "Engineering", "Marketing", "Sales")
+	dept := strings.TrimSpace(entry.GetAttributeValue("department"))
+	if dept != "" && !seen[strings.ToLower(dept)] {
+		teams = append(teams, dept)
+		seen[strings.ToLower(dept)] = true
+	}
+
+	// 2. memberOf attributes (group DNs, e.g. CN=Engineering,OU=Groups,DC=company,DC=local)
+	memberOfValues := entry.GetAttributeValues("memberOf")
+	for _, rawDN := range memberOfValues {
+		rawDN = strings.TrimSpace(rawDN)
+		if rawDN == "" {
+			continue
+		}
+		firstPart := strings.TrimSpace(strings.Split(rawDN, ",")[0])
+		if strings.HasPrefix(strings.ToLower(firstPart), "cn=") {
+			groupName := strings.TrimSpace(firstPart[3:])
+			if groupName == "" || isSystemADGroup(groupName) {
+				continue
+			}
+			lower := strings.ToLower(groupName)
+			if !seen[lower] {
+				teams = append(teams, groupName)
+				seen[lower] = true
+			}
+		}
+	}
+
+	return teams
+}
+
+// adAssignUserToTeam ensures that the team exists (creates it if missing) and adds the user as a member.
+// Returns true if a brand new team was created in the database.
+func (h *WorkspaceHandler) adAssignUserToTeam(ctx *fasthttp.RequestCtx, teamName string, userID string) bool {
+	teamName = strings.TrimSpace(teamName)
+	if teamName == "" || userID == "" {
+		return false
+	}
+	if h.store == nil || h.store.ConfigStore == nil {
+		return false
+	}
+
+	teamCreated := false
+	team, _ := h.store.ConfigStore.GetTeamByName(ctx, teamName, "")
+	if team == nil {
+		now := time.Now().UTC()
+		sourceID := "ad:" + strings.ToLower(teamName)
+		team = &tables.TableTeam{
+			ID:        uuid.NewString(),
+			Name:      teamName,
+			SourceID:  &sourceID,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := h.store.ConfigStore.CreateTeam(ctx, team); err != nil {
+			logger.Warn("Active Directory sync: failed to create team '%s': %v", teamName, err)
+			return false
+		}
+		teamCreated = true
+		if h.promptLifecycle != nil {
+			_ = h.promptLifecycle.OnTeamCreated(ctx, team)
+		}
+		logger.Info("Active Directory sync: created new team '%s' (id=%s) from AD group/department", teamName, team.ID)
+	}
+
+	ws := h.scimWorkspaceStore()
+	if ws == nil {
+		return teamCreated
+	}
+
+	// Avoid duplicate team member insert
+	if members, err := ws.ListTeamMembers(ctx, team.ID); err == nil {
+		for _, m := range members {
+			if m.UserID == userID {
+				return teamCreated
+			}
+		}
+	}
+
+	if err := ws.AddTeamMember(ctx, team.ID, userID); err == nil {
+		if h.promptLifecycle != nil {
+			_ = h.promptLifecycle.OnTeamMemberAdded(ctx, team.ID, userID)
+		}
+		logger.Info("Active Directory sync: added user %s to team '%s'", userID, teamName)
+	} else {
+		logger.Warn("Active Directory sync: failed to add user %s to team '%s': %v", userID, teamName, err)
+	}
+
+	return teamCreated
 }
 
 // syncActiveDirectoryUsers handles POST /api/scim/ad/sync
@@ -344,7 +490,7 @@ func (h *WorkspaceHandler) syncActiveDirectoryUsers(ctx *fasthttp.RequestCtx) {
 		baseDN,
 		ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 1000, 30, false,
 		cfg.UserFilter,
-		[]string{cfg.UsernameAttr, cfg.EmailAttr, cfg.DisplayNameAttr, "userPrincipalName", "cn"},
+		[]string{cfg.UsernameAttr, cfg.EmailAttr, cfg.DisplayNameAttr, "userPrincipalName", "cn", "department", "memberOf"},
 		nil,
 	)
 
@@ -359,6 +505,7 @@ func (h *WorkspaceHandler) syncActiveDirectoryUsers(ctx *fasthttp.RequestCtx) {
 	discoveredCount := len(sr.Entries)
 	createdCount := 0
 	existingCount := 0
+	teamsCreatedCount := 0
 	quotaReached := false
 
 	now := time.Now().UTC()
@@ -391,11 +538,36 @@ func (h *WorkspaceHandler) syncActiveDirectoryUsers(ctx *fasthttp.RequestCtx) {
 			email = username + "@" + strings.TrimPrefix(cfg.Domain, "@")
 		}
 
-		// Check if user already exists
+		adTeams := extractADTeams(entry)
+
+		// Check if user already exists by username
 		existing, getErr := h.store.ConfigStore.GetUserByUsername(ctx, username)
 		if getErr == nil && existing != nil {
 			existingCount++
+			if len(adTeams) > 0 {
+				for _, tName := range adTeams {
+					if created := h.adAssignUserToTeam(ctx, tName, existing.ID); created {
+						teamsCreatedCount++
+					}
+				}
+			}
 			continue
+		}
+
+		// Also check if user already exists by email to avoid unique constraint conflict
+		if email != "" {
+			existingByEmail, emailErr := h.store.ConfigStore.GetUserByEmail(ctx, email)
+			if emailErr == nil && existingByEmail != nil {
+				existingCount++
+				if len(adTeams) > 0 {
+					for _, tName := range adTeams {
+						if created := h.adAssignUserToTeam(ctx, tName, existingByEmail.ID); created {
+							teamsCreatedCount++
+						}
+					}
+				}
+				continue
+			}
 		}
 
 		// Verify license limit before creating new user
@@ -447,17 +619,28 @@ func (h *WorkspaceHandler) syncActiveDirectoryUsers(ctx *fasthttp.RequestCtx) {
 		}
 
 		// Send welcome email with temporary password (same as SCIM provisioning flow).
-		if tempPass != "" {
+		if tempPass != "" && newUser.Email != "" {
 			trySendProvisionedEmail(h.store.ConfigStore, ctx, newUser.Username, newUser.Email, tempPass)
 		}
 
-		// Assign to the default team configured in SCIM settings, if any.
-		h.scimAssignDefaultTeam(ctx, newUser.ID)
+		// Assign to AD teams (creating team if it exists in AD) or fall back to default SCIM team
+		if len(adTeams) > 0 {
+			for _, tName := range adTeams {
+				if created := h.adAssignUserToTeam(ctx, tName, newUser.ID); created {
+					teamsCreatedCount++
+				}
+			}
+		} else {
+			h.scimAssignDefaultTeam(ctx, newUser.ID)
+		}
 
 		createdCount++
 	}
 
 	statusMsg := fmt.Sprintf("Successfully synced Active Directory! Discovered %d users: %d new users created, %d existing users.", discoveredCount, createdCount, existingCount)
+	if teamsCreatedCount > 0 {
+		statusMsg += fmt.Sprintf(" Created %d new team(s) from Active Directory groups/departments.", teamsCreatedCount)
+	}
 	if quotaReached {
 		statusMsg += " Note: Further accounts paused because the license user limit was reached."
 	}
@@ -465,12 +648,13 @@ func (h *WorkspaceHandler) syncActiveDirectoryUsers(ctx *fasthttp.RequestCtx) {
 	h.recordADSyncResult(ctx, &cfg, "success", statusMsg, createdCount, discoveredCount)
 
 	SendJSON(ctx, map[string]any{
-		"success":          true,
-		"message":          statusMsg,
-		"discovered_count": discoveredCount,
-		"created_count":    createdCount,
-		"existing_count":   existingCount,
-		"quota_reached":    quotaReached,
+		"success":             true,
+		"message":             statusMsg,
+		"discovered_count":    discoveredCount,
+		"created_count":       createdCount,
+		"existing_count":      existingCount,
+		"teams_created_count": teamsCreatedCount,
+		"quota_reached":       quotaReached,
 	})
 }
 

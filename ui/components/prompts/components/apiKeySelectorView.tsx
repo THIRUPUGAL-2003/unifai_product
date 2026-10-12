@@ -226,18 +226,17 @@ export function ApiKeySelectorView({
 			{showVKBudget && selectedVK && (() => {
 				const customerName = selectedVK.customer?.name || selectedVK.customers?.[0]?.name;
 				const teamName = selectedVK.team?.name || selectedVK.teams?.[0]?.name;
-				const scopeLabel = isRegularUser
-					? teamName
-						? `Team: ${teamName}`
-						: null
+				const hideOrgBudgets = isRegularUser || (authStatus?.role !== "admin" && authStatus?.role !== "super_admin");
+				const scopeLabel = hideOrgBudgets
+					? null
 					: customerName
 						? `Customer: ${customerName}`
 						: teamName
 							? `Team: ${teamName}`
 							: null;
-				// Never expose customer budget to regular user accounts
-				const customerBudgets = isRegularUser ? [] : (selectedVK.customer?.budgets || selectedVK.customers?.[0]?.budgets || []);
-				const teamBudgets = selectedVK.team?.budgets || selectedVK.teams?.[0]?.budgets || [];
+				// Never expose customer or team budgets to regular user accounts (only show VK budget and personal user budget)
+				const customerBudgets = hideOrgBudgets ? [] : (selectedVK.customer?.budgets || selectedVK.customers?.[0]?.budgets || []);
+				const teamBudgets = hideOrgBudgets ? [] : (selectedVK.team?.budgets || selectedVK.teams?.[0]?.budgets || []);
 				const vkBudgets = selectedVK.budgets || [];
 
 				return (

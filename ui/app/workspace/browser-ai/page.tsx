@@ -50,6 +50,9 @@ import {
 	KeyRound,
 	Clock,
 	Building2,
+	ArrowUpDown,
+	ArrowUp,
+	ArrowDown,
 } from "lucide-react";
 import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getDeploymentOrigin } from "@/lib/utils/port";
@@ -179,6 +182,46 @@ function compareGuardVersions(a: string, b: string): number {
 
 /** First Guard version that can switch to server-published Guard code. */
 const PROXY_BUNDLE_MIN_GUARD = "1.1.14";
+
+function SortHeader({
+	label,
+	sortKey,
+	currentKey,
+	currentDir,
+	onSort,
+	className = "",
+}: {
+	label: React.ReactNode;
+	sortKey: string;
+	currentKey: string;
+	currentDir: "asc" | "desc";
+	onSort: (key: string) => void;
+	className?: string;
+}) {
+	const isActive = currentKey === sortKey;
+	return (
+		<div
+			className={`inline-flex items-center gap-1 cursor-pointer select-none hover:text-foreground transition-colors ${
+				isActive ? "text-foreground font-semibold" : "text-muted-foreground"
+			} ${className}`}
+			onClick={(e) => {
+				e.stopPropagation();
+				onSort(sortKey);
+			}}
+		>
+			<span>{label}</span>
+			{isActive ? (
+				currentDir === "asc" ? (
+					<ArrowUp className="h-3.5 w-3.5 shrink-0 text-primary" />
+				) : (
+					<ArrowDown className="h-3.5 w-3.5 shrink-0 text-primary" />
+				)
+			) : (
+				<ArrowUpDown className="h-3 w-3 shrink-0 opacity-40 hover:opacity-100" />
+			)}
+		</div>
+	);
+}
 
 export default function BrowserAiPage() {
 	const [tabParam, setTabParam] = useQueryState(
@@ -894,12 +937,39 @@ export default function BrowserAiPage() {
 		}
 	}, [controls.upload_warning, uploadWarningEditing]);
 	const agents = agentsData?.agents || [];
+	const [agentSortKey, setAgentSortKey] = useState<string>("last_seen_at");
+	const [agentSortDir, setAgentSortDir] = useState<"asc" | "desc">("desc");
+	const toggleAgentSort = (key: string) => {
+		if (agentSortKey === key) {
+			setAgentSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+		} else {
+			setAgentSortKey(key);
+			setAgentSortDir("asc");
+		}
+	};
+	const sortedAgents = useMemo(() => {
+		if (!agents.length) return [];
+		return [...agents].sort((a, b) => {
+			let va: any = a[agentSortKey as keyof typeof a] ?? "";
+			let vb: any = b[agentSortKey as keyof typeof b] ?? "";
+			if (agentSortKey === "last_seen_at" || agentSortKey === "installed_at") {
+				va = a.last_seen_at ? new Date(a.last_seen_at).getTime() : 0;
+				vb = b.last_seen_at ? new Date(b.last_seen_at).getTime() : 0;
+			} else {
+				va = String(va).toLowerCase();
+				vb = String(vb).toLowerCase();
+			}
+			if (va < vb) return agentSortDir === "asc" ? -1 : 1;
+			if (va > vb) return agentSortDir === "asc" ? 1 : -1;
+			return 0;
+		});
+	}, [agents, agentSortKey, agentSortDir]);
 	const totalAgents = agentsData?.total || 0;
 	const activeAgentsCount = agentsData?.active_count ?? agents.filter((a) => a.status === "active").length;
 	const pausedAgentsCount = agentsData?.paused_count ?? agents.filter((a) => a.status === "paused").length;
 	const uninstalledAgentsCount = agentsData?.uninstalled_count ?? agents.filter((a) => a.status === "uninstalled").length;
 	const agentSettings = agentSettingsData?.settings;
-	const visibleAgentIds = useMemo(() => agents.map((a) => a.id), [agents]);
+	const visibleAgentIds = useMemo(() => sortedAgents.map((a) => a.id), [sortedAgents]);
 	const selectedVisibleAgentIds = useMemo(
 		() => visibleAgentIds.filter((id) => selectedAgentIds.has(id)),
 		[selectedAgentIds, visibleAgentIds],
@@ -1764,6 +1834,82 @@ export default function BrowserAiPage() {
 	};
 
 	const logs = logsData?.logs || [];
+	const [logSortKey, setLogSortKey] = useState<string>("timestamp");
+	const [logSortDir, setLogSortDir] = useState<"asc" | "desc">("desc");
+	const toggleLogSort = (key: string) => {
+		if (logSortKey === key) {
+			setLogSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+		} else {
+			setLogSortKey(key);
+			setLogSortDir("asc");
+		}
+	};
+	const sortedLogs = useMemo(() => {
+		if (!logs.length) return [];
+		return [...logs].sort((a, b) => {
+			let va: any = a[logSortKey as keyof typeof a] ?? "";
+			let vb: any = b[logSortKey as keyof typeof b] ?? "";
+			if (logSortKey === "timestamp") {
+				va = new Date(a.timestamp || 0).getTime();
+				vb = new Date(b.timestamp || 0).getTime();
+			} else if (logSortKey === "est_tokens") {
+				va = Number(a.est_tokens) || 0;
+				vb = Number(b.est_tokens) || 0;
+			} else {
+				va = String(va).toLowerCase();
+				vb = String(vb).toLowerCase();
+			}
+			if (va < vb) return logSortDir === "asc" ? -1 : 1;
+			if (va > vb) return logSortDir === "asc" ? 1 : -1;
+			return 0;
+		});
+	}, [logs, logSortKey, logSortDir]);
+
+	const [searchSortKey, setSearchSortKey] = useState<string>("timestamp");
+	const [searchSortDir, setSearchSortDir] = useState<"asc" | "desc">("desc");
+	const toggleSearchSort = (key: string) => {
+		if (searchSortKey === key) {
+			setSearchSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+		} else {
+			setSearchSortKey(key);
+			setSearchSortDir("asc");
+		}
+	};
+	const sortedSearchLogs = useMemo(() => {
+		if (!searchLogs.length) return [];
+		return [...searchLogs].sort((a, b) => {
+			let va: any = a[searchSortKey as keyof typeof a] ?? "";
+			let vb: any = b[searchSortKey as keyof typeof b] ?? "";
+			if (searchSortKey === "timestamp") {
+				va = new Date(a.timestamp || 0).getTime();
+				vb = new Date(b.timestamp || 0).getTime();
+			} else if (searchSortKey === "risk_score") {
+				va = Number(a.risk_score) || 0;
+				vb = Number(b.risk_score) || 0;
+			} else {
+				va = String(va).toLowerCase();
+				vb = String(vb).toLowerCase();
+			}
+			if (va < vb) return searchSortDir === "asc" ? -1 : 1;
+			if (va > vb) return searchSortDir === "asc" ? 1 : -1;
+			return 0;
+		});
+	}, [searchLogs, searchSortKey, searchSortDir]);
+
+	const [ruleSortKey, setRuleSortKey] = useState<string>("name");
+	const [ruleSortDir, setRuleSortDir] = useState<"asc" | "desc">("asc");
+
+	const [targetSortKey, setTargetSortKey] = useState<string>("domain");
+	const [targetSortDir, setTargetSortDir] = useState<"asc" | "desc">("asc");
+	const toggleTargetSort = (key: string) => {
+		if (targetSortKey === key) {
+			setTargetSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+		} else {
+			setTargetSortKey(key);
+			setTargetSortDir("asc");
+		}
+	};
+
 	const totalLogs = logsData?.total || logs.length;
 	const rules = rulesData?.rules || [];
 	const targets = targetsData?.targets || [];
@@ -2147,13 +2293,33 @@ export default function BrowserAiPage() {
 		return raw.trim();
 	};
 
-	const filteredRules = rules.filter(
-		(r) =>
-			r.name.toLowerCase().includes(ruleSearch.toLowerCase()) ||
-			(r.pattern || "").toLowerCase().includes(ruleSearch.toLowerCase()) ||
-			(r.bot_prompt || "").toLowerCase().includes(ruleSearch.toLowerCase()) ||
-			(r.description || "").toLowerCase().includes(ruleSearch.toLowerCase())
-	);
+	const filteredRules = useMemo(() => {
+		const list = rules.filter(
+			(r) =>
+				r.name.toLowerCase().includes(ruleSearch.toLowerCase()) ||
+				(r.pattern || "").toLowerCase().includes(ruleSearch.toLowerCase()) ||
+				(r.bot_prompt || "").toLowerCase().includes(ruleSearch.toLowerCase()) ||
+				(r.description || "").toLowerCase().includes(ruleSearch.toLowerCase())
+		);
+		return [...list].sort((a, b) => {
+			let va: any = a[ruleSortKey as keyof typeof a] ?? "";
+			let vb: any = b[ruleSortKey as keyof typeof b] ?? "";
+			if (ruleSortKey === "severity") {
+				const rank: Record<string, number> = { CRITICAL: 3, HIGH: 2, MEDIUM: 1 };
+				va = rank[a.severity] || 0;
+				vb = rank[b.severity] || 0;
+			} else if (ruleSortKey === "active") {
+				va = a.active ? 1 : 0;
+				vb = b.active ? 1 : 0;
+			} else {
+				va = String(va).toLowerCase();
+				vb = String(vb).toLowerCase();
+			}
+			if (va < vb) return ruleSortDir === "asc" ? -1 : 1;
+			if (va > vb) return ruleSortDir === "asc" ? 1 : -1;
+			return 0;
+		});
+	}, [rules, ruleSearch, ruleSortKey, ruleSortDir]);
 
 	useEffect(() => {
 		setRulesPageOffset(0);
@@ -2453,13 +2619,29 @@ export default function BrowserAiPage() {
 
 	const filteredTargetGroups = useMemo(() => {
 		const groups = groupTargetsByParent(targets);
-		if (!targetSearchLower) return groups;
-		return groups.filter((group) => {
-			const parentHit = targetMatchesSearch(group.parent);
-			const childHits = group.children.filter(targetMatchesSearch);
-			return parentHit || childHits.length > 0;
+		let filtered = groups;
+		if (targetSearchLower) {
+			filtered = groups.filter((group) => {
+				const parentHit = targetMatchesSearch(group.parent);
+				const childHits = group.children.filter(targetMatchesSearch);
+				return parentHit || childHits.length > 0;
+			});
+		}
+		return [...filtered].sort((ga, gb) => {
+			let va: any = ga.parent[targetSortKey as keyof typeof ga.parent] ?? "";
+			let vb: any = gb.parent[targetSortKey as keyof typeof gb.parent] ?? "";
+			if (targetSortKey === "intercepted_count") {
+				va = Number(ga.parent.intercepted_count) || 0;
+				vb = Number(gb.parent.intercepted_count) || 0;
+			} else {
+				va = String(va).toLowerCase();
+				vb = String(vb).toLowerCase();
+			}
+			if (va < vb) return targetSortDir === "asc" ? -1 : 1;
+			if (va > vb) return targetSortDir === "asc" ? 1 : -1;
+			return 0;
 		});
-	}, [targets, targetSearchLower]);
+	}, [targets, targetSearchLower, targetSortKey, targetSortDir]);
 
 	const totalTargetParents = filteredTargetGroups.length;
 	const targetCurrentPage = Math.floor(targetPageOffset / targetPageLimit) + 1;
@@ -2613,6 +2795,18 @@ export default function BrowserAiPage() {
 								<Trash2 className="h-3.5 w-3.5" />
 								Clear Logs
 							</Button>
+							{selectedSearchLogIds.size > 0 ? (
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => setDeleteSelectedTarget("search-logs")}
+									className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+									data-testid="browser-ai-delete-selected-search-logs"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									Delete selected ({selectedSearchLogIds.size})
+								</Button>
+							) : null}
 						</div>
 					) : null}
 
@@ -2916,24 +3110,24 @@ export default function BrowserAiPage() {
 											<TableHead className="w-[40px]">
 												<Checkbox
 													aria-label="Select all prompt logs on this page"
-													checked={logs.length > 0 && logs.every((l) => selectedLogIds.has(l.id))}
+													checked={sortedLogs.length > 0 && sortedLogs.every((l) => selectedLogIds.has(l.id))}
 													onCheckedChange={(on) =>
-														setSelectedLogIds(on === true ? new Set(logs.map((l) => l.id)) : new Set())
+														setSelectedLogIds(on === true ? new Set(sortedLogs.map((l) => l.id)) : new Set())
 													}
 												/>
 											</TableHead>
-											<TableHead className="w-[100px]">Date</TableHead>
-											<TableHead className="w-[100px]">Time</TableHead>
-											<TableHead className="w-[110px]">Desktop Name</TableHead>
-											<TableHead className="w-[100px]">Platform</TableHead>
-											<TableHead className="w-[auto]">User Prompt</TableHead>
-											<TableHead className="w-[80px] text-right">Est. Tokens</TableHead>
-											<TableHead className="w-[120px]">Action</TableHead>
+											<TableHead className="w-[100px]"><SortHeader label="Date" sortKey="timestamp" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
+											<TableHead className="w-[100px]"><SortHeader label="Time" sortKey="timestamp" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
+											<TableHead className="w-[110px]"><SortHeader label="Desktop Name" sortKey="agent_hostname" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
+											<TableHead className="w-[100px]"><SortHeader label="Platform" sortKey="platform" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
+											<TableHead className="w-[auto]"><SortHeader label="User Prompt" sortKey="user_prompt_preview" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
+											<TableHead className="w-[80px] text-right"><SortHeader label="Est. Tokens" sortKey="est_tokens" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} className="justify-end" /></TableHead>
+											<TableHead className="w-[120px]"><SortHeader label="Action" sortKey="action" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
 											<TableHead className="w-[64px] text-right">Details</TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
-										{logs.map((log) => (
+										{sortedLogs.map((log) => (
 											<TableRow
 												key={log.id}
 												onClick={() => setSelectedLog(log)}
@@ -3181,21 +3375,30 @@ export default function BrowserAiPage() {
 								<Table className="w-full min-w-[980px]">
 									<TableHeader>
 										<TableRow className="border-border hover:bg-transparent">
-											<TableHead className="w-[100px]">Date</TableHead>
-											<TableHead className="w-[100px]">Time</TableHead>
-											<TableHead className="w-[140px]">Desktop Name</TableHead>
-											<TableHead className="w-[130px]">Search Engine</TableHead>
-											<TableHead className="w-[90px]">Browser</TableHead>
-											<TableHead className="w-[150px]">Privacy Mode</TableHead>
-											<TableHead className="w-[auto]">Search Query / Prompt</TableHead>
+											<TableHead className="w-[40px]">
+												<Checkbox
+													aria-label="Select all search logs on this page"
+													checked={sortedSearchLogs.length > 0 && sortedSearchLogs.every((l) => selectedSearchLogIds.has(l.id))}
+													onCheckedChange={(on) =>
+														setSelectedSearchLogIds(on === true ? new Set(sortedSearchLogs.map((l) => l.id)) : new Set())
+													}
+												/>
+											</TableHead>
+											<TableHead className="w-[100px]"><SortHeader label="Date" sortKey="timestamp" currentKey={searchSortKey} currentDir={searchSortDir} onSort={toggleSearchSort} /></TableHead>
+											<TableHead className="w-[100px]"><SortHeader label="Time" sortKey="timestamp" currentKey={searchSortKey} currentDir={searchSortDir} onSort={toggleSearchSort} /></TableHead>
+											<TableHead className="w-[140px]"><SortHeader label="Desktop Name" sortKey="agent_hostname" currentKey={searchSortKey} currentDir={searchSortDir} onSort={toggleSearchSort} /></TableHead>
+											<TableHead className="w-[130px]"><SortHeader label="Search Engine" sortKey="engine" currentKey={searchSortKey} currentDir={searchSortDir} onSort={toggleSearchSort} /></TableHead>
+											<TableHead className="w-[90px]"><SortHeader label="Browser" sortKey="browser" currentKey={searchSortKey} currentDir={searchSortDir} onSort={toggleSearchSort} /></TableHead>
+											<TableHead className="w-[150px]"><SortHeader label="Privacy Mode" sortKey="is_incognito" currentKey={searchSortKey} currentDir={searchSortDir} onSort={toggleSearchSort} /></TableHead>
+											<TableHead className="w-[auto]"><SortHeader label="Search Query / Prompt" sortKey="query" currentKey={searchSortKey} currentDir={searchSortDir} onSort={toggleSearchSort} /></TableHead>
 											<TableHead className="w-[200px]">Clicked Result Link</TableHead>
-											<TableHead className="w-[140px]">Threat Risk</TableHead>
+											<TableHead className="w-[140px]"><SortHeader label="Threat Risk" sortKey="risk_score" currentKey={searchSortKey} currentDir={searchSortDir} onSort={toggleSearchSort} /></TableHead>
 										</TableRow>
 									</TableHeader>
 									<TableBody>
 										{searchLogsLoading && searchLogs.length === 0 ? (
 											<TableRow>
-												<TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+												<TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
 													<div className="flex flex-col items-center justify-center gap-2">
 														<RefreshCw className="h-5 w-5 animate-spin text-primary" />
 														<p>Loading search events...</p>
@@ -3204,7 +3407,7 @@ export default function BrowserAiPage() {
 											</TableRow>
 										) : searchLogs.length === 0 ? (
 											<TableRow>
-												<TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+												<TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
 													<div className="flex flex-col items-center justify-center gap-2">
 														<Search className="h-6 w-6 text-muted-foreground/50" />
 														<p>No search events logged yet.</p>
@@ -3212,7 +3415,7 @@ export default function BrowserAiPage() {
 												</TableCell>
 											</TableRow>
 										) : (
-											searchLogs.map((log) => {
+											sortedSearchLogs.map((log) => {
 												const e = log.engine.toLowerCase();
 												return (
 													<TableRow
@@ -3220,6 +3423,13 @@ export default function BrowserAiPage() {
 														className="border-border hover:bg-muted/30 cursor-pointer"
 														onClick={() => setSelectedSearchLog(log)}
 													>
+														<TableCell className="py-0" onClick={(e) => e.stopPropagation()}>
+															<Checkbox
+																aria-label="Select search log"
+																checked={selectedSearchLogIds.has(log.id)}
+																onCheckedChange={(on) => toggleId(setSelectedSearchLogIds, log.id, on === true)}
+															/>
+														</TableCell>
 														<TableCell className="font-mono text-xs whitespace-nowrap text-muted-foreground">
 															{formatLogDate(log.timestamp)}
 														</TableCell>
@@ -3550,6 +3760,29 @@ export default function BrowserAiPage() {
 									</CardDescription>
 								</div>
 								<div className="flex shrink-0 flex-wrap lg:flex-nowrap items-center gap-2">
+									<div className="flex items-center gap-1.5 bg-background border border-border px-2 py-1 rounded-md text-xs">
+										<span className="text-muted-foreground">Sort:</span>
+										<Select
+											value={`${ruleSortKey}-${ruleSortDir}`}
+											onValueChange={(val) => {
+												const [key, dir] = val.split("-");
+												setRuleSortKey(key);
+												setRuleSortDir(dir as "asc" | "desc");
+											}}
+										>
+											<SelectTrigger className="h-7 w-[140px] text-xs border-0 bg-transparent focus:ring-0 p-0">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="name-asc">Name (A-Z)</SelectItem>
+												<SelectItem value="name-desc">Name (Z-A)</SelectItem>
+												<SelectItem value="severity-desc">Severity (High-Low)</SelectItem>
+												<SelectItem value="severity-asc">Severity (Low-High)</SelectItem>
+												<SelectItem value="active-desc">Active first</SelectItem>
+												<SelectItem value="active-asc">Disabled first</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
 									<Button
 										type="button"
 										variant="outline"
@@ -4131,10 +4364,10 @@ export default function BrowserAiPage() {
 								<Table className="table-fixed min-w-[980px]">
 									<TableHeader>
 										<TableRow className="border-border hover:bg-transparent">
-											<TableHead className="w-[320px]">Domain</TableHead>
-											<TableHead className="w-[120px]">Platform Name</TableHead>
-											<TableHead className="w-[110px]">Intercepted</TableHead>
-											<TableHead className="w-[100px]">Status</TableHead>
+											<TableHead className="w-[320px]"><SortHeader label="Domain" sortKey="domain" currentKey={targetSortKey} currentDir={targetSortDir} onSort={toggleTargetSort} /></TableHead>
+											<TableHead className="w-[120px]"><SortHeader label="Platform Name" sortKey="platform_name" currentKey={targetSortKey} currentDir={targetSortDir} onSort={toggleTargetSort} /></TableHead>
+											<TableHead className="w-[110px]"><SortHeader label="Intercepted" sortKey="intercepted_count" currentKey={targetSortKey} currentDir={targetSortDir} onSort={toggleTargetSort} /></TableHead>
+											<TableHead className="w-[100px]"><SortHeader label="Status" sortKey="status" currentKey={targetSortKey} currentDir={targetSortDir} onSort={toggleTargetSort} /></TableHead>
 											<TableHead className="w-[120px]">Monitoring</TableHead>
 											<TableHead className="w-[130px]">Block Website</TableHead>
 											<TableHead className="w-[90px] text-right">Actions</TableHead>
@@ -4718,21 +4951,21 @@ export default function BrowserAiPage() {
 												disabled={agents.length === 0}
 											/>
 										</TableHead>
-										<TableHead className="w-[180px]">Host</TableHead>
-										<TableHead className="w-[90px]">Source</TableHead>
-										<TableHead className="w-[110px]">User</TableHead>
-										<TableHead className="w-[130px]">IP</TableHead>
+										<TableHead className="w-[180px]"><SortHeader label="Host" sortKey="hostname" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
+										<TableHead className="w-[90px]"><SortHeader label="Source" sortKey="agent_type" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
+										<TableHead className="w-[110px]"><SortHeader label="User" sortKey="username" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
+										<TableHead className="w-[130px]"><SortHeader label="IP" sortKey="ip_address" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
 										<TableHead className="w-[180px] pr-4">Physical address (MAC)</TableHead>
 										<TableHead className="w-[200px] px-4">Transport name</TableHead>
-										<TableHead className="w-[190px]">Version</TableHead>
-										<TableHead className="w-[140px]">Status</TableHead>
-										<TableHead className="w-[160px]">Last seen</TableHead>
-										<TableHead className="w-[160px]">Installed</TableHead>
+										<TableHead className="w-[190px]"><SortHeader label="Version" sortKey="agent_version" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
+										<TableHead className="w-[140px]"><SortHeader label="Status" sortKey="status" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
+										<TableHead className="w-[160px]"><SortHeader label="Last seen" sortKey="last_seen_at" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
+										<TableHead className="w-[160px]"><SortHeader label="Installed" sortKey="installed_at" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
 										<TableHead className="w-[70px] text-right">Actions</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{agents.map((agent) => (
+									{sortedAgents.map((agent) => (
 										<TableRow key={agent.id} className="border-border">
 											<TableCell>
 												<Checkbox

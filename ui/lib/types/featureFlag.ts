@@ -38,3 +38,11 @@ export interface UpdateFeatureFlagRequest {
 	id: string;
 	enabled: boolean;
 }
+
+export interface CreateFeatureFlagRequest {
+	id: string;
+	display_name: string;
+	description?: string;
+	default?: boolean;
+	enabled?: boolean;
+}

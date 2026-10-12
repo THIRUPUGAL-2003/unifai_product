@@ -756,7 +756,11 @@ func (h *BrowserAIHandler) rebuildSetupPackages(ctx *fasthttp.RequestCtx) {
 	}
 
 	// Full Windows PyInstaller+Inno can take several minutes.
-	cmd := exec.Command(pythonBin, publishScript)
+	absPublishScript := publishScript
+	if abs, err := filepath.Abs(publishScript); err == nil {
+		absPublishScript = abs
+	}
+	cmd := exec.Command(pythonBin, absPublishScript)
 	cmd.Dir = workDir
 	out, err := cmd.CombinedOutput()
 	logTail := strings.TrimSpace(string(out))

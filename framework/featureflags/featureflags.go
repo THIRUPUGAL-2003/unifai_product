@@ -259,7 +259,21 @@ func (s *Store) Restore(id string, snap EntrySnapshot, hadEntry bool) {
 	s.mu.Unlock()
 }
 
+// Delete removes an entry override from the store. Returns ErrFlagLocked
+// if the flag was pinned by config.json.
+func (s *Store) Delete(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if cur, ok := s.entries[id]; ok && cur.fromFile {
+		return fmt.Errorf("%w: %q", ErrFlagLocked, id)
+	}
+	delete(s.entries, id)
+	return nil
+}
+
+
 // Hydrate loads DB overrides during bootstrap. Call BEFORE ApplyFile so
+
 // file values overwrite any DB conflicts in-memory while leaving the DB row
 // intact (so removing the file override later re-exposes the DB value).
 func (s *Store) Hydrate(rows []HydrationRow) {

@@ -514,6 +514,12 @@ func (s *RDBConfigStore) UpsertFeatureFlag(ctx context.Context, id string, enabl
 	}).Create(&row).Error
 }
 
+// DeleteFeatureFlag removes an override row for the given flag id.
+func (s *RDBConfigStore) DeleteFeatureFlag(ctx context.Context, id string) error {
+	return s.DB().WithContext(ctx).Where("id = ?", id).Delete(&tables.TableFeatureFlag{}).Error
+}
+
+
 // GetClientConfig retrieves the client configuration from the database.
 func (s *RDBConfigStore) GetClientConfig(ctx context.Context) (*ClientConfig, error) {
 	var dbConfig tables.TableClientConfig
