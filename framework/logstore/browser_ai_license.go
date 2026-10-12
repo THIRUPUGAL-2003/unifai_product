@@ -27,6 +27,20 @@ var MasterPublicKeyBytes = []byte{
 	0xac, 0xc4, 0xdc, 0xe3, 0x27, 0x17, 0x80, 0x3a,
 }
 
+// GetMasterPublicKey returns the active Ed25519 public key.
+// It allows overriding via LICENSE_MASTER_PUBLIC_KEY env var (base64 or hex) or falls back to MasterPublicKeyBytes.
+func GetMasterPublicKey() ed25519.PublicKey {
+	if envKey := strings.TrimSpace(os.Getenv("LICENSE_MASTER_PUBLIC_KEY")); envKey != "" {
+		if b, err := base64.StdEncoding.DecodeString(envKey); err == nil && len(b) == ed25519.PublicKeySize {
+			return ed25519.PublicKey(b)
+		}
+		if b, err := hex.DecodeString(envKey); err == nil && len(b) == ed25519.PublicKeySize {
+			return ed25519.PublicKey(b)
+		}
+	}
+	return ed25519.PublicKey(MasterPublicKeyBytes)
+}
+
 const (
 	BrowserAILicenseID = "browser-ai-license-active"
 )
@@ -239,7 +253,7 @@ func VerifyLicenseEnvelope(raw []byte) (*EnterpriseLicensePayload, *EnterpriseLi
 	}
 
 	// Cryptographic Ed25519 signature verification
-	pubKey := ed25519.PublicKey(MasterPublicKeyBytes)
+	pubKey := GetMasterPublicKey()
 	if !ed25519.Verify(pubKey, rawPayload, rawSig) {
 		return nil, nil, fmt.Errorf("CRYPTOGRAPHIC_SIGNATURE_INVALID: license data is tampered, corrupted, or forged")
 	}

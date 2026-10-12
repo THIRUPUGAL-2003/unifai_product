@@ -343,7 +343,7 @@ func verifyAuthorityEnvelope(body []byte) (LicenseAuthorityDecision, error) {
 	if err != nil {
 		return LicenseAuthorityDecision{}, err
 	}
-	if !ed25519.Verify(ed25519.PublicKey(MasterPublicKeyBytes), raw, sig) {
+	if !ed25519.Verify(GetMasterPublicKey(), raw, sig) {
 		return LicenseAuthorityDecision{}, fmt.Errorf("authority signature invalid")
 	}
 	var decision LicenseAuthorityDecision

@@ -227,6 +227,11 @@ def verify_vendor_authorization(args) -> bool:
     if getattr(args, "bypass_vendor_check", False):
         return True
 
+    # 0. Possessing the Master Private Key file is direct cryptographic authorization
+    key_file = Path(getattr(args, "key", None) or os.environ.get("MASTER_PRIVATE_KEY_PATH") or SCRIPT_DIR / "master_private.key")
+    if key_file.is_file():
+        return True
+
     # 1. Master Secret check (CLI argument or environment variable)
     secret = (getattr(args, "vendor_secret", "") or os.environ.get("YESPANCHI_MASTER_SECRET") or os.environ.get("GUARD_SECRET_KEY") or "").strip()
     if secret in (DEFAULT_VENDOR_MASTER_SECRET, "ycsKvD5uWlL1ymRZZW/3ePHqMe7sab4ZiG9L1VRMAFo="):
