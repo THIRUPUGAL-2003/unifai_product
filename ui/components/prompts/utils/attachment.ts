@@ -1014,7 +1014,15 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 		return parts[0] ?? null;
 	}
 
-	if (mimeType.startsWith("audio/") || isVideoFile(file, mimeType)) {
+	// Only these 9 formats are accepted by Whisper / transcription APIs.
+	// All other audio-like files (wma, aiff, mid, sf2, als, band, flp, ptx, …)
+	// fall through to extractPromptFileText which returns binary-strings metadata.
+	const WHISPER_EXTS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm"]);
+	const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
+	const isTranscribableAudio = WHISPER_EXTS.has(fileExt) || (mimeType.startsWith("audio/") && ["audio/flac", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm", "audio/x-wav", "audio/wave", "audio/vnd.wav"].includes(mimeType));
+	const isTranscribableVideo = isVideoFile(file, mimeType) && ["mp4", "mpeg", "mpg", "webm", "m4v"].includes(fileExt);
+
+	if (isTranscribableAudio || isTranscribableVideo) {
 		const normalized = (await normalizeAudioToWavFile(file)) || file;
 		toast.message("Transcribing voice with Whisper…");
 		const transcript = await transcribeAudioFile(normalized, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
@@ -1049,12 +1057,19 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 	}
 
 	if (extracted && extracted.trim()) {
-		toast.success(`Extracted text from ${file.name}`);
+		const isBinaryStub = extracted.startsWith("[Binary File:") || extracted.startsWith("[File:");
+		if (isBinaryStub) {
+			toast.message(`Attached "${file.name}" as binary metadata`, {
+				description: "Printable strings and file info were extracted for context.",
+			});
+		} else {
+			toast.success(`Extracted text from ${file.name}`);
+		}
 		return textAttachmentFromExtract(file.name, extracted);
 	}
 
-	toast.error(`No text extractor for "${file.name}"`, {
-		description: "This format is not PDF, Office, OpenDocument, spreadsheet, image, audio, or plain text. It was not added to the prompt.",
+	toast.error(`Could not process "${file.name}"`, {
+		description: "The file appears to be empty or completely unreadable.",
 	});
 	return null;
 }

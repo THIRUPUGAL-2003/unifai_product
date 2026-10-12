@@ -83,14 +83,53 @@ export function attachmentExt(name?: string, contentType?: string): string {
 	return "";
 }
 
+const IMAGE_EXTS = new Set([
+	".png", ".jpg", ".jpeg", ".jpe", ".webp", ".gif", ".bmp", ".dib", ".svg",
+	".ico", ".cur", ".tif", ".tiff", ".avif", ".heic", ".heif", ".jxl",
+]);
+
+const TEXT_CODE_EXTS = new Set([
+	".txt", ".text", ".md", ".markdown", ".mdown", ".rst", ".tex", ".latex", ".rtf",
+	".json", ".jsonl", ".ndjson", ".jsonc", ".xml", ".html", ".htm", ".xhtml",
+	".yaml", ".yml", ".toml", ".ini", ".env", ".conf", ".config", ".cfg", ".properties",
+	".editorconfig", ".map", ".proto", ".graphql", ".gql", ".sql", ".sh", ".bash",
+	".zsh", ".fish", ".ps1", ".psm1", ".psd1", ".bat", ".cmd", ".py", ".pyw", ".pyi",
+	".pyx", ".jsx", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".java",
+	".go", ".rs", ".rlib", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx", ".hh", ".hxx",
+	".cs", ".csx", ".fs", ".fsi", ".fsx", ".php", ".phtml", ".phar", ".rb", ".rake",
+	".gemspec", ".swift", ".kt", ".kts", ".dart", ".scala", ".sc", ".r", ".rmd",
+	".m", ".mlx", ".jl", ".pl", ".pm", ".t", ".lua", ".asm", ".s", ".f", ".for",
+	".f90", ".f95", ".cbl", ".cob", ".cpy", ".mm", ".ex", ".exs", ".erl", ".hrl",
+	".hs", ".lhs", ".clj", ".cljs", ".cljc", ".edn", ".lisp", ".lsp", ".cl", ".pro",
+	".sol", ".wat", ".wasm", ".vue", ".svelte", ".aspx", ".ascx", ".cshtml", ".razor",
+	".manifest", ".webmanifest", ".tf", ".tfvars", ".tfstate", ".j2", ".jinja",
+	".jinja2", ".cmake", ".gradle", ".pom", ".sln", ".slnx", ".csproj", ".vcxproj",
+	".fsproj", ".lock", ".diff", ".patch", ".log", ".csv", ".tsv", ".svg", ".srt",
+	".vtt", ".ass", ".ssa", ".ttml", ".dfxp", ".prompt", ".dvc", ".pem", ".crt",
+	".cer", ".cert", ".csr", ".key", ".pub", ".asc", ".sig", ".sha256", ".sha512",
+	".md5", ".sha1", ".spdx", ".gpg", ".pgp", ".eml", ".vcf", ".ics", ".ical",
+	".obj", ".stl", ".gcode", ".nc", ".tap", ".scad", ".dxf", ".step", ".stp",
+	".iges", ".igs", ".kicad_sch", ".kicad_pcb", ".gbr", ".ger", ".gtl", ".gbl",
+	".brd", ".sch", ".geojson", ".kml", ".gpx", ".tab", ".mif", ".mid", ".topojson",
+	".wkt", ".prj", ".osm", ".reg", ".service", ".socket", ".timer", ".cron", ".plist",
+	".bib", ".ris", ".rdf", ".fa", ".fasta", ".fna", ".fq", ".fastq", ".sam", ".cif",
+	".qmd", ".nb", ".wl", ".edi", ".x12", ".hlsl", ".glsl", ".shader", ".po", ".pot",
+	".mo", ".xliff", ".xlf", ".strings", ".stringsdict", ".arb", ".rc", ".res",
+	".storyboard", ".xib", ".har", ".warc", ".mhtml", ".mht", ".fb2", ".x_t", ".x_b",
+	".lvproj", ".slx", ".mdl", ".cnc", ".stpnc", ".schdoc", ".pcbdoc", ".logicx",
+	".fcpxml", ".usda", ".x3d", ".x3dv", ".wrl", ".unity", ".godot", ".tscn", ".tres",
+	".enl", ".enlx", ".ofx", ".qfx", ".qif", ".sfz", ".lottie", ".m3u8", ".mpd", ".m4s",
+	".dockerfile", ".makefile", ".gitignore", ".npmrc",
+]);
+
 export function classifyAttachmentPreview(name?: string, contentType?: string): AttachmentPreviewKind {
 	const ext = attachmentExt(name, contentType);
 	const ct = (contentType || "").toLowerCase();
-	if (ct.startsWith("image/") || [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"].includes(ext)) return "image";
+	if (ct.startsWith("image/") || IMAGE_EXTS.has(ext)) return "image";
 	if (ct.includes("pdf") || ext === ".pdf") return "pdf";
 	if (ext === ".docx" || ct.includes("wordprocessingml")) return "html";
 	if ([".xlsx", ".xls", ".csv"].includes(ext) || ct.includes("spreadsheetml") || ct.includes("csv")) return "html";
-	if ([".txt", ".md", ".log", ".json", ".xml", ".html", ".htm"].includes(ext) || ct.startsWith("text/")) return "text";
+	if (ct.startsWith("text/") || ct.includes("json") || ct.includes("xml") || ct.includes("yaml") || TEXT_CODE_EXTS.has(ext)) return "text";
 	return "unsupported";
 }
 
@@ -325,6 +364,24 @@ export async function buildAttachmentPreview(
 			truncated: anyTruncated && !showAll,
 			totalRows,
 		};
+	}
+
+	// Fallback for any plain-text / code / script files that reached this point
+	const hasNul = bytes.subarray(0, Math.min(bytes.length, 4096)).includes(0);
+	if (!hasNul && bytes.length > 0) {
+		try {
+			const text = new TextDecoder().decode(bytes);
+			if (isReadableExtractedText(text) || text.length < 1000) {
+				return {
+					kind: "text",
+					text: showAll ? text : text.slice(0, 50_000),
+					truncated: !showAll && text.length > 50_000,
+					totalRows: text.length,
+				};
+			}
+		} catch {
+			/* not utf-8 text */
+		}
 	}
 
 	return { kind: "unsupported" };

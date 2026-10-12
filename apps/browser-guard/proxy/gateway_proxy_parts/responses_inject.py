@@ -35,11 +35,82 @@ def _block_ui_dedupe_key(host: str, msg: str) -> tuple[str, str]:
     return domain, f"block-ui|{norm}"
 
 
+def _xssi_length_frame(payload: str) -> str:
+    """Google batchexecute chunk: decimal byte length, then that many UTF-8 bytes."""
+    raw = payload.encode("utf-8")
+    return f"{len(raw)}\n{payload}\n"
+
+
+def _gemini_block_body(msg: str, rpc: str) -> bytes:
+    """Length-prefixed wrb.fr stream. A bare JSON array after )]}' throws in the current Gemini page and shows as a network error."""
+    payload_data = [None, [None, None, None, [[msg]]], [[msg]], msg]
+    payload_str = json.dumps(payload_data, ensure_ascii=False)
+    envelopes = [["wrb.fr", rpc, payload_str, None, None, None, "generic"]]
+    if rpc != "StreamGenerate":
+        envelopes.append(["wrb.fr", "StreamGenerate", payload_str, None, None, None, "generic"])
+    envelopes.extend([["di", 34], ["af.httprm", 34, "-gateway-", 1]])
+    chunk = json.dumps(envelopes, ensure_ascii=False)
+    return (")]}'\n" + _xssi_length_frame(chunk)).encode("utf-8")
+
+
+def _is_deepseek_completion(path: str, host_l: str) -> bool:
+    """DeepSeek web uses singular /chat/completion. OpenAI-style /chat/completions is a different client."""
+    p = (path or "").lower().split("?", 1)[0]
+    if "/chat/completions" in p:
+        return False
+    if "deepseek" in (host_l or ""):
+        return "completion" in p or "/chat" in p
+    return "/api/v0/chat/completion" in p or p.rstrip("/").endswith("/chat/completion")
+
+
+def _deepseek_block_sse(msg: str) -> bytes:
+    """chat.deepseek.com reads response.content APPEND patches. OpenAI delta chunks throw and the page says Network error."""
+    opening = {
+        "request_message_id": 1,
+        "response_message_id": 2,
+        "response": {
+            "message_id": 2,
+            "parent_id": 1,
+            "model": "",
+            "role": "ASSISTANT",
+            "content": "",
+            "thinking_content": None,
+            "status": "WIP",
+        },
+    }
+    parts = [
+        f"data: {json.dumps(opening, ensure_ascii=False)}\n\n",
+        f"data: {json.dumps({'p': 'response/content', 'o': 'APPEND', 'v': msg}, ensure_ascii=False)}\n\n",
+        f"data: {json.dumps({'p': 'response/status', 'o': 'SET', 'v': 'FINISHED'}, ensure_ascii=False)}\n\n",
+        "data: [DONE]\n\n",
+    ]
+    return "".join(parts).encode("utf-8")
+
+
 def _silent_block_response(flow: http.HTTPFlow, common_headers: dict, *, path: str, raw_body: str, accept: str) -> None:
     """Kill a duplicate blocked request without adding another in-chat bubble."""
     path_l = (path or "").lower()
     raw_low = (raw_body or "").lower()
     accept_l = (accept or "").lower()
+    host_l = ""
+    try:
+        host_l = (flow.request.pretty_host or "").lower()
+    except Exception:
+        host_l = ""
+    if is_batchexecute_chat_submit(path_l, raw_body or ""):
+        flow.response = http.Response.make(
+            200,
+            _gemini_block_body("", "StreamGenerate"),
+            {**common_headers, "Content-Type": "application/json; charset=utf-8"},
+        )
+        return
+    if _is_deepseek_completion(path_l, host_l):
+        flow.response = http.Response.make(
+            200,
+            b'data: {"p":"response/status","o":"SET","v":"FINISHED"}\n\ndata: [DONE]\n\n',
+            {**common_headers, "Content-Type": "text/event-stream; charset=utf-8"},
+        )
+        return
     # Claude / Anthropic: empty turn (no text delta).
     if _is_anthropic_messages_api_shape(path_l, raw_body or ""):
         silent = (
@@ -707,26 +778,19 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
 
         # StreamGenerate clients pick the reply from different array slots.
         # Put the same text in each slot the page is known to read.
-        payload_data = [None, [None, None, None, [[msg]]], [[msg]], msg]
-        payload_str = json.dumps(payload_data, ensure_ascii=False)
-
-        envelopes = [
-            ["wrb.fr", detected_rpc, payload_str, None, None, None, "generic"],
-        ]
-        if detected_rpc != "StreamGenerate":
-            envelopes.append(
-                ["wrb.fr", "StreamGenerate", payload_str, None, None, None, "generic"]
-            )
-        envelopes.extend([
-            ["di", 34],
-            ["af.httprm", 34, "-gateway-", 1],
-        ])
-
-        batchexecute_body = ")]}'\n" + json.dumps(envelopes, ensure_ascii=False) + "\n"
         flow.response = http.Response.make(
             200,
-            batchexecute_body.encode("utf-8"),
+            _gemini_block_body(msg, detected_rpc),
             {**common_headers, "Content-Type": "application/json; charset=utf-8"},
+        )
+        return
+
+    # ── DeepSeek web chat (singular /chat/completion) ──
+    if _is_deepseek_completion(path, host_l):
+        flow.response = http.Response.make(
+            200,
+            _deepseek_block_sse(msg),
+            {**common_headers, "Content-Type": "text/event-stream; charset=utf-8", "X-Accel-Buffering": "no"},
         )
         return
 
@@ -736,6 +800,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
     wants_stream = not is_explicit_non_stream and (
         "event-stream" in accept
         or "chat/completions" in path
+        or "/chat/completion" in path
         or "/api/chat" in path
         or "/stream" in path
         or path.endswith("/stream")

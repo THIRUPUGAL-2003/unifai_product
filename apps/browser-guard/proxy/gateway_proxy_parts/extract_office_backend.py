@@ -499,7 +499,7 @@ _PLAIN_TEXT_EXTS = frozenset({
     ".txt", ".text", ".md", ".markdown", ".mdown", ".tex", ".latex", ".rtf",
     ".csv", ".tsv", ".fb2",
     # 2. Programming and Source Code
-    ".py", ".pyw", ".pyi", ".pyx", ".js", ".mjs", ".cjs",
+    ".py", ".pyw", ".pyi", ".pyx", ".js", ".mjs", ".cjs", ".jsx",
     ".ts", ".tsx", ".mts", ".cts", ".html", ".htm", ".css", ".sass", ".scss",
     ".less", ".java", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx",
     ".cs", ".csx", ".fs", ".fsi", ".fsx", ".go", ".rs", ".rlib", ".php",
@@ -516,38 +516,49 @@ _PLAIN_TEXT_EXTS = frozenset({
     ".vue", ".svelte", ".aspx", ".ascx", ".cshtml", ".razor", ".manifest",
     ".webmanifest", ".tf", ".tfvars", ".tfstate", ".j2", ".jinja", ".jinja2",
     ".cmake", ".gradle", ".pom", ".sln", ".slnx", ".csproj", ".vcxproj",
-    ".fsproj", ".lock", ".diff", ".patch", ".log",
+    ".fsproj", ".lock", ".diff", ".patch", ".log", ".jsonc", ".dockerfile", ".makefile",
     # 4. Vector Graphics text
     ".svg",
-    # 6. Subtitles & Captions
+    # 5. Subtitle / Caption text
     ".srt", ".vtt", ".ass", ".ssa", ".ttml", ".dfxp",
-    # 8. Database scripts & exports
-    ".sql", ".dump",
-    # 9. AI config, prompt templates & tokenizers
+    # 6. Database scripts & exports
+    ".dump",
+    # 7. AI config, prompt templates & tokenizers
     ".prompt", ".jinja", ".jinja2", ".j2", ".dvc",
-    # 11. Security, Certificates & Cryptographic text
+    # 8. Security, Certificates & Cryptographic text
     ".pem", ".crt", ".cer", ".cert", ".csr", ".key", ".pub", ".asc", ".sig",
-    ".sha256", ".sha512", ".md5", ".sha1", ".spdx",
-    # 12. Email, Messaging & Contacts
+    ".sha256", ".sha512", ".md5", ".sha1", ".spdx", ".gpg", ".pgp",
+    # 9. Email, Messaging & Contacts
     ".eml", ".vcf", ".ics", ".ical",
-    # 14. CAD, 3D Models & Hardware text
-    ".obj", ".gcode", ".nc", ".tap", ".scad", ".dxf", ".step", ".stp",
+    # 10. CAD, 3D Models & Hardware text
+    ".obj", ".stl", ".gcode", ".nc", ".tap", ".scad", ".dxf", ".step", ".stp",
     ".iges", ".igs", ".kicad_sch", ".kicad_pcb", ".gbr", ".ger", ".gtl",
-    ".gbl", ".brd", ".sch",
-    # 15. GIS & Maps text
+    ".gbl", ".brd", ".sch", ".x_t", ".x_b", ".lvproj", ".slx", ".mdl",
+    ".cnc", ".stpnc", ".schdoc", ".pcbdoc",
+    # 11. GIS & Maps text
     ".geojson", ".kml", ".gpx", ".tab", ".mif", ".mid", ".topojson", ".wkt",
-    # 16. OS & System text
-    ".reg", ".service", ".socket", ".timer", ".cron",
-    # 18. Scientific & Research text
+    ".prj", ".osm", ".lottie", ".m3u8", ".mpd",
+    # 12. OS & System text
+    ".reg", ".service", ".socket", ".timer", ".cron", ".plist",
+    # 13. Scientific & Research text
     ".bib", ".ris", ".rdf", ".fa", ".fasta", ".fna", ".fq", ".fastq",
-    ".sam", ".pdb", ".cif", ".qmd",
-    # 19. E-commerce & Business data
-    ".edi", ".x12",
-    # 20. Shaders
+    ".sam", ".pdb", ".cif", ".qmd", ".nb", ".wl", ".enl", ".enlx",
+    # 14. E-commerce & Business data text
+    ".edi", ".x12", ".ofx", ".qfx", ".qif",
+    # 15. Shaders
     ".hlsl", ".glsl", ".shader",
-    # 22. Localization & Misc text
+    # 16. Localization & Misc text
     ".po", ".pot", ".mo", ".xliff", ".xlf", ".strings", ".stringsdict",
-    ".arb", ".rc", ".res",
+    ".arb", ".rc", ".res", ".har", ".mhtml", ".mht",
+    # 17. iOS/macOS UI files (XML)
+    ".storyboard", ".xib",
+    # 18. Games / 3D assets (text-based formats)
+    ".usda", ".x3d", ".x3dv", ".wrl", ".godot", ".tscn", ".tres",
+    ".unity", ".prefab", ".asset",
+    # 19. Music project text formats
+    ".sfz", ".logicx",
+    # 20. Video production text
+    ".fcpxml", ".aepx",
 })
 
 _STANDALONE_FILENAMES = frozenset({
@@ -568,20 +579,70 @@ _STANDALONE_FILENAMES = frozenset({
 })
 
 _BINARY_DATA_EXTS = frozenset({
+    # Executables / binaries
     ".exe", ".dll", ".sys", ".cpl", ".scr", ".msp", ".msix", ".appx",
     ".appxbundle", ".so", ".dylib", ".kext", ".dex", ".odex", ".vdex", ".elf",
-    ".bin", ".hex", ".fw", ".obj", ".o", ".pdb", ".dsym", ".core", ".dmp",
-    ".wasm", ".pt", ".pth", ".jit", ".tflite", ".keras", ".weights.h5", ".onnx",
+    ".bin", ".hex", ".fw", ".o", ".dsym", ".core", ".dmp",
+    ".wasm",
+    # AI / ML models
+    ".pt", ".pth", ".jit", ".tflite", ".keras", ".weights.h5", ".onnx",
     ".blob", ".engine", ".plan", ".mlmodel", ".mlpackage", ".gguf", ".ggml",
     ".safetensors", ".spm", ".ckpt", ".checkpoint", ".npz", ".npy", ".ubj",
     ".model", ".cbm", ".faiss", ".index", ".ann", ".lance", ".onnx_data",
-    ".db", ".sqlite", ".sqlite3", ".dump", ".backup", ".mdb", ".accdb", ".bak",
+    # Databases / data storage
+    ".db", ".sqlite", ".sqlite3", ".backup", ".mdb", ".accdb", ".bak",
     ".trn", ".exp", ".dat", ".duckdb", ".ldb", ".sst", ".parquet", ".orc",
-    ".avro", ".feather", ".arrow", ".arrows", ".h5", ".hdf5", ".nc", ".pkl",
+    ".avro", ".feather", ".arrow", ".arrows", ".h5", ".hdf5", ".pkl",
     ".pickle", ".joblib", ".pb", ".protobuf", ".msgpack", ".mpk", ".bson",
     ".cbor", ".sas7bdat", ".sas7bcat", ".xpt", ".sav", ".zsav", ".por",
-    ".dta", ".wal", ".ibd", ".hc", ".p12", ".pfx", ".der", ".jks", ".keystore",
-    ".pk8", ".p7b", ".p7c", ".p7s",
+    ".dta", ".wal", ".ibd",
+    # Crypto / certs binary
+    ".p12", ".pfx", ".der", ".jks", ".keystore", ".pk8", ".p7b", ".p7c", ".p7s", ".hc",
+    # Fonts (binary)
+    ".ttf", ".otf", ".woff", ".woff2", ".eot", ".pfa", ".pfb", ".afm",
+    ".pfm", ".ttc", ".otc", ".sfd",
+    # CAD / 3D binary
+    ".dwg", ".glb", ".fbx", ".3ds", ".sldprt", ".sldasm", ".slddrw",
+    ".f3d", ".f3z", ".fcstd", ".skp", ".rvt", ".rfa", ".ifc",
+    ".blend", ".3mf", ".amf", ".gltf",
+    # GIS binary
+    ".shp", ".shx", ".dbf", ".gpkg", ".fgb", ".las", ".laz",
+    ".grib", ".grb", ".grb2", ".mbtiles", ".pmtiles", ".pbf",
+    # System / VM images
+    ".lnk", ".evtx", ".pf", ".crash", ".ips", ".swp", ".swo",
+    ".vmdk", ".vdi", ".vhd", ".vhdx", ".qcow2", ".vmx", ".vbox",
+    ".ovf", ".ova", ".rom", ".cap", ".fd",
+    # Research / science binary
+    ".fits", ".fit", ".fts", ".dcm", ".nii", ".bam", ".zarr",
+    # Business data binary
+    ".qbb", ".qbm", ".qbw",
+    # Games / 3D assets binary
+    ".unitypackage", ".uproject", ".uasset", ".umap",
+    ".mcworld", ".mca", ".save", ".pak",
+    ".pck", ".bundle", ".usd", ".usdc", ".usdz", ".bvh", ".x3db",
+    # Email / calendar binary
+    ".pst", ".ost", ".mbox", ".emlx", ".msg",
+    # Audio project / instrument binary
+    ".sf2", ".aup3", ".band", ".als", ".flp", ".ptx",
+    # Image / raster binary (not routed via image extractor)
+    ".psd", ".psb", ".ai", ".indd", ".idml", ".cdr", ".xcf", ".kra",
+    ".afphoto", ".afdesign", ".raw", ".dng", ".cr2", ".cr3", ".nef",
+    ".arw", ".orf", ".rw2", ".raf", ".exr", ".hdr", ".tga",
+    ".dds", ".ktx", ".ktx2", ".ora", ".wmf", ".emf", ".jxl",
+    ".jp2", ".j2k", ".pbm", ".pgm", ".ppm", ".pnm",
+    # eBook binary
+    ".djvu", ".djv", ".azw", ".azw3", ".kfx", ".mobi", ".cbz", ".cbr",
+    ".epub",
+    # Misc web archive & packages
+    ".warc", ".wacz", ".asice", ".asics",
+    # Additional bytecode & archives
+    ".class", ".pyc", ".pyd", ".jar", ".war",
+    # Additional documents & diagrams
+    ".eps", ".ps", ".xps", ".oxps", ".vsd", ".vsdx", ".numbers",
+    # Additional research & science data
+    ".mat", ".rdata", ".rds",
+    # Additional GIS & engineering
+    ".kmz", ".vi",
 })
 
 
@@ -602,13 +663,28 @@ def _classify_upload_kind(data: bytes, content_type: str = "", file_name: str = 
         if "pdf" in ct or ext == ".pdf":
             return "pdf"
         if "image/" in ct or ext in (
-            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff",
-            ".heic", ".heif", ".avif", ".jfif", ".ico",
+            ".png", ".jpg", ".jpeg", ".jpe", ".webp", ".gif", ".bmp", ".dib",
+            ".tif", ".tiff", ".heic", ".heif", ".avif", ".jfif", ".ico", ".cur",
+            ".psd", ".psb", ".ai", ".indd", ".idml", ".cdr", ".xcf", ".kra",
+            ".afphoto", ".afdesign", ".raw", ".dng", ".cr2", ".cr3", ".nef",
+            ".arw", ".orf", ".rw2", ".raf", ".jp2", ".j2k", ".pbm", ".pgm",
+            ".ppm", ".pnm", ".exr", ".hdr", ".tga", ".dds", ".ktx", ".ktx2",
+            ".blend", ".ora", ".wmf", ".emf", ".jxl",
         ):
             return "image"
-        if "audio/" in ct or ext in (".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".aac"):
+        if "audio/" in ct or ext in (
+            ".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".aac",
+            ".wma", ".aiff", ".aif", ".opus", ".ra", ".ram", ".au", ".caf",
+            ".ape", ".ac3", ".dts", ".weba", ".pcm", ".amr", ".mid", ".midi",
+            ".sf2", ".sfz", ".aup3", ".band", ".als", ".flp", ".logicx", ".ptx",
+        ):
             return "audio"
-        if "video/" in ct or ext in (".mp4", ".mov", ".avi", ".mkv", ".webm"):
+        if "video/" in ct or ext in (
+            ".mp4", ".mov", ".avi", ".mkv", ".webm", ".wmv", ".flv",
+            ".3gp", ".3g2", ".m2ts", ".vob", ".ogv", ".qtl", ".m4v",
+            ".mpeg", ".mpg", ".mts", ".ts", ".m4s", ".lottie",
+            ".aep", ".aepx", ".prproj", ".drp", ".fcpxml", ".avp",
+        ):
             return "video"
         if "word" in ct or ext in (".docx", ".doc"):
             return "docx"
@@ -618,7 +694,11 @@ def _classify_upload_kind(data: bytes, content_type: str = "", file_name: str = 
             return "pptx"
         if ext in (".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".gz", ".bz2", ".xz", ".zst"):
             return "tar"
-        if ext in (".zip", ".rar", ".7z", ".cab", ".iso", ".dmg", ".apk", ".deb", ".rpm"):
+        if ext in (
+            ".zip", ".rar", ".7z", ".cab", ".iso", ".dmg", ".apk", ".deb", ".rpm",
+            ".img", ".wim", ".msi", ".ear", ".aab", ".appimage", ".pkg", ".app",
+            ".sfx", ".lzh", ".lha", ".z", ".par2",
+        ):
             return "zip"
         if ext in _BINARY_DATA_EXTS:
             return "binary"

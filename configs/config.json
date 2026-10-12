@@ -1,5 +1,22 @@
 {
   "$schema": "https://www.getgateway.ai/schema",
+  "client": {
+    "drop_excess_requests": false,
+    "initial_pool_size": 5000,
+    "prometheus_labels": [],
+    "enable_logging": true,
+    "disable_content_logging": false,
+    "log_retention_days": 365,
+    "enforce_auth_on_inference": true,
+    "allowed_origins": [
+      "env.SERVER_DOMAIN"
+    ],
+    "max_request_body_size_mb": 100,
+    "mcp_external_client_url": "env.SERVER_DOMAIN",
+    "compat": {
+      "should_convert_params": false
+    }
+  },
   "config_store": {
     "enabled": true,
     "type": "postgres",
@@ -24,6 +41,66 @@
       }
     }
   },
+  "framework": {
+    "pricing": {
+      "pricing_url": "file:///app/configs/pricing.json",
+      "pricing_sync_interval": 86400,
+      "model_parameters_url": "file:///app/configs/model-parameters.json",
+      "mcp_library_url": "file:///app/configs/mcp-library.json",
+      "mcp_library_sync_interval": 86400
+    }
+  },
+  "governance": {
+    "auth_config": {
+      "is_enabled": true,
+      "admin_username": {
+        "value": "env.ADMIN_EMAIL"
+      },
+      "admin_password": {
+        "value": "env.ADMIN_PASSWORD"
+      }
+    }
+  },
+  "guardrails_config": {
+    "guardrail_rules": [
+      {
+        "id": 2,
+        "name": "new ruele",
+        "enabled": true,
+        "cel_expression": "true",
+        "apply_to": "input",
+        "provider_config_ids": [
+          1
+        ],
+        "virtual_key_ids": [
+          "059738dc-e1ff-4914-ab19-e311d1973d1a"
+        ]
+      }
+    ],
+    "guardrail_providers": [
+      {
+        "id": 1,
+        "provider_name": "regex",
+        "policy_name": "phone number",
+        "enabled": true,
+        "config": {
+          "patterns": [
+            {
+              "description": "^(?:\\+91|91|0)?[6-9]\\d{9}$",
+              "flags": "i",
+              "pattern": "^(?:\\+91|91|0)?[6-9]\\d{9}$"
+            }
+          ]
+        }
+      },
+      {
+        "id": 0,
+        "provider_name": "",
+        "policy_name": "",
+        "enabled": true
+      }
+    ]
+  },
   "logs_store": {
     "enabled": true,
     "type": "postgres",
@@ -46,43 +123,6 @@
       "ssl_mode": {
         "value": "env.DB_SSL_MODE"
       }
-    }
-  },
-  "client": {
-    "drop_excess_requests": false,
-    "initial_pool_size": 5000,
-    "prometheus_labels": [],
-    "enable_logging": true,
-    "disable_content_logging": false,
-    "log_retention_days": 365,
-    "enforce_auth_on_inference": true,
-    "allowed_origins": [
-      "env.SERVER_DOMAIN"
-    ],
-    "max_request_body_size_mb": 100,
-    "mcp_external_client_url": "env.SERVER_DOMAIN",
-    "compat": {
-      "should_convert_params": false
-    }
-  },
-  "governance": {
-    "auth_config": {
-      "is_enabled": true,
-      "admin_username": {
-        "value": "env.ADMIN_EMAIL"
-      },
-      "admin_password": {
-        "value": "env.ADMIN_PASSWORD"
-      }
-    }
-  },
-  "framework": {
-    "pricing": {
-      "pricing_url": "file:///app/configs/pricing.json",
-      "pricing_sync_interval": 86400,
-      "model_parameters_url": "file:///app/configs/model-parameters.json",
-      "mcp_library_url": "file:///app/configs/mcp-library.json",
-      "mcp_library_sync_interval": 86400
     }
   }
 }

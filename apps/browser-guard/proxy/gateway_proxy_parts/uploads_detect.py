@@ -45,14 +45,15 @@ _UPLOAD_NAME_EXTS = frozenset({
     ".psd1", ".asm", ".s", ".f", ".for", ".f90", ".f95", ".cbl", ".cob",
     ".cpy", ".mm", ".ex", ".exs", ".erl", ".hrl", ".hs", ".lhs", ".clj",
     ".cljs", ".cljc", ".edn", ".lisp", ".lsp", ".cl", ".pro", ".sol", ".sql",
-    ".graphql", ".gql", ".proto", ".wasm", ".wat", ".ipynb",
+    ".graphql", ".gql", ".proto", ".wasm", ".wat", ".ipynb", ".jsx",
     # 3. Web Development, Configuration and Project Files
-    ".json", ".jsonl", ".ndjson", ".xml", ".yaml", ".yml", ".toml", ".ini",
+    ".json", ".jsonl", ".ndjson", ".jsonc", ".xml", ".yaml", ".yml", ".toml", ".ini",
     ".conf", ".config", ".cfg", ".env", ".properties", ".editorconfig", ".map",
     ".vue", ".svelte", ".aspx", ".ascx", ".cshtml", ".razor", ".manifest",
     ".webmanifest", ".tf", ".tfvars", ".tfstate", ".j2", ".jinja", ".jinja2",
     ".cmake", ".gradle", ".pom", ".sln", ".slnx", ".csproj", ".vcxproj",
-    ".fsproj", ".lock",
+    ".fsproj", ".lock", ".diff", ".patch", ".log", ".dockerfile", ".makefile",
+    ".gitignore", ".npmrc",
     # 4. Images and Graphics
     ".jpg", ".jpeg", ".jpe", ".png", ".gif", ".webp", ".avif", ".heif", ".heic",
     ".bmp", ".dib", ".tif", ".tiff", ".svg", ".ico", ".cur", ".psd", ".psb",
@@ -120,7 +121,7 @@ _UPLOAD_NAME_EXTS = frozenset({
     # 17. Scientific, Mathematical and Research Files
     ".bib", ".ris", ".enl", ".enlx", ".rdf", ".nb", ".wl", ".fits", ".fit",
     ".fts", ".dcm", ".nii", ".fa", ".fasta", ".fna", ".fq", ".fastq",
-    ".bam", ".sam", ".pdb", ".cif", ".zarr",
+    ".bam", ".sam", ".pdb", ".cif", ".zarr", ".qmd",
     # 18. E-commerce, Payments and Business Data
     ".ofx", ".qfx", ".qif", ".qbb", ".qbm", ".qbw", ".edi", ".x12",
     # 19. Gaming, Virtual Reality and Digital Assets

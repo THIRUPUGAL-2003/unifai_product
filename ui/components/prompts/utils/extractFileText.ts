@@ -382,7 +382,7 @@ async function extractEpubText(buf: ArrayBuffer): Promise<string> {
 }
 
 const TEXT_CODE_EXT_RE =
-	/\.(txt|text|md|markdown|mdown|rst|tex|latex|json|jsonl|ndjson|jsonc|xml|html|htm|xhtml|yaml|yml|toml|ini|env|conf|config|cfg|properties|editorconfig|map|proto|graphql|gql|sql|sh|bash|zsh|fish|ps1|psm1|psd1|bat|cmd|py|pyw|pyi|pyx|js|jsx|mjs|cjs|ts|tsx|mts|cts|java|go|rs|rlib|c|h|cpp|hpp|cc|cxx|hh|hxx|cs|csx|fs|fsi|fsx|php|phtml|phar|rb|rake|gemspec|swift|kt|kts|scala|sc|r|rmd|m|mlx|jl|pl|pm|t|lua|asm|s|f|for|f90|f95|cbl|cob|cpy|mm|ex|exs|erl|hrl|hs|lhs|clj|cljs|cljc|edn|lisp|lsp|cl|pro|sol|wat|vue|svelte|aspx|ascx|cshtml|razor|manifest|webmanifest|tf|tfvars|tfstate|j2|jinja|jinja2|cmake|gradle|pom|sln|slnx|csproj|vcxproj|fsproj|lock|diff|patch|log|csv|tsv|svg|srt|vtt|ass|ssa|ttml|dfxp|prompt|dvc|pem|crt|cer|cert|csr|key|pub|asc|sig|sha256|sha512|md5|sha1|spdx|eml|vcf|ics|ical|obj|stl|gcode|nc|tap|scad|dxf|step|stp|iges|igs|kicad_sch|kicad_pcb|gbr|ger|gtl|gbl|brd|sch|geojson|kml|gpx|tab|mif|mid|topojson|wkt|reg|service|socket|timer|cron|bib|ris|rdf|fa|fasta|fna|fq|fastq|sam|pdb|cif|qmd|edi|x12|hlsl|glsl|shader|po|pot|mo|xliff|xlf|strings|stringsdict|arb|rc|res)$/i;
+	/\.(txt|text|md|markdown|mdown|rst|tex|latex|json|jsonl|ndjson|jsonc|xml|html|htm|xhtml|yaml|yml|toml|ini|env|conf|config|cfg|properties|editorconfig|map|proto|graphql|gql|sql|sh|bash|zsh|fish|ps1|psm1|psd1|bat|cmd|py|pyw|pyi|pyx|jsx|js|mjs|cjs|ts|tsx|mts|cts|java|go|rs|rlib|c|h|cpp|hpp|cc|cxx|hh|hxx|cs|csx|fs|fsi|fsx|php|phtml|phar|rb|rake|gemspec|swift|kt|kts|dart|scala|sc|r|rmd|m|mlx|jl|pl|pm|t|lua|asm|s|f|for|f90|f95|cbl|cob|cpy|mm|ex|exs|erl|hrl|hs|lhs|clj|cljs|cljc|edn|lisp|lsp|cl|pro|sol|wat|wasm|vue|svelte|aspx|ascx|cshtml|razor|manifest|webmanifest|tf|tfvars|tfstate|j2|jinja|jinja2|cmake|gradle|pom|sln|slnx|csproj|vcxproj|fsproj|lock|diff|patch|log|csv|tsv|svg|srt|vtt|ass|ssa|ttml|dfxp|prompt|dvc|pem|crt|cer|cert|csr|key|pub|asc|sig|sha256|sha512|md5|sha1|spdx|gpg|pgp|eml|vcf|ics|ical|obj|stl|gcode|nc|tap|scad|dxf|step|stp|iges|igs|kicad_sch|kicad_pcb|gbr|ger|gtl|gbl|brd|sch|geojson|kml|gpx|tab|mif|mid|topojson|wkt|prj|osm|reg|service|socket|timer|cron|plist|bib|ris|rdf|fa|fasta|fna|fq|fastq|sam|cif|qmd|nb|wl|edi|x12|hlsl|glsl|shader|po|pot|mo|xliff|xlf|strings|stringsdict|arb|rc|res|storyboard|xib|har|warc|mhtml|mht|fb2|dart|x_t|x_b|lvproj|slx|mdl|cnc|stpnc|schdoc|pcbdoc|logicx|fcpxml|usda|x3d|x3dv|wrl|unity|godot|tscn|tres|shader|enl|enlx|zarr|ofx|qfx|qif|sfz|lottie|lnk|m3u8|mpd|m4s|mts|qtl|aup3|band|als|flp|ptx|dockerfile|makefile|gitignore|npmrc|ipynb)$/i;
 
 const TEXT_STANDALONE_NAMES = new Set([
 	"dockerfile",
@@ -593,9 +593,26 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			const text = await extractFromOleCompound(buf, []);
 			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
+
+		// ── Binary / unknown fallback ─────────────────────────────────────────
+		// For AI models, databases, executables, CAD binary, fonts, game assets,
+		// VM images and any other format that reached this point: harvest printable
+		// string runs (≥5 chars) so guardrails still have something to scan and
+		// the user gets a structured metadata attachment instead of an error.
+		const binaryStrings = extractBinaryOfficeStrings(bytes);
+		const ext = name.split(".").pop() || "";
+		const sizekb = (file.size / 1024).toFixed(1);
+		const header = `[Binary File: ${file.name} | Type: ${ext.toUpperCase() || "unknown"} | Size: ${sizekb} KB]`;
+		if (binaryStrings && binaryStrings.trim().length >= 8) {
+			return `${header}\n\n--- Extracted Strings & Metadata ---\n${binaryStrings.slice(0, MAX_EXTRACT_CHARS - header.length - 50)}`;
+		}
+		// Nothing readable at all — still return a stub so callers don't show "No text extractor" error
+		return `${header}\n\n[No readable text content found in binary data]`;
 	} catch (error) {
 		console.warn("Failed to extract text from attachment:", file.name, error);
-		return null;
+		// Even on hard error, return a metadata stub so attachment doesn't silently disappear
+		const sizekb = (file.size / 1024).toFixed(1);
+		return `[File: ${file.name} | Size: ${sizekb} KB | Extraction error: ${error instanceof Error ? error.message : String(error)}]`;
 	}
 
 	return null;
