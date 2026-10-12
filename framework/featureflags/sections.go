@@ -16,6 +16,11 @@ func init() {
 		{ID: "section.adaptive-routing", DisplayName: "Adaptive Routing", Description: "Adaptive routing dashboard and settings.", Default: true},
 		{ID: "section.prompt-repository", DisplayName: "Prompt Repository", Description: "Saved prompts and folders.", Default: true},
 		{ID: "section.skills-repository", DisplayName: "Skills Repository", Description: "Skill files stored for this workspace.", Default: true},
+		{ID: "section.cluster", DisplayName: "Cluster Config", Description: "Cluster nodes, load balancer routing, and high availability.", Default: true},
+		{ID: "section.scim", DisplayName: "User Provisioning (SCIM)", Description: "SCIM directory integrations, Active Directory sync, and automated user provisioning.", Default: true},
+		{ID: "section.audit-logs", DisplayName: "Audit Logs", Description: "Governance audit trail for admin actions, virtual keys, and system mutations.", Default: true},
+		{ID: "section.access-profiles", DisplayName: "Access Profiles", Description: "Access profile policies and multi-entity permission grants.", Default: true},
+		{ID: "section.business-units", DisplayName: "Business Units", Description: "Business unit organizational grouping and team management.", Default: true},
 	}
 	for _, def := range defs {
 		MustRegister(def)

@@ -147,6 +147,7 @@ export default function ClientSettingsView() {
 	const handleSave = useCallback(async () => {
 		// Defense in depth - don't save if security headers are present
 		if (hasSecurityHeaderError) {
+			toast.error("Remove blocked security headers before saving.");
 			return;
 		}
 
@@ -175,11 +176,12 @@ export default function ClientSettingsView() {
 
 		let coreConfigSaved = false;
 		let largePayloadSaved = false;
+		let saveFailed = false;
 
 		// Save core config if changed
 		if (hasCoreConfigChanges) {
-			if (!gatewayConfig) {
-				toast.error("Configuration not loaded. Please refresh and try again.");
+			if (!gatewayConfig || coreConfigError) {
+				toast.error(getErrorMessage(coreConfigError) || "Configuration not loaded. Please refresh and try again.");
 				return;
 			}
 			// Clean up empty strings from header filter config
@@ -195,25 +197,33 @@ export default function ClientSettingsView() {
 				await updateCoreConfig({ ...gatewayConfig!, client_config: cleanedConfig }).unwrap();
 				coreConfigSaved = true;
 			} catch (error) {
-				toast.error(`Failed to save client config: ${getErrorMessage(error)}`);
+				saveFailed = true;
+				toast.error(`Failed to save client config: ${getErrorMessage(error) || "request failed"}`);
 			}
 		}
 
 		// Save large payload config if changed
 		if (hasLargePayloadChanges) {
+			if (largePayloadError) {
+				toast.error(getErrorMessage(largePayloadError) || "Large payload settings failed to load. Refresh and try again.");
+				return;
+			}
 			try {
 				await updateLargePayloadConfig(localLargePayloadConfig).unwrap();
 				largePayloadSaved = true;
 			} catch (error) {
-				toast.error(`Failed to save large payload config: ${getErrorMessage(error)}`);
+				saveFailed = true;
+				toast.error(`Failed to save large payload config: ${getErrorMessage(error) || "request failed"}`);
 			}
 		}
 
-			if (coreConfigSaved || largePayloadSaved) {
-				toast.success("Client settings updated. Changes apply on the next request.");
-			}
+		if (!saveFailed && (coreConfigSaved || largePayloadSaved)) {
+			toast.success("Client settings updated. Changes apply on the next request.");
+		}
 	}, [
 		gatewayConfig,
+		coreConfigError,
+		largePayloadError,
 		hasSecurityHeaderError,
 		hasCoreConfigChanges,
 		hasLargePayloadChanges,
@@ -293,15 +303,17 @@ export default function ClientSettingsView() {
 				<p className="text-muted-foreground text-sm">Configure client behavior and request handling.</p>
 			</div>
 
-			{Boolean(coreConfigError || largePayloadError || droppedRequestsError) && (
+			{Boolean(coreConfigError || largePayloadError) && (
 				<div className="border-destructive/50 bg-destructive/10 rounded-sm border p-4">
 					<p className="text-destructive text-sm font-medium">Failed to load client settings</p>
 					<p className="text-muted-foreground mt-1 text-sm">
-						{getErrorMessage(coreConfigError || largePayloadError || droppedRequestsError) ||
-							"An unexpected error occurred. Please try again."}
+						{getErrorMessage(coreConfigError || largePayloadError) || "An unexpected error occurred. Please try again."}
 					</p>
 				</div>
 			)}
+			{droppedRequestsError && !coreConfigError ? (
+				<p className="text-muted-foreground text-xs">Dropped-request count is unavailable right now. The switches below still save.</p>
+			) : null}
 
 			<div className="space-y-4">
 				{/* Drop Excess Requests */}
@@ -326,7 +338,7 @@ export default function ClientSettingsView() {
 						size="md"
 						checked={localConfig.drop_excess_requests}
 						onCheckedChange={(checked) => handleConfigChange("drop_excess_requests", checked)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}
 					/>
 				</div>
 
@@ -345,7 +357,7 @@ export default function ClientSettingsView() {
 						size="md"
 						checked={localConfig.disable_db_pings_in_health}
 						onCheckedChange={(checked) => handleConfigChange("disable_db_pings_in_health", checked)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}
 					/>
 				</div>
 
@@ -365,7 +377,7 @@ export default function ClientSettingsView() {
 						size="md"
 						checked={localConfig.dump_errors_in_console_logs}
 						onCheckedChange={(checked) => handleConfigChange("dump_errors_in_console_logs", checked)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}
 					/>
 				</div>
 				{/* Async Job Result TTL */}
@@ -386,7 +398,7 @@ export default function ClientSettingsView() {
 						className="w-32"
 						value={localConfig.async_job_result_ttl}
 						onChange={(e) => handleConfigChange("async_job_result_ttl", parseInt(e.target.value) || 0)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}
 						data-testid="client-settings-async-job-result-ttl-input"
 					/>
 				</div>
@@ -508,7 +520,7 @@ export default function ClientSettingsView() {
 									)}
 									value={header}
 									onChange={(e) => handleAllowlistChange(index, e.target.value)}
-									disabled={!hasSettingsUpdateAccess}
+									disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}
 								/>
 								<Button
 									type="button"
@@ -516,13 +528,13 @@ export default function ClientSettingsView() {
 									size="icon"
 									onClick={() => handleRemoveAllowlistHeader(index)}
 									className="text-muted-foreground hover:text-destructive"
-									disabled={!hasSettingsUpdateAccess}
+									disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}
 								>
 									<X className="h-4 w-4" />
 								</Button>
 							</div>
 						))}
-						<Button type="button" variant="outline" size="sm" onClick={handleAddAllowlistHeader} disabled={!hasSettingsUpdateAccess}>
+						<Button type="button" variant="outline" size="sm" onClick={handleAddAllowlistHeader} disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}>
 							<Plus className="mr-2 h-4 w-4" />
 							Add Header
 						</Button>
@@ -552,7 +564,7 @@ export default function ClientSettingsView() {
 									)}
 									value={header}
 									onChange={(e) => handleDenylistChange(index, e.target.value)}
-									disabled={!hasSettingsUpdateAccess}
+									disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}
 								/>
 								<Button
 									type="button"
@@ -560,13 +572,13 @@ export default function ClientSettingsView() {
 									size="icon"
 									onClick={() => handleRemoveDenylistHeader(index)}
 									className="text-muted-foreground hover:text-destructive"
-									disabled={!hasSettingsUpdateAccess}
+									disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}
 								>
 									<X className="h-4 w-4" />
 								</Button>
 							</div>
 						))}
-						<Button type="button" variant="outline" size="sm" onClick={handleAddDenylistHeader} disabled={!hasSettingsUpdateAccess}>
+						<Button type="button" variant="outline" size="sm" onClick={handleAddDenylistHeader} disabled={!hasSettingsUpdateAccess || Boolean(coreConfigError)}>
 							<Plus className="mr-2 h-4 w-4" />
 							Add Header
 						</Button>
@@ -578,7 +590,7 @@ export default function ClientSettingsView() {
 			<LargePayloadSettingsFragment
 				config={localLargePayloadConfig}
 				onConfigChange={handleLargePayloadConfigChange}
-				controlsDisabled={isLoading || !hasSettingsUpdateAccess}
+				controlsDisabled={isLoading || !hasSettingsUpdateAccess || Boolean(largePayloadError)}
 			/>
 
 			<div className="flex justify-end pt-2">
@@ -594,7 +606,7 @@ export default function ClientSettingsView() {
 						</TooltipContent>
 					</Tooltip>
 				) : (
-					<Button onClick={handleSave} disabled={!hasChanges || isLoading || isQueriesLoading || !hasSettingsUpdateAccess}>
+					<Button onClick={handleSave} disabled={!hasChanges || isLoading || isQueriesLoading || !hasSettingsUpdateAccess || (Boolean(coreConfigError) && hasCoreConfigChanges) || (Boolean(largePayloadError) && hasLargePayloadChanges)}>
 						{isLoading ? "Saving..." : "Save Changes"}
 					</Button>
 				)}

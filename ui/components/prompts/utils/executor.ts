@@ -17,6 +17,8 @@ export interface ExecutionConfig {
 	skillId?: string;
 	/** Prompt Repository id — stamps x-uf-prompt-id so Guardrails prompt-scoped rules match. */
 	promptId?: string;
+	/** Ticked MCP tools (`client-tool`). Omit to allow every tool on the virtual key. */
+	mcpIncludeTools?: string[];
 }
 
 function getBaseUrl() {
@@ -25,7 +27,7 @@ function getBaseUrl() {
 	return "";
 }
 
-function buildHeaders(config: Pick<ExecutionConfig, "apiKeyId" | "virtualKeyId" | "customHeaders" | "skillId" | "promptId">): Record<string, string> {
+function buildHeaders(config: Pick<ExecutionConfig, "apiKeyId" | "virtualKeyId" | "customHeaders" | "skillId" | "promptId" | "mcpIncludeTools">): Record<string, string> {
 	const headers: Record<string, string> = { "Content-Type": "application/json" };
 	if (config.virtualKeyId && config.virtualKeyId !== "__auto__" && config.virtualKeyId.startsWith("sk-uf-")) {
 		headers["Authorization"] = `Bearer ${config.virtualKeyId}`;
@@ -37,6 +39,9 @@ function buildHeaders(config: Pick<ExecutionConfig, "apiKeyId" | "virtualKeyId" 
 	// MCP Settings has "disable auto tool inject" enabled. Virtual-key grants
 	// (and allow_on_all clients) still gate which tools are actually usable.
 	headers["x-uf-mcp-include-clients"] = "*";
+	if (config.mcpIncludeTools) {
+		headers["x-uf-mcp-include-tools"] = config.mcpIncludeTools.join(",");
+	}
 	if (config.skillId?.trim()) {
 		headers["x-uf-skill-id"] = config.skillId.trim();
 	}
@@ -215,7 +220,16 @@ export async function executePrompt(
 		resolvedMessages = await enrichVoiceWithWhisper(resolvedMessages, config.apiKeyId, signal);
 		const headers = buildHeaders(config);
 
-		const { api_key_id: _, skill_id: _skill, ...rawParams } = config.modelParams || {};
+		const {
+			api_key_id: _,
+			skill_id: _skill,
+			prompt_allowed_providers: _providers,
+			prompt_allowed_models: _models,
+			prompt_allowed_virtual_keys: _vks,
+			prompt_allowed_api_keys: _apiKeys,
+			prompt_allowed_mcp_tools: _mcpTools,
+			...rawParams
+		} = config.modelParams || {};
 		const payload: Record<string, any> = {
 			model: `${config.provider}/${config.model}`,
 			messages: Message.toAPIMessages(resolvedMessages),

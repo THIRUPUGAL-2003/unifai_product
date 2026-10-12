@@ -1999,7 +1999,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 												</ul>
 											</div>
 
-											<div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
+											<div className="flex flex-col gap-4">
 												{teams?.length > 0 && (
 													<FormField
 														control={form.control}

@@ -192,11 +192,15 @@ curl --location '${baseUrl}/api/governance/virtual-keys' \\
 									try {
 										const result = await createVirtualKey({ name: keyName.trim(), is_active: true }).unwrap();
 										const secret = result.virtual_key?.value || "";
+										if (!secret) {
+											toast.error("Key was created but the secret was not returned. Open Governance to copy it.");
+											return;
+										}
 										setCreatedSecret(secret);
 										setKeyName("");
 										toast.success("Virtual key created");
 									} catch (error) {
-										toast.error(getErrorMessage(error));
+										toast.error(getErrorMessage(error) || "Failed to create virtual key.");
 									}
 								})();
 							}}

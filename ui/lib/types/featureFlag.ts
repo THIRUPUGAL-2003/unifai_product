@@ -36,7 +36,9 @@ export interface FeatureFlagsListResponse {
 
 export interface UpdateFeatureFlagRequest {
 	id: string;
-	enabled: boolean;
+	enabled?: boolean;
+	display_name?: string;
+	description?: string;
 }
 
 export interface CreateFeatureFlagRequest {

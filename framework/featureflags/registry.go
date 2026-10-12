@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -75,6 +76,23 @@ func MustRegister(def FlagDef) {
 	}
 }
 
+// UpdateDef replaces the display name and description of a registered flag.
+// If the flag was not registered yet, it registers it with the given metadata.
+func UpdateDef(id, displayName, description string) bool {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	def, ok := registry[id]
+	if !ok {
+		def = FlagDef{ID: id}
+	}
+	if name := strings.TrimSpace(displayName); name != "" {
+		def.DisplayName = name
+	}
+	def.Description = description
+	registry[id] = def
+	return true
+}
+
 // LookupDef returns the registered definition for a flag, or false if the
 // flag is not registered. Unregistered flags can still exist in DB/file as
 // stale data; the store handles them as registered=false in List().
@@ -97,6 +115,7 @@ func RegisteredDefs() []FlagDef {
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
 	return defs
 }
+
 
 // Unregister removes a flag definition from the process-wide registry.
 func Unregister(id string) {

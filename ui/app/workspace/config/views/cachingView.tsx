@@ -271,12 +271,6 @@ export default function CachingView() {
 		setMode(inferMode(editorConfig));
 	}, [plugins, semanticCachePlugin]);
 
-	useEffect(() => {
-		if (providersError) {
-			toast.error(`Failed to load providers: ${getErrorMessage(providersError as any)}`);
-		}
-	}, [providersError]);
-
 	const handleSaveVectorStore = async () => {
 		const err = validateVectorForm(vectorForm);
 		if (err) {
@@ -598,11 +592,11 @@ export default function CachingView() {
 				</div>
 			)}
 
-			{Boolean(vectorStoreError || pluginsError) && (
+			{Boolean(vectorStoreError || pluginsError || providersError) && (
 				<div className="border-destructive/50 bg-destructive/10 rounded-sm border p-4">
 					<p className="text-destructive text-sm font-medium">Failed to load cache settings</p>
 					<p className="text-muted-foreground mt-1 text-sm">
-						{getErrorMessage(vectorStoreError || pluginsError) || "An unexpected error occurred. Please try again."}
+						{getErrorMessage(vectorStoreError || pluginsError || providersError) || "An unexpected error occurred. Please try again."}
 					</p>
 				</div>
 			)}

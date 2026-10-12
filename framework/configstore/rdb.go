@@ -495,7 +495,12 @@ func (s *RDBConfigStore) GetFrameworkConfig(ctx context.Context) (*tables.TableF
 
 // ListFeatureFlags returns every persisted feature-flag override. Flags at
 // their code default are absent from this table by design.
+func (s *RDBConfigStore) ensureFeatureFlagsTable(ctx context.Context) {
+	_ = s.DB().WithContext(ctx).AutoMigrate(&tables.TableFeatureFlag{})
+}
+
 func (s *RDBConfigStore) ListFeatureFlags(ctx context.Context) ([]tables.TableFeatureFlag, error) {
+	s.ensureFeatureFlagsTable(ctx)
 	var rows []tables.TableFeatureFlag
 	if err := s.DB().WithContext(ctx).Find(&rows).Error; err != nil {
 		return nil, err
@@ -507,6 +512,7 @@ func (s *RDBConfigStore) ListFeatureFlags(ctx context.Context) ([]tables.TableFe
 // primary key so concurrent writers cannot create duplicates. updatedAt is
 // the caller-supplied logical timestamp used by gossip for last-write-wins.
 func (s *RDBConfigStore) UpsertFeatureFlag(ctx context.Context, id string, enabled bool, updatedAt int64) error {
+	s.ensureFeatureFlagsTable(ctx)
 	row := tables.TableFeatureFlag{ID: id, Enabled: enabled, UpdatedAt: updatedAt}
 	return s.DB().WithContext(ctx).Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
@@ -514,8 +520,25 @@ func (s *RDBConfigStore) UpsertFeatureFlag(ctx context.Context, id string, enabl
 	}).Create(&row).Error
 }
 
+// UpsertFeatureFlagDetails writes or replaces an override row along with DisplayName and Description.
+func (s *RDBConfigStore) UpsertFeatureFlagDetails(ctx context.Context, id string, enabled bool, displayName string, description string, updatedAt int64) error {
+	s.ensureFeatureFlagsTable(ctx)
+	row := tables.TableFeatureFlag{
+		ID:          id,
+		Enabled:     enabled,
+		DisplayName: displayName,
+		Description: description,
+		UpdatedAt:   updatedAt,
+	}
+	return s.DB().WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"enabled", "display_name", "description", "updated_at"}),
+	}).Create(&row).Error
+}
+
 // DeleteFeatureFlag removes an override row for the given flag id.
 func (s *RDBConfigStore) DeleteFeatureFlag(ctx context.Context, id string) error {
+	s.ensureFeatureFlagsTable(ctx)
 	return s.DB().WithContext(ctx).Where("id = ?", id).Delete(&tables.TableFeatureFlag{}).Error
 }
 

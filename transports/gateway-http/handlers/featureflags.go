@@ -54,7 +54,9 @@ func (h *FeatureFlagsHandler) listFlags(ctx *fasthttp.RequestCtx) {
 type updateFlagRequest struct {
 	// Pointer so that a missing field decodes as nil rather than false;
 	// otherwise a PUT with an empty body silently disables the flag.
-	Enabled *bool `json:"enabled"`
+	Enabled     *bool   `json:"enabled"`
+	DisplayName *string `json:"display_name"`
+	Description *string `json:"description"`
 }
 
 func (h *FeatureFlagsHandler) updateFlag(ctx *fasthttp.RequestCtx) {
@@ -69,20 +71,33 @@ func (h *FeatureFlagsHandler) updateFlag(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
 		return
 	}
-	if req.Enabled == nil {
-		SendError(ctx, fasthttp.StatusBadRequest, "Missing required field: enabled")
+
+	status, err := h.store.Status(id)
+	if err != nil && !errors.Is(err, featureflags.ErrFlagNotFound) {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to inspect flag: "+err.Error())
 		return
 	}
-	enabled := *req.Enabled
+
+	enabled := status.Enabled
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
+	displayName := status.DisplayName
+	if req.DisplayName != nil && strings.TrimSpace(*req.DisplayName) != "" {
+		displayName = strings.TrimSpace(*req.DisplayName)
+	}
+
+	description := status.Description
+	if req.Description != nil {
+		description = strings.TrimSpace(*req.Description)
+	}
 
 	// Capture prior in-memory state verbatim so a failed DB write below
-	// can be rolled back without corrupting metadata. Snapshot's second
-	// return distinguishes "had an override" from "was at code default";
-	// Restore uses that to delete vs. write-back, preserving the original
-	// source (default / db / file) and timestamps exactly.
+	// can be rolled back without corrupting metadata.
 	priorSnap, priorHad := h.store.Snapshot(id)
 
-	status, err := h.store.Set(ctx, id, enabled)
+	newStatus, err := h.store.Set(ctx, id, enabled)
 	switch {
 	case errors.Is(err, featureflags.ErrFlagLocked):
 		SendError(ctx, fasthttp.StatusConflict, "Feature flag is locked by config.json / Helm")
@@ -98,19 +113,20 @@ func (h *FeatureFlagsHandler) updateFlag(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Persist after the in-memory toggle succeeds. If the DB write fails
-	// we roll back the in-memory change to keep the two layers consistent;
-	// otherwise a subsequent restart would silently revert the operator's
-	// toggle and they would have no way to know.
+	featureflags.UpdateDef(id, displayName, description)
+	newStatus.DisplayName = displayName
+	newStatus.Description = description
+
+	// Persist to DB
 	if h.configStore != nil {
-		if err := h.configStore.UpsertFeatureFlag(ctx, id, enabled, status.UpdatedAt); err != nil {
+		if err := h.configStore.UpsertFeatureFlagDetails(ctx, id, enabled, displayName, description, newStatus.UpdatedAt); err != nil {
 			h.store.Restore(id, priorSnap, priorHad)
 			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to persist feature flag: "+err.Error())
 			return
 		}
 	}
 
-	SendJSON(ctx, status)
+	SendJSON(ctx, newStatus)
 }
 
 type createFlagRequest struct {
@@ -168,7 +184,7 @@ func (h *FeatureFlagsHandler) createFlag(ctx *fasthttp.RequestCtx) {
 	}
 
 	if h.configStore != nil {
-		if err := h.configStore.UpsertFeatureFlag(ctx, req.ID, initialEnabled, status.UpdatedAt); err != nil {
+		if err := h.configStore.UpsertFeatureFlagDetails(ctx, req.ID, initialEnabled, def.DisplayName, def.Description, status.UpdatedAt); err != nil {
 			h.store.Restore(req.ID, featureflags.EntrySnapshot{}, false)
 			featureflags.Unregister(req.ID)
 			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to persist feature flag: "+err.Error())
@@ -187,13 +203,8 @@ func (h *FeatureFlagsHandler) deleteFlag(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	priorSnap, _ := h.store.Snapshot(id)
 	status, err := h.store.Status(id)
-	if err != nil {
-		SendError(ctx, fasthttp.StatusNotFound, "Feature flag not found")
-		return
-	}
-	if status.Locked {
+	if err == nil && status.Locked {
 		SendError(ctx, fasthttp.StatusConflict, "Cannot delete feature flag locked by config.json / Helm")
 		return
 	}
@@ -205,7 +216,7 @@ func (h *FeatureFlagsHandler) deleteFlag(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	h.store.Restore(id, priorSnap, false)
+	_ = h.store.Delete(id)
 	featureflags.Unregister(id)
 
 	SendJSON(ctx, map[string]any{"status": "deleted", "id": id})

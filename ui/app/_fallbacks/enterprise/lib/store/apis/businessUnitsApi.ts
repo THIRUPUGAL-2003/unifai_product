@@ -16,6 +16,14 @@ export const businessUnitsApi = baseApi.injectEndpoints({
 			query: (body) => ({ url: "/governance/business-units", method: "POST", body }),
 			invalidatesTags: ["BusinessUnits"],
 		}),
+		updateBusinessUnit: builder.mutation<{ business_unit: BusinessUnit }, { id: string; name: string }>({
+			query: ({ id, name }) => ({
+				url: `/governance/business-units/${id}`,
+				method: "PUT",
+				body: { name },
+			}),
+			invalidatesTags: ["BusinessUnits"],
+		}),
 		deleteBusinessUnit: builder.mutation<void, string>({
 			query: (id) => ({ url: `/governance/business-units/${id}`, method: "DELETE" }),
 			invalidatesTags: ["BusinessUnits"],
@@ -45,6 +53,7 @@ export const businessUnitsApi = baseApi.injectEndpoints({
 export const {
 	useGetBusinessUnitsQuery,
 	useCreateBusinessUnitMutation,
+	useUpdateBusinessUnitMutation,
 	useDeleteBusinessUnitMutation,
 	useGetBusinessUnitTeamsQuery,
 	useAssignBusinessUnitTeamMutation,

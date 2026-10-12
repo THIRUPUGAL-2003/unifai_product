@@ -18,6 +18,7 @@ import { getErrorMessage, useGetCustomersQuery, useGetTeamsQuery } from "@/lib/s
 import {
 	useAssignBusinessUnitTeamMutation,
 	useCreateBusinessUnitMutation,
+	useUpdateBusinessUnitMutation,
 	useDeleteBusinessUnitMutation,
 	useGetBusinessUnitTeamsQuery,
 	useGetBusinessUnitsQuery,
@@ -25,7 +26,7 @@ import {
 } from "@enterprise/lib/store/apis/businessUnitsApi";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { BusinessUnit } from "@enterprise/lib/types/workspace";
-import { Building2, Plus, Search, Trash2, X } from "lucide-react";
+import { Building2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
@@ -37,6 +38,8 @@ export function BusinessUnitsView() {
 	const [open, setOpen] = useState(false);
 	const [teamId, setTeamId] = useState("");
 	const [unitToDelete, setUnitToDelete] = useState<BusinessUnit | null>(null);
+	const [unitToEdit, setUnitToEdit] = useState<BusinessUnit | null>(null);
+	const [editName, setEditName] = useState("");
 	const [offset, setOffset] = useState(0);
 	const [limit, setLimit] = useState(10);
 	const hasCreateAccess = useRbac(RbacResource.Teams, RbacOperation.Create);
@@ -53,6 +56,7 @@ export function BusinessUnitsView() {
 		error: assignedTeamsError,
 	} = useGetBusinessUnitTeamsQuery(selected?.id ?? "", { skip: !selected });
 	const [createUnit] = useCreateBusinessUnitMutation();
+	const [updateUnit, { isLoading: isUpdating }] = useUpdateBusinessUnitMutation();
 	const [deleteUnit] = useDeleteBusinessUnitMutation();
 	const [assignTeam] = useAssignBusinessUnitTeamMutation();
 	const [removeTeam] = useRemoveBusinessUnitTeamMutation();
@@ -93,6 +97,21 @@ export function BusinessUnitsView() {
 			await deleteUnit(id).unwrap();
 			if (selected?.id === id) setSelected(null);
 			toast.success("Business unit deleted");
+		} catch (err) {
+			toast.error(getErrorMessage(err));
+		}
+	};
+
+	const handleUpdate = async () => {
+		if (!unitToEdit || !editName.trim()) return;
+		try {
+			await updateUnit({ id: unitToEdit.id, name: editName.trim() }).unwrap();
+			toast.success("Business unit updated");
+			if (selected?.id === unitToEdit.id) {
+				setSelected((prev) => (prev ? { ...prev, name: editName.trim() } : null));
+			}
+			setUnitToEdit(null);
+			setEditName("");
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		}
@@ -199,18 +218,35 @@ export function BusinessUnitsView() {
 									<TableCell className="font-medium">{unit.name}</TableCell>
 									<TableCell>{unit.team_count}</TableCell>
 									<TableCell className="text-right">
-										<Button
-											size="icon"
-											variant="ghost"
-											disabled={!hasDeleteAccess}
-											onClick={(e) => {
-												e.stopPropagation();
-												setUnitToDelete(unit);
-											}}
-											className="h-8 w-8 text-muted-foreground hover:text-red-400"
-										>
-											<Trash2 className="h-4 w-4" />
-										</Button>
+										<div className="flex items-center justify-end gap-1">
+											<Button
+												size="icon"
+												variant="ghost"
+												disabled={!hasUpdateAccess}
+												onClick={(e) => {
+													e.stopPropagation();
+													setUnitToEdit(unit);
+													setEditName(unit.name);
+												}}
+												className="h-8 w-8 text-muted-foreground hover:text-foreground"
+												title="Edit business unit"
+											>
+												<Pencil className="h-4 w-4" />
+											</Button>
+											<Button
+												size="icon"
+												variant="ghost"
+												disabled={!hasDeleteAccess}
+												onClick={(e) => {
+													e.stopPropagation();
+													setUnitToDelete(unit);
+												}}
+												className="h-8 w-8 text-muted-foreground hover:text-red-400"
+												title="Delete business unit"
+											>
+												<Trash2 className="h-4 w-4" />
+											</Button>
+										</div>
 									</TableCell>
 								</TableRow>
 							))
@@ -237,11 +273,21 @@ export function BusinessUnitsView() {
 					<p className="text-muted-foreground text-sm">Select a business unit to assign teams.</p>
 				) : (
 					<div className="space-y-4">
-						<div>
+						<div className="flex items-center justify-between">
 							<h2 className="text-lg font-semibold">{selected.name}</h2>
-							<p className="text-muted-foreground text-xs">
-								Assign any team (with or without a customer). Related customers appear on the Customer detail view via shared teams.
-							</p>
+							<Button
+								size="sm"
+								variant="outline"
+								disabled={!hasUpdateAccess}
+								onClick={() => {
+									setUnitToEdit(selected);
+									setEditName(selected.name);
+								}}
+								className="gap-1.5 h-8 text-xs"
+							>
+								<Pencil className="h-3.5 w-3.5" />
+								Edit
+							</Button>
 						</div>
 						<div className="flex gap-2">
 							<select value={teamId} onChange={(e) => setTeamId(e.target.value)} className="border-input bg-background h-9 flex-1 rounded-md border px-3 text-sm">
@@ -297,6 +343,36 @@ export function BusinessUnitsView() {
 						</Button>
 						<Button onClick={() => void create()} disabled={!name.trim() || !hasCreateAccess}>
 							Create
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={!!unitToEdit} onOpenChange={(isOpen) => !isOpen && setUnitToEdit(null)}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Edit business unit</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-1 py-2">
+						<Label>Name</Label>
+						<Input
+							value={editName}
+							onChange={(e) => setEditName(e.target.value)}
+							placeholder="Business unit name"
+							autoFocus
+							onKeyDown={(e) => {
+								if (e.key === "Enter" && editName.trim()) {
+									void handleUpdate();
+								}
+							}}
+						/>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setUnitToEdit(null)}>
+							Cancel
+						</Button>
+						<Button onClick={() => void handleUpdate()} disabled={!editName.trim() || !hasUpdateAccess || isUpdating}>
+							{isUpdating ? "Saving..." : "Save changes"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

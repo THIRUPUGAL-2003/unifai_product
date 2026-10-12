@@ -83,6 +83,7 @@ func (h *WorkspaceHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.GET("/api/governance/business-units", wrap(h.listBusinessUnits))
 	r.POST("/api/governance/business-units", wrap(h.createBusinessUnit))
 	r.GET("/api/governance/business-units/{id}", wrap(h.getBusinessUnit))
+	r.PUT("/api/governance/business-units/{id}", wrap(h.updateBusinessUnit))
 	r.DELETE("/api/governance/business-units/{id}", wrap(h.deleteBusinessUnit))
 	r.GET("/api/governance/business-units/{id}/teams", wrap(h.listBusinessUnitTeams))
 	r.POST("/api/governance/business-units/{id}/teams", wrap(h.assignBusinessUnitTeam))

@@ -122,6 +122,48 @@ func (h *WorkspaceHandler) createBusinessUnit(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, map[string]any{"business_unit": businessUnitFromRow(row)})
 }
 
+func (h *WorkspaceHandler) updateBusinessUnit(ctx *fasthttp.RequestCtx) {
+	store := h.requireStore(ctx)
+	if store == nil {
+		return
+	}
+	id := pathID(ctx, "id")
+	row, err := store.GetBusinessUnit(ctx, id)
+	if isStoreNotFound(err) {
+		SendError(ctx, fasthttp.StatusNotFound, "business unit not found")
+		return
+	}
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to load business unit")
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil || strings.TrimSpace(body.Name) == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "name is required")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	existing, err := store.ListBusinessUnits(ctx)
+	if err == nil {
+		for _, r := range existing {
+			if r.ID != id && strings.EqualFold(r.Name, name) {
+				SendError(ctx, fasthttp.StatusConflict, "a business unit with this name already exists")
+				return
+			}
+		}
+	}
+	row.Name = name
+	row.UpdatedAt = time.Now().UTC()
+	if err := store.UpdateBusinessUnit(ctx, row); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update business unit")
+		return
+	}
+	h.reloadBusinessUnitIndex(ctx)
+	SendJSON(ctx, map[string]any{"business_unit": businessUnitFromRow(*row)})
+}
+
 func (h *WorkspaceHandler) getBusinessUnit(ctx *fasthttp.RequestCtx) {
 	store := h.requireStore(ctx)
 	if store == nil {

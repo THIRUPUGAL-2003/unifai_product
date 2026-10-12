@@ -73,6 +73,18 @@ interface PromptContextValue {
 	/** Optional Skills Repository skill id for playground injection */
 	skillId: string;
 	setSkillId: React.Dispatch<React.SetStateAction<string>>;
+	/** null = every connected MCP tool. A list = only the ticked tools. */
+	mcpIncludeTools: string[] | null;
+	setMcpIncludeTools: React.Dispatch<React.SetStateAction<string[] | null>>;
+	/** null = not committed yet. A list = only these options are shown to prompt users. */
+	allowedProviders: string[] | null;
+	setAllowedProviders: React.Dispatch<React.SetStateAction<string[] | null>>;
+	allowedModels: string[] | null;
+	setAllowedModels: React.Dispatch<React.SetStateAction<string[] | null>>;
+	allowedVirtualKeys: string[] | null;
+	setAllowedVirtualKeys: React.Dispatch<React.SetStateAction<string[] | null>>;
+	allowedApiKeys: string[] | null;
+	setAllowedApiKeys: React.Dispatch<React.SetStateAction<string[] | null>>;
 
 	// Jinja2 variables
 	variables: VariableMap;
@@ -296,6 +308,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const [virtualKeyId, setVirtualKeyId] = useState("__auto__");
 	const [apiKeyId, setApiKeyId] = useState("__auto__");
 	const [skillId, setSkillId] = useState("");
+	const [mcpIncludeTools, setMcpIncludeTools] = useState<string[] | null>(null);
+	const [allowedProviders, setAllowedProviders] = useState<string[] | null>(null);
+	const [allowedModels, setAllowedModels] = useState<string[] | null>(null);
+	const [allowedVirtualKeys, setAllowedVirtualKeys] = useState<string[] | null>(null);
+	const [allowedApiKeys, setAllowedApiKeys] = useState<string[] | null>(null);
 	const [isStreaming, setIsStreaming] = useState(false);
 	const activeRunRef = useRef<symbol | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
@@ -427,7 +444,19 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					: "empty";
 
 		const loadFromParams = (params: ModelParams, prov: string, mod: string) => {
-			const { api_key_id, virtual_key_id, skill_id, ...rest } = params || ({} as ModelParams);
+			const {
+				api_key_id,
+				virtual_key_id,
+				skill_id,
+				prompt_allowed_providers,
+				prompt_allowed_models,
+				prompt_allowed_virtual_keys,
+				prompt_allowed_api_keys,
+				prompt_allowed_mcp_tools,
+				...rest
+			} = params || ({} as ModelParams);
+			const asList = (value: unknown): string[] | null =>
+				Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : null;
 			setModelParams({
 				stream: true,
 				temperature: typeof rest.temperature === "number" ? rest.temperature : 0.7,
@@ -443,6 +472,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			setVirtualKeyId(resolvedVk || "__auto__");
 			setApiKeyId(resolvedApi || "__auto__");
 			setSkillId(typeof skill_id === "string" ? skill_id : "");
+			setMcpIncludeTools(asList(prompt_allowed_mcp_tools));
+			setAllowedProviders(asList(prompt_allowed_providers));
+			setAllowedModels(asList(prompt_allowed_models));
+			setAllowedVirtualKeys(asList(prompt_allowed_virtual_keys));
+			setAllowedApiKeys(asList(prompt_allowed_api_keys));
 			setProvider(prov || "");
 			setModel(mod || "");
 		};
@@ -506,6 +540,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			setVirtualKeyId("__auto__");
 			setApiKeyId("__auto__");
 			setSkillId("");
+			setMcpIncludeTools(null);
+			setAllowedProviders(null);
+			setAllowedModels(null);
+			setAllowedVirtualKeys(null);
+			setAllowedApiKeys(null);
 			loadedPlaygroundKeyRef.current = playgroundKey;
 		}
 	}, [
@@ -567,6 +606,15 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			if (currentVkId !== (expectedRefVk || undefined)) return true;
 			if (currentApiKeyId !== (expectedRefApiKey || undefined)) return true;
 			if ((skillId || undefined) !== (refSkillId || undefined)) return true;
+			const sameList = (current: string[] | null, saved: unknown) => {
+				const refList = Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string") : null;
+				return JSON.stringify(current) === JSON.stringify(refList);
+			};
+			if (!sameList(allowedProviders, refParams?.prompt_allowed_providers)) return true;
+			if (!sameList(allowedModels, refParams?.prompt_allowed_models)) return true;
+			if (!sameList(allowedVirtualKeys, refParams?.prompt_allowed_virtual_keys)) return true;
+			if (!sameList(allowedApiKeys, refParams?.prompt_allowed_api_keys)) return true;
+			if (!sameList(mcpIncludeTools, refParams?.prompt_allowed_mcp_tools)) return true;
 
 			// Normalize: treat missing stream/temperature/max_tokens as defaults so legacy params don't appear changed
 			const normalizeParams = (p: ModelParams): ModelParams => {
@@ -591,7 +639,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 			return false;
 		},
-		[provider, model, modelParams, virtualKeyId, apiKeyId, skillId, messages],
+		[provider, model, modelParams, virtualKeyId, apiKeyId, skillId, messages, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, mcpIncludeTools],
 	);
 
 	// Diff detection — compare current playground state against the loaded session/version
@@ -722,8 +770,13 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		if (skillId.trim()) {
 			params.skill_id = skillId.trim();
 		}
+		if (allowedProviders) params.prompt_allowed_providers = allowedProviders;
+		if (allowedModels) params.prompt_allowed_models = allowedModels;
+		if (allowedVirtualKeys) params.prompt_allowed_virtual_keys = allowedVirtualKeys;
+		if (allowedApiKeys) params.prompt_allowed_api_keys = allowedApiKeys;
+		if (mcpIncludeTools) params.prompt_allowed_mcp_tools = mcpIncludeTools;
 		return params;
-	}, [modelParams, virtualKeyId, apiKeyId, skillId]);
+	}, [modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, mcpIncludeTools]);
 
 	const persistPlaygroundSession = useCallback(
 		async (finalMessages: Message[]) => {
@@ -807,6 +860,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					skillSystemPrompt,
 					skillId,
 					promptId: selectedPromptId ?? undefined,
+					mcpIncludeTools: mcpIncludeTools ?? undefined,
 				},
 				{
 					onStreamingStart: (allMessages, placeholder) => {
@@ -871,6 +925,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			customHeaders,
 			skillSystemPrompt,
 			skillId,
+			mcpIncludeTools,
 			selectedPromptId,
 			selectedPrompt,
 			isUserRole,
@@ -942,6 +997,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					skillSystemPrompt,
 					skillId,
 					promptId: selectedPromptId ?? undefined,
+					mcpIncludeTools: mcpIncludeTools ?? undefined,
 				},
 				{
 					onStreamingStart: (allMessages, placeholder) => {
@@ -990,7 +1046,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				abortController.signal,
 			);
 		},
-		[messages, provider, model, modelParams, virtualKeyId, apiKeyId, variables, customHeaders, skillSystemPrompt, skillId, selectedPromptId, selectedPrompt, isUserRole, assignedMemberVkValue, persistPlaygroundSession],
+		[messages, provider, model, modelParams, virtualKeyId, apiKeyId, variables, customHeaders, skillSystemPrompt, skillId, mcpIncludeTools, selectedPromptId, selectedPrompt, isUserRole, assignedMemberVkValue, persistPlaygroundSession],
 	);
 
 	const handleExecuteToolCall = useCallback(
@@ -1078,6 +1134,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					skillSystemPrompt,
 					skillId,
 					promptId: selectedPromptId ?? undefined,
+					mcpIncludeTools: mcpIncludeTools ?? undefined,
 				},
 				{
 					onStreamingStart: (allMessages, placeholder) => {
@@ -1125,7 +1182,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				abortController.signal,
 			);
 		},
-		[messages, provider, model, modelParams, apiKeyId, variables, customHeaders, handleSubmitToolResult, skillSystemPrompt, skillId, selectedPromptId, persistPlaygroundSession],
+		[messages, provider, model, modelParams, apiKeyId, variables, customHeaders, handleSubmitToolResult, skillSystemPrompt, skillId, mcpIncludeTools, selectedPromptId, persistPlaygroundSession],
 	);
 
 	const handleExecuteAllToolCalls = useCallback(
@@ -1218,6 +1275,16 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		setApiKeyId,
 		skillId,
 		setSkillId,
+		mcpIncludeTools,
+		setMcpIncludeTools,
+		allowedProviders,
+		setAllowedProviders,
+		allowedModels,
+		setAllowedModels,
+		allowedVirtualKeys,
+		setAllowedVirtualKeys,
+		allowedApiKeys,
+		setAllowedApiKeys,
 		variables,
 		setVariables,
 		customHeaders,

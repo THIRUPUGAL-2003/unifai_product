@@ -590,11 +590,16 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 											props.onValueChange?.(next);
 										}}
 									>
+										<span
+											className={cn(
+												"border-primary flex size-4 shrink-0 items-center justify-center rounded-sm border",
+												isSelected ? "bg-primary text-primary-foreground" : "opacity-50",
+											)}
+										>
+											<CheckIcon className={cn("size-3", isSelected ? "" : "invisible")} />
+										</span>
 										{option.icon ? <span className="text-muted-foreground flex shrink-0 items-center">{option.icon}</span> : null}
 										<span>{option.label}</span>
-										<span className="pointer-events-none absolute right-2 flex size-4 items-center justify-center">
-											{isSelected && <CheckIcon className="size-4" />}
-										</span>
 									</CommandPrimitive.Item>
 								);
 							})}

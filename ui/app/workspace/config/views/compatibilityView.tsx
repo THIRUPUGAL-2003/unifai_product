@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { getErrorMessage, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
@@ -9,7 +10,7 @@ import { toast } from "sonner";
 
 export default function CompatibilityView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const { data: gatewayConfig, isError: configFailed, error: configError } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config?.compat;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [localCompatConfig, setLocalCompatConfig] = useState<CompatConfig>(DefaultCoreConfig.compat);
@@ -37,8 +38,8 @@ export default function CompatibilityView() {
 	}, []);
 
 	const handleSave = useCallback(async () => {
-		if (!gatewayConfig) {
-			toast.error("Configuration not loaded");
+		if (!gatewayConfig || configFailed) {
+			toast.error(getErrorMessage(configError) || "Configuration not loaded. Refresh and try again.");
 			return;
 		}
 
@@ -52,9 +53,9 @@ export default function CompatibilityView() {
 			}).unwrap();
 			toast.success("Compatibility settings updated successfully.");
 		} catch (error) {
-			toast.error(getErrorMessage(error));
+			toast.error(getErrorMessage(error) || "Failed to save compatibility settings.");
 		}
-	}, [gatewayConfig, localCompatConfig, updateCoreConfig]);
+	}, [gatewayConfig, configFailed, configError, localCompatConfig, updateCoreConfig]);
 
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-6">
@@ -74,6 +75,10 @@ export default function CompatibilityView() {
 				</p>
 			</div>
 
+			{configFailed ? (
+				<QueryErrorBanner testId="compat-config-query-error" message={getErrorMessage(configError) || "Failed to load compatibility settings."} />
+			) : null}
+
 			<div className="space-y-4">
 				<div className="flex items-center justify-between space-x-2">
 					<div className="space-y-0.5">
@@ -88,7 +93,7 @@ export default function CompatibilityView() {
 						size="md"
 						checked={localCompatConfig.convert_text_to_chat}
 						onCheckedChange={(checked) => handleCompatChange("convert_text_to_chat", checked)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || configFailed}
 					/>
 				</div>
 
@@ -107,7 +112,7 @@ export default function CompatibilityView() {
 						size="md"
 						checked={localCompatConfig.convert_chat_to_responses}
 						onCheckedChange={(checked) => handleCompatChange("convert_chat_to_responses", checked)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || configFailed}
 					/>
 				</div>
 
@@ -124,7 +129,7 @@ export default function CompatibilityView() {
 						size="md"
 						checked={localCompatConfig.should_drop_params}
 						onCheckedChange={(checked) => handleCompatChange("should_drop_params", checked)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || configFailed}
 					/>
 				</div>
 
@@ -141,13 +146,13 @@ export default function CompatibilityView() {
 						size="md"
 						checked={localCompatConfig.should_convert_params}
 						onCheckedChange={(checked) => handleCompatChange("should_convert_params", checked)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || configFailed}
 					/>
 				</div>
 			</div>
 
 			<div className="flex justify-end pt-2">
-				<Button onClick={handleSave} disabled={!hasChanges || isLoading || !hasSettingsUpdateAccess} data-testid="compat-save-button">
+				<Button onClick={handleSave} disabled={!hasChanges || isLoading || configFailed || !hasSettingsUpdateAccess} data-testid="compat-save-button">
 					{isLoading ? "Saving..." : "Save Changes"}
 				</Button>
 			</div>

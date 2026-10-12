@@ -8,9 +8,11 @@ package tables
 // stored display_name or description here - those live with the code-side
 // registration and can change without a DB migration.
 type TableFeatureFlag struct {
-	ID        string `gorm:"primaryKey;type:varchar(255)" json:"id"`
-	Enabled   bool   `gorm:"not null" json:"enabled"`
-	UpdatedAt int64  `gorm:"not null" json:"updated_at"`
+	ID          string `gorm:"primaryKey;type:varchar(255)" json:"id"`
+	Enabled     bool   `gorm:"not null" json:"enabled"`
+	DisplayName string `gorm:"type:varchar(255);default:''" json:"display_name"`
+	Description string `gorm:"type:text;default:''" json:"description"`
+	UpdatedAt   int64  `gorm:"not null" json:"updated_at"`
 }
 
 // TableName sets the table name.

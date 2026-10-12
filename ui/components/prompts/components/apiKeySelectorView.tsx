@@ -1,6 +1,6 @@
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ComboboxSelect } from "@/components/ui/combobox";
 import { getErrorMessage } from "@/lib/store";
 import { useGetVirtualKeyBillingBlocksQuery } from "@/lib/store/apis/governanceApi";
 import { useIsAuthEnabledQuery } from "@/lib/store/apis/sessionApi";
@@ -13,8 +13,12 @@ export function ApiKeySelectorView({
 	virtualKeys,
 	virtualKeyValue,
 	onVirtualKeyChange,
+	virtualKeyValues,
+	onVirtualKeyValuesChange,
 	apiKeyIdValue,
 	onApiKeyIdChange,
+	apiKeyValues,
+	onApiKeyValuesChange,
 	providerLabel,
 	disabled,
 	placeholder,
@@ -26,8 +30,12 @@ export function ApiKeySelectorView({
 	virtualKeys: VirtualKey[];
 	virtualKeyValue?: string;
 	onVirtualKeyChange?: (v: string | null) => void;
+	virtualKeyValues?: string[];
+	onVirtualKeyValuesChange?: (values: string[]) => void;
 	apiKeyIdValue?: string;
 	onApiKeyIdChange?: (v: string | null) => void;
+	apiKeyValues?: string[];
+	onApiKeyValuesChange?: (values: string[]) => void;
 	providerLabel?: string;
 	disabled?: boolean;
 	placeholder?: string;
@@ -126,6 +134,31 @@ export function ApiKeySelectorView({
 	const hasVirtualKeysToShow = !isMember || virtualKeys.length > 0;
 	const showProviderKeySection = !isMember || providerKeys.length > 0;
 
+	const vkOptions = useMemo(() => {
+		const opts: { label: string; value: string }[] = [];
+		for (const vk of virtualKeys) {
+			const isInactive = vk.is_active === false;
+			const isExpired = vk.expires_at ? new Date(vk.expires_at).getTime() < Date.now() : false;
+			const block = blocks?.[vk.id];
+			let suffix = "";
+			if (isInactive) suffix = " (Inactive)";
+			else if (isExpired) suffix = " (Expired)";
+			else if (block) {
+				const scopeLabel = block.scope === "vk" ? "Key" : block.scope === "team" ? "Team" : isRegularUser ? "Key" : "Customer";
+				suffix = ` (${scopeLabel} budget used up)`;
+			} else if (vk.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit)) {
+				suffix = " (Key budget used up)";
+			}
+			opts.push({ label: `${vk.name}${suffix}`, value: vk.value });
+		}
+		return opts;
+	}, [virtualKeys, blocks, isRegularUser]);
+
+	const apiKeyOptions = useMemo(
+		() => providerKeys.map((key) => ({ label: key.name, value: key.key_id })),
+		[providerKeys],
+	);
+
 	return (
 		<div className="flex flex-col gap-4">
 			{isMember && billingFailed ? (
@@ -149,57 +182,32 @@ export function ApiKeySelectorView({
 								: "Governance virtual key assigned to you (user, team, or customer). Routing, models, and budgets apply."
 							: "Governance virtual keys. Routing, allowed models, budgets, and rate limits apply."}
 					</p>
-					<Select
-						value={selectVkValue}
-						onValueChange={(v) => {
-							if (v && v !== "__none__") {
-								handleVkChange(v);
-							}
-						}}
-						disabled={disabled}
-					>
-						<SelectTrigger className="border-border bg-background h-9 w-full text-sm font-normal" data-testid={isMember ? "member-vk-select" : "admin-vk-select"}>
-							<SelectValue placeholder={placeholder ?? "Select Virtual Key"} />
-						</SelectTrigger>
-						<SelectContent className="max-h-72">
-							{!isMember && (
-								<SelectItem value="__auto__">All (Auto - All Virtual Keys)</SelectItem>
-							)}
-							{isMember && virtualKeys.length > 1 && (
-								<SelectItem value="__auto__">All (Auto - Assigned Keys)</SelectItem>
-							)}
-							<SelectGroup>
-								<SelectLabel className="text-muted-foreground text-xs font-semibold">
-									{isMember ? "Your Virtual Keys" : "Virtual Keys"}
-								</SelectLabel>
-								{virtualKeys.length > 0 ? (
-									virtualKeys.map((vk) => {
-										const isInactive = vk.is_active === false;
-										const isExpired = vk.expires_at ? new Date(vk.expires_at).getTime() < Date.now() : false;
-										const block = blocks?.[vk.id];
-										let suffix = "";
-										if (isInactive) suffix = " (Inactive)";
-										else if (isExpired) suffix = " (Expired)";
-										else if (block) {
-											const scopeLabel = block.scope === "vk" ? "Key" : block.scope === "team" ? "Team" : isRegularUser ? "Key" : "Customer";
-											suffix = ` (${scopeLabel} budget used up)`;
-										} else if (vk.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit)) {
-											suffix = " (Key budget used up)";
-										}
-										return (
-											<SelectItem key={vk.value} value={vk.value}>
-												{vk.name}{suffix}
-											</SelectItem>
-										);
-									})
-								) : (
-									<SelectItem value="__none__" disabled>
-										{isMember ? "No assigned keys" : "No active virtual keys"}
-									</SelectItem>
-								)}
-							</SelectGroup>
-						</SelectContent>
-					</Select>
+					{onVirtualKeyValuesChange ? (
+						<ComboboxSelect
+							multiple
+							compactTrigger
+							options={vkOptions}
+							value={(virtualKeyValues ?? []).filter((value) => vkOptions.some((option) => option.value === value))}
+							onValueChange={onVirtualKeyValuesChange}
+							disabled={disabled || vkOptions.length === 0}
+							placeholder={vkOptions.length === 0 ? "No active virtual keys" : "Select virtual keys"}
+							searchPlaceholder="Search..."
+							selectAllValue="*"
+							selectAllLabel="Select all"
+							data-testid="admin-vk-select"
+						/>
+					) : (
+						<ComboboxSelect
+							options={vkOptions}
+							value={selectVkValue === "__auto__" ? null : selectVkValue}
+							onValueChange={(v) => handleVkChange(v && v !== "__none__" ? v : "__auto__")}
+							disabled={disabled || vkOptions.length === 0}
+							placeholder={placeholder ?? (vkOptions.length === 0 ? (isMember ? "No assigned keys" : "No active virtual keys") : "Select Virtual Key")}
+							searchPlaceholder="Search..."
+							hideClear
+							data-testid={isMember ? "member-vk-select" : "admin-vk-select"}
+						/>
+					)}
 
 					{/* Every member always sees personal budget */}
 					{showUserBudget && (
@@ -243,21 +251,8 @@ export function ApiKeySelectorView({
 						</div>
 					)}
 
-					{/* VK / team / customer budgets — only when a key is assigned to this user (direct / team / customer) */}
+					{/* Prompt Repository shows only this virtual key's own budget. */}
 					{showVKBudget && selectedVK && (() => {
-						const customerName = selectedVK.customer?.name || selectedVK.customers?.[0]?.name;
-						const teamName = selectedVK.team?.name || selectedVK.teams?.[0]?.name;
-						const hideOrgBudgets = isRegularUser || (authStatus?.role !== "admin" && authStatus?.role !== "super_admin");
-						const scopeLabel = hideOrgBudgets
-							? null
-							: customerName
-								? `Customer: ${customerName}`
-								: teamName
-									? `Team: ${teamName}`
-									: null;
-						// Never expose customer or team budgets to regular user accounts (only show VK budget and personal user budget)
-						const customerBudgets = hideOrgBudgets ? [] : (selectedVK.customer?.budgets || selectedVK.customers?.[0]?.budgets || []);
-						const teamBudgets = hideOrgBudgets ? [] : (selectedVK.team?.budgets || selectedVK.teams?.[0]?.budgets || []);
 						const vkBudgets = selectedVK.budgets || [];
 
 						return (
@@ -267,11 +262,6 @@ export function ApiKeySelectorView({
 										<span className="inline-block h-1.5 w-1.5 rounded-full bg-teal-500" />
 										VK: {selectedVK.name}
 									</span>
-									{scopeLabel && (
-										<span className="rounded border border-teal-500/20 bg-teal-500/10 px-1.5 py-0.5 text-[10px] font-medium text-teal-600 dark:text-teal-400">
-											{scopeLabel}
-										</span>
-									)}
 								</div>
 
 								{vkBudgets.length > 0 ? (
@@ -307,78 +297,12 @@ export function ApiKeySelectorView({
 											)}
 										</div>
 									))
-								) : customerBudgets.length === 0 && teamBudgets.length === 0 ? (
+								) : (
 									<div className="flex items-center justify-between text-[11px]">
 										<span className="text-muted-foreground font-medium">Key Budget:</span>
 										<span className="text-muted-foreground">Unlimited</span>
 									</div>
-								) : null}
-
-								{customerBudgets.map((b) => (
-									<div key={`cust-${b.id || b.reset_duration}`} className="border-border/40 space-y-0.5 border-t pt-1">
-										<div className="flex items-center justify-between text-[11px]">
-											<span className="text-muted-foreground font-medium">Customer Budget ({customerName}):</span>
-											<span className="font-mono">
-												{fmt(b.current_usage)} / {b.max_limit > 0 ? fmt(b.max_limit) : "Unlimited"}
-											</span>
-										</div>
-										{b.max_limit > 0 && (
-											<div className="space-y-0.5">
-												<div className="bg-muted/60 h-1.5 w-full overflow-hidden rounded-full">
-													<div
-														className={`h-full transition-all ${
-															(b.current_usage ?? 0) >= b.max_limit
-																? "bg-rose-500"
-																: (b.current_usage ?? 0) / b.max_limit > 0.8
-																	? "bg-amber-500"
-																	: "bg-teal-500"
-														}`}
-														style={{
-															width: `${Math.min(100, Math.max(0, ((b.current_usage ?? 0) / b.max_limit) * 100))}%`,
-														}}
-													/>
-												</div>
-												<div className="text-muted-foreground flex justify-between text-[10px]">
-													<span>Reset: {b.reset_duration || "monthly"}</span>
-													<span>{Math.round(((b.current_usage ?? 0) / b.max_limit) * 100)}% used</span>
-												</div>
-											</div>
-										)}
-									</div>
-								))}
-
-								{teamBudgets.map((b) => (
-									<div key={`team-${b.id || b.reset_duration}`} className="border-border/40 space-y-0.5 border-t pt-1">
-										<div className="flex items-center justify-between text-[11px]">
-											<span className="text-muted-foreground font-medium">Team Budget ({teamName}):</span>
-											<span className="font-mono">
-												{fmt(b.current_usage)} / {b.max_limit > 0 ? fmt(b.max_limit) : "Unlimited"}
-											</span>
-										</div>
-										{b.max_limit > 0 && (
-											<div className="space-y-0.5">
-												<div className="bg-muted/60 h-1.5 w-full overflow-hidden rounded-full">
-													<div
-														className={`h-full transition-all ${
-															(b.current_usage ?? 0) >= b.max_limit
-																? "bg-rose-500"
-																: (b.current_usage ?? 0) / b.max_limit > 0.8
-																	? "bg-amber-500"
-																	: "bg-teal-500"
-														}`}
-														style={{
-															width: `${Math.min(100, Math.max(0, ((b.current_usage ?? 0) / b.max_limit) * 100))}%`,
-														}}
-													/>
-												</div>
-												<div className="text-muted-foreground flex justify-between text-[10px]">
-													<span>Reset: {b.reset_duration || "monthly"}</span>
-													<span>{Math.round(((b.current_usage ?? 0) / b.max_limit) * 100)}% used</span>
-												</div>
-											</div>
-										)}
-									</div>
-								))}
+								)}
 								{selectedVK.is_active === false && (
 									<div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium text-rose-500">
 										<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -431,32 +355,32 @@ export function ApiKeySelectorView({
 					<p className="text-muted-foreground text-[11px] leading-snug">
 						Direct provider API key configured for {providerLabel || "the selected provider"}.
 					</p>
-					<Select
-						value={selectApiKeyValue}
-						onValueChange={(v) => {
-							if (v && v !== "__none__") {
-								handleApiKeyChange(v);
-							}
-						}}
-						disabled={disabled}
-					>
-						<SelectTrigger className="border-border bg-background h-9 w-full text-sm font-normal" data-testid="admin-provider-key-select">
-							<SelectValue placeholder="Select API Key" />
-						</SelectTrigger>
-						<SelectContent className="max-h-72">
-							<SelectItem value="__auto__">Auto (Default Provider Key)</SelectItem>
-							{providerKeys.length > 0 && (
-								<SelectGroup>
-									<SelectLabel className="text-muted-foreground text-xs font-semibold">Configured Provider Keys</SelectLabel>
-									{providerKeys.map((k) => (
-										<SelectItem key={k.key_id} value={k.key_id}>
-											{k.name}
-										</SelectItem>
-									))}
-								</SelectGroup>
-							)}
-						</SelectContent>
-					</Select>
+					{onApiKeyValuesChange ? (
+						<ComboboxSelect
+							multiple
+							compactTrigger
+							options={apiKeyOptions}
+							value={(apiKeyValues ?? []).filter((value) => apiKeyOptions.some((option) => option.value === value))}
+							onValueChange={onApiKeyValuesChange}
+							disabled={disabled || apiKeyOptions.length === 0}
+							placeholder={apiKeyOptions.length === 0 ? "No API keys" : "Select API keys"}
+							searchPlaceholder="Search..."
+							selectAllValue="*"
+							selectAllLabel="Select all"
+							data-testid="admin-provider-key-select"
+						/>
+					) : (
+						<ComboboxSelect
+							options={apiKeyOptions}
+							value={selectApiKeyValue === "__auto__" ? null : selectApiKeyValue}
+							onValueChange={(v) => handleApiKeyChange(v || "__auto__")}
+							disabled={disabled}
+							placeholder="Select API Key"
+							searchPlaceholder="Search..."
+							hideClear
+							data-testid="admin-provider-key-select"
+						/>
+					)}
 				</div>
 			)}
 		</div>

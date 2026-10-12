@@ -72,9 +72,11 @@ type FlagStatus struct {
 // HydrationRow is the shape produced by configstore.ListFeatureFlags. We
 // avoid importing configstore here to keep the package free of DB types.
 type HydrationRow struct {
-	ID        string
-	Enabled   bool
-	UpdatedAt int64
+	ID          string
+	Enabled     bool
+	DisplayName string
+	Description string
+	UpdatedAt   int64
 }
 
 // SyncDelegate is invoked synchronously after a local Set() succeeds.
@@ -283,6 +285,9 @@ func (s *Store) Hydrate(rows []HydrationRow) {
 			enabled:   row.Enabled,
 			source:    SourceDB,
 			writtenAt: row.UpdatedAt,
+		}
+		if row.DisplayName != "" || row.Description != "" {
+			UpdateDef(row.ID, row.DisplayName, row.Description)
 		}
 	}
 	s.mu.Unlock()

@@ -3,19 +3,17 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { ComboboxSelect } from "@/components/ui/combobox";
 import ModelParameters from "@/components/ui/custom/modelParameters";
 import { Label } from "@/components/ui/label";
-import { ModelMultiselect } from "@/components/ui/modelMultiselect";
+import { useGetAllKeysQuery, useGetModelsQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { Input } from "@/components/ui/input";
 import { getErrorMessage, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery } from "@/lib/store";
-import { useGetAllKeysQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { useListSkillsQuery } from "@/lib/store/apis/skillsApi";
 import { useGetMCPClientsQuery } from "@/lib/store/apis/mcpApi";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Clock, PanelRightClose, Trash2, Wrench } from "lucide-react";
 import { toast } from "sonner";
@@ -43,6 +41,17 @@ export function SettingsPanel() {
 		setApiKeyId,
 		skillId,
 		setSkillId,
+		mcpIncludeTools,
+		setMcpIncludeTools,
+		allowedProviders,
+		setAllowedProviders,
+		allowedModels,
+		setAllowedModels,
+		allowedVirtualKeys,
+		setAllowedVirtualKeys,
+		allowedApiKeys,
+		setAllowedApiKeys,
+		selectedPrompt,
 		variables,
 		setVariables,
 		customHeaders,
@@ -89,8 +98,9 @@ export function SettingsPanel() {
 		(id: string) => {
 			setVirtualKeyId(id);
 			onModelChange("");
+			setMcpIncludeTools(null);
 		},
-		[setVirtualKeyId, onModelChange],
+		[setVirtualKeyId, onModelChange, setMcpIncludeTools],
 	);
 
 	const onApiKeyIdChange = useCallback(
@@ -211,7 +221,10 @@ export function SettingsPanel() {
 	// Virtual keys: show active virtual keys that serve the selected provider (or are wildcard keys).
 	// When no provider is selected, show all active keys.
 	const providerVirtualKeys = useMemo(() => {
-		const vks = (virtualKeysData?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
+		let vks = (virtualKeysData?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
+		if (isMemberOnly && allowedVirtualKeys) {
+			vks = vks.filter((vk) => allowedVirtualKeys.includes(vk.value));
+		}
 		if (!provider) return vks;
 		const targetProvider = provider.toLowerCase();
 		return vks.filter((vk) => {
@@ -222,7 +235,43 @@ export function SettingsPanel() {
 				(pc) => pc.provider === "*" || pc.provider.toLowerCase() === targetProvider,
 			);
 		});
-	}, [virtualKeysData, provider]);
+	}, [virtualKeysData, provider, isMemberOnly, allowedVirtualKeys]);
+
+	useEffect(() => {
+		if (isMemberOnly || allowedVirtualKeys !== null || !virtualKeysData) return;
+		const vks = (virtualKeysData.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
+		const promptUsers = new Set((selectedPrompt?.user_ids || "").split(",").map((id) => id.trim()).filter(Boolean));
+		const promptTeams = new Set((selectedPrompt?.team_ids || "").split(",").map((id) => id.trim()).filter(Boolean));
+		const promptCustomers = new Set((selectedPrompt?.customer_ids || "").split(",").map((id) => id.trim()).filter(Boolean));
+		const hasAccess = promptUsers.size + promptTeams.size + promptCustomers.size > 0;
+		const matched = vks
+			.filter((vk) => {
+				if (!hasAccess) return virtualKeyId !== "__auto__" && vk.value === virtualKeyId;
+				const vkUsers = new Set([...(vk.user_ids || []), ...(vk.users || []).map((user) => user.user_id)]);
+				const vkTeams = new Set([...(vk.team_ids || []), vk.team_id, ...(vk.teams || []).map((team) => team.id)].filter(Boolean));
+				const vkCustomers = new Set(
+					[...(vk.customer_ids || []), vk.customer_id, vk.customer?.id, ...(vk.customers || []).map((customer) => customer.id)].filter(Boolean),
+				);
+				return (
+					[...promptUsers].some((id) => vkUsers.has(id)) ||
+					[...promptTeams].some((id) => vkTeams.has(id as string)) ||
+					[...promptCustomers].some((id) => vkCustomers.has(id as string))
+				);
+			})
+			.map((vk) => vk.value);
+		if (matched.length > 0) setAllowedVirtualKeys(matched);
+		else if (virtualKeyId && virtualKeyId !== "__auto__") setAllowedVirtualKeys([virtualKeyId]);
+	}, [isMemberOnly, allowedVirtualKeys, virtualKeysData, selectedPrompt, virtualKeyId, setAllowedVirtualKeys]);
+
+	useEffect(() => {
+		if (!isMemberOnly || !allowedProviders?.length || allowedProviders.includes(provider)) return;
+		onProviderChange(allowedProviders[0]);
+	}, [isMemberOnly, allowedProviders, provider, onProviderChange]);
+
+	useEffect(() => {
+		if (!isMemberOnly || !allowedModels?.length || allowedModels.includes(model)) return;
+		onModelChange(allowedModels[0]);
+	}, [isMemberOnly, allowedModels, model, onModelChange]);
 
 	// Auto-bind first assigned VK for members so usage hits the correct budget meter,
 	// skipping keys whose team or customer budget is used up.
@@ -251,6 +300,44 @@ export function SettingsPanel() {
 		return undefined;
 	}, [selectedVirtualKey]);
 
+	const { data: modelsData } = useGetModelsQuery(
+		{
+			provider: provider || undefined,
+			keys: filterKeys && filterKeys.length > 0 ? filterKeys : undefined,
+			vks: filterVks,
+			limit: 5000,
+			unfiltered: !filterVks && (!filterKeys || filterKeys.length === 0),
+		},
+		{ skip: !provider },
+	);
+	const modelOptions = useMemo(() => {
+		const opts = (modelsData?.models ?? []).map((item) => ({ label: item.name, value: item.name }));
+		if (model && !opts.some((option) => option.value === model)) {
+			opts.unshift({ label: model, value: model });
+		}
+		return opts;
+	}, [modelsData, model]);
+
+	const mcpToolOptions = useMemo(() => {
+		const opts: { label: string; value: string }[] = [];
+		for (const client of activeMCPClients) {
+			const clientName = client.config?.name || "";
+			if (!clientName) continue;
+			const tools = client.tools ?? [];
+			if (tools.length === 0) {
+				opts.push({ label: `${clientName} (all tools)`, value: `${clientName}-*` });
+				continue;
+			}
+			for (const tool of tools) {
+				if (!tool.name) continue;
+				opts.push({ label: `${clientName} / ${tool.name}`, value: `${clientName}-${tool.name}` });
+			}
+		}
+		return opts;
+	}, [activeMCPClients]);
+	const mcpToolValues = useMemo(() => mcpToolOptions.map((option) => option.value), [mcpToolOptions]);
+	const selectedMcpTools = mcpIncludeTools === null ? mcpToolValues : mcpIncludeTools.filter((value) => mcpToolValues.includes(value));
+
 	const handleModelParamsChange = useCallback(
 		(params: Record<string, any>) => {
 			onModelParamsChange(params as ModelParams);
@@ -267,12 +354,36 @@ export function SettingsPanel() {
 	const keySelector =
 		showKeySelector || showMemberBudgetStrip ? (
 			<ApiKeySelectorView
-				providerKeys={providerKeys}
+				providerKeys={
+					isMemberOnly && allowedApiKeys
+						? providerKeys.filter((key) => allowedApiKeys.includes(key.key_id))
+						: providerKeys
+				}
 				virtualKeys={providerVirtualKeys}
 				virtualKeyValue={virtualKeyId}
 				onVirtualKeyChange={(v) => onVirtualKeyChange(v ?? "__auto__")}
+				virtualKeyValues={allowedVirtualKeys ?? []}
+				onVirtualKeyValuesChange={
+					isMemberOnly
+						? undefined
+						: (next) => {
+								setAllowedVirtualKeys(next);
+								if (next.length === 1) setVirtualKeyId(next[0]);
+								else if (!next.includes(virtualKeyId)) setVirtualKeyId("__auto__");
+							}
+				}
 				apiKeyIdValue={apiKeyId}
 				onApiKeyIdChange={(v) => onApiKeyIdChange(v ?? "__auto__")}
+				apiKeyValues={allowedApiKeys ?? []}
+				onApiKeyValuesChange={
+					isMemberOnly
+						? undefined
+						: (next) => {
+								setAllowedApiKeys(next);
+								if (next.length === 1) setApiKeyId(next[0]);
+								else if (!next.includes(apiKeyId)) setApiKeyId("__auto__");
+							}
+				}
 				providerLabel={getProviderLabel(provider)}
 				disabled={false}
 			/>
@@ -360,30 +471,70 @@ export function SettingsPanel() {
 							<div className="space-y-6">
 								<div className="flex flex-col gap-2" data-testid="settings-provider">
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Provider</Label>
-									<ComboboxSelect
-										options={providerOptions}
-										value={provider}
-										onValueChange={(v) => v && onProviderChange(v)}
-										placeholder="Select provider"
-										hideClear
-									/>
+									{isMemberOnly ? (
+										<ComboboxSelect
+											options={
+												allowedProviders
+													? providerOptions.filter((option) => allowedProviders.includes(option.value))
+													: providerOptions
+											}
+											value={provider}
+											onValueChange={(v) => v && onProviderChange(v)}
+											placeholder="Select provider"
+											searchPlaceholder="Search..."
+											hideClear
+										/>
+									) : (
+										<ComboboxSelect
+											multiple
+											compactTrigger
+											options={providerOptions}
+											value={allowedProviders ?? (provider ? [provider] : [])}
+											onValueChange={(next) => {
+												setAllowedProviders(next);
+												if (!next.includes(provider)) onProviderChange(next[0] || "");
+											}}
+											placeholder="Select providers"
+											searchPlaceholder="Search..."
+											selectAllValue="*"
+											selectAllLabel="Select all"
+										/>
+									)}
 								</div>
 
 								<div className="flex flex-col gap-2" data-testid="settings-model">
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Model</Label>
-									<ModelMultiselect
-										provider={provider}
-										keys={filterKeys && filterKeys.length > 0 ? filterKeys : undefined}
-										vks={filterVks}
-										value={model}
-										onChange={(v) => onModelChange(v)}
-										isSingleSelect
-										placeholder={
-											!provider ? "Select a provider first" : filterVks ? "Select a model allowed on this key" : "Select model"
-										}
-										disabled={!provider}
-										unfiltered={!filterVks && (!filterKeys || filterKeys.length === 0)}
-									/>
+									{isMemberOnly ? (
+										<ComboboxSelect
+											options={
+												allowedModels ? modelOptions.filter((option) => allowedModels.includes(option.value)) : modelOptions
+											}
+											value={model || null}
+											onValueChange={(v) => onModelChange(v ?? "")}
+											placeholder={!provider ? "Select a provider first" : "Select model"}
+											searchPlaceholder="Search..."
+											disabled={!provider}
+											hideClear
+											data-testid="settings-model-select"
+										/>
+									) : (
+										<ComboboxSelect
+											multiple
+											compactTrigger
+											options={modelOptions}
+											value={allowedModels ?? (model ? [model] : [])}
+											onValueChange={(next) => {
+												setAllowedModels(next);
+												if (!next.includes(model)) onModelChange(next[0] || "");
+											}}
+											placeholder={!provider ? "Select a provider first" : "Select models"}
+											searchPlaceholder="Search..."
+											disabled={!provider}
+											selectAllValue="*"
+											selectAllLabel="Select all"
+											data-testid="settings-model-select"
+										/>
+									)}
 								</div>
 
 								{keySelector}
@@ -405,39 +556,36 @@ export function SettingsPanel() {
 												{totalMCPTools} {totalMCPTools === 1 ? "tool" : "tools"}
 											</Badge>
 										</div>
-										{activeMCPClients.length === 0 ? (
+										{(isMemberOnly && mcpIncludeTools
+											? mcpToolOptions.filter((option) => mcpIncludeTools.includes(option.value))
+											: mcpToolOptions
+										).length === 0 ? (
 											<p className="text-muted-foreground text-[11px] leading-relaxed">
 												No MCP servers attached to this key. Attach servers in MCP Catalog or enable &quot;Available to all virtual keys&quot;.
 											</p>
 										) : (
-											<div className="flex flex-col gap-1.5 mt-1">
-												{activeMCPClients.map((client) => {
-													const toolCount = client.tools?.length ?? 0;
-													const isConnected = client.state === "connected";
-													return (
-														<div
-															key={client.config.client_id}
-															className="flex items-center justify-between rounded bg-background/80 px-2 py-1 text-xs border border-border/40"
-														>
-															<div className="flex items-center gap-1.5 min-w-0">
-																<span
-																	className={cn(
-																		"h-2 w-2 rounded-full shrink-0",
-																		isConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500",
-																	)}
-																/>
-																<span className="font-medium truncate">{client.config.name}</span>
-																{client.config.allow_on_all_virtual_keys && (
-																	<span className="text-[10px] text-muted-foreground font-mono">(Global)</span>
-																)}
-															</div>
-															<span className="text-[11px] text-muted-foreground font-mono shrink-0">
-																{toolCount} {toolCount === 1 ? "tool" : "tools"}
-															</span>
-														</div>
-													);
-												})}
-											</div>
+											<ComboboxSelect
+												multiple
+												compactTrigger
+												options={
+													isMemberOnly && mcpIncludeTools
+														? mcpToolOptions.filter((option) => mcpIncludeTools.includes(option.value))
+														: mcpToolOptions
+												}
+												value={selectedMcpTools}
+												onValueChange={(next) => {
+													if (isMemberOnly) {
+														setMcpIncludeTools(next);
+														return;
+													}
+													setMcpIncludeTools(next.length === mcpToolValues.length ? null : next);
+												}}
+												placeholder="Select MCP tools"
+												searchPlaceholder="Search..."
+												selectAllValue="*"
+												selectAllLabel="Select all"
+												data-testid="settings-mcp-tools"
+											/>
 										)}
 									</div>
 								)}
@@ -450,9 +598,11 @@ export function SettingsPanel() {
 										</p>
 										<ComboboxSelect
 											options={skillOptions}
-											value={skillId}
-											onValueChange={(v) => setSkillId(v ?? "")}
+											value={skillId || null}
+											onValueChange={(v) => setSkillId(v && v !== "*" ? v : "")}
 											placeholder="Select skill"
+											searchPlaceholder="Search..."
+											data-testid="settings-skill-select"
 										/>
 									</div>
 								)}

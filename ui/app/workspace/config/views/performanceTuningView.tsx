@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { getErrorMessage, useGetCoreConfigQuery, useUpdateCoreConfigMutation } from "@/lib/store";
@@ -8,7 +9,7 @@ import { toast } from "sonner";
 
 export default function PerformanceTuningView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const { data: gatewayConfig, isError: configFailed, error: configError } = useGetCoreConfigQuery({ fromDB: true });
 	const config = gatewayConfig?.client_config;
 	const [updateCoreConfig, { isLoading }] = useUpdateCoreConfigMutation();
 	const [localConfig, setLocalConfig] = useState<CoreConfig>(DefaultCoreConfig);
@@ -69,16 +70,16 @@ export default function PerformanceTuningView() {
 				return;
 			}
 
-			if (!gatewayConfig) {
-				toast.error("Configuration not loaded. Please refresh and try again.");
+			if (!gatewayConfig || configFailed) {
+				toast.error(getErrorMessage(configError) || "Configuration not loaded. Please refresh and try again.");
 				return;
 			}
 			await updateCoreConfig({ ...gatewayConfig, client_config: localConfig }).unwrap();
 			toast.success("Performance settings updated successfully.");
 		} catch (error) {
-			toast.error(getErrorMessage(error));
+			toast.error(getErrorMessage(error) || "Failed to save performance settings.");
 		}
-	}, [gatewayConfig, localConfig, localValues, updateCoreConfig]);
+	}, [gatewayConfig, configFailed, configError, localConfig, localValues, updateCoreConfig]);
 
 	return (
 		<div className="mx-auto w-full max-w-4xl space-y-4">
@@ -86,6 +87,13 @@ export default function PerformanceTuningView() {
 				<h2 className="text-lg font-semibold tracking-tight">Performance Tuning</h2>
 				<p className="text-muted-foreground text-sm">Configure performance-related settings.</p>
 			</div>
+
+			{configFailed ? (
+				<QueryErrorBanner
+					testId="performance-config-query-error"
+					message={getErrorMessage(configError) || "Failed to load performance settings."}
+				/>
+			) : null}
 
 			<div className="space-y-4">
 				{/* Initial Pool Size */}
@@ -107,7 +115,7 @@ export default function PerformanceTuningView() {
 							className="w-28 text-right tabular-nums"
 							value={localValues.initial_pool_size}
 							onChange={(e) => handlePoolSizeChange(e.target.value.replace(/[^\d]/g, ""))}
-							disabled={!hasSettingsUpdateAccess}
+							disabled={!hasSettingsUpdateAccess || configFailed}
 						/>
 					</div>
 				</div>
@@ -131,13 +139,13 @@ export default function PerformanceTuningView() {
 							className="w-28 text-right tabular-nums"
 							value={localValues.max_request_body_size_mb}
 							onChange={(e) => handleMaxRequestBodySizeMBChange(e.target.value.replace(/[^\d]/g, ""))}
-							disabled={!hasSettingsUpdateAccess}
+							disabled={!hasSettingsUpdateAccess || configFailed}
 						/>
 					</div>
 				</div>
 			</div>
 			<div className="flex justify-end pt-2">
-				<Button onClick={handleSave} disabled={!hasChanges || isLoading || !hasSettingsUpdateAccess}>
+				<Button onClick={handleSave} disabled={!hasChanges || isLoading || configFailed || !hasSettingsUpdateAccess}>
 					{isLoading ? "Saving..." : "Save Changes"}
 				</Button>
 			</div>

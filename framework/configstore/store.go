@@ -218,6 +218,7 @@ type ConfigStore interface {
 	// removing its Register() call in code.
 	ListFeatureFlags(ctx context.Context) ([]tables.TableFeatureFlag, error)
 	UpsertFeatureFlag(ctx context.Context, id string, enabled bool, updatedAt int64) error
+	UpsertFeatureFlagDetails(ctx context.Context, id string, enabled bool, displayName string, description string, updatedAt int64) error
 	DeleteFeatureFlag(ctx context.Context, id string) error
 
 	// Provider config CRUD

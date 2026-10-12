@@ -4867,9 +4867,11 @@ func initFeatureFlags(ctx context.Context, config *Config, configData *ConfigDat
 			hydration := make([]featureflags.HydrationRow, 0, len(rows))
 			for _, row := range rows {
 				hydration = append(hydration, featureflags.HydrationRow{
-					ID:        row.ID,
-					Enabled:   row.Enabled,
-					UpdatedAt: row.UpdatedAt,
+					ID:          row.ID,
+					Enabled:     row.Enabled,
+					UpdatedAt:   row.UpdatedAt,
+					DisplayName: row.DisplayName,
+					Description: row.Description,
 				})
 			}
 			store.Hydrate(hydration)

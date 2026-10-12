@@ -11,12 +11,12 @@ export const featureFlagsApi = baseApi.injectEndpoints({
 			providesTags: ["FeatureFlags"],
 		}),
 
-		// Toggle a single feature flag.
+		// Toggle or edit a feature flag.
 		updateFeatureFlag: builder.mutation<FeatureFlagStatus, UpdateFeatureFlagRequest>({
-			query: ({ id, enabled }) => ({
+			query: ({ id, enabled, display_name, description }) => ({
 				url: `/feature-flags/${encodeURIComponent(id)}`,
 				method: "PUT",
-				body: { enabled },
+				body: { enabled, display_name, description },
 			}),
 			invalidatesTags: ["FeatureFlags"],
 		}),

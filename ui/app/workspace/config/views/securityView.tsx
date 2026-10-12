@@ -1,3 +1,4 @@
+import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,7 @@ const isRedactedPassword = (pwd?: string) => {
 
 export default function SecurityView() {
 	const hasSettingsUpdateAccess = useRbac(RbacResource.Settings, RbacOperation.Update);
-	const { data: gatewayConfig } = useGetCoreConfigQuery({ fromDB: true });
+	const { data: gatewayConfig, isError: configFailed, error: configError } = useGetCoreConfigQuery({ fromDB: true });
 	const { data: authType, isLoading: authTypeLoading, error: authTypeError } = useGetAuthTypeQuery(undefined, { skip: !IS_ENTERPRISE });
 	const { data: smtpData, error: smtpError } = useGetSMTPConfigQuery();
 	const [updateSMTP, { isLoading: isSavingSMTP }] = useUpdateSMTPConfigMutation();
@@ -153,7 +154,7 @@ export default function SecurityView() {
 			}).unwrap();
 			toast.success("SMTP settings saved");
 		} catch (error) {
-			toast.error(getErrorMessage(error));
+			toast.error(getErrorMessage(error) || "Failed to save SMTP settings.");
 		}
 	};
 
@@ -279,9 +280,13 @@ export default function SecurityView() {
 				toast.error("Enter an admin username and password to enable dashboard authentication.");
 				return;
 			}
+			if (!gatewayConfig || configFailed) {
+				toast.error(getErrorMessage(configError) || "Configuration not loaded. Please refresh and try again.");
+				return;
+			}
 
 			await updateCoreConfig({
-				...gatewayConfig!,
+				...gatewayConfig,
 				client_config: localConfig,
 				...(showPasswordSection
 					? {
@@ -291,9 +296,9 @@ export default function SecurityView() {
 			}).unwrap();
 			toast.success("Security settings updated successfully.");
 		} catch (error) {
-			toast.error(getErrorMessage(error));
+			toast.error(getErrorMessage(error) || "Failed to save security settings.");
 		}
-	}, [gatewayConfig, localConfig, authConfig, showPasswordSection, updateCoreConfig]);
+	}, [gatewayConfig, configFailed, configError, localConfig, authConfig, showPasswordSection, updateCoreConfig]);
 
 	return (
 		<div className="mx-auto h-[calc(100vh-50px)] w-full max-w-4xl space-y-4 overflow-y-auto">
@@ -301,6 +306,10 @@ export default function SecurityView() {
 				<h2 className="text-lg font-semibold tracking-tight">Security Settings</h2>
 				<p className="text-muted-foreground text-sm">Configure security and access control settings.</p>
 			</div>
+
+			{configFailed ? (
+				<QueryErrorBanner testId="security-config-query-error" message={getErrorMessage(configError) || "Failed to load security settings."} />
+			) : null}
 
 			{smtpError ? (
 				<div className="border-destructive/50 bg-destructive/10 rounded-sm border p-4">
@@ -423,7 +432,7 @@ export default function SecurityView() {
 										const res = await testSMTP({ to: smtpForm.from_email || smtpForm.username }).unwrap();
 										toast.success(`Test email sent to ${res.to || "inbox"}`);
 									} catch (error) {
-										toast.error(getErrorMessage(error));
+										toast.error(getErrorMessage(error) || "Failed to send test email.");
 									}
 								})();
 							}}
@@ -469,7 +478,7 @@ export default function SecurityView() {
 									id="auth-enabled"
 									checked={authConfig.is_enabled}
 									onCheckedChange={handleAuthToggle}
-									disabled={!hasSettingsUpdateAccess}
+									disabled={!hasSettingsUpdateAccess || configFailed}
 								/>
 							</div>
 							<div className="space-y-4">
@@ -527,7 +536,7 @@ export default function SecurityView() {
 						data-testid="enforce-auth-on-inference-switch"
 						checked={localConfig.enforce_auth_on_inference}
 						onCheckedChange={(checked) => handleConfigChange("enforce_auth_on_inference", checked)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || configFailed}
 					/>
 				</div>
 				{/* Allow Direct API Keys */}
@@ -547,7 +556,7 @@ export default function SecurityView() {
 						data-testid="security-allow-direct-keys-switch"
 						checked={localConfig.allow_direct_keys}
 						onCheckedChange={(checked) => handleConfigChange("allow_direct_keys", checked)}
-						disabled={!hasSettingsUpdateAccess}
+						disabled={!hasSettingsUpdateAccess || configFailed}
 					/>
 				</div>
 				{/* Allowed Origins */}
@@ -569,7 +578,7 @@ export default function SecurityView() {
 							placeholder="https://app.example.com, https://*.example.com, *"
 							value={localValues.allowed_origins}
 							onChange={(e) => handleAllowedOriginsChange(e.target.value)}
-							disabled={!hasSettingsUpdateAccess}
+							disabled={!hasSettingsUpdateAccess || configFailed}
 						/>
 					</div>
 				</div>
@@ -588,7 +597,7 @@ export default function SecurityView() {
 							placeholder="X-Stainless-Timeout"
 							value={localValues.allowed_headers}
 							onChange={(e) => handleAllowedHeadersChange(e.target.value)}
-							disabled={!hasSettingsUpdateAccess}
+							disabled={!hasSettingsUpdateAccess || configFailed}
 						/>
 					</div>
 				</div>
@@ -611,7 +620,7 @@ export default function SecurityView() {
 							placeholder="X-Tenant-ID, X-Custom-Header"
 							value={localValues.required_headers}
 							onChange={(e) => handleRequiredHeadersChange(e.target.value)}
-							disabled={!hasSettingsUpdateAccess}
+							disabled={!hasSettingsUpdateAccess || configFailed}
 						/>
 					</div>
 				</div>
@@ -635,13 +644,13 @@ export default function SecurityView() {
 							placeholder="/api/custom-webhook, /api/public-endpoint"
 							value={localValues.whitelisted_routes}
 							onChange={(e) => handleWhitelistedRoutesChange(e.target.value)}
-							disabled={!hasSettingsUpdateAccess}
+							disabled={!hasSettingsUpdateAccess || configFailed}
 						/>
 					</div>
 				</div>
 			</div>
 			<div className="bg-card sticky bottom-0 flex justify-end pt-2">
-				<Button onClick={handleSave} disabled={!hasChanges || isLoading || !hasSettingsUpdateAccess}>
+				<Button onClick={handleSave} disabled={!hasChanges || isLoading || configFailed || !hasSettingsUpdateAccess}>
 					{isLoading ? "Saving..." : "Save Changes"}
 				</Button>
 			</div>
