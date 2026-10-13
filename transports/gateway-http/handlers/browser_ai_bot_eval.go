@@ -1360,7 +1360,7 @@ JSON only: {"violation":true} or {"violation":false}`,
 	}
 
 	// Outsource vision: send text + image data-URLs via Gateway multimodal chat.
-	maxImages := 6
+	maxImages := 20
 	if len(images) > maxImages {
 		images = images[:maxImages]
 	}

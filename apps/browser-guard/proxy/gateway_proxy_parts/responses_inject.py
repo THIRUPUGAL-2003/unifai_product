@@ -1,6 +1,8 @@
 # Part of Gateway browser_ai_proxy — loaded via browser_ai_proxy.py into one shared namespace.
 # Do not import this file directly.
 import asyncio
+import json
+import re
 
 
 # Same rule/send must not paint 3 chat bubbles (Claude multi-request / multi-file).
@@ -45,40 +47,38 @@ def _xssi_length_frame(payload: str) -> str:
 
 def _gemini_block_body(msg: str, rpc: str = "StreamGenerate") -> bytes:
     """Length-prefixed wrb.fr stream for Google Gemini / Bard.
-    Fills every candidate slot (index 0..4) and all known Gemini RPC envelopes
-    so the web UI always renders the block message as an assistant reply
+    Fills candidates slot so the web UI always renders the block message as an assistant reply
     without throwing a Network error.
     """
-    candidate_obj = ["rc_gateway_block", [msg], None, None, None, None, None, []]
+    candidate_obj = ["rc_gateway_block", [msg], None, None, None, None, 0, []]
     payload_data = [
-        "c_gateway_conv",
-        ["c_gateway_conv", "r_gateway_block", None, [[msg]]],
-        [["rc_gateway_block", [msg]]],
-        msg,
+        None,
         [candidate_obj],
-        None,
-        None,
-        None,
-        None,
+        "c_gateway_conv",
+        "r_gateway_block",
+        [candidate_obj],
     ]
     payload_str = json.dumps(payload_data, ensure_ascii=False)
-    rpcs = [rpc] if rpc else []
-    for default_rpc in ("StreamGenerate", "wXbdQc", "vyAQhe", "hR32Ce", "GenerateContent"):
-        if default_rpc not in rpcs:
-            rpcs.append(default_rpc)
-    envelopes = [["wrb.fr", r, payload_str, None, None, None, "generic"] for r in rpcs]
-    envelopes.extend([["di", 34], ["af.httprm", 34, "-gateway-", 1]])
+    target_rpc = rpc if rpc else "StreamGenerate"
+    envelopes = [["wrb.fr", target_rpc, payload_str, None, None, None, "generic"]]
     chunk = json.dumps(envelopes, ensure_ascii=False)
     return (")]}'\n" + _xssi_length_frame(chunk)).encode("utf-8")
 
 
 def _is_deepseek_completion(path: str, host_l: str) -> bool:
-    """DeepSeek web uses singular /chat/completion. OpenAI-style /chat/completions is a different client."""
+    """DeepSeek web uses singular /chat/completion or /api/v0/chat/completion."""
     p = (path or "").lower().split("?", 1)[0]
+    h = (host_l or "").lower()
+    plat_l = ""
+    try:
+        _, _, target_plat = detect_target(h)
+        plat_l = (target_plat or "").lower()
+    except Exception:
+        pass
+    if "deepseek" in h or "deepseek" in plat_l:
+        return "completion" in p or "/chat" in p
     if "/chat/completions" in p:
         return False
-    if "deepseek" in (host_l or ""):
-        return "completion" in p or "/chat" in p
     return "/api/v0/chat/completion" in p or p.rstrip("/").endswith("/chat/completion")
 
 
@@ -116,12 +116,18 @@ def _silent_block_response(flow: http.HTTPFlow, common_headers: dict, *, path: s
         host_l = (flow.request.pretty_host or "").lower()
     except Exception:
         host_l = ""
+    target_plat = ""
+    try:
+        _, _, target_plat = detect_target(host_l)
+    except Exception:
+        target_plat = ""
+    plat_l = (target_plat or "").lower()
     if (
-        "gemini.google.com" in host_l
-        or "bard.google.com" in host_l
-        or "bardchatui" in path_l
-        or "assistant.lamda." in path_l
+        "gemini" in plat_l
+        or "gemini" in host_l
         or is_batchexecute_chat_submit(path_l, raw_body or "")
+        or ("f.req=" in (raw_body or "") and any(rpc in (raw_body or "") for rpc in ("StreamGenerate", "wXbdQc", "vyAQhe", "hR32Ce")))
+        or "streamgenerate" in path_l
     ):
         flow.response = http.Response.make(
             200,
@@ -574,11 +580,20 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
     _block_ui_history[dedupe_key] = now_mono
 
+    target_plat = ""
+    try:
+        _, _, target_plat = detect_target(host_l)
+    except Exception:
+        target_plat = ""
+    plat_l = (target_plat or "").lower()
+
     # ── ChatGPT-shaped conversation APIs (body shape or host/path, any monitored domain) ──
     is_chatgpt_conv = (
         messages_parts_body is not None
         or "chatgpt.com" in host_l
         or "openai.com" in host_l
+        or "chatgpt" in plat_l
+        or "openai" in plat_l
         or "/backend-api/f/conversation" in path
         or "/backend-api/conversation" in path
     )
@@ -653,7 +668,13 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
 
     # ── Claude / Anthropic chat APIs (path/body shape) ──
-    if _is_anthropic_messages_api_shape(path, raw_body) or "claude.ai" in host_l or "anthropic.com" in host_l:
+    if (
+        _is_anthropic_messages_api_shape(path, raw_body)
+        or "claude.ai" in host_l
+        or "anthropic.com" in host_l
+        or "claude" in plat_l
+        or "anthropic" in plat_l
+    ):
         anthropic_sse = (
             'event: message_start\n'
             'data: {"type":"message_start","message":{"id":"msg_gateway_block","type":"message",'
@@ -683,7 +704,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
 
     # ── Microsoft Copilot / Bing (request shape) ──
     if is_event_send_chat_submit(path, raw_body) or (
-        any(x in host_l for x in ("copilot", "sydney", "edgeservices"))
+        any(x in host_l or x in plat_l for x in ("copilot", "sydney", "edgeservices", "bing"))
         and ("/chat" in path or "/conversation" in path)
     ):
         copilot_card = {
@@ -746,7 +767,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
 
     # ── Perplexity (request shape) ──
-    if is_rest_sse_ask_submit(path, raw_body):
+    if is_rest_sse_ask_submit(path, raw_body) or "perplexity.ai" in host_l or "perplexity" in plat_l:
         # Ask-text UIs read text, answer, or a markdown block. Same reply across all shapes.
         ask_evt = {
             "text": msg,
@@ -801,20 +822,66 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         )
         return
 
-    # ── Gemini / Bard (request shape or domain) ──
+    # ── Gemini REST / Google AI Studio API ──
+    path_l = (path or "").lower()
+    is_gemini_rest = (
+        ":generatecontent" in path_l
+        or ":streamgeneratecontent" in path_l
+        or "generativelanguage.googleapis.com" in host_l
+    )
+    if is_gemini_rest:
+        if "event-stream" in accept or "alt=sse" in path_l or "stream" in path_l:
+            gemini_sse = (
+                f'data: {{"candidates": [{{"content": {{"parts": [{{"text": {msg_json}}}], "role": "model"}}, "finishReason": "STOP"}}]}}\n\n'
+            )
+            flow.response = http.Response.make(
+                200,
+                gemini_sse.encode("utf-8"),
+                {**common_headers, "Content-Type": "text/event-stream; charset=utf-8"},
+            )
+            return
+        gemini_json = json.dumps({
+            "candidates": [{
+                "content": {"parts": [{"text": msg}], "role": "model"},
+                "finishReason": "STOP",
+            }]
+        }, ensure_ascii=False)
+        flow.response = http.Response.make(
+            200,
+            gemini_json.encode("utf-8"),
+            {**common_headers, "Content-Type": "application/json; charset=utf-8"},
+        )
+        return
+
+    # ── Gemini (request shape or dynamic platform / domain) ──
+    target_plat = ""
+    try:
+        _, _, target_plat = detect_target(host_l)
+    except Exception:
+        target_plat = ""
+    plat_l = (target_plat or "").lower()
     is_gemini = (
-        "gemini.google.com" in host_l
-        or "bard.google.com" in host_l
-        or "bardchatui" in path
-        or "assistant.lamda." in path
+        "gemini" in plat_l
+        or "gemini" in host_l
         or is_batchexecute_chat_submit(path, raw_body)
+        or ("f.req=" in (raw_body or "") and any(rpc in (raw_body or "") for rpc in ("StreamGenerate", "wXbdQc", "vyAQhe", "hR32Ce")))
+        or "streamgenerate" in path
     )
     if is_gemini:
         detected_rpc = "StreamGenerate"
-        for rpc_cand in ("wXbdQc", "vyAQhe", "hR32Ce", "StreamGenerate", "GenerateContent"):
-            if rpc_cand in (raw_body or "") or rpc_cand in path:
-                detected_rpc = rpc_cand
-                break
+        try:
+            m_rpc = re.search(r'\[\[\["([A-Za-z0-9_]+)"', raw_body or "")
+            if not m_rpc:
+                m_rpc = re.search(r'%5B%5B%5B%22([A-Za-z0-9_]+)%22', raw_body or "")
+            if m_rpc:
+                detected_rpc = m_rpc.group(1)
+        except Exception:
+            pass
+        if detected_rpc == "StreamGenerate":
+            for rpc_cand in ("wXbdQc", "vyAQhe", "hR32Ce", "StreamGenerate", "GenerateContent"):
+                if rpc_cand in (raw_body or "") or rpc_cand in path:
+                    detected_rpc = rpc_cand
+                    break
 
         flow.response = http.Response.make(
             200,
@@ -824,7 +891,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
 
     # ── DeepSeek web chat (singular /chat/completion) ──
-    if _is_deepseek_completion(path, host_l):
+    if _is_deepseek_completion(path, host_l) or "deepseek" in plat_l:
         flow.response = http.Response.make(
             200,
             _deepseek_block_sse(msg),
@@ -833,7 +900,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
 
     # ── Lovable AI (lovable.dev) ──
-    if "lovable" in host_l or "lovable.dev" in host_l:
+    if "lovable" in host_l or "lovable.dev" in host_l or "lovable" in plat_l:
         lovable_chunk = {
             "id": "gateway-security-block",
             "role": "assistant",
@@ -864,7 +931,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
 
     # ── Mistral AI (chat.mistral.ai) ──
-    if "mistral.ai" in host_l or "mistral" in host_l:
+    if "mistral.ai" in host_l or "mistral" in host_l or "mistral" in plat_l:
         mistral_chunk = {
             "id": "gateway-reply",
             "object": "chat.completion.chunk",

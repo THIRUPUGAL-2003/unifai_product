@@ -1,4 +1,6 @@
 # Part of Gateway browser_ai_proxy — do not import directly.
+import threading
+import time
 
 _FILE_LOG_COALESCE: dict = {}
 _FILE_LOG_COALESCE_LOCK = threading.Lock()
@@ -372,18 +374,42 @@ def enforce_file_send_policy(
                     "ts": time.time(),
                     "cache_uid": f"inline|{time.time():.6f}|{idx}|{len(inline_bytes)}",
                 })
-        elif inlines and cached_list and len(cached_list) < expected_n:
-            cached_names = {(e.get("file_name") or "").strip().lower() for e in cached_list}
-            for idx, (inline_bytes, inline_ct, inline_name) in enumerate(inlines):
-                if inline_name.lower() not in cached_names:
+        elif inlines and cached_list:
+            expected_n = 0
+            try:
+                expected_n = _expected_send_attachment_count(raw_text or "")
+            except Exception:
+                expected_n = 0
+            if expected_n == 0 or len(cached_list) < expected_n:
+                cached_names = {(e.get("file_name") or "").strip().lower() for e in cached_list if (e.get("file_name") or "").strip()}
+                cached_fps = set()
+                for e in cached_list:
+                    cb = e.get("raw_bytes") or b""
+                    if cb:
+                        cached_fps.add(_bytes_name_fingerprint(cb))
+                for idx, (inline_bytes, inline_ct, inline_name) in enumerate(inlines):
+                    if inline_name and inline_name.lower().strip() in cached_names:
+                        continue
+                    if_fp = _bytes_name_fingerprint(inline_bytes)
+                    if if_fp and if_fp in cached_fps:
+                        continue
+                    final_name = inline_name
+                    if not final_name:
+                        is_img = _looks_like_image(inline_bytes, inline_ct, inline_name)
+                        final_name = f"Image {len(cached_list) + 1}" if is_img else f"Document {len(cached_list) + 1}"
                     cached_list.append({
-                        "file_name": inline_name,
+                        "file_name": final_name,
                         "content_type": inline_ct or content_type,
                         "raw_bytes": inline_bytes,
                         "ts": time.time(),
                         "cache_uid": f"inline|{time.time():.6f}|{idx}|{len(inline_bytes)}",
                     })
-                    cached_names.add(inline_name.lower())
+                    if if_fp:
+                        cached_fps.add(if_fp)
+                    if final_name:
+                        cached_names.add(final_name.lower().strip())
+                    if expected_n > 0 and len(cached_list) >= expected_n:
+                        break
         elif not cached_list:
             inline_bytes, inline_ct, inline_name = extract_inline_attachment_bytes(raw_text or "")
             if inline_bytes:
@@ -788,13 +814,9 @@ def enforce_file_send_policy(
         cached_ct = (cached.get("content_type") or content_type or "").strip()
         is_audio = _looks_like_audio(bytes(cached_bytes), cached_ct, fname)
 
-        if is_audio:
-            if _is_fake_upload_name(fname) or fname.lower() in ("attachment", "audio.bin"):
-                fname = "Voice Note"
-        elif _looks_like_image(bytes(cached_bytes), cached_ct, fname):
-            if _is_fake_upload_name(fname) or fname.lower() in ("attachment", "image.png", "image.jpg"):
-                fname = "Image"
-        elif _is_fake_upload_name(fname) or not fname:
+        # A code line such as "in data_12000_ or b" is not a fake placeholder,
+        # but it is not the file name Claude shows. Replace it with the real name.
+        if not _is_real_user_upload_name(fname):
             send_real = _prefer_real_filenames(
                 n for n in extract_all_attachment_filenames_from_send(raw_text or "")
                 if _is_real_user_upload_name(n)
@@ -807,7 +829,7 @@ def enforce_file_send_policy(
                     by_bytes = lookup_upload_name_by_bytes(bytes(cached_bytes))
                 except Exception:
                     by_bytes = ""
-                if by_bytes:
+                if by_bytes and _is_real_user_upload_name(by_bytes):
                     fname = by_bytes
                 else:
                     pending = ""
@@ -815,11 +837,14 @@ def enforce_file_send_policy(
                         pending = peek_pending_upload_name_for_domain(domain)
                     except Exception:
                         pending = ""
-                    if pending:
+                    if pending and _is_real_user_upload_name(pending):
                         fname = pending
+                    elif is_audio:
+                        fname = "Voice Note"
+                    elif _looks_like_image(bytes(cached_bytes), cached_ct, fname):
+                        fname = "Image"
                     else:
-                        is_img = _looks_like_image(bytes(cached_bytes), cached_ct, fname)
-                        fname = "Image" if is_img else "Document"
+                        fname = "Document"
             cached["file_name"] = fname
             if _is_real_user_upload_name(fname) and cached_bytes:
                 try:
@@ -936,11 +961,13 @@ def enforce_file_send_policy(
         ).strip()
         vision: list[str] = []
         for r in file_rows:
-            for img in (r.get("upload_images") or [])[:2]:
+            for img in (r.get("upload_images") or []):
                 if img and img not in vision:
                     vision.append(img)
-                if len(vision) >= 4:
+                if len(vision) >= _MULTI_FILE_VISION_MAX:
                     break
+            if len(vision) >= _MULTI_FILE_VISION_MAX:
+                break
         if combined or vision:
             try:
                 allowed, rt, action, _, _, eval_err = send_to_backend(
@@ -1484,7 +1511,11 @@ def post_upload_intercept(
     is_img = bool((content_type and "image/" in content_type.lower()) or _looks_like_image(raw_bytes or b"", content_type, file_name))
     is_aud = bool((content_type and "audio/" in content_type.lower()) or _looks_like_audio(raw_bytes or b"", content_type, file_name))
     fallback_name = "Voice Note" if is_aud else ("Image" if is_img else "Document")
-    if not file_name or _is_fake_upload_name(file_name) or file_name.lower() in ("attachment", "document.pdf", "unknown"):
+    if (
+        not file_name
+        or not _is_real_user_upload_name(file_name)
+        or file_name.lower() in ("attachment", "document.pdf", "unknown")
+    ) and file_name.lower() not in ("voice note", "image", "document"):
         file_name = fallback_name
 
     safe_name = (file_name or fallback_name).replace('"', "").replace("\r", "").replace("\n", "")
@@ -1512,7 +1543,7 @@ def post_upload_intercept(
     if ext:
         metadata["extracted_text"] = ext[:50_000]
     if upload_images:
-        metadata["upload_images"] = upload_images[:10]
+        metadata["upload_images"] = upload_images[:_MULTI_FILE_VISION_MAX]
 
     ctype = (content_type or "application/octet-stream").strip() or "application/octet-stream"
 
@@ -1525,12 +1556,16 @@ def post_upload_intercept(
             payload, sniffed_ct, sniffed_name = extract_upload_file_payload(
                 raw_bytes, content_type, safe_name,
             )
-            tiny_txt = (safe_name or "").lower().endswith((".txt", ".md", ".csv", ".log"))
-            if payload and (len(payload) >= 32 or (tiny_txt and len(payload) >= 1)):
+            is_real_file = _is_real_user_upload_name(safe_name) or _has_any_file_extension(safe_name)
+            if payload and (len(payload) >= 32 or (is_real_file and len(payload) >= 1)):
                 file_payload = payload
                 if sniffed_ct:
                     file_ctype = sniffed_ct
-                if sniffed_name and sniffed_name.lower() not in _FAKE_UPLOAD_NAMES:
+                if (
+                    sniffed_name
+                    and (_is_fake_upload_name(file_label) or not _is_real_user_upload_name(file_label))
+                    and _is_real_user_upload_name(sniffed_name)
+                ):
                     file_label = sniffed_name.replace('"', "").replace("\r", "").replace("\n", "")
             else:
                 # Raw body if it does not look like chat JSON metadata
@@ -1846,7 +1881,7 @@ def _extract_office_images(data: bytes, max_images: int = 10) -> list[str]:
     return out
 
 
-def _upload_images_for_vision(raw_bytes: bytes, content_type: str = "", file_name: str = "", max_images: int = 10) -> list[str]:
+def _upload_images_for_vision(raw_bytes: bytes, content_type: str = "", file_name: str = "", max_images: int = 20) -> list[str]:
     """Build base64 image list from an upload for LLaVA vision rules."""
     if not raw_bytes:
         return []

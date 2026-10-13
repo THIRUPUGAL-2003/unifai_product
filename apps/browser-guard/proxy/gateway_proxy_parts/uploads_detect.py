@@ -6,14 +6,12 @@ import time
 import json
 import zipfile
 import threading
+import urllib
+import urllib.parse
 
 
 
-_FAKE_UPLOAD_NAMES = frozenset({
-    "", "attachment", "attachment.txt", "attachment.bin", "blob", "blob.txt",
-    "document", "document.txt", "document.bin", "image",
-    "null", "undefined", "unknown", "screenshot", "voice",
-})
+_FAKE_UPLOAD_NAMES = frozenset()
 
 # Generic media stems are no longer blacklisted — if a user uploads screenshot.png, photo.jpg,
 # or presentation.pptx, that is their real filename and must be preserved as-is.
@@ -2052,6 +2050,13 @@ def extract_pdf_bytes(raw: bytes) -> bytes | None:
     if raw.startswith(b"%PDF-"):
         data = raw
     else:
+        # A file that does not start with %PDF- can only be a PDF if it is:
+        # 1) multipart form-data (starts with b"--") containing a PDF part, or
+        # 2) explicit application/pdf content type in multipart headers.
+        # Plain text / code files (like .py containing "%PDF-" string literals) must NOT be treated as PDFs.
+        stripped = raw.lstrip()
+        if not (stripped.startswith(b"--") or b"application/pdf" in raw[:2048].lower()):
+            return None
         idx = raw.find(b"%PDF-")
         if idx < 0 or idx > 64 * 1024:
             return None
@@ -2183,7 +2188,14 @@ def _extract_bytes_from_json_upload(raw: bytes, file_name: str = "") -> tuple[by
 
 def iter_multipart_named_files(raw: bytes) -> list[tuple[str, bytes]]:
     """Each filename= part when one request carries two or more files (Claude batch upload)."""
-    if not raw or raw.lower().count(b"filename=") < 2:
+    if not raw or len(raw) < 64:
+        return []
+    # Must be an actual multipart body: opens with --boundary or contains WebKitFormBoundary
+    sample = raw[:4096].lower()
+    is_multipart = (
+        raw.lstrip()[:2] == b"--" and b"content-disposition:" in sample
+    ) or b"webkitformboundary" in sample
+    if not is_multipart or raw.lower().count(b"filename=") < 2:
         return []
     out: list[tuple[str, bytes]] = []
     low = raw.lower()
@@ -2251,21 +2263,22 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
     if not raw:
         return None, "", file_name or ""
     name = _sanitize_upload_filename(file_name) or (file_name or "").strip()
-    # Prefer multipart / header filename when caller only had a placeholder.
-    mp_name = _filename_from_multipart_or_headers(raw, None, "")
-    if mp_name and _is_fake_upload_name(name):
-        name = mp_name
-    elif mp_name and not _is_fake_upload_name(mp_name):
-        name = mp_name
+    # Prefer multipart / header filename ONLY when caller had no name or a placeholder.
+    if _is_fake_upload_name(name) or not _is_real_user_upload_name(name):
+        mp_name = _filename_from_multipart_or_headers(raw, None, "")
+        if mp_name and _is_real_user_upload_name(mp_name):
+            name = mp_name
 
     pdf = extract_pdf_bytes(raw)
     if pdf:
         # Do NOT invent document.pdf here — that became the Prompt Log label for
         # Gemini/ChatGPT when the real name arrives later on Send. Keep placeholder.
-        if not (name or "").lower().endswith(".pdf") and _is_real_user_upload_name(name):
-            name = f"{name}.pdf"
+        if (name or "").lower().endswith(".pdf"):
+            pass
         elif _is_fake_upload_name(name) or not name:
             name = ""
+        elif not _has_any_file_extension(name) and _is_real_user_upload_name(name):
+            name = f"{name}.pdf"
         return pdf, "application/pdf", name
 
     # JSON base64 file wrappers (Claude/Gemini/DeepSeek).
@@ -2279,7 +2292,12 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
 
     # Multipart: extract part after filename=
     low_prefix = raw[: min(len(raw), 64 * 1024)].lower()
-    if b"filename=" in low_prefix or b"webkitformboundary" in low_prefix or b"multipart" in (content_type or "").lower().encode():
+    is_multipart = (
+        "multipart" in (content_type or "").lower()
+        or (raw.lstrip()[:2] == b"--" and b"content-disposition:" in low_prefix[:4096])
+        or b"webkitformboundary" in low_prefix[:1024]
+    )
+    if is_multipart and (b"filename=" in low_prefix or b"webkitformboundary" in low_prefix or "multipart" in (content_type or "").lower()):
         idx = low_prefix.find(b"filename=")
         if idx < 0:
             # File part without filename=: the part that declares its own Content-Type.
@@ -2296,8 +2314,9 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
                 hm = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';\r\n]+)["\']?', hdr, re.I)
                 if hm:
                     got = _sanitize_upload_filename(hm.group(1))
-                    if got and not (_is_fake_upload_name(got) and _is_real_user_upload_name(name)):
-                        name = got
+                    if got and _is_real_user_upload_name(got):
+                        if _is_fake_upload_name(name) or not _is_real_user_upload_name(name):
+                            name = got
                 cm = re.search(r"content-type:\s*([^\r\n;]+)", hdr, re.I)
                 if cm:
                     part_ct = cm.group(1).strip().lower()
@@ -3127,7 +3146,7 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
     # 2. Claude / Anthropic source base64 blocks:
     # {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": "..."}, "title": "doc.pdf"}
     for m in re.finditer(
-        r'\{[^{}]*?"source"\s*:\s*\{[^}]*?"(?:data|bytes)"\s*:\s*"([A-Za-z0-9+/=\s\\]{60,})"[^}]*?\}[^{}]*?\}',
+        r'"source"\s*:\s*\{[^{}]*?"(?:data|bytes)"\s*:\s*"([A-Za-z0-9+/=\s\\]{60,})"[^{}]*?\}',
         raw_text,
     ):
         block = m.group(0)
@@ -3138,9 +3157,10 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
             continue
         if len(data) < 32:
             continue
-        mm = re.search(r'"(?:media_type|mime_type|mediaType)"\s*:\s*"([^"]+)"', block)
+        ctx = raw_text[max(0, m.start() - 150): min(len(raw_text), m.end() + 150)]
+        mm = re.search(r'"(?:media_type|mime_type|mediaType)"\s*:\s*"([^"]+)"', block) or re.search(r'"(?:media_type|mime_type|mediaType)"\s*:\s*"([^"]+)"', ctx)
         mime = mm.group(1).strip() if mm else ""
-        tm = re.search(r'"(?:title|name|file_name|filename)"\s*:\s*"([^"]+)"', block)
+        tm = re.search(r'"(?:title|name|file_name|filename)"\s*:\s*"([^"]+)"', ctx)
         fname = _sanitize_upload_filename(tm.group(1).strip()) if tm else ""
         if not mime:
             if data[:5] == b"%PDF-": mime = "application/pdf"
@@ -3152,7 +3172,9 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
             fname = fname_base or ""
             if fname and "." not in fname:
                 fname = f"{fname}.{ext}"
-        sig = f"{fname.lower()}|{len(data)}"
+            elif not fname:
+                fname = f"Image_{len(out) + 1}.{ext}" if mime.startswith("image/") else f"Attachment_{len(out) + 1}.{ext}"
+        sig = _bytes_name_fingerprint(data)
         if sig not in seen:
             seen.add(sig)
             out.append((data, mime, fname))

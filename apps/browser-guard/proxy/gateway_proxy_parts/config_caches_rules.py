@@ -467,7 +467,7 @@ _UPLOAD_FILE_QUEUE_MAX = 128  # one Send may attach 100+ files; keep each one un
 # Only treat "latest upload" as this Send's file if the upload was this recent.
 # Prevents typed prompts from becoming "[FILE UPLOAD] attachment" after an old pick.
 _UPLOAD_LATEST_MATCH_TTL = 180  # 180 seconds match window for pending uploads on Send (supports multi-file & typing time)
-_MULTI_FILE_VISION_MAX = 12  # images sent together to Guard Bot on one Send
+_MULTI_FILE_VISION_MAX = 20  # images sent together to Guard Bot on one Send
 
 # Sticky map: client IP → last admin Target Website (CDN uploads often omit Referer).
 _CLIENT_TARGET_STICKY: dict[str, tuple[str, float]] = {}
@@ -1415,13 +1415,24 @@ def is_batchexecute_chat_submit(path: str, body: str = "") -> bool:
             if rpc in body or rpc in body_dec:
                 return False
 
-        # Chat send RPCs
-        chat_rpcs = ("wXbdQc", "vyAQhe", "hR32Ce", "StreamGenerate", "GenerateContent")
-        if any(rpc in body or rpc in body_dec for rpc in chat_rpcs):
+        # Chat send RPCs (query param or body, case-insensitive)
+        chat_rpcs = ("wXbdQc", "vyAQhe", "hR32Ce", "StreamGenerate", "GenerateContent", "otAQvf", "f6B7Re", "u0s7Td", "mK44yd")
+        body_low = body.lower()
+        if any(rpc in body or rpc in body_dec or rpc.lower() in path_l or rpc.lower() in body_low for rpc in chat_rpcs):
             return True
 
         if ("f.req=" in body or "f.req=" in body_dec) and ("StreamGenerate" in body or "StreamGenerate" in body_dec):
             return True
+
+        # Fallback: if it has f.req and extract_batchexecute_prompt finds a non-empty user prompt:
+        try:
+            fn = globals().get("extract_batchexecute_prompt")
+            if fn:
+                p = fn(body)
+                if p and len(p.strip()) >= 1 and not globals().get("_is_google_wire_blob", lambda x: False)(p):
+                    return True
+        except Exception:
+            pass
 
     return False
 

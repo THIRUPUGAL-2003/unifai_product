@@ -1167,7 +1167,7 @@ class BrowserAIInterceptor:
             except Exception:
                 pass
 
-        is_gemini_send = "batchexecute" in (path or "").lower() and is_batchexecute_chat_submit(path, raw_text)
+        is_gemini_send = ("batchexecute" in (path or "").lower() or "streamgenerate" in (path or "").lower()) and is_batchexecute_chat_submit(path, raw_text)
         if is_gemini_send:
             confident_send = True
 
