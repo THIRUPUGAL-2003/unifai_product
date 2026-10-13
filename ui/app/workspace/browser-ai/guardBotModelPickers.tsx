@@ -65,6 +65,15 @@ export function GuardBotOutsourceModelPicker({ provider, value, onChange, disabl
 		return opts;
 	}, [data, value]);
 
+	React.useEffect(() => {
+		if (provider && !value && options.length > 0) {
+			const firstPreferred = options[0]?.value;
+			if (firstPreferred) {
+				onChange(firstPreferred);
+			}
+		}
+	}, [provider, value, options, onChange]);
+
 	return (
 		<>
 			<ComboboxSelect

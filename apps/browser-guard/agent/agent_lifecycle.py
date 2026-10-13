@@ -258,8 +258,11 @@ def lock_install_dir_against_deletion() -> None:
             exe_path = os.path.abspath(sys.executable)
             exe_dir = os.path.dirname(exe_path)
             temp_dir = os.environ.get("TEMP", "").lower()
-            if os.path.isdir(exe_dir) and (not temp_dir or not exe_dir.lower().startswith(temp_dir)):
-                dirs_to_lock.add(exe_dir)
+            # Only lock production install dirs — never source trees, release artifacts, or dev workspaces
+            is_dev = any(dev in exe_dir.lower() for dev in ("release", "unifai", "browser-guard", ".git", "workspace"))
+            if getattr(sys, "frozen", False) and not is_dev and os.path.isdir(exe_dir):
+                if not temp_dir or not exe_dir.lower().startswith(temp_dir):
+                    dirs_to_lock.add(exe_dir)
 
             for d in dirs_to_lock:
                 subprocess.run(["icacls", d, "/deny", f"{user}:(OI)(CI)(DE,DC)"], capture_output=True, text=True, creationflags=flags)

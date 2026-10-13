@@ -159,6 +159,7 @@ import {
 import { getErrorMessage, useGetSMTPConfigQuery } from "@/lib/store";
 import { getApiBaseUrl } from "@/lib/utils/port";
 import { GuardRuleAIEvaluatorFields } from "./guardRuleAIEvaluatorFields";
+import { GuardBotOutsourceModelPicker } from "./guardBotModelPickers";
 import { logActionBadge, getPlatformBadge } from "./logBadges";
 import { LogPromptPreviewCell } from "./logPromptPreviewCell";
 import { formatLogDate, formatLogTime } from "./browserAiFormat";
@@ -991,6 +992,12 @@ export default function BrowserAiPage() {
 		setAgentPageOffset(0);
 	}, [agentSearch, agentStatusFilter, agentTypeFilter, agentPageLimit]);
 
+	useEffect(() => {
+		if (ruleDialogOpen && !newRuleBotProvider && outsourceProviderOptions.length > 0) {
+			setNewRuleBotProvider(outsourceProviderOptions[0].value);
+		}
+	}, [ruleDialogOpen, newRuleBotProvider, outsourceProviderOptions]);
+
 	// --- Detect new blocked violations and fire notifications ---
 	useEffect(() => {
 		if (!logsData?.logs) return;
@@ -1207,9 +1214,6 @@ export default function BrowserAiPage() {
 	const [guardKeyLoading, setGuardKeyLoading] = useState(false);
 	const [guardKeyHint, setGuardKeyHint] = useState("");
 
-	const [networkDeployDialogOpen, setNetworkDeployDialogOpen] = useState(false);
-	const [targetAgentForDeploy, setTargetAgentForDeploy] = useState<BrowserAIAgent | null>(null);
-	const [networkDeployCopied, setNetworkDeployCopied] = useState<string>("");
 
 	const [selectedAgentDetails, setSelectedAgentDetails] = useState<BrowserAIAgent | null>(null);
 	const [agentDetailsKey, setAgentDetailsKey] = useState<string>("");
@@ -1447,12 +1451,6 @@ export default function BrowserAiPage() {
 		}
 	};
 
-	const handleOpenNetworkDeployDialog = (agent: BrowserAIAgent) => {
-		setTargetAgentForDeploy(agent);
-		setNetworkDeployCopied("");
-		setNetworkDeployDialogOpen(true);
-	};
-
 	const handleDeleteSingleAgent = async (agent: BrowserAIAgent) => {
 		if (!confirm(`Remove ${agent.hostname || agent.id} from this dashboard fleet list?`)) return;
 		try {
@@ -1636,19 +1634,15 @@ export default function BrowserAiPage() {
 			setNewRuleGenerateError("Describe what the regex should catch.");
 			return;
 		}
-		if (!newRuleBotProvider.trim() || newRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !newRuleBotModel.trim()) {
-			setNewRuleGenerateError("Select a Model Provider and model. The model only writes the regex.");
-			return;
-		}
 		try {
 			const res = await generateRegexFromPolicy({
-				bot_provider: newRuleBotProvider.trim(),
-				bot_model: newRuleBotModel.trim(),
+				bot_provider: newRuleBotProvider.trim() || "",
+				bot_model: newRuleBotModel.trim() || "",
 				bot_prompt: prompt,
 			}).unwrap();
 			const pat = (res.pattern || "").trim();
 			if (!pat) {
-				setNewRuleGenerateError("Model returned an empty pattern.");
+				setNewRuleGenerateError("Could not generate pattern from policy.");
 				return;
 			}
 			setNewRulePattern(pat);
@@ -1672,18 +1666,14 @@ export default function BrowserAiPage() {
 			return;
 		}
 		try {
-			if (!provider.trim() || provider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !model.trim()) {
-				setErr("Select a Model Provider and model first.");
-				return;
-			}
 			const res = await generateRegexFromPolicy({
-				bot_provider: provider.trim(),
-				bot_model: model.trim(),
+				bot_provider: provider.trim() || "",
+				bot_model: model.trim() || "",
 				bot_prompt: prompt,
 			}).unwrap();
 			const pat = (res.pattern || "").trim();
 			if (!pat) {
-				setErr("Model returned an empty pattern.");
+				setErr("Could not generate pattern from policy.");
 				return;
 			}
 			setPat(pat);
@@ -3898,10 +3888,10 @@ export default function BrowserAiPage() {
 															)}
 														</SelectContent>
 													</Select>
-													<Input
-														placeholder="Model id, e.g. gpt-4o-mini"
+													<GuardBotOutsourceModelPicker
+														provider={newRuleBotProvider}
 														value={newRuleBotModel}
-														onChange={(e) => setNewRuleBotModel(e.target.value)}
+														onChange={setNewRuleBotModel}
 													/>
 												</div>
 												<Button type="button" variant="outline" size="sm" disabled={generatingRegex} onClick={() => void generatePatternIntoNewRule()}>
@@ -5111,14 +5101,7 @@ export default function BrowserAiPage() {
 															</DropdownMenuItem>
 														)}
 
-														{/* Network / Remote Deploy Script */}
-														<DropdownMenuItem
-															onClick={() => handleOpenNetworkDeployDialog(agent)}
-															className="text-blue-400 focus:text-blue-400 focus:bg-blue-950/40 cursor-pointer gap-2"
-														>
-															<Terminal className="h-4 w-4 text-blue-400" />
-															Network Push / Install Script
-														</DropdownMenuItem>
+
 
 														{/* Allow Reinstall when uninstalled */}
 														{agent.status === "uninstalled" && (
@@ -6939,168 +6922,7 @@ export default function BrowserAiPage() {
 				</DialogContent>
 			</Dialog>
 
-			{/* NETWORK REMOTE PUSH & INSTALL SCRIPT DIALOG */}
-			<Dialog open={networkDeployDialogOpen} onOpenChange={setNetworkDeployDialogOpen}>
-				<DialogContent className="bg-card border-border text-foreground w-[calc(100%-2rem)] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-					<DialogHeader>
-						<DialogTitle className="flex items-center gap-2 text-base text-blue-400">
-							<Terminal className="h-5 w-5 text-blue-400" />
-							Remote Push &amp; Network Reinstall Script
-						</DialogTitle>
-						<DialogDescription className="text-xs">
-							Run one of these commands to silently install or reinstall {PRODUCT_NAME} Guard on{" "}
-							<strong className="text-foreground">{targetAgentForDeploy?.hostname || targetAgentForDeploy?.ip_address || "the target laptop"}</strong> without employee popups.
-						</DialogDescription>
-					</DialogHeader>
 
-					<div className="space-y-4 py-2 text-xs">
-						{/* Target machine info badge */}
-						<div className="flex flex-wrap gap-3 p-2.5 rounded-md bg-secondary/30 border border-border text-xs">
-							<div><span className="text-muted-foreground">Target Host:</span> <span className="font-semibold text-foreground">{targetAgentForDeploy?.hostname || "—"}</span></div>
-							<div><span className="text-muted-foreground">IP Address:</span> <span className="font-mono text-foreground">{targetAgentForDeploy?.ip_address || "—"}</span></div>
-							<div><span className="text-muted-foreground">OS:</span> <span className="text-foreground">{targetAgentForDeploy?.os_version || "Windows"}</span></div>
-							<div><span className="text-muted-foreground">Current Status:</span> <span className="text-foreground">{targetAgentForDeploy?.status || "—"}</span></div>
-						</div>
-
-						{/* Option 1: PowerShell Silent Install One-Liner */}
-						<div className="space-y-1.5 p-3 rounded-md bg-secondary/20 border border-border">
-							<div className="flex items-center justify-between">
-								<span className="font-semibold text-foreground flex items-center gap-1.5">
-									<Terminal className="h-3.5 w-3.5 text-blue-400" />
-									1. PowerShell Silent Install (One-Liner)
-								</span>
-								<Button
-									size="sm"
-									variant="ghost"
-									className="h-7 text-xs gap-1 text-blue-400 hover:text-blue-300"
-									onClick={() => {
-										const origin = getDeploymentOrigin();
-										const script = `$d="$env:TEMP\\GatewayGuardInstall"; New-Item -ItemType Directory -Force -Path $d | Out-Null; curl.exe -fSL -o "$d\\Gateway_Guard_Windows.zip" "${origin}/api/browser-ai/setup/download-windows.zip"; Expand-Archive -Path "$d\\Gateway_Guard_Windows.zip" -DestinationPath $d -Force; Start-Process "$d\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait`;
-										navigator.clipboard.writeText(script);
-										setNetworkDeployCopied("ps");
-										setTimeout(() => setNetworkDeployCopied(""), 2500);
-									}}
-								>
-									{networkDeployCopied === "ps" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-									{networkDeployCopied === "ps" ? "Copied!" : "Copy Command"}
-								</Button>
-							</div>
-							<p className="text-[11px] text-muted-foreground">
-								Downloads the Windows zip for this website, then installs. The zip contains gateway_guard_config.json so the laptop connects here. Run it from an admin browser session. Do not install Setup.exe on its own.
-							</p>
-							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`$d="$env:TEMP\\GatewayGuardInstall"; New-Item -ItemType Directory -Force -Path $d | Out-Null; curl.exe -fSL -o "$d\\Gateway_Guard_Windows.zip" "${getDeploymentOrigin()}/api/browser-ai/setup/download-windows.zip"; Expand-Archive -Path "$d\\Gateway_Guard_Windows.zip" -DestinationPath $d -Force; Start-Process "$d\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait`}
-							</pre>
-						</div>
-
-						{/* Option 2: Office Network Push via PsExec */}
-						<div className="space-y-1.5 p-3 rounded-md bg-secondary/20 border border-border">
-							<div className="flex items-center justify-between">
-								<span className="font-semibold text-foreground flex items-center gap-1.5">
-									<Radio className="h-3.5 w-3.5 text-purple-400" />
-									2. Office Network Remote Push (PsExec / LAN)
-								</span>
-								<Button
-									size="sm"
-									variant="ghost"
-									className="h-7 text-xs gap-1 text-purple-400 hover:text-purple-300"
-									onClick={() => {
-										const origin = getDeploymentOrigin();
-										const ip = targetAgentForDeploy?.ip_address || "<laptop-ip>";
-										const script = `psexec \\\\${ip} -s powershell -Command "$d='C:\\Windows\\Temp\\GatewayGuardInstall'; New-Item -ItemType Directory -Force -Path $d | Out-Null; curl.exe -fSL -o $d\\Gateway_Guard_Windows.zip '${origin}/api/browser-ai/setup/download-windows.zip'; Expand-Archive -Path $d\\Gateway_Guard_Windows.zip -DestinationPath $d -Force; Start-Process $d\\Gateway_Guard_Setup.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait"`;
-										navigator.clipboard.writeText(script);
-										setNetworkDeployCopied("psexec");
-										setTimeout(() => setNetworkDeployCopied(""), 2500);
-									}}
-								>
-									{networkDeployCopied === "psexec" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-									{networkDeployCopied === "psexec" ? "Copied!" : "Copy Command"}
-								</Button>
-							</div>
-							<p className="text-[11px] text-muted-foreground">
-								Push directly from your admin machine across the office LAN/VPN to this laptop without touching the employee screen.
-							</p>
-							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-purple-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`psexec \\\\${targetAgentForDeploy?.ip_address || "<laptop-ip>"} -s powershell -Command "$d='C:\\Windows\\Temp\\GatewayGuardInstall'; New-Item -ItemType Directory -Force -Path $d | Out-Null; curl.exe -fSL -o $d\\Gateway_Guard_Windows.zip '${getDeploymentOrigin()}/api/browser-ai/setup/download-windows.zip'; Expand-Archive -Path $d\\Gateway_Guard_Windows.zip -DestinationPath $d -Force; Start-Process $d\\Gateway_Guard_Setup.exe -ArgumentList '/VERYSILENT /NORESTART' -Wait"`}
-							</pre>
-						</div>
-
-						{/* Option 4: Active Directory GPO Startup Script (Mass 1000+ Laptops) */}
-						<div className="space-y-1.5 p-3 rounded-md bg-secondary/20 border border-border">
-							<div className="flex items-center justify-between">
-								<span className="font-semibold text-foreground flex items-center gap-1.5">
-									<Building2 className="h-3.5 w-3.5 text-emerald-400" />
-									Active Directory GPO Startup Script (1,000+ Domain Laptops)
-								</span>
-								<Button
-									size="sm"
-									variant="ghost"
-									className="h-7 text-xs gap-1 text-emerald-400 hover:text-emerald-300"
-									onClick={() => {
-										const origin = getDeploymentOrigin();
-										const script = `$ZipUrl = "${origin}/api/browser-ai/setup/download-windows.zip"\n$Dest = "$env:TEMP\\GatewayGuardInstall"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    New-Item -ItemType Directory -Force -Path $Dest | Out-Null\n    Invoke-WebRequest -Uri $ZipUrl -OutFile "$Dest\\Gateway_Guard_Windows.zip" -UseBasicParsing\n    Expand-Archive -Path "$Dest\\Gateway_Guard_Windows.zip" -DestinationPath $Dest -Force\n    Start-Process "$Dest\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n}`;
-										navigator.clipboard.writeText(script);
-										setNetworkDeployCopied("gpo");
-										setTimeout(() => setNetworkDeployCopied(""), 2500);
-									}}
-								>
-									{networkDeployCopied === "gpo" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-									{networkDeployCopied === "gpo" ? "Copied!" : "Copy GPO Script"}
-								</Button>
-							</div>
-							<p className="text-[11px] text-muted-foreground">
-								Link this in <strong>Active Directory Group Policy (gpmc.msc) &gt; Computer Configuration &gt; Windows Settings &gt; Scripts &gt; Startup</strong>. All 1,000 domain computers silently install on next boot without employee interaction.
-							</p>
-							<pre className="p-2.5 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-emerald-300 overflow-x-auto whitespace-pre-wrap break-all">
-								{`$ZipUrl = "${getDeploymentOrigin()}/api/browser-ai/setup/download-windows.zip"\n$Dest = "$env:TEMP\\GatewayGuardInstall"\nif (-not (Test-Path "C:\\Program Files\\Gateway Guard\\Gateway Guard.exe")) {\n    New-Item -ItemType Directory -Force -Path $Dest | Out-Null\n    Invoke-WebRequest -Uri $ZipUrl -OutFile "$Dest\\Gateway_Guard_Windows.zip" -UseBasicParsing\n    Expand-Archive -Path "$Dest\\Gateway_Guard_Windows.zip" -DestinationPath $Dest -Force\n    Start-Process "$Dest\\Gateway_Guard_Setup.exe" -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" -Wait\n}`}
-							</pre>
-						</div>
-
-						{/* Option 3: Manual Direct Silent Arguments */}
-						<div className="space-y-1.5 p-3 rounded-md bg-secondary/20 border border-border">
-							<div className="flex items-center justify-between">
-								<span className="font-semibold text-foreground flex items-center gap-1.5">
-									<SlidersHorizontal className="h-3.5 w-3.5 text-amber-400" />
-									3. Installer Command-Line Flags (Silent)
-								</span>
-								<Button
-									size="sm"
-									variant="ghost"
-									className="h-7 text-xs gap-1 text-amber-400 hover:text-amber-300"
-									onClick={() => {
-										navigator.clipboard.writeText("Gateway_Guard_Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART");
-										setNetworkDeployCopied("flags");
-										setTimeout(() => setNetworkDeployCopied(""), 2500);
-									}}
-								>
-									{networkDeployCopied === "flags" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-									{networkDeployCopied === "flags" ? "Copied!" : "Copy Flags"}
-								</Button>
-							</div>
-							<p className="text-[11px] text-muted-foreground">
-								Extract the zip first. gateway_guard_config.json must sit in the same folder as Gateway_Guard_Setup.exe, or the laptop keeps the old website address. Then run:
-							</p>
-							<pre className="p-2 rounded bg-black/60 border border-border/80 font-mono text-[11px] text-amber-300">
-								Gateway_Guard_Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-							</pre>
-						</div>
-					</div>
-
-					<DialogFooter className="flex-col sm:flex-row gap-2 justify-between items-center">
-						<a
-							href="/api/browser-ai/setup/download-windows.zip"
-							download="Gateway_Guard_Windows.zip"
-							className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
-						>
-							<HardDriveDownload className="h-3.5 w-3.5" />
-							Direct Download Gateway_Guard_Windows.zip
-						</a>
-						<Button variant="outline" size="sm" onClick={() => setNetworkDeployDialogOpen(false)}>
-							Close
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
 
 			{/* GUARD AGENT DETAILS & DAILY UNINSTALL KEY DIALOG */}
 			<Dialog

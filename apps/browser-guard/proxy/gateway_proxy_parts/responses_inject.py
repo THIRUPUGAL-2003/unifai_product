@@ -5,6 +5,8 @@ import asyncio
 
 # Same rule/send must not paint 3 chat bubbles (Claude multi-request / multi-file).
 _BLOCK_UI_DEDUPE_TTL = 15.0
+_block_ui_history: dict[tuple[str, str], float] = {}
+
 
 
 def _security_reply_text(rule_triggered: str, warning_message: str = "") -> str:
@@ -41,13 +43,30 @@ def _xssi_length_frame(payload: str) -> str:
     return f"{len(raw)}\n{payload}\n"
 
 
-def _gemini_block_body(msg: str, rpc: str) -> bytes:
-    """Length-prefixed wrb.fr stream. A bare JSON array after )]}' throws in the current Gemini page and shows as a network error."""
-    payload_data = [None, [None, None, None, [[msg]]], [[msg]], msg]
+def _gemini_block_body(msg: str, rpc: str = "StreamGenerate") -> bytes:
+    """Length-prefixed wrb.fr stream for Google Gemini / Bard.
+    Fills every candidate slot (index 0..4) and all known Gemini RPC envelopes
+    so the web UI always renders the block message as an assistant reply
+    without throwing a Network error.
+    """
+    candidate_obj = ["rc_gateway_block", [msg], None, None, None, None, None, []]
+    payload_data = [
+        "c_gateway_conv",
+        ["c_gateway_conv", "r_gateway_block", None, [[msg]]],
+        [["rc_gateway_block", [msg]]],
+        msg,
+        [candidate_obj],
+        None,
+        None,
+        None,
+        None,
+    ]
     payload_str = json.dumps(payload_data, ensure_ascii=False)
-    envelopes = [["wrb.fr", rpc, payload_str, None, None, None, "generic"]]
-    if rpc != "StreamGenerate":
-        envelopes.append(["wrb.fr", "StreamGenerate", payload_str, None, None, None, "generic"])
+    rpcs = [rpc] if rpc else []
+    for default_rpc in ("StreamGenerate", "wXbdQc", "vyAQhe", "hR32Ce", "GenerateContent"):
+        if default_rpc not in rpcs:
+            rpcs.append(default_rpc)
+    envelopes = [["wrb.fr", r, payload_str, None, None, None, "generic"] for r in rpcs]
     envelopes.extend([["di", 34], ["af.httprm", 34, "-gateway-", 1]])
     chunk = json.dumps(envelopes, ensure_ascii=False)
     return (")]}'\n" + _xssi_length_frame(chunk)).encode("utf-8")
@@ -97,11 +116,17 @@ def _silent_block_response(flow: http.HTTPFlow, common_headers: dict, *, path: s
         host_l = (flow.request.pretty_host or "").lower()
     except Exception:
         host_l = ""
-    if is_batchexecute_chat_submit(path_l, raw_body or ""):
+    if (
+        "gemini.google.com" in host_l
+        or "bard.google.com" in host_l
+        or "bardchatui" in path_l
+        or "assistant.lamda." in path_l
+        or is_batchexecute_chat_submit(path_l, raw_body or "")
+    ):
         flow.response = http.Response.make(
             200,
             _gemini_block_body("", "StreamGenerate"),
-            {**common_headers, "Content-Type": "application/json; charset=utf-8"},
+            {**common_headers, "Content-Type": "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff"},
         )
         return
     if _is_deepseek_completion(path_l, host_l):
@@ -538,6 +563,17 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         )
         return
 
+    # Deduplicate in-chat assistant responses so parallel/multi requests within _BLOCK_UI_DEDUPE_TTL (e.g. Claude multi-file) don't paint duplicate bubbles.
+    dedupe_key = _block_ui_dedupe_key(host, msg)
+    now_mono = time.monotonic()
+    if len(_block_ui_history) > 200:
+        _block_ui_history.clear()
+    last_block = _block_ui_history.get(dedupe_key, 0.0)
+    if now_mono - last_block < _BLOCK_UI_DEDUPE_TTL:
+        _silent_block_response(flow, common_headers, path=path, raw_body=raw_body, accept=accept)
+        return
+    _block_ui_history[dedupe_key] = now_mono
+
     # ── ChatGPT-shaped conversation APIs (body shape or host/path, any monitored domain) ──
     is_chatgpt_conv = (
         messages_parts_body is not None
@@ -765,23 +801,25 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         )
         return
 
-    # ── Gemini / Bard (request shape) ──
-    # Only inject on real chat submits. History/settings batchexecute share f.req=
-    # — fake wrb.fr there leaves the sidebar spinning forever.
-    if is_batchexecute_chat_submit(path, raw_body):
-        # Dynamically detect actual RPC ID from raw_body (wXbdQc, vyAQhe, hR32Ce, StreamGenerate)
+    # ── Gemini / Bard (request shape or domain) ──
+    is_gemini = (
+        "gemini.google.com" in host_l
+        or "bard.google.com" in host_l
+        or "bardchatui" in path
+        or "assistant.lamda." in path
+        or is_batchexecute_chat_submit(path, raw_body)
+    )
+    if is_gemini:
         detected_rpc = "StreamGenerate"
         for rpc_cand in ("wXbdQc", "vyAQhe", "hR32Ce", "StreamGenerate", "GenerateContent"):
-            if rpc_cand in (raw_body or ""):
+            if rpc_cand in (raw_body or "") or rpc_cand in path:
                 detected_rpc = rpc_cand
                 break
 
-        # StreamGenerate clients pick the reply from different array slots.
-        # Put the same text in each slot the page is known to read.
         flow.response = http.Response.make(
             200,
             _gemini_block_body(msg, detected_rpc),
-            {**common_headers, "Content-Type": "application/json; charset=utf-8"},
+            {**common_headers, "Content-Type": "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff"},
         )
         return
 
@@ -791,6 +829,67 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             200,
             _deepseek_block_sse(msg),
             {**common_headers, "Content-Type": "text/event-stream; charset=utf-8", "X-Accel-Buffering": "no"},
+        )
+        return
+
+    # ── Lovable AI (lovable.dev) ──
+    if "lovable" in host_l or "lovable.dev" in host_l:
+        lovable_chunk = {
+            "id": "gateway-security-block",
+            "role": "assistant",
+            "message": msg,
+            "text": msg,
+            "content": msg,
+            "delta": {"role": "assistant", "content": msg, "text": msg},
+            "choices": [{"delta": {"content": msg}, "message": {"role": "assistant", "content": msg}, "finish_reason": "stop"}],
+            "status": "blocked",
+            "finish_reason": "stop",
+        }
+        lovable_sse = (
+            f"data: {json.dumps(lovable_chunk, ensure_ascii=False)}\n\n"
+            "data: [DONE]\n\n"
+        )
+        if "event-stream" in accept or "stream" in path or "/chat" in path:
+            flow.response = http.Response.make(
+                200,
+                lovable_sse.encode("utf-8"),
+                {**common_headers, "Content-Type": "text/event-stream; charset=utf-8"},
+            )
+            return
+        flow.response = http.Response.make(
+            200,
+            json.dumps(lovable_chunk, ensure_ascii=False).encode("utf-8"),
+            {**common_headers, "Content-Type": "application/json; charset=utf-8"},
+        )
+        return
+
+    # ── Mistral AI (chat.mistral.ai) ──
+    if "mistral.ai" in host_l or "mistral" in host_l:
+        mistral_chunk = {
+            "id": "gateway-reply",
+            "object": "chat.completion.chunk",
+            "choices": [{
+                "index": 0,
+                "delta": {"role": "assistant", "content": msg, "text": msg},
+                "finish_reason": None,
+            }],
+            "text": msg,
+            "content": msg,
+        }
+        mistral_done = {
+            "id": "gateway-reply",
+            "object": "chat.completion.chunk",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        }
+        mistral_sse = (
+            f"data: {json.dumps(mistral_chunk, ensure_ascii=False)}\n\n"
+            f"data: {json.dumps(mistral_done, ensure_ascii=False)}\n\n"
+            "data: [DONE]\n\n"
+        )
+        flow.response = http.Response.make(
+            200,
+            mistral_sse.encode("utf-8"),
+            {**common_headers, "Content-Type": "text/event-stream; charset=utf-8"},
         )
         return
 

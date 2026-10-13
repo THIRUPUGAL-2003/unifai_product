@@ -35,6 +35,7 @@ export default function PromptsViewHeader() {
 		allowedModels,
 		allowedVirtualKeys,
 		allowedApiKeys,
+		allowedSkills,
 		mcpIncludeTools,
 		modelParams,
 		provider,
@@ -154,9 +155,10 @@ export default function PromptsViewHeader() {
 		if (allowedModels) params.prompt_allowed_models = allowedModels;
 		if (allowedVirtualKeys) params.prompt_allowed_virtual_keys = allowedVirtualKeys;
 		if (allowedApiKeys) params.prompt_allowed_api_keys = allowedApiKeys;
+		if (allowedSkills) params.prompt_allowed_skills = allowedSkills;
 		if (mcpIncludeTools) params.prompt_allowed_mcp_tools = mcpIncludeTools;
 		return params;
-	}, [modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, mcpIncludeTools]);
+	}, [modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools]);
 
 	const handleSaveSession = useCallback(async () => {
 		if (!selectedPrompt || !hasChanges || isStreaming) return;

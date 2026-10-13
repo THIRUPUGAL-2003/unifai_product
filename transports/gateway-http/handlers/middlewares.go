@@ -1354,7 +1354,9 @@ func isGuardKeyBrowserAIRoute(method, path string) bool {
 	// Guard auto-update + admin Setup download: Guard secret OR dashboard session.
 	case "/api/browser-ai/setup/download.zip",
 		"/api/browser-ai/setup/download-windows.zip",
-		"/api/browser-ai/setup/download-mac.zip":
+		"/api/browser-ai/setup/download-mac.zip",
+		"/api/browser-ai/setup/Gateway_Guard_Setup.exe",
+		"/api/browser-ai/setup/Raksha_Guard_Setup.exe":
 		return method == fasthttp.MethodGet || method == fasthttp.MethodHead
 	case "/api/browser-ai/setup/proxy-bundle.json",
 		"/api/browser-ai/setup/proxy-bundle.zip":

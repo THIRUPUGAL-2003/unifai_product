@@ -356,15 +356,19 @@ Return ONLY this JSON (no markdown):
 {"pattern":"<regex>","focus":"<short>","notes":"<short>"}
 
 pattern RULES:
+- Match the secret or data the policy names, not the words of the policy.
+- "pin", "pin code", or "pincode" means a 4 to 6 digit number: \b\d{4,6}\b. Never match the letters pin or code.
+- "email" means an email address. "phone" means a phone number. "credit card" means a card number.
+- "aadhaar" means 12 digits. "pan card" means an India PAN (5 letters, 4 digits, 1 letter).
+- If the policy says N-digit, use \d{N}.
+- NEVER return only the policy words joined by |, such as \b(?:pin|code)\b.
 - Must be a real RE2 regex that can match chat text.
 - NEVER invent fake patterns like []word[] or empty [].
 - NEVER put English sentences in pattern.
-- Prefer \\b, \\d, [A-Za-z], |, (), {n,m}.
+- Prefer \b, \d, character classes, |, (), {n,m}.
 - No lookbehind/lookahead, no backreferences (RE2).
 - Keep pattern under 180 characters.
-- Case is ignored by the engine (?i).
-- Derive ONLY from SECURITY_POLICY — do not invent formats the policy does not mention.
-- If unsure: keyword alternation with word boundaries from policy terms.`
+- Case is ignored by the engine (?i).`
 
 	systemPromptRetry := `Output ONLY valid JSON: {"pattern":"<RE2 regex>","focus":"match","notes":"ok"}
 pattern must compile in Go regexp. No markdown. No English sentences as pattern.
@@ -509,6 +513,20 @@ Derive the pattern only from SECURITY_POLICY.`
 			genErr = err4
 		}
 	}
+	if !ok {
+		if fallbackPat, fallbackFocus, fallbackNotes := heuristicRegexFromPolicy(policy); fallbackPat != "" {
+			pat, focus, notes, ok = fallbackPat, fallbackFocus, fallbackNotes, true
+			genSource = "policy-pattern-engine"
+		}
+	}
+	// A model often echoes the description ("pin|code") instead of the data shape.
+	// When a known secret type has a real pattern, that pattern replaces the echo.
+	if ok && generatedPatternIsKeywordEcho(pat, policy) {
+		if fallbackPat, fallbackFocus, fallbackNotes := heuristicRegexFromPolicy(policy); fallbackPat != "" && !generatedPatternIsKeywordEcho(fallbackPat, policy) {
+			pat, focus, notes = fallbackPat, fallbackFocus, fallbackNotes
+			genSource = "policy-pattern-engine"
+		}
+	}
 
 	if !ok {
 		msg := "model did not return a usable regex pattern — use AI Prompt evaluate (Download/llama3.2), or edit Pattern manually"
@@ -539,6 +557,183 @@ func isVisionOnlyGuardModelName(model string) bool {
 		return false
 	}
 	return strings.Contains(m, "llava") || strings.Contains(m, "vision") || strings.Contains(m, "bakllava")
+}
+
+// isPinCodePolicy is a numeric PIN (ATM PIN, India PIN code), not a postal code that can contain letters.
+func isPinCodePolicy(p string) bool {
+	if strings.Contains(p, "post code") || strings.Contains(p, "postal") || strings.Contains(p, "zip") {
+		return false
+	}
+	return strings.Contains(p, "pincode") || strings.Contains(p, "pin code") || strings.Contains(p, "pin number") || regexp.MustCompile(`\bpin\b`).MatchString(p)
+}
+
+// generatedPatternIsKeywordEcho reports a pattern that only repeats words from the description,
+// such as \b(?:pin|code)\b for the description "pin code".
+func generatedPatternIsKeywordEcho(pattern, policy string) bool {
+	if strings.Contains(pattern, `\d`) || strings.Contains(pattern, "[0-9]") || strings.Contains(pattern, "@") {
+		return false
+	}
+	words := regexp.MustCompile(`[A-Za-z]{2,}`).FindAllString(strings.ToLower(pattern), -1)
+	if len(words) == 0 {
+		return false
+	}
+	policyWords := map[string]bool{}
+	for _, w := range strings.Fields(strings.ToLower(policy)) {
+		w = strings.Trim(w, `"'.,;:()[]`)
+		if w != "" {
+			policyWords[w] = true
+		}
+	}
+	for _, w := range words {
+		if !policyWords[w] {
+			return false
+		}
+	}
+	return true
+}
+
+func heuristicRegexFromPolicy(policy string) (pattern, focus, notes string) {
+	p := strings.ToLower(strings.TrimSpace(policy))
+	if p == "" {
+		return "", "", ""
+	}
+
+	// 1. Credit Card / PCI
+	if strings.Contains(p, "credit card") || strings.Contains(p, "debit card") || strings.Contains(p, "card number") || strings.Contains(p, "pci") || strings.Contains(p, "visa") || strings.Contains(p, "mastercard") {
+		return `\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b`, "credit card number", "standard PCI card pattern"
+	}
+
+	// 2. Phone / Mobile Number
+	if strings.Contains(p, "phone") || strings.Contains(p, "mobile") || strings.Contains(p, "contact number") || strings.Contains(p, "cell") {
+		return `\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b`, "phone number", "international/domestic phone pattern"
+	}
+
+	// 3. Email
+	if strings.Contains(p, "email") || strings.Contains(p, "mail address") {
+		return `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`, "email address", "RFC email address pattern"
+	}
+
+	// 4. Aadhaar
+	if strings.Contains(p, "aadhaar") || strings.Contains(p, "aadhar") {
+		return `\b[2-9]{1}[0-9]{3}\s?[0-9]{4}\s?[0-9]{4}\b`, "aadhaar number", "India UIDAI Aadhaar 12-digit format"
+	}
+
+	// 5. PAN card
+	if strings.Contains(p, "pan card") || strings.Contains(p, "pan number") || (strings.Contains(p, "pan") && strings.Contains(p, "india")) {
+		return `\b[A-Z]{5}[0-9]{4}[A-Z]\b`, "PAN card", "India Income Tax PAN format"
+	}
+
+	// 6. Social Security / SSN
+	if strings.Contains(p, "ssn") || strings.Contains(p, "social security") {
+		return `\b\d{3}-\d{2}-\d{4}\b`, "SSN", "US Social Security Number format"
+	}
+
+	// 7. API Keys / Secrets / Tokens / Passwords
+	if strings.Contains(p, "api key") || strings.Contains(p, "secret key") || strings.Contains(p, "token") || strings.Contains(p, "bearer") || strings.Contains(p, "password") || strings.Contains(p, "credential") || strings.Contains(p, "aws") {
+		return `\b(?:api[_-]?key|secret[_-]?token|bearer\s+[a-zA-Z0-9_\-\.]{16,}|ghp_[a-zA-Z0-9]{36}|AKIA[0-9A-Z]{16})\b`, "API key / credentials", "high-entropy secret keys and tokens"
+	}
+
+	// 8. Salary / Compensation / Payroll
+	if strings.Contains(p, "salary") || strings.Contains(p, "payroll") || strings.Contains(p, "compensation") || strings.Contains(p, "ctc") || strings.Contains(p, "bonus") || strings.Contains(p, "wage") {
+		return `\b(?:salary|payroll|bonus|compensation|ctc)\b`, "compensation terms", "salary and HR compensation keywords"
+	}
+
+	// 9. Confidential / Internal / Proprietary
+	if strings.Contains(p, "confidential") || strings.Contains(p, "proprietary") || strings.Contains(p, "classified") || strings.Contains(p, "restricted") || strings.Contains(p, "nda") {
+		return `\b(?:confidential|proprietary|strictly\s+confidential|internal\s+use\s+only|nda)\b`, "confidentiality marker", "corporate confidential markers"
+	}
+
+	// PIN / PIN code: a numeric code. Do not match the words "pin" or "code".
+	if isPinCodePolicy(p) {
+		return `\b\d{4,6}\b`, "PIN", "4 to 6 digit PIN"
+	}
+
+	// Postal code / ZIP. UK postcodes include letters; a PIN does not.
+	if strings.Contains(p, "post code") || strings.Contains(p, "postal") || strings.Contains(p, "zip") {
+		return `\b(?:\d{6}|\d{5}(?:-\d{4})?|[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b`, "postal code", "postal code and ZIP pattern"
+	}
+
+	// Digits of specific length (e.g. 4-digit, 8-digit, 10-digit)
+	digitMatch := regexp.MustCompile(`\b(\d{1,2})[- ]?digit\b`).FindStringSubmatch(p)
+	if len(digitMatch) > 1 {
+		num := digitMatch[1]
+		return `\b\d{` + num + `}\b`, num + "-digit number", num + "-digit number pattern"
+	}
+
+	// IP address
+	if strings.Contains(p, "ip address") || strings.Contains(p, "ipv4") || strings.Contains(p, "ip ") {
+		return `\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b`, "IPv4 address", "IPv4 address pattern"
+	}
+
+	// Passport
+	if strings.Contains(p, "passport") {
+		return `\b[A-Z]{1,2}[0-9]{7,9}\b`, "passport number", "international passport pattern"
+	}
+
+	// JWT / Bearer
+	if strings.Contains(p, "jwt") || strings.Contains(p, "json web token") {
+		return `\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b`, "JWT token", "JSON Web Token pattern"
+	}
+
+	// Private keys
+	if strings.Contains(p, "private key") || strings.Contains(p, "pem") || strings.Contains(p, "rsa key") {
+		return `-----BEGIN [A-Z ]*PRIVATE KEY-----`, "private key", "PEM private key format"
+	}
+
+	// 10. Extract keywords or quoted phrases
+	terms := make([]string, 0)
+	quotes := regexp.MustCompile(`["']([^"']+)["']`).FindAllStringSubmatch(policy, -1)
+	for _, m := range quotes {
+		if len(m) > 1 && strings.TrimSpace(m[1]) != "" {
+			terms = append(terms, regexp.QuoteMeta(strings.TrimSpace(m[1])))
+		}
+	}
+	if len(terms) == 0 {
+		parts := strings.Split(policy, ",")
+		if len(parts) > 1 {
+			for _, part := range parts {
+				cleaned := strings.TrimSpace(part)
+				if cleaned != "" && len(cleaned) < 50 && !strings.Contains(cleaned, "\n") {
+					terms = append(terms, regexp.QuoteMeta(cleaned))
+				}
+			}
+		}
+	}
+	if len(terms) > 0 {
+		cand := `\b(?:` + strings.Join(terms, "|") + `)\b`
+		if _, err := regexp.Compile("(?i)" + cand); err == nil {
+			return cand, "policy terms", "extracted terms from policy"
+		}
+	}
+
+	cleanPolicy := regexp.MustCompile(`[^a-zA-Z0-9_\s]`).ReplaceAllString(p, "")
+	cleanWords := strings.Fields(cleanPolicy)
+	var filtered []string
+	stopWords := map[string]bool{
+		"block": true, "prevent": true, "disallow": true, "filter": true, "reject": true,
+		"catch": true, "find": true, "detect": true, "the": true, "a": true, "an": true,
+		"in": true, "on": true, "at": true, "to": true, "for": true, "from": true, "into": true,
+		"any": true, "all": true, "user": true, "prompt": true, "chats": true, "chat": true,
+		"rule": true, "policy": true, "should": true, "must": true, "cannot": true,
+		"and": true, "with": true, "or": true, "example": true, "like": true, "such": true,
+		"as": true, "that": true, "this": true, "these": true, "those": true, "have": true,
+		"has": true, "code": true, "codes": true, "number": true, "numbers": true,
+		"words": true, "text": true, "contains": true, "containing": true, "send": true,
+		"sent": true, "stop": true, "stopping": true, "pin": true, "pins": true, "digit": true,
+	}
+	for _, w := range cleanWords {
+		if len(w) >= 3 && !stopWords[w] {
+			filtered = append(filtered, regexp.QuoteMeta(w))
+		}
+	}
+	if len(filtered) > 0 {
+		cand := `\b(?:` + strings.Join(filtered, "|") + `)\b`
+		if _, err := regexp.Compile("(?i)" + cand); err == nil {
+			return cand, "policy keywords", "generated from policy description"
+		}
+	}
+
+	return "", "", ""
 }
 
 func sanitizeGeneratedRegex(pattern string) string {

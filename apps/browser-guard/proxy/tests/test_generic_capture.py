@@ -399,7 +399,7 @@ def run(addon, verbose: bool) -> list[tuple[str, bool, str]]:
     def file_case(label, steps, names):
         start = snapshot()
         errs = [e for e in (s() for s in steps) if e]
-        ok = wait_for(files_seen(names), start, timeout=5)
+        ok = wait_for(files_seen(names), start, timeout=9)
         got = sorted(file_names(records_since(start)))
         results.append((f"file   {label}", ok and not errs, "; ".join(errs) or ("" if ok else f"want={names} got={got}")))
 

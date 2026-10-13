@@ -85,6 +85,8 @@ interface PromptContextValue {
 	setAllowedVirtualKeys: React.Dispatch<React.SetStateAction<string[] | null>>;
 	allowedApiKeys: string[] | null;
 	setAllowedApiKeys: React.Dispatch<React.SetStateAction<string[] | null>>;
+	allowedSkills: string[] | null;
+	setAllowedSkills: React.Dispatch<React.SetStateAction<string[] | null>>;
 
 	// Jinja2 variables
 	variables: VariableMap;
@@ -325,6 +327,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const [allowedModels, setAllowedModels] = useState<string[] | null>(null);
 	const [allowedVirtualKeys, setAllowedVirtualKeys] = useState<string[] | null>(null);
 	const [allowedApiKeys, setAllowedApiKeys] = useState<string[] | null>(null);
+	const [allowedSkills, setAllowedSkills] = useState<string[] | null>(null);
 	const [isStreaming, setIsStreaming] = useState(false);
 	const activeRunRef = useRef<symbol | null>(null);
 	const abortRef = useRef<AbortController | null>(null);
@@ -464,6 +467,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				prompt_allowed_models,
 				prompt_allowed_virtual_keys,
 				prompt_allowed_api_keys,
+				prompt_allowed_skills,
 				prompt_allowed_mcp_tools,
 				...rest
 			} = params || ({} as ModelParams);
@@ -489,6 +493,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			setAllowedModels(asList(prompt_allowed_models));
 			setAllowedVirtualKeys(asList(prompt_allowed_virtual_keys));
 			setAllowedApiKeys(asList(prompt_allowed_api_keys));
+			setAllowedSkills(asList(prompt_allowed_skills));
 			setProvider(prov || "");
 			setModel(mod || "");
 		};
@@ -557,6 +562,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			setAllowedModels(null);
 			setAllowedVirtualKeys(null);
 			setAllowedApiKeys(null);
+			setAllowedSkills(null);
 			loadedPlaygroundKeyRef.current = playgroundKey;
 		}
 	}, [
@@ -626,6 +632,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			if (!sameList(allowedModels, refParams?.prompt_allowed_models)) return true;
 			if (!sameList(allowedVirtualKeys, refParams?.prompt_allowed_virtual_keys)) return true;
 			if (!sameList(allowedApiKeys, refParams?.prompt_allowed_api_keys)) return true;
+			if (!sameList(allowedSkills, refParams?.prompt_allowed_skills)) return true;
 			if (!sameList(mcpIncludeTools, refParams?.prompt_allowed_mcp_tools)) return true;
 
 			// Normalize: treat missing stream/temperature/max_tokens as defaults so legacy params don't appear changed
@@ -651,7 +658,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 			return false;
 		},
-		[provider, model, modelParams, virtualKeyId, apiKeyId, skillId, messages, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, mcpIncludeTools],
+		[provider, model, modelParams, virtualKeyId, apiKeyId, skillId, messages, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools],
 	);
 
 	// Diff detection — compare current playground state against the loaded session/version
@@ -786,9 +793,10 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		if (allowedModels) params.prompt_allowed_models = allowedModels;
 		if (allowedVirtualKeys) params.prompt_allowed_virtual_keys = allowedVirtualKeys;
 		if (allowedApiKeys) params.prompt_allowed_api_keys = allowedApiKeys;
+		if (allowedSkills) params.prompt_allowed_skills = allowedSkills;
 		if (mcpIncludeTools) params.prompt_allowed_mcp_tools = mcpIncludeTools;
 		return params;
-	}, [modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, mcpIncludeTools]);
+	}, [modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools]);
 
 	const persistPlaygroundSession = useCallback(
 		async (finalMessages: Message[]) => {
@@ -1297,6 +1305,8 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		setAllowedVirtualKeys,
 		allowedApiKeys,
 		setAllowedApiKeys,
+		allowedSkills,
+		setAllowedSkills,
 		variables,
 		setVariables,
 		customHeaders,
