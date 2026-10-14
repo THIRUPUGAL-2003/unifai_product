@@ -116,23 +116,123 @@ def monitored_hosts() -> list[str]:
     return list(hosts)
 
 
-def check_prompt(host: str, url: str, prompt: str) -> dict:
-    """Same gateway decision the proxy uses. Failure lets the proxy decide."""
+_rules_lock = threading.Lock()
+_rules_cache: tuple[float, list[dict]] = (0.0, [])
+
+
+def dynamic_rules() -> list[dict]:
+    """Fetch live DLP rules directly from the Gateway backend / PostgreSQL DB."""
+    global _rules_cache
+    import time
+    now = time.time()
+    with _rules_lock:
+        cached_at, cached = _rules_cache
+        if cached and (now - cached_at) < 15:
+            return list(cached)
+    if not GATEWAY_BACKEND_URL:
+        return []
+    from agent_http import _http_json
+    code, data = _http_json("GET", f"{GATEWAY_BACKEND_URL}/api/browser-ai/rules?for=agent", timeout=8)
+    if code == 200 and isinstance(data, dict):
+        raw_rules = data.get("rules") or []
+        active_rules = []
+        for r in raw_rules:
+            if isinstance(r, dict) and r.get("active") is not False:
+                pattern = str(r.get("pattern") or "").strip()
+                if pattern:
+                    active_rules.append({
+                        "id": str(r.get("id") or ""),
+                        "name": str(r.get("name") or ""),
+                        "pattern": pattern,
+                        "action": str(r.get("action") or "BLOCK"),
+                        "warning_message": str(r.get("warning_message") or ""),
+                    })
+        with _rules_lock:
+            _rules_cache = (now, active_rules)
+        return active_rules
+    return []
+
+
+
+_RESTRICTED_EXTENSIONS = {
+    ".env", ".pem", ".key", ".cert", ".crt", ".id_rsa", ".id_ed25519",
+    ".kdbx", ".sql", ".dump", ".bak", ".pfx", ".p12", ".ovpn", ".secret"
+}
+
+
+def check_prompt(
+    host: str,
+    url: str,
+    prompt: str,
+    files: list | None = None,
+    upload_images: list | None = None,
+    is_blocked: bool = False,
+    rule: str = "",
+) -> dict:
+    """Evaluate prompt, files, and images against Gateway DLP policies."""
     text = (prompt or "").strip()
-    if not text:
+    files_list = files if isinstance(files, list) else []
+    images_list = upload_images if isinstance(upload_images, list) else []
+
+    file_restricted_rule = ""
+    # 1. Immediate scan of attached file names and extensions
+    for f in files_list:
+        if isinstance(f, dict):
+            fname = str(f.get("name") or "").strip()
+            fext = os.path.splitext(fname)[1].lower()
+            if fext in _RESTRICTED_EXTENSIONS:
+                file_restricted_rule = f"Restricted File Extension ({fext})"
+                is_blocked = True
+                rule = file_restricted_rule
+            ftext = str(f.get("text") or "").strip()
+            if ftext:
+                text += f"\n[File: {fname}]\n" + ftext[:15000]
+
+    if not text and not images_list and not files_list:
         return {"blocked": False, "message": "", "rule": ""}
     if not GATEWAY_BACKEND_URL:
-        return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
+        return {"blocked": is_blocked, "passthrough": not is_blocked, "message": "", "rule": rule}
+
+    # Format platform cleanly
+    platform = host or "Browser"
+    host_l = platform.lower()
+    if "gemini.google.com" in host_l:
+        platform = "Gemini"
+    elif "chatgpt.com" in host_l or "openai.com" in host_l:
+        platform = "ChatGPT"
+    elif "claude.ai" in host_l:
+        platform = "Claude"
+    elif "deepseek" in host_l:
+        platform = "DeepSeek"
+    elif "copilot" in host_l:
+        platform = "Copilot"
+    elif "perplexity" in host_l:
+        platform = "Perplexity"
+
+    agent_hostname = os.environ.get("GATEWAY_AGENT_HOSTNAME") or os.environ.get("COMPUTERNAME") or ""
+    agent_id = os.environ.get("GATEWAY_AGENT_ID") or ""
+
+    meta = {
+        "domain": host or "",
+        "url": url or "",
+        "method": "POST",
+        "source": "extension",
+        "desktop_name": agent_hostname,
+        "file_count": len(files_list),
+        "image_count": len(images_list),
+    }
+    if is_blocked:
+        meta["is_blocked"] = True
+        meta["blocked_reason"] = rule or "Client Security Rule"
+
     payload = {
-        "platform": host or "Browser",
-        "prompt": text[:20000],
+        "platform": platform,
+        "prompt": text[:40000],
         "client_ip": "127.0.0.1",
-        "metadata": {
-            "domain": host or "",
-            "url": url or "",
-            "method": "POST",
-            "source": "extension",
-        },
+        "agent_id": agent_id,
+        "agent_hostname": agent_hostname,
+        "upload_images": images_list[:5],
+        "metadata": meta,
     }
     try:
         code, data = _http_json(
@@ -149,13 +249,20 @@ def check_prompt(host: str, url: str, prompt: str) -> dict:
     action = str(data.get("action") or "")
     blocked = (not allowed) or action.lower() in ("blocked", "bot answered", "replied")
     message = str(data.get("reply_text") or data.get("warning_message") or data.get("security_message") or "").strip()
-    if blocked and not message:
+    if is_blocked:
+        blocked = True
+    if file_restricted_rule:
+        blocked = True
+        message = "Uploading restricted credential/code file is blocked by company security policy."
+        rule = file_restricted_rule
+    elif blocked and not message:
         message = "This request was blocked by Gateway Guard."
     return {
         "blocked": blocked,
         "message": message if blocked else "",
-        "rule": str(data.get("rule_triggered") or ""),
+        "rule": rule or str(data.get("rule_triggered") or ""),
     }
+
 
 
 def _ensure_pem() -> str:
@@ -192,6 +299,29 @@ def extension_id_from_pem(pem_path: str) -> str:
         out.append(chr(ord("a") + ((byte >> 4) & 0xF)))
         out.append(chr(ord("a") + (byte & 0xF)))
     return "".join(out)
+
+
+def get_extension_id() -> str:
+    """Return stable extension ID, matching manifest.json key or fixed enterprise ID."""
+    m_path = os.path.join(extension_source_dir(), "manifest.json")
+    if os.path.isfile(m_path):
+        try:
+            with open(m_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            key_b64 = data.get("key")
+            if key_b64:
+                import base64
+                der = base64.b64decode(key_b64)
+                digest = hashlib.sha256(der).digest()
+                out = []
+                for b in digest[:16]:
+                    out.append(chr(ord("a") + ((b >> 4) & 0xF)))
+                    out.append(chr(ord("a") + (b & 0xF)))
+                return "".join(out)
+        except Exception:
+            pass
+    return "feipkmhajgkonjajieopgccknifniono"
+
 
 
 def serialization_encoding():
@@ -288,6 +418,7 @@ def _extension_settings(extension_id: str, update_url: str) -> str:
             "installation_mode": "force_installed",
             "update_url": update_url,
             "incognito": "spanning",
+            "toolbar_pin": "force_unpinned",
         }
     })
 
@@ -417,10 +548,9 @@ def install_guard_extension(base_url: str) -> None:
     if not os.path.isfile(pem):
         return
     try:
-        ext_id = extension_id_from_pem(pem)
+        ext_id = get_extension_id()
     except Exception as e:
-        print(f"[Gateway Guard WARNING] YP-Raksha id failed: {e}")
-        return
+        ext_id = "feipkmhajgkonjajieopgccknifniono"
     update_url = f"{base_url}/extension/update.xml"
     if IS_WIN:
         _write_force_install(ext_id, update_url)
@@ -437,8 +567,130 @@ def remove_guard_extension_policy() -> None:
         _write_force_install("", "")
     else:
         _remove_mac_extension_policy()
+    _detach_browser_shortcuts()
+    if IS_WIN:
+        _write_force_install("", "")
+    else:
+        _remove_mac_extension_policy()
     _remove_firefox_policy()
-    print("[Gateway Guard] YP-Raksha removed from browser policy.")
+    print("[Gateway Guard] YP-Raksha removed from browser policy and shortcuts.")
+
+
+def _attach_browser_shortcuts(unpacked_dir: str) -> None:
+    if not IS_WIN or not os.path.isdir(unpacked_dir):
+        return
+    esc_path = unpacked_dir.replace("\\", "\\\\").replace('"', '\\"')
+    ps_script = (
+        f'$extPath = "{esc_path}"\n'
+        '$argToAdd = "--load-extension=`"" + $extPath + "`""\n'
+        '$wsh = New-Object -ComObject WScript.Shell\n'
+        '$searchDirs = @(\n'
+        '    [Environment]::GetFolderPath("Desktop"),\n'
+        '    [Environment]::GetFolderPath("CommonDesktopDirectory"),\n'
+        '    [Environment]::GetFolderPath("Programs"),\n'
+        '    [Environment]::GetFolderPath("CommonPrograms"),\n'
+        '    "$env:APPDATA\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar",\n'
+        '    "$env:APPDATA\\Microsoft\\Internet Explorer\\Quick Launch"\n'
+        ')\n'
+        '$oneDrive = "$env:USERPROFILE\\OneDrive"\n'
+        'if (Test-Path $oneDrive) {\n'
+        '    Get-ChildItem -Path $oneDrive -Filter "*Desktop*" -Directory -Depth 2 -ErrorAction SilentlyContinue | ForEach-Object {\n'
+        '        $searchDirs += $_.FullName\n'
+        '    }\n'
+        '}\n'
+        'foreach ($dir in $searchDirs) {\n'
+        '    if (Test-Path $dir) {\n'
+        '        $targetDir = $dir\n'
+        '        try {\n'
+        '            $fso = New-Object -ComObject Scripting.FileSystemObject\n'
+        '            $fFolder = $fso.GetFolder($dir)\n'
+        '            if ($fFolder.ShortPath) { $targetDir = $fFolder.ShortPath }\n'
+        '        } catch {}\n'
+        '        Get-ChildItem -Path $targetDir -Filter *.lnk -Depth 2 -ErrorAction SilentlyContinue | ForEach-Object {\n'
+        '            $name = $_.Name.ToLower()\n'
+        '            if ($name -match "chrome" -or $name -match "edge" -or $name -match "brave") {\n'
+        '                try {\n'
+        '                    $sc = $wsh.CreateShortcut($_.FullName)\n'
+        '                    $target = $sc.TargetPath\n'
+        '                    if ($target -match "chrome\\.exe" -or $target -match "msedge\\.exe" -or $target -match "brave\\.exe") {\n'
+        '                        $cur = $sc.Arguments\n'
+        '                        if ($cur -notmatch "load-extension") {\n'
+        '                            $sc.Arguments = ($cur + " " + $argToAdd).Trim()\n'
+        '                            $sc.Save()\n'
+        '                        }\n'
+        '                    }\n'
+        '                } catch {}\n'
+        '            }\n'
+        '        }\n'
+        '    }\n'
+        '}\n'
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+            timeout=15,
+            check=False,
+            capture_output=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception as e:
+        print(f"[Gateway Guard WARNING] Browser shortcut attach failed: {e}")
+
+
+def _detach_browser_shortcuts() -> None:
+    if not IS_WIN:
+        return
+    ps_script = (
+        '$wsh = New-Object -ComObject WScript.Shell\n'
+        '$searchDirs = @(\n'
+        '    [Environment]::GetFolderPath("Desktop"),\n'
+        '    [Environment]::GetFolderPath("CommonDesktopDirectory"),\n'
+        '    [Environment]::GetFolderPath("Programs"),\n'
+        '    [Environment]::GetFolderPath("CommonPrograms"),\n'
+        '    "$env:APPDATA\\Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar",\n'
+        '    "$env:APPDATA\\Microsoft\\Internet Explorer\\Quick Launch"\n'
+        ')\n'
+        '$oneDrive = "$env:USERPROFILE\\OneDrive"\n'
+        'if (Test-Path $oneDrive) {\n'
+        '    Get-ChildItem -Path $oneDrive -Filter "*Desktop*" -Directory -Depth 2 -ErrorAction SilentlyContinue | ForEach-Object {\n'
+        '        $searchDirs += $_.FullName\n'
+        '    }\n'
+        '}\n'
+        'foreach ($dir in $searchDirs) {\n'
+        '    if (Test-Path $dir) {\n'
+        '        $targetDir = $dir\n'
+        '        try {\n'
+        '            $fso = New-Object -ComObject Scripting.FileSystemObject\n'
+        '            $fFolder = $fso.GetFolder($dir)\n'
+        '            if ($fFolder.ShortPath) { $targetDir = $fFolder.ShortPath }\n'
+        '        } catch {}\n'
+        '        Get-ChildItem -Path $targetDir -Filter *.lnk -Depth 2 -ErrorAction SilentlyContinue | ForEach-Object {\n'
+        '            $name = $_.Name.ToLower()\n'
+        '            if ($name -match "chrome" -or $name -match "edge" -or $name -match "brave") {\n'
+        '                try {\n'
+        '                    $sc = $wsh.CreateShortcut($_.FullName)\n'
+        '                    $cur = $sc.Arguments\n'
+        '                    if ($cur -match "load-extension") {\n'
+        '                        $cleaned = ($cur -replace \'--load-extension=[^\\s"]+\', \'\' -replace \'--load-extension="[^"]*"\', \'\').Trim()\n'
+        '                        $sc.Arguments = $cleaned\n'
+        '                        $sc.Save()\n'
+        '                    }\n'
+        '                } catch {}\n'
+        '            }\n'
+        '        }\n'
+        '    }\n'
+        '}\n'
+    )
+    try:
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+            timeout=15,
+            check=False,
+            capture_output=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception as e:
+        print(f"[Gateway Guard WARNING] Browser shortcut detach failed: {e}")
 
 
 def _write_force_install(extension_id: str, update_url: str) -> None:
@@ -450,7 +702,9 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
 
     value = f"{extension_id};{update_url}" if extension_id and update_url else ""
     settings = _extension_settings(extension_id, update_url) if value else ""
+    crx = _crx_path()
     wrote = False
+
     for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
         for path in _CHROMIUM_POLICY_PATHS:
             list_path = path + r"\ExtensionInstallForcelist"
@@ -459,10 +713,39 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
                     wrote = True
                 if _set_reg_sz(root, path, "ExtensionSettings", settings):
                     wrote = True
+                _set_reg_sz(root, path + r"\ExtensionInstallSources", "1", "http://127.0.0.1:18195/*")
+                _set_reg_sz(root, path + r"\ExtensionInstallSources", "2", "http://localhost:18195/*")
             else:
                 _delete_reg_value(root, list_path, "1")
                 _delete_reg_value(root, path, "ExtensionSettings")
+                _delete_reg_value(root, path + r"\ExtensionInstallSources", "1")
+                _delete_reg_value(root, path + r"\ExtensionInstallSources", "2")
                 wrote = True
+
+        # External extensions registry keys for Chrome, Edge, and Brave
+        if extension_id:
+            ext_subkeys = [
+                r"Software\Google\Chrome\Extensions\\" + extension_id,
+                r"Software\Microsoft\Edge\Extensions\\" + extension_id,
+                r"Software\BraveSoftware\Brave\Extensions\\" + extension_id,
+            ]
+            for ext_sub in ext_subkeys:
+                if value and crx and os.path.isfile(crx):
+                    _set_reg_sz(root, ext_sub, "path", crx)
+                    _set_reg_sz(root, ext_sub, "version", EXTENSION_VERSION)
+                    _set_reg_sz(root, ext_sub, "update_url", update_url)
+                else:
+                    _delete_reg_value(root, ext_sub, "path")
+                    _delete_reg_value(root, ext_sub, "version")
+                    _delete_reg_value(root, ext_sub, "update_url")
+
+    # Also automatically attach/detach shortcuts so user launches always carry the extension
+    unpacked = _unpacked_dir()
+    if value and os.path.isdir(unpacked):
+        _attach_browser_shortcuts(unpacked)
+    elif not value:
+        _detach_browser_shortcuts()
+
     if value and not wrote:
         print("[Gateway Guard WARNING] YP-Raksha policy was not written. Browser policy keys are locked for this user.")
 
@@ -473,3 +756,4 @@ def local_base_url() -> str:
     if "://" in url:
         return url.split("/proxy.pac", 1)[0].rstrip("/")
     return ""
+

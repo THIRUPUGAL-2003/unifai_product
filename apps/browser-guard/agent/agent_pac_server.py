@@ -67,7 +67,11 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
         result = check_prompt(
             str(data.get("host") or ""),
             str(data.get("url") or ""),
-            str(data.get("prompt") or ""),
+            str(data.get("prompt") or data.get("text") or ""),
+            files=data.get("files") if isinstance(data.get("files"), list) else None,
+            upload_images=data.get("upload_images") if isinstance(data.get("upload_images"), list) else None,
+            is_blocked=bool(data.get("is_blocked")),
+            rule=str(data.get("rule") or ""),
         )
         self._json(200, result)
 
@@ -121,13 +125,16 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
             from agent_extension import monitored_hosts
             self._json(200, {"hosts": monitored_hosts()})
             return
+        if path == "/extension/rules":
+            from agent_extension import dynamic_rules, _RESTRICTED_EXTENSIONS
+            self._json(200, {
+                "rules": dynamic_rules(),
+                "restricted_extensions": sorted(list(_RESTRICTED_EXTENSIONS)),
+            })
+            return
         if path == "/extension/update.xml":
-            from agent_extension import extension_id_from_pem, local_base_url, update_xml, _pem_path
-            pem = _pem_path()
-            if not os.path.isfile(pem):
-                self.send_error(404)
-                return
-            body = update_xml(extension_id_from_pem(pem), local_base_url())
+            from agent_extension import get_extension_id, local_base_url, update_xml
+            body = update_xml(get_extension_id(), local_base_url())
             self.send_response(200)
             self.send_header("Content-Type", "text/xml; charset=utf-8")
             self.send_header("Cache-Control", "no-store")

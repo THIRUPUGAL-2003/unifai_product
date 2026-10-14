@@ -1,8 +1,15 @@
 {
   "manifest_version": 3,
   "name": "YP-Raksha",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApBK8/xXQ64vUKP8KdMhEePmstbmnnU2+hJETM6ONW8qhUAV4YhEbEDF+V4aEtidERkwCf3eKnBEhqLkI096lvcxgykHEyRG0f7VNbNEUxF6OS/0zf4YID8Jwd+JCoUb/B6IU+s2dOGXuxjzlziYY48wbzGJVYhCOoxq2ILLrke57X8bxQuGfRNZadSEtMqyOa63q2Y3KIIPVp5HDmKemFgyyZAwUc4F8y3U5WjRQYU8GGcHzhn16stlaZbdIGLZX3kP4WZ9O8JdzKFKF++4AhqE2m4LUHFkrXgBKWfAho7741uSHF/sJ/Syld+f22Rrz6lTwqNIuV+dgTWW4SN0X5QIDAQAB",
   "version": "1.0.0",
-  "description": "Shows the YP-Raksha security warning in the chat when a prompt is blocked.",
+  "description": "Enterprise AI Security Guard - Real-time Data Leak Prevention (DLP) for AI browsers.",
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
   "incognito": "spanning",
   "browser_specific_settings": {
     "gecko": {
@@ -10,6 +17,7 @@
       "strict_min_version": "115.0"
     }
   },
+  "permissions": ["storage"],
   "host_permissions": ["http://127.0.0.1/*", "https://*/*", "http://*/*"],
   "web_accessible_resources": [
     {
@@ -21,7 +29,8 @@
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": ["endpoint.js", "content.js"],
-      "run_at": "document_start"
+      "run_at": "document_start",
+      "all_frames": true
     }
   ]
 }

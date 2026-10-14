@@ -24,6 +24,23 @@
     }
   }
 
+  function syncRules() {
+    if (!base) return;
+    fetch(base + "/extension/rules", { method: "GET", cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var rules = (data && data.rules) || [];
+        var exts = (data && data.restricted_extensions) || [];
+        window.postMessage({
+          source: "gateway-guard",
+          type: "sync_rules",
+          rules: rules,
+          restricted_extensions: exts
+        }, "*");
+      })
+      .catch(function () {});
+  }
+
   function armIfMonitored() {
     if (!base) return;
     fetch(base + "/extension/sites", { method: "GET", cache: "no-store" })
@@ -32,14 +49,24 @@
         var domains = (data && data.hosts) || [];
         if (!hostMatches(location.hostname, domains)) return;
         window.postMessage({ source: "gateway-guard", type: "arm" }, "*");
+        syncRules();
       })
       .catch(function () {});
   }
 
+  // Periodic rule refresh every 15 seconds and on tab focus
+  setInterval(syncRules, 15000);
+  window.addEventListener("focus", syncRules);
+
   window.addEventListener("message", function (ev) {
     if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard-page") return;
     var msg = ev.data;
-    if (!base || !msg.prompt) {
+    var hasContent = Boolean(
+      (msg.prompt && msg.prompt.trim()) ||
+      (Array.isArray(msg.files) && msg.files.length) ||
+      (Array.isArray(msg.upload_images) && msg.upload_images.length)
+    );
+    if (!base || !hasContent) {
       window.postMessage({ source: "gateway-guard", type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
       return;
     }
@@ -49,7 +76,11 @@
       body: JSON.stringify({
         host: msg.host || location.hostname,
         url: msg.url || location.href,
-        prompt: msg.prompt
+        prompt: msg.prompt || "",
+        files: msg.files || [],
+        upload_images: msg.upload_images || [],
+        is_blocked: Boolean(msg.is_blocked),
+        rule: msg.rule || ""
       })
     })
       .then(function (r) { return r.json(); })

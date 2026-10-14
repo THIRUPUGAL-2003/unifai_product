@@ -155,7 +155,7 @@ func guardSeverityScore(severity string) (int, string) {
 	}
 }
 
-// CompileGuardRegex builds a case-insensitive RE2 pattern, stripping a leading (?i) from admin input.
+// CompileGuardRegex builds a case-insensitive RE2 pattern, stripping leading flags and PCRE lookaround syntax.
 func CompileGuardRegex(pattern string) (*regexp.Regexp, error) {
 	p := strings.TrimSpace(pattern)
 	if len(p) >= 4 && strings.EqualFold(p[:4], "(?i)") {
@@ -163,7 +163,46 @@ func CompileGuardRegex(pattern string) (*regexp.Regexp, error) {
 	} else if len(p) >= 5 && strings.EqualFold(p[:5], "(?-i)") {
 		p = p[5:]
 	}
-	return regexp.Compile("(?i)" + p)
+	re, err := regexp.Compile("(?i)" + p)
+	if err == nil {
+		return re, nil
+	}
+	// Fallback: strip PCRE-only lookarounds like (?<!...) or (?!...) that RE2 rejects
+	clean := p
+	for {
+		start := strings.Index(clean, "(?<")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(clean[start:], ")")
+		if end == -1 {
+			break
+		}
+		clean = clean[:start] + clean[start+end+1:]
+	}
+	for {
+		start := strings.Index(clean, "(?!")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(clean[start:], ")")
+		if end == -1 {
+			break
+		}
+		clean = clean[:start] + clean[start+end+1:]
+	}
+	for {
+		start := strings.Index(clean, "(?=")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(clean[start:], ")")
+		if end == -1 {
+			break
+		}
+		clean = clean[:start] + clean[start+end+1:]
+	}
+	return regexp.Compile("(?i)" + clean)
 }
 
 type BrowserAILog struct {
