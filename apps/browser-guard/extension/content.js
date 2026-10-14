@@ -1,6 +1,8 @@
 /* Isolated world: asks the local Guard, then tells the page hook the decision. */
 (function () {
-  var base = (typeof GATEWAY_GUARD_BASE === "string" && GATEWAY_GUARD_BASE) || "";
+  var base = (typeof GATEWAY_GUARD_BASE === "string" && GATEWAY_GUARD_BASE.trim())
+    ? GATEWAY_GUARD_BASE.trim().replace(/\/+$/, "")
+    : "http://127.0.0.1:18195";
 
   function hostMatches(host, domains) {
     host = (host || "").toLowerCase();
