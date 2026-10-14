@@ -42,6 +42,9 @@ def extension_source_dir() -> str:
 
 
 def _pem_path() -> str:
+    src_pem = os.path.join(extension_source_dir(), "guard_extension.pem")
+    if os.path.isfile(src_pem):
+        return src_pem
     return os.path.join(data_dir(), "guard_extension.pem")
 
 
@@ -320,7 +323,7 @@ def get_extension_id() -> str:
                 return "".join(out)
         except Exception:
             pass
-    return "feipkmhajgkonjajieopgccknifniono"
+    return "mipfhcmlcjfhmgldkokdckhndkebkllj"
 
 
 
@@ -550,7 +553,7 @@ def install_guard_extension(base_url: str) -> None:
     try:
         ext_id = get_extension_id()
     except Exception as e:
-        ext_id = "feipkmhajgkonjajieopgccknifniono"
+        ext_id = "mipfhcmlcjfhmgldkokdckhndkebkllj"
     update_url = f"{base_url}/extension/update.xml"
     if IS_WIN:
         _write_force_install(ext_id, update_url)

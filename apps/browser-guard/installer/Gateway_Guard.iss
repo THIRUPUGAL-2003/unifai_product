@@ -70,12 +70,12 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: dword; ValueName: "NoModify"; ValueData: 1
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: dword; ValueName: "NoRepair"; ValueData: 1
 ; Chromium external extension auto-attachment (Chrome, Edge, Brave)
-Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\feipkmhajgkonjajieopgccknifniono"; ValueType: string; ValueName: "path"; ValueData: "{localappdata}\Gateway\Guard\guard_extension.crx"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\feipkmhajgkonjajieopgccknifniono"; ValueType: string; ValueName: "version"; ValueData: "1.0.0"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Microsoft\Edge\Extensions\feipkmhajgkonjajieopgccknifniono"; ValueType: string; ValueName: "path"; ValueData: "{localappdata}\Gateway\Guard\guard_extension.crx"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Microsoft\Edge\Extensions\feipkmhajgkonjajieopgccknifniono"; ValueType: string; ValueName: "version"; ValueData: "1.0.0"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\BraveSoftware\Brave\Extensions\feipkmhajgkonjajieopgccknifniono"; ValueType: string; ValueName: "path"; ValueData: "{localappdata}\Gateway\Guard\guard_extension.crx"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\BraveSoftware\Brave\Extensions\feipkmhajgkonjajieopgccknifniono"; ValueType: string; ValueName: "version"; ValueData: "1.0.0"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "path"; ValueData: "{localappdata}\Gateway\Guard\guard_extension.crx"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "version"; ValueData: "1.0.0"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Microsoft\Edge\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "path"; ValueData: "{localappdata}\Gateway\Guard\guard_extension.crx"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Microsoft\Edge\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "version"; ValueData: "1.0.0"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\BraveSoftware\Brave\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "path"; ValueData: "{localappdata}\Gateway\Guard\guard_extension.crx"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\BraveSoftware\Brave\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "version"; ValueData: "1.0.0"; Flags: uninsdeletekey
 
 [Run]
 ; Run immediately in silent / auto-update mode

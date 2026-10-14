@@ -13,10 +13,10 @@ echo ============================================================
 echo  Registering Enterprise Extension Policies (HKLM)
 echo ============================================================
 
-set EXT_ID=feipkmhajgkonjajieopgccknifniono
+set EXT_ID=mipfhcmlcjfhmgldkokdckhndkebkllj
 set UPDATE_URL=http://127.0.0.1:18195/extension/update.xml
 set FORCE_VAL=%EXT_ID%;%UPDATE_URL%
-set SETTINGS_JSON={\"%EXT_ID%\":{\"installation_mode\":\"force_installed\",\"update_url\":\"%UPDATE_URL%\",\"incognito\":\"spanning\",\"toolbar_pin\":\"force_pinned\"}}
+set SETTINGS_JSON={\"%EXT_ID%\":{\"installation_mode\":\"force_installed\",\"update_url\":\"%UPDATE_URL%\",\"incognito\":\"spanning\",\"toolbar_pin\":\"force_unpinned\"}}
 
 :: Chrome
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v ExtensionSettings /t REG_SZ /d "%SETTINGS_JSON%" /f >nul

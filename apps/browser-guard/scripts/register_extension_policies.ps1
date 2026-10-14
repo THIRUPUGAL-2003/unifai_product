@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Continue"
 
-$extId = "feipkmhajgkonjajieopgccknifniono"
+$extId = "mipfhcmlcjfhmgldkokdckhndkebkllj"
 $updateUrl = "http://127.0.0.1:18195/extension/update.xml"
 $forceValue = "$extId;$updateUrl"
 $crxPath = "$env:LOCALAPPDATA\Gateway\Guard\guard_extension.crx"

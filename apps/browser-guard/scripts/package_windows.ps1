@@ -25,6 +25,7 @@ if (Test-Path 'installer\EMPLOYEE_README.txt') { Copy-Item -Force 'installer\EMP
 if (Test-Path 'installer\Uninstall_Gateway_Guard.bat') { Copy-Item -Force 'installer\Uninstall_Gateway_Guard.bat' 'installer\staging\Uninstall_Gateway_Guard.bat' }
 if (Test-Path 'release\INSTALL_WINDOWS.txt') { Copy-Item -Force 'release\INSTALL_WINDOWS.txt' 'installer\staging\INSTALL_WINDOWS.txt' }
 if (Test-Path 'release\VERSION.txt') { Copy-Item -Force 'release\VERSION.txt' 'installer\staging\VERSION.txt' }
+if (Test-Path 'extension') { Copy-Item -Recurse -Force 'extension' 'installer\staging\extension' }
 
 # 2. Compile Inno Setup (same search order as build_installer.bat - no machine-specific paths)
 $isccCandidates = @(
