@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.server
 import json
+import os
 import threading
 
 import agent_state
@@ -26,6 +27,50 @@ def html_escape(s: str) -> str:
 
 
 class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
+    def _cors(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+
+    def _json(self, code: int, payload: dict) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self._cors()
+        self.end_headers()
+
+    def do_POST(self) -> None:
+        path = (self.path or "/").split("?", 1)[0]
+        if path != "/extension/check":
+            self.send_error(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except Exception:
+            length = 0
+        raw = self.rfile.read(min(length, 100_000)) if length > 0 else b""
+        try:
+            data = json.loads(raw.decode("utf-8", errors="ignore") or "{}")
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        from agent_extension import check_prompt
+        result = check_prompt(
+            str(data.get("host") or ""),
+            str(data.get("url") or ""),
+            str(data.get("prompt") or ""),
+        )
+        self._json(200, result)
+
     def do_GET(self) -> None:
         path = (self.path or "/").split("?", 1)[0]
         if path in ("/status", "/health"):
@@ -69,6 +114,55 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/extension/sites":
+            from agent_extension import monitored_hosts
+            self._json(200, {"hosts": monitored_hosts()})
+            return
+        if path == "/extension/update.xml":
+            from agent_extension import extension_id_from_pem, local_base_url, update_xml, _pem_path
+            pem = _pem_path()
+            if not os.path.isfile(pem):
+                self.send_error(404)
+                return
+            body = update_xml(extension_id_from_pem(pem), local_base_url())
+            self.send_response(200)
+            self.send_header("Content-Type", "text/xml; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self._cors()
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/extension/yp-raksha.xpi":
+            from agent_extension import data_dir as _guard_data
+            xpi = os.path.join(_guard_data(), "yp-raksha.xpi")
+            if not os.path.isfile(xpi):
+                self.send_error(404)
+                return
+            with open(xpi, "rb") as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-xpinstall")
+            self.send_header("Content-Length", str(len(body)))
+            self._cors()
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if path == "/extension/guard.crx":
+            from agent_extension import _crx_path
+            crx = _crx_path()
+            if not os.path.isfile(crx):
+                self.send_error(404)
+                return
+            with open(crx, "rb") as f:
+                body = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-chrome-extension")
+            self.send_header("Content-Length", str(len(body)))
+            self._cors()
             self.end_headers()
             self.wfile.write(body)
             return

@@ -45,9 +45,17 @@ func TestResetPassword_LiftsLoginLockout(t *testing.T) {
 
 	fp := makeFastHTTPCtx("POST", "/api/session/forgot-password", map[string]string{"email": "dave@example.com"}, "10.20.1.1")
 	handler.forgotPassword(fp)
+	if fp.Response.StatusCode() != http.StatusTooManyRequests {
+		t.Fatalf("expected forgot-password to be blocked (429) while account is locked, got %d", fp.Response.StatusCode())
+	}
+
+	// After lock window ends, forgot password sends OTP and password reset succeeds
+	clearAccountLockouts(store, nil, "dave", "dave@example.com")
+	fp2 := makeFastHTTPCtx("POST", "/api/session/forgot-password", map[string]string{"email": "dave@example.com"}, "10.20.1.1")
+	handler.forgotPassword(fp2)
 	otpRow, err := store.GetLatestPasswordResetOTP(nil, "dave")
 	if err != nil || otpRow == nil {
-		t.Fatalf("forgot-password must still issue a code while the account is locked: %v", err)
+		t.Fatalf("forgot-password must issue a code after lockout expires: %v", err)
 	}
 	otpRow.OTPHash, _ = encrypt.Hash("246810")
 	_ = store.CreatePasswordResetOTP(nil, otpRow)

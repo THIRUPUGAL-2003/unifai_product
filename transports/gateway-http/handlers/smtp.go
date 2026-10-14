@@ -531,6 +531,27 @@ func clearAccountLockouts(store configstore.ConfigStore, ctx *fasthttp.RequestCt
 	}
 }
 
+// lockAccountIdentifiers enforces the lockout window across all specified identifiers
+// (username, email, login input) so they share the exact same lockout timing.
+func lockAccountIdentifiers(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, until time.Time, identifiers ...string) {
+	if store == nil {
+		return
+	}
+	for _, id := range identifiers {
+		key := loginUsernameKey(id)
+		if key == "" {
+			continue
+		}
+		row, _ := store.GetLoginLockout(ctx, key)
+		if row == nil {
+			row = &tables.TableLoginLockout{UsernameKey: key}
+		}
+		row.LockedUntil = &until
+		row.FailedCount = 0
+		_ = store.UpsertLoginLockout(ctx, row)
+	}
+}
+
 // retryMinutes rounds a remaining lockout up to whole minutes (never below 1).
 func retryMinutes(retryAfter time.Duration) int {
 	mins := int((retryAfter + time.Minute - 1) / time.Minute)

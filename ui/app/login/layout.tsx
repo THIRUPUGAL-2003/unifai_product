@@ -50,8 +50,11 @@ export const Route = createFileRoute("/login")({
 		const isExplicitLogout = params.get("logged_out") === "1" || params.get("logout") === "true";
 		const goto = getLoginGotoFromSearch(location.searchStr);
 		const data = await fetchSessionAuth(true);
-		// Never auto-bounce back to workspace if user arrived via explicit logout
+		// Never auto-bounce back to workspace if user arrived via explicit logout or must change temporary password
 		if (!isExplicitLogout && data && (!data.is_auth_enabled || data.has_valid_token)) {
+			if (data.must_change_password) {
+				return;
+			}
 			throw redirect({ href: resolvePostLoginPath(data, goto) });
 		}
 	},

@@ -77,6 +77,14 @@ export const sessionApi = baseApi.injectEndpoints({
 				method: "POST",
 				body,
 			}),
+			transformErrorResponse: (response, meta) => {
+				const error = response as FetchBaseQueryError;
+				const retryAfterSeconds = Number((meta as FetchBaseQueryMeta | undefined)?.response?.headers.get("Retry-After"));
+				if (error?.status === 429 && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+					return { ...error, retryAfterSeconds };
+				}
+				return error;
+			},
 		}),
 
 		verifyOTP: builder.mutation<{ valid: boolean; message: string; reset_token?: string }, { username?: string; email?: string; otp: string }>({
@@ -85,6 +93,14 @@ export const sessionApi = baseApi.injectEndpoints({
 				method: "POST",
 				body,
 			}),
+			transformErrorResponse: (response, meta) => {
+				const error = response as FetchBaseQueryError;
+				const retryAfterSeconds = Number((meta as FetchBaseQueryMeta | undefined)?.response?.headers.get("Retry-After"));
+				if (error?.status === 429 && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+					return { ...error, retryAfterSeconds };
+				}
+				return error;
+			},
 		}),
 
 		resetPassword: builder.mutation<
@@ -96,6 +112,14 @@ export const sessionApi = baseApi.injectEndpoints({
 				method: "POST",
 				body,
 			}),
+			transformErrorResponse: (response, meta) => {
+				const error = response as FetchBaseQueryError;
+				const retryAfterSeconds = Number((meta as FetchBaseQueryMeta | undefined)?.response?.headers.get("Retry-After"));
+				if (error?.status === 429 && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+					return { ...error, retryAfterSeconds };
+				}
+				return error;
+			},
 		}),
 
 		forgotUsername: builder.mutation<{ message: string }, { email: string }>({
@@ -104,6 +128,14 @@ export const sessionApi = baseApi.injectEndpoints({
 				method: "POST",
 				body,
 			}),
+			transformErrorResponse: (response, meta) => {
+				const error = response as FetchBaseQueryError;
+				const retryAfterSeconds = Number((meta as FetchBaseQueryMeta | undefined)?.response?.headers.get("Retry-After"));
+				if (error?.status === 429 && Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+					return { ...error, retryAfterSeconds };
+				}
+				return error;
+			},
 		}),
 
 		// Logout endpoint

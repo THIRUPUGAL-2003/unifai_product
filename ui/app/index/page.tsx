@@ -72,12 +72,18 @@ export default function LandingPage() {
 			.catch(() => {});
 	}, []);
 
-	// Smooth scrolling helper for nav links
+	// Smooth scrolling helper for nav links with top bar offset
 	const scrollToSection = (id: string) => {
 		setMobileMenuOpen(false);
-		const element = document.getElementById(id);
+		const targetId = id === "capabilities" ? "features" : id === "developers" ? "quickstart" : id;
+		const element = document.getElementById(targetId) || document.getElementById(id);
 		if (element) {
-			element.scrollIntoView({ behavior: "smooth", block: "start" });
+			const navHeight = 85;
+			const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
+			window.scrollTo({
+				top: elementPosition - navHeight,
+				behavior: "smooth",
+			});
 		}
 	};
 
@@ -202,8 +208,8 @@ console.log(response.choices[0].message.content);`
 				<div className="absolute top-[60%] left-[-10%] w-[500px] h-[500px] bg-sky-600/10 rounded-full blur-[140px]" />
 			</div>
 
-			{/* HIGH-VISIBILITY TOP NAVIGATION BAR */}
-			<header className="sticky top-0 z-50 w-full border-b border-white/[0.14] bg-[#0c0e17]/95 backdrop-blur-2xl shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
+			{/* HIGH-VISIBILITY TOP NAVIGATION BAR - FIXED TO TOP ACROSS ALL SCROLL */}
+			<header className="fixed top-0 left-0 right-0 z-50 w-full border-b border-white/[0.14] bg-[#0c0e17]/95 backdrop-blur-2xl shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
 				<div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
 					{/* Brand Logo & Tag */}
 					<a href="/" className="flex items-center gap-3.5 group cursor-pointer" aria-label={productName}>
@@ -359,8 +365,8 @@ console.log(response.choices[0].message.content);`
 				)}
 			</header>
 
-			{/* MAIN BODY CONTENT (SCROLLABLE) */}
-			<main className="relative z-10 w-full">
+			{/* MAIN BODY CONTENT (SCROLLABLE UNDER FIXED HEADER) */}
+			<main className="relative z-10 w-full pt-20">
 				{/* HERO SECTION */}
 				<section className="pt-16 pb-16 md:pt-24 md:pb-24 px-6 max-w-5xl mx-auto text-center">
 					{/* Glowing Platform Pill */}
@@ -660,6 +666,7 @@ console.log(response.choices[0].message.content);`
 
 				{/* CAPABILITIES SECTION */}
 				<section id="features" className="py-24 px-6 border-t border-white/[0.1] bg-[#090b14]/60 scroll-mt-24">
+					<div id="capabilities" className="scroll-mt-24" />
 					<div className="max-w-6xl mx-auto">
 						<div className="text-center max-w-2xl mx-auto mb-16">
 							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white mb-4">
@@ -720,6 +727,8 @@ console.log(response.choices[0].message.content);`
 
 				{/* DEVELOPER QUICKSTART CODE SECTION */}
 				<section id="quickstart" className="py-24 px-6 max-w-6xl mx-auto scroll-mt-24">
+					<div id="developers" className="scroll-mt-24" />
+					<div id="code-preview" className="scroll-mt-24" />
 					<div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
 						<div className="space-y-6">
 							<div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-xs font-semibold text-indigo-300">
@@ -875,23 +884,28 @@ console.log(response.choices[0].message.content);`
 				</section>
 			</main>
 
-			{/* HIGH-END FOOTER */}
-			<footer className="border-t border-white/[0.1] bg-[#05060a] py-12 px-6">
-				<div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6 text-xs text-slate-400">
-					<div className="flex items-center gap-3">
-						<img src={companyLogoSrc} alt={companyFullName} className="h-6 w-auto object-contain opacity-90" />
-						<span className="font-bold text-slate-200">{companyFullName}</span>
+			{/* HIGH-END FOOTER - PERFECT SINGLE-LINE ALIGNMENT */}
+			<footer className="border-t border-white/[0.1] bg-[#05060a] py-8 px-6 w-full">
+				<div className="max-w-[1400px] mx-auto flex flex-col lg:flex-row items-center justify-between gap-6 text-xs text-slate-400">
+					{/* Brand Logo & Company */}
+					<div className="flex items-center gap-3 shrink-0">
+						<img src={companyLogoSrc} alt={companyFullName} className="h-6 w-auto object-contain opacity-90 shrink-0" />
+						<span className="font-bold text-slate-200 whitespace-nowrap">{companyFullName}</span>
 					</div>
 
-					<div className="flex items-center gap-6">
-						<button onClick={() => scrollToSection("products")} className="hover:text-white transition-colors cursor-pointer">Products</button>
-						<button onClick={() => scrollToSection("features")} className="hover:text-white transition-colors cursor-pointer">Capabilities</button>
-						<button onClick={() => setIsDemoModalOpen(true)} className="hover:text-white transition-colors cursor-pointer">Book Demo</button>
-						<Link to="/login" className="hover:text-white transition-colors cursor-pointer">Sign In</Link>
-						<Link to="/signup" className="hover:text-white transition-colors cursor-pointer">Sign Up</Link>
-					</div>
+					{/* Navigation Links - Perfect single line, never wrap or split words */}
+					<nav aria-label="Footer Navigation" className="flex items-center gap-6 sm:gap-8 whitespace-nowrap shrink-0">
+						<button type="button" onClick={() => scrollToSection("products")} className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Products</button>
+						<button type="button" onClick={() => scrollToSection("features")} className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Capabilities</button>
+						<button type="button" onClick={() => setIsDemoModalOpen(true)} className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Book Demo</button>
+						<Link to="/login" className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Sign In</Link>
+						<Link to="/signup" className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Sign Up</Link>
+					</nav>
 
-					<div>{branding.footerText}</div>
+					{/* Copyright Text */}
+					<div className="text-slate-500 text-[11px] sm:text-xs text-center lg:text-right shrink-0 whitespace-nowrap">
+						{branding.footerText}
+					</div>
 				</div>
 			</footer>
 

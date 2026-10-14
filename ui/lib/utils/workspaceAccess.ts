@@ -12,6 +12,7 @@ export interface SessionAuth {
 	has_valid_token: boolean;
 	role?: string;
 	allowed_sections?: string;
+	must_change_password?: boolean;
 }
 
 let cachedAuth: { data: SessionAuth | null; timestamp: number } | null = null;

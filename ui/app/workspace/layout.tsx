@@ -89,6 +89,11 @@ export const Route = createFileRoute("/workspace")({
 				});
 			}
 		}
+		if (auth && auth.is_auth_enabled && auth.has_valid_token && auth.must_change_password) {
+			throw redirect({
+				href: "/login?mode=force_change_password",
+			});
+		}
 		const redirectTo = getWorkspaceAccessRedirect(auth, location.pathname);
 		if (redirectTo) {
 			throw redirect({ to: redirectTo, replace: true });

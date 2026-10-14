@@ -414,6 +414,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 		return
 	} else if locked {
 		mins := lockoutRetryMinutes(ctx, retryAfter)
+		ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 		SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Try again in about %d minutes", mins))
 		return
 	}
@@ -443,6 +444,9 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 			}
 			if locked, retryAfter := recordLoginFailure(h.configStore, ctx, lockoutKey); locked {
 				mins := lockoutRetryMinutes(ctx, retryAfter)
+				until := time.Now().Add(retryAfter)
+				lockAccountIdentifiers(h.configStore, ctx, until, lockoutKey, adminEmail, payload.Username)
+				ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Account locked for about %d minutes", mins))
 				return
 			}
@@ -476,6 +480,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 				return
 			} else if locked {
 				mins := lockoutRetryMinutes(ctx, retryAfter)
+				ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Try again in about %d minutes", mins))
 				return
 			}
@@ -489,6 +494,9 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 				}
 				if locked, retryAfter := recordLoginFailure(h.configStore, ctx, lockoutKey); locked {
 					mins := lockoutRetryMinutes(ctx, retryAfter)
+					until := time.Now().Add(retryAfter)
+					lockAccountIdentifiers(h.configStore, ctx, until, lockoutKey, dbUser.Email, payload.Username)
+					ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 					SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Account locked for about %d minutes", mins))
 					return
 				}
@@ -529,6 +537,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 			}
 			if locked, retryAfter := recordLoginFailure(h.configStore, ctx, lockoutKey); locked {
 				mins := lockoutRetryMinutes(ctx, retryAfter)
+				ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Account locked for about %d minutes", mins))
 				return
 			}
@@ -834,6 +843,13 @@ func (h *SessionHandler) isAdmin(ctx *fasthttp.RequestCtx) bool {
 	if err != nil || session == nil || session.ExpiresAt.Before(time.Now()) {
 		return false
 	}
+	if session.Username != "" {
+		if dbUser, err := h.configStore.GetUserByUsername(ctx, session.Username); err == nil && dbUser != nil {
+			if !dbUser.IsApproved() {
+				return false
+			}
+		}
+	}
 	return session.Role == "admin" || session.Role == "sub_admin"
 }
 
@@ -854,6 +870,13 @@ func (h *SessionHandler) isSuperAdmin(ctx *fasthttp.RequestCtx) bool {
 	session, err := h.configStore.GetSession(ctx, token)
 	if err != nil || session == nil || session.ExpiresAt.Before(time.Now()) {
 		return false
+	}
+	if session.Username != "" {
+		if dbUser, err := h.configStore.GetUserByUsername(ctx, session.Username); err == nil && dbUser != nil {
+			if !dbUser.IsApproved() {
+				return false
+			}
+		}
 	}
 	return session.Role == "admin"
 }
@@ -1222,20 +1245,19 @@ func (h *SessionHandler) forgotPassword(ctx *fasthttp.RequestCtx) {
 	payload.Username = strings.TrimSpace(payload.Username)
 	payload.Email = strings.TrimSpace(payload.Email)
 
-	// Always return the same message to avoid account enumeration.
-	generic := map[string]any{"message": "If an account matches, a one-time code was sent by email"}
-
-	// Consume quota before lookup so unknown targets cannot bypass IP/target limits.
-	targetKey := strings.ToLower(strings.TrimSpace(payload.Email))
-	if targetKey == "" {
-		targetKey = strings.ToLower(strings.TrimSpace(payload.Username))
-	}
-	if targetKey == "" {
-		targetKey = "anonymous"
-	}
-	if consumeForgotPasswordQuota(h.configStore, ctx, clientIPAddress(ctx), targetKey) {
-		SendJSON(ctx, generic)
-		return
+	// Check if this account or identifier is locked due to failed login attempts.
+	// Block forgot-password requests immediately so lockout wait cannot be bypassed.
+	for _, rawKey := range []string{payload.Email, payload.Username} {
+		key := strings.TrimSpace(rawKey)
+		if key == "" {
+			continue
+		}
+		if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, key); locked {
+			mins := lockoutRetryMinutes(ctx, retryAfter)
+			ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+			SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
+			return
+		}
 	}
 
 	var user *tables.TableUser
@@ -1258,6 +1280,52 @@ func (h *SessionHandler) forgotPassword(ctx *fasthttp.RequestCtx) {
 		if err == nil {
 			user = u
 		}
+	}
+
+	// Also check if the resolved DB account has an active lockout on username or email
+	if user != nil {
+		for _, key := range []string{user.Username, user.Email} {
+			if strings.TrimSpace(key) == "" {
+				continue
+			}
+			if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, key); locked {
+				mins := lockoutRetryMinutes(ctx, retryAfter)
+				ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
+				return
+			}
+		}
+	} else {
+		adminName, adminEmail := h.getAdminCredentials(ctx)
+		if adminEmail != "" && (isMatchingAdminIdentity(payload.Username, adminName, adminEmail) || isMatchingAdminIdentity(payload.Email, adminName, adminEmail)) {
+			for _, key := range []string{adminName, adminEmail} {
+				if strings.TrimSpace(key) == "" {
+					continue
+				}
+				if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, key); locked {
+					mins := lockoutRetryMinutes(ctx, retryAfter)
+					ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+					SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
+					return
+				}
+			}
+		}
+	}
+
+	// Always return the same message to avoid account enumeration.
+	generic := map[string]any{"message": "If an account matches, a one-time code was sent by email"}
+
+	// Consume quota before lookup so unknown targets cannot bypass IP/target limits.
+	targetKey := strings.ToLower(strings.TrimSpace(payload.Email))
+	if targetKey == "" {
+		targetKey = strings.ToLower(strings.TrimSpace(payload.Username))
+	}
+	if targetKey == "" {
+		targetKey = "anonymous"
+	}
+	if consumeForgotPasswordQuota(h.configStore, ctx, clientIPAddress(ctx), targetKey) {
+		SendJSON(ctx, generic)
+		return
 	}
 
 	targetUsername := ""
@@ -1449,6 +1517,32 @@ func (h *SessionHandler) forgotUsername(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, payload.Email); locked {
+		mins := lockoutRetryMinutes(ctx, retryAfter)
+		ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+		SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
+		return
+	}
+
+	if user, err := h.configStore.GetUserByEmail(ctx, payload.Email); err == nil && user != nil {
+		if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, user.Username); locked {
+			mins := lockoutRetryMinutes(ctx, retryAfter)
+			ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+			SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
+			return
+		}
+	} else {
+		adminName, adminEmail := h.getAdminCredentials(ctx)
+		if adminEmail != "" && (strings.EqualFold(payload.Email, adminEmail) || isMatchingAdminIdentity(payload.Email, adminName, adminEmail)) {
+			if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, adminName); locked {
+				mins := lockoutRetryMinutes(ctx, retryAfter)
+				ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
+				return
+			}
+		}
+	}
+
 	generic := map[string]any{"message": "If an account matches, your username was sent to your email."}
 
 	if checkForgotUsernameCooldown(h.configStore, ctx, payload.Email) || checkForgotUsernameCooldown(h.configStore, ctx, clientIPAddress(ctx)) {
@@ -1591,6 +1685,7 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 		// The emailed code proves ownership, so the failed-login lock (which only guards
 		// the old password) is lifted. The per-IP limit still applies.
 		clearAccountLockouts(h.configStore, ctx, user.Username, user.Email)
+		clearLoginIPFailures(h.configStore, ctx)
 		SendJSON(ctx, map[string]any{"message": "Password updated. You can sign in now."})
 		return
 	}
@@ -1652,6 +1747,7 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 	}
 
 	clearAccountLockouts(h.configStore, ctx, adminName, adminEmail, "admin")
+	clearLoginIPFailures(h.configStore, ctx)
 	SendJSON(ctx, map[string]any{"message": "Password updated. You can sign in now."})
 }
 
@@ -2101,6 +2197,10 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 		logger.Error("failed to register user username=%s: %v", payload.Username, err)
 		errLower := strings.ToLower(err.Error())
 		if strings.Contains(errLower, "duplicate") || strings.Contains(errLower, "unique") {
+			if strings.Contains(errLower, "email") {
+				SendError(ctx, fasthttp.StatusConflict, "This email is already registered with another account")
+				return
+			}
 			SendError(ctx, fasthttp.StatusConflict, "Username is already registered")
 			return
 		}
@@ -2340,6 +2440,12 @@ func (h *SessionHandler) changeTemporaryPassword(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to update password: "+err.Error())
 		return
 	}
+
+	// Revoke other active sessions for this account; re-insert the current active session
+	_ = h.configStore.DeleteSessionsByUsername(ctx, sess.Username)
+	sess.CreatedAt = time.Now()
+	sess.UpdatedAt = time.Now()
+	_ = h.configStore.CreateSession(ctx, sess)
 
 	SendJSON(ctx, map[string]any{
 		"status":  "success",

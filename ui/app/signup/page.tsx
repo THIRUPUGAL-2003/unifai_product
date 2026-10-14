@@ -45,6 +45,16 @@ export default function SignupPage() {
 	const [codeInfo, setCodeInfo] = useState("");
 	const [resendCooldown, setResendCooldown] = useState(0);
 	const [isResending, setIsResending] = useState(false);
+	const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+	const clearFieldError = (field: string) => {
+		setFieldErrors((prev) => {
+			if (!prev[field]) return prev;
+			const next = { ...prev };
+			delete next[field];
+			return next;
+		});
+	};
 	const navigate = useNavigate();
 
 	useEffect(() => {
@@ -67,7 +77,14 @@ export default function SignupPage() {
 	const handleVerifyCode = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
 		setErrorMessage("");
-		if (!/^\d{6}$/.test(code.trim())) {
+		const cleanCode = code.trim();
+		if (!cleanCode) {
+			setFieldErrors({ code: "Please fill in this field" });
+			setErrorMessage("Please enter the 6-digit verification code");
+			return;
+		}
+		if (!/^\d{6}$/.test(cleanCode)) {
+			setFieldErrors({ code: "Code must be 6 digits" });
 			setErrorMessage("Enter the 6-digit code from your email");
 			return;
 		}
@@ -120,12 +137,28 @@ export default function SignupPage() {
 		e.preventDefault();
 		setErrorMessage("");
 
-		if (password !== confirmPassword) {
-			setErrorMessage("Passwords do not match");
-			return;
+		const newErrors: Record<string, string> = {};
+		if (!username.trim()) {
+			newErrors.username = "Please fill in this field";
 		}
 		if (!email.trim()) {
-			setErrorMessage("Email is required");
+			newErrors.email = "Please fill in this field";
+		}
+		if (!password) {
+			newErrors.password = "Please fill in this field";
+		}
+		if (!confirmPassword) {
+			newErrors.confirmPassword = "Please fill in this field";
+		}
+		if (Object.keys(newErrors).length > 0) {
+			setFieldErrors(newErrors);
+			setErrorMessage("Please fill in all required fields");
+			return;
+		}
+
+		if (password !== confirmPassword) {
+			setFieldErrors({ confirmPassword: "Passwords do not match" });
+			setErrorMessage("Passwords do not match");
 			return;
 		}
 
@@ -178,14 +211,14 @@ export default function SignupPage() {
 	};
 
 	return (
-		<div className="relative flex min-h-screen flex-col justify-between overflow-x-hidden overflow-y-auto bg-[#090b12] font-sans text-slate-100 selection:bg-[#45f3ff] selection:text-black">
+		<div className="relative flex h-screen flex-col overflow-hidden bg-[#090b12] font-sans text-slate-100 selection:bg-[#45f3ff] selection:text-black">
 			{/* Ambient Gradient Glows */}
 			<div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 h-[500px] w-[800px] rounded-full bg-gradient-to-tr from-indigo-500/15 via-[#45f3ff]/15 to-transparent blur-[140px]" />
 			<div className="pointer-events-none absolute right-[-5%] bottom-[-10%] h-[420px] w-[420px] rounded-full bg-blue-600/10 blur-[130px]" />
 			<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px] opacity-70" />
 
-			{/* Floating Top Navigation Header */}
-			<header className="relative z-20 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-5">
+			{/* Fixed Top Navigation Header */}
+			<header className="relative z-20 flex-shrink-0 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-5">
 				<div className="flex items-center gap-4">
 					<button
 						type="button"
@@ -220,9 +253,10 @@ export default function SignupPage() {
 				</div>
 			</header>
 
-			{/* Main Center Content */}
-			<main className="relative z-10 mx-auto flex w-full max-w-[1300px] flex-1 items-center justify-center px-6 py-8">
-				<div className="grid w-full items-center gap-12 lg:grid-cols-12 lg:gap-14">
+			{/* Main Center Content - only this area scrolls */}
+			<main className="relative z-10 flex-1 overflow-y-auto">
+			<div className="mx-auto flex w-full max-w-[1300px] min-h-full flex-1 items-center justify-center px-6 py-8">
+					<div className="grid w-full items-center gap-12 lg:grid-cols-12 lg:gap-14">
 					{/* Left Column: Platform Value Props */}
 					<section className="hidden flex-col justify-center space-y-8 lg:col-span-6 lg:flex">
 						<div className="space-y-4">
@@ -319,11 +353,19 @@ export default function SignupPage() {
 										</div>
 									)}
 
-									<form onSubmit={handleVerifyCode} className="space-y-4">
+									<form onSubmit={handleVerifyCode} noValidate className="space-y-4">
 										<div className="space-y-1.5">
-											<Label htmlFor="signup-code" className="text-xs font-medium text-slate-200">
-												Verification Code
-											</Label>
+											<div className="flex items-center justify-between">
+												<Label htmlFor="signup-code" className="text-xs font-medium text-slate-200">
+													Verification Code <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+												</Label>
+												{fieldErrors.code && (
+													<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+														<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+														{fieldErrors.code}
+													</span>
+												)}
+											</div>
 											<div className="relative">
 												<KeyRound className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
@@ -333,16 +375,22 @@ export default function SignupPage() {
 													maxLength={6}
 													placeholder="6-digit code"
 													value={code}
-													onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-													required
-													className="h-11 pl-10 rounded-xl border-white/10 bg-black/40 font-mono tracking-[0.3em] text-sm text-white placeholder:tracking-normal focus:border-[#45f3ff]"
+													onChange={(e) => {
+														setCode(e.target.value.replace(/\D/g, ""));
+														clearFieldError("code");
+													}}
+													className={`h-11 pl-10 rounded-xl bg-black/40 font-mono tracking-[0.3em] text-sm text-white placeholder:tracking-normal transition-all ${
+														fieldErrors.code
+															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+															: "border-white/10 focus:border-[#45f3ff]"
+													}`}
 												/>
 											</div>
 										</div>
 
 										<Button
 											type="submit"
-											disabled={isLoading || code.trim().length < 6}
+											disabled={isLoading}
 											className="h-11 w-full rounded-xl bg-gradient-to-r from-[#45f3ff] to-[#38bdf8] font-bold text-[#090b12] shadow-[0_0_24px_rgba(69,243,255,0.25)] hover:brightness-105 transition-all cursor-pointer disabled:opacity-40"
 										>
 											{isLoading ? "Verifying..." : "Verify & Complete"}
@@ -398,11 +446,19 @@ export default function SignupPage() {
 										</div>
 									)}
 
-									<form onSubmit={handleSignup} className="space-y-3.5">
+									<form onSubmit={handleSignup} noValidate className="space-y-3.5">
 										<div className="space-y-1.5">
-											<Label htmlFor="username" className="text-xs font-medium text-slate-200">
-												Username
-											</Label>
+											<div className="flex items-center justify-between">
+												<Label htmlFor="username" className="text-xs font-medium text-slate-200">
+													Username <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+												</Label>
+												{fieldErrors.username && (
+													<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+														<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+														{fieldErrors.username}
+													</span>
+												)}
+											</div>
 											<div className="relative">
 												<User className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
@@ -410,18 +466,32 @@ export default function SignupPage() {
 													type="text"
 													placeholder="e.g. john.doe"
 													value={username}
-													onChange={(e) => setUsername(e.target.value)}
-													required
-													className="h-10 pl-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+													onChange={(e) => {
+														setUsername(e.target.value);
+														clearFieldError("username");
+													}}
+													className={`h-10 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+														fieldErrors.username
+															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+															: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+													}`}
 													autoComplete="username"
 												/>
 											</div>
 										</div>
 
 										<div className="space-y-1.5">
-											<Label htmlFor="email" className="text-xs font-medium text-slate-200">
-												Email Address
-											</Label>
+											<div className="flex items-center justify-between">
+												<Label htmlFor="email" className="text-xs font-medium text-slate-200">
+													Email Address <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+												</Label>
+												{fieldErrors.email && (
+													<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+														<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+														{fieldErrors.email}
+													</span>
+												)}
+											</div>
 											<div className="relative">
 												<Mail className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
@@ -429,18 +499,32 @@ export default function SignupPage() {
 													type="email"
 													placeholder="e.g. user@company.com"
 													value={email}
-													onChange={(e) => setEmail(e.target.value)}
-													required
-													className="h-10 pl-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+													onChange={(e) => {
+														setEmail(e.target.value);
+														clearFieldError("email");
+													}}
+													className={`h-10 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+														fieldErrors.email
+															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+															: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+													}`}
 													autoComplete="email"
 												/>
 											</div>
 										</div>
 
 										<div className="space-y-1.5">
-											<Label htmlFor="password" className="text-xs font-medium text-slate-200">
-												Password
-											</Label>
+											<div className="flex items-center justify-between">
+												<Label htmlFor="password" className="text-xs font-medium text-slate-200">
+													Password <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+												</Label>
+												{fieldErrors.password && (
+													<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+														<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+														{fieldErrors.password}
+													</span>
+												)}
+											</div>
 											<div className="relative">
 												<Lock className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
@@ -448,9 +532,15 @@ export default function SignupPage() {
 													type={showPassword ? "text" : "password"}
 													placeholder="Create a strong password"
 													value={password}
-													onChange={(e) => setPassword(e.target.value)}
-													required
-													className="h-10 pl-10 pr-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff]"
+													onChange={(e) => {
+														setPassword(e.target.value);
+														clearFieldError("password");
+													}}
+													className={`h-10 pl-10 pr-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+														fieldErrors.password
+															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+															: "border-white/10 focus:border-[#45f3ff]"
+													}`}
 													autoComplete="new-password"
 												/>
 												<button
@@ -464,9 +554,17 @@ export default function SignupPage() {
 										</div>
 
 										<div className="space-y-1.5">
-											<Label htmlFor="confirm-password" className="text-xs font-medium text-slate-200">
-												Confirm Password
-											</Label>
+											<div className="flex items-center justify-between">
+												<Label htmlFor="confirm-password" className="text-xs font-medium text-slate-200">
+													Confirm Password <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+												</Label>
+												{fieldErrors.confirmPassword && (
+													<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+														<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+														{fieldErrors.confirmPassword}
+													</span>
+												)}
+											</div>
 											<div className="relative">
 												<Lock className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
@@ -474,9 +572,15 @@ export default function SignupPage() {
 													type={showConfirmPassword ? "text" : "password"}
 													placeholder="Repeat your password"
 													value={confirmPassword}
-													onChange={(e) => setConfirmPassword(e.target.value)}
-													required
-													className="h-10 pl-10 pr-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff]"
+													onChange={(e) => {
+														setConfirmPassword(e.target.value);
+														clearFieldError("confirmPassword");
+													}}
+													className={`h-10 pl-10 pr-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+														fieldErrors.confirmPassword
+															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+															: "border-white/10 focus:border-[#45f3ff]"
+													}`}
 													autoComplete="new-password"
 												/>
 												<button
@@ -489,25 +593,25 @@ export default function SignupPage() {
 											</div>
 										</div>
 
-										{/* Password requirements checklist */}
-										<div className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-white/5 bg-black/20 p-2.5 text-[11px]">
-											<span className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> 8+ chars
+										{/* Password requirements checklist - single compact row */}
+										<div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-[11px]">
+											<span className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> 8+ chars
 											</span>
-											<span className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> A-Z
+											<span className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> A-Z
 											</span>
-											<span className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> a-z
+											<span className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> a-z
 											</span>
-											<span className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> 0-9
+											<span className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> 0-9
 											</span>
-											<span className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> Symbol
+											<span className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> Symbol
 											</span>
-											<span className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> Match
+											<span className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> Match
 											</span>
 										</div>
 
@@ -557,6 +661,7 @@ export default function SignupPage() {
 						</div>
 					</section>
 				</div>
+			</div>
 			</main>
 
 			{/* Minimal Sleek Footer */}

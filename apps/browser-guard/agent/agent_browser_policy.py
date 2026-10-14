@@ -331,6 +331,14 @@ def set_system_proxy_pac_and_browsers(enable: bool, pac_url: str | None = None, 
         pac_url = pac_http_url()
     ok = set_system_proxy_pac(enable=enable, pac_url=pac_url, silent=silent)
     set_browser_pac_policy(enable=enable, pac_url=pac_url)
+    try:
+        from agent_extension import install_guard_extension, local_base_url, remove_guard_extension_policy
+        if enable:
+            install_guard_extension(local_base_url())
+        else:
+            remove_guard_extension_policy()
+    except Exception as e:
+        print(f"[Gateway Guard WARNING] Chat extension install failed: {e}")
     if IS_WIN:
         _notify_wininet()
     return ok

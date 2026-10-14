@@ -8,6 +8,7 @@ import (
 
 	"github.com/gateway/gateway/core/schemas"
 	"github.com/gateway/gateway/framework/configstore"
+	"github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/gateway/gateway/framework/rbac"
 	"github.com/valyala/fasthttp"
 )
@@ -51,6 +52,31 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				next(ctx)
 				return
 			}
+			token := sessionToken(ctx)
+			var session *tables.SessionsTable
+			if token != "" {
+				if sess, err := store.GetSession(ctx, token); err == nil && sess != nil {
+					session = sess
+					if session.Username != "" {
+						if user, err := store.GetUserByUsername(ctx, session.Username); err == nil && user != nil {
+							if !user.IsApproved() {
+								SendError(ctx, fasthttp.StatusForbidden, "Your account is not approved or is disabled.")
+								return
+							}
+							if user.MustChangePassword {
+								allowedForPasswordChange := path == "/api/session/change-temporary-password" ||
+									path == "/api/session/is-auth-enabled" ||
+									path == "/api/session/logout"
+								if !allowedForPasswordChange {
+									SendError(ctx, fasthttp.StatusForbidden, "You must change your temporary password before accessing the dashboard.")
+									return
+								}
+							}
+						}
+					}
+				}
+			}
+
 			method := string(ctx.Method())
 			req := rbac.PathRequirementFor(method, path)
 			sections := rbac.SectionRequirementFor(method, path)
@@ -58,17 +84,15 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				next(ctx)
 				return
 			}
-			token := sessionToken(ctx)
-			if token == "" {
-				next(ctx)
-				return
-			}
-			session, err := store.GetSession(ctx, token)
-			if err != nil || session == nil {
+			if token == "" || session == nil {
 				next(ctx)
 				return
 			}
 			if session.Role == "admin" {
+				if len(sections) > 0 && !sessionSectionsAllow(ctx, store, session.Role, session.Username, sections) {
+					SendError(ctx, fasthttp.StatusForbidden, "this section is not enabled for your account")
+					return
+				}
 				next(ctx)
 				return
 			}

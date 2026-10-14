@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "YP-Raksha",
+  "version": "1.0.0",
+  "description": "Shows the YP-Raksha security warning in the chat when a prompt is blocked.",
+  "incognito": "spanning",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "yp-raksha@gateway.guard",
+      "strict_min_version": "115.0"
+    }
+  },
+  "host_permissions": ["http://127.0.0.1/*", "https://*/*", "http://*/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["page_hook.js"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["endpoint.js", "content.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

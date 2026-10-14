@@ -30,9 +30,42 @@ import {
 	Sparkles,
 	User,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type AuthMode = "login" | "forgot" | "reset" | "forgot_username" | "force_change_password";
+
+const LOCKOUT_STORAGE_KEY = "unifai_auth_lockout";
+
+interface LockedAccountInfo {
+	identifier: string;
+	endsAt: number;
+	reason: string;
+}
+
+function getStoredLockout(): LockedAccountInfo | null {
+	if (typeof window === "undefined") return null;
+	try {
+		const raw = localStorage.getItem(LOCKOUT_STORAGE_KEY);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		if (parsed && typeof parsed.endsAt === "number" && Date.now() < parsed.endsAt) {
+			return parsed;
+		}
+		localStorage.removeItem(LOCKOUT_STORAGE_KEY);
+	} catch {}
+	return null;
+}
+
+function saveStoredLockout(data: LockedAccountInfo | null) {
+	if (typeof window === "undefined") return;
+	try {
+		if (data && data.endsAt > Date.now()) {
+			localStorage.setItem(LOCKOUT_STORAGE_KEY, JSON.stringify(data));
+		} else {
+			localStorage.removeItem(LOCKOUT_STORAGE_KEY);
+		}
+	} catch {}
+}
 
 // Must match the server's per-account forgot-password cooldown; a resend inside it is
 // silently dropped (generic response, no email).
@@ -40,7 +73,15 @@ const OTP_RESEND_COOLDOWN_SECONDS = 120;
 
 export default function LoginView() {
 	const branding = useBranding();
-	const [mode, setMode] = useState<AuthMode>("login");
+	const [mode, setMode] = useState<AuthMode>(() => {
+		if (typeof window !== "undefined") {
+			const params = new URLSearchParams(window.location.search);
+			if (params.get("mode") === "force_change_password") {
+				return "force_change_password";
+			}
+		}
+		return "login";
+	});
 	const [username, setUsername] = useState("");
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
@@ -56,10 +97,13 @@ export default function LoginView() {
 	const [errorMessage, setErrorMessage] = useState("");
 	const [infoMessage, setInfoMessage] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
-	const [lockoutEndsAt, setLockoutEndsAt] = useState<number | null>(null);
-	const [lockoutReason, setLockoutReason] = useState("");
-	// Account lockouts belong to one username; network lockouts (per IP) apply to every username.
-	const [lockoutUsername, setLockoutUsername] = useState<string | null>(null);
+	const [lockedAccount, setLockedAccountState] = useState<LockedAccountInfo | null>(getStoredLockout);
+
+	const setLockedAccount = useCallback((data: LockedAccountInfo | null) => {
+		setLockedAccountState(data);
+		saveStoredLockout(data);
+	}, []);
+
 	const [now, setNow] = useState(() => Date.now());
 
 	const [login, { isLoading: isLoggingIn }] = useLoginMutation();
@@ -69,6 +113,16 @@ export default function LoginView() {
 	const [forgotUsername, { isLoading: isRetrievingUsername }] = useForgotUsernameMutation();
 	const [changeTemporaryPassword, { isLoading: isChangingTempPassword }] = useChangeTemporaryPasswordMutation();
 	const [pendingPostLoginTarget, setPendingPostLoginTarget] = useState("");
+	const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+	const clearFieldError = (field: string) => {
+		setFieldErrors((prev) => {
+			if (!prev[field]) return prev;
+			const next = { ...prev };
+			delete next[field];
+			return next;
+		});
+	};
 
 	useEffect(() => {
 		if (resendCooldown <= 0) return;
@@ -77,23 +131,47 @@ export default function LoginView() {
 	}, [resendCooldown]);
 
 	useEffect(() => {
-		if (lockoutEndsAt === null) return;
+		if (mode === "force_change_password" && !infoMessage) {
+			setInfoMessage("Please set a new permanent password to continue.");
+		}
+	}, [mode, infoMessage]);
+
+	useEffect(() => {
+		if (!lockedAccount) return;
 		const tick = () => {
 			const current = Date.now();
 			setNow(current);
-			if (current >= lockoutEndsAt) {
-				setLockoutEndsAt(null);
-				setLockoutReason("");
+			if (current >= lockedAccount.endsAt) {
+				setLockedAccount(null);
 				setErrorMessage("");
 			}
 		};
 		tick();
 		const timer = setInterval(tick, 1000);
 		return () => clearInterval(timer);
-	}, [lockoutEndsAt]);
+	}, [lockedAccount, setLockedAccount]);
 
-	const lockoutSecondsLeft = lockoutEndsAt === null ? 0 : Math.max(0, Math.ceil((lockoutEndsAt - now) / 1000));
-	const isLockedOut = mode === "login" && lockoutSecondsLeft > 0;
+	// Active identifier being typed/used across modes
+	const activeInputIdentifier = (
+		mode === "login"
+			? username
+			: email || username
+	).trim().toLowerCase();
+
+	// Lockout applies when the entered username/email matches the blocked account across ANY mode
+	const isCurrentAccountLocked = Boolean(
+		lockedAccount &&
+		now < lockedAccount.endsAt &&
+		(
+			(activeInputIdentifier && activeInputIdentifier === lockedAccount.identifier) ||
+			(username.trim().toLowerCase() && username.trim().toLowerCase() === lockedAccount.identifier) ||
+			(email.trim().toLowerCase() && email.trim().toLowerCase() === lockedAccount.identifier)
+		)
+	);
+	const lockoutSecondsLeft = isCurrentAccountLocked && lockedAccount
+		? Math.max(0, Math.ceil((lockedAccount.endsAt - now) / 1000))
+		: 0;
+	const isLockedOut = isCurrentAccountLocked && lockoutSecondsLeft > 0;
 	const lockoutCountdown = `${Math.floor(lockoutSecondsLeft / 60)}:${String(lockoutSecondsLeft % 60).padStart(2, "0")}`;
 
 	const has8Chars = newPassword.length >= 8;
@@ -104,9 +182,17 @@ export default function LoginView() {
 	const passwordsMatch = newPassword.length > 0 && newPassword === confirmPassword;
 
 	const handleResendOtp = async () => {
-		if (isSendingOtp) return;
+		if (isSendingOtp || isLockedOut) return;
 		if (!email.trim()) {
 			setErrorMessage("Please enter your email address first");
+			return;
+		}
+		if (
+			lockedAccount &&
+			(email.trim().toLowerCase() === lockedAccount.identifier || username.trim().toLowerCase() === lockedAccount.identifier) &&
+			now < lockedAccount.endsAt
+		) {
+			setErrorMessage(`This account is temporarily locked for ${lockoutCountdown}. Please wait before trying again.`);
 			return;
 		}
 		setErrorMessage("");
@@ -124,8 +210,14 @@ export default function LoginView() {
 
 	const handleVerifyOtp = async () => {
 		const cleanOtp = otp.trim();
-		if (cleanOtp.length < 6) {
+		if (!cleanOtp) {
+			setFieldErrors((prev) => ({ ...prev, otp: "Please fill in this field" }));
 			setErrorMessage("Please enter the 6-digit OTP code");
+			return;
+		}
+		if (cleanOtp.length < 6) {
+			setFieldErrors((prev) => ({ ...prev, otp: "OTP must be 6 digits" }));
+			setErrorMessage("OTP must be 6 digits");
 			return;
 		}
 		setErrorMessage("");
@@ -137,6 +229,7 @@ export default function LoginView() {
 				: { username: cleanInput, email: cleanInput, otp: cleanOtp };
 			const res = await verifyOtp(payload).unwrap();
 			setIsOtpVerified(true);
+			clearFieldError("otp");
 			if (res.reset_token) {
 				setResetToken(res.reset_token);
 			}
@@ -149,28 +242,88 @@ export default function LoginView() {
 
 	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
+		if (isLockedOut) {
+			setErrorMessage(`This account is temporarily locked for ${lockoutCountdown}. Please wait before trying again.`);
+			return;
+		}
 		setErrorMessage("");
 		setInfoMessage("");
 
-		if (mode === "forgot" && !email.trim()) {
-			setErrorMessage("Email address or username is required");
-			return;
+		if (mode === "login") {
+			const trimmedUsername = username.trim();
+			const newErrors: Record<string, string> = {};
+			if (!trimmedUsername) {
+				newErrors.username = "Please fill in this field";
+			}
+			if (!password) {
+				newErrors.password = "Please fill in this field";
+			}
+			if (Object.keys(newErrors).length > 0) {
+				setFieldErrors(newErrors);
+				setErrorMessage("Please fill in all required fields");
+				return;
+			}
 		}
-		if (mode === "forgot_username" && !email.trim()) {
-			setErrorMessage("Email address is required");
-			return;
+
+		if (mode === "forgot") {
+			const cleanInput = email.trim();
+			if (!cleanInput) {
+				setFieldErrors({ email: "Please fill in this field" });
+				setErrorMessage("Please fill in your email address or username");
+				return;
+			}
+			if (
+				lockedAccount &&
+				(cleanInput.toLowerCase() === lockedAccount.identifier || username.trim().toLowerCase() === lockedAccount.identifier) &&
+				now < lockedAccount.endsAt
+			) {
+				setErrorMessage(`This account is temporarily locked for ${lockoutCountdown}. Forgot password is not allowed during lockout.`);
+				return;
+			}
 		}
+
+		if (mode === "forgot_username") {
+			const cleanInput = email.trim();
+			if (!cleanInput) {
+				setFieldErrors({ email: "Please fill in this field" });
+				setErrorMessage("Please fill in your email address");
+				return;
+			}
+		}
+
 		if (mode === "reset") {
-			if (!isOtpVerified || !resetToken.trim()) {
-				setErrorMessage("Please click 'Verify OTP' to verify your code before setting password");
-				return;
+			const newErrors: Record<string, string> = {};
+			if (!otp.trim()) {
+				newErrors.otp = "Please fill in this field";
+			} else if (otp.trim().length < 6) {
+				newErrors.otp = "OTP must be 6 digits";
+			} else if (!isOtpVerified || !resetToken.trim()) {
+				newErrors.otp = "Please verify code first";
 			}
-			if (newPassword !== confirmPassword) {
-				setErrorMessage("Passwords do not match");
-				return;
+
+			if (!newPassword) {
+				newErrors.newPassword = "Please fill in this field";
+			} else if (!has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial) {
+				newErrors.newPassword = "Must meet all 5 requirements";
 			}
-			if (!has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial) {
-				setErrorMessage("Password must be at least 8 characters and include uppercase, lowercase, a number, and a symbol");
+
+			if (!confirmPassword) {
+				newErrors.confirmPassword = "Please fill in this field";
+			} else if (newPassword !== confirmPassword) {
+				newErrors.confirmPassword = "Passwords do not match";
+			}
+
+			if (Object.keys(newErrors).length > 0) {
+				setFieldErrors(newErrors);
+				if (!otp.trim() || !newPassword || !confirmPassword) {
+					setErrorMessage("Please fill in all required fields");
+				} else if (!isOtpVerified || !resetToken.trim()) {
+					setErrorMessage("Please click 'Verify Code' to verify your code before setting password");
+				} else if (newPassword !== confirmPassword) {
+					setErrorMessage("Passwords do not match");
+				} else {
+					setErrorMessage("Password must be at least 8 characters and include uppercase, lowercase, a number, and a symbol");
+				}
 				return;
 			}
 		}
@@ -195,16 +348,26 @@ export default function LoginView() {
 				return;
 			}
 			if (mode === "force_change_password") {
-				if (!newPassword || !confirmPassword) {
-					setErrorMessage("Both new password and confirm password are required");
-					return;
+				const newErrors: Record<string, string> = {};
+				if (!newPassword) {
+					newErrors.newPassword = "Please fill in this field";
+				} else if (!has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial) {
+					newErrors.newPassword = "Must meet all 5 requirements";
 				}
-				if (newPassword !== confirmPassword) {
-					setErrorMessage("Passwords do not match");
-					return;
+				if (!confirmPassword) {
+					newErrors.confirmPassword = "Please fill in this field";
+				} else if (newPassword !== confirmPassword) {
+					newErrors.confirmPassword = "Passwords do not match";
 				}
-				if (!has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial) {
-					setErrorMessage("Password must be at least 8 characters and include uppercase, lowercase, a number, and a symbol");
+				if (Object.keys(newErrors).length > 0) {
+					setFieldErrors(newErrors);
+					if (!newPassword || !confirmPassword) {
+						setErrorMessage("Please fill in all required fields");
+					} else if (newPassword !== confirmPassword) {
+						setErrorMessage("Passwords do not match");
+					} else {
+						setErrorMessage("Password must be at least 8 characters and include uppercase, lowercase, a number, and a symbol");
+					}
 					return;
 				}
 				const res = await changeTemporaryPassword({
@@ -243,8 +406,7 @@ export default function LoginView() {
 			}).unwrap();
 			setInfoMessage(result.message || "Password updated. Sign in with your new password.");
 			// The reset lifts the server-side lock, so drop the stale countdown too.
-			setLockoutEndsAt(null);
-			setLockoutReason("");
+			setLockedAccount(null);
 			setMode("login");
 			setEmail("");
 			setPassword("");
@@ -256,11 +418,24 @@ export default function LoginView() {
 		} catch (error) {
 			const message = getErrorMessage(error);
 			setErrorMessage(message);
-			const retryAfterSeconds = (error as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds;
-			if (mode === "login" && retryAfterSeconds) {
-				setLockoutReason(message.split(/(?<=\.)\s/)[0]);
-				setLockoutEndsAt(Date.now() + retryAfterSeconds * 1000);
-				setLockoutUsername(/from this network/i.test(message) ? null : username.trim().toLowerCase());
+			let retryAfterSeconds = (error as { retryAfterSeconds?: number } | undefined)?.retryAfterSeconds;
+			if (!retryAfterSeconds && /about\s+(\d+)\s+minutes?/i.test(message)) {
+				const match = message.match(/about\s+(\d+)\s+minutes?/i);
+				if (match && match[1]) {
+					retryAfterSeconds = parseInt(match[1], 10) * 60;
+				}
+			}
+			if (retryAfterSeconds || /locked|too many failed/i.test(message)) {
+				const seconds = retryAfterSeconds || 1200;
+				const reason = message.split(/(?<=\.)\s/)[0] || "Too many failed attempts. Account locked";
+				const targetId = (mode === "login" ? username : email || username).trim().toLowerCase();
+				if (targetId) {
+					setLockedAccount({
+						identifier: targetId,
+						endsAt: Date.now() + seconds * 1000,
+						reason,
+					});
+				}
 			}
 		} finally {
 			setIsLoading(false);
@@ -268,14 +443,14 @@ export default function LoginView() {
 	};
 
 	return (
-		<div className="relative flex min-h-screen flex-col justify-between overflow-x-hidden overflow-y-auto bg-[#090b12] font-sans text-slate-100 selection:bg-[#45f3ff] selection:text-black">
+		<div className="relative flex h-screen flex-col overflow-hidden bg-[#090b12] font-sans text-slate-100 selection:bg-[#45f3ff] selection:text-black">
 			{/* Ambient Gradient Glows */}
 			<div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 h-[500px] w-[800px] rounded-full bg-gradient-to-tr from-indigo-500/15 via-[#45f3ff]/15 to-transparent blur-[140px]" />
 			<div className="pointer-events-none absolute right-[-5%] bottom-[-10%] h-[420px] w-[420px] rounded-full bg-blue-600/10 blur-[130px]" />
 			<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px] opacity-70" />
 
-			{/* Floating Top Navigation Header */}
-			<header className="relative z-20 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-5">
+			{/* Fixed Top Navigation Header */}
+			<header className="relative z-20 flex-shrink-0 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-5">
 				<div className="flex items-center gap-4">
 					<button
 						type="button"
@@ -310,9 +485,10 @@ export default function LoginView() {
 				</div>
 			</header>
 
-			{/* Main Center Content */}
-			<main className="relative z-10 mx-auto flex w-full max-w-[1300px] flex-1 items-center justify-center px-6 py-8">
-				<div className="grid w-full items-center gap-12 lg:grid-cols-12 lg:gap-14">
+			{/* Main Center Content - only this area scrolls */}
+			<main className="relative z-10 flex-1 overflow-y-auto">
+				<div className="mx-auto flex w-full max-w-[1300px] min-h-full items-center justify-center px-6 py-8">
+					<div className="grid w-full items-center gap-12 lg:grid-cols-12 lg:gap-14">
 					{/* Left Column: Enterprise Highlights */}
 					<section className="hidden flex-col justify-center space-y-8 lg:col-span-6 lg:flex">
 						<div className="space-y-4">
@@ -387,6 +563,7 @@ export default function LoginView() {
 										}
 										setErrorMessage("");
 										setInfoMessage("");
+										setFieldErrors({});
 									}}
 									className="group mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-[#45f3ff] transition-colors cursor-pointer"
 								>
@@ -420,12 +597,23 @@ export default function LoginView() {
 								</p>
 							</div>
 
-							{errorMessage && (
+							{isLockedOut ? (
+								<div className="mb-4 flex flex-col gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300 shadow-sm animate-in fade-in duration-150">
+									<div className="flex items-center gap-2 font-semibold text-rose-200">
+										<ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+										<span>{lockedAccount?.reason || "Account Locked Out"}</span>
+									</div>
+									<p className="text-slate-300 leading-relaxed text-[11px]">
+										Too many failed attempts for <span className="font-semibold text-white">"{activeInputIdentifier || lockedAccount?.identifier}"</span>. Please wait{" "}
+										<span className="font-mono font-bold text-amber-300">{lockoutCountdown}</span> before trying again.
+									</p>
+								</div>
+							) : errorMessage ? (
 								<div className="mb-4 flex items-center gap-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
 									<ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
-									<span>{isLockedOut ? `${lockoutReason} Try again in ${lockoutCountdown}.` : errorMessage}</span>
+									<span>{errorMessage}</span>
 								</div>
-							)}
+							) : null}
 
 							{infoMessage && (
 								<div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
@@ -434,14 +622,22 @@ export default function LoginView() {
 								</div>
 							)}
 
-							<form onSubmit={handleSubmit} className="space-y-4">
+							<form onSubmit={handleSubmit} noValidate className="space-y-4">
 								{/* Login Mode Fields */}
 								{mode === "login" && (
 									<>
 										<div className="space-y-1.5">
-											<Label htmlFor="username" className="text-xs font-medium text-slate-200">
-												Username or email
-											</Label>
+											<div className="flex items-center justify-between">
+												<Label htmlFor="username" className="text-xs font-medium text-slate-200">
+													Username or email <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+												</Label>
+												{fieldErrors.username && (
+													<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+														<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+														{fieldErrors.username}
+													</span>
+												)}
+											</div>
 											<div className="relative">
 												<User className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
@@ -450,13 +646,19 @@ export default function LoginView() {
 													placeholder="Username or email"
 													value={username}
 													onChange={(e) => {
-														setUsername(e.target.value);
-														if (lockoutUsername && e.target.value.trim().toLowerCase() !== lockoutUsername) {
-															setLockoutEndsAt(null);
+														const val = e.target.value;
+														setUsername(val);
+														clearFieldError("username");
+														// Clear previous error if switching away from the locked account
+														if (errorMessage && (!lockedAccount || val.trim().toLowerCase() !== lockedAccount.identifier)) {
+															setErrorMessage("");
 														}
 													}}
-													required
-													className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40 transition-all"
+													className={`h-10.5 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+														fieldErrors.username
+															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+															: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+													}`}
 													autoComplete="username"
 												/>
 											</div>
@@ -465,25 +667,36 @@ export default function LoginView() {
 										<div className="space-y-1.5">
 											<div className="flex items-center justify-between">
 												<Label htmlFor="password" className="text-xs font-medium text-slate-200">
-													Password
+													Password <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
 												</Label>
-												<button
-													type="button"
-													className="text-[11px] font-medium text-[#45f3ff] hover:underline cursor-pointer"
-													onClick={() => {
-														setMode("forgot");
-														setEmail("");
-														setNewPassword("");
-														setConfirmPassword("");
-														setOtp("");
-														setIsOtpVerified(false);
-														setResetToken("");
-														setErrorMessage("");
-														setInfoMessage("");
-													}}
-												>
-													Forgot password?
-												</button>
+												<div className="flex items-center gap-3">
+													{fieldErrors.password && (
+														<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+															<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+															{fieldErrors.password}
+														</span>
+													)}
+													<button
+														type="button"
+														className="text-[11px] font-medium text-[#45f3ff] hover:underline cursor-pointer"
+														onClick={() => {
+															setMode("forgot");
+															if (username.trim()) {
+																setEmail(username.trim());
+															}
+															setNewPassword("");
+															setConfirmPassword("");
+															setOtp("");
+															setIsOtpVerified(false);
+															setResetToken("");
+															setErrorMessage("");
+															setInfoMessage("");
+															setFieldErrors({});
+														}}
+													>
+														Forgot password?
+													</button>
+												</div>
 											</div>
 											<div className="relative">
 												<Lock className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
@@ -492,9 +705,15 @@ export default function LoginView() {
 													type={showPassword ? "text" : "password"}
 													placeholder="Enter your password"
 													value={password}
-													onChange={(e) => setPassword(e.target.value)}
-													required
-													className="h-10.5 pl-10 pr-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40 transition-all"
+													onChange={(e) => {
+														setPassword(e.target.value);
+														clearFieldError("password");
+													}}
+													className={`h-10.5 pl-10 pr-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+														fieldErrors.password
+															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+															: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+													}`}
 													autoComplete="current-password"
 												/>
 												<button
@@ -512,9 +731,17 @@ export default function LoginView() {
 								{/* Forgot Password Mode */}
 								{mode === "forgot" && (
 									<div className="space-y-1.5">
-										<Label htmlFor="email" className="text-xs font-medium text-slate-200">
-											Email Address or Username
-										</Label>
+										<div className="flex items-center justify-between">
+											<Label htmlFor="email" className="text-xs font-medium text-slate-200">
+												Email Address or Username <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+											</Label>
+											{fieldErrors.email && (
+												<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+													<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+													{fieldErrors.email}
+												</span>
+											)}
+										</div>
 										<div className="relative">
 											<Mail className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 											<Input
@@ -522,9 +749,15 @@ export default function LoginView() {
 												type="text"
 												placeholder="name@company.com or username"
 												value={email}
-												onChange={(e) => setEmail(e.target.value)}
-												required
-												className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40 transition-all"
+												onChange={(e) => {
+													setEmail(e.target.value);
+													clearFieldError("email");
+												}}
+												className={`h-10.5 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+													fieldErrors.email
+														? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+														: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+												}`}
 												autoComplete="email username"
 											/>
 										</div>
@@ -534,9 +767,17 @@ export default function LoginView() {
 								{/* Forgot Username Mode */}
 								{mode === "forgot_username" && (
 									<div className="space-y-1.5">
-										<Label htmlFor="forgot-user-email" className="text-xs font-medium text-slate-200">
-											Email Address
-										</Label>
+										<div className="flex items-center justify-between">
+											<Label htmlFor="forgot-user-email" className="text-xs font-medium text-slate-200">
+												Email Address <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+											</Label>
+											{fieldErrors.email && (
+												<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+													<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+													{fieldErrors.email}
+												</span>
+											)}
+										</div>
 										<div className="relative">
 											<Mail className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 											<Input
@@ -544,9 +785,15 @@ export default function LoginView() {
 												type="email"
 												placeholder="name@company.com"
 												value={email}
-												onChange={(e) => setEmail(e.target.value)}
-												required
-												className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40 transition-all"
+												onChange={(e) => {
+													setEmail(e.target.value);
+													clearFieldError("email");
+												}}
+												className={`h-10.5 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+													fieldErrors.email
+														? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+														: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+												}`}
 												autoComplete="email"
 											/>
 										</div>
@@ -568,6 +815,7 @@ export default function LoginView() {
 																setMode("forgot");
 																setErrorMessage("");
 																setInfoMessage("");
+																setFieldErrors({});
 															}}
 															className="text-xs font-semibold text-[#45f3ff] hover:underline cursor-pointer"
 														>
@@ -579,22 +827,30 @@ export default function LoginView() {
 												<div className="space-y-1.5">
 													<div className="flex items-center justify-between">
 														<Label htmlFor="otp" className="text-xs font-medium text-slate-200">
-															Verification OTP Code
+															Verification OTP Code <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
 														</Label>
-														{isOtpVerified ? (
-															<span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
-																<CheckCircle2 className="h-3.5 w-3.5" /> Verified
-															</span>
-														) : (
-															<button
-																type="button"
-																disabled={isSendingOtp || resendCooldown > 0}
-																onClick={handleResendOtp}
-																className="text-[11px] font-medium text-[#45f3ff] hover:underline disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-															>
-																{resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
-															</button>
-														)}
+														<div className="flex items-center gap-2">
+															{fieldErrors.otp && (
+																<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+																	<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+																	{fieldErrors.otp}
+																</span>
+															)}
+															{isOtpVerified ? (
+																<span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
+																	<CheckCircle2 className="h-3.5 w-3.5" /> Verified
+																</span>
+															) : (
+																<button
+																	type="button"
+														disabled={isSendingOtp || resendCooldown > 0}
+														onClick={handleResendOtp}
+														className="text-[11px] font-medium text-[#45f3ff] hover:underline disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+													>
+														{resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
+														</button>
+															)}
+														</div>
 													</div>
 													<div className="flex gap-2">
 														<div className="relative flex-1">
@@ -606,14 +862,21 @@ export default function LoginView() {
 																maxLength={6}
 																value={otp}
 																disabled={isOtpVerified}
-																onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-																className="h-10.5 pl-10 rounded-xl border-white/10 bg-black/40 font-mono tracking-widest text-sm text-white placeholder:tracking-normal focus:border-[#45f3ff] disabled:opacity-50"
+																onChange={(e) => {
+																	setOtp(e.target.value.replace(/\D/g, ""));
+																	clearFieldError("otp");
+																}}
+																className={`h-10.5 pl-10 rounded-xl bg-black/40 font-mono tracking-widest text-sm text-white placeholder:tracking-normal transition-all disabled:opacity-50 ${
+																	fieldErrors.otp
+																		? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+																		: "border-white/10 focus:border-[#45f3ff]"
+																}`}
 															/>
 														</div>
 														{!isOtpVerified && (
 															<Button
 																type="button"
-																disabled={otp.trim().length < 6 || isVerifyingOtp}
+																disabled={isVerifyingOtp}
 																onClick={handleVerifyOtp}
 																className="h-10.5 px-4 rounded-xl bg-white/10 text-xs font-semibold text-white hover:bg-white/20 border border-white/15 cursor-pointer"
 															>
@@ -626,9 +889,17 @@ export default function LoginView() {
 										)}
 
 										<div className="space-y-1.5">
-											<Label htmlFor="newPassword" className="text-xs font-medium text-slate-200">
-												New Password
-											</Label>
+											<div className="flex items-center justify-between">
+												<Label htmlFor="newPassword" className="text-xs font-medium text-slate-200">
+													New Password <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+												</Label>
+												{fieldErrors.newPassword && (
+													<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+														<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+														{fieldErrors.newPassword}
+													</span>
+												)}
+											</div>
 											<div className="relative">
 												<Lock className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
@@ -636,9 +907,15 @@ export default function LoginView() {
 													type={showNewPassword ? "text" : "password"}
 													placeholder="Enter new password"
 													value={newPassword}
-													onChange={(e) => setNewPassword(e.target.value)}
-													required
-													className="h-10.5 pl-10 pr-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff]"
+													onChange={(e) => {
+														setNewPassword(e.target.value);
+														clearFieldError("newPassword");
+													}}
+													className={`h-10.5 pl-10 pr-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+														fieldErrors.newPassword
+															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+															: "border-white/10 focus:border-[#45f3ff]"
+													}`}
 												/>
 												<button
 													type="button"
@@ -651,9 +928,17 @@ export default function LoginView() {
 										</div>
 
 										<div className="space-y-1.5">
-											<Label htmlFor="confirmPassword" className="text-xs font-medium text-slate-200">
-												Confirm New Password
-											</Label>
+											<div className="flex items-center justify-between">
+												<Label htmlFor="confirmPassword" className="text-xs font-medium text-slate-200">
+													Confirm New Password <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
+												</Label>
+												{fieldErrors.confirmPassword && (
+													<span className="text-[11px] font-medium text-rose-400 animate-in fade-in flex items-center gap-1">
+														<span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+														{fieldErrors.confirmPassword}
+													</span>
+												)}
+											</div>
 											<div className="relative">
 												<Lock className="absolute top-1/2 left-3.5 -translate-y-1/2 h-4 w-4 text-slate-500" />
 												<Input
@@ -661,9 +946,15 @@ export default function LoginView() {
 													type={showConfirmPassword ? "text" : "password"}
 													placeholder="Re-enter new password"
 													value={confirmPassword}
-													onChange={(e) => setConfirmPassword(e.target.value)}
-													required
-													className="h-10.5 pl-10 pr-10 rounded-xl border-white/10 bg-black/40 text-sm text-white placeholder:text-slate-500 focus:border-[#45f3ff]"
+													onChange={(e) => {
+														setConfirmPassword(e.target.value);
+														clearFieldError("confirmPassword");
+													}}
+													className={`h-10.5 pl-10 pr-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+														fieldErrors.confirmPassword
+															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
+															: "border-white/10 focus:border-[#45f3ff]"
+													}`}
 												/>
 												<button
 													type="button"
@@ -675,25 +966,25 @@ export default function LoginView() {
 											</div>
 										</div>
 
-										{/* Password requirements checklist */}
-										<div className="flex flex-wrap items-center justify-between gap-1.5 rounded-xl border border-white/5 bg-black/20 p-2.5 text-[11px]">
-											<span className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> 8+ chars
+										{/* Password requirements checklist - single compact row */}
+										<div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-[11px]">
+											<span className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> 8+ chars
 											</span>
-											<span className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> A-Z
+											<span className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> A-Z
 											</span>
-											<span className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> a-z
+											<span className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> a-z
 											</span>
-											<span className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> 0-9
+											<span className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> 0-9
 											</span>
-											<span className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> Symbol
+											<span className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> Symbol
 											</span>
-											<span className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1" : "text-slate-500 flex items-center gap-1"}>
-												<Check className="h-3 w-3" /> Match
+											<span className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+												<Check className="h-3 w-3 shrink-0" /> Match
 											</span>
 										</div>
 									</>
@@ -708,31 +999,31 @@ export default function LoginView() {
 										isLockedOut ||
 										isSendingOtp ||
 										isRetrievingUsername ||
-										(mode === "reset" && (!isOtpVerified || !has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial || !passwordsMatch || isResetting)) ||
-										(mode === "force_change_password" && (!has8Chars || !hasUpper || !hasLower || !hasDigit || !hasSpecial || !passwordsMatch || isChangingTempPassword))
+										(mode === "reset" && isResetting) ||
+										(mode === "force_change_password" && isChangingTempPassword)
 									}
 								>
-									{mode === "login"
-										? isLoading || isLoggingIn
-											? "Signing in..."
-											: isLockedOut
-												? `Try again in ${lockoutCountdown}`
+									{isLockedOut
+										? `Try again in ${lockoutCountdown}`
+										: mode === "login"
+											? isLoading || isLoggingIn
+												? "Signing in..."
 												: "Sign In"
-										: mode === "forgot"
-											? isSendingOtp
-												? "Sending OTP..."
-												: "Send Verification Code"
-											: mode === "forgot_username"
-												? isRetrievingUsername
-													? "Retrieving..."
-													: "Retrieve Username"
-												: mode === "force_change_password"
-													? isChangingTempPassword
-														? "Setting Password..."
-														: "Set Password & Continue"
-													: isResetting
-														? "Updating password..."
-														: "Update Password"}
+											: mode === "forgot"
+												? isSendingOtp
+													? "Sending OTP..."
+													: "Send Verification Code"
+												: mode === "forgot_username"
+													? isRetrievingUsername
+														? "Retrieving..."
+														: "Retrieve Username"
+													: mode === "force_change_password"
+														? isChangingTempPassword
+															? "Setting Password..."
+															: "Set Password & Continue"
+														: isResetting
+															? "Updating Password..."
+															: "Update Password"}
 								</Button>
 
 								{mode === "login" && (
@@ -745,15 +1036,16 @@ export default function LoginView() {
 												setEmail("");
 												setErrorMessage("");
 												setInfoMessage("");
+												setFieldErrors({});
 											}}
 										>
 											Forgot your username?
 										</button>
 									</div>
-								)}
-							</form>
+								)}							</form>
 						</div>
 					</section>
+					</div>
 				</div>
 			</main>
 

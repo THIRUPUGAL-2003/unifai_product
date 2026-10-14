@@ -34,6 +34,7 @@ datas = [
     (str(PROXY_PARTS / "gateway_proxy_parts.enc"), "gateway_proxy_parts"),
     (str(PROXY_PARTS / "MANIFEST.txt"), "gateway_proxy_parts"),
     (str(CONFIG), "."),
+    (str(ROOT / "extension"), "extension"),
 ]
 binaries = []
 # Explicit agent modules (split from gateway_agent.py) — safe if Analysis misses a lazy import.

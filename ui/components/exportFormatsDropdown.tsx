@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdownMenu";
+import { buildCSV, downloadCSV } from "@/lib/utils/csv";
 import {
 	downloadDocTable,
 	downloadExcelTable,
@@ -57,7 +58,7 @@ export function ExportFormatsDropdown({
 	const [exporting, setExporting] = useState(false);
 
 	const run = useCallback(
-		async (format: "pdf" | "excel" | "doc" | "json") => {
+		async (format: "pdf" | "excel" | "doc" | "json" | "csv") => {
 			setExporting(true);
 			await new Promise((r) => requestAnimationFrame(r));
 			try {
@@ -68,6 +69,18 @@ export function ExportFormatsDropdown({
 				}
 				if (!payload.columns.length || !payload.rows.length) {
 					toast.info("Nothing to export");
+					return;
+				}
+				if (format === "csv") {
+					const headers = payload.columns.map((c) => c.header);
+					const data = payload.rows.map((row) =>
+						payload.columns.map((c) => {
+							const v = row[c.key];
+							return v === null || v === undefined ? "" : v;
+						})
+					);
+					const csv = buildCSV(headers, data);
+					downloadCSV(csv, payload.filename || "export");
 					return;
 				}
 				if (format === "pdf") {
@@ -101,13 +114,17 @@ export function ExportFormatsDropdown({
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
-				<DropdownMenuItem onClick={() => void run("pdf")} data-testid="export-pdf-item">
-					<FileText className="h-4 w-4" />
-					PDF
+				<DropdownMenuItem onClick={() => void run("csv")} data-testid="export-csv-item">
+					<FileSpreadsheet className="h-4 w-4" />
+					CSV
 				</DropdownMenuItem>
 				<DropdownMenuItem onClick={() => void run("excel")} data-testid="export-excel-item">
 					<FileSpreadsheet className="h-4 w-4" />
 					Excel
+				</DropdownMenuItem>
+				<DropdownMenuItem onClick={() => void run("pdf")} data-testid="export-pdf-item">
+					<FileText className="h-4 w-4" />
+					PDF
 				</DropdownMenuItem>
 				<DropdownMenuItem onClick={() => void run("doc")} data-testid="export-doc-item">
 					<FileText className="h-4 w-4" />

@@ -463,6 +463,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"drop_unconfigured_telemetry_otel_plugins"}, run: migrationDropUnconfiguredObservabilityPlugins},
 	{IDs: []string{"add_governance_scoping_to_prompts"}, run: migrationAddGovernanceScopingToPrompts},
 	{IDs: []string{"add_must_change_password_to_governance_users"}, run: migrationAddMustChangePasswordToGovernanceUsers},
+	{IDs: []string{"ensure_governance_users_email_unique_index"}, run: migrationEnsureGovernanceUsersEmailUniqueIndex},
 }
 
 // migrationWidenPromptMessageJSONMySQL turns prompt message_json columns into LONGTEXT on MySQL,
@@ -11532,6 +11533,43 @@ func migrationAddGovernanceScopingToPrompts(ctx context.Context, db *gorm.DB, lo
 	}})
 	if err := m.Migrate(); err != nil {
 		return fmt.Errorf("error running %s migration: %w", migrationName, err)
+	}
+	return nil
+}
+
+// migrationEnsureGovernanceUsersEmailUniqueIndex ensures duplicate non-empty email registrations are rejected at the DB level.
+func migrationEnsureGovernanceUsersEmailUniqueIndex(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "ensure_governance_users_email_unique_index"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			dial := tx.Dialector.Name()
+			switch dial {
+			case "postgres":
+				return tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_governance_users_email_unique ON governance_users (LOWER(email)) WHERE email IS NOT NULL AND email != ''").Error
+			case "sqlite":
+				return tx.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_governance_users_email_unique ON governance_users (LOWER(email)) WHERE email IS NOT NULL AND email != ''").Error
+			case "mysql":
+				_ = tx.Exec("ALTER TABLE governance_users ADD UNIQUE INDEX idx_governance_users_email_unique ((LOWER(email)))")
+				return nil
+			default:
+				return nil
+			}
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			dial := tx.Dialector.Name()
+			if dial == "mysql" {
+				return tx.Exec("ALTER TABLE governance_users DROP INDEX idx_governance_users_email_unique").Error
+			}
+			return tx.Exec("DROP INDEX IF EXISTS idx_governance_users_email_unique").Error
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		logger.Warn("[configstore] %s warning: %v", migrationName, err)
 	}
 	return nil
 }

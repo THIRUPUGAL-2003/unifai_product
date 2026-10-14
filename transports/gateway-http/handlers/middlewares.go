@@ -211,6 +211,7 @@ func (c *CorsMiddleware) Middleware() schemas.GatewayHTTPMiddleware {
 				ctx.Response.Header.Set("Access-Control-Allow-Origin", origin)
 				ctx.Response.Header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD")
 				ctx.Response.Header.Set("Access-Control-Allow-Headers", strings.Join(allowedHeaders, ", "))
+				ctx.Response.Header.Set("Access-Control-Expose-Headers", "Retry-After")
 				if credentialed {
 					ctx.Response.Header.Set("Access-Control-Allow-Credentials", "true")
 				}
