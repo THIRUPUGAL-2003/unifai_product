@@ -496,19 +496,14 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		var winAssets []zipAsset
 		if setupOK {
 			winAssets = append(winAssets, zipAsset{name: "Gateway_Guard_Setup.exe", path: setupPath})
-		}
-		if exeOK {
+		} else if exeOK {
 			winAssets = append(winAssets, zipAsset{name: "Gateway_Guard.exe", path: exePath})
 		}
 		cfg, cfgOK := guardConfigForDownload(ctx)
 		if !cfgOK {
 			return
 		}
-		for _, name := range []string{"INSTALL_WINDOWS.txt", "VERSION.txt", "Update_Gateway_Guard.ps1"} {
-			if p, ok := findFirstExisting(browserAISetupCandidates()[name]); ok {
-				winAssets = append(winAssets, zipAsset{name: name, path: p})
-			}
-		}
+		// Clean, concise ZIP: only main installer and server config (no cluttering text files or scripts)
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/zip")
 		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="Gateway_Guard_Windows.zip"`)
@@ -517,7 +512,6 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		}
 		ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
 			zw := zip.NewWriter(w)
-			wroteVersion := false
 			for _, asset := range winAssets {
 				data, err := os.ReadFile(asset.path)
 				if err != nil {
@@ -528,17 +522,9 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 					continue
 				}
 				_, _ = entry.Write(data)
-				if asset.name == "VERSION.txt" {
-					wroteVersion = true
-				}
 			}
 			if entry, err := zw.Create(guardConfigFileName); err == nil {
 				_, _ = entry.Write(cfg)
-			}
-			if !wroteVersion && winVer != "" {
-				if entry, err := zw.Create("VERSION.txt"); err == nil {
-					_, _ = entry.Write([]byte(winVer + "\n"))
-				}
 			}
 			_ = zw.Close()
 			_ = w.Flush()
@@ -552,27 +538,11 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	var assets []zipAsset
 	if setupOK {
 		assets = append(assets, zipAsset{name: "Gateway_Guard_Setup.exe", path: setupPath})
-	}
-	if exeOK {
+	} else if exeOK {
 		assets = append(assets, zipAsset{name: "Gateway_Guard.exe", path: exePath})
 	}
 	if macZipOK {
 		assets = append(assets, zipAsset{name: "Gateway_Guard_macOS.zip", path: macZipPath})
-	}
-	for _, name := range []string{
-		"INSTALL_WINDOWS.txt",
-		"INSTALL_MACOS.txt",
-		"UNINSTALL_MACOS.txt",
-		"EMPLOYEE_README_MAC.txt",
-		"Install_Gateway_Guard.command",
-		"Uninstall_Gateway_Guard.command",
-		"Update_Gateway_Guard_macOS.command",
-		"Update_Gateway_Guard.ps1",
-		"VERSION.txt",
-	} {
-		if path, ok := findFirstExisting(browserAISetupCandidates()[name]); ok {
-			assets = append(assets, zipAsset{name: name, path: path})
-		}
 	}
 
 	cfg, cfgOK := guardConfigForDownload(ctx)
@@ -598,7 +568,6 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	}
 	ctx.SetBodyStreamWriter(func(w *bufio.Writer) {
 		zw := zip.NewWriter(w)
-		wroteVersion := false
 		for _, asset := range assets {
 			data, err := os.ReadFile(asset.path)
 			if err != nil {
@@ -609,15 +578,6 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 				continue
 			}
 			_, _ = entry.Write(data)
-			if asset.name == "VERSION.txt" {
-				wroteVersion = true
-			}
-		}
-		// Always embed the current release version so employees see the expected number.
-		if !wroteVersion && winVer != "" {
-			if entry, err := zw.Create("VERSION.txt"); err == nil {
-				_, _ = entry.Write([]byte(winVer + "\n"))
-			}
 		}
 		if entry, err := zw.Create(guardConfigFileName); err == nil {
 			_, _ = entry.Write(cfg)

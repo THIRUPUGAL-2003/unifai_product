@@ -291,6 +291,41 @@ func (h *GovernanceHandler) getUserVirtualKeys(ctx *fasthttp.RequestCtx) {
 					}
 				}
 			}
+			// Business Unit-assigned Virtual Keys (BU -> Team -> User cascade!)
+			if units, err := ws.ListBusinessUnits(ctx); err == nil {
+				for _, unit := range units {
+					member := false
+					for _, tid := range unit.ParsedTeamIDs {
+						if tid == team.ID {
+							member = true
+							break
+						}
+					}
+					if !member {
+						continue
+					}
+					if buLinks, err := ws.ListVirtualKeysForBusinessUnit(ctx, unit.ID); err == nil {
+						for _, bl := range buLinks {
+							if seenVK[bl.VirtualKeyID] {
+								continue
+							}
+							bvk, err := h.configStore.GetVirtualKey(ctx, bl.VirtualKeyID)
+							if err != nil || bvk == nil {
+								continue
+							}
+							seenVK[bvk.ID] = true
+							keys = append(keys, map[string]any{
+								"id":          bvk.ID,
+								"name":        bvk.Name,
+								"is_active":   bvk.IsActiveValue(),
+								"created_at":  bvk.CreatedAt,
+								"origin":      "business_unit",
+								"origin_name": unit.Name,
+							})
+						}
+					}
+				}
+			}
 		}
 	}
 

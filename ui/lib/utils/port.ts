@@ -105,7 +105,10 @@ export function getApiBaseUrl(): string {
 	const config = getPortConfig();
 
 	if (config.isDevelopment) {
-		return `${config.baseUrl}/api`;
+		// Same origin as the Vite page so the session cookie is first-party.
+		// Vite proxies /api to the gateway. A direct call to 127.0.0.1 from
+		// localhost is cross-site, and the browser drops the login cookie.
+		return "/api";
 	} else {
 		// Production mode: use relative URL for API calls
 		return "/api";

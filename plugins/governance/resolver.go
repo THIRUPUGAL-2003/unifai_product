@@ -551,6 +551,8 @@ func budgetExhaustedReason(err error, decision Decision) string {
 		return fmt.Sprintf("Your personal budget is used up (%s). Requests are blocked until it resets or an admin raises it.", used)
 	case "Team":
 		return fmt.Sprintf("Team budget is used up (%s). This virtual key is blocked for your team — please use another virtual key.", used)
+	case "BusinessUnit":
+		return fmt.Sprintf("Business unit budget is used up (%s). This virtual key is blocked for teams in that unit — please use another virtual key.", used)
 	case "Customer":
 		return fmt.Sprintf("Customer budget is used up (%s). This virtual key is blocked for all of the customer's teams — please use another virtual key.", used)
 	case "VK":

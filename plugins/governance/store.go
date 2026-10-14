@@ -3,6 +3,7 @@ package governance
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -11,12 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/cel-go/cel"
 	"github.com/gateway/gateway/core/schemas"
 	"github.com/gateway/gateway/framework/configstore"
 	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 	"github.com/gateway/gateway/framework/modelcatalog"
 	"github.com/gateway/gateway/framework/routing"
+	"github.com/google/cel-go/cel"
 	"gorm.io/gorm"
 )
 
@@ -2228,6 +2229,12 @@ func (gs *LocalGovernanceStore) DumpRateLimits(ctx context.Context, tokenBaselin
 	if len(rateLimitUpdates) > 0 && gs.configStore != nil {
 		if err := gs.configStore.ExecuteTransaction(ctx, func(tx *gorm.DB) error {
 			for _, update := range rateLimitUpdates {
+				if strings.HasPrefix(update.ID, "bu_rl_") {
+					if err := persistBusinessUnitRateLimitUsage(ctx, tx, strings.TrimPrefix(update.ID, "bu_rl_"), update.TokenCurrentUsage, update.RequestCurrentUsage); err != nil {
+						return err
+					}
+					continue
+				}
 				// Direct UPDATE only updates usage fields
 				// This prevents overwriting max_limit or reset_duration that may have been changed by other nodes/requests
 				result := tx.WithContext(ctx).
@@ -2261,6 +2268,26 @@ func (gs *LocalGovernanceStore) DumpRateLimits(ctx context.Context, tokenBaselin
 			}
 			return fmt.Errorf("failed to dump rate limits to database: %w", err)
 		}
+	}
+	return nil
+}
+
+func persistBusinessUnitRateLimitUsage(ctx context.Context, tx *gorm.DB, buID string, tokenUsage, requestUsage int64) error {
+	var row configstoreTables.TableBusinessUnit
+	err := tx.WithContext(ctx).Where("id = ?", buID).First(&row).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("failed to load business unit rate limit %s: %w", buID, err)
+	}
+	if row.ParsedRateLimit == nil {
+		row.ParsedRateLimit = map[string]any{}
+	}
+	row.ParsedRateLimit["token_current_usage"] = tokenUsage
+	row.ParsedRateLimit["request_current_usage"] = requestUsage
+	if err := tx.WithContext(ctx).Save(&row).Error; err != nil {
+		return fmt.Errorf("failed to save business unit rate limit %s: %w", buID, err)
 	}
 	return nil
 }
@@ -2306,6 +2333,14 @@ func (gs *LocalGovernanceStore) DumpBudgets(ctx context.Context, baselines map[s
 				newUsage := inMemoryBudget.CurrentUsage
 				if baseline, exists := baselines[inMemoryBudget.ID]; exists {
 					newUsage += baseline
+				}
+
+				if strings.HasPrefix(inMemoryBudget.ID, "bu_") {
+					if err := persistBusinessUnitBudgetUsage(ctx, tx, strings.TrimPrefix(inMemoryBudget.ID, "bu_"), newUsage, inMemoryBudget); err != nil {
+						return err
+					}
+					flushed[inMemoryBudget.ID] = newUsage
+					continue
 				}
 
 				lastFlushed, exists := gs.LastDBUsagesBudgets[inMemoryBudget.ID]
@@ -2367,6 +2402,30 @@ func (gs *LocalGovernanceStore) DumpBudgets(ctx context.Context, baselines map[s
 			}
 			return fmt.Errorf("failed to dump budgets to database: %w", err)
 		}
+	}
+	return nil
+}
+
+func persistBusinessUnitBudgetUsage(ctx context.Context, tx *gorm.DB, buID string, usage float64, budget *configstoreTables.TableBudget) error {
+	var row configstoreTables.TableBusinessUnit
+	err := tx.WithContext(ctx).Where("id = ?", buID).First(&row).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("failed to load business unit budget %s: %w", buID, err)
+	}
+	if row.ParsedBudget == nil {
+		row.ParsedBudget = map[string]any{}
+	}
+	row.ParsedBudget["current_usage"] = usage
+	if budget != nil && budget.ResetDuration != "" {
+		if _, ok := row.ParsedBudget["reset_duration"]; !ok {
+			row.ParsedBudget["reset_duration"] = budget.ResetDuration
+		}
+	}
+	if err := tx.WithContext(ctx).Save(&row).Error; err != nil {
+		return fmt.Errorf("failed to save business unit budget %s: %w", buID, err)
 	}
 	return nil
 }
@@ -2904,18 +2963,10 @@ func (gs *LocalGovernanceStore) collectRateLimitsFromHierarchy(ctx context.Conte
 		}
 		addRateLimit("Team", teamRateLimitID)
 
-		if index := gs.businessUnitsByTeam.Load(); index != nil {
-			if units, ok := (*index)[teamID]; ok {
-				for _, bu := range units {
-					buRateLimitID := "bu_rl_" + bu.ID
-					addRateLimit("BusinessUnit", &buRateLimitID)
-				}
-			}
+		for _, buID := range gs.billedBusinessUnitIDs(vk, teamID) {
+			buRateLimitID := "bu_rl_" + buID
+			addRateLimit("BusinessUnit", &buRateLimitID)
 		}
-	}
-	for _, buID := range vkBusinessUnitIDs(vk) {
-		buRateLimitID := "bu_rl_" + buID
-		addRateLimit("BusinessUnit", &buRateLimitID)
 	}
 	for _, cid := range gs.billedCustomerIDs(ctx, vk, teamID) {
 		var customerRateLimitID *string
@@ -2997,11 +3048,6 @@ func vkCustomerIDs(vk *configstoreTables.TableVirtualKey) []string {
 	for _, cid := range vk.CustomerIDs {
 		if cid != "" && !slices.Contains(ids, cid) {
 			ids = append(ids, cid)
-		}
-	}
-	for _, bu := range vk.BusinessUnits {
-		if bu.CustomerID != nil && *bu.CustomerID != "" && !slices.Contains(ids, *bu.CustomerID) {
-			ids = append(ids, *bu.CustomerID)
 		}
 	}
 	return ids
@@ -3092,10 +3138,6 @@ func (gs *LocalGovernanceStore) billedTeam(ctx context.Context, vk *configstoreT
 		if cid := gs.teamCustomerID(nil, tid); cid != "" && slices.Contains(customers, cid) {
 			return tid
 		}
-	}
-	// If the user belongs to exactly one team, attribute the request to that team.
-	if len(member) == 1 {
-		return member[0]
 	}
 	return ""
 }
@@ -3192,9 +3234,41 @@ func (gs *LocalGovernanceStore) BilledEntities(ctx context.Context, vk *configst
 	return teamID, gs.billedCustomerIDs(ctx, vk, teamID)
 }
 
-// ExhaustedBilledEntity reports the VK / team / customer whose budget is used up when a member
-// of userTeamIDs calls vk, as ("vk"|"team"|"customer", name), or empty strings when the key is usable.
-// Order matches pre-request checks: VK first, then team, then customer.
+// billedBusinessUnitIDs returns the business units one request should meter.
+// A key linked to business units meters only the unit that contains the billed team.
+// A customer-assigned key meters that team's unit when the unit belongs to the billed customer.
+// A team-only or user-only key meters no business unit, and a second unit on the same key is not charged.
+func (gs *LocalGovernanceStore) billedBusinessUnitIDs(vk *configstoreTables.TableVirtualKey, teamID string) []string {
+	if vk == nil || teamID == "" {
+		return nil
+	}
+	index := gs.businessUnitsByTeam.Load()
+	if index == nil {
+		return nil
+	}
+	units := (*index)[teamID]
+	if len(units) == 0 {
+		return nil
+	}
+	linked := vkBusinessUnitIDs(vk)
+	customers := vkCustomerIDs(vk)
+	out := make([]string, 0, 1)
+	for _, bu := range units {
+		if len(linked) > 0 {
+			if slices.Contains(linked, bu.ID) && !slices.Contains(out, bu.ID) {
+				out = append(out, bu.ID)
+			}
+			continue
+		}
+		if bu.CustomerID != nil && *bu.CustomerID != "" && slices.Contains(customers, *bu.CustomerID) && !slices.Contains(out, bu.ID) {
+			out = append(out, bu.ID)
+		}
+	}
+	return out
+}
+
+// ExhaustedBilledEntity reports the VK / team / business unit / customer whose budget is used up
+// when a member of userTeamIDs calls vk, or empty strings when the key is usable.
 func (gs *LocalGovernanceStore) ExhaustedBilledEntity(ctx context.Context, vk *configstoreTables.TableVirtualKey, userTeamIDs []string) (string, string) {
 	if vk == nil {
 		return "", ""
@@ -3213,6 +3287,22 @@ func (gs *LocalGovernanceStore) ExhaustedBilledEntity(ctx context.Context, vk *c
 				return "team", team.Name
 			}
 		}
+	}
+	for _, buID := range gs.billedBusinessUnitIDs(vk, teamID) {
+		if !gs.anyBudgetExhausted([]configstoreTables.TableBudget{{ID: "bu_" + buID}}) {
+			continue
+		}
+		name := buID
+		if index := gs.businessUnitsByTeam.Load(); index != nil {
+			for _, units := range *index {
+				for _, bu := range units {
+					if bu.ID == buID && bu.Name != "" {
+						name = bu.Name
+					}
+				}
+			}
+		}
+		return "business_unit", name
 	}
 	for _, customerID := range customers {
 		if v, ok := gs.customers.Load(customerID); ok && v != nil {
@@ -3347,24 +3437,12 @@ func (gs *LocalGovernanceStore) collectBudgetsFromHierarchy(ctx context.Context,
 			addBudgets("Team", teamBudgets)
 		}
 
-		if index := gs.businessUnitsByTeam.Load(); index != nil {
-			if units, ok := (*index)[teamID]; ok {
-				for _, bu := range units {
-					buBudgetID := "bu_" + bu.ID
-					if bVal, exists := gs.budgets.Load(buBudgetID); exists && bVal != nil {
-						if b, ok := bVal.(*configstoreTables.TableBudget); ok && b != nil {
-							addBudgets("BusinessUnit", []configstoreTables.TableBudget{*b})
-						}
-					}
+		for _, buID := range gs.billedBusinessUnitIDs(vk, teamID) {
+			buBudgetID := "bu_" + buID
+			if bVal, exists := gs.budgets.Load(buBudgetID); exists && bVal != nil {
+				if b, ok := bVal.(*configstoreTables.TableBudget); ok && b != nil {
+					addBudgets("BusinessUnit", []configstoreTables.TableBudget{*b})
 				}
-			}
-		}
-	}
-	for _, buID := range vkBusinessUnitIDs(vk) {
-		buBudgetID := "bu_" + buID
-		if bVal, exists := gs.budgets.Load(buBudgetID); exists && bVal != nil {
-			if b, ok := bVal.(*configstoreTables.TableBudget); ok && b != nil {
-				addBudgets("BusinessUnit", []configstoreTables.TableBudget{*b})
 			}
 		}
 	}
@@ -4258,38 +4336,107 @@ func (gs *LocalGovernanceStore) reloadBusinessUnitTeamIndex(ctx context.Context)
 		}
 
 		// Index Business Unit budget into gs.budgets if configured
+		buBudgetID := "bu_" + row.ID
+		var maxLimit float64
 		if row.ParsedBudget != nil {
-			var maxLimit float64
 			if ml, ok := row.ParsedBudget["max_limit"].(float64); ok {
 				maxLimit = ml
 			} else if ml, ok := row.ParsedBudget["max_limit"].(int); ok {
 				maxLimit = float64(ml)
 			}
+		}
+		if maxLimit <= 0 {
+			gs.budgets.Delete(buBudgetID)
+		} else {
 			resetDur, _ := row.ParsedBudget["reset_duration"].(string)
 			if resetDur == "" {
 				resetDur = "1M"
 			}
-			if maxLimit > 0 {
-				buBudgetID := "bu_" + row.ID
-				var curUsage float64
-				if cu, ok := row.ParsedBudget["current_usage"].(float64); ok {
-					curUsage = cu
+			var curUsage float64
+			if cu, ok := row.ParsedBudget["current_usage"].(float64); ok {
+				curUsage = cu
+			}
+			if existingRaw, exists := gs.budgets.Load(buBudgetID); exists && existingRaw != nil {
+				if existing, ok := existingRaw.(*configstoreTables.TableBudget); ok && existing != nil {
+					curUsage = existing.CurrentUsage
 				}
-				if existingRaw, exists := gs.budgets.Load(buBudgetID); exists && existingRaw != nil {
-					if existing, ok := existingRaw.(*configstoreTables.TableBudget); ok && existing != nil {
-						curUsage = existing.CurrentUsage
-					}
-				}
-				gs.budgets.Store(buBudgetID, &configstoreTables.TableBudget{
-					ID:            buBudgetID,
-					MaxLimit:      maxLimit,
-					ResetDuration: resetDur,
-					CurrentUsage:  curUsage,
-					LastReset:     time.Now(),
-				})
+			}
+			gs.budgets.Store(buBudgetID, &configstoreTables.TableBudget{
+				ID:            buBudgetID,
+				MaxLimit:      maxLimit,
+				ResetDuration: resetDur,
+				CurrentUsage:  curUsage,
+				LastReset:     time.Now(),
+			})
+		}
+		gs.indexBusinessUnitRateLimit(row)
+	}
+}
+
+func buJSONInt(values map[string]any, key string) int64 {
+	if values == nil {
+		return 0
+	}
+	switch n := values[key].(type) {
+	case float64:
+		return int64(n)
+	case int:
+		return int64(n)
+	case int64:
+		return n
+	default:
+		return 0
+	}
+}
+
+func (gs *LocalGovernanceStore) indexBusinessUnitRateLimit(row configstoreTables.TableBusinessUnit) {
+	id := "bu_rl_" + row.ID
+	tokenMax := buJSONInt(row.ParsedRateLimit, "token_max_limit")
+	requestMax := buJSONInt(row.ParsedRateLimit, "request_max_limit")
+	if tokenMax <= 0 && requestMax <= 0 {
+		gs.rateLimits.Delete(id)
+		return
+	}
+	tokenUsage := buJSONInt(row.ParsedRateLimit, "token_current_usage")
+	requestUsage := buJSONInt(row.ParsedRateLimit, "request_current_usage")
+	tokenReset := time.Now()
+	requestReset := time.Now()
+	if existingRaw, exists := gs.rateLimits.Load(id); exists && existingRaw != nil {
+		if existing, ok := existingRaw.(*configstoreTables.TableRateLimit); ok && existing != nil {
+			tokenUsage = existing.TokenCurrentUsage
+			requestUsage = existing.RequestCurrentUsage
+			if !existing.TokenLastReset.IsZero() {
+				tokenReset = existing.TokenLastReset
+			}
+			if !existing.RequestLastReset.IsZero() {
+				requestReset = existing.RequestLastReset
 			}
 		}
 	}
+	limit := &configstoreTables.TableRateLimit{
+		ID:                  id,
+		TokenCurrentUsage:   tokenUsage,
+		RequestCurrentUsage: requestUsage,
+		TokenLastReset:      tokenReset,
+		RequestLastReset:    requestReset,
+	}
+	if tokenMax > 0 {
+		limit.TokenMaxLimit = &tokenMax
+		reset, _ := row.ParsedRateLimit["token_reset_duration"].(string)
+		if reset == "" {
+			reset = "1h"
+		}
+		limit.TokenResetDuration = &reset
+	}
+	if requestMax > 0 {
+		limit.RequestMaxLimit = &requestMax
+		reset, _ := row.ParsedRateLimit["request_reset_duration"].(string)
+		if reset == "" {
+			reset = "1h"
+		}
+		limit.RequestResetDuration = &reset
+	}
+	gs.rateLimits.Store(id, limit)
 }
 
 // stampBusinessUnitsForTeam copies BU id/name onto ctx for observability rankings.

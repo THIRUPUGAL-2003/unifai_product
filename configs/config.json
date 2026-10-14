@@ -75,6 +75,21 @@
         "virtual_key_ids": [
           "059738dc-e1ff-4914-ab19-e311d1973d1a"
         ]
+      },
+      {
+        "id": 3,
+        "name": "new",
+        "description": "nn",
+        "enabled": true,
+        "cel_expression": "true",
+        "apply_to": "output",
+        "provider_config_ids": [
+          1
+        ],
+        "virtual_key_ids": [
+          "059738dc-e1ff-4914-ab19-e311d1973d1a",
+          "7e8f5ca5-1dcd-491b-841d-99a4992adb0a"
+        ]
       }
     ],
     "guardrail_providers": [
@@ -92,12 +107,6 @@
             }
           ]
         }
-      },
-      {
-        "id": 0,
-        "provider_name": "",
-        "policy_name": "",
-        "enabled": true
       }
     ]
   },

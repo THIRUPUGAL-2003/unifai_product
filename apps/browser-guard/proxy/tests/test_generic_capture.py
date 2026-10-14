@@ -32,6 +32,8 @@ if hasattr(sys.stderr, "reconfigure"):
 
 HERE = Path(__file__).resolve().parent
 PARTS = HERE.parent / "gateway_proxy_parts"
+if not (PARTS / "MANIFEST.txt").exists() and (PARTS / "gateway_proxy_parts" / "MANIFEST.txt").exists():
+    PARTS = PARTS / "gateway_proxy_parts"
 
 # ── fake backend ─────────────────────────────────────────────────────────────
 TARGETS: list[dict] = []

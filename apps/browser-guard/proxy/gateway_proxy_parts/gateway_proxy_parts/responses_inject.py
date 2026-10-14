@@ -45,24 +45,25 @@ def _xssi_length_frame(payload: str) -> str:
     return f"{len(raw)}\n{payload}\n"
 
 
-def _gemini_block_body(msg: str, rpc: str = "StreamGenerate") -> bytes:
-    """Length-prefixed wrb.fr stream for Google Gemini / Bard.
-    Fills candidates slot so the web UI always renders the block message as an assistant reply
-    without throwing a Network error.
-    """
-    candidate_obj = ["rc_gateway_block", [msg], None, None, None, None, 0, []]
-    payload_data = [
-        None,
-        [candidate_obj],
-        "c_gateway_conv",
-        "r_gateway_block",
-        [candidate_obj],
-    ]
+def _gemini_block_body(msg: str, rpc: str = "") -> bytes:
+    """Gemini web reply. Uses valid RPC targets so client resolves promise cleanly without network error."""
+    text = msg or ""
+    candidate = ["c_1", [text], None, None, None, None, None, None, []]
+    rc_candidate = ["rc_1", [text], None, None, None, None, []]
+    payload_data = [None, [rc_candidate], None, None, [candidate]]
     payload_str = json.dumps(payload_data, ensure_ascii=False)
-    target_rpc = rpc if rpc else "StreamGenerate"
-    envelopes = [["wrb.fr", target_rpc, payload_str, None, None, None, "generic"]]
+
+    target_rpcs = []
+    if rpc:
+        target_rpcs.append(rpc)
+    for default_rpc in ("StreamGenerate", "wXbdQc"):
+        if default_rpc not in target_rpcs:
+            target_rpcs.append(default_rpc)
+
+    envelopes = [["wrb.fr", trpc, payload_str, None, None, None, "generic"] for trpc in target_rpcs]
     chunk = json.dumps(envelopes, ensure_ascii=False)
-    return (")]}'\n" + _xssi_length_frame(chunk)).encode("utf-8")
+    di = json.dumps(["di", 1], ensure_ascii=False)
+    return (")]}'\n\n" + _xssi_length_frame(chunk) + _xssi_length_frame(di)).encode("utf-8")
 
 
 def _is_deepseek_completion(path: str, host_l: str) -> bool:
@@ -76,32 +77,72 @@ def _is_deepseek_completion(path: str, host_l: str) -> bool:
     except Exception:
         pass
     if "deepseek" in h or "deepseek" in plat_l:
-        return "completion" in p or "/chat" in p
+        # Match only completion endpoints, never general background APIs like /chat_session or /pow
+        return "completion" in p
     if "/chat/completions" in p:
         return False
     return "/api/v0/chat/completion" in p or p.rstrip("/").endswith("/chat/completion")
 
 
-def _deepseek_block_sse(msg: str) -> bytes:
-    """chat.deepseek.com reads response.content APPEND patches. OpenAI delta chunks throw and the page says Network error."""
-    opening = {
-        "request_message_id": 1,
-        "response_message_id": 2,
-        "response": {
-            "message_id": 2,
-            "parent_id": 1,
-            "model": "",
-            "role": "ASSISTANT",
-            "content": "",
-            "thinking_content": None,
-            "status": "WIP",
-        },
+def _plain_security_text(msg: str) -> str:
+    text = re.sub(r"<[^>]+>", "", msg or "")
+    return text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").strip()
+
+
+def _deepseek_block_sse(msg: str, raw_body: str = "") -> bytes:
+    """DeepSeek SSE stream. Message ID must strictly differ from parent ID to avoid tree cycles."""
+    parent_id = None
+    chat_session_id = None
+    search_enabled = False
+    thinking_enabled = False
+    try:
+        data = json.loads(raw_body or "")
+    except Exception:
+        data = None
+    if isinstance(data, dict):
+        parent_id = data.get("parent_message_id")
+        chat_session_id = data.get("chat_session_id")
+        search_enabled = bool(data.get("search_enabled"))
+        thinking_enabled = bool(data.get("thinking_enabled"))
+    if isinstance(parent_id, str) and parent_id.isdigit():
+        parent_id = int(parent_id)
+    cursor_id = parent_id if isinstance(parent_id, int) else int(time.time() * 1000)
+    resp_id = cursor_id + 1 if isinstance(cursor_id, int) else f"{cursor_id}_resp"
+    text = _plain_security_text(msg)
+    ready = {
+        "request_message_id": cursor_id,
+        "response_message_id": resp_id,
+        "model_type": "default",
     }
+    if chat_session_id:
+        ready["chat_session_id"] = chat_session_id
+
+    init_response = {
+        "message_id": resp_id,
+        "parent_id": cursor_id,
+        "model": "deepseek-chat",
+        "role": "ASSISTANT",
+        "content": "",
+        "fragments": [{"type": "text", "content": ""}],
+        "thinking_content": None,
+        "status": "STREAMING",
+        "thinking_enabled": thinking_enabled,
+        "search_enabled": search_enabled,
+        "accumulated_token_count": 0,
+    }
+    if chat_session_id:
+        init_response["chat_session_id"] = chat_session_id
+
     parts = [
-        f"data: {json.dumps(opening, ensure_ascii=False)}\n\n",
-        f"data: {json.dumps({'p': 'response/content', 'o': 'APPEND', 'v': msg}, ensure_ascii=False)}\n\n",
-        f"data: {json.dumps({'p': 'response/status', 'o': 'SET', 'v': 'FINISHED'}, ensure_ascii=False)}\n\n",
-        "data: [DONE]\n\n",
+        f"event: ready\ndata: {json.dumps(ready, ensure_ascii=False)}\n\n",
+        "event: update_session\ndata: {}\n\n",
+        f"data: {json.dumps({'v': {'response': init_response}}, ensure_ascii=False)}\n\n",
+        f"data: {json.dumps({'p': 'response/fragments/-1/content', 'o': 'APPEND', 'v': text}, ensure_ascii=False)}\n\n",
+        f"data: {json.dumps({'p': 'response/content', 'o': 'SET', 'v': text}, ensure_ascii=False)}\n\n",
+        "data: {\"p\":\"response/status\",\"o\":\"SET\",\"v\":\"FINISHED\"}\n\n",
+        f"data: {json.dumps({'p': 'response/accumulated_token_count', 'o': 'SET', 'v': max(1, len(text) // 4)}, ensure_ascii=False)}\n\n",
+        "event: update_session\ndata: {}\n\n",
+        "event: close\ndata: {\"click_behavior\":\"none\",\"auto_resume\":false}\n\n",
     ]
     return "".join(parts).encode("utf-8")
 
@@ -132,13 +173,13 @@ def _silent_block_response(flow: http.HTTPFlow, common_headers: dict, *, path: s
         flow.response = http.Response.make(
             200,
             _gemini_block_body("", "StreamGenerate"),
-            {**common_headers, "Content-Type": "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff"},
+            {**common_headers, "Content-Type": "application/json; charset=utf-8", "X-Content-Type-Options": "nosniff"},
         )
         return
     if _is_deepseek_completion(path_l, host_l):
         flow.response = http.Response.make(
             200,
-            b'data: {"p":"response/status","o":"SET","v":"FINISHED"}\n\ndata: [DONE]\n\n',
+            b'event: close\ndata: {"click_behavior":"none","auto_resume":false}\n\n',
             {**common_headers, "Content-Type": "text/event-stream; charset=utf-8"},
         )
         return
@@ -804,8 +845,11 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
 
         pplx_sse = (
             f"data: {ask_json}\n\n"
+            f"event: query_progress\ndata: {ask_json}\n\n"
+            f"event: query_answered\ndata: {ask_json}\n\n"
             f"event: message\ndata: {ask_json}\n\n"
-            "data: [DONE]\n\n"
+            f'data: {{"text":{msg_json},"answer":{msg_json},"status":"completed","final":true}}\n\n'
+            "event: end_of_stream\ndata: {}\n\n"
         )
         if "application/json" in accept and "event-stream" not in accept and "/sse" not in path:
             flow.response = http.Response.make(
@@ -877,8 +921,12 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
                 detected_rpc = m_rpc.group(1)
         except Exception:
             pass
+        if "rpcids=" in path:
+            m_q = re.search(r'rpcids=([A-Za-z0-9_]+)', path)
+            if m_q:
+                detected_rpc = m_q.group(1)
         if detected_rpc == "StreamGenerate":
-            for rpc_cand in ("wXbdQc", "vyAQhe", "hR32Ce", "StreamGenerate", "GenerateContent"):
+            for rpc_cand in ("StreamGenerate", "wXbdQc", "vyAQhe", "hR32Ce", "GenerateContent"):
                 if rpc_cand in (raw_body or "") or rpc_cand in path:
                     detected_rpc = rpc_cand
                     break
@@ -886,7 +934,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         flow.response = http.Response.make(
             200,
             _gemini_block_body(msg, detected_rpc),
-            {**common_headers, "Content-Type": "text/plain; charset=utf-8", "X-Content-Type-Options": "nosniff"},
+            {**common_headers, "Content-Type": "application/json; charset=utf-8", "X-Content-Type-Options": "nosniff"},
         )
         return
 
@@ -894,7 +942,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
     if _is_deepseek_completion(path, host_l) or "deepseek" in plat_l:
         flow.response = http.Response.make(
             200,
-            _deepseek_block_sse(msg),
+            _deepseek_block_sse(msg, raw_body or ""),
             {**common_headers, "Content-Type": "text/event-stream; charset=utf-8", "X-Accel-Buffering": "no"},
         )
         return

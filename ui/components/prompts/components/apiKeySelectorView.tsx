@@ -101,39 +101,6 @@ export function ApiKeySelectorView({
 		}
 	};
 
-	const selectedVK = useMemo(() => virtualKeys.find((vk) => vk.value === resolvedVkValue), [virtualKeys, resolvedVkValue]);
-	const selectedBlock = selectedVK ? blocks?.[selectedVK.id] : undefined;
-	const fmt = (v?: number) => `$${(v ?? 0).toFixed(2)}`;
-
-	const userBudget = authStatus?.budget;
-	const userUsage = authStatus?.budget_current_usage ?? 0;
-	// Members always see their personal budget. Users with a configured budget also see their meter.
-	const showUserBudget = isMember || (userBudget !== undefined && userBudget > 0);
-	const showVKBudget = Boolean(selectedVK);
-
-	const selectVkValue = useMemo(() => {
-		if (resolvedVkValue && resolvedVkValue !== "__auto__") {
-			if (virtualKeys.some((vk) => vk.value === resolvedVkValue)) return resolvedVkValue;
-		}
-		if (resolvedVkValue === "__auto__") {
-			return "__auto__";
-		}
-		if (isMember) {
-			return virtualKeys[0]?.value ?? "__auto__";
-		}
-		return "__auto__";
-	}, [resolvedVkValue, virtualKeys, isMember]);
-
-	const selectApiKeyValue = useMemo(() => {
-		if (resolvedApiKeyValue && resolvedApiKeyValue !== "__auto__") {
-			if (providerKeys.some((k) => k.key_id === resolvedApiKeyValue)) return resolvedApiKeyValue;
-		}
-		return "__auto__";
-	}, [resolvedApiKeyValue, providerKeys]);
-
-	const hasVirtualKeysToShow = !isMember || virtualKeys.length > 0;
-	const showProviderKeySection = !isMember || providerKeys.length > 0;
-
 	const vkOptions = useMemo(() => {
 		const opts: { label: string; value: string }[] = [];
 		for (const vk of virtualKeys) {
@@ -155,6 +122,59 @@ export function ApiKeySelectorView({
 		}
 		return opts;
 	}, [virtualKeys, blocks, isRegularUser]);
+
+	const effectiveVkValues = useMemo(() => {
+		const matched = (virtualKeyValues ?? []).filter((value) => vkOptions.some((option) => option.value === value));
+		if (matched.length > 0) return matched;
+		if (resolvedVkValue && resolvedVkValue !== "__auto__" && vkOptions.some((option) => option.value === resolvedVkValue)) {
+			return [resolvedVkValue];
+		}
+		if (vkOptions.length > 0 && vkOptions[0]?.value) {
+			return [vkOptions[0].value];
+		}
+		return [];
+	}, [virtualKeyValues, vkOptions, resolvedVkValue]);
+
+	const selectedVK = useMemo(() => {
+		if (resolvedVkValue && resolvedVkValue !== "__auto__") {
+			const found = virtualKeys.find((vk) => vk.value === resolvedVkValue);
+			if (found) return found;
+		}
+		if (effectiveVkValues.length > 0) {
+			const found = virtualKeys.find((vk) => vk.value === effectiveVkValues[0]);
+			if (found) return found;
+		}
+		return virtualKeys[0];
+	}, [virtualKeys, resolvedVkValue, effectiveVkValues]);
+	const selectedBlock = selectedVK ? blocks?.[selectedVK.id] : undefined;
+	const fmt = (v?: number) => `$${(v ?? 0).toFixed(2)}`;
+
+	const userBudget = authStatus?.budget;
+	const userUsage = authStatus?.budget_current_usage ?? 0;
+	// Members always see their personal budget. Users with a configured budget also see their meter.
+	const showUserBudget = isMember || (userBudget !== undefined && userBudget > 0);
+	const isMultipleKeysSelected = effectiveVkValues.length > 1;
+	const showVKBudget = Boolean(selectedVK) && !isMultipleKeysSelected;
+
+	const selectVkValue = useMemo(() => {
+		if (resolvedVkValue && resolvedVkValue !== "__auto__") {
+			if (virtualKeys.some((vk) => vk.value === resolvedVkValue)) return resolvedVkValue;
+		}
+		if (virtualKeys.length > 0 && virtualKeys[0]?.value) {
+			return virtualKeys[0].value;
+		}
+		return "__auto__";
+	}, [resolvedVkValue, virtualKeys]);
+
+	const selectApiKeyValue = useMemo(() => {
+		if (resolvedApiKeyValue && resolvedApiKeyValue !== "__auto__") {
+			if (providerKeys.some((k) => k.key_id === resolvedApiKeyValue)) return resolvedApiKeyValue;
+		}
+		return "__auto__";
+	}, [resolvedApiKeyValue, providerKeys]);
+
+	const hasVirtualKeysToShow = !isMember || virtualKeys.length > 0;
+	const showProviderKeySection = !isMember || providerKeys.length > 0;
 
 	const apiKeyOptions = useMemo(
 		() => providerKeys.map((key) => ({ label: key.name, value: key.key_id })),
@@ -189,7 +209,7 @@ export function ApiKeySelectorView({
 							multiple
 							compactTrigger
 							options={vkOptions}
-							value={(virtualKeyValues ?? []).filter((value) => vkOptions.some((option) => option.value === value))}
+							value={effectiveVkValues}
 							onValueChange={onVirtualKeyValuesChange}
 							disabled={disabled || vkOptions.length === 0}
 							placeholder={vkOptions.length === 0 ? "No active virtual keys" : "Select virtual keys"}

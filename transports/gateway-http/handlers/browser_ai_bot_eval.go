@@ -359,10 +359,14 @@ pattern RULES:
 - Match the secret or data the policy names, not the words of the policy.
 - "pin", "pin code", or "pincode" means a 4 to 6 digit number: \b\d{4,6}\b. Never match the letters pin or code.
 - "email" means an email address. "phone" means a phone number. "credit card" means a card number.
+- "bank account" means a 9 to 18 digit account number (\b\d{9,18}\b). Never match the words bank or account.
 - "aadhaar" means 12 digits. "pan card" means an India PAN (5 letters, 4 digits, 1 letter).
+- "ifsc" means an 11-character bank code (\b[A-Z]{4}0[A-Z0-9]{6}\b). "iban" means an IBAN.
+- "driver license" means license format (\b[A-Z0-9]{6,12}\b).
+- "otp" means 4 to 8 digits (\b\d{4,8}\b). "cvv" means 3 to 4 digits (\b\d{3,4}\b).
 - If the policy says N-digit, use \d{N}.
-- NEVER return only the policy words joined by |, such as \b(?:pin|code)\b.
-- Must be a real RE2 regex that can match chat text.
+- NEVER return only the policy words joined by |, such as \b(?:pin|code)\b or \b(?:bank|account)\b.
+- Must be a real RE2 regex that matches data shapes, tokens, formats, or credentials, not plain English words.
 - NEVER invent fake patterns like []word[] or empty [].
 - NEVER put English sentences in pattern.
 - Prefer \b, \d, character classes, |, (), {n,m}.
@@ -680,6 +684,71 @@ func heuristicRegexFromPolicy(policy string) (pattern, focus, notes string) {
 		return `-----BEGIN [A-Z ]*PRIVATE KEY-----`, "private key", "PEM private key format"
 	}
 
+	// Bank Account Number / Account Number
+	if strings.Contains(p, "bank account") || strings.Contains(p, "account number") || strings.Contains(p, "bank acct") {
+		return `\b\d{9,18}\b`, "bank account number", "standard 9-18 digit account number"
+	}
+
+	// IFSC Code
+	if strings.Contains(p, "ifsc") {
+		return `\b[A-Z]{4}0[A-Z0-9]{6}\b`, "IFSC code", "India Bank IFSC 11-character code"
+	}
+
+	// IBAN
+	if strings.Contains(p, "iban") {
+		return `\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}([A-Z0-9]?){0,16}\b`, "IBAN", "International Bank Account Number"
+	}
+
+	// SWIFT / BIC
+	if strings.Contains(p, "swift") || strings.Contains(p, "bic") {
+		return `\b[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?\b`, "SWIFT/BIC code", "ISO 9362 SWIFT/BIC code"
+	}
+
+	// Driver License
+	if strings.Contains(p, "driver license") || strings.Contains(p, "driving license") || strings.Contains(p, "driver's license") {
+		return `\b[A-Z]{1,3}[-\s]?\d{4,14}\b`, "driver license", "driver license number pattern"
+	}
+
+	// OTP / Verification Code
+	if strings.Contains(p, "otp") || strings.Contains(p, "one time password") || strings.Contains(p, "verification code") {
+		return `\b\d{4,8}\b`, "one-time passcode", "4 to 8 digit OTP/passcode"
+	}
+
+	// CVV / CVC
+	if strings.Contains(p, "cvv") || strings.Contains(p, "cvc") || strings.Contains(p, "security code") {
+		return `\b\d{3,4}\b`, "CVV/CVC code", "3 to 4 digit card security code"
+	}
+
+	// MAC Address
+	if strings.Contains(p, "mac address") || strings.Contains(p, "ethernet address") {
+		return `\b(?:[0-9A-Fa-f]{2}[:-]){5}(?:[0-9A-Fa-f]{2})\b`, "MAC address", "hardware MAC address pattern"
+	}
+
+	// UUID / GUID
+	if strings.Contains(p, "uuid") || strings.Contains(p, "guid") {
+		return `\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b`, "UUID / GUID", "standard UUID format"
+	}
+
+	// Date of Birth / DOB
+	if strings.Contains(p, "date of birth") || strings.Contains(p, "dob") || strings.Contains(p, "birth date") {
+		return `\b(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{4}[/-]\d{1,2}[/-]\d{1,2})\b`, "date of birth", "date of birth pattern"
+	}
+
+	// Tax ID / EIN / ITIN
+	if strings.Contains(p, "tax id") || strings.Contains(p, "ein") || strings.Contains(p, "itin") {
+		return `\b(?:\d{2}-\d{7}|\d{3}-\d{2}-\d{4})\b`, "tax identification number", "US EIN / ITIN / Tax ID pattern"
+	}
+
+	// Medical Record / MRN
+	if strings.Contains(p, "medical record") || strings.Contains(p, "mrn") || strings.Contains(p, "patient id") {
+		return `\b(?:mrn|patient|med)[:\s#]*\d{6,10}\b`, "medical record number", "MRN / health record pattern"
+	}
+
+	// Cloud API tokens
+	if strings.Contains(p, "github token") || strings.Contains(p, "slack token") || strings.Contains(p, "aws key") {
+		return `\b(?:AKIA[0-9A-Z]{16}|gh[pousr]_[0-9a-zA-Z]{36}|xox[baprs]-[0-9a-zA-Z]{10,48})\b`, "API credentials", "high-entropy developer token"
+	}
+
 	// 10. Extract keywords or quoted phrases
 	terms := make([]string, 0)
 	quotes := regexp.MustCompile(`["']([^"']+)["']`).FindAllStringSubmatch(policy, -1)
@@ -706,6 +775,43 @@ func heuristicRegexFromPolicy(policy string) (pattern, focus, notes string) {
 		}
 	}
 
+	// If policy describes a numeric code, identifier, or key, do NOT fall back to echoing English words!
+	isNumericOrIdentifierPolicy := strings.Contains(p, "number") || strings.Contains(p, "code") || strings.Contains(p, "account") || strings.Contains(p, "card") || strings.Contains(p, "license") || strings.Contains(p, "digit")
+	if isNumericOrIdentifierPolicy {
+		return `\b\d{4,18}\b`, "numeric identifier", "numeric pattern"
+	}
+
+	// Bank Routing Number / Sort Code / Cheque / Letter of Credit / CIF
+	if strings.Contains(p, "routing number") || strings.Contains(p, "aba number") {
+		return `\b\d{9}\b`, "routing number", "ABA 9-digit routing transit number"
+	}
+	if strings.Contains(p, "sort code") {
+		return `\b\d{2}[-\s]?\d{2}[-\s]?\d{2}\b`, "sort code", "bank sort code pattern"
+	}
+	if strings.Contains(p, "cheque") || strings.Contains(p, "check number") {
+		return `\b(?:cheque|check)[:\s#]*\d{6}\b`, "cheque number", "standard 6-digit cheque number"
+	}
+	if strings.Contains(p, "letter of credit") || (strings.Contains(p, "credit") && strings.Contains(p, "letter")) {
+		return `\b(?:lc|letter\s+of\s+credit)[:\s#]*[A-Z0-9]{8,20}\b`, "letter of credit", "commercial letter of credit identifier"
+	}
+	if strings.Contains(p, "cif") || strings.Contains(p, "customer id") || strings.Contains(p, "client id") {
+		return `\b(?:cif|cust|client)[:\s#]*\d{6,12}\b`, "customer identifier", "customer information file / client ID"
+	}
+
+	// Structural letter patterns (uppercase, lowercase, alphanumeric, alphabetic words)
+	if strings.Contains(p, "capital letter") || strings.Contains(p, "uppercase") {
+		return `\b[A-Z]{3,}\b`, "uppercase letters", "sequence of 3 or more uppercase letters"
+	}
+	if strings.Contains(p, "lowercase letter") || strings.Contains(p, "lowercase") {
+		return `\b[a-z]{4,}\b`, "lowercase letters", "sequence of 4 or more lowercase letters"
+	}
+	if strings.Contains(p, "alphanumeric") || (strings.Contains(p, "letter") && (strings.Contains(p, "digit") || strings.Contains(p, "number"))) {
+		return `\b[A-Za-z0-9]{6,}\b`, "alphanumeric sequence", "alphanumeric code or identifier"
+	}
+	if strings.Contains(p, "letter only") || strings.Contains(p, "alphabetic") {
+		return `\b[A-Za-z]{4,}\b`, "alphabetic text", "alphabetic sequence"
+	}
+
 	cleanPolicy := regexp.MustCompile(`[^a-zA-Z0-9_\s]`).ReplaceAllString(p, "")
 	cleanWords := strings.Fields(cleanPolicy)
 	var filtered []string
@@ -720,6 +826,11 @@ func heuristicRegexFromPolicy(policy string) (pattern, focus, notes string) {
 		"has": true, "code": true, "codes": true, "number": true, "numbers": true,
 		"words": true, "text": true, "contains": true, "containing": true, "send": true,
 		"sent": true, "stop": true, "stopping": true, "pin": true, "pins": true, "digit": true,
+		"letter": true, "letters": true, "alphabet": true, "alphabets": true, "word": true,
+		"string": true, "strings": true, "content": true, "messages": true, "message": true,
+		"data": true, "information": true, "info": true, "detail": true, "details": true,
+		"value": true, "values": true, "type": true, "types": true, "pattern": true,
+		"patterns": true, "regex": true, "expression": true, "expressions": true,
 	}
 	for _, w := range cleanWords {
 		if len(w) >= 3 && !stopWords[w] {
@@ -731,6 +842,11 @@ func heuristicRegexFromPolicy(policy string) (pattern, focus, notes string) {
 		if _, err := regexp.Compile("(?i)" + cand); err == nil {
 			return cand, "policy keywords", "generated from policy description"
 		}
+	}
+
+	// Final fallback for letter-related policies
+	if strings.Contains(p, "letter") {
+		return `\b[A-Za-z]{4,}\b`, "letter sequence", "alphabetic sequence pattern"
 	}
 
 	return "", "", ""

@@ -2,7 +2,7 @@
 ; Build: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\Gateway_Guard.iss
 
 #define MyAppName "Gateway Guard"
-#define MyAppVersion "1.1.27"
+#define MyAppVersion "1.1.28"
 #define MyAppPublisher "Gateway"
 ; Synced from .env SERVER_DOMAIN by apps/browser-guard/scripts/sync_config_from_env.py
 #define MyAppURL "https://unifai.yespanchi.com"
@@ -40,10 +40,14 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "autostart"; Description: "Start Gateway Guard automatically at Windows login (recommended)"; Flags: checkedonce
 
+[Dirs]
+Name: "{app}"; Permissions: users-readexec
+
 [Files]
 Source: "staging\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs restartreplace
 ; Browser AI → Setup → Build now ships a server-fresh config next to Setup.exe; it wins over the compiled-in one.
 Source: "{src}\gateway_guard_config.json"; DestDir: "{app}"; Flags: external skipifsourcedoesntexist ignoreversion
+Source: "{src}\gateway_guard_config.enc"; DestDir: "{app}"; Flags: external skipifsourcedoesntexist ignoreversion
 
 [Icons]
 Name: "{group}\Gateway Guard"; Filename: "{app}\{#MyAppExeName}"

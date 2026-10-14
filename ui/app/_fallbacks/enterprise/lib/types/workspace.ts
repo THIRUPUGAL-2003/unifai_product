@@ -168,11 +168,28 @@ export interface SCIMConfig {
 	config: Record<string, string>;
 }
 
+export interface BusinessUnitBudget {
+	max_limit?: number;
+	current_usage?: number;
+	reset_duration?: string;
+}
+
+export interface BusinessUnitRateLimit {
+	token_max_limit?: number;
+	token_current_usage?: number;
+	token_reset_duration?: string;
+	request_max_limit?: number;
+	request_current_usage?: number;
+	request_reset_duration?: string;
+}
+
 export interface BusinessUnit {
 	id: string;
 	name: string;
 	team_count?: number;
 	team_ids?: string[];
+	budget?: BusinessUnitBudget | null;
+	rate_limit?: BusinessUnitRateLimit | null;
 	created_at?: string;
 	updated_at?: string;
 }

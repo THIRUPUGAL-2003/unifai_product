@@ -720,12 +720,41 @@ def _list_zip_member_basenames(data: bytes, max_names: int = 24) -> list[str]:
     return out
 
 
+def _isolate_active_send_message(raw_text: str) -> str:
+    """If payload contains conversation history (e.g. ChatGPT / Claude / Gemini messages array),
+    isolate ONLY the active/latest user message being submitted in THIS turn.
+    Prevents old attachments from previous turns in the chat history from being re-logged!"""
+    if not raw_text or not isinstance(raw_text, str):
+        return raw_text
+    s = raw_text.strip()
+    if s.startswith("{") and ('"messages"' in s or '"conversation"' in s or '"contents"' in s):
+        try:
+            data = json.loads(s)
+            if isinstance(data, dict):
+                msgs = data.get("messages")
+                if not msgs and isinstance(data.get("conversation"), dict):
+                    msgs = data["conversation"].get("messages")
+                if not msgs and isinstance(data.get("contents"), list):
+                    msgs = data["contents"]
+                if isinstance(msgs, list) and msgs:
+                    for m in reversed(msgs):
+                        if isinstance(m, dict):
+                            author = m.get("author") if isinstance(m.get("author"), dict) else {}
+                            role = (author.get("role") or m.get("role") or "").lower()
+                            if role in ("user", ""):
+                                return json.dumps(m)
+        except Exception:
+            pass
+    return raw_text
+
+
 def _extract_names_from_one_text(raw_text: str) -> list[str]:
     """All real filenames referenced on a chat Send (multi-file).
 
     Returns names for EVERY file type (not only pdf/pptx/json). Filters out
     ChatGPT site hosts / chat-tab titles that leak into title/name fields.
     """
+    raw_text = _isolate_active_send_message(raw_text)
     if not raw_text:
         return []
     found: list[str] = []
@@ -853,6 +882,7 @@ def _nested_json_send_names(raw_text: str) -> list[str]:
 
 def extract_all_attachment_filenames_from_send(raw_text: str) -> list[str]:
     """All real filenames referenced on a chat Send — any wire shape, any AI site."""
+    raw_text = _isolate_active_send_message(raw_text)
     if not raw_text:
         return []
     names = _extract_names_from_one_text(raw_text)
@@ -1579,6 +1609,7 @@ def _drop_stale_and_partial_uploads(cached_list: list[dict]) -> list[dict]:
             if _has_known_file_magic(_raw(e))
             or _is_real_user_upload_name((e.get("file_name") or "").strip())
             or not _looks_binary_blob(_raw(e))     # plain-text files have no magic
+            or len(_raw(e)) >= 32                  # nameless image/office sibling
         ]
     else:
         keep = burst
@@ -1701,7 +1732,7 @@ def _trim_phantom_upload_caches(
         solid_named = [e for e in realish if e not in tiny_named]
         keep_fake = [
             e for e in fakeish
-            if len(e.get("raw_bytes") or b"") >= 256
+            if len(e.get("raw_bytes") or b"") >= 32
         ]
         # Gemini StreamGenerate logs two rows: a tiny "File name: X" field plus the
         # real bytes labeled "attachment". Move the real name onto the file and drop
@@ -1717,9 +1748,9 @@ def _trim_phantom_upload_caches(
             keep_fake = [e for e in keep_fake if not _is_prompt_echo_upload(e, caption or "")]
             tiny_named = [e for e in tiny_named if not _is_prompt_echo_upload(e, caption or "")]
             return _dedupe_cached_uploads_by_bytes(solid_named + tiny_named + keep_fake)
-        if expected > 1:
-            return _dedupe_cached_uploads_by_bytes(realish + fakeish)
-        return _dedupe_cached_uploads_by_bytes(realish)
+        # The site often reports 1 file when several were uploaded. Keep the
+        # other byte rows; do not leave only the named one.
+        return _dedupe_cached_uploads_by_bytes(realish + fakeish)
 
     if send_names or expected > 1:
         target = max(len(send_names), expected, 1)
@@ -1732,17 +1763,12 @@ def _trim_phantom_upload_caches(
                 continue
             seen_fp.add(fp)
             uniq_real.append(e)
-        if len(uniq_real) >= target:
-            # Prefer exact target count but never collapse multi distinct bytes.
-            if len(uniq_real) == target:
-                return uniq_real
-            return _dedupe_cached_uploads_by_bytes(uniq_real)[: max(target, len(uniq_real))]
+        extra = [e for e in fakeish if len(e.get("raw_bytes") or b"") >= 32]
         if uniq_real:
-            need = max(target - len(uniq_real), 0)
-            return uniq_real + (_rank_uploads(fakeish, need) if (need and fakeish) else [])
-        # Nameless rows: the Send references `target` files — keep the `target` strongest,
-        # not all of them (that produced attachment (1/7) ... (7/7) for one Send).
-        return _rank_uploads(_dedupe_cached_uploads_by_bytes(cached_list), target)
+            return _dedupe_cached_uploads_by_bytes(uniq_real + extra)
+        # Nameless rows are still separate files. Do not cut them down to the
+        # count the site put in the request.
+        return _dedupe_cached_uploads_by_bytes(cached_list)
 
     if (caption or "").strip() and len(cached_list) > 1 and expected <= 1:
         # Only drop small items if they are fake/nameless placeholders (attachment/document),
@@ -1936,26 +1962,9 @@ def is_confident_file_upload(
     host_l = (host or "").lower()
     path_l = (path or "").lower().split("?", 1)[0]
 
-    # Monitored upload paths: cache real bytes, skip tiny JSON.
+    # Any file body on an upload URL is a file, whatever the extension or type.
     if detect_target(host_l)[0] and _path_looks_like_upload(path_l) and len(data) >= 32:
-        if name and name_l not in _FAKE_UPLOAD_NAMES:
-            return True
-        if any(x in ct for x in (
-            "octet-stream", "multipart", "pdf", "image/", "audio/", "video/",
-            "msword", "officedocument",
-        )):
-            return True
-        if data[:5] == b"%PDF-" or (len(data) >= 2 and data[:2] == b"PK"):
-            return True
-        if b"filename=" in data[:16000].lower() or b"filename*=" in data[:16000].lower():
-            return True
-        if len(data) >= 2048:
-            return True
-        # JSON file/voice wrappers on monitored upload paths (Claude/Gemini/DeepSeek/…).
-        if data.lstrip()[:1] in (b"{", b"["):
-            j_bytes, _, _ = _extract_bytes_from_json_upload(data, name)
-            if j_bytes and len(j_bytes) >= 32:
-                return True
+        return True
 
     # Any host: JSON body that already carries extractable file/voice bytes.
     if data.lstrip()[:1] in (b"{", b"[") and len(data) >= 120:
@@ -1969,10 +1978,10 @@ def is_confident_file_upload(
             return True
         return False
 
-    # Real filename with extension (not placeholder names)
-    if name and name_l not in _FAKE_UPLOAD_NAMES and "." in name:
+    # Any extension counts: csv, py, zip, dwg, markdown, and the rest.
+    if name and name_l not in _FAKE_UPLOAD_NAMES and "." in name and not _is_fake_upload_name(name):
         ext = name_l.rsplit(".", 1)[-1]
-        if 1 <= len(ext) <= 5 and ext.isalnum():
+        if 1 <= len(ext) <= 12 and ext.replace("+", "").isalnum():
             return True
 
     # Magic bytes / known file shapes (strong evidence)
@@ -2806,6 +2815,7 @@ def cache_upload_file(
 
 
 def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
+    raw_text = _isolate_active_send_message(raw_text)
     ids: list[str] = []
     if not raw_text:
         return ids
@@ -2849,35 +2859,46 @@ def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
         r'"storage_id"\s*:\s*"([^"]+)"',
         r'"storageId"\s*:\s*"([^"]+)"',
         r'/c/api/attachments/([^"?\s]+)',
+        r'file-service://(file-[a-zA-Z0-9_-]+)',
         r'file-service://file-([a-zA-Z0-9_-]+)',
-        r'asset_pointer"\s*:\s*"[^"]*file-([a-zA-Z0-9_-]+)',
+        r'asset_pointer"\s*:\s*"[^"]*(file-[a-zA-Z0-9_-]+)',
         r'"id"\s*:\s*"(file-[a-zA-Z0-9_-]+)"',
     ):
         for m in re.finditer(pat, raw_text):
             ids.append(m.group(1))
     out: list[str] = []
     seen: set[str] = set()
-    for i in ids:
-        if i not in seen:
-            seen.add(i)
-            out.append(i)
+    for raw_i in ids:
+        i = (raw_i or "").strip()
+        if not i:
+            continue
+        canon = i if i.startswith("file-") else f"file-{i}"
+        alt = i[5:] if i.startswith("file-") else i
+        if canon in seen or alt in seen or i in seen:
+            continue
+        seen.add(i)
+        seen.add(canon)
+        seen.add(alt)
+        out.append(i)
     return out
 
 
 def _expected_send_attachment_count(raw_text: str) -> int:
     """How many distinct files this Send references (ChatGPT/Gemini/Claude multi-upload)."""
-    body = raw_text or ""
+    body = _isolate_active_send_message(raw_text or "")
     if not body:
         return 0
-    ids = _extract_file_ids_from_chat(body)
     names = [
         n for n in extract_all_attachment_filenames_from_send(body)
         if _is_real_user_upload_name(n)
     ]
+    if names:
+        return len(names)
+    ids = _extract_file_ids_from_chat(body)
     # Non-empty attachments / files / documents object or string arrays
     n_objs = 0
     for m in re.finditer(
-        r'"(?:attachments|files|documents|uploadedFiles|uploaded_files|media|fileattachments|imageattachments|file_list|filelist|assets|sources|docs|content)"\s*:\s*\[(.*?)\]',
+        r'"(?:attachments|files|documents|uploadedFiles|uploaded_files|media|fileattachments|imageattachments|file_list|filelist|assets|sources|docs)"\s*:\s*\[(.*?)\]',
         body,
         re.I | re.S,
     ):
@@ -2888,7 +2909,7 @@ def _expected_send_attachment_count(raw_text: str) -> int:
         n_strings = len(re.findall(r'["\'][a-zA-Z0-9_\-\.]{1,}["\']', chunk)) if not n_braces else 0
         n_objs = max(n_objs, n_braces, n_strings)
     n_content_blocks = len(re.findall(r'"type"\s*:\s*"(?:document|image|file|audio)"', body, re.I))
-    return max(len(ids), len(names), n_objs, n_content_blocks, 0)
+    return max(len(ids), n_objs, n_content_blocks, 0)
 
 
 def chat_carries_attachment(raw_text: str) -> bool:
@@ -2898,6 +2919,7 @@ def chat_carries_attachment(raw_text: str) -> bool:
     or "media_type" — those must NOT count as an upload (that caused Prompt Log =
     "[FILE UPLOAD] attachment" for normal typed prompts).
     """
+    raw_text = _isolate_active_send_message(raw_text)
     if not raw_text:
         return False
     low = raw_text.lower()
@@ -3173,7 +3195,7 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
             if fname and "." not in fname:
                 fname = f"{fname}.{ext}"
             elif not fname:
-                fname = f"Image_{len(out) + 1}.{ext}" if mime.startswith("image/") else f"Attachment_{len(out) + 1}.{ext}"
+                fname = ""
         sig = _bytes_name_fingerprint(data)
         if sig not in seen:
             seen.add(sig)
@@ -3260,8 +3282,7 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
                     if _looks_like_document_body_dump(s_clean):
                         docs.append(s_clean)
                 for i, s_clean in enumerate(docs):
-                    suffix = f" {i + 1}" if len(docs) > 1 else ""
-                    one_name = names[i] if i < len(names) else f"Document{suffix}"
+                    one_name = names[i] if i < len(names) else ""
                     doc_bytes = s_clean.encode("utf-8")
                     ext = one_name.rsplit(".", 1)[-1].lower() if "." in one_name else "txt"
                     ct = "text/plain" if ext in ("txt", "md", "csv", "json", "py") else "application/octet-stream"
@@ -3574,9 +3595,11 @@ def take_all_cached_uploads_for_send(
         seen_uids.add(uid)
         found.append(entry)
 
+    active_text = _isolate_active_send_message(raw_text or "")
+
     with _UPLOAD_FILE_CACHE_LOCK:
         _purge_upload_file_cache()
-        for fid in _extract_file_ids_from_chat(raw_text):
+        for fid in _extract_file_ids_from_chat(active_text):
             for alias in aliases:
                 for key in (f"{alias}|id|{fid}", f"{alias}|id|file-{fid}"):
                     if key in _UPLOAD_FILE_CACHE:
@@ -3585,7 +3608,7 @@ def take_all_cached_uploads_for_send(
                         _remove_cache_keys_for_entry(entry, aliases)
         for m in re.finditer(
             r'["\'](?:file_name|fileName|filename|name|title)["\']\s*:\s*["\']([^"\']+)["\']',
-            raw_text or "",
+            active_text or "",
         ):
             name = m.group(1).strip()
             name_l = name.lower()
@@ -3602,13 +3625,24 @@ def take_all_cached_uploads_for_send(
                     entry = _UPLOAD_FILE_CACHE.pop(key)
                     add_entry(entry)
                     _remove_cache_keys_for_entry(entry, aliases)
-        if allow_latest:
+
+        expected_n = 0
+        try:
+            expected_n = _expected_send_attachment_count(active_text)
+        except Exception:
+            expected_n = 0
+
+        if allow_latest and (expected_n == 0 or len(found) < expected_n):
             now = time.time()
             for alias in aliases:
                 qkey = _upload_queue_key(alias)
-                for entry in list(_UPLOAD_FILE_QUEUES.get(qkey, [])):
+                q_entries = list(_UPLOAD_FILE_QUEUES.get(qkey, []))
+                q_entries.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
+                for entry in q_entries:
+                    if expected_n > 0 and len(found) >= expected_n:
+                        break
                     age = now - float(entry.get("ts") or 0)
-                    if age <= _UPLOAD_LATEST_MATCH_TTL:
+                    if age <= min(_UPLOAD_LATEST_MATCH_TTL, 45.0):
                         add_entry(entry)
                         _remove_cache_keys_for_entry(entry, aliases)
                 if qkey in _UPLOAD_FILE_QUEUES:
@@ -3618,7 +3652,7 @@ def take_all_cached_uploads_for_send(
                     ]
                 if not found:
                     latest = _UPLOAD_FILE_CACHE.get(f"{alias}|latest")
-                    if latest and (now - float(latest.get("ts") or 0)) <= _UPLOAD_LATEST_MATCH_TTL:
+                    if latest and (now - float(latest.get("ts") or 0)) <= min(_UPLOAD_LATEST_MATCH_TTL, 45.0):
                         add_entry(latest)
                         _remove_cache_keys_for_entry(latest, aliases)
     return _dedupe_cached_uploads_by_bytes(found)
@@ -3669,8 +3703,9 @@ def take_recent_confident_caches_for_send(domain: str) -> list[dict]:
                 if not isinstance(raw, (bytes, bytearray)) or len(raw) < 32:
                     if not name or _is_fake_upload_name(name):
                         continue
-                if not is_confident_file_upload(
-                    fname=name if not _is_fake_upload_name(name) else "file.bin",
+                has_bytes = isinstance(raw, (bytes, bytearray)) and len(raw) >= 32
+                if not has_bytes and not is_confident_file_upload(
+                    fname="" if _is_fake_upload_name(name) else name,
                     content_type=(entry.get("content_type") or ""),
                     raw_bytes=raw if isinstance(raw, (bytes, bytearray)) else b"",
                     raw_text="",

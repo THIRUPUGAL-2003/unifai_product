@@ -346,15 +346,18 @@ def enforce_file_send_policy(
 
     # ChatGPT often under-counts attachments (one wire token like composer_rendered
     # plus a single id). Never throw away sibling files from the same upload burst.
-    # Only drop caches that are older than 3 minutes — a previous Send's leftovers.
+    # Only keep caches that are within 30 seconds of the newest upload.
     if cached_list and len(cached_list) > 1:
         newest = max(float(e.get("ts") or 0) for e in cached_list)
         clustered = [
             e for e in cached_list
-            if newest - float(e.get("ts") or 0) <= 180.0
+            if newest - float(e.get("ts") or 0) <= 30.0
         ]
         if clustered:
             cached_list = clustered
+    if expected_n > 0 and len(cached_list) > expected_n:
+        cached_list.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
+        cached_list = cached_list[:expected_n]
 
     if not has_attach and not cached_list:
         return False, "", "", 0, False
@@ -364,11 +367,8 @@ def enforce_file_send_policy(
         if inlines and not cached_list:
             cached_list = []
             for idx, (inline_bytes, inline_ct, inline_name) in enumerate(inlines):
-                is_img = _looks_like_image(inline_bytes, inline_ct, inline_name)
-                suffix = f" {idx + 1}" if len(inlines) > 1 else ""
-                fallback_name = f"Image{suffix}" if is_img else f"Document{suffix}"
                 cached_list.append({
-                    "file_name": inline_name or fallback_name,
+                    "file_name": inline_name or "",
                     "content_type": inline_ct or content_type,
                     "raw_bytes": inline_bytes,
                     "ts": time.time(),
@@ -393,10 +393,7 @@ def enforce_file_send_policy(
                     if_fp = _bytes_name_fingerprint(inline_bytes)
                     if if_fp and if_fp in cached_fps:
                         continue
-                    final_name = inline_name
-                    if not final_name:
-                        is_img = _looks_like_image(inline_bytes, inline_ct, inline_name)
-                        final_name = f"Image {len(cached_list) + 1}" if is_img else f"Document {len(cached_list) + 1}"
+                    final_name = inline_name or ""
                     cached_list.append({
                         "file_name": final_name,
                         "content_type": inline_ct or content_type,
@@ -413,10 +410,8 @@ def enforce_file_send_policy(
         elif not cached_list:
             inline_bytes, inline_ct, inline_name = extract_inline_attachment_bytes(raw_text or "")
             if inline_bytes:
-                is_img = _looks_like_image(inline_bytes, inline_ct, inline_name)
-                fallback_name = "Image" if is_img else "Document"
                 cached_list = [{
-                    "file_name": inline_name or fallback_name,
+                    "file_name": inline_name or "",
                     "content_type": inline_ct or content_type,
                     "raw_bytes": inline_bytes,
                     "ts": time.time(),
@@ -451,7 +446,7 @@ def enforce_file_send_policy(
             chat_carries_attachment(raw_text) and _extract_transcript_fields_from_json(raw_text or "")
         ) or _looks_like_audio(b"", content_type, hint))
         if is_voice and (_is_fake_upload_name(hint) or hint.lower() in ("attachment", "file")):
-            hint = "Voice Note"
+            hint = ""
         if controls_active("block_upload"):
             warn = (get_control_settings().get("upload_warning") or "").strip() or "File/voice uploads are blocked by admin policy."
             msg = warn
@@ -753,19 +748,9 @@ def enforce_file_send_policy(
                 "ts": time.time(),
                 "cache_uid": f"send-name|{time.time():.6f}|{n}",
             })
-        # If ChatGPT wire payload listed fewer names than files uploaded in this burst,
-        # never discard the real uploaded siblings.
-        if remaining:
-            newest_ts = max((float(e.get("ts") or 0) for e in matched), default=time.time())
-            for e in remaining:
-                raw_b = e.get("raw_bytes") or b""
-                if (isinstance(raw_b, (bytes, bytearray)) and len(raw_b) >= 32) or _is_real_user_upload_name((e.get("file_name") or "").strip()):
-                    if abs(newest_ts - float(e.get("ts") or 0)) <= 180.0:
-                        matched.append(e)
         cached_list = matched
-    elif expected_n > 0 and len(cached_list) > expected_n:
-        cached_list = sorted(cached_list, key=lambda x: float(x.get("ts") or 0), reverse=True)[:expected_n]
-        cached_list.reverse()
+    if expected_n > 0 and len(cached_list) > expected_n:
+        cached_list = cached_list[:expected_n]
     else:
         # Pending names → nameless upload caches.
         still_fake = [e for e in cached_list if not _is_real_user_upload_name((e.get("file_name") or "").strip())]
@@ -812,7 +797,6 @@ def enforce_file_send_policy(
         if not isinstance(cached_bytes, (bytes, bytearray)):
             cached_bytes = b""
         cached_ct = (cached.get("content_type") or content_type or "").strip()
-        is_audio = _looks_like_audio(bytes(cached_bytes), cached_ct, fname)
 
         # A code line such as "in data_12000_ or b" is not a fake placeholder,
         # but it is not the file name Claude shows. Replace it with the real name.
@@ -839,12 +823,8 @@ def enforce_file_send_policy(
                         pending = ""
                     if pending and _is_real_user_upload_name(pending):
                         fname = pending
-                    elif is_audio:
-                        fname = "Voice Note"
-                    elif _looks_like_image(bytes(cached_bytes), cached_ct, fname):
-                        fname = "Image"
                     else:
-                        fname = "Document"
+                        fname = ""
             cached["file_name"] = fname
             if _is_real_user_upload_name(fname) and cached_bytes:
                 try:
@@ -852,12 +832,8 @@ def enforce_file_send_policy(
                 except Exception:
                     pass
         display_label = _display_label_for_upload(fname, bytes(cached_bytes), cached_ct)
-        if is_audio and display_label.lower() in ("attachment", "audio.bin"):
-            display_label = "Voice Note"
-        elif _looks_like_image(bytes(cached_bytes), cached_ct, fname) and display_label.lower() in ("attachment", "image.png"):
-            display_label = "Image"
-        elif display_label.lower() in ("attachment", "document.pdf", "unknown"):
-            display_label = "Document"
+        if display_label.lower() in ("attachment", "audio.bin", "image.png", "document.pdf", "unknown", "file.bin"):
+            display_label = ""
         prepared.append({
             "file_label": display_label,
             "store_name": fname,
@@ -870,7 +846,6 @@ def enforce_file_send_policy(
     # One row per distinct file: same bytes collapse unless both carry different real names.
     unique_prep: list[dict] = []
     seen_fps: dict[str, set[str]] = {}
-    seen_names: set[str] = set()
     for p in prepared:
         b = p.get("cached_bytes") or b""
         fp = _bytes_name_fingerprint(b)
@@ -881,17 +856,8 @@ def enforce_file_send_policy(
             names_for_fp = seen_fps[fp]
             if not real or lbl_key in names_for_fp or "" in names_for_fp:
                 continue
-        if real and lbl_key in seen_names:
-            for idx, existing in enumerate(unique_prep):
-                if (existing.get("store_name") or existing.get("file_label") or "").strip().lower() == lbl_key:
-                    if len(b) > len(existing.get("cached_bytes") or b""):
-                        unique_prep[idx] = p
-                    break
-            continue
         if fp:
             seen_fps.setdefault(fp, set()).add(lbl_key if real else "")
-        if real:
-            seen_names.add(lbl_key)
         unique_prep.append(p)
     if unique_prep:
         prepared = [p for p in unique_prep if _keep_logged_upload(p)]
@@ -1454,16 +1420,11 @@ def _extract_file_send_user_caption(
 
 
 def _keep_logged_upload(prep: dict) -> bool:
-    """Log only a real upload. UI labels and empty placeholders are not files."""
-    name = (prep.get("store_name") or prep.get("file_label") or "").strip()
+    """Predict every uploaded file. Type and filename do not decide this."""
     raw = prep.get("cached_bytes") or b""
-    if not isinstance(raw, (bytes, bytearray)):
-        raw = b""
-    ct = prep.get("cached_ct") or ""
-    if _upload_is_voice(name, ct, bytes(raw)):
+    if isinstance(raw, (bytes, bytearray)) and len(raw) >= 32:
         return True
-    if name.lower() in ("document", "image", "attachment", "file", "unknown", "voice note"):
-        return False
+    name = (prep.get("store_name") or prep.get("file_label") or "").strip()
     return _is_real_user_upload_name(name)
 
 
@@ -1472,7 +1433,15 @@ def _user_prompt_log_text(*, voice: bool = False, file_label: str = "", caption:
     cap = (caption or "").strip()
     if voice:
         return f"voice -- {cap}" if cap else "voice"
-    name = (file_label or "file").strip()
+    name = (file_label or "").strip()
+    if (not name or name.lower() in ("file", "attachment", "document", "image")) and cap:
+        m = re.search(r'\b([A-Za-z0-9_\-\.]{1,60}\.(?:pdf|docx?|xlsx?|csv|txt|png|jpe?g|pptx?|json|py|zip))\b', cap, re.I)
+        if m:
+            candidate_fn = m.group(1).strip()
+            if _is_real_user_upload_name(candidate_fn):
+                name = candidate_fn
+    if not name:
+        name = "file"
     if total > 1:
         name = f"{name}({index}/{total})"
     return f"{name} -- {cap}" if cap else name
@@ -1508,19 +1477,10 @@ def post_upload_intercept(
     Also attaches file bytes (when present, capped) so backend can temp-store
     for ~10 minutes of View/Download, then auto-delete the file only.
     """
-    is_img = bool((content_type and "image/" in content_type.lower()) or _looks_like_image(raw_bytes or b"", content_type, file_name))
-    is_aud = bool((content_type and "audio/" in content_type.lower()) or _looks_like_audio(raw_bytes or b"", content_type, file_name))
-    fallback_name = "Voice Note" if is_aud else ("Image" if is_img else "Document")
-    if (
-        not file_name
-        or not _is_real_user_upload_name(file_name)
-        or file_name.lower() in ("attachment", "document.pdf", "unknown")
-    ) and file_name.lower() not in ("voice note", "image", "document"):
-        file_name = fallback_name
+    if not _is_real_user_upload_name(file_name):
+        file_name = ""
 
-    safe_name = (file_name or fallback_name).replace('"', "").replace("\r", "").replace("\n", "")
-    if not safe_name:
-        safe_name = fallback_name
+    safe_name = (file_name or "").replace('"', "").replace("\r", "").replace("\n", "")
 
     if "[FILE UPLOAD] attachment" in prompt:
         prompt = prompt.replace("[FILE UPLOAD] attachment", f"[FILE UPLOAD] {safe_name}")

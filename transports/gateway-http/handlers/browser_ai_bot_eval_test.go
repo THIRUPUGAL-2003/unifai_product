@@ -234,6 +234,51 @@ func TestHeuristicRegexFromPolicy(t *testing.T) {
 			sampleMatch:   "613002",
 			sampleNoMatch: "pin code",
 		},
+		{
+			policy:        "bank account number",
+			sampleMatch:   "transfer to 123456789012 please",
+			sampleNoMatch: "my bank account is empty",
+		},
+		{
+			policy:        "ifsc code",
+			sampleMatch:   "branch HDFC0001234",
+			sampleNoMatch: "hello ifsc world",
+		},
+		{
+			policy:        "iban",
+			sampleMatch:   "DE89370400440532013000",
+			sampleNoMatch: "iban account",
+		},
+		{
+			policy:        "driver license",
+			sampleMatch:   "DL DL1420110012345",
+			sampleNoMatch: "driver license document",
+		},
+		{
+			policy:        "otp code",
+			sampleMatch:   "your otp is 482910",
+			sampleNoMatch: "otp code sent",
+		},
+		{
+			policy:        "cvv",
+			sampleMatch:   "cvv is 382",
+			sampleNoMatch: "card cvv info",
+		},
+		{
+			policy:        "mac address",
+			sampleMatch:   "device 00:1A:2B:3C:4D:5E connected",
+			sampleNoMatch: "mac address of device",
+		},
+		{
+			policy:        "uuid",
+			sampleMatch:   "id 123e4567-e89b-12d3-a456-426614174000",
+			sampleNoMatch: "uuid string",
+		},
+		{
+			policy:        "date of birth",
+			sampleMatch:   "born on 15/08/1990",
+			sampleNoMatch: "date of birth field",
+		},
 	}
 
 	for _, tc := range cases {

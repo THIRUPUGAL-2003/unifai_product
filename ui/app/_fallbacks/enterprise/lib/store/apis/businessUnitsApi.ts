@@ -6,21 +6,32 @@ export interface BusinessUnitTeam {
 	name: string;
 }
 
+export interface BusinessUnitWrite {
+	name: string;
+	budget?: { max_limit: number; reset_duration: string };
+	rate_limit?: {
+		token_max_limit?: number;
+		token_reset_duration?: string;
+		request_max_limit?: number;
+		request_reset_duration?: string;
+	};
+}
+
 export const businessUnitsApi = baseApi.injectEndpoints({
 	endpoints: (builder) => ({
 		getBusinessUnits: builder.query<{ business_units: BusinessUnit[]; total: number }, void>({
 			query: () => ({ url: "/governance/business-units", params: { limit: 100 } }),
 			providesTags: ["BusinessUnits"],
 		}),
-		createBusinessUnit: builder.mutation<{ business_unit: BusinessUnit }, { name: string }>({
+		createBusinessUnit: builder.mutation<{ business_unit: BusinessUnit }, BusinessUnitWrite>({
 			query: (body) => ({ url: "/governance/business-units", method: "POST", body }),
 			invalidatesTags: ["BusinessUnits"],
 		}),
-		updateBusinessUnit: builder.mutation<{ business_unit: BusinessUnit }, { id: string; name: string }>({
-			query: ({ id, name }) => ({
+		updateBusinessUnit: builder.mutation<{ business_unit: BusinessUnit }, BusinessUnitWrite & { id: string }>({
+			query: ({ id, name, budget, rate_limit }) => ({
 				url: `/governance/business-units/${id}`,
 				method: "PUT",
-				body: { name },
+				body: { name, budget, rate_limit },
 			}),
 			invalidatesTags: ["BusinessUnits"],
 		}),

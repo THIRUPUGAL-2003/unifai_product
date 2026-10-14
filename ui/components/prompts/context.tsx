@@ -194,13 +194,11 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const { data: authStatus, error: authPollError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
 	const isUserRole = isPromptMemberRole(authStatus?.role);
 
-	// Members prefer an assigned Virtual Key when present; otherwise Auto (provider keys).
+	// Prefer an assigned Virtual Key when present; otherwise Auto (provider keys).
 	const { data: virtualKeysData, error: vkPollError } = useGetVirtualKeysQuery(undefined, {
-		skip: !isUserRole,
 		pollingInterval: vkPollMs,
 	});
 	const { data: billingBlocks, error: billingPollError } = useGetVirtualKeyBillingBlocksQuery(undefined, {
-		skip: !isUserRole,
 		pollingInterval: billingPollMs,
 	});
 
@@ -214,7 +212,6 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		setBillingPollMs(billingPollError ? 0 : PROMPTS_POLL_MS);
 	}, [billingPollError]);
 	const assignedMemberVkValue = useMemo(() => {
-		if (!isUserRole) return "";
 		const vks = virtualKeysData?.virtual_keys ?? [];
 		const now = Date.now();
 		const validKeys = vks.filter((vk) => {
@@ -240,7 +237,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			return !vk.budgets.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit);
 		});
 		return withBudget?.value ?? sortedKeys[0]?.value ?? "";
-	}, [isUserRole, virtualKeysData, billingBlocks]);
+	}, [virtualKeysData, billingBlocks]);
 
 	// UI state — persisted in URL query params
 	const [{ promptId: selectedPromptId, sessionId: selectedSessionId, versionId: selectedVersionId }, setUrlState] = useQueryStates(
@@ -338,11 +335,12 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const [customHeaders, setCustomHeaders] = useState<Record<string, string>>({});
 
 	useEffect(() => {
-		if (!isUserRole || !assignedMemberVkValue) return;
+		if (!assignedMemberVkValue) return;
 		if (virtualKeyId === "__auto__" || !String(virtualKeyId).startsWith("sk-uf-")) {
 			setVirtualKeyId(assignedMemberVkValue);
+			setAllowedVirtualKeys((prev) => (prev && prev.length > 0 ? prev : [assignedMemberVkValue]));
 		}
-	}, [isUserRole, assignedMemberVkValue, virtualKeyId]);
+	}, [assignedMemberVkValue, virtualKeyId, setAllowedVirtualKeys]);
 
 	const { data: skillData } = useGetSkillQuery(skillId, { skip: !skillId });
 	const skillSystemPrompt = skillData?.skill?.skill_md_body?.trim() || "";

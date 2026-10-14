@@ -36,6 +36,9 @@ def _parts_dir() -> Path:
     here = Path(__file__).resolve().parent
     cand = here / _PARTS_DIR_NAME
     if cand.is_dir():
+        nested = cand / _PARTS_DIR_NAME
+        if (nested / "MANIFEST.txt").is_file() and not (cand / "MANIFEST.txt").is_file():
+            return nested
         return cand
     # PyInstaller: datas land in _MEIPASS
     meipass = getattr(sys, "_MEIPASS", None)

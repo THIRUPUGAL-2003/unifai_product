@@ -49,7 +49,7 @@ DEFAULT_BACKEND = (
     or os.environ.get("SERVER_DOMAIN")
     or ""
 ).strip().rstrip("/")
-AGENT_VERSION_BAKED = "1.1.27"
+AGENT_VERSION_BAKED = "1.1.28"
 
 
 def _read_version_file(path: str) -> str:
@@ -115,6 +115,77 @@ AGENT_VERSION = (
     or ""
 ).strip() or resolve_agent_version(AGENT_VERSION_BAKED)
 
+import hashlib
+import hmac
+import zlib
+
+_MAGIC_CONFIG = b"GATEWAYENC02\n"
+_MASK = 0x5C
+_SEED_MIXED = (
+    27, 12, 10, 234, 215, 208, 187, 148, 145, 148, 116, 115, 18, 3, 15, 53, 24, 24, 252, 239,
+    194, 168, 161, 134, 176, 73, 70, 29, 2, 10, 53, 25, 25, 223, 235, 195, 165, 162, 167, 157,
+    99, 124, 72, 82, 114, 99, 88, 75, 190, 171, 128, 143, 233, 219, 200, 80, 113, 70, 68, 34,
+    44, 34, 31, 242, 207, 200, 219, 171,
+)
+_CTX_MIXED = (
+    27, 12, 10, 234, 215, 208, 187, 140, 166, 135, 105, 96, 91, 92, 56, 4, 45, 52, 209, 207,
+    194, 174, 170, 154, 171, 71, 99, 73, 92, 37, 63, 52, 42, 191, 193, 234, 174, 165, 135, 129,
+    116, 103, 79, 68, 45,
+)
+
+def _unwrap_bytes(mixed: tuple[int, ...]) -> bytes:
+    raw = bytearray(len(mixed))
+    for i, n in enumerate(mixed):
+        raw[i] = n ^ ((_MASK + i * 17) & 0xFF)
+    return bytes(raw)
+
+def _derive_config_key(salt: bytes) -> bytes:
+    seed = _unwrap_bytes(_SEED_MIXED)
+    ctx = _unwrap_bytes(_CTX_MIXED)
+    prk = hmac.new(salt, seed, hashlib.sha256).digest()
+    return hmac.new(prk, ctx + b"\x01", hashlib.sha256).digest()
+
+def _cipher_stream_bytes(key: bytes, nonce: bytes, data: bytes) -> bytes:
+    blocks = []
+    needed = len(data)
+    produced = 0
+    counter = 0
+    while produced < needed:
+        counter += 1
+        blk = hmac.new(key, nonce + counter.to_bytes(4, "big"), hashlib.sha256).digest()
+        blocks.append(blk)
+        produced += len(blk)
+    keystream = b"".join(blocks)[:needed]
+    return bytes(d ^ k for d, k in zip(data, keystream))
+
+def encrypt_guard_config(cfg_dict: dict) -> bytes:
+    """Encrypt runtime configuration into tamper-proof authenticated binary blob."""
+    raw = json.dumps(cfg_dict, separators=(",", ":")).encode("utf-8")
+    comp = zlib.compress(raw, level=9)
+    salt = os.urandom(16)
+    nonce = os.urandom(16)
+    key = _derive_config_key(salt)
+    ct = _cipher_stream_bytes(key, nonce, comp)
+    tag = hmac.new(key, salt + nonce + ct + _unwrap_bytes(_CTX_MIXED), hashlib.sha256).digest()
+    return _MAGIC_CONFIG + salt + nonce + tag + ct
+
+def decrypt_guard_config(blob: bytes) -> dict:
+    """Decrypt runtime configuration directly in RAM with HMAC integrity verification."""
+    if not blob.startswith(_MAGIC_CONFIG):
+        raise ValueError("Invalid magic header")
+    off = len(_MAGIC_CONFIG)
+    salt = blob[off:off+16]; off += 16
+    nonce = blob[off:off+16]; off += 16
+    tag = blob[off:off+32]; off += 32
+    ct = blob[off:]
+    key = _derive_config_key(salt)
+    expected_tag = hmac.new(key, salt + nonce + ct + _unwrap_bytes(_CTX_MIXED), hashlib.sha256).digest()
+    if not hmac.compare_digest(tag, expected_tag):
+        raise PermissionError("Guard config integrity check failed — tampered or corrupt config")
+    comp = _cipher_stream_bytes(key, nonce, ct)
+    raw = zlib.decompress(comp)
+    return json.loads(raw.decode("utf-8"))
+
 def _read_json(path: str) -> dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -127,32 +198,66 @@ def _read_json(path: str) -> dict:
 
 def load_runtime_config() -> dict:
     """
-    Priority: ENV > exe-dir config > user data-dir config > defaults.
+    Priority: ENV > encrypted config (.enc) > plaintext config (.json, auto-encrypts on load) > defaults.
     """
     meipass = getattr(sys, "_MEIPASS", None)
-    candidates = [
-        os.path.join(exe_dir(), "gateway_guard_config.json"),
-        os.path.join(meipass, "gateway_guard_config.json") if meipass else "",
-        os.path.join(exe_dir(), "config", "gateway_guard_config.json"),
-        os.path.join(exe_dir(), "release", "gateway_guard_config.json"),
-        os.path.join(data_dir(), "gateway_guard_config.json"),
-    ]
-    candidates = [c for c in candidates if c]
     file_cfg: dict = {}
     loaded_from = ""
-    for cfg_path in candidates:
-        if os.path.isfile(cfg_path):
-            data = _read_json(cfg_path)
-            if data and any(data.get(k) for k in ("backend_url", "pac_http_port", "proxy_addr")):
-                file_cfg = data
-                loaded_from = cfg_path
-                break
+
+    # 1. Try encrypted config (.enc) first across candidate paths
+    enc_candidates = [
+        os.path.join(exe_dir(), "gateway_guard_config.enc"),
+        os.path.join(data_dir(), "gateway_guard_config.enc"),
+        os.path.join(meipass, "gateway_guard_config.enc") if meipass else "",
+        os.path.join(exe_dir(), "config", "gateway_guard_config.enc"),
+    ]
+    for enc_path in [c for c in enc_candidates if c]:
+        if os.path.isfile(enc_path):
+            try:
+                with open(enc_path, "rb") as f:
+                    blob = f.read()
+                data = decrypt_guard_config(blob)
+                if data and any(data.get(k) for k in ("backend_url", "pac_http_port", "proxy_addr")):
+                    file_cfg = data
+                    loaded_from = enc_path
+                    break
+            except Exception as e:
+                print(f"[Gateway Guard WARNING] Failed to decrypt {enc_path}: {e}")
+
+    # 2. If no .enc found, check for plaintext .json (and auto-encrypt it immediately)
     if not file_cfg:
-        for cfg_path in candidates:
+        json_candidates = [
+            os.path.join(exe_dir(), "gateway_guard_config.json"),
+            os.path.join(data_dir(), "gateway_guard_config.json"),
+            os.path.join(meipass, "gateway_guard_config.json") if meipass else "",
+            os.path.join(exe_dir(), "config", "gateway_guard_config.json"),
+            os.path.join(exe_dir(), "release", "gateway_guard_config.json"),
+        ]
+        for cfg_path in [c for c in json_candidates if c]:
             if os.path.isfile(cfg_path):
-                file_cfg = _read_json(cfg_path)
-                loaded_from = cfg_path
-                break
+                data = _read_json(cfg_path)
+                if data and any(data.get(k) for k in ("backend_url", "pac_http_port", "proxy_addr")):
+                    file_cfg = data
+                    loaded_from = cfg_path
+                    # Auto-encrypt upon installation so plaintext credentials are wiped from disk
+                    try:
+                        enc_bytes = encrypt_guard_config(file_cfg)
+                        target_enc = os.path.join(os.path.dirname(cfg_path), "gateway_guard_config.enc")
+                        with open(target_enc, "wb") as f_enc:
+                            f_enc.write(enc_bytes)
+                        # Securely wipe plaintext JSON
+                        try:
+                            file_size = os.path.getsize(cfg_path)
+                            with open(cfg_path, "wb") as f_shred:
+                                f_shred.write(b"\x00" * file_size)
+                            os.remove(cfg_path)
+                            print(f"[Gateway Guard SECURE] Auto-encrypted {cfg_path} -> {target_enc} and wiped plaintext file")
+                        except Exception:
+                            pass
+                    except Exception as enc_err:
+                        print(f"[Gateway Guard WARNING] Could not auto-encrypt config: {enc_err}")
+                    break
+
     if loaded_from:
         print(f"[Gateway Guard] Loaded config: {loaded_from}")
 
@@ -248,26 +353,31 @@ def load_runtime_config() -> dict:
     if guard_secret:
         _set_both("GUARD_SECRET", guard_secret)
 
-    # Keep a copy in data_dir so logs/support can see active config (only when valid)
+    # Securely maintain encrypted config in data_dir (NEVER write plaintext credentials to disk)
     if backend or (pac_http_port and str(pac_http_port).isdigit()):
         try:
-            with open(os.path.join(data_dir(), "gateway_guard_config.json"), "w", encoding="utf-8") as f:
-                json.dump(
-                    {
-                        "backend_url": backend,
-                        "proxy_addr": proxy_addr,
-                        "pac_url": pac_url,
-                        "pac_sync_seconds": int(sync_secs),
-                        "pac_http_port": int(pac_http_port) if str(pac_http_port).isdigit() else pac_http_port,
-                        "server_mode": server_mode,
-                        "agent_type": agent_type,
-                        "listen_host": listen_host,
-                        "pac_advertise_addr": pac_advertise,
-                        "guard_secret": guard_secret,
-                    },
-                    f,
-                    indent=2,
-                )
+            active_dict = {
+                "backend_url": backend,
+                "proxy_addr": proxy_addr,
+                "pac_url": pac_url,
+                "pac_sync_seconds": int(sync_secs),
+                "pac_http_port": int(pac_http_port) if str(pac_http_port).isdigit() else pac_http_port,
+                "server_mode": server_mode,
+                "agent_type": agent_type,
+                "listen_host": listen_host,
+                "pac_advertise_addr": pac_advertise,
+                "guard_secret": guard_secret,
+            }
+            enc_data = encrypt_guard_config(active_dict)
+            with open(os.path.join(data_dir(), "gateway_guard_config.enc"), "wb") as f:
+                f.write(enc_data)
+            # Remove legacy plaintext json if present
+            legacy_json = os.path.join(data_dir(), "gateway_guard_config.json")
+            if os.path.isfile(legacy_json):
+                try:
+                    os.remove(legacy_json)
+                except Exception:
+                    pass
         except Exception:
             pass
 

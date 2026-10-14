@@ -13,6 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import NumberAndSelect from "@/components/ui/numberAndSelect";
+import { Progress } from "@/components/ui/progress";
+import { budgetDurationOptions, resetDurationLabels, resetDurationOptions } from "@/lib/constants/governance";
+import { formatCurrency } from "@/lib/utils/governance";
+import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getErrorMessage, useGetCustomersQuery, useGetTeamsQuery } from "@/lib/store";
 import {
@@ -31,15 +36,97 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
 
+function budgetPayload(limit: number | undefined, reset: string) {
+	if (limit === undefined || !Number.isFinite(limit) || limit <= 0) {
+		return { max_limit: 0, reset_duration: reset || "1M" };
+	}
+	return { max_limit: limit, reset_duration: reset || "1M" };
+}
+
+function ratePayload(tokens: number | undefined, tokenReset: string, requests: number | undefined, requestReset: string) {
+	const rate: {
+		token_max_limit?: number;
+		token_reset_duration?: string;
+		request_max_limit?: number;
+		request_reset_duration?: string;
+	} = {};
+	if (tokens !== undefined && Number.isFinite(tokens) && tokens > 0) {
+		rate.token_max_limit = Math.floor(tokens);
+		rate.token_reset_duration = tokenReset || "1h";
+	}
+	if (requests !== undefined && Number.isFinite(requests) && requests > 0) {
+		rate.request_max_limit = Math.floor(requests);
+		rate.request_reset_duration = requestReset || "1h";
+	}
+	return rate;
+}
+
+function moneyLabel(used?: number, max?: number) {
+	if (!max || max <= 0) return "—";
+	return `${formatCurrency(used ?? 0)} / ${formatCurrency(max)}`;
+}
+
+function countLabel(used?: number, max?: number) {
+	if (!max || max <= 0) return "—";
+	return `${Math.round(used ?? 0).toLocaleString()} / ${Math.round(max).toLocaleString()}`;
+}
+
+function LimitMeter({
+	used = 0,
+	max,
+	reset,
+	money,
+}: {
+	used?: number;
+	max?: number;
+	reset?: string;
+	money?: boolean;
+}) {
+	if (!max || max <= 0) return <span className="text-muted-foreground text-sm">-</span>;
+	const pct = Math.min((used / max) * 100, 100);
+	const exhausted = used >= max;
+	const limitLabel = money ? formatCurrency(max) : max.toLocaleString();
+	const usedLabel = money ? formatCurrency(used) : used.toLocaleString();
+	return (
+		<div className="min-w-[140px] space-y-1">
+			<div className="flex items-center justify-between gap-3">
+				<span className="text-sm font-medium">{limitLabel}</span>
+				<span className="text-muted-foreground text-xs">{resetDurationLabels[reset || ""] || reset}</span>
+			</div>
+			<Progress
+				value={pct}
+				className={cn(
+					"bg-muted/70 h-1.5",
+					exhausted ? "[&>div]:bg-red-500/70" : pct > 80 ? "[&>div]:bg-amber-500/70" : "[&>div]:bg-emerald-500/70",
+				)}
+			/>
+			<p className="text-muted-foreground text-xs">{usedLabel} used</p>
+		</div>
+	);
+}
+
 export function BusinessUnitsView() {
 	const [selected, setSelected] = useState<BusinessUnit | null>(null);
 	const [search, setSearch] = useState("");
 	const [name, setName] = useState("");
+	const [budgetLimit, setBudgetLimit] = useState<number | undefined>(undefined);
+	const [budgetReset, setBudgetReset] = useState("1M");
+	const [tokenLimit, setTokenLimit] = useState<number | undefined>(undefined);
+	const [tokenReset, setTokenReset] = useState("1h");
+	const [requestLimit, setRequestLimit] = useState<number | undefined>(undefined);
+	const [requestReset, setRequestReset] = useState("1h");
+	const [createTeamIds, setCreateTeamIds] = useState<string[]>([]);
 	const [open, setOpen] = useState(false);
-	const [teamId, setTeamId] = useState("");
 	const [unitToDelete, setUnitToDelete] = useState<BusinessUnit | null>(null);
 	const [unitToEdit, setUnitToEdit] = useState<BusinessUnit | null>(null);
 	const [editName, setEditName] = useState("");
+	const [editBudgetLimit, setEditBudgetLimit] = useState<number | undefined>(undefined);
+	const [editBudgetReset, setEditBudgetReset] = useState("1M");
+	const [editTokenLimit, setEditTokenLimit] = useState<number | undefined>(undefined);
+	const [editTokenReset, setEditTokenReset] = useState("1h");
+	const [editRequestLimit, setEditRequestLimit] = useState<number | undefined>(undefined);
+	const [editRequestReset, setEditRequestReset] = useState("1h");
+	const [editTeamIds, setEditTeamIds] = useState<string[]>([]);
 	const [offset, setOffset] = useState(0);
 	const [limit, setLimit] = useState(10);
 	const hasCreateAccess = useRbac(RbacResource.Teams, RbacOperation.Create);
@@ -77,19 +164,44 @@ export function BusinessUnitsView() {
 
 	const pagedUnits = useMemo(() => filteredUnits.slice(offset, offset + limit), [filteredUnits, offset, limit]);
 
-	const assignedIds = useMemo(() => new Set(assigned.map((t) => t.id)), [assigned]);
 	const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
 	const customerNameById = useMemo(() => new Map(customers.map((c) => [c.id, c.name])), [customers]);
 
 	const create = async () => {
 		try {
-			await createUnit({ name }).unwrap();
+			const created = await createUnit({
+				name: name.trim(),
+				budget: budgetPayload(budgetLimit, budgetReset),
+				rate_limit: ratePayload(tokenLimit, tokenReset, requestLimit, requestReset),
+			}).unwrap();
+			for (const team of createTeamIds) {
+				await assignTeam({ id: created.business_unit.id, team_id: team }).unwrap();
+			}
 			toast.success("Business unit created");
 			setOpen(false);
 			setName("");
+			setBudgetLimit(undefined);
+			setBudgetReset("1M");
+			setTokenLimit(undefined);
+			setTokenReset("1h");
+			setRequestLimit(undefined);
+			setRequestReset("1h");
+			setCreateTeamIds([]);
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		}
+	};
+
+	const openEdit = (unit: BusinessUnit) => {
+		setUnitToEdit(unit);
+		setEditName(unit.name);
+		setEditBudgetLimit(unit.budget?.max_limit || undefined);
+		setEditBudgetReset(unit.budget?.reset_duration || "1M");
+		setEditTokenLimit(unit.rate_limit?.token_max_limit || undefined);
+		setEditTokenReset(unit.rate_limit?.token_reset_duration || "1h");
+		setEditRequestLimit(unit.rate_limit?.request_max_limit || undefined);
+		setEditRequestReset(unit.rate_limit?.request_reset_duration || "1h");
+		setEditTeamIds(unit.team_ids || []);
 	};
 
 	const remove = async (id: string) => {
@@ -105,36 +217,39 @@ export function BusinessUnitsView() {
 	const handleUpdate = async () => {
 		if (!unitToEdit || !editName.trim()) return;
 		try {
-			await updateUnit({ id: unitToEdit.id, name: editName.trim() }).unwrap();
+			const saved = await updateUnit({
+				id: unitToEdit.id,
+				name: editName.trim(),
+				budget: budgetPayload(editBudgetLimit, editBudgetReset),
+				rate_limit: ratePayload(editTokenLimit, editTokenReset, editRequestLimit, editRequestReset),
+			}).unwrap();
 			toast.success("Business unit updated");
+			const previous = new Set(unitToEdit.team_ids || []);
+			const next = new Set(editTeamIds);
+			for (const team of editTeamIds) {
+				if (!previous.has(team)) await assignTeam({ id: unitToEdit.id, team_id: team }).unwrap();
+			}
+			for (const team of previous) {
+				if (!next.has(team)) await removeTeam({ id: unitToEdit.id, team_id: team }).unwrap();
+			}
 			if (selected?.id === unitToEdit.id) {
-				setSelected((prev) => (prev ? { ...prev, name: editName.trim() } : null));
+				setSelected({ ...saved.business_unit, team_ids: editTeamIds, team_count: editTeamIds.length });
 			}
 			setUnitToEdit(null);
 			setEditName("");
+			setEditBudgetLimit(undefined);
+			setEditBudgetReset("1M");
+			setEditTokenLimit(undefined);
+			setEditTokenReset("1h");
+			setEditRequestLimit(undefined);
+			setEditRequestReset("1h");
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		}
 	};
 
-	const assign = async () => {
-		if (!selected || !teamId) return;
-		try {
-			await assignTeam({ id: selected.id, team_id: teamId }).unwrap();
-			toast.success("Team assigned");
-			setTeamId("");
-		} catch (err) {
-			toast.error(getErrorMessage(err));
-		}
-	};
-
-	const unassign = async (id: string) => {
-		if (!selected) return;
-		try {
-			await removeTeam({ id: selected.id, team_id: id }).unwrap();
-		} catch (err) {
-			toast.error(getErrorMessage(err));
-		}
+	const toggleTeam = (ids: string[], team: string, setIds: (next: string[]) => void) => {
+		setIds(ids.includes(team) ? ids.filter((id) => id !== team) : [...ids, team]);
 	};
 
 	const teamLabel = (teamIdValue: string, fallbackName?: string) => {
@@ -155,11 +270,23 @@ export function BusinessUnitsView() {
 							Business Units
 						</h1>
 						<p className="text-muted-foreground text-sm">
-							Group teams for reporting and log filters. Budgets stay on Customer, Team, Virtual Key, User, and Model — not on the
-							business unit itself.
+							Group teams and set a spend limit for this unit. Requests from a team in the unit count against this budget.
 						</p>
 					</div>
-					<Button onClick={() => setOpen(true)} disabled={!hasCreateAccess}>
+					<Button
+						onClick={() => {
+							setName("");
+							setBudgetLimit(undefined);
+							setBudgetReset("1M");
+							setTokenLimit(undefined);
+							setTokenReset("1h");
+							setRequestLimit(undefined);
+							setRequestReset("1h");
+							setCreateTeamIds([]);
+							setOpen(true);
+						}}
+						disabled={!hasCreateAccess}
+					>
 						<Plus className="h-4 w-4" />
 						New unit
 					</Button>
@@ -197,6 +324,9 @@ export function BusinessUnitsView() {
 					<TableHeader>
 						<TableRow>
 							<TableHead>Name</TableHead>
+							<TableHead>Budget</TableHead>
+							<TableHead>Tokens</TableHead>
+							<TableHead>Requests</TableHead>
 							<TableHead>Teams</TableHead>
 							<TableHead />
 						</TableRow>
@@ -204,7 +334,7 @@ export function BusinessUnitsView() {
 					<TableBody>
 						{filteredUnits.length === 0 ? (
 							<TableRow>
-								<TableCell colSpan={3} className="text-center py-10 text-muted-foreground text-sm">
+								<TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
 									{search ? `No business units match "${search}"` : "No business units found."}
 								</TableCell>
 							</TableRow>
@@ -216,7 +346,32 @@ export function BusinessUnitsView() {
 									onClick={() => setSelected(unit)}
 								>
 									<TableCell className="font-medium">{unit.name}</TableCell>
-									<TableCell>{unit.team_count}</TableCell>
+									<TableCell>
+										<LimitMeter used={unit.budget?.current_usage} max={unit.budget?.max_limit} reset={unit.budget?.reset_duration} money />
+									</TableCell>
+									<TableCell>
+										<LimitMeter
+											used={unit.rate_limit?.token_current_usage}
+											max={unit.rate_limit?.token_max_limit}
+											reset={unit.rate_limit?.token_reset_duration}
+										/>
+									</TableCell>
+									<TableCell>
+										<LimitMeter
+											used={unit.rate_limit?.request_current_usage}
+											max={unit.rate_limit?.request_max_limit}
+											reset={unit.rate_limit?.request_reset_duration}
+										/>
+									</TableCell>
+									<TableCell>
+										{(unit.team_ids || []).length === 0 ? (
+											<span className="text-muted-foreground text-sm">-</span>
+										) : (unit.team_ids || []).length === 1 ? (
+											<span className="text-sm">{teamLabel(unit.team_ids![0])}</span>
+										) : (
+											<span className="text-sm">{(unit.team_ids || []).length}</span>
+										)}
+									</TableCell>
 									<TableCell className="text-right">
 										<div className="flex items-center justify-end gap-1">
 											<Button
@@ -225,8 +380,7 @@ export function BusinessUnitsView() {
 												disabled={!hasUpdateAccess}
 												onClick={(e) => {
 													e.stopPropagation();
-													setUnitToEdit(unit);
-													setEditName(unit.name);
+													openEdit(unit);
 												}}
 												className="h-8 w-8 text-muted-foreground hover:text-foreground"
 												title="Edit business unit"
@@ -270,55 +424,41 @@ export function BusinessUnitsView() {
 
 			<div className="rounded-xl border p-4">
 				{!selected ? (
-					<p className="text-muted-foreground text-sm">Select a business unit to assign teams.</p>
+					<p className="text-muted-foreground text-sm">Select a business unit to see its teams.</p>
 				) : (
 					<div className="space-y-4">
 						<div className="flex items-center justify-between">
-							<h2 className="text-lg font-semibold">{selected.name}</h2>
+							<div>
+								<h2 className="text-lg font-semibold">{selected.name}</h2>
+								<p className="text-muted-foreground text-xs">
+									Used {moneyLabel(selected.budget?.current_usage, selected.budget?.max_limit)} ·{" "}
+									{countLabel(selected.rate_limit?.token_current_usage, selected.rate_limit?.token_max_limit)} tokens ·{" "}
+									{countLabel(selected.rate_limit?.request_current_usage, selected.rate_limit?.request_max_limit)} requests
+								</p>
+							</div>
 							<Button
 								size="sm"
 								variant="outline"
 								disabled={!hasUpdateAccess}
-								onClick={() => {
-									setUnitToEdit(selected);
-									setEditName(selected.name);
-								}}
+								onClick={() => openEdit(selected)}
 								className="gap-1.5 h-8 text-xs"
 							>
 								<Pencil className="h-3.5 w-3.5" />
 								Edit
 							</Button>
 						</div>
-						<div className="flex gap-2">
-							<select value={teamId} onChange={(e) => setTeamId(e.target.value)} className="border-input bg-background h-9 flex-1 rounded-md border px-3 text-sm">
-								<option value="">Select team</option>
-								{teams
-									.filter((team) => !assignedIds.has(team.id))
-									.map((team) => (
-										<option key={team.id} value={team.id}>
-											{teamLabel(team.id, team.name)}
-										</option>
-									))}
-							</select>
-							<Button onClick={() => void assign()} disabled={!teamId || !hasUpdateAccess}>
-								Assign
-							</Button>
-						</div>
-						<div className="space-y-2">
+						<div className="max-h-72 space-y-2 overflow-y-auto pr-1">
 							{assignedTeamsFailed ? (
 								<QueryErrorBanner
 									testId="business-unit-teams-query-error"
 									message={getErrorMessage(assignedTeamsError) || "Failed to load assigned teams."}
 								/>
 							) : assigned.length === 0 ? (
-								<p className="text-muted-foreground text-sm">No teams assigned yet.</p>
+								<p className="text-muted-foreground text-sm">No teams assigned yet. Add teams from New unit or Edit.</p>
 							) : (
 								assigned.map((team) => (
-									<div key={team.id} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-										<span>{teamLabel(team.id, team.name)}</span>
-										<Button size="icon" variant="ghost" disabled={!hasUpdateAccess} onClick={() => void unassign(team.id)}>
-											<Trash2 className="h-4 w-4" />
-										</Button>
+									<div key={team.id} className="rounded-lg border px-3 py-2 text-sm">
+										{teamLabel(team.id, team.name)}
 									</div>
 								))
 							)}
@@ -328,14 +468,65 @@ export function BusinessUnitsView() {
 			</div>
 
 			<Dialog open={open} onOpenChange={setOpen}>
-				<DialogContent>
+				<DialogContent className="max-h-[90vh] overflow-y-auto">
 					<DialogHeader>
 						<DialogTitle>Create business unit</DialogTitle>
 					</DialogHeader>
-					<div className="space-y-1 py-2">
-						<Label>Name</Label>
-						<Input value={name} onChange={(e) => setName(e.target.value)} />
-						<p className="text-muted-foreground text-xs">After create, assign teams. Spend limits remain on Customer / Team / VK / User.</p>
+					<div className="space-y-3 py-2">
+						<div className="space-y-1">
+							<Label>Name</Label>
+							<Input value={name} onChange={(e) => setName(e.target.value)} />
+						</div>
+						<NumberAndSelect
+							id="bu-budget"
+							label="Maximum Spend (USD)"
+							value={budgetLimit}
+							selectValue={budgetReset}
+							onChangeNumber={setBudgetLimit}
+							onChangeSelect={setBudgetReset}
+							options={budgetDurationOptions}
+							placeholder="No limit"
+						/>
+						<NumberAndSelect
+							id="bu-tokens"
+							label="Maximum Tokens"
+							value={tokenLimit}
+							selectValue={tokenReset}
+							onChangeNumber={setTokenLimit}
+							onChangeSelect={setTokenReset}
+							options={resetDurationOptions}
+							placeholder="No limit"
+						/>
+						<NumberAndSelect
+							id="bu-requests"
+							label="Maximum Requests"
+							value={requestLimit}
+							selectValue={requestReset}
+							onChangeNumber={setRequestLimit}
+							onChangeSelect={setRequestReset}
+							options={resetDurationOptions}
+							placeholder="No limit"
+						/>
+						<div className="space-y-1">
+							<Label>Teams</Label>
+							<div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+								{teams.length === 0 ? (
+									<p className="text-muted-foreground text-xs">No teams yet.</p>
+								) : (
+									teams.map((team) => (
+										<label key={team.id} className="flex items-center gap-2 text-sm">
+											<input
+												type="checkbox"
+												checked={createTeamIds.includes(team.id)}
+												onChange={() => toggleTeam(createTeamIds, team.id, setCreateTeamIds)}
+											/>
+											<span>{teamLabel(team.id, team.name)}</span>
+										</label>
+									))
+								)}
+							</div>
+						</div>
+						<p className="text-muted-foreground text-xs">Leave a limit blank for no limit. Checked teams share this unit budget.</p>
 					</div>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setOpen(false)}>
@@ -349,23 +540,75 @@ export function BusinessUnitsView() {
 			</Dialog>
 
 			<Dialog open={!!unitToEdit} onOpenChange={(isOpen) => !isOpen && setUnitToEdit(null)}>
-				<DialogContent>
+				<DialogContent className="max-h-[90vh] overflow-y-auto">
 					<DialogHeader>
 						<DialogTitle>Edit business unit</DialogTitle>
 					</DialogHeader>
-					<div className="space-y-1 py-2">
-						<Label>Name</Label>
-						<Input
-							value={editName}
-							onChange={(e) => setEditName(e.target.value)}
-							placeholder="Business unit name"
-							autoFocus
-							onKeyDown={(e) => {
-								if (e.key === "Enter" && editName.trim()) {
-									void handleUpdate();
-								}
-							}}
+					<div className="space-y-3 py-2">
+						<div className="space-y-1">
+							<Label>Name</Label>
+							<Input
+								value={editName}
+								onChange={(e) => setEditName(e.target.value)}
+								placeholder="Business unit name"
+								autoFocus
+								onKeyDown={(e) => {
+									if (e.key === "Enter" && editName.trim()) {
+										void handleUpdate();
+									}
+								}}
+							/>
+						</div>
+						<NumberAndSelect
+							id="bu-edit-budget"
+							label="Maximum Spend (USD)"
+							value={editBudgetLimit}
+							selectValue={editBudgetReset}
+							onChangeNumber={setEditBudgetLimit}
+							onChangeSelect={setEditBudgetReset}
+							options={budgetDurationOptions}
+							placeholder="No limit"
 						/>
+						<NumberAndSelect
+							id="bu-edit-tokens"
+							label="Maximum Tokens"
+							value={editTokenLimit}
+							selectValue={editTokenReset}
+							onChangeNumber={setEditTokenLimit}
+							onChangeSelect={setEditTokenReset}
+							options={resetDurationOptions}
+							placeholder="No limit"
+						/>
+						<NumberAndSelect
+							id="bu-edit-requests"
+							label="Maximum Requests"
+							value={editRequestLimit}
+							selectValue={editRequestReset}
+							onChangeNumber={setEditRequestLimit}
+							onChangeSelect={setEditRequestReset}
+							options={resetDurationOptions}
+							placeholder="No limit"
+						/>
+						<div className="space-y-1">
+							<Label>Teams</Label>
+							<div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+								{teams.length === 0 ? (
+									<p className="text-muted-foreground text-xs">No teams yet.</p>
+								) : (
+									teams.map((team) => (
+										<label key={team.id} className="flex items-center gap-2 text-sm">
+											<input
+												type="checkbox"
+												checked={editTeamIds.includes(team.id)}
+												onChange={() => toggleTeam(editTeamIds, team.id, setEditTeamIds)}
+											/>
+											<span>{teamLabel(team.id, team.name)}</span>
+										</label>
+									))
+								)}
+							</div>
+						</div>
+						<p className="text-muted-foreground text-xs">Clear a limit to remove it. Checked teams stay on this unit.</p>
 					</div>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setUnitToEdit(null)}>

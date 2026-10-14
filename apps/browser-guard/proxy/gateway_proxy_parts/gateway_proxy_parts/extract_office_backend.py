@@ -1428,6 +1428,22 @@ def extract_batchexecute_prompt(content: str) -> str:
             return False
         return len(s) >= 1
 
+    def _is_code_or_doc_dump(s: str) -> bool:
+        if not s:
+            return False
+        # Code signatures / file text that must not become a user prompt
+        if s.startswith(("def ", "class ", "import ", "from ", "#!/usr/", "package ", "func ", "public class ", "<html", "<?xml", "<?php")):
+            return True
+        if "\ndef " in s or "\nclass " in s or "\nimport " in s or "\n    def " in s:
+            return True
+        try:
+            from config_caches_rules import _looks_like_document_body_dump
+            if _looks_like_document_body_dump(s):
+                return True
+        except Exception:
+            pass
+        return False
+
     def _pick_user_prompt(cands: list[str]) -> str:
         good = []
         for raw in cands:
@@ -1436,29 +1452,34 @@ def extract_batchexecute_prompt(content: str) -> str:
                 good.append(cand)
         if not good:
             return ""
+        # Prefer real user prompt text over file content or code dumps
+        non_dumps = [s for s in good if not _is_code_or_doc_dump(s)]
+        pool = non_dumps if non_dumps else good
         # Prefer real sentences over a leftover token in the same payload.
-        good.sort(key=lambda s: (1 if (" " in s or "\n" in s) else 0, len(s)), reverse=True)
-        return good[0]
+        pool.sort(key=lambda s: (1 if (" " in s or "\n" in s) else 0, len(s)), reverse=True)
+        return pool[0]
 
     def _from_stream_inner(inner, trusted: bool = False) -> str:
-        """StreamGenerate: typed prompt is ONLY the first [prompt, 0, ...] slot — not locale."""
+        """StreamGenerate: typed prompt is ONLY the user prompt slot — not code/file dumps or locale."""
         if not isinstance(inner, list) or not inner:
             return ""
 
         cands: list[str] = []
         if len(inner) > 0 and isinstance(inner[0], list):
             first = inner[0]
-            if (
-                len(first) > 0
-                and isinstance(first[0], list)
-                and len(first[0]) > 1
-                and isinstance(first[0][0], str)
-                and first[0][1] == 0
-            ):
-                cands.append(first[0][0])
-            elif len(first) > 1 and isinstance(first[0], str) and first[1] == 0:
-                cands.append(first[0])
+            for elem in first:
+                if isinstance(elem, list) and len(elem) > 1 and isinstance(elem[0], str) and elem[1] == 0:
+                    cands.append(elem[0])
+                elif isinstance(elem, list) and len(elem) > 0 and isinstance(elem[0], str):
+                    cands.append(elem[0])
+                elif isinstance(elem, str):
+                    cands.append(elem)
         if trusted and cands:
+            non_dumps = [s for s in cands if not _is_code_or_doc_dump(s)]
+            if non_dumps:
+                slot = non_dumps[0].strip()
+                if slot and _struct_value_ok(slot) and not _is_google_wire_blob(slot):
+                    return slot
             slot = cands[0].strip()
             if slot and _struct_value_ok(slot) and not _is_google_wire_blob(slot):
                 return slot

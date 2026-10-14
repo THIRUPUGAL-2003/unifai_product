@@ -135,8 +135,16 @@ def _should_stream_without_inspection(flow: http.HTTPFlow) -> bool:
 class BrowserAIInterceptor:
 
     def requestheaders(self, flow: http.HTTPFlow) -> None:
-        """Let page, script, and settings calls pass through without buffering."""
+        """Let page, script, and settings calls pass through without buffering.
+
+        A full-site lock must not be streamed. Otherwise the page opens and
+        only the chat calls die, so the block page never appears.
+        """
         try:
+            blocked, _, _ = detect_site_block(flow.request.pretty_host or "")
+            if blocked:
+                flow.request.stream = False
+                return
             if _should_stream_without_inspection(flow):
                 flow.request.stream = True
         except Exception:
@@ -671,6 +679,48 @@ class BrowserAIInterceptor:
         # Search engine query / result interception.
         self._maybe_record_search_engine(flow, host)
 
+        # Full-site lock before the stream shortcut. A streamed GET used to
+        # skip this and leave the website half-open.
+        blocked, b_domain, b_platform = detect_site_block(host)
+        if blocked:
+            client_ip = get_client_ip(flow)
+            if not is_duplicate_event(b_domain, "site-block", ttl=BLOCK_DEDUPE_TTL):
+                print(f"[Gateway Proxy] SITE BLOCKED | {client_ip} -> {host} ({b_domain})")
+                import json as _json
+                import threading as _thr
+                _wire = _agent_wire_fields() if "_agent_wire_fields" in globals() else {}
+                _meta = _agent_metadata_fields() if "_agent_metadata_fields" in globals() else {}
+                _site_block_payload = _json.dumps({
+                    "platform": b_platform,
+                    "prompt": f"[SITE BLOCKED] Access denied to {b_domain}",
+                    "client_ip": client_ip,
+                    **_wire,
+                    "metadata": {
+                        "domain": b_domain,
+                        "url": flow.request.url,
+                        "method": flow.request.method,
+                        "is_blocked": True,
+                        "blocked_reason": "Block Entire Website",
+                        **_meta,
+                    },
+                }).encode("utf-8")
+
+                def _post_site_block(payload=_site_block_payload):
+                    try:
+                        req = urllib.request.Request(
+                            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
+                            data=payload,
+                            headers=_backend_headers({"Content-Type": "application/json"}),
+                            method="POST",
+                        )
+                        urllib.request.urlopen(req, timeout=3)
+                    except Exception:
+                        pass
+
+                _thr.Thread(target=_post_site_block, daemon=True).start()
+            make_site_blocked_response(flow, b_domain, b_platform)
+            return
+
         # requestheaders already marked page/script/settings calls to stream.
         # Do not read the body — that would hold the site again.
         if getattr(flow.request, "stream", False):
@@ -732,49 +782,6 @@ class BrowserAIInterceptor:
             return
 
         if is_noise_host(host):
-            return
-
-        # Full-site lock (admin: Block entire website) — all methods, all paths
-        blocked, b_domain, b_platform = detect_site_block(host)
-        if blocked:
-            client_ip = get_client_ip(flow)
-            if not is_duplicate_event(b_domain, "site-block", ttl=BLOCK_DEDUPE_TTL):
-                print(f"[Gateway Proxy] SITE BLOCKED | {client_ip} -> {host} ({b_domain})")
-                # Fire-and-forget: do NOT block the mitmproxy event loop with a
-                # synchronous urlopen — backend latency stalls ALL proxy flows.
-                import json as _json
-                import threading as _thr
-                _wire = _agent_wire_fields() if "_agent_wire_fields" in globals() else {}
-                _meta = _agent_metadata_fields() if "_agent_metadata_fields" in globals() else {}
-                _site_block_payload = _json.dumps({
-                    "platform": b_platform,
-                    "prompt": f"[SITE BLOCKED] Access denied to {b_domain}",
-                    "client_ip": client_ip,
-                    **_wire,
-                    "metadata": {
-                        "domain": b_domain,
-                        "url": flow.request.url,
-                        "method": flow.request.method,
-                        "is_blocked": True,
-                        "blocked_reason": "Block Entire Website",
-                        **_meta,
-                    },
-                }).encode("utf-8")
-
-                def _post_site_block(payload=_site_block_payload):
-                    try:
-                        req = urllib.request.Request(
-                            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
-                            data=payload,
-                            headers=_backend_headers({"Content-Type": "application/json"}),
-                            method="POST",
-                        )
-                        urllib.request.urlopen(req, timeout=3)
-                    except Exception:
-                        pass
-
-                _thr.Thread(target=_post_site_block, daemon=True).start()
-            make_site_blocked_response(flow, b_domain, b_platform)
             return
 
         is_target, domain, platform = detect_target(host)

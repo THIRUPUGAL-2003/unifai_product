@@ -139,6 +139,98 @@ func TestCustomerKeyBillsUsersTeamAndCustomer(t *testing.T) {
 	}
 }
 
+func TestTwoCustomersChargeOnlyTheUsersCustomerAndTeam(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team1", "b-team2", "b-c1", "b-c2", "b-vk"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-1", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-1"}})
+	gs.teams.Store("team-1", &configstoreTables.TableTeam{
+		ID: "team-1", CustomerID: strPtr("cust-1"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team1"}},
+	})
+	gs.teams.Store("team-2", &configstoreTables.TableTeam{
+		ID: "team-2", CustomerID: strPtr("cust-1"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team2"}},
+	})
+	gs.customers.Store("cust-1", &configstoreTables.TableCustomer{
+		ID: "cust-1", Budgets: []configstoreTables.TableBudget{{ID: "b-c1"}},
+	})
+	gs.customers.Store("cust-2", &configstoreTables.TableCustomer{
+		ID: "cust-2", Budgets: []configstoreTables.TableBudget{{ID: "b-c2"}},
+	})
+	vk := &configstoreTables.TableVirtualKey{
+		ID: "vk-two",
+		Customers: []configstoreTables.TableCustomer{{ID: "cust-1"}, {ID: "cust-2"}},
+		Budgets:   []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-two", vk)
+	index := map[string][]buStamp{
+		"team-1": {{ID: "bu-1", CustomerID: strPtr("cust-1")}},
+	}
+	gs.businessUnitsByTeam.Store(&index)
+	gs.budgets.Store("bu_bu-1", &configstoreTables.TableBudget{ID: "bu_bu-1", MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+
+	tracker := &UsageTracker{store: gs, logger: NewMockLogger(), billed: make(map[string]time.Time)}
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-two", UserID: "user-1", Success: true, Cost: 5,
+		UserTeamIDs: []string{"team-1"},
+	})
+
+	want := map[string]float64{
+		"b-user": 5, "b-vk": 5, "b-team1": 5, "b-c1": 5, "bu_bu-1": 5,
+		"b-team2": 0, "b-c2": 0,
+	}
+	for id, expected := range want {
+		raw, _ := gs.budgets.Load(id)
+		if got := raw.(*configstoreTables.TableBudget).CurrentUsage; got != expected {
+			t.Errorf("budget %s usage = %v, want %v", id, got, expected)
+		}
+	}
+}
+
+func TestBusinessUnitKeyChargesOnlyThatUnitNotItsCustomerOrSibling(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk", "bu_bu-a", "bu_bu-b"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-1", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-a"}})
+	gs.teams.Store("team-a", &configstoreTables.TableTeam{
+		ID: "team-a", CustomerID: strPtr("cust-bank"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	vk := &configstoreTables.TableVirtualKey{
+		ID:              "vk-bu",
+		BusinessUnitIDs: []string{"bu-a", "bu-b"},
+		Budgets:         []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-bu", vk)
+	index := map[string][]buStamp{
+		"team-a": {{ID: "bu-a", CustomerID: strPtr("cust-bank")}},
+	}
+	gs.businessUnitsByTeam.Store(&index)
+
+	tracker := &UsageTracker{store: gs, logger: NewMockLogger(), billed: make(map[string]time.Time)}
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-bu", UserID: "user-1", Success: true, Cost: 5,
+		UserTeamIDs: []string{"team-a"},
+	})
+
+	want := map[string]float64{
+		"b-user": 5, "b-vk": 5, "b-team": 5, "bu_bu-a": 5,
+		"bu_bu-b": 0, "b-cust": 0,
+	}
+	for id, expected := range want {
+		raw, _ := gs.budgets.Load(id)
+		if got := raw.(*configstoreTables.TableBudget).CurrentUsage; got != expected {
+			t.Errorf("budget %s usage = %v, want %v", id, got, expected)
+		}
+	}
+}
+
 func TestCustomerKeyUsageChargesUserTeamCustomerAndKey(t *testing.T) {
 	gs := &LocalGovernanceStore{}
 	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk"} {

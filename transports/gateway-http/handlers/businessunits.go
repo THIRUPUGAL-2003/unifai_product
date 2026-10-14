@@ -11,7 +11,7 @@ import (
 )
 
 type businessUnitPayload struct {
-	ID        string         `json:"id"`
+	ID         string         `json:"id"`
 	Name       string         `json:"name"`
 	CustomerID *string        `json:"customer_id,omitempty"`
 	TeamIDs    []string       `json:"team_ids,omitempty"`
@@ -59,6 +59,8 @@ func (h *WorkspaceHandler) listBusinessUnits(ctx *fasthttp.RequestCtx) {
 		items = append(items, map[string]any{
 			"id": row.ID, "name": row.Name, "customer_id": row.CustomerID, "team_count": len(row.ParsedTeamIDs),
 			"team_ids":   row.ParsedTeamIDs,
+			"budget":     row.ParsedBudget,
+			"rate_limit": row.ParsedRateLimit,
 			"created_at": row.CreatedAt, "updated_at": row.UpdatedAt,
 		})
 	}
@@ -93,8 +95,10 @@ func (h *WorkspaceHandler) createBusinessUnit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	var body struct {
-		Name       string  `json:"name"`
-		CustomerID *string `json:"customer_id"`
+		Name       string         `json:"name"`
+		CustomerID *string        `json:"customer_id"`
+		Budget     map[string]any `json:"budget"`
+		RateLimit  map[string]any `json:"rate_limit"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil || strings.TrimSpace(body.Name) == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "name is required")
@@ -121,6 +125,8 @@ func (h *WorkspaceHandler) createBusinessUnit(ctx *fasthttp.RequestCtx) {
 		ID: newEntityID(), Name: strings.TrimSpace(body.Name), CustomerID: custID,
 		ParsedTeamIDs: []string{}, CreatedAt: now, UpdatedAt: now,
 	}
+	applyBusinessUnitBudget(&row, body.Budget)
+	applyBusinessUnitRateLimit(&row, body.RateLimit)
 	if err := store.CreateBusinessUnit(ctx, &row); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to save business unit")
 		return
@@ -145,8 +151,10 @@ func (h *WorkspaceHandler) updateBusinessUnit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	var body struct {
-		Name       string  `json:"name"`
-		CustomerID *string `json:"customer_id"`
+		Name       string          `json:"name"`
+		CustomerID *string         `json:"customer_id"`
+		Budget     *map[string]any `json:"budget"`
+		RateLimit  *map[string]any `json:"rate_limit"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &body); err != nil || strings.TrimSpace(body.Name) == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "name is required")
@@ -170,6 +178,12 @@ func (h *WorkspaceHandler) updateBusinessUnit(ctx *fasthttp.RequestCtx) {
 		} else {
 			row.CustomerID = nil
 		}
+	}
+	if body.Budget != nil {
+		applyBusinessUnitBudget(row, *body.Budget)
+	}
+	if body.RateLimit != nil {
+		applyBusinessUnitRateLimit(row, *body.RateLimit)
 	}
 	row.UpdatedAt = time.Now().UTC()
 	if err := store.UpdateBusinessUnit(ctx, row); err != nil {
@@ -353,17 +367,107 @@ func (h *WorkspaceHandler) updateBusinessUnitGovernance(ctx *fasthttp.RequestCtx
 		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
 		return
 	}
-	// Governance never enforces business-unit limits; only clearing legacy values is allowed.
-	if len(body.Budget) > 0 || len(body.RateLimit) > 0 {
-		SendError(ctx, fasthttp.StatusBadRequest, "business units do not enforce budgets or rate limits; set them on the unit's teams, customers, virtual keys or users instead")
-		return
+	if len(body.Budget) > 0 {
+		applyBusinessUnitBudget(row, body.Budget)
+	} else {
+		row.ParsedBudget = nil
 	}
-	row.ParsedBudget = nil
-	row.ParsedRateLimit = nil
+	applyBusinessUnitRateLimit(row, body.RateLimit)
 	row.UpdatedAt = time.Now().UTC()
 	if err := store.UpdateBusinessUnit(ctx, row); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "failed to update governance")
 		return
 	}
+	h.reloadBusinessUnitIndex(ctx)
 	SendJSON(ctx, map[string]any{"business_unit": businessUnitFromRow(*row)})
+}
+
+func applyBusinessUnitBudget(row *tables.TableBusinessUnit, budget map[string]any) {
+	if row == nil {
+		return
+	}
+	maxLimit, ok := businessUnitNumber(budget["max_limit"])
+	if !ok || maxLimit <= 0 {
+		row.ParsedBudget = nil
+		return
+	}
+	reset, _ := budget["reset_duration"].(string)
+	switch reset {
+	case "1h", "1d", "1w", "1M":
+	default:
+		reset = "1M"
+	}
+	current := 0.0
+	if row.ParsedBudget != nil {
+		if used, ok := businessUnitNumber(row.ParsedBudget["current_usage"]); ok {
+			current = used
+		}
+	}
+	row.ParsedBudget = map[string]any{
+		"max_limit":      maxLimit,
+		"current_usage":  current,
+		"reset_duration": reset,
+	}
+}
+
+func applyBusinessUnitRateLimit(row *tables.TableBusinessUnit, rate map[string]any) {
+	if row == nil {
+		return
+	}
+	tokenMax, tokenOK := businessUnitNumber(rate["token_max_limit"])
+	requestMax, requestOK := businessUnitNumber(rate["request_max_limit"])
+	if (!tokenOK || tokenMax <= 0) && (!requestOK || requestMax <= 0) {
+		row.ParsedRateLimit = nil
+		return
+	}
+	out := map[string]any{}
+	if row.ParsedRateLimit != nil {
+		if used, ok := businessUnitNumber(row.ParsedRateLimit["token_current_usage"]); ok {
+			out["token_current_usage"] = used
+		}
+		if used, ok := businessUnitNumber(row.ParsedRateLimit["request_current_usage"]); ok {
+			out["request_current_usage"] = used
+		}
+	}
+	if tokenOK && tokenMax > 0 {
+		reset, _ := rate["token_reset_duration"].(string)
+		if _, err := tables.ParseDuration(reset); err != nil {
+			reset = "1h"
+		}
+		out["token_max_limit"] = tokenMax
+		out["token_reset_duration"] = reset
+		if _, ok := out["token_current_usage"]; !ok {
+			out["token_current_usage"] = 0.0
+		}
+	}
+	if requestOK && requestMax > 0 {
+		reset, _ := rate["request_reset_duration"].(string)
+		if _, err := tables.ParseDuration(reset); err != nil {
+			reset = "1h"
+		}
+		out["request_max_limit"] = requestMax
+		out["request_reset_duration"] = reset
+		if _, ok := out["request_current_usage"]; !ok {
+			out["request_current_usage"] = 0.0
+		}
+	}
+	row.ParsedRateLimit = out
+}
+
+func businessUnitNumber(value any) (float64, bool) {
+	switch n := value.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	default:
+		return 0, false
+	}
 }

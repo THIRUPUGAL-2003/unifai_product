@@ -8,7 +8,7 @@ ROOT = Path(SPECPATH).resolve()
 # guard_bootstrap is the only first-party module frozen as bytecode.
 # Agent modules and the proxy loader are sealed in gateway_guard_code.enc.
 AGENT = ROOT / "agent" / "guard_bootstrap.py"
-PROXY_PARTS = ROOT / "proxy" / "gateway_proxy_parts"
+PROXY_PARTS = ROOT / "proxy" / "gateway_proxy_parts" / "gateway_proxy_parts"
 CONFIG = ROOT / "config" / "gateway_guard_config.json"
 CODE_ENC = ROOT / "proxy" / "gateway_guard_code.enc"
 STUB_DIR = ROOT / "installer" / "frozen_stub"

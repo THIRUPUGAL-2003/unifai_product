@@ -112,7 +112,7 @@ func buildWindowsPackage(config []byte) (string, error) {
 	if exeOK {
 		assets = append(assets, buildAsset{name: "Gateway_Guard.exe", path: exePath})
 	}
-	for _, name := range []string{"INSTALL_WINDOWS.txt", "VERSION.txt", "Update_Gateway_Guard.ps1", "Uninstall_Gateway_Guard.bat"} {
+	for _, name := range []string{"VERSION.txt"} {
 		if p, ok := findFirstExisting(browserAISetupCandidates()[name]); ok {
 			assets = append(assets, buildAsset{name: name, path: p})
 		}

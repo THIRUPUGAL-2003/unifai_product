@@ -12,6 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PARTS_DIR = ROOT / "proxy" / "gateway_proxy_parts"
+if (PARTS_DIR / "gateway_proxy_parts").is_dir():
+    PARTS_DIR = PARTS_DIR / "gateway_proxy_parts"
 OUTPUT_ENC = PARTS_DIR / "gateway_proxy_parts.enc"
 
 sys.path.insert(0, str(PARTS_DIR))
@@ -38,6 +40,30 @@ def main() -> int:
     total_kb = OUTPUT_ENC.stat().st_size / 1024
     code_kb = code_enc.stat().st_size / 1024
     print(f"\nSUCCESS: {OUTPUT_ENC.name} ({total_kb:.1f} KB), {code_enc.name} ({code_kb:.1f} KB)")
+
+    # Mirror to all runtime & installed Guard destinations
+    import shutil
+    parent_enc = ROOT / "proxy" / "gateway_proxy_parts" / "gateway_proxy_parts.enc"
+    if parent_enc != OUTPUT_ENC:
+        try:
+            shutil.copy2(OUTPUT_ENC, parent_enc)
+            print(f"  -> Mirrored to {parent_enc}")
+        except Exception as e:
+            print(f"  -> Mirror parent failed: {e}")
+
+    installed_guard_dir = Path(r"C:\Users\sakth\AppData\Local\Programs\Gateway\Guard")
+    if installed_guard_dir.is_dir():
+        try:
+            shutil.copy2(code_enc, installed_guard_dir / "gateway_guard_code.enc")
+            print(f"  -> Deployed to {installed_guard_dir / 'gateway_guard_code.enc'}")
+        except Exception as e:
+            print(f"  -> Deploy to installed guard failed: {e}")
+        try:
+            shutil.copy2(OUTPUT_ENC, installed_guard_dir / "gateway_proxy_parts.enc")
+            print(f"  -> Deployed to {installed_guard_dir / 'gateway_proxy_parts.enc'}")
+        except Exception as e:
+            pass
+
     print("Encryption: AES-256-GCM + Hardware Acceleration + In-Memory Decryption")
     print("=" * 60)
     return 0

@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { getErrorMessage, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery } from "@/lib/store";
 import { useListSkillsQuery } from "@/lib/store/apis/skillsApi";
 import { useGetMCPClientsQuery } from "@/lib/store/apis/mcpApi";
+import { useGetBusinessUnitsQuery } from "@enterprise/lib/store/apis/businessUnitsApi";
+import { useGetUserVirtualKeysQuery } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -72,6 +74,16 @@ export function SettingsPanel() {
 	const isMemberOnly = Boolean(authStatus?.role && authStatus.role !== "admin");
 
 	const { data: virtualKeysData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery(undefined, { pollingInterval: vkPollMs });
+	const { data: businessUnitsData } = useGetBusinessUnitsQuery();
+	const focusUserId =
+		selectedPrompt?.owner_user_id ||
+		selectedPrompt?.user_ids?.split(",").map((id) => id.trim()).find(Boolean) ||
+		"";
+	const {
+		data: focusUserKeys,
+		isSuccess: focusUserKeysReady,
+		isError: focusUserKeysFailed,
+	} = useGetUserVirtualKeysQuery(focusUserId, { skip: !focusUserId });
 
 	useEffect(() => {
 		setAuthPollMs(authPollError ? 0 : POLL_MS);
@@ -148,46 +160,93 @@ export function SettingsPanel() {
 		});
 	}, [providers, virtualKeysData, allKeys, hasLoadedAllKeys]);
 
-	// Picking a virtual key narrows Provider to the providers configured on that key.
-	const selectedVirtualKey = useMemo(
-		() => (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === virtualKeyId),
-		[virtualKeysData, virtualKeyId],
-	);
+	// Collect all VKs that are currently selected (from allowedVirtualKeys or virtualKeyId)
+	const selectedVirtualKeys = useMemo(() => {
+		const vks = virtualKeysData?.virtual_keys ?? [];
+		const activeIds = new Set(
+			allowedVirtualKeys && allowedVirtualKeys.length > 0
+				? allowedVirtualKeys
+				: (virtualKeyId && virtualKeyId !== "__auto__" ? [virtualKeyId] : [])
+		);
+		return vks.filter((vk) => activeIds.has(vk.value) || activeIds.has(vk.id));
+	}, [virtualKeysData, allowedVirtualKeys, virtualKeyId]);
+
+	// Primary single virtual key (if only 1 key is selected, or matching virtualKeyId)
+	const selectedVirtualKey = useMemo(() => {
+		if (selectedVirtualKeys.length === 1) return selectedVirtualKeys[0];
+		return (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === virtualKeyId);
+	}, [selectedVirtualKeys, virtualKeysData, virtualKeyId]);
+
 	const activeMCPClients = useMemo(() => {
-		if (!selectedVirtualKey) return [];
-		const vkId = selectedVirtualKey.id;
+		if (selectedVirtualKeys.length === 0 && !selectedVirtualKey) return [];
+		const vkIds = new Set(selectedVirtualKeys.map((vk) => vk.id));
+		if (selectedVirtualKey) vkIds.add(selectedVirtualKey.id);
+
+		const selectedVKMcpNames = new Set<string>();
+		for (const vk of selectedVirtualKeys) {
+			for (const mc of vk.mcp_configs ?? []) {
+				if (mc.mcp_client?.name) selectedVKMcpNames.add(mc.mcp_client.name);
+			}
+		}
+		if (selectedVirtualKey?.mcp_configs) {
+			for (const mc of selectedVirtualKey.mcp_configs) {
+				if (mc.mcp_client?.name) selectedVKMcpNames.add(mc.mcp_client.name);
+			}
+		}
+
 		return (mcpClientsData?.clients ?? []).filter((client) => {
 			if (!client.config?.client_id || client.config.disabled) return false;
 			if (client.config.allow_on_all_virtual_keys) return true;
-			if (client.vk_configs?.some((vc) => vc.virtual_key_id === vkId)) return true;
-			if (selectedVirtualKey.mcp_configs?.some((mc) => mc.mcp_client?.name === client.config?.name)) return true;
+			if (client.vk_configs?.some((vc) => vkIds.has(vc.virtual_key_id))) return true;
+			if (client.config?.name && selectedVKMcpNames.has(client.config.name)) return true;
 			return false;
 		});
-	}, [mcpClientsData, selectedVirtualKey]);
+	}, [mcpClientsData, selectedVirtualKeys, selectedVirtualKey]);
 
 	const totalMCPTools = useMemo(
 		() => activeMCPClients.reduce((acc, c) => acc + (c.tools?.length ?? 0), 0),
 		[activeMCPClients],
 	);
 
-	const selectedVKProviders = useMemo(
-		() => [...new Set((selectedVirtualKey?.provider_configs ?? []).map((pc) => pc.provider))],
-		[selectedVirtualKey],
-	);
+	// All providers across all selected VKs
+	const selectedVKProviders = useMemo(() => {
+		const provs = new Set<string>();
+		for (const vk of selectedVirtualKeys) {
+			for (const pc of vk.provider_configs ?? []) {
+				if (pc.provider) provs.add(pc.provider);
+			}
+		}
+		if (provs.size === 0 && selectedVirtualKey) {
+			for (const pc of selectedVirtualKey.provider_configs ?? []) {
+				if (pc.provider) provs.add(pc.provider);
+			}
+		}
+		return [...provs];
+	}, [selectedVirtualKeys, selectedVirtualKey]);
+
 	useEffect(() => {
 		if (selectedVKProviders.length === 0) return;
-		if (provider && selectedVKProviders.some((p) => p === "*" || p.toLowerCase() === provider.toLowerCase())) return;
-		const nextProv = selectedVKProviders[0] === "*" ? configuredProviders[0]?.name || "" : selectedVKProviders[0];
-		if (nextProv) {
-			setProvider(nextProv);
-			onModelChange("");
-			onModelParamsChange((prev) => ({
-				stream: true,
-				temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
-				max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
-			}));
+		const availableProvs = selectedVKProviders.includes("*")
+			? configuredProviders.map((p) => p.name)
+			: selectedVKProviders;
+		if (availableProvs.length > 0) {
+			if (!allowedProviders || allowedProviders.length === 0) {
+				setAllowedProviders(availableProvs);
+			}
+			if (!provider || !availableProvs.some((p) => p.toLowerCase() === provider.toLowerCase())) {
+				const nextProv = availableProvs[0] || "";
+				if (nextProv) {
+					setProvider(nextProv);
+					onModelChange("");
+					onModelParamsChange((prev) => ({
+						stream: true,
+						temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
+						max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
+					}));
+				}
+			}
 		}
-	}, [selectedVKProviders, provider, configuredProviders, setProvider, onModelChange, onModelParamsChange]);
+	}, [selectedVKProviders, provider, allowedProviders, configuredProviders, setAllowedProviders, setProvider, onModelChange, onModelParamsChange]);
 
 	// Ensure current provider always has a label-resolved option (even before providers query loads)
 	const providerOptions = useMemo(() => {
@@ -240,6 +299,8 @@ export function SettingsPanel() {
 
 	useEffect(() => {
 		if (allowedVirtualKeys !== null || !virtualKeysData) return;
+		if (focusUserId && !focusUserKeysReady && !focusUserKeysFailed) return;
+		const inheritedKeyIds = new Set((focusUserKeys?.virtual_keys ?? []).map((key) => key.id));
 		const vks = (virtualKeysData.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
 
 		// Collect target user, team, customer IDs from selectedPrompt, promptFilters, and folder tree
@@ -298,10 +359,20 @@ export function SettingsPanel() {
 						const vkCustomers = new Set(
 							[...(vk.customer_ids || []), vk.customer_id, vk.customer?.id, ...(vk.customers || []).map((customer) => customer.id)].filter(Boolean),
 						);
+						const vkUnits = new Set(
+							[...(vk.business_unit_ids || []), ...(vk.business_units || []).map((unit) => unit.id)].filter(Boolean),
+						);
+						const teamInAssignedUnit = [...targetTeamIds].some((teamId) =>
+							(businessUnitsData?.business_units || []).some(
+								(unit) => vkUnits.has(unit.id) && (unit.team_ids || []).includes(teamId),
+							),
+						);
 						return (
+							inheritedKeyIds.has(vk.id) ||
 							[...targetUserIds].some((id) => vkUsers.has(id)) ||
 							[...targetTeamIds].some((id) => vkTeams.has(id as string)) ||
-							[...targetCustomerIds].some((id) => vkCustomers.has(id as string))
+							[...targetCustomerIds].some((id) => vkCustomers.has(id as string)) ||
+							teamInAssignedUnit
 						);
 					})
 					.map((vk) => vk.value)
@@ -314,11 +385,19 @@ export function SettingsPanel() {
 				setVirtualKeyId(matched[0]);
 			}
 		} else {
-			// If no VK is assigned to this user/team/customer, leave it unselected (NEVER select all 12 keys!)
-			setAllowedVirtualKeys([]);
-			setVirtualKeyId("__auto__");
+			// If no VK target matched from folder, pick the first available active key
+			const defaultVk = vks.find((vk) => !billingBlocks?.blocks?.[vk.id]) ?? vks[0];
+			if (defaultVk?.value) {
+				setAllowedVirtualKeys([defaultVk.value]);
+				if (!virtualKeyId || virtualKeyId === "__auto__") {
+					setVirtualKeyId(defaultVk.value);
+				}
+			} else {
+				setAllowedVirtualKeys([]);
+				setVirtualKeyId("__auto__");
+			}
 		}
-	}, [allowedVirtualKeys, virtualKeysData, selectedPrompt, folders, promptFilters, virtualKeyId, setAllowedVirtualKeys, setVirtualKeyId]);
+	}, [allowedVirtualKeys, virtualKeysData, businessUnitsData, focusUserId, focusUserKeys, focusUserKeysReady, focusUserKeysFailed, selectedPrompt, folders, promptFilters, virtualKeyId, setAllowedVirtualKeys, setVirtualKeyId]);
 
 	useEffect(() => {
 		if (!allowedProviders?.length || allowedProviders.includes(provider)) return;
@@ -338,8 +417,11 @@ export function SettingsPanel() {
 		if (!first?.value) return;
 		if (virtualKeyId === "__auto__" || !virtualKeyId || !providerVirtualKeys.some((vk) => vk.value === virtualKeyId)) {
 			setVirtualKeyId(first.value);
+			if (!allowedVirtualKeys || allowedVirtualKeys.length === 0) {
+				setAllowedVirtualKeys([first.value]);
+			}
 		}
-	}, [providerVirtualKeys, virtualKeyId, setVirtualKeyId, billingBlocks]);
+	}, [providerVirtualKeys, virtualKeyId, setVirtualKeyId, billingBlocks, allowedVirtualKeys, setAllowedVirtualKeys]);
 
 	// Separate keys/vks to pass to model fetch for filtering.
 	const filterKeys = useMemo(() => {
@@ -349,9 +431,10 @@ export function SettingsPanel() {
 	}, [apiKeyId, providerKeys]);
 
 	const filterVks = useMemo(() => {
+		if (selectedVirtualKeys.length > 0) return selectedVirtualKeys.map((vk) => vk.id);
 		if (selectedVirtualKey) return [selectedVirtualKey.id];
 		return undefined;
-	}, [selectedVirtualKey]);
+	}, [selectedVirtualKeys, selectedVirtualKey]);
 
 	const { data: modelsData } = useGetModelsQuery(
 		{
@@ -363,6 +446,13 @@ export function SettingsPanel() {
 		},
 		{ skip: !provider },
 	);
+	const { data: assignedVkModelsData } = useGetModelsQuery(
+		{
+			vks: filterVks,
+			limit: 5000,
+		},
+		{ skip: !filterVks || filterVks.length === 0 },
+	);
 	const modelOptions = useMemo(() => {
 		const opts = (modelsData?.models ?? []).map((item) => ({ label: item.name, value: item.name }));
 		if (model && !opts.some((option) => option.value === model)) {
@@ -371,10 +461,45 @@ export function SettingsPanel() {
 		return opts;
 	}, [modelsData, model]);
 
+	// Auto-select every model on every provider of the assigned virtual keys.
 	useEffect(() => {
-		if (model || !modelOptions || modelOptions.length === 0) return;
-		onModelChange(modelOptions[0].value);
-	}, [model, modelOptions, onModelChange]);
+		const source = assignedVkModelsData?.models ?? [];
+		if (source.length === 0) return;
+		const availableModelNames = source.map((m) => m.name);
+		const selectedProvs = new Set(selectedVKProviders.map((p) => p.toLowerCase()));
+		const explicitModels = new Set<string>();
+		let hasWildcard = false;
+
+		for (const vk of selectedVirtualKeys) {
+			for (const pc of vk.provider_configs ?? []) {
+				const pcProv = (pc.provider || "").toLowerCase();
+				if (pcProv !== "*" && selectedProvs.size > 0 && !selectedProvs.has(pcProv)) continue;
+				if (!pc.allowed_models || pc.allowed_models.length === 0 || pc.allowed_models.includes("*")) {
+					hasWildcard = true;
+				} else {
+					for (const m of pc.allowed_models) {
+						if (m && m !== "*") explicitModels.add(m);
+					}
+				}
+			}
+		}
+
+		let targetModels: string[] = [];
+		if (explicitModels.size > 0 && !hasWildcard) {
+			targetModels = availableModelNames.filter((m) => explicitModels.has(m));
+			if (targetModels.length === 0) targetModels = [...explicitModels];
+		} else {
+			targetModels = availableModelNames;
+		}
+
+		if (targetModels.length > 0 && (!allowedModels || allowedModels.length === 0)) {
+			setAllowedModels(targetModels);
+		}
+		const currentNames = (modelsData?.models ?? []).map((m) => m.name);
+		if (currentNames.length > 0 && (!model || !currentNames.includes(model))) {
+			onModelChange(currentNames[0]);
+		}
+	}, [assignedVkModelsData, modelsData, selectedVirtualKeys, selectedVKProviders, allowedModels, model, setAllowedModels, onModelChange]);
 
 	const mcpToolOptions = useMemo(() => {
 		const opts: { label: string; value: string }[] = [];
@@ -395,6 +520,13 @@ export function SettingsPanel() {
 	}, [activeMCPClients]);
 	const mcpToolValues = useMemo(() => mcpToolOptions.map((option) => option.value), [mcpToolOptions]);
 	const selectedMcpTools = mcpIncludeTools === null ? mcpToolValues : mcpIncludeTools.filter((value) => mcpToolValues.includes(value));
+
+	// Auto-select all MCP tools connected to active clients
+	useEffect(() => {
+		if (mcpToolValues.length > 0 && mcpIncludeTools === null) {
+			setMcpIncludeTools(mcpToolValues);
+		}
+	}, [mcpToolValues, mcpIncludeTools, setMcpIncludeTools]);
 
 	const handleModelParamsChange = useCallback(
 		(params: Record<string, any>) => {
@@ -420,14 +552,18 @@ export function SettingsPanel() {
 				virtualKeys={providerVirtualKeys}
 				virtualKeyValue={virtualKeyId}
 				onVirtualKeyChange={(v) => onVirtualKeyChange(v ?? "__auto__")}
-				virtualKeyValues={allowedVirtualKeys ?? []}
+				virtualKeyValues={
+					allowedVirtualKeys && allowedVirtualKeys.length > 0
+						? allowedVirtualKeys
+						: (virtualKeyId && virtualKeyId !== "__auto__" ? [virtualKeyId] : (providerVirtualKeys.length > 0 ? [providerVirtualKeys[0].value] : []))
+				}
 				onVirtualKeyValuesChange={
 					isMemberOnly
 						? undefined
 						: (next) => {
 								setAllowedVirtualKeys(next);
-								if (next.length === 1) setVirtualKeyId(next[0]);
-								else if (!next.includes(virtualKeyId)) setVirtualKeyId("__auto__");
+								if (next.length > 0) setVirtualKeyId(next[0]);
+								else setVirtualKeyId("__auto__");
 							}
 				}
 				apiKeyIdValue={apiKeyId}
@@ -653,40 +789,22 @@ export function SettingsPanel() {
 									<p className="text-muted-foreground text-xs">
 										Injects the skill markdown as a system message for this playground run.
 									</p>
-									{!isMemberOnly && (
-										<div className="flex flex-col gap-1.5">
-											<Label className="text-xs text-muted-foreground font-medium">Allowed skills</Label>
-											<ComboboxSelect
-												multiple
-												compactTrigger
-												options={skillOptions}
-												value={allowedSkills ?? (skillId ? [skillId] : [])}
-												onValueChange={(next) => {
-													setAllowedSkills(next);
-													if (!next.includes(skillId)) setSkillId(next[0] || "");
-												}}
-												placeholder="Select skills"
-												searchPlaceholder="Search skills..."
-												selectAllValue="*"
-												selectAllLabel="Select all"
-												data-testid="settings-allowed-skills-select"
-											/>
-										</div>
-									)}
 									<div className="flex flex-col gap-1.5">
-										{!isMemberOnly && <Label className="text-xs text-muted-foreground font-medium">Skill for this run</Label>}
+										<Label className="text-xs text-muted-foreground font-medium">Allowed skills</Label>
 										<ComboboxSelect
-											options={[
-												{ label: "None", value: "" },
-												...(allowedSkills && allowedSkills.length > 0
-													? skillOptions.filter((opt) => allowedSkills.includes(opt.value))
-													: skillOptions),
-											]}
-											value={skillId || null}
-											onValueChange={(v) => setSkillId(v && v !== "*" ? v : "")}
-											placeholder={skillOptions.length === 0 ? "No skills available" : "Select skill"}
+											multiple
+											compactTrigger
+											options={skillOptions}
+											value={allowedSkills ?? (skillId ? [skillId] : [])}
+											onValueChange={(next) => {
+												setAllowedSkills(next);
+												setSkillId(next[0] || "");
+											}}
+											placeholder={skillOptions.length === 0 ? "No skills available" : "Select skills"}
 											searchPlaceholder="Search skills..."
-											data-testid="settings-skill-select"
+											selectAllValue="*"
+											selectAllLabel="Select all"
+											data-testid="settings-allowed-skills-select"
 										/>
 									</div>
 								</div>
