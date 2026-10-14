@@ -17,6 +17,8 @@ import {
 	ChevronDown,
 	ChevronRight,
 	Loader2,
+	UserX,
+	Ban,
 } from "lucide-react";
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
@@ -41,6 +43,8 @@ import {
 	useApproveSessionUserMutation,
 	useCreateSessionUserMutation,
 	useDeleteSessionUserMutation,
+	useBlockSessionUserMutation,
+	useUnblockSessionUserMutation,
 	useGetPromptsQuery,
 	useGetSessionUsersQuery,
 	useGetProductUserQuotaQuery,
@@ -182,7 +186,7 @@ function UserVirtualKeysCell({ userId }: { userId: string }) {
 	);
 }
 
-export type TabFilter = "allowed" | "all" | "user" | "admin" | "sub_admin" | "pending";
+export type TabFilter = "allowed" | "all" | "user" | "admin" | "sub_admin" | "pending" | "rejected" | "blocked";
 
 export default function UsersView() {
 	const [searchQuery, setSearchQuery] = useState("");
@@ -222,6 +226,8 @@ export default function UsersView() {
 	const [deleteUser] = useDeleteSessionUserMutation();
 	const [approveUser] = useApproveSessionUserMutation();
 	const [rejectUser] = useRejectSessionUserMutation();
+	const [blockUser] = useBlockSessionUserMutation();
+	const [unblockUser] = useUnblockSessionUserMutation();
 	const [addTeamMember] = useAddTeamMemberMutation();
 	const [removeTeamMember] = useRemoveTeamMemberMutation();
 	const [setVirtualKeyUser] = useSetVirtualKeyUserMutation();
@@ -806,6 +812,42 @@ export default function UsersView() {
 		}
 	};
 
+	const handleBlock = async (user: SessionUser) => {
+		setActionBusyId(user.id);
+		try {
+			const result = await blockUser(user.id).unwrap();
+			if (result?.email_sent) {
+				toast.success(`${user.username} blocked — security notification email sent`);
+			} else if (result?.email_error) {
+				toast.warning(`${user.username} blocked, but notification email failed: ${result.email_error}`);
+			} else {
+				toast.success(`${user.username} blocked`);
+			}
+		} catch (err) {
+			toast.error(getErrorMessage(err));
+		} finally {
+			setActionBusyId(null);
+		}
+	};
+
+	const handleUnblock = async (user: SessionUser) => {
+		setActionBusyId(user.id);
+		try {
+			const result = await unblockUser(user.id).unwrap();
+			if (result?.email_sent) {
+				toast.success(`${user.username} unblocked — notification email sent`);
+			} else if (result?.email_error) {
+				toast.warning(`${user.username} unblocked, but notification email failed: ${result.email_error}`);
+			} else {
+				toast.success(`${user.username} unblocked`);
+			}
+		} catch (err) {
+			toast.error(getErrorMessage(err));
+		} finally {
+			setActionBusyId(null);
+		}
+	};
+
 	const resetForm = () => {
 		setUsername("");
 		setEmail("");
@@ -902,9 +944,10 @@ export default function UsersView() {
 		return true;
 	};
 
-	// Disabled = deactivated by the identity provider (SCIM); listed with a badge, cannot sign in.
-	const approvedUsers = users.filter((u) => ["approved", "disabled"].includes(u.status || "approved"));
-	const unapprovedUsers = users.filter((u) => ["pending", "email_unverified"].includes(u.status || "approved"));
+	const approvedUsers = users.filter((u) => (u.status || "approved") === "approved");
+	const unapprovedUsers = users.filter((u) => ["pending", "email_unverified"].includes(u.status || ""));
+	const rejectedUsers = users.filter((u) => u.status === "rejected");
+	const blockedUsers = users.filter((u) => u.status === "disabled");
 
 	const allowedDisplay = userQuota
 		? userQuota.limited
@@ -919,6 +962,8 @@ export default function UsersView() {
 		admin: approvedUsers.filter(isAdminRoleOnly).length,
 		sub_admin: approvedUsers.filter(isSubAdminRoleOnly).length,
 		pending: unapprovedUsers.length,
+		rejected: rejectedUsers.length,
+		blocked: blockedUsers.length,
 	};
 
 	const roleFilterOptions: { value: TabFilter; label: string; icon: React.ReactNode }[] = [
@@ -928,10 +973,14 @@ export default function UsersView() {
 		{ value: "admin", label: "Admin", icon: <Shield className="h-3.5 w-3.5" /> },
 		{ value: "sub_admin", label: "Sub Admin", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
 		{ value: "pending", label: "Pending Approvals", icon: <Clock className="h-3.5 w-3.5" /> },
+		{ value: "rejected", label: "Rejected Users", icon: <UserX className="h-3.5 w-3.5 text-rose-400" /> },
+		{ value: "blocked", label: "Blocked Accounts", icon: <Ban className="h-3.5 w-3.5 text-amber-400" /> },
 	];
 
-	// Pending queue matches search
+	// Filtered sets matching search
 	const pendingUsers = unapprovedUsers.filter(matchesSearch);
+	const filteredRejectedUsers = rejectedUsers.filter(matchesSearch);
+	const filteredBlockedUsers = blockedUsers.filter(matchesSearch);
 	const activeUsers = approvedUsers.filter((u) => matchesSearch(u) && matchesRole(u));
 	const [activeUsersOffset, setActiveUsersOffset] = useState(0);
 	const [activeUsersLimit, setActiveUsersLimit] = useState(10);
@@ -1033,7 +1082,10 @@ export default function UsersView() {
 						const active = roleFilter === opt.value;
 						const isPendingTab = opt.value === "pending";
 						const isAllowedTab = opt.value === "allowed";
+						const isRejectedTab = opt.value === "rejected";
+						const isBlockedTab = opt.value === "blocked";
 						const hasPendingAlert = isPendingTab && (Number(roleCounts.pending) || 0) > 0;
+						const hasRejectedAlert = isRejectedTab && (Number(roleCounts.rejected) || 0) > 0;
 						return (
 							<button
 								key={opt.value}
@@ -1054,12 +1106,18 @@ export default function UsersView() {
 											? "bg-amber-500 text-white shadow-sm"
 											: isAllowedTab
 												? "bg-emerald-600 text-white shadow-sm"
-												: "bg-teal-500 text-white shadow-sm"
+												: isRejectedTab
+													? "bg-rose-600 text-white shadow-sm"
+													: isBlockedTab
+														? "bg-amber-600 text-white shadow-sm"
+														: "bg-teal-500 text-white shadow-sm"
 										: hasPendingAlert
 											? "text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 font-semibold"
-											: isAllowedTab
-												? "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-												: "text-muted-foreground hover:bg-muted hover:text-foreground"
+											: hasRejectedAlert
+												? "text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 font-semibold"
+												: isAllowedTab
+													? "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+													: "text-muted-foreground hover:bg-muted hover:text-foreground"
 								}`}
 							>
 								{opt.icon}
@@ -1070,9 +1128,11 @@ export default function UsersView() {
 											? "bg-white/20 text-white"
 											: hasPendingAlert
 												? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-												: isAllowedTab
-													? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-													: "bg-muted text-muted-foreground"
+												: hasRejectedAlert
+													? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+													: isAllowedTab
+														? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+														: "bg-muted text-muted-foreground"
 									}`}
 								>
 									{roleCounts[opt.value]}
@@ -1218,6 +1278,233 @@ export default function UsersView() {
 						</div>
 					)}
 				</div>
+			) : roleFilter === "rejected" ? (
+				/* Rejected users view */
+				<div className="space-y-4">
+					<div className="flex flex-col gap-2 rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+						<div className="space-y-1">
+							<div className="flex items-center gap-2">
+								<UserX className="h-5 w-5 text-rose-400" />
+								<h2 className="text-base font-semibold text-rose-300">
+									Rejected Users ({filteredRejectedUsers.length}{searchQuery && filteredRejectedUsers.length !== rejectedUsers.length ? ` of ${rejectedUsers.length}` : ""})
+								</h2>
+							</div>
+							<p className="text-muted-foreground text-xs">
+								Accounts that were previously denied. Admins can Accept (restores access and sends login details) or Block / Delete them.
+							</p>
+						</div>
+					</div>
+
+					{filteredRejectedUsers.length === 0 ? (
+						<div className="border-border/40 bg-muted/10 flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
+							<UserX className="text-muted-foreground/60 mb-3 h-12 w-12" />
+							<p className="text-foreground/80 text-base font-medium">No Rejected Users</p>
+							<p className="text-muted-foreground mt-1 max-w-xs text-sm">
+								{searchQuery ? "No rejected users match your search query." : "No accounts currently in rejected state."}
+							</p>
+						</div>
+					) : (
+						<div className="border-rose-500/20 bg-rose-500/5 overflow-hidden rounded-xl border shadow-sm">
+							<Table>
+								<TableHeader className="bg-muted/30">
+									<TableRow>
+										<TableHead className="text-foreground/90 font-semibold">ID</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Username</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Email</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Role</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Rejected / Reviewed At</TableHead>
+										<TableHead className="text-foreground/90 text-right font-semibold">Actions</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{filteredRejectedUsers.map((user) => (
+										<TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
+											<TableCell className="font-mono text-[11px] text-muted-foreground max-w-[140px] truncate" title={user.id}>
+												{user.id}
+											</TableCell>
+											<TableCell className="font-medium">
+												<div className="flex items-center gap-2">
+													<div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-500/10 text-xs font-bold text-rose-400 uppercase">
+														{user.username.slice(0, 2)}
+													</div>
+													{user.username}
+												</div>
+											</TableCell>
+											<TableCell className="text-sm text-muted-foreground">
+												{user.email || "—"}
+											</TableCell>
+											<TableCell>
+												<span
+													className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+														user.role === "admin"
+															? "border-teal-500/20 bg-teal-500/10 text-teal-400"
+															: user.role === "sub_admin"
+																? "border-purple-500/20 bg-purple-500/10 text-purple-400"
+																: "border-blue-500/20 bg-blue-500/10 text-blue-400"
+													}`}
+												>
+													{user.role === "admin" ? <Shield className="h-3 w-3" /> : user.role === "sub_admin" ? <ShieldCheck className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+													{roleLabel(user.role)}
+												</span>
+											</TableCell>
+											<TableCell className="text-muted-foreground text-xs">
+												{user.reviewed_at ? new Date(user.reviewed_at).toLocaleString() : new Date(user.created_at).toLocaleString()}
+											</TableCell>
+											<TableCell className="text-right">
+												<div className="flex justify-end gap-2">
+													<Button
+														size="sm"
+														disabled={actionBusyId === user.id || !hasUpdateAccess}
+														onClick={() => handleApprove(user)}
+														className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-500 text-white"
+														title="Re-accept user and send approval email with login link"
+														data-testid="rejected-user-accept"
+													>
+														<Check className="h-3.5 w-3.5" />
+														Accept
+													</Button>
+													<Button
+														size="sm"
+														variant="outline"
+														disabled={actionBusyId === user.id || !hasUpdateAccess}
+														onClick={() => handleBlock(user)}
+														className="h-8 gap-1 border-amber-500/40 text-amber-400 hover:bg-amber-950/40"
+														title="Block user account and send security email"
+														data-testid="rejected-user-block"
+													>
+														<Ban className="h-3.5 w-3.5" />
+														Block
+													</Button>
+													<Button
+														size="sm"
+														variant="outline"
+														disabled={actionBusyId === user.id || !hasDeleteAccess}
+														onClick={() => openDeleteModal(user)}
+														className="h-8 gap-1 border-rose-500/40 text-rose-400 hover:bg-rose-950/40"
+														title="Permanently delete user record"
+														data-testid="rejected-user-delete"
+													>
+														<Trash2 className="h-3.5 w-3.5" />
+														Delete
+													</Button>
+												</div>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</div>
+					)}
+				</div>
+			) : roleFilter === "blocked" ? (
+				/* Blocked accounts view */
+				<div className="space-y-4">
+					<div className="flex flex-col gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+						<div className="space-y-1">
+							<div className="flex items-center gap-2">
+								<Ban className="h-5 w-5 text-amber-400" />
+								<h2 className="text-base font-semibold text-amber-300">
+									Blocked Accounts ({filteredBlockedUsers.length}{searchQuery && filteredBlockedUsers.length !== blockedUsers.length ? ` of ${blockedUsers.length}` : ""})
+								</h2>
+							</div>
+							<p className="text-muted-foreground text-xs">
+								Accounts that have been blocked or disabled by an administrator. Admins can unblock accounts anytime to restore access, or permanently delete them.
+							</p>
+						</div>
+					</div>
+
+					{filteredBlockedUsers.length === 0 ? (
+						<div className="border-border/40 bg-muted/10 flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
+							<Ban className="text-muted-foreground/60 mb-3 h-12 w-12" />
+							<p className="text-foreground/80 text-base font-medium">No Blocked Accounts</p>
+							<p className="text-muted-foreground mt-1 max-w-xs text-sm">
+								{searchQuery ? "No blocked accounts match your search query." : "No accounts are currently blocked."}
+							</p>
+						</div>
+					) : (
+						<div className="border-amber-500/20 bg-amber-500/5 overflow-hidden rounded-xl border shadow-sm">
+							<Table>
+								<TableHeader className="bg-muted/30">
+									<TableRow>
+										<TableHead className="text-foreground/90 font-semibold">ID</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Username</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Email</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Role</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Updated At</TableHead>
+										<TableHead className="text-foreground/90 text-right font-semibold">Actions</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{filteredBlockedUsers.map((user) => (
+										<TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
+											<TableCell className="font-mono text-[11px] text-muted-foreground max-w-[140px] truncate" title={user.id}>
+												{user.id}
+											</TableCell>
+											<TableCell className="font-medium">
+												<div className="flex items-center gap-2">
+													<div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500/10 text-xs font-bold text-amber-400 uppercase">
+														{user.username.slice(0, 2)}
+													</div>
+													{user.username}
+													<span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-medium text-rose-400">
+														Blocked
+													</span>
+												</div>
+											</TableCell>
+											<TableCell className="text-sm text-muted-foreground">
+												{user.email || "—"}
+											</TableCell>
+											<TableCell>
+												<span
+													className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+														user.role === "admin"
+															? "border-teal-500/20 bg-teal-500/10 text-teal-400"
+															: user.role === "sub_admin"
+																? "border-purple-500/20 bg-purple-500/10 text-purple-400"
+																: "border-blue-500/20 bg-blue-500/10 text-blue-400"
+													}`}
+												>
+													{user.role === "admin" ? <Shield className="h-3 w-3" /> : user.role === "sub_admin" ? <ShieldCheck className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+													{roleLabel(user.role)}
+												</span>
+											</TableCell>
+											<TableCell className="text-muted-foreground text-xs">
+												{new Date(user.updated_at || user.created_at).toLocaleString()}
+											</TableCell>
+											<TableCell className="text-right">
+												<div className="flex justify-end gap-2">
+													<Button
+														size="sm"
+														disabled={actionBusyId === user.id || !hasUpdateAccess}
+														onClick={() => handleUnblock(user)}
+														className="h-8 gap-1 bg-teal-600 hover:bg-teal-500 text-white"
+														title="Unblock account and send notification email"
+														data-testid="blocked-user-unblock"
+													>
+														<Check className="h-3.5 w-3.5" />
+														Unblock
+													</Button>
+													<Button
+														size="sm"
+														variant="outline"
+														disabled={actionBusyId === user.id || !hasDeleteAccess}
+														onClick={() => openDeleteModal(user)}
+														className="h-8 gap-1 border-rose-500/40 text-rose-400 hover:bg-rose-950/40"
+														title="Permanently delete user record"
+														data-testid="blocked-user-delete"
+													>
+														<Trash2 className="h-3.5 w-3.5" />
+														Delete
+													</Button>
+												</div>
+											</TableCell>
+										</TableRow>
+									))}
+								</TableBody>
+							</Table>
+						</div>
+					)}
+				</div>
 			) : (
 				/* Active users */
 				<div className="space-y-3">
@@ -1345,6 +1632,17 @@ export default function UsersView() {
 												<TableCell className="text-muted-foreground text-xs">{new Date(user.created_at).toLocaleDateString()}</TableCell>
 												<TableCell className="text-right">
 													<div className="flex justify-end gap-2">
+														<Button
+															size="icon"
+															variant="ghost"
+															disabled={!hasUpdateAccess || user.role === "admin"}
+															onClick={() => handleBlock(user)}
+															title="Block user account"
+															className="text-muted-foreground h-8 w-8 rounded-lg transition-colors hover:text-amber-400"
+															data-testid={`user-block-${user.id}`}
+														>
+															<Ban className="h-4 w-4" />
+														</Button>
 														<Button
 															size="icon"
 															variant="ghost"

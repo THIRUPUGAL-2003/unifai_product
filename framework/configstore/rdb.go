@@ -5954,6 +5954,21 @@ func (s *RDBConfigStore) HasLoginDevice(ctx context.Context, usernameKey, finger
 	return count > 0, nil
 }
 
+// GetLoginDevice fetches the recorded device information if seen before.
+func (s *RDBConfigStore) GetLoginDevice(ctx context.Context, usernameKey, fingerprint string) (*tables.TableLoginDevice, error) {
+	var row tables.TableLoginDevice
+	err := s.DB().WithContext(ctx).
+		Where("username_key = ? AND fingerprint = ?", usernameKey, fingerprint).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 // UpsertLoginDevice records or refreshes a known login device.
 func (s *RDBConfigStore) UpsertLoginDevice(ctx context.Context, row *tables.TableLoginDevice) error {
 	if row == nil {

@@ -29,6 +29,7 @@ import {
 	ShieldAlert,
 	Sparkles,
 	User,
+	Ban,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -76,14 +77,25 @@ export default function LoginView() {
 	const [mode, setMode] = useState<AuthMode>(() => {
 		if (typeof window !== "undefined") {
 			const params = new URLSearchParams(window.location.search);
-			if (params.get("mode") === "force_change_password") {
-				return "force_change_password";
+			const m = params.get("mode");
+			if (m === "force_change_password" || m === "forgot" || m === "forgot_username") {
+				return m;
 			}
 		}
 		return "login";
 	});
-	const [username, setUsername] = useState("");
-	const [email, setEmail] = useState("");
+	const [username, setUsername] = useState(() => {
+		if (typeof window !== "undefined") {
+			return new URLSearchParams(window.location.search).get("username") || "";
+		}
+		return "";
+	});
+	const [email, setEmail] = useState(() => {
+		if (typeof window !== "undefined") {
+			return new URLSearchParams(window.location.search).get("email") || "";
+		}
+		return "";
+	});
 	const [password, setPassword] = useState("");
 	const [otp, setOtp] = useState("");
 	const [isOtpVerified, setIsOtpVerified] = useState(false);
@@ -151,22 +163,20 @@ export default function LoginView() {
 		return () => clearInterval(timer);
 	}, [lockedAccount, setLockedAccount]);
 
-	// Active identifier being typed/used across modes
+	// Active identifier being typed/used in the current mode
 	const activeInputIdentifier = (
-		mode === "login"
+		mode === "login" || mode === "force_change_password"
 			? username
-			: email || username
+			: email
 	).trim().toLowerCase();
 
-	// Lockout applies when the entered username/email matches the blocked account across ANY mode
+	// Lockout applies strictly when the CURRENTLY entered username/email matches the locked account.
+	// If the user enters a different account ID, do not block or show the waiting error for that different account.
 	const isCurrentAccountLocked = Boolean(
 		lockedAccount &&
 		now < lockedAccount.endsAt &&
-		(
-			(activeInputIdentifier && activeInputIdentifier === lockedAccount.identifier) ||
-			(username.trim().toLowerCase() && username.trim().toLowerCase() === lockedAccount.identifier) ||
-			(email.trim().toLowerCase() && email.trim().toLowerCase() === lockedAccount.identifier)
-		)
+		activeInputIdentifier &&
+		activeInputIdentifier === lockedAccount.identifier
 	);
 	const lockoutSecondsLeft = isCurrentAccountLocked && lockedAccount
 		? Math.max(0, Math.ceil((lockedAccount.endsAt - now) / 1000))
@@ -189,7 +199,7 @@ export default function LoginView() {
 		}
 		if (
 			lockedAccount &&
-			(email.trim().toLowerCase() === lockedAccount.identifier || username.trim().toLowerCase() === lockedAccount.identifier) &&
+			email.trim().toLowerCase() === lockedAccount.identifier &&
 			now < lockedAccount.endsAt
 		) {
 			setErrorMessage(`This account is temporarily locked for ${lockoutCountdown}. Please wait before trying again.`);
@@ -274,7 +284,7 @@ export default function LoginView() {
 			}
 			if (
 				lockedAccount &&
-				(cleanInput.toLowerCase() === lockedAccount.identifier || username.trim().toLowerCase() === lockedAccount.identifier) &&
+				cleanInput.toLowerCase() === lockedAccount.identifier &&
 				now < lockedAccount.endsAt
 			) {
 				setErrorMessage(`This account is temporarily locked for ${lockoutCountdown}. Forgot password is not allowed during lockout.`);
@@ -428,7 +438,7 @@ export default function LoginView() {
 			if (retryAfterSeconds || /locked|too many failed/i.test(message)) {
 				const seconds = retryAfterSeconds || 1200;
 				const reason = message.split(/(?<=\.)\s/)[0] || "Too many failed attempts. Account locked";
-				const targetId = (mode === "login" ? username : email || username).trim().toLowerCase();
+				const targetId = (mode === "login" || mode === "force_change_password" ? username : email).trim().toLowerCase();
 				if (targetId) {
 					setLockedAccount({
 						identifier: targetId,
@@ -609,9 +619,22 @@ export default function LoginView() {
 									</p>
 								</div>
 							) : errorMessage ? (
-								<div className="mb-4 flex items-center gap-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
-									<ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
-									<span>{errorMessage}</span>
+								<div className="mb-4 flex flex-col gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
+									<div className="flex items-center gap-2 font-semibold text-rose-200">
+										{errorMessage.toLowerCase().includes("blocked") ? (
+											<Ban className="h-4 w-4 shrink-0 text-rose-400" />
+										) : (
+											<ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+										)}
+										<span>
+											{errorMessage.toLowerCase().includes("blocked")
+												? "Account Blocked"
+												: "Sign In Error"}
+										</span>
+									</div>
+									<p className="text-slate-300 leading-relaxed text-[11px] pl-6">
+										{errorMessage}
+									</p>
 								</div>
 							) : null}
 
@@ -750,8 +773,12 @@ export default function LoginView() {
 												placeholder="name@company.com or username"
 												value={email}
 												onChange={(e) => {
-													setEmail(e.target.value);
+													const val = e.target.value;
+													setEmail(val);
 													clearFieldError("email");
+													if (errorMessage && (!lockedAccount || val.trim().toLowerCase() !== lockedAccount.identifier)) {
+														setErrorMessage("");
+													}
 												}}
 												className={`h-10.5 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
 													fieldErrors.email
@@ -786,8 +813,12 @@ export default function LoginView() {
 												placeholder="name@company.com"
 												value={email}
 												onChange={(e) => {
-													setEmail(e.target.value);
+													const val = e.target.value;
+													setEmail(val);
 													clearFieldError("email");
+													if (errorMessage && (!lockedAccount || val.trim().toLowerCase() !== lockedAccount.identifier)) {
+														setErrorMessage("");
+													}
 												}}
 												className={`h-10.5 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
 													fieldErrors.email

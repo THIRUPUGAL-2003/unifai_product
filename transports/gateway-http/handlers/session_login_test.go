@@ -171,6 +171,19 @@ func (m *memoryConfigStore) HasLoginDevice(ctx context.Context, key, fp string) 
 	return m.devices[key+":"+fp], nil
 }
 
+func (m *memoryConfigStore) GetLoginDevice(ctx context.Context, key, fp string) (*tables.TableLoginDevice, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if !m.devices[key+":"+fp] {
+		return nil, nil
+	}
+	return &tables.TableLoginDevice{
+		UsernameKey: key,
+		Fingerprint: fp,
+		LastSeenAt:  time.Now(),
+	}, nil
+}
+
 func (m *memoryConfigStore) GetUserByEmail(ctx context.Context, email string) (*tables.TableUser, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

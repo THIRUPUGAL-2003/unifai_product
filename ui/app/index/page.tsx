@@ -31,7 +31,8 @@ import {
 	Globe,
 	ChevronRight,
 	SlidersHorizontal,
-	Database
+	Database,
+	Loader2
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getApiBaseUrl } from "@/lib/utils/port";
@@ -50,6 +51,8 @@ export default function LandingPage() {
 	// Demo Booking Modal State
 	const [isDemoModalOpen, setIsDemoModalOpen] = useState(false);
 	const [demoSubmitted, setDemoSubmitted] = useState(false);
+	const [isSubmittingDemo, setIsSubmittingDemo] = useState(false);
+	const [demoError, setDemoError] = useState("");
 	const [demoForm, setDemoForm] = useState({
 		fullName: "",
 		email: "",
@@ -93,15 +96,41 @@ export default function LandingPage() {
 		setTimeout(() => setCopiedCode(false), 2000);
 	};
 
-	const handleDemoSubmit = (e: React.FormEvent) => {
+	const handleDemoSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!demoForm.fullName || !demoForm.email) return;
-		setDemoSubmitted(true);
+		setIsSubmittingDemo(true);
+		setDemoError("");
+		try {
+			const res = await fetch(`${getApiBaseUrl()}/session/schedule-demo`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					full_name: demoForm.fullName.trim(),
+					email: demoForm.email.trim(),
+					company: demoForm.company.trim(),
+					team_size: demoForm.teamSize,
+					interest: demoForm.interest,
+					notes: demoForm.notes.trim(),
+				}),
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				throw new Error(data?.error?.message || data?.message || "Failed to schedule demonstration. Please try again.");
+			}
+			setDemoSubmitted(true);
+		} catch (err: any) {
+			setDemoError(err?.message || "Unable to send demo schedule. Please check your network and try again.");
+		} finally {
+			setIsSubmittingDemo(false);
+		}
 	};
 
 	const resetDemoModal = () => {
 		setDemoSubmitted(false);
 		setIsDemoModalOpen(false);
+		setIsSubmittingDemo(false);
+		setDemoError("");
 		setDemoForm({
 			fullName: "",
 			email: "",
@@ -942,6 +971,11 @@ console.log(response.choices[0].message.content);`
 						</div>
 					) : (
 						<form onSubmit={handleDemoSubmit} className="space-y-4 mt-2">
+							{demoError && (
+								<div className="rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs text-rose-300">
+									{demoError}
+								</div>
+							)}
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 								<div className="space-y-1">
 									<label className="text-xs font-semibold text-slate-300">Full Name *</label>
@@ -1032,6 +1066,7 @@ console.log(response.choices[0].message.content);`
 								<Button
 									type="button"
 									variant="ghost"
+									disabled={isSubmittingDemo}
 									onClick={() => setIsDemoModalOpen(false)}
 									className="text-xs h-8 text-slate-400 hover:text-white cursor-pointer"
 								>
@@ -1039,9 +1074,17 @@ console.log(response.choices[0].message.content);`
 								</Button>
 								<Button
 									type="submit"
-									className="bg-white hover:bg-slate-100 text-[#07090e] font-bold text-xs h-8 px-5 rounded-lg shadow-sm cursor-pointer"
+									disabled={isSubmittingDemo}
+									className="bg-white hover:bg-slate-100 text-[#07090e] font-bold text-xs h-8 px-5 rounded-lg shadow-sm cursor-pointer disabled:opacity-50"
 								>
-									Submit Request
+									{isSubmittingDemo ? (
+										<span className="flex items-center gap-1.5">
+											<Loader2 className="h-3.5 w-3.5 animate-spin" />
+											Scheduling...
+										</span>
+									) : (
+										"Submit Request"
+									)}
 								</Button>
 							</div>
 						</form>

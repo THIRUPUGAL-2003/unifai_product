@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -305,9 +306,13 @@ func welcomeAccountEmailBody(username, email, tempPassword string) string {
 	} else {
 		passInfo = "\nSign in with the temporary password provided by your administrator. You will be required to set a new permanent password upon your first sign in.\n"
 	}
+	loginLine := "Sign in on the login page."
+	if loginURL := publicLoginURL(); loginURL != "" {
+		loginLine = "Sign in: " + loginURL
+	}
 	return fmt.Sprintf(
-		"Hello %s,\n\nYour Gateway Enterprise account has been created.\n\nUsername: %s\nEmail: %s%s\nPlease keep your credentials confidential.\n",
-		username, username, email, passInfo,
+		"Hello %s,\n\nYour Gateway Enterprise account has been created.\n\n%s\n\nUsername: %s\nEmail: %s%s\nPlease keep your credentials confidential.\n",
+		username, loginLine, username, email, passInfo,
 	)
 }
 
@@ -405,9 +410,13 @@ func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx
 }
 
 func accountApprovedEmailBody(username string) string {
+	loginLine := "Sign in on the login page."
+	if loginURL := publicLoginURL(); loginURL != "" {
+		loginLine = "Sign in: " + loginURL
+	}
 	return fmt.Sprintf(
-		"Hello %s,\n\nYour Gateway registration was approved by an administrator.\n\nYou can sign in now with the username and password you registered with.\n\nIf you forgot your password, use Forgot password on the login page.\n",
-		username,
+		"Hello %s,\n\nYour Gateway registration was approved by an administrator.\n\n%s\n\nYou can sign in now with the username and password you registered with.\n\nIf you forgot your password, use Forgot password on the login page.\n",
+		username, loginLine,
 	)
 }
 
@@ -416,6 +425,40 @@ func accountRejectedEmailBody(username string) string {
 		"Hello %s,\n\nYour Gateway registration was reviewed and was not approved.\n\nYou will not be able to sign in with this account. Contact your administrator if you believe this is a mistake.\n",
 		username,
 	)
+}
+
+// trySendAccountBlockStatusEmail notifies the user when their account is blocked or unblocked.
+func trySendAccountBlockStatusEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email string, blocked bool) (bool, string) {
+	email = strings.TrimSpace(email)
+	if email == "" || store == nil {
+		return false, ""
+	}
+	smtpRow, err := store.GetSMTPConfig(ctx)
+	if err != nil || smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
+		return false, ""
+	}
+	var subject, body string
+	if blocked {
+		subject = "Security Notice: Your Account Has Been Blocked"
+		body = fmt.Sprintf(
+			"Hello %s,\n\nSecurity Notice: Your Gateway account has been blocked by an administrator.\n\nYou will not be able to sign in while your account is blocked. Please contact your administrator if you believe this is an error.\n",
+			username,
+		)
+	} else {
+		subject = "Account Notice: Your Account Has Been Unblocked"
+		loginLine := "Sign in on the login page."
+		if loginURL := publicLoginURL(); loginURL != "" {
+			loginLine = "Sign in: " + loginURL
+		}
+		body = fmt.Sprintf(
+			"Hello %s,\n\nYour Gateway account has been unblocked by an administrator.\n\n%s\n\nYou can now sign in normally with your credentials.\n",
+			username, loginLine,
+		)
+	}
+	if err := sendAuthEmail(store, ctx, email, subject, body); err != nil {
+		return false, err.Error()
+	}
+	return true, ""
 }
 
 // trySendRegistrationDecisionEmail notifies the user after admin accept/reject.
@@ -682,7 +725,7 @@ func loginDeviceFingerprint(ctx *fasthttp.RequestCtx) (fingerprint, ip, ua strin
 	return fingerprint, ip, ua
 }
 
-// trySendLoginNoticeEmail sends only on first login or a new device when NotifyOnLogin is on.
+// trySendLoginNoticeEmail sends only on first login, new device, or after extended inactivity (>7 days).
 func trySendLoginNoticeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email string) {
 	email = strings.TrimSpace(email)
 	if store == nil || email == "" || username == "" {
@@ -694,24 +737,58 @@ func trySendLoginNoticeEmail(store configstore.ConfigStore, ctx *fasthttp.Reques
 	}
 	fp, ip, ua := loginDeviceFingerprint(ctx)
 	key := loginUsernameKey(username)
-	known, err := store.HasLoginDevice(ctx, key, fp)
-	if err != nil {
-		known = false
+	dev, err := store.GetLoginDevice(ctx, key, fp)
+
+	isNewDevice := (dev == nil || err != nil)
+	isInactiveReturn := false
+	if dev != nil && !dev.LastSeenAt.IsZero() {
+		if time.Since(dev.LastSeenAt) > 7*24*time.Hour {
+			isInactiveReturn = true
+		}
 	}
+
 	_ = store.UpsertLoginDevice(ctx, &tables.TableLoginDevice{
 		UsernameKey: key,
 		Fingerprint: fp,
 		UserAgent:   truncateASCII(ua, 500),
 		IPAddress:   truncateASCII(ip, 64),
 	})
-	if known {
-		return // same device — no email
+
+	if !isNewDevice && !isInactiveReturn {
+		return
 	}
+
+	resetURL := publicLoginURL()
+	resetLine := ""
+	if resetURL != "" {
+		forgotURL := resetURL + "?mode=forgot&email=" + url.QueryEscape(email)
+		resetLine = fmt.Sprintf("If this was not you, secure your account and reset your password immediately here:\n%s\n", forgotURL)
+	} else {
+		resetLine = "If this was not you, secure your account and reset your password immediately on the sign-in page.\n"
+	}
+
+	var subject string
+	var reason string
+	if isInactiveReturn {
+		subject = "Security Alert: Sign-in after extended inactivity"
+		reason = "Your Gateway account was signed into after an extended period of inactivity."
+	} else {
+		subject = "Security Alert: Sign-in from new device or first-time login"
+		reason = "Your Gateway account signed in from a new device or for the first time."
+	}
+
 	body := fmt.Sprintf(
-		"Hello %s,\n\nYour Gateway account signed in from a new device or for the first time.\n\nIP: %s\nBrowser: %s\n\nIf this was not you, reset your password immediately.\n",
-		username, ip, truncateASCII(ua, 200),
+		"Hello %s,\n\n"+
+			"%s\n\n"+
+			"• Account: %s\n"+
+			"• IP Address: %s\n"+
+			"• Device / Browser: %s\n"+
+			"• Timestamp: %s\n\n"+
+			"%s\n"+
+			"Please keep your credentials confidential. If you authorized this sign-in, no action is needed.\n",
+		username, reason, username, ip, truncateASCII(ua, 200), time.Now().Format(time.RFC1123), resetLine,
 	)
-	_ = sendAuthEmail(store, ctx, email, "Gateway login notice", body)
+	_ = sendAuthEmail(store, ctx, email, subject, body)
 }
 
 func truncateASCII(s string, max int) string {

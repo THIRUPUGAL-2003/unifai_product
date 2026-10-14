@@ -194,6 +194,7 @@ func (h *SessionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.POST("/api/session/verify-otp", lib.ChainMiddlewares(h.verifyOTP, middlewares...))
 	r.POST("/api/session/reset-password", lib.ChainMiddlewares(h.resetPassword, middlewares...))
 	r.POST("/api/session/forgot-username", lib.ChainMiddlewares(h.forgotUsername, middlewares...))
+	r.POST("/api/session/schedule-demo", lib.ChainMiddlewares(h.scheduleDemo, middlewares...))
 	r.GET("/api/session/users", lib.ChainMiddlewares(h.getUsers, middlewares...))
 	r.GET("/api/session/users/quota", lib.ChainMiddlewares(h.getProductUserQuota, middlewares...))
 	r.POST("/api/session/users", lib.ChainMiddlewares(h.createUser, middlewares...))
@@ -201,6 +202,8 @@ func (h *SessionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.DELETE("/api/session/users/{id}", lib.ChainMiddlewares(h.deleteUser, middlewares...))
 	r.POST("/api/session/users/{id}/approve", lib.ChainMiddlewares(h.approveUser, middlewares...))
 	r.POST("/api/session/users/{id}/reject", lib.ChainMiddlewares(h.rejectUser, middlewares...))
+	r.POST("/api/session/users/{id}/block", lib.ChainMiddlewares(h.blockUser, middlewares...))
+	r.POST("/api/session/users/{id}/unblock", lib.ChainMiddlewares(h.unblockUser, middlewares...))
 	// Signed Accept/Deny links from admin notification email (token auth; no session required).
 	r.GET("/api/session/users/review", lib.ChainMiddlewares(h.reviewRegistrationByToken, middlewares...))
 	r.POST("/api/session/change-temporary-password", lib.ChainMiddlewares(h.changeTemporaryPassword, middlewares...))
@@ -513,7 +516,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 				case tables.UserStatusRejected:
 					SendError(ctx, fasthttp.StatusForbidden, "Admin has not accepted your request")
 				case tables.UserStatusDisabled:
-					SendError(ctx, fasthttp.StatusForbidden, "Your account is disabled. Contact your administrator.")
+					SendError(ctx, fasthttp.StatusForbidden, "Your account has been blocked by an administrator. Please contact your administrator to unblock.")
 				case tables.UserStatusEmailUnverified:
 					SendError(ctx, fasthttp.StatusForbidden, "Verify your email first — enter the code we emailed you on the Sign Up page")
 				default:
@@ -800,17 +803,16 @@ func (h *SessionHandler) assertEmailAvailable(ctx *fasthttp.RequestCtx, email, e
 	if exceptUserID != "" && other.ID == exceptUserID {
 		return true
 	}
-	// Abandoned unverified sign-ups and denied rows must not hold the email forever.
-	// Denied accounts are hidden from Governance; reclaim frees the address for a new sign-up.
-	if other.Status == tables.UserStatusRejected ||
-		(other.Status == tables.UserStatusEmailUnverified && time.Since(other.UpdatedAt) > passwordResetOTPTTL) {
+	// Only abandoned unverified sign-ups past OTP TTL may be reclaimed.
+	// Rejected, disabled, and pending accounts are preserved in governance and strictly prevent duplicate emails.
+	if other.Status == tables.UserStatusEmailUnverified && time.Since(other.UpdatedAt) > passwordResetOTPTTL {
 		if strings.TrimSpace(other.ExternalID) == "" {
 			if err := h.configStore.DeleteUser(ctx, other.ID); err == nil {
 				return true
 			}
 		}
 	}
-	SendError(ctx, fasthttp.StatusConflict, "Unable to complete registration with this email. Try a different email or sign in if you already have an account.")
+	SendError(ctx, fasthttp.StatusConflict, "This email is already registered with an existing account. Duplicate email addresses are not permitted.")
 	return false
 }
 
@@ -897,10 +899,6 @@ func (h *SessionHandler) getUsers(ctx *fasthttp.RequestCtx) {
 		if u == nil {
 			continue
 		}
-		// Denied rows stay in DB for login messaging, but are not listed as users.
-		if u.Status == tables.UserStatusRejected {
-			continue
-		}
 		item := map[string]any{
 			"id":                   u.ID,
 			"username":             u.Username,
@@ -915,6 +913,7 @@ func (h *SessionHandler) getUsers(ctx *fasthttp.RequestCtx) {
 			"allowed_sections":     u.AllowedSections,
 			"created_at":           u.CreatedAt,
 			"updated_at":           u.UpdatedAt,
+			"reviewed_at":          u.ReviewedAt,
 		}
 		if u.BudgetID != nil && *u.BudgetID != "" {
 			var currentUsage float64
@@ -1579,6 +1578,148 @@ func (h *SessionHandler) forgotUsername(ctx *fasthttp.RequestCtx) {
 
 	SendJSON(ctx, generic)
 }
+
+// scheduleDemo handles POST /api/session/schedule-demo - Public demo booking from landing page.
+func (h *SessionHandler) scheduleDemo(ctx *fasthttp.RequestCtx) {
+	if h.configStore == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "Service temporarily unavailable")
+		return
+	}
+	var req struct {
+		FullName  string `json:"full_name"`
+		FullName2 string `json:"fullName"`
+		Email     string `json:"email"`
+		WorkEmail string `json:"workEmail"`
+		Company   string `json:"company"`
+		TeamSize  string `json:"team_size"`
+		TeamSize2 string `json:"teamSize"`
+		Interest  string `json:"interest"`
+		Notes     string `json:"notes"`
+	}
+	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
+		return
+	}
+	if req.FullName == "" {
+		req.FullName = req.FullName2
+	}
+	if req.Email == "" {
+		req.Email = req.WorkEmail
+	}
+	if req.TeamSize == "" {
+		req.TeamSize = req.TeamSize2
+	}
+	req.FullName = strings.TrimSpace(req.FullName)
+	req.Email = strings.TrimSpace(req.Email)
+	req.Company = strings.TrimSpace(req.Company)
+	req.TeamSize = strings.TrimSpace(req.TeamSize)
+	req.Interest = strings.TrimSpace(req.Interest)
+	req.Notes = strings.TrimSpace(req.Notes)
+
+	if req.FullName == "" || req.Email == "" || !strings.Contains(req.Email, "@") {
+		SendError(ctx, fasthttp.StatusBadRequest, "Please provide your full name and a valid work email address.")
+		return
+	}
+	if req.Company == "" {
+		req.Company = "Enterprise Client"
+	}
+	if req.TeamSize == "" {
+		req.TeamSize = "50-250 engineers"
+	}
+	if req.Interest == "" || req.Interest == "both" {
+		req.Interest = "Universal AI Gateway & Browser Guard Data Loss Prevention (DLP)"
+	} else if req.Interest == "browser_guard" {
+		req.Interest = "Browser Guard Endpoint DLP & Prompt Filtering"
+	} else if req.Interest == "gateway" {
+		req.Interest = "Universal AI Gateway & Semantic Caching"
+	}
+
+	companyName := strings.TrimSpace(os.Getenv("GATEWAY_COMPANY_NAME"))
+	brandName := strings.TrimSpace(os.Getenv("GATEWAY_BRAND_NAME"))
+	serverDomain := strings.TrimRight(strings.TrimSpace(os.Getenv("SERVER_DOMAIN")), "/")
+
+	subjectBrand := brandName
+	if companyName != "" && brandName != "" {
+		subjectBrand = companyName + " " + brandName
+	} else if subjectBrand == "" {
+		subjectBrand = companyName
+	}
+
+	clientSubject := "Confirmed: Enterprise Architecture Demonstration"
+	if subjectBrand != "" {
+		clientSubject = fmt.Sprintf("Confirmed: Enterprise Architecture Demo — %s", subjectBrand)
+	}
+
+	signoffLine := "Enterprise Architecture & Solutions Team"
+	if subjectBrand != "" {
+		signoffLine += "\n" + subjectBrand
+	}
+	if serverDomain != "" {
+		signoffLine += "\n" + serverDomain
+	}
+
+	clientBody := fmt.Sprintf(
+		"Hello %s,\n\n"+
+			"Thank you for scheduling an Enterprise Architecture Demonstration.\n\n"+
+			"We have received your request and reserved your 20-minute tailored demonstration session:\n\n"+
+			"  • Full Name: %s\n"+
+			"  • Work Email: %s\n"+
+			"  • Organization: %s\n"+
+			"  • Team Size: %s\n"+
+			"  • Primary Focus: %s\n"+
+			"  • Architecture Notes: %s\n\n"+
+			"Session Agenda (20 Minutes):\n"+
+			"1. Real-time In-Flight Data Leak Prevention (DLP) Prompt & Attachment Interception\n"+
+			"2. Zero-latency Browser Guard Desktop Agent (Windows & macOS)\n"+
+			"3. Universal AI Gateway: Vectorized Semantic Caching & 75%% API Cost Reduction\n"+
+			"4. Air-gapped / Private VPC On-Premise Deployment Architecture\n"+
+			"5. Q&A and Deployment Roadmap with Senior Engineers\n\n"+
+			"A calendar invite with video conference credentials has been dispatched to this email address.\n"+
+			"If you would like to invite additional team members or have any specific compliance requirements to cover, simply reply directly to this email.\n\n"+
+			"Warm regards,\n"+
+			"%s\n",
+		req.FullName,
+		req.FullName, req.Email, req.Company, req.TeamSize, req.Interest,
+		req.Notes, signoffLine,
+	)
+
+	// Send confirmation email to client
+	if err := sendAuthEmail(h.configStore, ctx, req.Email, clientSubject, clientBody); err != nil {
+		logger.Warn("demo confirmation email failed for email=%s: %v", req.Email, err)
+	}
+
+	// Also notify admin/team
+	smtpRow, _ := h.configStore.GetSMTPConfig(ctx)
+	adminRecipient := ""
+	if smtpRow != nil && smtpRow.Username != "" {
+		adminRecipient = smtpRow.Username
+	} else {
+		adminRecipient = os.Getenv("SMTP_USERNAME")
+	}
+	if adminRecipient != "" && !strings.EqualFold(adminRecipient, req.Email) {
+		adminSubject := fmt.Sprintf("🎯 New Enterprise Demo Booking: %s (%s)", req.FullName, req.Company)
+		adminBody := fmt.Sprintf(
+			"New Enterprise Demo Booking Received from Landing Page!\n\n"+
+				"• Lead Name: %s\n"+
+				"• Work Email: %s\n"+
+				"• Organization: %s\n"+
+				"• Estimated Team Size: %s\n"+
+				"• Primary Interest: %s\n"+
+				"• Architecture Notes: %s\n"+
+				"• Request Time: %s\n"+
+				"• IP Address: %s\n",
+			req.FullName, req.Email, req.Company, req.TeamSize, req.Interest, req.Notes,
+			time.Now().Format(time.RFC1123), clientIPAddress(ctx),
+		)
+		_ = sendAuthEmail(h.configStore, ctx, adminRecipient, adminSubject, adminBody)
+	}
+
+	SendJSON(ctx, map[string]any{
+		"status":  "success",
+		"message": "Demo request received and confirmation email sent.",
+	})
+}
+
 
 // resetPassword verifies a signed reset_token (from verify-otp) and sets a new password.
 // Raw OTP alone is rejected — OTP must be verified first so the code is burned.
@@ -2261,12 +2402,12 @@ func (h *SessionHandler) reviewTargetGuard(ctx *fasthttp.RequestCtx, user *table
 			SendError(ctx, fasthttp.StatusConflict, "This sign-up has not verified email yet. Wait for verification, or Deny to remove the request.")
 			return false
 		}
-		if user.Status != tables.UserStatusPending {
-			SendError(ctx, fasthttp.StatusConflict, "Only pending sign-ups can be approved. Use Edit to change an existing account.")
+		if user.Status != tables.UserStatusPending && user.Status != tables.UserStatusRejected && user.Status != tables.UserStatusDisabled {
+			SendError(ctx, fasthttp.StatusConflict, "Only pending, rejected, or disabled accounts can be approved. Use Edit to change an existing account.")
 			return false
 		}
-	} else if user.Status != tables.UserStatusPending && user.Status != tables.UserStatusEmailUnverified {
-		SendError(ctx, fasthttp.StatusConflict, "Only pending sign-ups can be denied. Use Edit to change an existing account.")
+	} else if user.Status != tables.UserStatusPending && user.Status != tables.UserStatusEmailUnverified && user.Status != tables.UserStatusApproved {
+		SendError(ctx, fasthttp.StatusConflict, "Only pending, unverified, or approved accounts can be denied.")
 		return false
 	}
 	if user.Role == "admin" && !h.isSuperAdmin(ctx) {
@@ -2297,10 +2438,6 @@ func (h *SessionHandler) approveUser(ctx *fasthttp.RequestCtx) {
 	user, err := h.configStore.GetUserByID(ctx, id)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusNotFound, "User not found")
-		return
-	}
-	if user.Status == tables.UserStatusDisabled {
-		SendError(ctx, fasthttp.StatusConflict, "This account was disabled by the identity provider. Re-activate it there.")
 		return
 	}
 	if !h.reviewTargetGuard(ctx, user, true) {
@@ -2363,6 +2500,75 @@ func (h *SessionHandler) rejectUser(ctx *fasthttp.RequestCtx) {
 	emailSent, emailErr := trySendRegistrationDecisionEmail(h.configStore, ctx, user.Username, user.Email, "rejected")
 	SendJSON(ctx, map[string]any{
 		"message":     "Registration denied",
+		"id":          user.ID,
+		"status":      user.Status,
+		"email_sent":  emailSent,
+		"email_error": emailErr,
+	})
+}
+
+// blockUser handles POST /api/session/users/{id}/block
+func (h *SessionHandler) blockUser(ctx *fasthttp.RequestCtx) {
+	if !h.isAdmin(ctx) {
+		SendError(ctx, fasthttp.StatusForbidden, "Forbidden")
+		return
+	}
+	id, ok := h.extractParam(ctx, "id")
+	if !ok {
+		return
+	}
+	user, err := h.configStore.GetUserByID(ctx, id)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusNotFound, "User not found")
+		return
+	}
+	if user.Role == "admin" && !h.isSuperAdmin(ctx) {
+		SendError(ctx, fasthttp.StatusForbidden, "Cannot block an administrator account")
+		return
+	}
+	now := time.Now()
+	user.Status = tables.UserStatusDisabled
+	user.UpdatedAt = now
+	if err := h.configStore.UpdateUser(ctx, user); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to block user: "+err.Error())
+		return
+	}
+	_ = h.configStore.DeleteSessionsByUsername(ctx, user.Username)
+	emailSent, emailErr := trySendAccountBlockStatusEmail(h.configStore, ctx, user.Username, user.Email, true)
+	SendJSON(ctx, map[string]any{
+		"message":     "User blocked",
+		"id":          user.ID,
+		"status":      user.Status,
+		"email_sent":  emailSent,
+		"email_error": emailErr,
+	})
+}
+
+// unblockUser handles POST /api/session/users/{id}/unblock
+func (h *SessionHandler) unblockUser(ctx *fasthttp.RequestCtx) {
+	if !h.isAdmin(ctx) {
+		SendError(ctx, fasthttp.StatusForbidden, "Forbidden")
+		return
+	}
+	id, ok := h.extractParam(ctx, "id")
+	if !ok {
+		return
+	}
+	user, err := h.configStore.GetUserByID(ctx, id)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusNotFound, "User not found")
+		return
+	}
+	now := time.Now()
+	user.Status = tables.UserStatusApproved
+	user.UpdatedAt = now
+	if err := h.configStore.UpdateUser(ctx, user); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to unblock user: "+err.Error())
+		return
+	}
+	emailSent, emailErr := trySendAccountBlockStatusEmail(h.configStore, ctx, user.Username, user.Email, false)
+	SendJSON(ctx, map[string]any{
+		"message":     "User unblocked",
 		"id":          user.ID,
 		"status":      user.Status,
 		"email_sent":  emailSent,

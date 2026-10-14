@@ -14,6 +14,8 @@ export interface SessionUser {
 	allowed_prompt_repos?: string;
 	allowed_sections?: string;
 	created_at: string;
+	reviewed_at?: string | null;
+	updated_at?: string;
 	email_sent?: boolean;
 	email_error?: string;
 }
@@ -75,6 +77,14 @@ export const sessionUsersApi = baseApi.injectEndpoints({
 			query: (id) => ({ url: `/session/users/${id}/reject`, method: "POST" }),
 			invalidatesTags: ["Users", "Roles", "Permissions", "RBACScopeGrants"],
 		}),
+		blockSessionUser: builder.mutation<{ message: string; id: string; status: string; email_sent?: boolean; email_error?: string }, string>({
+			query: (id) => ({ url: `/session/users/${id}/block`, method: "POST" }),
+			invalidatesTags: ["Users", "Roles", "Permissions", "RBACScopeGrants"],
+		}),
+		unblockSessionUser: builder.mutation<{ message: string; id: string; status: string; email_sent?: boolean; email_error?: string }, string>({
+			query: (id) => ({ url: `/session/users/${id}/unblock`, method: "POST" }),
+			invalidatesTags: ["Users", "Roles", "Permissions", "RBACScopeGrants"],
+		}),
 	}),
 });
 
@@ -86,4 +96,6 @@ export const {
 	useDeleteSessionUserMutation,
 	useApproveSessionUserMutation,
 	useRejectSessionUserMutation,
+	useBlockSessionUserMutation,
+	useUnblockSessionUserMutation,
 } = sessionUsersApi;
