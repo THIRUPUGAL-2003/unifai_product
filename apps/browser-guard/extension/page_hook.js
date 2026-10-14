@@ -105,11 +105,11 @@
 
     for (var k = 0; k < dynamicRules.length; k++) {
       var r = dynamicRules[k];
-      if (r.re && r.re.test(fullContent)) {
-        if (r.action === "BLOCK" || r.action === "REDACT") {
+        if (r.re && r.re.test(fullContent)) {
+        if (r.action === "BLOCK") {
           return {
             blocked: true,
-            action: r.action,
+            action: "Blocked",
             message: r.msg,
             rule: r.name,
             matchedRule: r
@@ -232,8 +232,9 @@
   }
 
   // Stunning In-Page YP-Raksha Warning Card
-  function showBubble(message, ruleName, offendingText) {
-    var text = (message || "This request was blocked by YP-Raksha.").trim();
+  function showBubble(message, ruleName, kind) {
+    var tone = kind === "warn" || kind === "redact" ? "warn" : "block";
+    var text = (message || (tone === "warn" ? "YP-Raksha checked this request." : "This request was blocked by YP-Raksha.")).trim();
     var modalId = "yp-raksha-alert-card";
     var old = document.getElementById(modalId);
     if (old) old.remove();
@@ -244,7 +245,7 @@
     card.style.cssText =
       "position:fixed;left:50%;bottom:80px;transform:translateX(-50%);max-width:680px;width:min(680px,calc(100% - 32px));" +
       "z-index:2147483647;background:rgba(17,24,39,0.96);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);" +
-      "color:#f9fafb;border:1px solid #ef4444;border-radius:18px;padding:16px 20px;box-shadow:0 20px 45px rgba(0,0,0,0.45);" +
+      "color:#f9fafb;border:1px solid " + (tone === "warn" ? "#f59e0b" : "#ef4444") + ";border-radius:18px;padding:16px 20px;box-shadow:0 20px 45px rgba(0,0,0,0.45);" +
       "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;animation:ypFadeIn 0.25s ease-out;";
 
     // Style animation
@@ -267,7 +268,7 @@
 
     var title = document.createElement("strong");
     title.textContent = "YP-Raksha Data Loss Prevention";
-    title.style.cssText = "font-size:13px;font-weight:700;letter-spacing:0.02em;color:#f87171;";
+    title.style.cssText = "font-size:13px;font-weight:700;letter-spacing:0.02em;color:" + (tone === "warn" ? "#fbbf24" : "#f87171") + ";";
 
     titleBox.appendChild(icon);
     titleBox.appendChild(title);
@@ -284,18 +285,56 @@
     body.style.cssText = "font-size:14px;line-height:1.5;color:#e5e7eb;";
     body.textContent = text;
 
-    if (ruleName) {
-      var badge = document.createElement("div");
-      badge.style.cssText = "display:inline-block;background:#374151;color:#fbbf24;font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px;margin-top:8px;";
-      badge.textContent = "Rule Triggered: " + ruleName;
-      body.appendChild(document.createElement("br"));
-      body.appendChild(badge);
-    }
-
     card.appendChild(header);
     card.appendChild(body);
 
     (document.body || document.documentElement).appendChild(card);
+  }
+
+  function handleDecision(decision, proceed) {
+    var action = String((decision && decision.action) || "").toLowerCase();
+    var blocked = !!(decision && (decision.blocked || action === "blocked" || action === "block" || action === "bot answered" || action === "replied"));
+    if (blocked) {
+      showBubble(decision.message, decision.rule, "block");
+      return;
+    }
+    if (action === "warned" || action === "warn" || action === "alert") {
+      showBubble(decision.message, decision.rule, "warn");
+      proceed(decision);
+      return;
+    }
+    if (action === "redacted" || action === "redact") {
+      if (decision.redacted_prompt) setComposerText(decision.redacted_prompt);
+      showBubble(decision.message || "Sensitive text was redacted.", decision.rule, "redact");
+      proceed(decision);
+      return;
+    }
+    proceed(decision || { blocked: false });
+  }
+
+  function rewriteBody(body, nextText) {
+    if (typeof body !== "string" || !nextText) return null;
+    try {
+      var parsed = JSON.parse(body);
+      var changed = false;
+      if (parsed && typeof parsed.prompt === "string") { parsed.prompt = nextText; changed = true; }
+      if (parsed && typeof parsed.query === "string") { parsed.query = nextText; changed = true; }
+      if (parsed && typeof parsed.query_str === "string") { parsed.query_str = nextText; changed = true; }
+      if (parsed && Array.isArray(parsed.messages)) {
+        for (var m = parsed.messages.length - 1; m >= 0; m--) {
+          var msg = parsed.messages[m];
+          if (!msg) continue;
+          var role = msg.role || (msg.author && msg.author.role) || "";
+          if (role !== "user") continue;
+          if (typeof msg.content === "string") { msg.content = nextText; changed = true; }
+          else if (msg.content && Array.isArray(msg.content.parts)) { msg.content.parts = [nextText]; changed = true; }
+          break;
+        }
+      }
+      return changed ? JSON.stringify(parsed) : null;
+    } catch (err) {
+      return null;
+    }
   }
 
   // --- 2. ALL FILE TYPES & IMAGE INTERCEPTION ENGINE ---
@@ -408,18 +447,16 @@
     var target = e.target;
 
     ask(text, stagedFiles, stagedImages).then(function (decision) {
-      if (decision && decision.blocked) {
-        showBubble(decision.message, decision.rule);
-        return;
-      }
-      stagedFiles = [];
-      stagedImages = [];
-      passKey = true;
-      try {
-        target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true, keyCode: 13, which: 13 }));
-      } finally {
-        passKey = false;
-      }
+      handleDecision(decision, function () {
+        stagedFiles = [];
+        stagedImages = [];
+        passKey = true;
+        try {
+          target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true, keyCode: 13, which: 13 }));
+        } finally {
+          passKey = false;
+        }
+      });
     });
   }, true);
 
@@ -446,18 +483,16 @@
     e.stopImmediatePropagation();
 
     ask(text, stagedFiles, stagedImages).then(function (decision) {
-      if (decision && decision.blocked) {
-        showBubble(decision.message, decision.rule);
-        return;
-      }
-      stagedFiles = [];
-      stagedImages = [];
-      passClick = true;
-      try {
-        btn.click();
-      } finally {
-        passClick = false;
-      }
+      handleDecision(decision, function () {
+        stagedFiles = [];
+        stagedImages = [];
+        passClick = true;
+        try {
+          btn.click();
+        } finally {
+          passClick = false;
+        }
+      });
     });
   }, true);
 
@@ -508,11 +543,25 @@
 
       var args = arguments;
       return ask(promptText, netFiles, []).then(function (decision) {
-        if (decision && decision.blocked) {
-          showBubble(decision.message, decision.rule);
-          return new Response("", { status: 204, headers: { "content-type": "text/plain" } });
-        }
-        return origFetch.apply(window, args);
+        var sent = false;
+        var result = null;
+        handleDecision(decision, function (chosen) {
+          sent = true;
+          var nextArgs = args;
+          var action = String((chosen && chosen.action) || "").toLowerCase();
+          if ((action === "redacted" || action === "redact") && chosen.redacted_prompt && init) {
+            var rewritten = rewriteBody(init.body, chosen.redacted_prompt);
+            if (rewritten) {
+              var nextInit = {};
+              for (var k in init) nextInit[k] = init[k];
+              nextInit.body = rewritten;
+              nextArgs = [input, nextInit];
+            }
+          }
+          result = origFetch.apply(window, nextArgs);
+        });
+        if (!sent) return new Response("", { status: 204, headers: { "content-type": "text/plain" } });
+        return result;
       });
     };
   }

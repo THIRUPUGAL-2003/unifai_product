@@ -26,6 +26,7 @@ if (Test-Path 'installer\Uninstall_Gateway_Guard.bat') { Copy-Item -Force 'insta
 if (Test-Path 'release\INSTALL_WINDOWS.txt') { Copy-Item -Force 'release\INSTALL_WINDOWS.txt' 'installer\staging\INSTALL_WINDOWS.txt' }
 if (Test-Path 'release\VERSION.txt') { Copy-Item -Force 'release\VERSION.txt' 'installer\staging\VERSION.txt' }
 if (Test-Path 'extension') { Copy-Item -Recurse -Force 'extension' 'installer\staging\extension' }
+if (Test-Path 'scripts\attach_extension_shortcuts.ps1') { Copy-Item -Force 'scripts\attach_extension_shortcuts.ps1' 'installer\staging\attach_extension_shortcuts.ps1' }
 
 # 2. Compile Inno Setup (same search order as build_installer.bat - no machine-specific paths)
 $isccCandidates = @(

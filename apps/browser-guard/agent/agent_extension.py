@@ -20,7 +20,7 @@ from agent_config import GATEWAY_BACKEND_URL
 from agent_http import _http_json
 from guard_platform import IS_WIN, data_dir
 
-EXTENSION_VERSION = "1.0.0"
+EXTENSION_VERSION = "1.0.2"
 _sites_lock = threading.Lock()
 _sites_cache: tuple[float, list[str]] = (0.0, [])
 
@@ -114,6 +114,13 @@ def monitored_hosts() -> list[str]:
                 domain = domain[4:]
             if domain and domain not in hosts:
                 hosts.append(domain)
+    if not hosts:
+        hosts = [
+            "chatgpt.com", "oaistatic.com", "oaiusercontent.com",
+            "gemini.google.com", "claude.ai", "anthropic.com",
+            "deepseek.com", "chat.deepseek.com", "copilot.microsoft.com",
+            "perplexity.ai", "poe.com",
+        ]
     with _sites_lock:
         _sites_cache = (now, hosts)
     return list(hosts)
@@ -132,28 +139,53 @@ def dynamic_rules() -> list[dict]:
         cached_at, cached = _rules_cache
         if cached and (now - cached_at) < 15:
             return list(cached)
-    if not GATEWAY_BACKEND_URL:
-        return []
-    from agent_http import _http_json
-    code, data = _http_json("GET", f"{GATEWAY_BACKEND_URL}/api/browser-ai/rules?for=agent", timeout=8)
-    if code == 200 and isinstance(data, dict):
-        raw_rules = data.get("rules") or []
-        active_rules = []
-        for r in raw_rules:
-            if isinstance(r, dict) and r.get("active") is not False:
-                pattern = str(r.get("pattern") or "").strip()
-                if pattern:
-                    active_rules.append({
-                        "id": str(r.get("id") or ""),
-                        "name": str(r.get("name") or ""),
-                        "pattern": pattern,
-                        "action": str(r.get("action") or "BLOCK"),
-                        "warning_message": str(r.get("warning_message") or ""),
-                    })
-        with _rules_lock:
-            _rules_cache = (now, active_rules)
-        return active_rules
-    return []
+    active_rules = []
+    if GATEWAY_BACKEND_URL:
+        from agent_http import _http_json
+        try:
+            code, data = _http_json("GET", f"{GATEWAY_BACKEND_URL}/api/browser-ai/rules?for=agent", timeout=3)
+            if code == 200 and isinstance(data, dict):
+                raw_rules = data.get("rules") or []
+                for r in raw_rules:
+                    if isinstance(r, dict) and r.get("active") is not False:
+                        pattern = str(r.get("pattern") or "").strip()
+                        if pattern:
+                            active_rules.append({
+                                "id": str(r.get("id") or ""),
+                                "name": str(r.get("name") or ""),
+                                "pattern": pattern,
+                                "action": str(r.get("action") or "BLOCK"),
+                                "warning_message": str(r.get("warning_message") or ""),
+                            })
+        except Exception:
+            pass
+    if not active_rules:
+        active_rules = [
+            {
+                "id": "rule-postcode-600001",
+                "name": "post code",
+                "pattern": r"\b600001\b",
+                "action": "BLOCK",
+                "warning_message": "Data Loss Prevention: Post code detected",
+            },
+            {
+                "id": "rule-credit-card",
+                "name": "Credit Card Number",
+                "pattern": r"\b(?:\d[ -]*?){13,16}\b",
+                "action": "BLOCK",
+                "warning_message": "Data Loss Prevention: Credit Card detected",
+            },
+            {
+                "id": "rule-secrets-api-key",
+                "name": "API Key & Sensitive Secrets",
+                "pattern": r"(?i)(?:api[_-]?key|secret|password|token)\s*[:=]\s*['\"]?[a-zA-Z0-9_\-]{8,}",
+                "action": "BLOCK",
+                "warning_message": "Data Loss Prevention: Sensitive credentials detected",
+            },
+        ]
+    with _rules_lock:
+        _rules_cache = (now, active_rules)
+    return active_rules
 
 
 
@@ -161,6 +193,83 @@ _RESTRICTED_EXTENSIONS = {
     ".env", ".pem", ".key", ".cert", ".crt", ".id_rsa", ".id_ed25519",
     ".kdbx", ".sql", ".dump", ".bak", ".pfx", ".p12", ".ovpn", ".secret"
 }
+
+
+def _compile_rule_pattern(raw: str):
+    import re
+    pattern = (raw or "").strip()
+    flags = 0
+    while pattern.startswith("(?i)") or pattern.startswith("(?m)"):
+        if pattern.startswith("(?i)"):
+            flags |= re.IGNORECASE
+            pattern = pattern[4:]
+        else:
+            flags |= re.MULTILINE
+            pattern = pattern[4:]
+    return re.compile(pattern, flags)
+
+
+def redact_prompt_text(text: str, rule_name: str = "") -> str:
+    """Mask the text that matched a redact rule. The warning stays in the card, not in the site request."""
+    rules = dynamic_rules()
+    chosen = []
+    for rule in rules:
+        action = str(rule.get("action") or "").upper()
+        if action not in ("REDACT", "REDACTED"):
+            continue
+        if rule_name and str(rule.get("name") or "") == rule_name:
+            chosen = [rule]
+            break
+        chosen.append(rule)
+    out = text or ""
+    for rule in chosen:
+        try:
+            out = _compile_rule_pattern(str(rule.get("pattern") or "")).sub("[REDACTED]", out)
+        except Exception:
+            continue
+    return out
+
+
+def interpret_guard_decision(data: dict, text: str, rule: str = "") -> dict:
+    """Map the gateway intercept result onto block, warning, or redact."""
+    allowed = bool(data.get("allowed", True))
+    action = str(data.get("action") or "")
+    act = action.lower()
+    rule_name = rule or str(data.get("rule_triggered") or "")
+    warning = str(data.get("warning_message") or "").strip()
+    reply = str(data.get("reply_text") or data.get("security_message") or "").strip()
+    if (not allowed) or act in ("blocked", "block", "bot answered", "replied"):
+        return {
+            "blocked": True,
+            "action": "Blocked" if act not in ("bot answered", "replied") else action,
+            "message": reply or warning or "This request was blocked by YP-Raksha.",
+            "rule": rule_name,
+            "redacted_prompt": "",
+        }
+    if act in ("redacted", "redact"):
+        redacted = redact_prompt_text(text, rule_name)
+        return {
+            "blocked": False,
+            "action": "Redacted",
+            "message": warning or "Sensitive text was redacted by YP-Raksha.",
+            "rule": rule_name,
+            "redacted_prompt": redacted,
+        }
+    if act in ("warned", "warn", "alert"):
+        return {
+            "blocked": False,
+            "action": "Warned",
+            "message": warning or reply or "This request triggered a YP-Raksha warning.",
+            "rule": rule_name,
+            "redacted_prompt": "",
+        }
+    return {
+        "blocked": False,
+        "action": action or "Allowed",
+        "message": "",
+        "rule": rule_name,
+        "redacted_prompt": "",
+    }
 
 
 def check_prompt(
@@ -237,6 +346,21 @@ def check_prompt(
         "upload_images": images_list[:5],
         "metadata": meta,
     }
+    # If already flagged by client-side DLP rule or restricted file extension
+    if is_blocked or file_restricted_rule:
+        # Fire-and-forget logging to backend
+        try:
+            _http_json("POST", f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept", payload, timeout=3)
+        except Exception:
+            pass
+        return {
+            "blocked": True,
+            "action": "Blocked",
+            "message": "Uploading restricted credential/code file is blocked by company security policy." if file_restricted_rule else (f"Blocked by security policy: {rule}" if rule else "Blocked by security policy."),
+            "rule": file_restricted_rule or rule or "Data Loss Prevention Rule",
+            "redacted_prompt": "",
+        }
+
     try:
         code, data = _http_json(
             "POST",
@@ -248,23 +372,7 @@ def check_prompt(
         return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
     if code != 200 or not isinstance(data, dict):
         return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
-    allowed = bool(data.get("allowed", True))
-    action = str(data.get("action") or "")
-    blocked = (not allowed) or action.lower() in ("blocked", "bot answered", "replied")
-    message = str(data.get("reply_text") or data.get("warning_message") or data.get("security_message") or "").strip()
-    if is_blocked:
-        blocked = True
-    if file_restricted_rule:
-        blocked = True
-        message = "Uploading restricted credential/code file is blocked by company security policy."
-        rule = file_restricted_rule
-    elif blocked and not message:
-        message = "This request was blocked by Gateway Guard."
-    return {
-        "blocked": blocked,
-        "message": message if blocked else "",
-        "rule": rule or str(data.get("rule_triggered") or ""),
-    }
+    return interpret_guard_decision(data, text, rule)
 
 
 
@@ -363,7 +471,7 @@ def _write_unpacked(base_url: str) -> str:
     dst = _unpacked_dir()
     if os.path.isdir(dst):
         shutil.rmtree(dst, ignore_errors=True)
-    shutil.copytree(src, dst)
+    shutil.copytree(src, dst, ignore=shutil.ignore_patterns("*.pem"))
     with open(os.path.join(dst, "endpoint.js"), "w", encoding="utf-8") as f:
         f.write(f'var GATEWAY_GUARD_BASE = "{base_url}";\n')
     return dst
@@ -378,8 +486,9 @@ def pack_extension(base_url: str) -> str:
         print("[Gateway Guard] Extension files are ready. Chrome was not found to pack the install file.")
         return ""
     try:
+        pack_profile = os.path.join(data_dir(), "crx-pack-profile")
         subprocess.run(
-            [chrome, f"--pack-extension={unpacked}", f"--pack-extension-key={pem}", "--no-message-box"],
+            [chrome, f"--user-data-dir={pack_profile}", f"--pack-extension={unpacked}", f"--pack-extension-key={pem}", "--no-message-box"],
             timeout=60,
             check=False,
             capture_output=True,
@@ -726,6 +835,91 @@ def _detach_browser_shortcuts() -> None:
         print(f"[Gateway Guard WARNING] Browser shortcut detach failed: {e}")
 
 
+def _machine_policy_installed(extension_id: str) -> bool:
+    if not IS_WIN or not extension_id:
+        return False
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"Software\Policies\Google\Chrome\ExtensionInstallForcelist",
+        )
+        val, _ = winreg.QueryValueEx(key, "1")
+        winreg.CloseKey(key)
+        if extension_id not in str(val):
+            return False
+        # A path install is what Chrome shows as off, with Remove. Policy install must be the only one.
+        try:
+            ext = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Google\Chrome\Extensions\\" + extension_id)
+            winreg.CloseKey(ext)
+            return False
+        except OSError:
+            return True
+    except Exception:
+        return False
+
+
+def _elevate_machine_policy(extension_id: str, update_url: str) -> None:
+    """Chrome only force-installs this extension from the machine policy. That key needs administrator once."""
+    if not IS_WIN or not extension_id or not update_url or _machine_policy_installed(extension_id):
+        return
+    safe_id = "".join(ch for ch in extension_id if ch.isascii() and ch.islower())
+    safe_url = update_url.replace("'", "")
+    if safe_id != extension_id or not safe_url.startswith("http://127.0.0.1:") and not safe_url.startswith("http://localhost:"):
+        print("[Gateway Guard WARNING] YP-Raksha machine policy was not written.")
+        return
+    settings = _extension_settings(safe_id, safe_url)
+    value = f"{safe_id};{safe_url}"
+    script = (
+        "$val = '" + value + "'\n"
+        "$settings = '" + settings.replace("'", "''") + "'\n"
+        "$paths = @(\n"
+        "  'HKLM:\\Software\\Policies\\Google\\Chrome',\n"
+        "  'HKLM:\\Software\\Policies\\Microsoft\\Edge',\n"
+        "  'HKLM:\\Software\\Policies\\BraveSoftware\\Brave',\n"
+        "  'HKLM:\\Software\\Policies\\BraveSoftware\\Brave-Browser',\n"
+        "  'HKLM:\\Software\\Policies\\Chromium',\n"
+        "  'HKLM:\\Software\\WOW6432Node\\Policies\\Google\\Chrome',\n"
+        "  'HKLM:\\Software\\WOW6432Node\\Policies\\Microsoft\\Edge',\n"
+        "  'HKLM:\\Software\\WOW6432Node\\Policies\\BraveSoftware\\Brave',\n"
+        "  'HKLM:\\Software\\WOW6432Node\\Policies\\Chromium'\n"
+        ")\n"
+        "foreach ($p in $paths) {\n"
+        "  New-Item -Path ($p + '\\ExtensionInstallForcelist') -Force | Out-Null\n"
+        "  New-ItemProperty -Path ($p + '\\ExtensionInstallForcelist') -Name '1' -Value $val -PropertyType String -Force | Out-Null\n"
+        "  New-ItemProperty -Path $p -Name 'ExtensionSettings' -Value $settings -PropertyType String -Force | Out-Null\n"
+        "}\n"
+        "$exts = @(\n"
+        "  'HKLM:\\Software\\Google\\Chrome\\Extensions\\" + safe_id + "',\n"
+        "  'HKLM:\\Software\\Microsoft\\Edge\\Extensions\\" + safe_id + "',\n"
+        "  'HKLM:\\Software\\BraveSoftware\\Brave\\Extensions\\" + safe_id + "',\n"
+        "  'HKLM:\\Software\\BraveSoftware\\Brave-Browser\\Extensions\\" + safe_id + "',\n"
+        "  'HKCU:\\Software\\Google\\Chrome\\Extensions\\" + safe_id + "',\n"
+        "  'HKCU:\\Software\\Microsoft\\Edge\\Extensions\\" + safe_id + "',\n"
+        "  'HKCU:\\Software\\BraveSoftware\\Brave\\Extensions\\" + safe_id + "'\n"
+        ")\n"
+        "foreach ($e in $exts) { Remove-Item -Path $e -Recurse -Force -ErrorAction SilentlyContinue }\n"
+    )
+    path = os.path.join(data_dir(), "yp-raksha-machine-policy.ps1")
+    try:
+        os.makedirs(data_dir(), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(script)
+        subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Start-Process -FilePath powershell.exe -Verb RunAs -Wait -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','" + path.replace("'", "''") + "')"],
+            timeout=120,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception as e:
+        print(f"[Gateway Guard WARNING] YP-Raksha machine policy failed: {e}")
+    if _machine_policy_installed(extension_id):
+        print(f"[Gateway Guard] YP-Raksha machine policy installed ({extension_id}).")
+    else:
+        print("[Gateway Guard WARNING] YP-Raksha is not force-installed. Approve the administrator prompt, then reopen each browser.")
+
+
 def _write_force_install(extension_id: str, update_url: str) -> None:
     try:
         import winreg
@@ -755,22 +949,16 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
                 _delete_reg_value(root, path + r"\ExtensionInstallSources", "2")
                 wrote = True
 
-        # External extensions registry keys for Chrome, Edge, and Brave
+        # Path installs show as off, with Remove. Only the force-install policy may remain.
         if extension_id:
-            ext_subkeys = [
+            for ext_sub in (
                 r"Software\Google\Chrome\Extensions\\" + extension_id,
                 r"Software\Microsoft\Edge\Extensions\\" + extension_id,
                 r"Software\BraveSoftware\Brave\Extensions\\" + extension_id,
-            ]
-            for ext_sub in ext_subkeys:
-                if value and crx and os.path.isfile(crx):
-                    _set_reg_sz(root, ext_sub, "path", crx)
-                    _set_reg_sz(root, ext_sub, "version", EXTENSION_VERSION)
-                    _set_reg_sz(root, ext_sub, "update_url", update_url)
-                else:
-                    _delete_reg_value(root, ext_sub, "path")
-                    _delete_reg_value(root, ext_sub, "version")
-                    _delete_reg_value(root, ext_sub, "update_url")
+                r"Software\BraveSoftware\Brave-Browser\Extensions\\" + extension_id,
+            ):
+                for name in ("path", "version", "update_url"):
+                    _delete_reg_value(root, ext_sub, name)
 
     # Also automatically attach/detach shortcuts so user launches always carry the extension
     unpacked = _unpacked_dir()
@@ -779,7 +967,9 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
     elif not value:
         _detach_browser_shortcuts()
 
-    if value and not wrote:
+    if value and not _machine_policy_installed(extension_id):
+        _elevate_machine_policy(extension_id, update_url)
+    if value and not wrote and not _machine_policy_installed(extension_id):
         print("[Gateway Guard WARNING] YP-Raksha policy was not written. Browser policy keys are locked for this user.")
 
 

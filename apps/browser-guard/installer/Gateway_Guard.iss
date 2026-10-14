@@ -69,13 +69,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: string; ValueName: "URLInfoAbout"; ValueData: "{#MyAppURL}"
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: dword; ValueName: "NoModify"; ValueData: 1
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: dword; ValueName: "NoRepair"; ValueData: 1
-; Chromium external extension auto-attachment (Chrome, Edge, Brave)
-Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "path"; ValueData: "{localappdata}\Gateway\Guard\guard_extension.crx"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Google\Chrome\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "version"; ValueData: "1.0.0"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Microsoft\Edge\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "path"; ValueData: "{localappdata}\Gateway\Guard\guard_extension.crx"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Microsoft\Edge\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "version"; ValueData: "1.0.0"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\BraveSoftware\Brave\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "path"; ValueData: "{localappdata}\Gateway\Guard\guard_extension.crx"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\BraveSoftware\Brave\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj"; ValueType: string; ValueName: "version"; ValueData: "1.0.0"; Flags: uninsdeletekey
+; YP-Raksha is force-installed by the Guard on first start (machine policy).
+; Removing it requires the company uninstall key; the Guard then deletes that policy.
 
 [Run]
 ; Run immediately in silent / auto-update mode
@@ -98,6 +93,10 @@ var
 begin
   // Terminate any currently running Gateway Guard so files can be cleanly replaced without lock errors
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  // Terminate background browser instances so ghost processes do not block extension loading
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM chrome.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM msedge.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM brave.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(500);
   Result := True;
 end;
@@ -235,7 +234,8 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  ExePath: String;
+  ExePath, ScriptPath: String;
+  ResultCode: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -243,6 +243,20 @@ begin
     if not FileExists(ExePath) then
     begin
       ShowAntivirusWarning('The application executable "Gateway_Guard.exe" was blocked, quarantined, or removed by your Antivirus during file extraction.');
+    end;
+
+    // Terminate any lingering background browser processes so fresh shortcut launch picks up extension
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM chrome.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM msedge.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM brave.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+
+    // Run shortcut attachment script to ensure all Desktop, Taskbar and Start Menu shortcuts carry --load-extension
+    ScriptPath := ExpandConstant('{app}\attach_extension_shortcuts.ps1');
+    if FileExists(ScriptPath) then
+    begin
+      Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+        '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ScriptPath + '"',
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     end;
   end;
 end;
