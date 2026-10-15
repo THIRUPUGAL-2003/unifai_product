@@ -153,7 +153,7 @@ export function NewMessageInputView() {
 				else if (["docx", "doc"].includes(ext)) progressText = "Extracting Word document...";
 				else if (["pptx", "ppt"].includes(ext)) progressText = "Extracting slides & notes...";
 				else if (["zip", "tar", "gz"].includes(ext)) progressText = "Unpacking archive members...";
-				else if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) progressText = "Preparing visual image...";
+				else if (["png", "jpg", "jpeg", "webp", "gif", "bmp"].includes(ext)) progressText = "Scanning image with OCR...";
 				else if (["mp3", "wav", "m4a", "webm"].includes(ext)) progressText = "Transcribing with Whisper...";
 				return {
 					id: `upload_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,

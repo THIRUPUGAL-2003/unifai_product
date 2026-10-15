@@ -299,6 +299,12 @@ export default function LoginView() {
 				setErrorMessage("Please fill in your email address");
 				return;
 			}
+			const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+			if (!emailRegex.test(cleanInput)) {
+				setFieldErrors({ email: "Please enter a valid email address" });
+				setErrorMessage("Please enter a valid email address");
+				return;
+			}
 		}
 
 		if (mode === "reset") {
@@ -562,7 +568,7 @@ export default function LoginView() {
 					{/* Right Column: Sleek Authentication Card */}
 					<section className="flex items-center justify-center lg:col-span-6">
 						<div className="w-full max-w-[440px] rounded-2xl border border-white/10 bg-[#0f121d]/90 p-8 shadow-[0_25px_70px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
-							{mode !== "login" && mode !== "force_change_password" && (
+							{mode !== "login" && (
 								<button
 									type="button"
 									onClick={() => {
@@ -574,6 +580,9 @@ export default function LoginView() {
 										setErrorMessage("");
 										setInfoMessage("");
 										setFieldErrors({});
+										setPassword("");
+										setNewPassword("");
+										setConfirmPassword("");
 									}}
 									className="group mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-[#45f3ff] transition-colors cursor-pointer"
 								>
@@ -672,8 +681,13 @@ export default function LoginView() {
 														const val = e.target.value;
 														setUsername(val);
 														clearFieldError("username");
-														// Clear previous error if switching away from the locked account
-														if (errorMessage && (!lockedAccount || val.trim().toLowerCase() !== lockedAccount.identifier)) {
+														if (errorMessage && !isLockedOut) {
+															setErrorMessage("");
+														}
+													}}
+													onInput={() => {
+														clearFieldError("username");
+														if (errorMessage && !isLockedOut) {
 															setErrorMessage("");
 														}
 													}}
@@ -731,6 +745,15 @@ export default function LoginView() {
 													onChange={(e) => {
 														setPassword(e.target.value);
 														clearFieldError("password");
+														if (errorMessage && !isLockedOut) {
+															setErrorMessage("");
+														}
+													}}
+													onInput={() => {
+														clearFieldError("password");
+														if (errorMessage && !isLockedOut) {
+															setErrorMessage("");
+														}
 													}}
 													className={`h-10.5 pl-10 pr-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
 														fieldErrors.password
@@ -776,7 +799,13 @@ export default function LoginView() {
 													const val = e.target.value;
 													setEmail(val);
 													clearFieldError("email");
-													if (errorMessage && (!lockedAccount || val.trim().toLowerCase() !== lockedAccount.identifier)) {
+													if (errorMessage && !isLockedOut) {
+														setErrorMessage("");
+													}
+												}}
+												onInput={() => {
+													clearFieldError("email");
+													if (errorMessage && !isLockedOut) {
 														setErrorMessage("");
 													}
 												}}
@@ -816,7 +845,13 @@ export default function LoginView() {
 													const val = e.target.value;
 													setEmail(val);
 													clearFieldError("email");
-													if (errorMessage && (!lockedAccount || val.trim().toLowerCase() !== lockedAccount.identifier)) {
+													if (errorMessage && !isLockedOut) {
+														setErrorMessage("");
+													}
+												}}
+												onInput={() => {
+													clearFieldError("email");
+													if (errorMessage && !isLockedOut) {
 														setErrorMessage("");
 													}
 												}}

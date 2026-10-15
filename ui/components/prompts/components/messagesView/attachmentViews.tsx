@@ -29,7 +29,7 @@ export function AttachmentBadge({
 	const isAudio = attachment.type === "input_audio";
 	const name = getAttachmentDisplayName(attachment);
 	const ext = getFileExtension(name);
-	const badge = getFileTypeBadge(ext, attachment.type);
+	const badge = getFileTypeBadge(ext, attachment.type, name);
 	const BadgeIcon = badge.icon;
 
 	return (

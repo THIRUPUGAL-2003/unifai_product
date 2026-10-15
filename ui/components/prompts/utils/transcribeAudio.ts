@@ -6,6 +6,9 @@ const DEFAULT_TRANSCRIPTION_MODELS = [
 	"groq/whisper-large-v3",
 	"groq/distil-whisper-large-v3-en",
 	"whisper-large-v3",
+	"mistral/voxtral-mini-latest",
+	"voxtral-mini-latest",
+	"voxtral-mini-2602",
 	"openai/gpt-4o-mini-transcribe",
 	"openai/gpt-4o-transcribe",
 ];

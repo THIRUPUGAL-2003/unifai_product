@@ -52,6 +52,21 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				next(ctx)
 				return
 			}
+			// Public auth endpoints never enforce RBAC or previous temporary-password restrictions:
+			if path == "/api/session/login" ||
+				path == "/api/session/register" ||
+				path == "/api/session/register/verify" ||
+				path == "/api/session/register/resend" ||
+				path == "/api/session/forgot-password" ||
+				path == "/api/session/verify-otp" ||
+				path == "/api/session/reset-password" ||
+				path == "/api/session/forgot-username" ||
+				path == "/api/session/is-auth-enabled" ||
+				path == "/api/session/schedule-demo" ||
+				path == "/api/session/logout" {
+				next(ctx)
+				return
+			}
 			token := sessionToken(ctx)
 			var session *tables.SessionsTable
 			if token != "" {

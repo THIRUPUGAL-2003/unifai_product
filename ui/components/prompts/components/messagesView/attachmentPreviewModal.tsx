@@ -35,8 +35,11 @@ function getFileExtension(name: string): string {
 }
 
 /** Formatter helper for badge colors based on file category */
-export function getFileTypeBadge(ext: string, type: string) {
+export function getFileTypeBadge(ext: string, type: string, name?: string) {
 	const e = ext.toLowerCase();
+	if (name?.startsWith("OCR:") || e === "ocr") {
+		return { label: "OCR", bg: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30", icon: FileText };
+	}
 	if (["pdf"].includes(e)) {
 		return { label: "PDF", bg: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30", icon: FileText };
 	}

@@ -4,10 +4,6 @@
 (function () {
   "use strict";
 
-  // Never intercept localhost or local management/dev servers
-  var isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "0.0.0.0";
-  if (isLocal) return;
-
   var armed = false; // Armed only when confirmed by extension for monitored AI domains
   var curScript = document.currentScript;
   var guardNonce = (curScript && curScript.dataset && curScript.dataset.guardNonce) || "";
@@ -485,6 +481,7 @@
 
   // Hook 1: File Input Selector (<input type="file">)
   document.addEventListener("change", function (ev) {
+    if (!armed) return;
     if (ev.target && ev.target.tagName === "INPUT" && ev.target.type === "file") {
       var files = ev.target.files;
       if (files && files.length) {
@@ -502,6 +499,7 @@
 
   // Hook 2: Drag & Drop Files
   window.addEventListener("drop", function (ev) {
+    if (!armed) return;
     if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
       var files = ev.dataTransfer.files;
       for (var i = 0; i < files.length; i++) {
@@ -516,6 +514,7 @@
 
   // Hook 3: Clipboard Paste (Ctrl+V Screenshots, Files & Sensitive Text Shielding)
   window.addEventListener("paste", function (ev) {
+    if (!armed) return;
     var cd = ev.clipboardData;
     if (!cd) return;
     // 1. Files & Screenshots

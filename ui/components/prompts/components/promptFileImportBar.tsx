@@ -343,10 +343,7 @@ export function PromptFileImportBar({
 				toast.message("Transcribing voice audio…");
 				const whisperResult = await transcribeAudioFile(file, { apiKeyId, virtualKeyId });
 				if (whisperResult && "error" in whisperResult) {
-					toast.error(`Voice was not transcribed: ${whisperResult.error}`, {
-						description: "Check the selected key and a Whisper model, then record again.",
-					});
-					return;
+					toast.warning("Cloud transcription unavailable — attaching voice audio recording");
 				}
 				if (whisperResult?.text?.trim()) {
 					const text = whisperResult.text.trim();

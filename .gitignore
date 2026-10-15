@@ -18,6 +18,7 @@ ui/out/
 dist/
 build/
 *.tsbuildinfo
+*.traineddata
 coverage/
 .nyc_output/
 .cache/

@@ -1030,11 +1030,24 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 			toast.success(`Voice transcribed (${transcript.model})`);
 			return voiceTranscriptAttachment(file.name, transcript.text);
 		}
-		const reason = transcript && "error" in transcript ? transcript.error : "no transcript";
-		toast.error(`Voice was not transcribed: ${reason}`, {
-			description: "The recording was not sent as the prompt. Check the selected key and a Whisper model, then record again.",
-		});
-		return null;
+		try {
+			const b64Url = await fileToBase64(normalized);
+			const commaIdx = b64Url.indexOf(",");
+			const rawB64 = commaIdx >= 0 ? b64Url.slice(commaIdx + 1) : b64Url;
+			const fmt = (fileExt === "mp3" || fileExt === "wav" ? fileExt : "wav") as "mp3" | "wav";
+			toast.message(`Attached audio: ${file.name}`);
+			return {
+				type: "input_audio",
+				input_audio: {
+					data: rawB64,
+					format: fmt,
+				},
+			};
+		} catch {
+			const reason = transcript && "error" in transcript ? transcript.error : "no transcript";
+			toast.error(`Voice was not transcribed: ${reason}`);
+			return null;
+		}
 	}
 
 	const extracted = await extractPromptFileText(file, mimeType);

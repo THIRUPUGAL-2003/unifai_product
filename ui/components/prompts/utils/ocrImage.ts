@@ -116,20 +116,97 @@ export async function ocrDocument(
 	return null;
 }
 
-/** OCR an image data URL. */
+/**
+ * Run client-side OCR on an image data URL using in-browser Tesseract.js.
+ * Zero external API dependencies, zero rate limits, works completely offline.
+ */
+export async function clientSideOcr(dataUrl: string): Promise<string> {
+	if (!dataUrl?.startsWith("data:image/")) return "";
+	try {
+		const { default: Tesseract } = await import("tesseract.js");
+		const res = await Tesseract.recognize(dataUrl, "eng");
+		return res?.data?.text?.trim() || "";
+	} catch (err) {
+		console.warn("Client Tesseract OCR failed:", err);
+		return "";
+	}
+}
+
+/** OCR an image data URL (cloud first, in-browser Tesseract fallback). */
 export async function ocrImageFile(
 	dataUrl: string,
 	opts?: { apiKeyId?: string; virtualKeyId?: string; models?: string[]; signal?: AbortSignal },
 ): Promise<{ text: string; model: string } | null> {
-	return ocrDocument({ type: "image_url", image_url: dataUrl }, opts);
+	// 1. Try cloud OCR via gateway /v1/ocr
+	const cloud = await ocrDocument({ type: "image_url", image_url: dataUrl }, opts);
+	if (cloud?.text?.trim()) {
+		return cloud;
+	}
+
+	// 2. Client-side Tesseract.js fallback
+	const clientText = await clientSideOcr(dataUrl);
+	if (clientText) {
+		return { text: clientText, model: "tesseract-ocr" };
+	}
+
+	return null;
 }
 
-/** OCR a PDF (or other document) data URL — used for scanned / image-only PDFs. */
+/** OCR a PDF data URL — used for scanned / image-only PDFs (cloud first, in-browser canvas render + Tesseract fallback). */
 export async function ocrPdfFile(
 	dataUrl: string,
 	opts?: { apiKeyId?: string; virtualKeyId?: string; models?: string[]; signal?: AbortSignal; pages?: number[] },
 ): Promise<{ text: string; model: string } | null> {
-	return ocrDocument({ type: "document_url", document_url: dataUrl }, opts);
+	// 1. Try cloud OCR via gateway /v1/ocr
+	const cloud = await ocrDocument({ type: "document_url", document_url: dataUrl }, opts);
+	if (cloud?.text?.trim()) {
+		return cloud;
+	}
+
+	// 2. Client-side PDF OCR via pdfjs-dist + Tesseract.js
+	try {
+		const base64Match = dataUrl.match(/^data:application\/pdf;base64,(.+)$/);
+		if (base64Match) {
+			const raw = atob(base64Match[1]);
+			const bytes = new Uint8Array(raw.length);
+			for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+
+			const { default: pdfjsWorker } = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+			const pdfjs = await import("pdfjs-dist");
+			pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
+			const doc = await pdfjs.getDocument({ data: bytes }).promise;
+			const pagesToScan = Math.min(doc.numPages, 5);
+			const { default: Tesseract } = await import("tesseract.js");
+			const pageTexts: string[] = [];
+
+			for (let p = 1; p <= pagesToScan; p++) {
+				const page = await doc.getPage(p);
+				const viewport = page.getViewport({ scale: 1.5 });
+				const canvas = document.createElement("canvas");
+				canvas.width = viewport.width;
+				canvas.height = viewport.height;
+				const ctx = canvas.getContext("2d");
+				if (ctx) {
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					await (page.render as any)({ canvasContext: ctx, viewport }).promise;
+					const res = await Tesseract.recognize(canvas, "eng");
+					const txt = res?.data?.text?.trim();
+					if (txt) {
+						pageTexts.push(pagesToScan > 1 ? `[Page ${p}]\n${txt}` : txt);
+					}
+				}
+			}
+
+			if (pageTexts.length > 0) {
+				return { text: pageTexts.join("\n\n").trim(), model: "tesseract-ocr" };
+			}
+		}
+	} catch (pdfOcrErr) {
+		console.warn("Client PDF OCR fallback failed:", pdfOcrErr);
+	}
+
+	return null;
 }
 
 export function ocrTextAttachment(fileName: string, ocrText: string): {

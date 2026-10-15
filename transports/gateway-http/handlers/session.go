@@ -516,7 +516,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 				case tables.UserStatusRejected:
 					SendError(ctx, fasthttp.StatusForbidden, "Admin has not accepted your request")
 				case tables.UserStatusDisabled:
-					SendError(ctx, fasthttp.StatusForbidden, "Your account has been blocked by an administrator. Please contact your administrator to unblock.")
+					SendError(ctx, fasthttp.StatusForbidden, "Security Notice: Your Gateway account has been blocked by an administrator. You will not be able to sign in or access workspaces. Please contact your administrator to unblock.")
 				case tables.UserStatusEmailUnverified:
 					SendError(ctx, fasthttp.StatusForbidden, "Verify your email first — enter the code we emailed you on the Sign Up page")
 				default:
@@ -1513,6 +1513,10 @@ func (h *SessionHandler) forgotUsername(ctx *fasthttp.RequestCtx) {
 	payload.Email = strings.TrimSpace(strings.ToLower(payload.Email))
 	if payload.Email == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "Email is required")
+		return
+	}
+	if !strings.Contains(payload.Email, "@") || !strings.Contains(payload.Email, ".") {
+		SendError(ctx, fasthttp.StatusBadRequest, "Please enter a valid email address")
 		return
 	}
 
@@ -2566,7 +2570,11 @@ func (h *SessionHandler) unblockUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to unblock user: "+err.Error())
 		return
 	}
-	emailSent, emailErr := trySendAccountBlockStatusEmail(h.configStore, ctx, user.Username, user.Email, false)
+	userEmail := strings.TrimSpace(user.Email)
+	if userEmail == "" && strings.Contains(user.Username, "@") {
+		userEmail = strings.TrimSpace(user.Username)
+	}
+	emailSent, emailErr := trySendAccountBlockStatusEmail(h.configStore, ctx, user.Username, userEmail, false)
 	SendJSON(ctx, map[string]any{
 		"message":     "User unblocked",
 		"id":          user.ID,

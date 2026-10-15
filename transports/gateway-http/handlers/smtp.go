@@ -307,7 +307,7 @@ func welcomeAccountEmailBody(username, email, tempPassword string) string {
 		passInfo = "\nSign in with the temporary password provided by your administrator. You will be required to set a new permanent password upon your first sign in.\n"
 	}
 	loginLine := "Sign in on the login page."
-	if loginURL := publicLoginURL(); loginURL != "" {
+	if loginURL := publicLoginURL(); loginURL != "" && loginURL != "/login" {
 		loginLine = "Sign in: " + loginURL
 	}
 	return fmt.Sprintf(
@@ -319,14 +319,69 @@ func welcomeAccountEmailBody(username, email, tempPassword string) string {
 func publicLoginURL() string {
 	domain := strings.TrimRight(strings.TrimSpace(os.Getenv("SERVER_DOMAIN")), "/")
 	if domain == "" {
-		return ""
+		domain = strings.TrimRight(strings.TrimSpace(os.Getenv("GATEWAY_UI_URL")), "/")
+	}
+	if domain == "" {
+		domain = strings.TrimRight(strings.TrimSpace(os.Getenv("UI_URL")), "/")
+	}
+	if domain == "" {
+		domain = strings.TrimRight(strings.TrimSpace(os.Getenv("FRONTEND_URL")), "/")
+	}
+	if domain == "" {
+		return "/login"
+	}
+	if strings.HasSuffix(domain, "/login") {
+		return domain
 	}
 	return domain + "/login"
 }
 
+func requestLoginURL(ctx *fasthttp.RequestCtx) string {
+	domain := strings.TrimRight(strings.TrimSpace(os.Getenv("SERVER_DOMAIN")), "/")
+	if domain != "" {
+		if strings.HasSuffix(domain, "/login") {
+			return domain
+		}
+		return domain + "/login"
+	}
+	if ctx != nil {
+		// Prefer Origin header if present (standard CORS header sent by browsers on API requests)
+		if origin := strings.TrimRight(strings.TrimSpace(string(ctx.Request.Header.Peek("Origin"))), "/"); origin != "" {
+			return origin + "/login"
+		}
+
+		// Check Referer header if present
+		if referer := strings.TrimSpace(string(ctx.Request.Header.Peek("Referer"))); referer != "" {
+			if parsed, err := url.Parse(referer); err == nil && parsed.Host != "" {
+				scheme := parsed.Scheme
+				if scheme == "" {
+					scheme = "http"
+				}
+				return scheme + "://" + parsed.Host + "/login"
+			}
+		}
+
+		// Fallback to request Host header, dynamically replacing backend port with UI port from env
+		host := string(ctx.Host())
+		if host != "" {
+			scheme := "http"
+			if ctx.IsTLS() || string(ctx.Request.Header.Peek("X-Forwarded-Proto")) == "https" {
+				scheme = "https"
+			}
+			appPort := strings.TrimSpace(os.Getenv("APP_PORT"))
+			uiPort := strings.TrimSpace(os.Getenv("UI_PORT"))
+			if appPort != "" && uiPort != "" && strings.Contains(host, ":"+appPort) {
+				host = strings.Replace(host, ":"+appPort, ":"+uiPort, 1)
+			}
+			return scheme + "://" + host + "/login"
+		}
+	}
+	return publicLoginURL()
+}
+
 func provisionedAccountEmailBody(username, email, tempPassword string) string {
 	loginLine := "Sign in on the login page."
-	if loginURL := publicLoginURL(); loginURL != "" {
+	if loginURL := publicLoginURL(); loginURL != "" && loginURL != "/login" {
 		loginLine = "Sign in: " + loginURL
 	}
 	return fmt.Sprintf(
@@ -411,7 +466,7 @@ func trySendWelcomeEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx
 
 func accountApprovedEmailBody(username string) string {
 	loginLine := "Sign in on the login page."
-	if loginURL := publicLoginURL(); loginURL != "" {
+	if loginURL := publicLoginURL(); loginURL != "" && loginURL != "/login" {
 		loginLine = "Sign in: " + loginURL
 	}
 	return fmt.Sprintf(
@@ -430,12 +485,19 @@ func accountRejectedEmailBody(username string) string {
 // trySendAccountBlockStatusEmail notifies the user when their account is blocked or unblocked.
 func trySendAccountBlockStatusEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username, email string, blocked bool) (bool, string) {
 	email = strings.TrimSpace(email)
+	if email == "" && strings.Contains(username, "@") {
+		email = strings.TrimSpace(username)
+	}
 	if email == "" || store == nil {
-		return false, ""
+		return false, "User email address is missing"
 	}
 	smtpRow, err := store.GetSMTPConfig(ctx)
-	if err != nil || smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
-		return false, ""
+	if err != nil {
+		return false, err.Error()
+	}
+	hasEnvSMTP := strings.TrimSpace(os.Getenv("SMTP_HOST")) != ""
+	if (smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "") && !hasEnvSMTP {
+		return false, "SMTP is not enabled. Please configure SMTP in Security settings to dispatch notification emails."
 	}
 	var subject, body string
 	if blocked {
@@ -446,12 +508,13 @@ func trySendAccountBlockStatusEmail(store configstore.ConfigStore, ctx *fasthttp
 		)
 	} else {
 		subject = "Account Notice: Your Account Has Been Unblocked"
-		loginLine := "Sign in on the login page."
-		if loginURL := publicLoginURL(); loginURL != "" {
-			loginLine = "Sign in: " + loginURL
+		loginURL := requestLoginURL(ctx)
+		loginLine := ""
+		if loginURL != "" && loginURL != "/login" {
+			loginLine = fmt.Sprintf("\n\nSign in link: %s", loginURL)
 		}
 		body = fmt.Sprintf(
-			"Hello %s,\n\nYour Gateway account has been unblocked by an administrator.\n\n%s\n\nYou can now sign in normally with your credentials.\n",
+			"Hello %s,\n\nYour Gateway account has been unblocked by an administrator.\n\nYou can now sign in normally with your credentials.%s\n\nIf you have any questions, please contact your administrator.\n",
 			username, loginLine,
 		)
 	}
@@ -760,7 +823,7 @@ func trySendLoginNoticeEmail(store configstore.ConfigStore, ctx *fasthttp.Reques
 
 	resetURL := publicLoginURL()
 	resetLine := ""
-	if resetURL != "" {
+	if resetURL != "" && resetURL != "/login" {
 		forgotURL := resetURL + "?mode=forgot&email=" + url.QueryEscape(email)
 		resetLine = fmt.Sprintf("If this was not you, secure your account and reset your password immediately here:\n%s\n", forgotURL)
 	} else {
