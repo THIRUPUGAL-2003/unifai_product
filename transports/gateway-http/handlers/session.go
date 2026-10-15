@@ -1999,7 +1999,7 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		}
 		existingUser.Email = newEmail
 	}
-	if payload.Status != nil && (*payload.Status == tables.UserStatusApproved || *payload.Status == tables.UserStatusPending || *payload.Status == tables.UserStatusRejected) {
+	if payload.Status != nil && (*payload.Status == tables.UserStatusApproved || *payload.Status == tables.UserStatusPending || *payload.Status == tables.UserStatusRejected || *payload.Status == tables.UserStatusDisabled) {
 		existingUser.Status = *payload.Status
 	}
 	tempPassword := ""
@@ -2086,8 +2086,8 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// Terminate sessions on password change / reject; sync or revoke on role change.
-	if payload.Password != "" || payload.SendTemporaryPassword || (payload.Status != nil && (*payload.Status == tables.UserStatusRejected || *payload.Status == tables.UserStatusPending)) {
+	// Terminate sessions on password change / reject / block; sync or revoke on role change.
+	if payload.Password != "" || payload.SendTemporaryPassword || (payload.Status != nil && (*payload.Status == tables.UserStatusRejected || *payload.Status == tables.UserStatusPending || *payload.Status == tables.UserStatusDisabled)) {
 		_ = h.configStore.DeleteSessionsByUsername(ctx, existingUser.Username)
 		if prevUsername != "" && prevUsername != existingUser.Username {
 			_ = h.configStore.DeleteSessionsByUsername(ctx, prevUsername)
