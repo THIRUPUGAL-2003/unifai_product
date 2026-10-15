@@ -1984,7 +1984,7 @@ export default function BrowserAiPage() {
 			const url = window.URL.createObjectURL(blob);
 			const link = document.createElement("a");
 			link.href = url;
-			link.download = platform === "mac" ? "Gateway_Guard_macOS.zip" : "Gateway_Guard_Windows.zip";
+			link.download = platform === "mac" ? "YP_Raksha_macOS.zip" : "YP_Raksha_Windows.zip";
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
@@ -5221,7 +5221,7 @@ export default function BrowserAiPage() {
 									) : agents.length === 0 ? (
 										<TableRow>
 											<TableCell colSpan={12} className="text-center py-10 text-muted-foreground text-sm">
-												No Guard agents yet. Install Gateway_Guard_Setup.exe (Windows) or Gateway_Guard_macOS.zip (Mac) on laptops and/or run the network proxy: docker compose --profile network-proxy up -d gateway_browser_ai_proxy (or Guard with server_mode). Same dashboard for both.
+												No Guard agents yet. Install YP_Raksha_Setup.exe (Windows) or YP_Raksha_macOS.zip (Mac) on laptops and/or run the network proxy: docker compose --profile network-proxy up -d gateway_browser_ai_proxy (or Guard with server_mode). Same dashboard for both.
 											</TableCell>
 										</TableRow>
 									) : null}
@@ -5660,7 +5660,7 @@ export default function BrowserAiPage() {
 								{[
 									{
 										label: "Windows",
-										file: "Gateway_Guard_Windows.zip",
+										file: "YP_Raksha_Windows.zip",
 										contents: "Setup.exe · auto-start · proxy routing",
 										dot: "bg-sky-500",
 										ready: setupInfo?.windows_ready,
@@ -5669,8 +5669,8 @@ export default function BrowserAiPage() {
 									},
 									{
 										label: "macOS",
-										file: "Gateway_Guard_macOS.zip",
-										contents: "Gateway_Guard.app · Install .command",
+										file: "YP_Raksha_macOS.zip",
+										contents: "YP_Raksha.app · Install .command",
 										dot: "bg-primary",
 										ready: setupInfo?.macos_ready,
 										version: latestMacVersion,
@@ -5825,7 +5825,7 @@ export default function BrowserAiPage() {
 								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
 									Run{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Gateway_Guard_Setup.exe
+										YP_Raksha_Setup.exe
 									</code>
 									. Keep autostart enabled so Guard starts at Windows login. To turn OFF / uninstall: Windows Settings → Apps →
 									{PRODUCT_NAME} Guard → Uninstall (company uninstall key).
@@ -5840,17 +5840,17 @@ export default function BrowserAiPage() {
 								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
 									Unzip{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Gateway_Guard_macOS.zip
+										YP_Raksha_macOS.zip
 									</code>
 									, then double-click{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Install_Gateway_Guard.command
+										Install_YP_Raksha.command
 									</code>{" "}
 									(Right-click → Open if Gatekeeper blocks). See{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">INSTALL_MACOS.txt</code>. To
 									turn OFF / uninstall: double-click{" "}
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Uninstall_Gateway_Guard.command
+										Uninstall_YP_Raksha.command
 									</code>{" "}
 									and enter the same company uninstall key (
 									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">UNINSTALL_MACOS.txt</code>
@@ -5873,20 +5873,20 @@ export default function BrowserAiPage() {
 								<ul className="list-disc pl-5 text-foreground/80 space-y-1.5">
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											Gateway_Guard_Windows.zip
+											YP_Raksha_Windows.zip
 										</code>{" "}
 										— Windows{" "}
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											Gateway_Guard_Setup.exe
+											YP_Raksha_Setup.exe
 										</code>{" "}
 										installer &amp; docs
 									</li>
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											Gateway_Guard_macOS.zip
+											YP_Raksha_macOS.zip
 										</code>{" "}
 										— macOS{" "}
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">Gateway_Guard.app</code> +
+										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">YP_Raksha.app</code> +
 										Install &amp; Uninstall scripts
 									</li>
 									<li>

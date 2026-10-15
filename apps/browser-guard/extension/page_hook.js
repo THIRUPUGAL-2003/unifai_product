@@ -5,6 +5,8 @@
   "use strict";
 
   var armed = true; // Default armed, confirmed by extension
+  var curScript = document.currentScript;
+  var guardNonce = (curScript && curScript.dataset && curScript.dataset.guardNonce) || "";
   var passKey = false;
   var passClick = false;
   var pending = {};
@@ -67,6 +69,7 @@
   // Listen for messages from extension content script
   window.addEventListener("message", function (ev) {
     if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard") return;
+    if (guardNonce && ev.data.nonce && ev.data.nonce !== guardNonce) return;
     if (ev.data.type === "arm") armed = true;
     if (ev.data.type === "sync_rules") {
       setDynamicRules(ev.data.rules, ev.data.restricted_extensions);
@@ -161,6 +164,7 @@
         // Asynchronously notify backend so the blocked prompt is recorded in PostgreSQL DB & dashboard!
         window.postMessage({
           source: "gateway-guard-page",
+          nonce: guardNonce,
           id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
           prompt: prompt,
           files: files || [],
@@ -193,6 +197,7 @@
 
       window.postMessage({
         source: "gateway-guard-page",
+        nonce: guardNonce,
         id: id,
         prompt: prompt,
         files: files || [],
@@ -506,6 +511,7 @@
           showBubble("Pasting confidential data is blocked by company security policy: " + pasteDecision.message, pasteDecision.rule, "block");
           window.postMessage({
             source: "gateway-guard-page",
+            nonce: guardNonce,
             id: "paste_log_" + Date.now().toString(36),
             prompt: pastedText.slice(0, 500),
             host: location.hostname,
@@ -723,5 +729,20 @@
     };
   }
 
-  console.log("[YP-Raksha] In-Browser DLP Engine Active: Prompts, Images, Files & Real-time WebSockets Protected.");
+  // Hook navigator.sendBeacon (Telemetry & AI Background Ping Protection)
+  if (typeof navigator.sendBeacon === "function") {
+    var origSendBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = function (url, data) {
+      if (armed && typeof data === "string" && data.length > 5) {
+        var beaconDecision = evaluateClientRules(data, []);
+        if (beaconDecision && beaconDecision.blocked) {
+          showBubble(beaconDecision.message, beaconDecision.rule, "block");
+          return false;
+        }
+      }
+      return origSendBeacon(url, data);
+    };
+  }
+
+  console.log("[YP-Raksha] In-Browser DLP Engine Active: Prompts, Images, Files, WebSockets & Beacons Protected.");
 })();

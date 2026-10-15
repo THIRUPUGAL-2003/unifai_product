@@ -35,8 +35,8 @@ def pack_all():
         mdata = json.load(f)
     version = mdata.get("version", "1.1.28.4")
 
-    # 1. WebStore Zip (manifest, content.js, page_hook.js, endpoint.js, icons)
-    store_zip = os.path.join(rel_dir, "YP_Raksha_WebStore.zip")
+    # 1. WebStore Zip (manifest, content.js, page_hook.js, endpoint.js, popup, background, icons)
+    store_zip = os.path.join(rel_dir, "yp-raksha.zip")
     with zipfile.ZipFile(store_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for fname in os.listdir(ext_src):
             if fname.endswith(".pem") or fname.endswith(".crx") or fname.endswith(".zip") or fname.endswith(".xpi"):
@@ -49,12 +49,14 @@ def pack_all():
                     shutil.copy2(fpath, os.path.join(common_ext, fname))
                 except Exception:
                     pass
+    # Legacy alias for WebStore zip
+    shutil.copy2(store_zip, os.path.join(rel_dir, "YP_Raksha_WebStore.zip"))
 
     # 2. Firefox XPI (same files without pem)
     xpi_path = os.path.join(rel_dir, "yp-raksha.xpi")
     shutil.copy2(store_zip, xpi_path)
 
-    # 3. Signed CRX3
+    # 3. Signed Chromium CRX3 (yp-raksha.crx & legacy guard_extension.crx)
     agent_dir = os.path.join(bg_dir, "agent")
     if agent_dir not in sys.path:
         sys.path.insert(0, agent_dir)
@@ -62,13 +64,14 @@ def pack_all():
         from agent_extension import pack_extension, _crx_path, get_extension_id
         crx_file = pack_extension("http://127.0.0.1:18195")
         if crx_file and os.path.isfile(crx_file):
+            shutil.copy2(crx_file, os.path.join(rel_dir, "yp-raksha.crx"))
             shutil.copy2(crx_file, os.path.join(rel_dir, "guard_extension.crx"))
             ext_id = get_extension_id()
             update_xml = (
                 '<?xml version=\'1.0\' encoding=\'UTF-8\'?>\n'
                 '<gupdate xmlns=\'http://www.google.com/update2/response\' protocol=\'2.0\'>\n'
                 f'  <app appid=\'{ext_id}\'>\n'
-                f'    <updatecheck codebase=\'http://127.0.0.1:18195/extension/guard.crx\' version=\'{version}\' />\n'
+                f'    <updatecheck codebase=\'http://127.0.0.1:18195/extension/yp-raksha.crx\' version=\'{version}\' />\n'
                 '  </app>\n'
                 '</gupdate>\n'
             )
@@ -77,11 +80,10 @@ def pack_all():
     except Exception as e:
         print(f"[pack] CRX generation notice: {e}")
 
-    print(f"[pack] YP-Raksha v{version} successfully packed:")
-    print(f"  - WebStore: {store_zip} ({os.path.getsize(store_zip)} bytes)")
-    print(f"  - Firefox:  {xpi_path} ({os.path.getsize(xpi_path)} bytes)")
-    if os.path.isfile(os.path.join(rel_dir, "guard_extension.crx")):
-        print(f"  - CRX3:     {os.path.join(rel_dir, 'guard_extension.crx')} ({os.path.getsize(os.path.join(rel_dir, 'guard_extension.crx'))} bytes)")
+    print(f"[pack] YP-Raksha v{version} successfully packed with unified naming:")
+    print(f"  - Chromium (.crx): {os.path.join(rel_dir, 'yp-raksha.crx')} ({os.path.getsize(os.path.join(rel_dir, 'yp-raksha.crx'))} bytes)")
+    print(f"  - Firefox  (.xpi): {xpi_path} ({os.path.getsize(xpi_path)} bytes)")
+    print(f"  - Store    (.zip): {store_zip} ({os.path.getsize(store_zip)} bytes)")
 
 if __name__ == "__main__":
     pack_all()

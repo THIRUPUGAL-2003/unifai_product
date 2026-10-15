@@ -17,7 +17,11 @@
       "48": "icon48.png",
       "128": "icon128.png"
     },
-    "default_title": "YP-Raksha Enterprise AI Security Guard"
+    "default_title": "YP-Raksha Enterprise AI Security Guard",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "incognito": "spanning",
   "browser_specific_settings": {
@@ -27,7 +31,8 @@
     }
   },
   "permissions": [
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
     "http://127.0.0.1/*",
