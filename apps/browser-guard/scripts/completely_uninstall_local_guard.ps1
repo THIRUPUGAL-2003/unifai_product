@@ -90,7 +90,12 @@ foreach ($dir in $searchDirs) {
             $name = $_.Name.ToLower()
             if ($name -match 'chrome' -or $name -match 'edge' -or $name -match 'brave') {
                 try {
-                    $sc = $wsh.CreateShortcut($_.FullName)
+                    $linkPath = $_.FullName
+                    try {
+                        $fso = New-Object -ComObject Scripting.FileSystemObject
+                        $linkPath = $fso.GetFile($_.FullName).ShortPath
+                    } catch {}
+                    $sc = $wsh.CreateShortcut($linkPath)
                     if ($sc.Arguments -match "--load-extension") {
                         $clean = ($sc.Arguments -replace '--load-extension=[^\s"]+', '' -replace '--load-extension="[^"]*"', '').Trim()
                         $sc.Arguments = $clean
@@ -129,6 +134,10 @@ $registryKeysToRemove = @(
     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run\Gateway_Guard",
     "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Gateway Guard_is1",
     "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Gateway Guard_is1",
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}",
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}",
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}_is1",
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}_is1",
     "HKLM:\SOFTWARE\Microsoft\Edge\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj",
     "HKCU:\SOFTWARE\Microsoft\Edge\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj",
     "HKLM:\SOFTWARE\Google\Chrome\Extensions\mipfhcmlcjfhmgldkokdckhndkebkllj",
@@ -172,6 +181,7 @@ foreach ($rk in $registryKeysToRemove) {
 # 6. Delete local Gateway Guard application and extension files
 Write-Host "`n[6/6] Deleting installed Gateway Guard application files..."
 $foldersToDelete = @(
+    "$env:ProgramData\Gateway",
     "$env:LOCALAPPDATA\Gateway",
     "$env:APPDATA\Gateway",
     "C:\Program Files (x86)\Gateway\Guard",

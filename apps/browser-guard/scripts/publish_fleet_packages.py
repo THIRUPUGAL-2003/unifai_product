@@ -192,6 +192,9 @@ def main() -> int:
 
     sync = os.path.join(scripts, "sync_config_from_env.py")
     run([sys.executable, sync], cwd=repo, timeout=120)
+    pack_ext = os.path.join(scripts, "pack_all_extensions.py")
+    if os.path.isfile(pack_ext):
+        run([sys.executable, pack_ext], cwd=repo, timeout=120)
 
     # Verify secret landed in release config when required.
     release_cfg = os.path.join(bg, "release", "gateway_guard_config.json")

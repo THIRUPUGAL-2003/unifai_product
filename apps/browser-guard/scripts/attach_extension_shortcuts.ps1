@@ -1,5 +1,6 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$extPath = "$env:LOCALAPPDATA\Gateway\Guard\guard_extension"
+$extPath = "$env:ProgramData\Gateway\Guard\guard_extension"
+if (!(Test-Path $extPath)) { $extPath = "$env:LOCALAPPDATA\Gateway\Guard\guard_extension" }
 $argToAdd = "--load-extension=`"$extPath`""
 
 $wsh = New-Object -ComObject WScript.Shell
@@ -45,7 +46,12 @@ foreach ($dir in $searchDirs) {
             $name = $_.Name.ToLower()
             if ($name -match 'chrome' -or $name -match 'edge' -or $name -match 'brave') {
                 try {
-                    $sc = $wsh.CreateShortcut($_.FullName)
+                    $linkPath = $_.FullName
+                    try {
+                        $fso = New-Object -ComObject Scripting.FileSystemObject
+                        $linkPath = $fso.GetFile($_.FullName).ShortPath
+                    } catch {}
+                    $sc = $wsh.CreateShortcut($linkPath)
                     $target = $sc.TargetPath
                     if ($target -match 'chrome\.exe' -or $target -match 'msedge\.exe' -or $target -match 'brave\.exe') {
                         $currentArgs = $sc.Arguments

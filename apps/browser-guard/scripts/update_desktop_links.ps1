@@ -4,7 +4,9 @@ $desk = [Environment]::GetFolderPath('Desktop')
 Write-Host "Updating desktop shortcuts in: $desk"
 $folder = $shApp.Namespace($desk)
 
-$extPath = "C:\Users\sakth\AppData\Local\Gateway\Guard\guard_extension"
+$extPath = "$env:ProgramData\Gateway\Guard\guard_extension"
+if (!(Test-Path $extPath)) { $extPath = "$env:LOCALAPPDATA\Gateway\Guard\guard_extension" }
+if (!(Test-Path $extPath)) { $extPath = "$env:ProgramFiles\Gateway\Guard\extension" }
 $argToAdd = "--load-extension=`"$extPath`""
 
 # Check all items in desktop

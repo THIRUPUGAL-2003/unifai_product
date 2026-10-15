@@ -17,12 +17,42 @@ import (
 	"sync"
 	"time"
 
+	"unicode/utf8"
+
 	"github.com/gateway/gateway/framework/encrypt"
 	"github.com/gateway/gateway/framework/envutil"
 	"github.com/google/uuid"
 	"golang.org/x/net/idna"
 	"gorm.io/gorm"
 )
+
+var bpeTokenRegex = regexp.MustCompile(`(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}|[^\s\p{L}\p{N}]+|\s+`)
+
+// CountAccurateTokens performs subword BPE token estimation matching modern LLM tokenizers (tiktoken/cl100k/o200k).
+func CountAccurateTokens(text string) int {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return 0
+	}
+	matches := bpeTokenRegex.FindAllString(text, -1)
+	if len(matches) == 0 {
+		return 1
+	}
+	total := 0
+	for _, m := range matches {
+		trimmed := strings.TrimSpace(m)
+		runeCount := utf8.RuneCountInString(trimmed)
+		if runeCount > 4 {
+			total += (runeCount + 3) / 4
+		} else {
+			total++
+		}
+	}
+	if total == 0 && len(text) > 0 {
+		total = 1
+	}
+	return total
+}
 
 var pacHostSafe = regexp.MustCompile(`^[a-z0-9.-]+$`)
 var pacProxyAddrSafe = regexp.MustCompile(`^[A-Za-z0-9.:\[\]-]+$`)
@@ -55,6 +85,11 @@ func looksLikeBinaryOrWireGarbage(s string) bool {
 		return true
 	}
 	low := strings.ToLower(t)
+
+	// Google WebChannel session heartbeat / transport pings (never typed prompts)
+	if strings.HasPrefix(low, "count=") || strings.Contains(low, "&ofs=") || strings.Contains(low, "req0___data__") || strings.Contains(low, "processsession") {
+		return true
+	}
 
 	// Cursor / IDE exe attestation + content hashes (not typed chat)
 	if strings.Contains(low, "cursor.exe") || ideExeAtHash.MatchString(t) {
@@ -213,8 +248,13 @@ type BrowserAILog struct {
 	Domain            string `gorm:"index" json:"domain"`
 	UserPromptPreview string `json:"user_prompt_preview"`
 	UserPromptFull    string `gorm:"type:text" json:"user_prompt_full"`
-	EstTokens         int    `json:"est_tokens"`
-	ClientIP          string `json:"client_ip"`
+	EstTokens         int     `json:"est_tokens"`
+	PromptTokens      int     `json:"prompt_tokens"`
+	CompletionTokens  int     `json:"completion_tokens"`
+	TotalTokens       int     `json:"total_tokens"`
+	AudioDurationSec  float64 `json:"audio_duration_sec"`
+	Cost              float64 `json:"cost"`
+	ClientIP          string  `json:"client_ip"`
 	AgentID           string `gorm:"index" json:"agent_id"`
 	AgentHostname     string `json:"agent_hostname"`
 	Status            string `gorm:"index" json:"status"`
@@ -740,6 +780,19 @@ func (m *BrowserAIManager) GetLogs(ctx context.Context, platform, status, action
 	}
 
 	err := query.Order("timestamp DESC").Limit(limit).Offset(offset).Find(&logs).Error
+	if err == nil {
+		for i := range logs {
+			if logs[i].PromptTokens == 0 && logs[i].EstTokens > 0 {
+				logs[i].PromptTokens = logs[i].EstTokens
+			}
+			if logs[i].TotalTokens == 0 {
+				logs[i].TotalTokens = logs[i].PromptTokens + logs[i].CompletionTokens
+			}
+			if logs[i].Cost == 0 && (logs[i].TotalTokens > 0 || logs[i].AudioDurationSec > 0) {
+				logs[i].Cost = CalculateBrowserAICost(logs[i].Platform, logs[i].Domain, logs[i].PromptTokens, logs[i].CompletionTokens, logs[i].AudioDurationSec)
+			}
+		}
+	}
 	return logs, total, err
 }
 
@@ -1683,11 +1736,34 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		return nil, "", fmt.Errorf("database connection not available")
 	}
 
+	trimmedPrompt := strings.TrimSpace(promptFull)
+	lowTrimmed := strings.ToLower(trimmedPrompt)
+	isUpload := strings.HasPrefix(trimmedPrompt, "[FILE UPLOAD]") ||
+		strings.HasPrefix(trimmedPrompt, "[VOICE UPLOAD]") ||
+		strings.HasPrefix(trimmedPrompt, "[SITE BLOCKED")
+
+	if !isUpload {
+		if trimmedPrompt == "" || lowTrimmed == "ping" || lowTrimmed == "pong" || lowTrimmed == "heartbeat" || strings.HasPrefix(lowTrimmed, "count=") {
+			return &BrowserAILog{
+				ID:                uuid.New().String(),
+				Timestamp:         time.Now(),
+				Platform:          platform,
+				UserPromptPreview: "",
+				UserPromptFull:    "",
+				EstTokens:         0,
+				ClientIP:          clientIP,
+				Status:            "Skipped (heartbeat/empty)",
+				Action:            "Allowed",
+				RiskScore:         0,
+				PredictiveRisk:    "LOW",
+				PredictedCategory: "SAFE",
+				CreatedAt:         time.Now(),
+			}, "", nil
+		}
+	}
+
 	// Do not persist Cursor/IDE binary decode fragments as Prompt Logs.
-	if looksLikeBinaryOrWireGarbage(promptFull) &&
-		!strings.HasPrefix(strings.TrimSpace(promptFull), "[FILE UPLOAD]") &&
-		!strings.HasPrefix(strings.TrimSpace(promptFull), "[VOICE UPLOAD]") &&
-		!strings.HasPrefix(strings.TrimSpace(promptFull), "[SITE BLOCKED") {
+	if looksLikeBinaryOrWireGarbage(promptFull) && !isUpload {
 		return &BrowserAILog{
 			ID:                uuid.New().String(),
 			Timestamp:         time.Now(),
@@ -1705,11 +1781,7 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		}, "", nil
 	}
 
-	words := strings.Fields(promptFull)
-	estTokens := int(float64(len(words)) * 1.3)
-	if estTokens == 0 && len(promptFull) > 0 {
-		estTokens = 1
-	}
+	estTokens := CountAccurateTokens(promptFull)
 
 	preview := promptFull
 	if len(preview) > 100 {
@@ -1919,6 +1991,26 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		}
 	}
 
+	promptTokens := extractIntFromMeta(metadata, "prompt_tokens", "input_tokens")
+	if promptTokens == 0 {
+		promptTokens = estTokens
+	}
+	completionTokens := extractIntFromMeta(metadata, "completion_tokens", "output_tokens")
+	totalTokens := extractIntFromMeta(metadata, "total_tokens")
+	if totalTokens == 0 {
+		totalTokens = promptTokens + completionTokens
+	}
+	audioDurationSec := extractFloatFromMeta(metadata, "audio_duration_sec", "duration", "total_seconds")
+	if audioDurationSec == 0 {
+		if durMs := extractFloatFromMeta(metadata, "duration_ms"); durMs > 0 {
+			audioDurationSec = durMs / 1000.0
+		}
+	}
+	cost := extractFloatFromMeta(metadata, "cost")
+	if cost == 0 {
+		cost = CalculateBrowserAICost(platform, domain, promptTokens, completionTokens, audioDurationSec)
+	}
+
 	logEntry := BrowserAILog{
 		ID:                uuid.New().String(),
 		Timestamp:         time.Now(),
@@ -1927,6 +2019,11 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		UserPromptPreview: preview,
 		UserPromptFull:    promptFull,
 		EstTokens:         estTokens,
+		PromptTokens:      promptTokens,
+		CompletionTokens:  completionTokens,
+		TotalTokens:       totalTokens,
+		AudioDurationSec:  audioDurationSec,
+		Cost:              cost,
 		ClientIP:          clientIP,
 		AgentID:           agentID,
 		AgentHostname:     agentHostname,
@@ -1942,6 +2039,54 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		AttachmentName:    attachmentName,
 		Metadata:          string(metaBytes),
 		CreatedAt:         time.Now(),
+	}
+
+	// Deduplicate: If an identical prompt from the same agent/IP & platform was logged within the last 6 seconds,
+	// merge/enrich it instead of creating a duplicate row.
+	var existing BrowserAILog
+	dedupCutoff := time.Now().Add(-6 * time.Second)
+	dedupQuery := db.WithContext(ctx).
+		Where("platform = ? AND created_at >= ?", platform, dedupCutoff).
+		Where("user_prompt_full = ? OR user_prompt_preview = ?", promptFull, preview)
+
+	if agentID != "" {
+		dedupQuery = dedupQuery.Where("agent_id = ? OR client_ip = ?", agentID, clientIP)
+	} else if clientIP != "" {
+		dedupQuery = dedupQuery.Where("client_ip = ?", clientIP)
+	}
+
+	if err := dedupQuery.Order("created_at DESC").First(&existing).Error; err == nil && existing.ID != "" {
+		updates := map[string]any{}
+		if existing.DomainUser == "" && domainUser != "" {
+			updates["domain_user"] = domainUser
+		}
+		if existing.ADDomain == "" && adDomain != "" {
+			updates["ad_domain"] = adDomain
+		}
+		if existing.ADUpn == "" && adUpn != "" {
+			updates["ad_upn"] = adUpn
+		}
+		if existing.Domain == "" && domain != "" {
+			updates["domain"] = domain
+		}
+		if existing.PromptTokens == 0 && promptTokens > 0 {
+			updates["prompt_tokens"] = promptTokens
+		}
+		if existing.Cost == 0 && cost > 0 {
+			updates["cost"] = cost
+		}
+		if existing.Action == "Allowed" && action == "Blocked" {
+			updates["action"] = action
+			updates["status"] = status
+			updates["rule_triggered"] = ruleTriggered
+			updates["risk_score"] = riskScore
+			updates["predictive_risk"] = predictiveRisk
+			updates["predicted_category"] = predictedCategory
+		}
+		if len(updates) > 0 {
+			_ = db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", existing.ID).Updates(updates).Error
+		}
+		return &existing, matchedWarning, nil
 	}
 
 	if err := db.WithContext(ctx).Create(&logEntry).Error; err != nil {
@@ -2110,17 +2255,145 @@ func (m *BrowserAIManager) GetLogByID(ctx context.Context, id string) (*BrowserA
 	return &log, nil
 }
 
-// UpdateLogReplyBot stores the Reply Bot provider/model/text on an existing intercept log.
+// extractIntFromMeta safely extracts an integer from metadata across multiple candidate keys.
+func extractIntFromMeta(meta map[string]any, keys ...string) int {
+	if meta == nil {
+		return 0
+	}
+	for _, k := range keys {
+		if v, ok := meta[k]; ok {
+			switch n := v.(type) {
+			case int:
+				return n
+			case int64:
+				return int(n)
+			case float64:
+				return int(n)
+			case string:
+				var i int
+				if _, err := fmt.Sscanf(strings.TrimSpace(n), "%d", &i); err == nil {
+					return i
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// extractFloatFromMeta safely extracts a float64 from metadata across multiple candidate keys.
+func extractFloatFromMeta(meta map[string]any, keys ...string) float64 {
+	if meta == nil {
+		return 0
+	}
+	for _, k := range keys {
+		if v, ok := meta[k]; ok {
+			switch n := v.(type) {
+			case float64:
+				return n
+			case float32:
+				return float64(n)
+			case int:
+				return float64(n)
+			case int64:
+				return float64(n)
+			case string:
+				var f float64
+				if _, err := fmt.Sscanf(strings.TrimSpace(n), "%f", &f); err == nil {
+					return f
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// CalculateBrowserAICost computes estimated USD cost based on platform/model token rates and audio seconds.
+func CalculateBrowserAICost(platform, model string, promptTokens, completionTokens int, audioDurationSec float64) float64 {
+	combined := strings.ToLower(platform + " " + model)
+	var promptRate, completionRate float64
+	audioRatePerSec := 0.0001 // ~$0.006 per min (Whisper / Audio standard)
+
+	switch {
+	case strings.Contains(combined, "mini") || strings.Contains(combined, "flash") || strings.Contains(combined, "haiku"):
+		promptRate = 0.15 / 1_000_000.0
+		completionRate = 0.60 / 1_000_000.0
+	case strings.Contains(combined, "claude") || strings.Contains(combined, "sonnet") || strings.Contains(combined, "opus"):
+		promptRate = 3.00 / 1_000_000.0
+		completionRate = 15.00 / 1_000_000.0
+	case strings.Contains(combined, "deepseek"):
+		promptRate = 0.14 / 1_000_000.0
+		completionRate = 0.28 / 1_000_000.0
+	case strings.Contains(combined, "gemini"):
+		promptRate = 1.25 / 1_000_000.0
+		completionRate = 5.00 / 1_000_000.0
+	default:
+		// Default to standard GPT-4o pricing ($2.50 input / $10.00 output per 1M)
+		promptRate = 2.50 / 1_000_000.0
+		completionRate = 10.00 / 1_000_000.0
+	}
+
+	tokenCost := (float64(promptTokens) * promptRate) + (float64(completionTokens) * completionRate)
+	audioCost := audioDurationSec * audioRatePerSec
+	return tokenCost + audioCost
+}
+
+// UpdateLogReplyBot stores the Reply Bot provider/model/text on an existing intercept log,
+// and automatically computes completion tokens, total tokens, and updated cost.
 func (m *BrowserAIManager) UpdateLogReplyBot(ctx context.Context, logID, provider, model, text string) error {
 	db := m.GetDB()
 	if db == nil || strings.TrimSpace(logID) == "" {
 		return nil
 	}
+	var existing BrowserAILog
+	_ = db.WithContext(ctx).Where("id = ?", logID).First(&existing).Error
+
+	completionTokens := CountAccurateTokens(text)
+	promptTokens := existing.PromptTokens
+	if promptTokens == 0 && existing.EstTokens > 0 {
+		promptTokens = existing.EstTokens
+	}
+	totalTokens := promptTokens + completionTokens
+	cost := CalculateBrowserAICost(existing.Platform, model, promptTokens, completionTokens, existing.AudioDurationSec)
+
 	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(map[string]any{
 		"reply_bot_provider": provider,
 		"reply_bot_model":    model,
 		"reply_bot_text":     text,
+		"completion_tokens":  completionTokens,
+		"total_tokens":       totalTokens,
+		"cost":               cost,
 	}).Error
+}
+
+// UpdateLogTokensAndCost updates input/output/total tokens, audio duration, and cost on an existing intercept log.
+func (m *BrowserAIManager) UpdateLogTokensAndCost(ctx context.Context, logID string, promptTokens, completionTokens, totalTokens int, audioDurationSec, cost float64) error {
+	db := m.GetDB()
+	if db == nil || strings.TrimSpace(logID) == "" {
+		return nil
+	}
+	updates := map[string]any{}
+	if promptTokens > 0 {
+		updates["prompt_tokens"] = promptTokens
+		updates["est_tokens"] = promptTokens
+	}
+	if completionTokens > 0 {
+		updates["completion_tokens"] = completionTokens
+	}
+	if totalTokens > 0 {
+		updates["total_tokens"] = totalTokens
+	} else if promptTokens > 0 || completionTokens > 0 {
+		updates["total_tokens"] = promptTokens + completionTokens
+	}
+	if audioDurationSec > 0 {
+		updates["audio_duration_sec"] = audioDurationSec
+	}
+	if cost > 0 {
+		updates["cost"] = cost
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(updates).Error
 }
 
 // UpdateLogActionStatus updates action/status after Reply Bot "all questions" mode answers.

@@ -99,6 +99,7 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 	r.DELETE("/api/browser-ai/logs", lib.ChainMiddlewares(h.deleteLogs, middlewares...))
 	r.POST("/api/browser-ai/logs/bulk-delete", lib.ChainMiddlewares(h.bulkDeleteLogs, middlewares...))
 	r.DELETE("/api/browser-ai/logs/{id}", lib.ChainMiddlewares(h.deleteLog, middlewares...))
+	r.POST("/api/browser-ai/logs/{id}/usage", lib.ChainMiddlewares(h.updateLogUsage, middlewares...))
 
 	r.GET("/api/browser-ai/search-logs", lib.ChainMiddlewares(h.getSearchLogs, middlewares...))
 	r.POST("/api/browser-ai/search-logs", lib.ChainMiddlewares(h.recordSearchLog, middlewares...))
@@ -365,3 +366,35 @@ func (h *BrowserAIHandler) deletePromptLogIDs(ctx *fasthttp.RequestCtx, ids []st
 	}
 	SendJSON(ctx, map[string]any{"status": "success", "deleted": deleted})
 }
+
+// updateLogUsage updates token usage and cost for an intercepted prompt log.
+func (h *BrowserAIHandler) updateLogUsage(ctx *fasthttp.RequestCtx) {
+	id, _ := ctx.UserValue("id").(string)
+	id = strings.TrimSpace(id)
+	if id == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "id is required")
+		return
+	}
+	h.ensureDB(ctx)
+	if h.manager == nil || h.manager.GetDB() == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "Log database is not available")
+		return
+	}
+	var payload struct {
+		PromptTokens     int     `json:"prompt_tokens"`
+		CompletionTokens int     `json:"completion_tokens"`
+		TotalTokens      int     `json:"total_tokens"`
+		AudioDurationSec float64 `json:"audio_duration_sec"`
+		Cost             float64 `json:"cost"`
+	}
+	if err := sonic.Unmarshal(ctx.PostBody(), &payload); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+	if err := h.manager.UpdateLogTokensAndCost(context.Background(), id, payload.PromptTokens, payload.CompletionTokens, payload.TotalTokens, payload.AudioDurationSec, payload.Cost); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+	SendJSON(ctx, map[string]any{"status": "success", "message": "Log usage updated successfully"})
+}
+

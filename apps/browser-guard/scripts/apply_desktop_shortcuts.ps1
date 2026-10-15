@@ -1,33 +1,26 @@
 $wsh = New-Object -ComObject WScript.Shell
-$extPath = "C:\Users\sakth\AppData\Local\Gateway\Guard\guard_extension"
-$desktop = "C:\Users\sakth\OneDrive\9831~1\Desktop"
+$extPath = "$env:ProgramData\Gateway\Guard\guard_extension"
+if (!(Test-Path $extPath)) { $extPath = "$env:LOCALAPPDATA\Gateway\Guard\guard_extension" }
+$searchDirs = @(
+    [Environment]::GetFolderPath("Desktop"),
+    [Environment]::GetFolderPath("CommonDesktopDirectory"),
+    "$env:USERPROFILE\OneDrive\Desktop"
+)
 
-$lnkChrome = "$desktop\Thirupugal (Your Chrome) - Chrome.lnk"
-if (Test-Path $lnkChrome) {
-    $scChrome = $wsh.CreateShortcut($lnkChrome)
-    Write-Host "Chrome Target: $($scChrome.TargetPath)"
-    Write-Host "Chrome Current Args: $($scChrome.Arguments)"
-    $cur = $scChrome.Arguments
-    if ($cur -notmatch 'load-extension') {
-        $scChrome.Arguments = ($cur + " --load-extension=`"$extPath`"").Trim()
-        $scChrome.Save()
-        Write-Host "[SUCCESS] Chrome Desktop Shortcut updated!"
-    } else {
-        Write-Host "[ALREADY] Chrome Desktop Shortcut has load-extension"
-    }
-}
-
-$lnkBrave = "$desktop\Brave.lnk"
-if (Test-Path $lnkBrave) {
-    $scBrave = $wsh.CreateShortcut($lnkBrave)
-    Write-Host "Brave Target: $($scBrave.TargetPath)"
-    Write-Host "Brave Current Args: $($scBrave.Arguments)"
-    $curB = $scBrave.Arguments
-    if ($curB -notmatch 'load-extension') {
-        $scBrave.Arguments = ($curB + " --load-extension=`"$extPath`"").Trim()
-        $scBrave.Save()
-        Write-Host "[SUCCESS] Brave Desktop Shortcut updated!"
-    } else {
-        Write-Host "[ALREADY] Brave Desktop Shortcut has load-extension"
+foreach ($dir in $searchDirs) {
+    if (Test-Path $dir) {
+        Get-ChildItem -Path $dir -Filter "*.lnk" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "chrome|edge|brave" } | ForEach-Object {
+            try {
+                $sc = $wsh.CreateShortcut($_.FullName)
+                $cur = $sc.Arguments
+                if ($cur -notmatch 'load-extension') {
+                    $sc.Arguments = ($cur + " --load-extension=`"$extPath`"").Trim()
+                    $sc.Save()
+                    Write-Host "[SUCCESS] Updated $($_.Name) with load-extension"
+                } else {
+                    Write-Host "[ALREADY] $($_.Name) already has load-extension"
+                }
+            } catch {}
+        }
     }
 }

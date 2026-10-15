@@ -6,7 +6,19 @@ ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
-login_data = json.dumps({"username": "admin@yespanchi.com", "password": "YP2025-2026yp"}).encode('utf-8')
+import os
+from pathlib import Path
+env_file = Path(__file__).resolve().parent / ".env"
+env_vars = {}
+if env_file.is_file():
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        if "=" in line and not line.strip().startswith("#"):
+            k, v = line.split("=", 1)
+            env_vars[k.strip()] = v.strip().strip("'\"")
+
+admin_user = env_vars.get("ADMIN_EMAIL", "admin@yespanchi.com")
+admin_pass = env_vars.get("ADMIN_PASSWORD", "")
+login_data = json.dumps({"username": admin_user, "password": admin_pass}).encode('utf-8')
 req = urllib.request.Request(f"{backend_url}/api/session/login", data=login_data, headers={"Content-Type": "application/json"}, method="POST")
 
 with urllib.request.urlopen(req, context=ctx) as resp:

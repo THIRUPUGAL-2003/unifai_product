@@ -1,6 +1,8 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$extPath = "C:\Users\sakth\AppData\Local\Gateway\Guard\guard_extension"
+$extPath = "$env:ProgramData\Gateway\Guard\guard_extension"
+if (!(Test-Path $extPath)) { $extPath = "$env:LOCALAPPDATA\Gateway\Guard\guard_extension" }
+if (!(Test-Path $extPath)) { $extPath = "$env:ProgramFiles\Gateway\Guard\extension" }
 $argToAdd = "--load-extension=`"$extPath`""
 
 $wsh = New-Object -ComObject WScript.Shell
@@ -8,9 +10,10 @@ $shellApp = New-Object -ComObject Shell.Application
 
 # 1. Update or create Desktop shortcuts
 $desktops = @(
-    "C:\Users\sakth\Desktop",
-    "C:\Users\sakth\OneDrive\ドキュメント\Desktop",
-    "C:\Users\Public\Desktop"
+    [Environment]::GetFolderPath("Desktop"),
+    [Environment]::GetFolderPath("CommonDesktopDirectory"),
+    "$env:USERPROFILE\OneDrive\Desktop",
+    "$env:PUBLIC\Desktop"
 )
 
 # Also ensure Edge desktop shortcut exists
@@ -19,6 +22,7 @@ foreach ($d in $desktops) {
         $edgeLnk = Join-Path $d "Microsoft Edge.lnk"
         if (!(Test-Path $edgeLnk)) {
             $edgeExe = "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+            if (!(Test-Path $edgeExe)) { $edgeExe = "C:\Program Files\Microsoft\Edge\Application\msedge.exe" }
             if (Test-Path $edgeExe) {
                 try {
                     $sc = $wsh.CreateShortcut($edgeLnk)
@@ -37,9 +41,10 @@ foreach ($d in $desktops) {
 
 # 2. Update all existing lnk files across Desktop, Taskbar, Start Menu
 $searchDirs = @(
-    "C:\Users\sakth\Desktop",
-    "C:\Users\sakth\OneDrive\ドキュメント\Desktop",
-    "C:\Users\Public\Desktop",
+    [Environment]::GetFolderPath("Desktop"),
+    [Environment]::GetFolderPath("CommonDesktopDirectory"),
+    "$env:USERPROFILE\OneDrive\Desktop",
+    "$env:PUBLIC\Desktop",
     "$env:APPDATA\Microsoft\Windows\Start Menu\Programs",
     "$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
     "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar",

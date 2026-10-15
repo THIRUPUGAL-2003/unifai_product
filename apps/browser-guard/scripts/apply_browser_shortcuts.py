@@ -8,7 +8,9 @@ except Exception:
     import subprocess
     sys.exit(0)
 
-ext_path = os.path.expandvars(r'%LOCALAPPDATA%\Gateway\Guard\guard_extension')
+ext_path = os.path.expandvars(r'%ProgramData%\Gateway\Guard\guard_extension')
+if not os.path.isdir(ext_path):
+    ext_path = os.path.expandvars(r'%LOCALAPPDATA%\Gateway\Guard\guard_extension')
 arg = f'--load-extension="{ext_path}"'
 
 dirs = [

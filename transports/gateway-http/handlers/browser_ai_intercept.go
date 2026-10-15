@@ -28,14 +28,19 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	h.ensureDB(ctx)
 
 	var payload struct {
-		Platform      string         `json:"platform"`
-		Prompt        string         `json:"prompt"`
-		ClientIP      string         `json:"client_ip"`
-		AgentID       string         `json:"agent_id"`
-		AgentHostname string         `json:"agent_hostname"`
-		AgentType     string         `json:"agent_type"`
-		UploadImages  []string       `json:"upload_images"`
-		Metadata      map[string]any `json:"metadata"`
+		Platform         string         `json:"platform"`
+		Prompt           string         `json:"prompt"`
+		ClientIP         string         `json:"client_ip"`
+		AgentID          string         `json:"agent_id"`
+		AgentHostname    string         `json:"agent_hostname"`
+		AgentType        string         `json:"agent_type"`
+		UploadImages     []string       `json:"upload_images"`
+		PromptTokens     int            `json:"prompt_tokens"`
+		CompletionTokens int            `json:"completion_tokens"`
+		TotalTokens      int            `json:"total_tokens"`
+		AudioDurationSec float64        `json:"audio_duration_sec"`
+		Cost             float64        `json:"cost"`
+		Metadata         map[string]any `json:"metadata"`
 	}
 
 	if err := sonic.Unmarshal(ctx.PostBody(), &payload); err != nil {
@@ -56,6 +61,21 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	}
 	if payload.Metadata == nil {
 		payload.Metadata = make(map[string]any)
+	}
+	if payload.PromptTokens > 0 {
+		payload.Metadata["prompt_tokens"] = payload.PromptTokens
+	}
+	if payload.CompletionTokens > 0 {
+		payload.Metadata["completion_tokens"] = payload.CompletionTokens
+	}
+	if payload.TotalTokens > 0 {
+		payload.Metadata["total_tokens"] = payload.TotalTokens
+	}
+	if payload.AudioDurationSec > 0 {
+		payload.Metadata["audio_duration_sec"] = payload.AudioDurationSec
+	}
+	if payload.Cost > 0 {
+		payload.Metadata["cost"] = payload.Cost
 	}
 	if strings.TrimSpace(payload.AgentID) != "" {
 		payload.Metadata["agent_id"] = strings.TrimSpace(payload.AgentID)
@@ -342,6 +362,12 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		logEntry.ReplyBotProvider = replyProvider
 		logEntry.ReplyBotModel = replyModel
 		logEntry.ReplyBotText = replyText
+		logEntry.CompletionTokens = int(float64(len(strings.Fields(replyText))) * 1.3)
+		if logEntry.CompletionTokens == 0 && len(replyText) > 0 {
+			logEntry.CompletionTokens = 1
+		}
+		logEntry.TotalTokens = logEntry.PromptTokens + logEntry.CompletionTokens
+		logEntry.Cost = logstore.CalculateBrowserAICost(logEntry.Platform, replyModel, logEntry.PromptTokens, logEntry.CompletionTokens, logEntry.AudioDurationSec)
 		if logEntry.Action == "Bot Answered" {
 			_ = h.manager.UpdateLogActionStatus(ctx, logEntry.ID, logEntry.Action, logEntry.Status)
 		}

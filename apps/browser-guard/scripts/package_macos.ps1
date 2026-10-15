@@ -22,7 +22,11 @@ if (-not (Test-Path 'proxy\gateway_proxy_parts\gateway_proxy_parts.enc')) {
 }
 Get-ChildItem $partsDest -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.py' -or $_.Name -eq 'README.md' -or $_.Name -eq 'Gateway_proxy_parts.enc' } | Remove-Item -Force -ErrorAction SilentlyContinue
 Copy-Item -Force 'proxy\gateway_proxy_parts\gateway_proxy_parts.enc' (Join-Path $partsDest 'gateway_proxy_parts.enc')
-Copy-Item -Force 'proxy\gateway_proxy_parts\MANIFEST.txt' (Join-Path $partsDest 'MANIFEST.txt')
+if (Test-Path 'proxy\gateway_proxy_parts\gateway_proxy_parts\MANIFEST.txt') {
+    Copy-Item -Force 'proxy\gateway_proxy_parts\gateway_proxy_parts\MANIFEST.txt' (Join-Path $partsDest 'MANIFEST.txt')
+} elseif (Test-Path 'proxy\gateway_proxy_parts\MANIFEST.txt') {
+    Copy-Item -Force 'proxy\gateway_proxy_parts\MANIFEST.txt' (Join-Path $partsDest 'MANIFEST.txt')
+}
 # Decryptor is compiled into the Mac binary (hidden import). Do not ship bundle_crypto.py.
 Get-ChildItem -Path 'release\Gateway_Guard.app' -Recurse -File -Filter '*.py' |
     Where-Object { $_.Name -ne 'browser_ai_proxy.py' } |
@@ -72,7 +76,7 @@ if (Test-Path 'release\Uninstall_Gateway_Guard.command') { Copy-Item -Force 'rel
 if (Test-Path 'release\Update_Gateway_Guard_macOS.command') { Copy-Item -Force 'release\Update_Gateway_Guard_macOS.command' "$macStage\Update_Gateway_Guard_macOS.command" }
 
 if (Test-Path 'release\Gateway_Guard_macOS.zip') { Remove-Item -Force 'release\Gateway_Guard_macOS.zip' }
-Compress-Archive -Path "$macStage\*" -DestinationPath 'release\Gateway_Guard_macOS.zip' -Force
+python -c "import shutil; shutil.make_archive('release/Gateway_Guard_macOS', 'zip', 'installer/staging-mac-zip')"
 
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $macStage
 

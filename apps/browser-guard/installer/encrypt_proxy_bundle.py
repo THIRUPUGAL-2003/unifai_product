@@ -42,6 +42,7 @@ def main() -> int:
     print(f"\nSUCCESS: {OUTPUT_ENC.name} ({total_kb:.1f} KB), {code_enc.name} ({code_kb:.1f} KB)")
 
     # Mirror to all runtime & installed Guard destinations
+    import os
     import shutil
     parent_enc = ROOT / "proxy" / "gateway_proxy_parts" / "gateway_proxy_parts.enc"
     if parent_enc != OUTPUT_ENC:
@@ -50,8 +51,8 @@ def main() -> int:
             print(f"  -> Mirrored to {parent_enc}")
         except Exception as e:
             print(f"  -> Mirror parent failed: {e}")
-
-    installed_guard_dir = Path(r"C:\Users\sakth\AppData\Local\Programs\Gateway\Guard")
+    local_app_data = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    installed_guard_dir = Path(local_app_data) / "Programs" / "Gateway" / "Guard"
     if installed_guard_dir.is_dir():
         try:
             shutil.copy2(code_enc, installed_guard_dir / "gateway_guard_code.enc")

@@ -283,6 +283,9 @@ IGNORE_PATH_PATTERNS = [
     "/getconversation", "/listconversations", "/recordaction",
     # Activity pings & browser heartbeat
     "/activity", "/heartbeat", "/events",
+    # Google WebChannel / Gemini session keepalive & transport pings (never user prompts)
+    "/processSession", "/processsession", "/v1/processSession", "/v1/processsession",
+    "/webchannel", "/channel/bind", "/channel/test",
 ]
 
 # Only these path markers are treated as real submitted chat prompts

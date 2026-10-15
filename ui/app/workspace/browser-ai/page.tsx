@@ -1842,9 +1842,12 @@ export default function BrowserAiPage() {
 			if (logSortKey === "timestamp") {
 				va = new Date(a.timestamp || 0).getTime();
 				vb = new Date(b.timestamp || 0).getTime();
-			} else if (logSortKey === "est_tokens") {
-				va = Number(a.est_tokens) || 0;
-				vb = Number(b.est_tokens) || 0;
+			} else if (logSortKey === "est_tokens" || logSortKey === "tokens") {
+				va = Number(a.total_tokens ?? (a.prompt_tokens ? (a.prompt_tokens + (a.completion_tokens ?? 0)) : a.est_tokens)) || 0;
+				vb = Number(b.total_tokens ?? (b.prompt_tokens ? (b.prompt_tokens + (b.completion_tokens ?? 0)) : b.est_tokens)) || 0;
+			} else if (logSortKey === "cost") {
+				va = Number(a.cost) || 0;
+				vb = Number(b.cost) || 0;
 			} else {
 				va = String(va).toLowerCase();
 				vb = String(vb).toLowerCase();
@@ -2579,7 +2582,8 @@ export default function BrowserAiPage() {
 				{ key: "desktop_name", header: "Desktop Name" },
 				{ key: "platform", header: "Platform" },
 				{ key: "prompt", header: "User Prompt" },
-				{ key: "tokens", header: "Est. Tokens" },
+				{ key: "tokens", header: "Tokens (In / Out / Total)" },
+				{ key: "cost", header: "Cost ($)" },
 				{ key: "action", header: "Action" },
 				{ key: "details", header: "Security & Policy Details" },
 			],
@@ -2589,7 +2593,8 @@ export default function BrowserAiPage() {
 				desktop_name: log.agent_hostname || log.agent_id || "",
 				platform: log.platform || "",
 				prompt: promptPreviewForExport(log),
-				tokens: log.est_tokens ?? "",
+				tokens: `${log.prompt_tokens ?? log.est_tokens ?? 0} in / ${log.completion_tokens ?? 0} out (${log.total_tokens ?? ((log.prompt_tokens ?? log.est_tokens ?? 0) + (log.completion_tokens ?? 0))} total)${log.audio_duration_sec ? ` [Audio: ${log.audio_duration_sec.toFixed(1)}s]` : ""}`,
+				cost: log.cost != null ? `$${log.cost.toFixed(4)}` : "$0.00",
 				action: log.action || "",
 				details: promptDetailsForExport(log),
 			})),
@@ -2946,7 +2951,8 @@ export default function BrowserAiPage() {
 											<TableHead className="w-[110px]">Desktop Name</TableHead>
 											<TableHead className="w-[100px]">Platform</TableHead>
 											<TableHead className="w-[auto]">User Prompt</TableHead>
-											<TableHead className="w-[80px] text-right">Est. Tokens</TableHead>
+											<TableHead className="w-[110px] text-right">Tokens</TableHead>
+											<TableHead className="w-[80px] text-right">Cost</TableHead>
 											<TableHead className="w-[120px]">Action</TableHead>
 											<TableHead className="w-[64px] text-right">Details</TableHead>
 										</TableRow>
@@ -2982,7 +2988,26 @@ export default function BrowserAiPage() {
 												<TableCell className="max-w-0 py-0">
 													<LogPromptPreviewCell log={log} />
 												</TableCell>
-												<TableCell className="py-0 text-right text-xs font-mono">{log.est_tokens}</TableCell>
+												<TableCell className="py-0 text-right text-xs font-mono">
+													<div className="flex flex-col items-end leading-tight">
+														<span className="font-semibold text-foreground">
+															{(log.total_tokens ?? ((log.prompt_tokens ?? log.est_tokens ?? 0) + (log.completion_tokens ?? 0))) || 0}
+														</span>
+														<span className="text-[10px] text-muted-foreground whitespace-nowrap">
+															{log.prompt_tokens ?? log.est_tokens ?? 0} in / {log.completion_tokens ?? 0} out
+														</span>
+														{log.audio_duration_sec && log.audio_duration_sec > 0 ? (
+															<span className="text-[10px] text-amber-500 font-medium">
+																🎙️ {log.audio_duration_sec.toFixed(1)}s
+															</span>
+														) : null}
+													</div>
+												</TableCell>
+												<TableCell className="py-0 text-right text-xs font-mono">
+													<span className={log.cost && log.cost > 0 ? "text-emerald-500 font-medium" : "text-muted-foreground"}>
+														{log.cost != null ? (log.cost === 0 ? "$0.00" : (log.cost < 0.0001 ? `$${log.cost.toFixed(6)}` : `$${log.cost.toFixed(4)}`)) : "$0.00"}
+													</span>
+												</TableCell>
 												<TableCell className="py-0">{logActionBadge(log)}</TableCell>
 												<TableCell className="py-0 text-right">
 													<div className="inline-flex items-center justify-end gap-0.5">
@@ -3111,7 +3136,8 @@ export default function BrowserAiPage() {
 											<TableHead className="w-[110px]"><SortHeader label="Desktop Name" sortKey="agent_hostname" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
 											<TableHead className="w-[100px]"><SortHeader label="Platform" sortKey="platform" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
 											<TableHead className="w-[auto]"><SortHeader label="User Prompt" sortKey="user_prompt_preview" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
-											<TableHead className="w-[80px] text-right"><SortHeader label="Est. Tokens" sortKey="est_tokens" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} className="justify-end" /></TableHead>
+											<TableHead className="w-[110px] text-right"><SortHeader label="Tokens" sortKey="tokens" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} className="justify-end" /></TableHead>
+											<TableHead className="w-[80px] text-right"><SortHeader label="Cost" sortKey="cost" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} className="justify-end" /></TableHead>
 											<TableHead className="w-[120px]"><SortHeader label="Action" sortKey="action" currentKey={logSortKey} currentDir={logSortDir} onSort={toggleLogSort} /></TableHead>
 											<TableHead className="w-[64px] text-right">Details</TableHead>
 										</TableRow>
@@ -3142,7 +3168,7 @@ export default function BrowserAiPage() {
 												</TableCell>
 												<TableCell className="max-w-0 py-0">
 													<div className="truncate text-xs text-muted-foreground" title={log.agent_hostname || log.agent_id || ""}>
-														{log.agent_hostname || log.agent_id || "—"}
+														{log.agent_hostname || log.agent_id || "— "}
 													</div>
 												</TableCell>
 												<TableCell className="max-w-0 py-0">
@@ -3151,7 +3177,26 @@ export default function BrowserAiPage() {
 												<TableCell className="max-w-0 py-0">
 													<LogPromptPreviewCell log={log} />
 												</TableCell>
-												<TableCell className="py-0 text-right text-xs font-mono">{log.est_tokens}</TableCell>
+												<TableCell className="py-0 text-right text-xs font-mono">
+													<div className="flex flex-col items-end leading-tight">
+														<span className="font-semibold text-foreground">
+															{(log.total_tokens ?? ((log.prompt_tokens ?? log.est_tokens ?? 0) + (log.completion_tokens ?? 0))) || 0}
+														</span>
+														<span className="text-[10px] text-muted-foreground whitespace-nowrap">
+															{log.prompt_tokens ?? log.est_tokens ?? 0} in / {log.completion_tokens ?? 0} out
+														</span>
+														{log.audio_duration_sec && log.audio_duration_sec > 0 ? (
+															<span className="text-[10px] text-amber-500 font-medium">
+																🎙️ {log.audio_duration_sec.toFixed(1)}s
+															</span>
+														) : null}
+													</div>
+												</TableCell>
+												<TableCell className="py-0 text-right text-xs font-mono">
+													<span className={log.cost && log.cost > 0 ? "text-emerald-500 font-medium" : "text-muted-foreground"}>
+														{log.cost != null ? (log.cost === 0 ? "$0.00" : (log.cost < 0.0001 ? `$${log.cost.toFixed(6)}` : `$${log.cost.toFixed(4)}`)) : "$0.00"}
+													</span>
+												</TableCell>
 												<TableCell className="py-0">{logActionBadge(log)}</TableCell>
 												<TableCell className="py-0 text-right">
 													<div className="inline-flex items-center justify-end gap-0.5">
@@ -6479,19 +6524,55 @@ export default function BrowserAiPage() {
 									</p>
 								</div>
 
-								<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-									<div className="rounded-lg border border-border/80 bg-background/60 p-3.5 space-y-1">
-										<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Estimated Tokens</Label>
-										<p className="text-sm font-semibold">{selectedLog.est_tokens} tokens</p>
+								{/* Token & Cost Consumption Card */}
+								<div className="rounded-lg border border-border/80 bg-background/60 p-3.5 space-y-2.5">
+									<div className="flex items-center justify-between">
+										<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Token & Cost Consumption</Label>
+										<span className="text-xs font-mono font-semibold text-emerald-400">
+											{selectedLog.cost != null && selectedLog.cost > 0
+												? (selectedLog.cost < 0.0001 ? `$${selectedLog.cost.toFixed(6)}` : `$${selectedLog.cost.toFixed(4)}`)
+												: "$0.00"}
+										</span>
 									</div>
-									<div className="rounded-lg border border-border/80 bg-background/60 p-3.5 space-y-1">
-										<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Violated Rule</Label>
-										<p className={`text-sm font-semibold ${selectedLog.rule_triggered && selectedLog.action !== "Allowed" ? "text-purple-300" : "text-muted-foreground"}`}>
-											{selectedLog.action === "Allowed" && (selectedLog.predicted_category || "").toUpperCase() === "AI_GUARD_BOT_CLEAR"
-												? "None (checked — no violation)"
-												: (selectedLog.rule_triggered || "None")}
-										</p>
+									<div className="grid grid-cols-3 gap-2 pt-1 border-t border-border/50 text-center">
+										<div className="p-2 rounded bg-muted/40">
+											<div className="text-[10px] text-muted-foreground uppercase font-medium">Input (Prompt)</div>
+											<div className="text-sm font-semibold font-mono text-foreground mt-0.5">
+												{selectedLog.prompt_tokens ?? selectedLog.est_tokens ?? 0}
+											</div>
+										</div>
+										<div className="p-2 rounded bg-muted/40">
+											<div className="text-[10px] text-muted-foreground uppercase font-medium">Output (Answer)</div>
+											<div className="text-sm font-semibold font-mono text-foreground mt-0.5">
+												{selectedLog.completion_tokens ?? 0}
+											</div>
+										</div>
+										<div className="p-2 rounded bg-muted/40">
+											<div className="text-[10px] text-muted-foreground uppercase font-medium">Total Tokens</div>
+											<div className="text-sm font-semibold font-mono text-primary mt-0.5">
+												{selectedLog.total_tokens ?? ((selectedLog.prompt_tokens ?? selectedLog.est_tokens ?? 0) + (selectedLog.completion_tokens ?? 0))}
+											</div>
+										</div>
 									</div>
+									{selectedLog.audio_duration_sec && selectedLog.audio_duration_sec > 0 ? (
+										<div className="flex items-center justify-between px-2.5 py-1.5 rounded bg-amber-500/10 border border-amber-500/20 text-xs">
+											<span className="text-amber-400 font-medium flex items-center gap-1.5">
+												🎙️ Audio Duration Consumed
+											</span>
+											<span className="font-mono font-semibold text-amber-300">
+												{selectedLog.audio_duration_sec.toFixed(1)}s
+											</span>
+										</div>
+									) : null}
+								</div>
+
+								<div className="rounded-lg border border-border/80 bg-background/60 p-3.5 space-y-1">
+									<Label className="text-[11px] uppercase tracking-wide text-muted-foreground">Violated Rule</Label>
+									<p className={`text-sm font-semibold ${selectedLog.rule_triggered && selectedLog.action !== "Allowed" ? "text-purple-300" : "text-muted-foreground"}`}>
+										{selectedLog.action === "Allowed" && (selectedLog.predicted_category || "").toUpperCase() === "AI_GUARD_BOT_CLEAR"
+											? "None (checked —  no violation)"
+											: (selectedLog.rule_triggered || "None")}
+									</p>
 								</div>
 
 								{isFileUploadLog(selectedLog) && logExtractedText(selectedLog) ? (

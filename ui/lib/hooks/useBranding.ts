@@ -37,7 +37,7 @@ export function useBranding(): BrandingInfo {
 	});
 
 	useEffect(() => {
-		fetch(`${getApiBaseUrl()}/api/branding`)
+		fetch(`${getApiBaseUrl()}/branding`)
 			.then((res) => (res.ok ? res.json() : null))
 			.then((data) => {
 				if (!data) return;

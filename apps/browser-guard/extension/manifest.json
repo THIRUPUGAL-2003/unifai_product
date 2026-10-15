@@ -2,13 +2,22 @@
   "manifest_version": 3,
   "name": "YP-Raksha",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsjCVEOn2TciTknXyEB/s1AjU3LBZEnv6eZBJQyUFQbcZ/6ZTItVZIgBk++ZMLulWe8TqH4vMxTSNEGb+EJKRAYtGXnGbY+IuKs2Oyk64w1XyBx/CUin+lYLmvfnhyA+C++XegW1OtupMQIpeIREk+8m4RW8vWAHkNLWWwghfliZOs+w/3GGUlG4M75o5t59fEhcaU2KwtGWhUTd8kGWTZU6B/NMsfjaPtHbIB4ueHyD1GQYfW8hiO1kMkGzfT6XUxbBxgjtRhM64U/9Jo3fiAwb42VMc/nC0bG6wpnXAazD/OKJGICmJ+O1qU7xo/YELmmdM6RNNRL8cV8EUTxaJyQIDAQAB",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Enterprise AI Security Guard - Real-time Data Leak Prevention (DLP) for AI browsers.",
   "icons": {
     "16": "icon16.png",
     "32": "icon32.png",
     "48": "icon48.png",
     "128": "icon128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    },
+    "default_title": "YP-Raksha Enterprise AI Security Guard"
   },
   "incognito": "spanning",
   "browser_specific_settings": {

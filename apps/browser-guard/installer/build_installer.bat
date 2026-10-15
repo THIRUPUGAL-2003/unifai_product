@@ -29,6 +29,8 @@ if errorlevel 1 (
   echo ERROR: set SERVER_DOMAIN in repo .env then: python apps/browser-guard/scripts/sync_config_from_env.py
   exit /b 1
 )
+python scripts\pack_all_extensions.py
+python installer\encrypt_proxy_bundle.py
 
 echo.
 echo ============================================================

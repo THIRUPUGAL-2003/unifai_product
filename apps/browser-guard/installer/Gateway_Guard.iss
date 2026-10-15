@@ -42,9 +42,11 @@ Name: "autostart"; Description: "Start Gateway Guard automatically at Windows lo
 
 [Dirs]
 Name: "{app}"; Permissions: users-readexec
+Name: "{commonappdata}\Gateway\Guard\guard_extension"; Permissions: users-modify
 
 [Files]
 Source: "staging\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs restartreplace
+Source: "staging\extension\*"; DestDir: "{commonappdata}\Gateway\Guard\guard_extension"; Flags: ignoreversion recursesubdirs createallsubdirs restartreplace
 ; Browser AI → Setup → Build now ships a server-fresh config next to Setup.exe; it wins over the compiled-in one.
 Source: "{src}\gateway_guard_config.json"; DestDir: "{app}"; Flags: external skipifsourcedoesntexist ignoreversion
 Source: "{src}\gateway_guard_config.enc"; DestDir: "{app}"; Flags: external skipifsourcedoesntexist ignoreversion

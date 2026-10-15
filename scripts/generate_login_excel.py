@@ -891,12 +891,9 @@ for col_num, width in bug_col_widths.items():
 
 # Save to Desktop and Workspace
 out_paths = [
-    r"d:\unifai_project\Auth_and_User_Lifecycle_Test_Cases.xlsx",
-    r"d:\unifai_project\Login_Test_Cases_Updated.xlsx",
-    r"d:\unifai_project\Login_Test_Cases.xlsx",
-    r"C:\Users\sakth\OneDrive\ドキュメント\Desktop\Auth_and_User_Lifecycle_Test_Cases.xlsx",
-    r"C:\Users\sakth\OneDrive\ドキュメント\Desktop\Login_Test_Cases_Updated.xlsx",
-    r"C:\Users\sakth\OneDrive\ドキュメント\Desktop\Login_Test_Cases.xlsx",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Auth_and_User_Lifecycle_Test_Cases.xlsx"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Login_Test_Cases_Updated.xlsx"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Login_Test_Cases.xlsx"),
     os.path.expanduser(r"~\Desktop\Auth_and_User_Lifecycle_Test_Cases.xlsx"),
     os.path.expanduser(r"~\Desktop\Login_Test_Cases.xlsx")
 ]

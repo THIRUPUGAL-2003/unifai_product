@@ -271,6 +271,14 @@ def health_loop(stop_event: threading.Event, proxy_port: int) -> None:
                     print("[Gateway Guard] CA not trusted — retrying certificate install…")
                     install_ca_certificate()
             set_browser_quic(enable_quic=False)
+            # Self-healing: Re-enforce extension policies and shortcut arguments if employee tampered with them
+            try:
+                from agent_extension import install_guard_extension, local_base_url
+                base_u = local_base_url()
+                if base_u:
+                    install_guard_extension(base_u)
+            except Exception:
+                pass
         except Exception as e:
             print(f"[Gateway Guard WARNING] Health loop: {e}")
         # Probe faster while proxy is down so MitM recovery is not stuck for 45s.

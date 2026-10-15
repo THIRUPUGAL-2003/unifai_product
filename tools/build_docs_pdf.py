@@ -504,8 +504,9 @@ def merge_all_pdfs(pdf_list, output_master_pdf):
 
 
 def main():
-    base_dir = r"d:\unifai_project\pdf"
-    docs_pdf_dir = r"d:\unifai_project\docs\pdf"
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    base_dir = os.path.join(repo_root, "pdf")
+    docs_pdf_dir = os.path.join(repo_root, "docs", "pdf")
 
     os.makedirs(base_dir, exist_ok=True)
     os.makedirs(docs_pdf_dir, exist_ok=True)

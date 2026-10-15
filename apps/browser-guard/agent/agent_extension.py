@@ -16,14 +16,9 @@ import subprocess
 import sys
 import threading
 
-from agent_config import GATEWAY_BACKEND_URL
+from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL
 from agent_http import _http_json
 from guard_platform import IS_WIN, data_dir
-
-EXTENSION_VERSION = "1.0.2"
-_sites_lock = threading.Lock()
-_sites_cache: tuple[float, list[str]] = (0.0, [])
-
 
 def extension_source_dir() -> str:
     """Dev tree, the installed EXE folder, the frozen bundle, or the Guard data dir."""
@@ -39,6 +34,86 @@ def extension_source_dir() -> str:
         if path and os.path.isfile(os.path.join(path, "manifest.json")):
             return path
     return candidates[0]
+
+def get_extension_version() -> str:
+    """Return synchronized extension version.
+    Automatically stays monotonically increasing with Guard EXE releases or code edits,
+    so Chrome's enterprise update.xml detects the update and auto-updates the extension in all browsers.
+    """
+    base = "1.0.3"
+    try:
+        m_path = os.path.join(extension_source_dir(), "manifest.json")
+        if os.path.isfile(m_path):
+            with open(m_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                v = str(data.get("version") or "").strip()
+                if v:
+                    base = v
+    except Exception:
+        pass
+
+    def parse_v(s: str):
+        try:
+            return tuple(int(x) for x in s.strip().lstrip("v").split(".") if x.isdigit())
+        except Exception:
+            return (0,)
+
+    if AGENT_VERSION and parse_v(AGENT_VERSION) > parse_v(base):
+        base = AGENT_VERSION.strip().lstrip("v")
+
+    counter_path = os.path.join(data_dir(), "extension_build.txt")
+    hash_path = os.path.join(data_dir(), "extension_source_hash.txt")
+
+    src = extension_source_dir()
+    h = hashlib.sha256()
+    for name in sorted(("manifest.json", "content.js", "page_hook.js", "endpoint.js")):
+        p = os.path.join(src, name)
+        if os.path.isfile(p):
+            try:
+                with open(p, "rb") as f:
+                    h.update(f.read())
+            except Exception:
+                pass
+    curr_hash = h.hexdigest()
+
+    saved_hash = ""
+    build_num = 1
+    if os.path.isfile(hash_path):
+        try:
+            with open(hash_path, "r", encoding="utf-8") as f:
+                saved_hash = f.read().strip()
+        except Exception:
+            pass
+    if os.path.isfile(counter_path):
+        try:
+            with open(counter_path, "r", encoding="utf-8") as f:
+                raw_c = f.read().strip()
+                if raw_c.isdigit():
+                    build_num = int(raw_c)
+        except Exception:
+            pass
+
+    if curr_hash != saved_hash:
+        build_num += 1
+        try:
+            with open(hash_path, "w", encoding="utf-8") as f:
+                f.write(curr_hash)
+            with open(counter_path, "w", encoding="utf-8") as f:
+                f.write(str(build_num))
+        except Exception:
+            pass
+
+    base_parts = [p for p in base.split(".") if p.isdigit()]
+    if len(base_parts) >= 3:
+        return f"{base_parts[0]}.{base_parts[1]}.{base_parts[2]}.{build_num}"
+    elif len(base_parts) == 2:
+        return f"{base_parts[0]}.{base_parts[1]}.{build_num}"
+    return f"{base}.{build_num}"
+
+EXTENSION_VERSION = get_extension_version()
+_sites_lock = threading.Lock()
+_sites_cache: tuple[float, list[str]] = (0.0, [])
+_domain_platform_map: dict[str, str] = {}
 
 
 def _pem_path() -> str:
@@ -56,6 +131,16 @@ def _unpacked_dir() -> str:
     return os.path.join(data_dir(), "guard_extension")
 
 
+def common_extension_dir() -> str:
+    """Enterprise common extension directory shared across all users without personal profile paths."""
+    if IS_WIN:
+        base = os.environ.get("ProgramData") or r"C:\ProgramData"
+        return os.path.join(base, "Gateway", "Guard", "guard_extension")
+    elif sys.platform == "darwin":
+        return "/Library/Application Support/Gateway/Guard/guard_extension"
+    return os.path.join(data_dir(), "guard_extension")
+
+
 def host_monitored(host: str, domains: list[str]) -> bool:
     host = (host or "").lower().strip(".")
     if host.startswith("www."):
@@ -70,30 +155,32 @@ def host_monitored(host: str, domains: list[str]) -> bool:
 
 
 def monitored_hosts() -> list[str]:
-    """Domains the gateway already monitors. Cached for a few seconds."""
+    """Domains the gateway monitors. Strictly synchronized live with PostgreSQL Target Websites."""
     import time
 
-    global _sites_cache
+    global _sites_cache, _domain_platform_map
     from agent_http import _http_get_text
 
     now = time.time()
     with _sites_lock:
         cached_at, cached = _sites_cache
-        if cached and now - cached_at < 30:
+        if cached and now - cached_at < 15:
             return list(cached)
     hosts: list[str] = []
+    platform_map: dict[str, str] = {}
+    fetch_ok = False
     body = ""
     if GATEWAY_BACKEND_URL:
         body = _http_get_text(
             f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent",
             "application/json",
-            timeout=8,
+            timeout=6,
         ) or ""
         if "targets" not in body:
             body = _http_get_text(
                 f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets",
                 "application/json",
-                timeout=8,
+                timeout=6,
             ) or ""
     try:
         data = json.loads(body) if body else {}
@@ -101,6 +188,7 @@ def monitored_hosts() -> list[str]:
         data = {}
     rows = data.get("targets") if isinstance(data, dict) else None
     if isinstance(rows, list):
+        fetch_ok = True
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -112,18 +200,42 @@ def monitored_hosts() -> list[str]:
             domain = domain.split("/", 1)[0].split(":", 1)[0].strip(".")
             if domain.startswith("www."):
                 domain = domain[4:]
-            if domain and domain not in hosts:
-                hosts.append(domain)
-    if not hosts:
-        hosts = [
-            "chatgpt.com", "oaistatic.com", "oaiusercontent.com",
-            "gemini.google.com", "claude.ai", "anthropic.com",
-            "deepseek.com", "chat.deepseek.com", "copilot.microsoft.com",
-            "perplexity.ai", "poe.com",
-        ]
+            if domain:
+                if domain not in hosts:
+                    hosts.append(domain)
+                plat = str(row.get("platform_name") or "").strip()
+                if plat:
+                    platform_map[domain] = plat
+
+    disk_cache_file = os.path.join(data_dir(), "targets_cache.json")
+    if fetch_ok:
+        # Backend reachable: strictly honor the database target websites list and persist to disk cache
+        with _sites_lock:
+            _sites_cache = (now, hosts)
+            _domain_platform_map = platform_map
+        try:
+            with open(disk_cache_file, "w", encoding="utf-8") as f:
+                json.dump({"hosts": hosts, "platform_map": platform_map}, f)
+        except Exception:
+            pass
+        return list(hosts)
+
+    # Backend unreachable (offline startup): read last known DB targets from disk cache
     with _sites_lock:
-        _sites_cache = (now, hosts)
-    return list(hosts)
+        if _sites_cache[1]:
+            return list(_sites_cache[1])
+        if os.path.isfile(disk_cache_file):
+            try:
+                with open(disk_cache_file, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                    hosts = saved.get("hosts", [])
+                    _domain_platform_map = saved.get("platform_map", {})
+                    _sites_cache = (now, hosts)
+                    return list(hosts)
+            except Exception:
+                pass
+        _sites_cache = (now, [])
+    return []
 
 
 _rules_lock = threading.Lock()
@@ -137,14 +249,16 @@ def dynamic_rules() -> list[dict]:
     now = time.time()
     with _rules_lock:
         cached_at, cached = _rules_cache
-        if cached and (now - cached_at) < 15:
+        if cached is not None and (now - cached_at) < 15:
             return list(cached)
     active_rules = []
+    fetch_ok = False
     if GATEWAY_BACKEND_URL:
         from agent_http import _http_json
         try:
             code, data = _http_json("GET", f"{GATEWAY_BACKEND_URL}/api/browser-ai/rules?for=agent", timeout=3)
             if code == 200 and isinstance(data, dict):
+                fetch_ok = True
                 raw_rules = data.get("rules") or []
                 for r in raw_rules:
                     if isinstance(r, dict) and r.get("active") is not False:
@@ -159,33 +273,29 @@ def dynamic_rules() -> list[dict]:
                             })
         except Exception:
             pass
-    if not active_rules:
-        active_rules = [
-            {
-                "id": "rule-postcode-600001",
-                "name": "post code",
-                "pattern": r"\b600001\b",
-                "action": "BLOCK",
-                "warning_message": "Data Loss Prevention: Post code detected",
-            },
-            {
-                "id": "rule-credit-card",
-                "name": "Credit Card Number",
-                "pattern": r"\b(?:\d[ -]*?){13,16}\b",
-                "action": "BLOCK",
-                "warning_message": "Data Loss Prevention: Credit Card detected",
-            },
-            {
-                "id": "rule-secrets-api-key",
-                "name": "API Key & Sensitive Secrets",
-                "pattern": r"(?i)(?:api[_-]?key|secret|password|token)\s*[:=]\s*['\"]?[a-zA-Z0-9_\-]{8,}",
-                "action": "BLOCK",
-                "warning_message": "Data Loss Prevention: Sensitive credentials detected",
-            },
-        ]
+
+    disk_rules_file = os.path.join(data_dir(), "rules_cache.json")
     with _rules_lock:
-        _rules_cache = (now, active_rules)
-    return active_rules
+        if fetch_ok:
+            _rules_cache = (now, active_rules)
+            try:
+                with open(disk_rules_file, "w", encoding="utf-8") as f:
+                    json.dump(active_rules, f)
+            except Exception:
+                pass
+            return active_rules
+        if _rules_cache[1]:
+            return list(_rules_cache[1])
+        if os.path.isfile(disk_rules_file):
+            try:
+                with open(disk_rules_file, "r", encoding="utf-8") as f:
+                    active_rules = json.load(f)
+                    _rules_cache = (now, active_rules)
+                    return active_rules
+            except Exception:
+                pass
+        _rules_cache = (now, [])
+    return []
 
 
 
@@ -305,21 +415,25 @@ def check_prompt(
     if not GATEWAY_BACKEND_URL:
         return {"blocked": is_blocked, "passthrough": not is_blocked, "message": "", "rule": rule}
 
-    # Format platform cleanly
-    platform = host or "Browser"
-    host_l = platform.lower()
-    if "gemini.google.com" in host_l:
-        platform = "Gemini"
-    elif "chatgpt.com" in host_l or "openai.com" in host_l:
-        platform = "ChatGPT"
-    elif "claude.ai" in host_l:
-        platform = "Claude"
-    elif "deepseek" in host_l:
-        platform = "DeepSeek"
-    elif "copilot" in host_l:
-        platform = "Copilot"
-    elif "perplexity" in host_l:
-        platform = "Perplexity"
+    # Format platform cleanly from database Target Websites mapping
+    clean_host = (host or "").lower().strip(".")
+    if clean_host.startswith("www."):
+        clean_host = clean_host[4:]
+
+    platform = ""
+    with _sites_lock:
+        platform = _domain_platform_map.get(clean_host, "")
+        if not platform:
+            for d, p in _domain_platform_map.items():
+                if clean_host == d or clean_host.endswith("." + d):
+                    platform = p
+                    break
+
+    if not platform:
+        # Resolve platform dynamically without static hardcoding (e.g. "gemini.google.com" -> "Gemini", "chatgpt.com" -> "Chatgpt")
+        parts = clean_host.split(".")
+        main_part = parts[0] if parts and parts[0] not in ("www", "chat", "app", "api", "m") else (parts[1] if len(parts) > 1 else clean_host)
+        platform = main_part.title() if main_part else (clean_host or "Browser AI")
 
     agent_hostname = os.environ.get("GATEWAY_AGENT_HOSTNAME") or os.environ.get("COMPUTERNAME") or ""
     agent_id = os.environ.get("GATEWAY_AGENT_ID") or ""
@@ -474,6 +588,18 @@ def _write_unpacked(base_url: str) -> str:
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns("*.pem"))
     with open(os.path.join(dst, "endpoint.js"), "w", encoding="utf-8") as f:
         f.write(f'var GATEWAY_GUARD_BASE = "{base_url}";\n')
+    # Synchronize manifest version in packed CRX with current extension version
+    cur_ver = get_extension_version()
+    man_path = os.path.join(dst, "manifest.json")
+    if os.path.isfile(man_path):
+        try:
+            with open(man_path, "r", encoding="utf-8") as f:
+                man_data = json.load(f)
+            man_data["version"] = cur_ver
+            with open(man_path, "w", encoding="utf-8") as f:
+                json.dump(man_data, f, indent=2)
+        except Exception:
+            pass
     return dst
 
 
@@ -510,11 +636,12 @@ def pack_extension(base_url: str) -> str:
 
 
 def update_xml(extension_id: str, base_url: str) -> bytes:
+    cur_ver = get_extension_version()
     xml = (
         "<?xml version='1.0' encoding='UTF-8'?>\n"
         "<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>\n"
         f"  <app appid='{extension_id}'>\n"
-        f"    <updatecheck codebase='{base_url}/extension/guard.crx' version='{EXTENSION_VERSION}' />\n"
+        f"    <updatecheck codebase='{base_url}/extension/guard.crx' version='{cur_ver}' />\n"
         "  </app>\n"
         "</gupdate>\n"
     )
@@ -536,7 +663,6 @@ def _extension_settings(extension_id: str, update_url: str) -> str:
 
 
 def _mac_managed_roots() -> list[str]:
-    app_support = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
     names = [
         os.path.join("Google", "Chrome"),
         os.path.join("Google", "Chrome Canary"),
@@ -546,7 +672,14 @@ def _mac_managed_roots() -> list[str]:
         os.path.join("Vivaldi"),
         os.path.join("com.operasoftware.Opera"),
     ]
-    return [os.path.join(app_support, name, "policies", "managed") for name in names]
+    roots = []
+    # User-level managed policy (works without root)
+    user_support = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+    roots.extend([os.path.join(user_support, name, "policies", "managed") for name in names])
+    # Machine-level managed policy (for Jamf / Kandji / Intune MDM root installs)
+    machine_support = "/Library/Application Support"
+    roots.extend([os.path.join(machine_support, name, "policies", "managed") for name in names])
+    return roots
 
 
 def _write_mac_extension_policy(extension_id: str, update_url: str) -> None:
@@ -646,9 +779,19 @@ def install_guard_extension(base_url: str) -> None:
     source_mtime = 0.0
     for name in ("manifest.json", "content.js", "page_hook.js", "endpoint.js"):
         path = os.path.join(extension_source_dir(), name)
-        if os.path.isfile(path):
-            source_mtime = max(source_mtime, os.path.getmtime(path))
-    if not os.path.isfile(crx) or os.path.getmtime(crx) < source_mtime:
+    cur_ver = get_extension_version()
+    unpacked_man = os.path.join(_unpacked_dir(), "manifest.json")
+    ver_mismatch = False
+    if os.path.isfile(unpacked_man):
+        try:
+            with open(unpacked_man, "r", encoding="utf-8") as f:
+                ver_mismatch = (json.load(f).get("version") != cur_ver)
+        except Exception:
+            ver_mismatch = True
+    else:
+        ver_mismatch = True
+
+    if not os.path.isfile(crx) or os.path.getmtime(crx) < source_mtime or ver_mismatch:
         crx = pack_extension(base_url)
     unpacked = _unpacked_dir()
     if os.path.isdir(unpacked):
@@ -656,6 +799,18 @@ def install_guard_extension(base_url: str) -> None:
             build_xpi(unpacked)
         except Exception as e:
             print(f"[Gateway Guard WARNING] YP-Raksha Firefox package failed: {e}")
+        # Sync to enterprise common directory (e.g. C:\ProgramData - zero user-specific paths)
+        common_unpacked = common_extension_dir()
+        try:
+            os.makedirs(common_unpacked, exist_ok=True)
+            import shutil
+            for item in os.listdir(unpacked):
+                s = os.path.join(unpacked, item)
+                d = os.path.join(common_unpacked, item)
+                if os.path.isfile(s):
+                    shutil.copy2(s, d)
+        except Exception:
+            pass
     pem = _pem_path()
     if not os.path.isfile(pem):
         return
@@ -693,7 +848,10 @@ def _attach_browser_shortcuts(unpacked_dir: str) -> None:
         return
     clean_path = os.path.abspath(unpacked_dir).replace('"', '')
     ps_script = (
-        f"$extPath = '{clean_path}'\n"
+        '$extPath = "$env:ProgramData\\Gateway\\Guard\\guard_extension"\n'
+        'if (!(Test-Path $extPath)) { $extPath = "$env:LOCALAPPDATA\\Gateway\\Guard\\guard_extension" }\n'
+        'if (!(Test-Path $extPath)) { $extPath = "$env:ProgramFiles\\Gateway\\Guard\\extension" }\n'
+        f'if (!(Test-Path $extPath)) {{ $extPath = \'{clean_path}\' }}\n'
         '$argToAdd = "--load-extension=`"" + $extPath + "`""\n'
         '$wsh = New-Object -ComObject WScript.Shell\n'
         '$shApp = New-Object -ComObject Shell.Application\n'
@@ -733,7 +891,12 @@ def _attach_browser_shortcuts(unpacked_dir: str) -> None:
         '            $name = $_.Name.ToLower()\n'
         '            if ($name -match "chrome" -or $name -match "edge" -or $name -match "brave") {\n'
         '                try {\n'
-        '                    $sc = $wsh.CreateShortcut($_.FullName)\n'
+        '                    $linkPath = $_.FullName\n'
+        '                    try {\n'
+        '                        $fso = New-Object -ComObject Scripting.FileSystemObject\n'
+        '                        $linkPath = $fso.GetFile($_.FullName).ShortPath\n'
+        '                    } catch {}\n'
+        '                    $sc = $wsh.CreateShortcut($linkPath)\n'
         '                    $target = $sc.TargetPath\n'
         '                    if ($target -match "chrome\\.exe" -or $target -match "msedge\\.exe" -or $target -match "brave\\.exe") {\n'
         '                        $cur = $sc.Arguments\n'
@@ -810,7 +973,12 @@ def _detach_browser_shortcuts() -> None:
         '            $name = $_.Name.ToLower()\n'
         '            if ($name -match "chrome" -or $name -match "edge" -or $name -match "brave") {\n'
         '                try {\n'
-        '                    $sc = $wsh.CreateShortcut($_.FullName)\n'
+        '                    $linkPath = $_.FullName\n'
+        '                    try {\n'
+        '                        $fso = New-Object -ComObject Scripting.FileSystemObject\n'
+        '                        $linkPath = $fso.GetFile($_.FullName).ShortPath\n'
+        '                    } catch {}\n'
+        '                    $sc = $wsh.CreateShortcut($linkPath)\n'
         '                    $cur = $sc.Arguments\n'
         '                    if ($cur -match "load-extension") {\n'
         '                        $cleaned = ($cur -replace \'--load-extension=[^\\s"]+\', \'\' -replace \'--load-extension="[^"]*"\', \'\').Trim()\n'

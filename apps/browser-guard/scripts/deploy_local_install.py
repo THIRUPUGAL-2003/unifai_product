@@ -1,11 +1,13 @@
 import os, shutil, sys
 
-sys.path.insert(0, r'd:\unifai_project\apps\browser-guard\agent')
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(ROOT, "agent"))
 import agent_extension
 
-src = r'd:\unifai_project\apps\browser-guard\extension'
-dst1 = r'C:\Users\sakth\AppData\Local\Programs\Gateway\Guard\extension'
-dst2 = r'C:\Users\sakth\AppData\Local\Gateway\Guard\guard_extension'
+src = os.path.join(ROOT, "extension")
+local_app = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+dst1 = os.path.join(local_app, "Programs", "Gateway", "Guard", "extension")
+dst2 = os.path.join(local_app, "Gateway", "Guard", "guard_extension")
 
 for dst in (dst1, dst2):
     os.makedirs(dst, exist_ok=True)

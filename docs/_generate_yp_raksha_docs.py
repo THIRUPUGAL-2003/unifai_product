@@ -6,11 +6,10 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor, Cm, Twips
-from datetime import date
-
+import os
 from _yp_raksha_extra import add_system, add_tech, add_user
 
-OUT = r"d:\unifai_project\docs"
+OUT = os.path.dirname(os.path.abspath(__file__))
 DATE = "12 October 2026"
 VERSION = "Repository baseline, Guard agent 1.1.20"
 CLASSIFICATION = "Internal"

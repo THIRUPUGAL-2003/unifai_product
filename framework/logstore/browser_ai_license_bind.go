@@ -120,9 +120,8 @@ func (m *BrowserAIManager) assertLicenseBinding(ctx context.Context, payload *En
 		}
 	}
 	if !isFloatingServer {
-		hostID := GetServerHardwareID()
-		if !strings.EqualFold(srv, strings.TrimSpace(hostID)) {
-			return fmt.Errorf("LICENSE_SERVER_MISMATCH: license is locked to server hardware [%s], but current host hardware is [%s]", srv, hostID)
+		if !MatchServerIdentifier(srv) {
+			return fmt.Errorf("LICENSE_SERVER_MISMATCH: license is locked to server host [%s], but current host does not match", srv)
 		}
 	}
 	rev := payload.Revision

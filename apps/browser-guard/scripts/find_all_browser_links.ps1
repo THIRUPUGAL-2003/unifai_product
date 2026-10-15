@@ -3,9 +3,11 @@ $sh = New-Object -ComObject WScript.Shell
 $shellApp = New-Object -ComObject Shell.Application
 
 $paths = @(
-    "C:\Users\sakth\Desktop",
-    "C:\Users\sakth\OneDrive\ドキュメント\Desktop",
-    "C:\Users\Public\Desktop",
+    [Environment]::GetFolderPath("Desktop"),
+    [Environment]::GetFolderPath("CommonDesktopDirectory"),
+    "$env:USERPROFILE\Desktop",
+    "$env:USERPROFILE\OneDrive\Desktop",
+    "$env:PUBLIC\Desktop",
     "$env:APPDATA\Microsoft\Windows\Start Menu\Programs",
     "$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
     "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar",

@@ -1,8 +1,19 @@
 $wsh = New-Object -ComObject WScript.Shell
-$extPath = "$env:LOCALAPPDATA\Gateway\Guard\guard_extension"
+$extPath = "$env:ProgramData\Gateway\Guard\guard_extension"
+if (!(Test-Path $extPath)) { $extPath = "$env:LOCALAPPDATA\Gateway\Guard\guard_extension" }
 $argToAdd = "--load-extension=`"$extPath`""
 
-$files = Get-ChildItem -Path "C:\Users\sakth\OneDrive" -Filter "*.lnk" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Chrome' -or $_.Name -match 'Brave' -or $_.Name -match 'Edge' }
+$searchDirs = @(
+    [Environment]::GetFolderPath("Desktop"),
+    "$env:USERPROFILE\Desktop",
+    "$env:USERPROFILE\OneDrive\Desktop"
+)
+$files = @()
+foreach ($d in $searchDirs) {
+    if (Test-Path $d) {
+        $files += Get-ChildItem -Path $d -Filter "*.lnk" -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Chrome' -or $_.Name -match 'Brave' -or $_.Name -match 'Edge' }
+    }
+}
 foreach ($f in $files) {
     try {
         $sc = $wsh.CreateShortcut($f.FullName)

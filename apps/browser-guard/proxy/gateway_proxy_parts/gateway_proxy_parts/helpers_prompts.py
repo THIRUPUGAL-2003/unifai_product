@@ -3,6 +3,7 @@ import re
 import json
 import os
 import urllib.parse
+from config_caches_rules import _path_has_ignore_pattern, _is_typed_numeric_prompt, _is_symbol_prompt, _UNIVERSAL_PROMPT_KEYS
 
 def _safe_unescape_prompt_str(raw: str) -> str:
     """Safely decode JSON string escapes without destroying UTF-8 unicode/emojis."""
@@ -460,6 +461,8 @@ def _is_transport_ping(text: str) -> bool:
         return False
     low = t.lower()
     if low in ("ping", "pong", "heartbeat"):
+        return True
+    if low.startswith("count=") or "&ofs=" in low or "req0___data__" in low:
         return True
     if low.startswith("{") and ("ping" in low or "pong" in low):
         try:
@@ -1179,7 +1182,7 @@ def is_noise(path: str, content: str = "") -> bool:
     if NOISE_EXTENSIONS.search(path_lower):
         return True
 
-    if _path_has_ignore_pattern(path_lower):
+    if _path_has_ignore_pattern(path_lower) or "processsession" in path_lower:
         return True
 
     # Partial typing / autocomplete — not a submitted prompt
@@ -1189,6 +1192,9 @@ def is_noise(path: str, content: str = "") -> bool:
         return True
 
     if content:
+        c_strip = content.strip()
+        if c_strip.startswith("count=") or "&ofs=" in c_strip or "req0___data__" in c_strip:
+            return True
         # Datadog RUM actions / telemetry (Claude / web monitoring)
         if '"_dd":' in content or ('"format_version":' in content and '"action"' in content):
             return True
@@ -3082,7 +3088,11 @@ def _extract_prompt_universal_raw(body_bytes: bytes, content_type: str = "", hos
             pass
 
     # ── Layer 4: Platform-specific parsers (most accurate for known shapes) ─
-    got = extract_prompt(body_bytes, content_type, host=host)
+    try:
+        from extract_office_backend import extract_prompt
+        got = extract_prompt(body_bytes, content_type, host=host)
+    except Exception:
+        got = None
     if got:
         got_s = (got or "").strip()
         if (

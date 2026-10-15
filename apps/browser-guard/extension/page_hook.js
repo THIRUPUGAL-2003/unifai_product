@@ -105,12 +105,33 @@
 
     for (var k = 0; k < dynamicRules.length; k++) {
       var r = dynamicRules[k];
-        if (r.re && r.re.test(fullContent)) {
-        if (r.action === "BLOCK") {
+      if (r.re && r.re.test(fullContent)) {
+        var act = String(r.action || "BLOCK").toUpperCase();
+        if (act === "BLOCK" || act === "BLOCKED") {
           return {
             blocked: true,
             action: "Blocked",
-            message: r.msg,
+            message: r.msg || ("Blocked by security rule: " + r.name),
+            rule: r.name,
+            matchedRule: r
+          };
+        }
+        if (act === "REDACT" || act === "REDACTED") {
+          var redacted = fullContent.replace(r.re, "[REDACTED]");
+          return {
+            blocked: false,
+            action: "Redacted",
+            message: r.msg || ("Confidential text was redacted (" + r.name + ")."),
+            rule: r.name,
+            redacted_prompt: redacted,
+            matchedRule: r
+          };
+        }
+        if (act === "WARN" || act === "WARNED") {
+          return {
+            blocked: false,
+            action: "Warned",
+            message: r.msg || ("Security Warning: " + r.name + " detected."),
             rule: r.name,
             matchedRule: r
           };
@@ -120,12 +141,23 @@
     return null;
   }
 
+  var lastDecisionCache = { text: "", time: 0, decision: null };
+
   // Ask Gateway Guard Engine (Async verify with PAC server & Gateway backend)
   function ask(prompt, files, images) {
+    var trimmed = (prompt || "").trim();
+    if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
+      if (lastDecisionCache.text === trimmed && (Date.now() - lastDecisionCache.time < 5000) && lastDecisionCache.decision) {
+        return Promise.resolve(lastDecisionCache.decision);
+      }
+    }
     return new Promise(function (resolve) {
       // 1. First run fast client-side check
       var clientDecision = evaluateClientRules(prompt, files);
       if (clientDecision && clientDecision.blocked) {
+        if (trimmed) {
+          lastDecisionCache = { text: trimmed, time: Date.now(), decision: clientDecision };
+        }
         // Asynchronously notify backend so the blocked prompt is recorded in PostgreSQL DB & dashboard!
         window.postMessage({
           source: "gateway-guard-page",
@@ -147,12 +179,16 @@
       var id = Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
       var timer = setTimeout(function () {
         delete pending[id];
-        resolve({ blocked: false, passthrough: true });
+        resolve(clientDecision || { blocked: false, passthrough: true });
       }, 5000);
 
       pending[id] = function (decision) {
         clearTimeout(timer);
-        resolve(decision || { blocked: false });
+        var res = decision || clientDecision || { blocked: false };
+        if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
+          lastDecisionCache = { text: trimmed, time: Date.now(), decision: res };
+        }
+        resolve(res);
       };
 
       window.postMessage({
@@ -162,7 +198,8 @@
         files: files || [],
         upload_images: images || [],
         host: location.hostname,
-        url: location.href
+        url: location.href,
+        rule: clientDecision ? clientDecision.rule : ""
       }, "*");
     });
   }
@@ -231,10 +268,19 @@
     return false;
   }
 
-  // Stunning In-Page YP-Raksha Warning Card
+  // Sleek, compact In-Page YP-Raksha Alert Toast
   function showBubble(message, ruleName, kind) {
-    var tone = kind === "warn" || kind === "redact" ? "warn" : "block";
-    var text = (message || (tone === "warn" ? "YP-Raksha checked this request." : "This request was blocked by YP-Raksha.")).trim();
+    var tone = kind === "warn" ? "warn" : (kind === "redact" ? "redact" : "block");
+    var isWarn = (tone === "warn");
+    var isRedact = (tone === "redact");
+    var borderColor = isWarn ? "#f59e0b" : (isRedact ? "#38bdf8" : "#ef4444");
+    var titleColor = isWarn ? "#fbbf24" : (isRedact ? "#38bdf8" : "#f87171");
+    var titleText = isWarn ? "YP-Raksha Warning" : (isRedact ? "YP-Raksha Redacted" : "YP-Raksha Blocked");
+    var iconText = isWarn ? "⚠️" : (isRedact ? "✂️" : "🛡️");
+    var text = (message || (isWarn ? "Security Warning: Policy match detected." : (isRedact ? "Sensitive information was redacted." : "This request was blocked by YP-Raksha."))).trim();
+    if (ruleName && text.indexOf(ruleName) < 0) {
+      text = text + " (" + ruleName + ")";
+    }
     var modalId = "yp-raksha-alert-card";
     var old = document.getElementById(modalId);
     if (old) old.remove();
@@ -243,53 +289,65 @@
     card.id = modalId;
     card.setAttribute("role", "alertdialog");
     card.style.cssText =
-      "position:fixed;left:50%;bottom:80px;transform:translateX(-50%);max-width:680px;width:min(680px,calc(100% - 32px));" +
-      "z-index:2147483647;background:rgba(17,24,39,0.96);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);" +
-      "color:#f9fafb;border:1px solid " + (tone === "warn" ? "#f59e0b" : "#ef4444") + ";border-radius:18px;padding:16px 20px;box-shadow:0 20px 45px rgba(0,0,0,0.45);" +
-      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;animation:ypFadeIn 0.25s ease-out;";
+      "all:initial;display:block;box-sizing:border-box;position:fixed;left:50%;bottom:95px;transform:translateX(-50%);max-width:460px;width:fit-content;min-width:280px;" +
+      "z-index:2147483647;background:rgba(15,23,42,0.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);" +
+      "color:#f9fafb;border:1px solid " + borderColor + ";border-radius:12px;padding:9px 14px;box-shadow:0 10px 30px rgba(0,0,0,0.5);" +
+      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;animation:ypFadeIn 0.2s ease-out;";
 
     // Style animation
     if (!document.getElementById("yp-raksha-keyframes")) {
       var kf = document.createElement("style");
       kf.id = "yp-raksha-keyframes";
-      kf.textContent = "@keyframes ypFadeIn{from{opacity:0;transform:translate(-50%,16px)}to{opacity:1;transform:translate(-50%,0)}}";
+      kf.textContent = "@keyframes ypFadeIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}";
       (document.head || document.documentElement).appendChild(kf);
     }
 
     var header = document.createElement("div");
-    header.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;";
+    header.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;";
 
     var titleBox = document.createElement("div");
-    titleBox.style.cssText = "display:flex;align-items:center;gap:8px;";
+    titleBox.style.cssText = "display:flex;align-items:center;gap:6px;";
 
     var icon = document.createElement("span");
-    icon.textContent = "🛡️";
-    icon.style.cssText = "font-size:18px;";
+    icon.textContent = iconText;
+    icon.style.cssText = "font-size:13px;line-height:1;";
 
     var title = document.createElement("strong");
-    title.textContent = "YP-Raksha Data Loss Prevention";
-    title.style.cssText = "font-size:13px;font-weight:700;letter-spacing:0.02em;color:" + (tone === "warn" ? "#fbbf24" : "#f87171") + ";";
+    title.textContent = titleText;
+    title.style.cssText = "font-size:11px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:" + titleColor + ";";
 
     titleBox.appendChild(icon);
     titleBox.appendChild(title);
 
     var closeBtn = document.createElement("button");
     closeBtn.textContent = "✕";
-    closeBtn.style.cssText = "background:none;border:none;color:#9ca3af;font-size:16px;cursor:pointer;padding:2px 6px;line-height:1;";
+    closeBtn.style.cssText = "background:none;border:none;color:#9ca3af;font-size:12px;cursor:pointer;padding:0 2px;line-height:1;";
     closeBtn.onclick = function () { card.remove(); };
 
     header.appendChild(titleBox);
     header.appendChild(closeBtn);
 
     var body = document.createElement("div");
-    body.style.cssText = "font-size:14px;line-height:1.5;color:#e5e7eb;";
+    body.style.cssText = "font-size:12.5px;line-height:1.4;color:#e2e8f0;font-weight:400;";
     body.textContent = text;
 
     card.appendChild(header);
     card.appendChild(body);
 
     (document.body || document.documentElement).appendChild(card);
+
+    // Auto-dismiss after 5 seconds
+    setTimeout(function () {
+      if (card && card.parentNode) {
+        card.style.transition = "opacity 0.3s ease";
+        card.style.opacity = "0";
+        setTimeout(function () { if (card.parentNode) card.remove(); }, 300);
+      }
+    }, 5000);
   }
+
+  var lastWarnedTime = 0;
+  var lastWarnedRule = "";
 
   function handleDecision(decision, proceed) {
     var action = String((decision && decision.action) || "").toLowerCase();
@@ -299,13 +357,18 @@
       return;
     }
     if (action === "warned" || action === "warn" || action === "alert") {
-      showBubble(decision.message, decision.rule, "warn");
+      var now = Date.now();
+      if (now - lastWarnedTime > 4000 || lastWarnedRule !== decision.rule) {
+        lastWarnedTime = now;
+        lastWarnedRule = decision.rule || "";
+        showBubble(decision.message, decision.rule, "warn");
+      }
       proceed(decision);
       return;
     }
     if (action === "redacted" || action === "redact") {
       if (decision.redacted_prompt) setComposerText(decision.redacted_prompt);
-      showBubble(decision.message || "Sensitive text was redacted.", decision.rule, "redact");
+      showBubble(decision.message || "Sensitive text was redacted before sending.", decision.rule, "redact");
       proceed(decision);
       return;
     }
@@ -418,10 +481,11 @@
     }
   }, true);
 
-  // Hook 3: Clipboard Paste (Ctrl+V Screenshots & Files)
+  // Hook 3: Clipboard Paste (Ctrl+V Screenshots, Files & Sensitive Text Shielding)
   window.addEventListener("paste", function (ev) {
     var cd = ev.clipboardData;
     if (!cd) return;
+    // 1. Files & Screenshots
     if (cd.files && cd.files.length) {
       for (var i = 0; i < cd.files.length; i++) {
         if (!inspectAndStageFile(cd.files[i])) {
@@ -431,6 +495,28 @@
         }
       }
     }
+    // 2. Sensitive Text Paste Shield (Blocks secret credentials directly on Ctrl+V paste)
+    try {
+      var pastedText = cd.getData("text/plain");
+      if (pastedText && pastedText.length > 5) {
+        var pasteDecision = evaluateClientRules(pastedText, []);
+        if (pasteDecision && pasteDecision.blocked) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          showBubble("Pasting confidential data is blocked by company security policy: " + pasteDecision.message, pasteDecision.rule, "block");
+          window.postMessage({
+            source: "gateway-guard-page",
+            id: "paste_log_" + Date.now().toString(36),
+            prompt: pastedText.slice(0, 500),
+            host: location.hostname,
+            url: location.href,
+            is_blocked: true,
+            rule: pasteDecision.rule || ""
+          }, "*");
+          return;
+        }
+      }
+    } catch (pasteErr) {}
   }, true);
 
   // --- 3. SEND INTERCEPTION (Enter Key & Send Button) ---
@@ -496,7 +582,36 @@
     });
   }, true);
 
-  // --- 4. NETWORK LAYER HOOK (fetch & XMLHttpRequest) ---
+  // Form Submit Interception (Catches Enter in simple forms or form.requestSubmit)
+  document.addEventListener("submit", function (e) {
+    if (!armed || passClick) return;
+    var form = e.target;
+    if (!form) return;
+    var text = (composerFrom(form) || composerFrom(document.activeElement)).trim();
+    if (!text && stagedFiles.length === 0 && stagedImages.length === 0) return;
+
+    e.preventDefault();
+    e.stopImmediatePropagation();
+
+    ask(text, stagedFiles, stagedImages).then(function (decision) {
+      handleDecision(decision, function () {
+        stagedFiles = [];
+        stagedImages = [];
+        passClick = true;
+        try {
+          if (typeof form.requestSubmit === "function") {
+            form.requestSubmit();
+          } else {
+            form.submit();
+          }
+        } finally {
+          passClick = false;
+        }
+      });
+    });
+  }, true);
+
+  // --- 4. NETWORK LAYER HOOK (fetch, XMLHttpRequest & WebSocket) ---
 
   var origFetch = window.fetch;
   if (typeof origFetch === "function") {
@@ -593,5 +708,20 @@
     return origXHRSend.apply(this, arguments);
   };
 
-  console.log("[YP-Raksha] In-Browser DLP Engine Active: Prompts, Images, and All File Types Protected.");
+  // Hook WebSocket (Streaming & Real-time AI Chatbots)
+  if (typeof window.WebSocket !== "undefined" && window.WebSocket.prototype) {
+    var origWSSend = window.WebSocket.prototype.send;
+    window.WebSocket.prototype.send = function (data) {
+      if (armed && typeof data === "string" && data.length > 5) {
+        var wsDecision = evaluateClientRules(data, []);
+        if (wsDecision && wsDecision.blocked) {
+          showBubble(wsDecision.message, wsDecision.rule, "block");
+          return;
+        }
+      }
+      return origWSSend.apply(this, arguments);
+    };
+  }
+
+  console.log("[YP-Raksha] In-Browser DLP Engine Active: Prompts, Images, Files & Real-time WebSockets Protected.");
 })();

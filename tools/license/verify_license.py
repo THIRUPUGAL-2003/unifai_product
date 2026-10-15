@@ -27,12 +27,25 @@ def verify_license_file(license_file_path: str, public_key_path: str = None) -> 
     with open(pub_path, "rb") as f:
         public_key = serialization.load_pem_public_key(f.read())
 
-    # Load License Envelope
-    with open(lic_path, "r", encoding="utf-8") as f:
-        envelope = json.load(f)
+    # Load License Envelope (supports raw JSON and GWLIC1 sealed format)
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    _LICENSE_FILE_KEY = bytes([
+        0x91, 0x3C, 0xE7, 0x4A, 0x18, 0xB2, 0x5D, 0x06,
+        0xCF, 0x77, 0x21, 0x9E, 0x44, 0xD8, 0x0B, 0x63,
+        0xAA, 0x15, 0x6F, 0x82, 0x39, 0xC4, 0x5E, 0x10,
+        0x7B, 0xE1, 0x48, 0x9A, 0x2D, 0xF6, 0x53, 0x0C,
+    ])
 
-    if not isinstance(envelope, dict):
-        raise ValueError("Invalid license format: expected JSON object")
+    with open(lic_path, "r", encoding="utf-8") as f:
+        raw_text = f.read().strip()
+
+    if raw_text.startswith("GWLIC1."):
+        raw = base64.b64decode(raw_text[7:])
+        nonce, ct = raw[:12], raw[12:]
+        unsealed = AESGCM(_LICENSE_FILE_KEY).decrypt(nonce, ct, b"GWLIC1.")
+        envelope = json.loads(unsealed.decode("utf-8"))
+    else:
+        envelope = json.loads(raw_text)
 
     payload_b64 = envelope.get("payload_b64")
     signature_b64 = envelope.get("signature")

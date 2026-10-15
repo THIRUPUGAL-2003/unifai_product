@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives import serialization
 
 DEFAULT_ISSUER = "YesPanchi Group of Companies"
 DEFAULT_PRODUCT = "Gateway - Real-time AI Knowledge Screening & Hazard Audit"
+SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Must match framework/logstore/license_wrap.go licenseFileKey.
 _LICENSE_FILE_KEY = bytes([
@@ -65,8 +66,8 @@ def issue_license(
     client_name: str,
     seats: int,
     expiry_date: str,
-    server_id: str,
-    install_id: str,
+    server_id: str = None,
+    install_id: str = None,
     license_id: str = None,
     product_users: int = 0,
     issuer: str = DEFAULT_ISSUER,
@@ -111,12 +112,12 @@ def issue_license(
     except Exception as e:
         raise ValueError(f"Invalid expiry date '{expiry_date}'. Use YYYY-MM-DD format: {e}")
 
-    install_id = (install_id or "").strip()
-    server_id = (server_id or "").strip().upper()
-    if not install_id or install_id in ("*", "ANY"):
-        install_id = "*"
-    if not server_id or server_id in ("*", "ANY"):
-        server_id = "*"
+    clean_server_id = (server_id or "").strip()
+    clean_install_id = (install_id or "").strip()
+    if clean_server_id in ("*", "ANY"):
+        clean_server_id = ""
+    if clean_install_id in ("*", "ANY"):
+        clean_install_id = ""
 
     now_dt = datetime.now(timezone.utc)
     now_iso = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -134,13 +135,13 @@ def issue_license(
         revision = int(previous.get("revision") or 0) + 1
     else:
         license_id = f"YP-{now_dt.strftime('%Y%m')}-{uuid.uuid4().hex[:8].upper()}"
-        matching_revs = [int(row.get("revision") or 0) for row in licenses.values() if str(row.get("install_id") or "").strip().upper() == install_id.upper()]
+        matching_revs = [int(row.get("revision") or 0) for row in licenses.values() if clean_install_id and str(row.get("install_id") or "").strip().upper() == clean_install_id.upper()]
         revision = (max(matching_revs) + 1) if matching_revs else 1
 
     for other_id, row in list(licenses.items()):
         if other_id == license_id:
             continue
-        if install_id != "*" and str(row.get("install_id") or "").strip().upper() == install_id.upper() and str(row.get("status") or "") == "active":
+        if clean_install_id and str(row.get("install_id") or "").strip().upper() == clean_install_id.upper() and str(row.get("status") or "") == "active":
             row["status"] = "revoked"
 
     if not vendor_ip or not str(vendor_ip).strip():
@@ -161,15 +162,18 @@ def issue_license(
         "client_name": client_name.strip(),
         "tier": tier.strip(),
         "max_seats": int(seats),
-        "install_id": install_id,
-        "server_hardware_id": server_id,
-        "server_ip": server_id,
         "issued_from_ip": vendor_ip,
         "revision": int(revision),
         "features": sorted(features),
         "issued_at": now_iso,
         "expires_at": expiry_iso,
     }
+    # Only include server_hardware_id / install_id if explicitly requested by vendor
+    if clean_server_id:
+        payload_data["server_hardware_id"] = clean_server_id.upper()
+        payload_data["server_ip"] = clean_server_id
+    if clean_install_id:
+        payload_data["install_id"] = clean_install_id
     if int(product_users) > 0:
         payload_data["max_product_users"] = int(product_users)
 
@@ -267,7 +271,7 @@ def main():
     parser.add_argument("--client", required=True, help="Client organization name (e.g., 'ABC Corporation')")
     parser.add_argument("--seats", type=int, default=100, help="Maximum allowed laptop agent seats (default: 100)")
     parser.add_argument("--expiry", required=True, help="Expiry date in YYYY-MM-DD format (e.g., '2027-10-07')")
-    parser.add_argument("--product-users", type=int, default=100, help="Dashboard accounts allowed in total (user + admin + sub-admin). Default: 100. Set 0 for unlimited.")
+    parser.add_argument("--product-users", type=int, default=None, help="Dashboard accounts allowed in total (user + admin + sub-admin). Default: matches --seats. Set 0 for unlimited.")
     parser.add_argument("--issuer", default=DEFAULT_ISSUER, help=f"Vendor Issuer name (default: '{DEFAULT_ISSUER}')")
     parser.add_argument("--product", default=DEFAULT_PRODUCT, help=f"Product name (default: '{DEFAULT_PRODUCT}')")
     parser.add_argument("--tier", default="Enterprise On-Premise", help="License tier name")
@@ -299,16 +303,17 @@ def main():
         print("=" * 68 + "\n", file=sys.stderr)
         sys.exit(1)
 
+    server_id = None
     if args.server_ip:
         server_id = args.server_ip.strip()
-    elif args.any_server:
-        server_id = "*"
     elif args.server_id:
         server_id = args.server_id.strip()
-    else:
-        server_id = "*"
 
-    install_id = "*" if (args.any_db or not args.install_id) else args.install_id
+    install_id = None
+    if args.install_id and args.install_id not in ("*", "ANY") and not args.any_db:
+        install_id = args.install_id.strip()
+
+    effective_product_users = args.seats if args.product_users is None else args.product_users
 
     try:
         res = issue_license(
@@ -318,7 +323,7 @@ def main():
             server_id=server_id,
             install_id=install_id,
             license_id=args.license_id,
-            product_users=args.product_users,
+            product_users=effective_product_users,
             issuer=args.issuer,
             product=args.product,
             tier=args.tier,
@@ -341,9 +346,14 @@ def main():
         else:
             print(" Dashboard Users:  Unlimited / No Cap")
         print(f" Tier:             {p['tier']}")
-        server_mode = "Floating (* Any Server IP / Host)" if p.get('server_ip') == "*" or p.get('server_hardware_id') == "*" else (p.get('server_ip') or p.get('server_hardware_id'))
-        print(f" Server IP / Host: {server_mode}")
-        print(f" Database Binding: Floating (No Install ID Required)")
+        if p.get('server_ip') or p.get('server_hardware_id'):
+            print(f" Server IP / Host: {p.get('server_ip') or p.get('server_hardware_id')}")
+        else:
+            print(" Server Binding:   Floating (Runs on Any Server)")
+        if p.get('install_id'):
+            print(f" Database Binding: Locked to {p.get('install_id')}")
+        else:
+            print(" Database Binding: Floating (Runs on Any Database)")
         print(f" Issued By Vendor: YesPanchi (Host: {p.get('issued_from_ip', 'Local')})")
         print(f" Revision:         {p['revision']}")
         print(f" Expires At:       {p['expires_at']}")

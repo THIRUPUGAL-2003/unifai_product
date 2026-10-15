@@ -8,6 +8,11 @@ export interface BrowserAILogEntry {
 	user_prompt_preview: string;
 	user_prompt_full: string;
 	est_tokens: number;
+	prompt_tokens?: number;
+	completion_tokens?: number;
+	total_tokens?: number;
+	audio_duration_sec?: number;
+	cost?: number;
 	client_ip: string;
 	agent_id?: string;
 	agent_hostname?: string;

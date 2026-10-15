@@ -158,7 +158,7 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
             self.end_headers()
             self.wfile.write(body)
             return
-        if path == "/extension/guard.crx":
+        if path in ("/extension/guard.crx", "/extension/guard_extension.crx"):
             from agent_extension import _crx_path
             crx = _crx_path()
             if not os.path.isfile(crx):

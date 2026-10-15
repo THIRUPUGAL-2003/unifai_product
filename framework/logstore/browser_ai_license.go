@@ -157,17 +157,31 @@ func MatchServerIdentifier(target string) bool {
 		return false
 	}
 
+	// Normalize target: strip http://, https://, trailing port and path
+	cleanTarget := strings.TrimPrefix(strings.TrimPrefix(target, "https://"), "http://")
+	if idx := strings.Index(cleanTarget, "/"); idx != -1 {
+		cleanTarget = cleanTarget[:idx]
+	}
+	if idx := strings.Index(cleanTarget, ":"); idx != -1 {
+		cleanTarget = cleanTarget[:idx]
+	}
+	cleanTarget = strings.TrimSpace(cleanTarget)
+	if cleanTarget == "" {
+		return true
+	}
+
 	// 1. Direct match with hardware ID
-	if strings.EqualFold(target, strings.TrimSpace(GetServerHardwareID())) {
+	if strings.EqualFold(cleanTarget, strings.TrimSpace(GetServerHardwareID())) {
 		return true
 	}
 
 	// 2. Check Hostname
-	if host, err := os.Hostname(); err == nil && strings.EqualFold(target, strings.TrimSpace(host)) {
+	if host, err := os.Hostname(); err == nil && strings.EqualFold(cleanTarget, strings.TrimSpace(host)) {
 		return true
 	}
 
-	// 3. Check Network Interface IP addresses
+	// Collect local IP addresses
+	var localIPs []net.IP
 	if ifaces, err := net.Interfaces(); err == nil {
 		for _, iface := range ifaces {
 			addrs, err := iface.Addrs()
@@ -182,28 +196,43 @@ func MatchServerIdentifier(target string) bool {
 				case *net.IPAddr:
 					ip = v.IP
 				}
-				if ip != nil && (ip.String() == target || strings.EqualFold(ip.String(), target)) {
-					return true
+				if ip != nil {
+					localIPs = append(localIPs, ip)
+					if ip.String() == cleanTarget || strings.EqualFold(ip.String(), cleanTarget) {
+						return true
+					}
 				}
 			}
 		}
 	}
 
-	// 4. Check Environment Variables (SERVER_DOMAIN, SERVER_IP, HOST, APP_HOST)
-	for _, envKey := range []string{"SERVER_DOMAIN", "SERVER_IP", "HOST", "APP_HOST"} {
+	// 3. Check Environment Variables (SERVER_DOMAIN, SERVER_IP, HOST, APP_HOST, GATEWAY_BACKEND_URL, APP_URL)
+	for _, envKey := range []string{"SERVER_DOMAIN", "SERVER_IP", "HOST", "APP_HOST", "GATEWAY_BACKEND_URL", "APP_URL"} {
 		val := strings.TrimSpace(os.Getenv(envKey))
 		if val == "" {
 			continue
 		}
 		cleanVal := strings.TrimPrefix(strings.TrimPrefix(val, "https://"), "http://")
-		if idx := strings.Index(cleanVal, ":"); idx != -1 {
-			cleanVal = cleanVal[:idx]
-		}
 		if idx := strings.Index(cleanVal, "/"); idx != -1 {
 			cleanVal = cleanVal[:idx]
 		}
-		if strings.EqualFold(target, cleanVal) {
+		if idx := strings.Index(cleanVal, ":"); idx != -1 {
+			cleanVal = cleanVal[:idx]
+		}
+		cleanVal = strings.TrimSpace(cleanVal)
+		if strings.EqualFold(cleanTarget, cleanVal) {
 			return true
+		}
+	}
+
+	// 4. DNS Domain Lookup: if cleanTarget is a domain (e.g. guard.company.com), resolve and check against local interface IPs
+	if ips, err := net.LookupIP(cleanTarget); err == nil && len(ips) > 0 {
+		for _, resolvedIP := range ips {
+			for _, localIP := range localIPs {
+				if resolvedIP.Equal(localIP) {
+					return true
+				}
+			}
 		}
 	}
 
@@ -279,11 +308,10 @@ func VerifyLicenseEnvelope(raw []byte) (*EnterpriseLicensePayload, *EnterpriseLi
 		}
 	}
 
-	// Check Server Hardware ID (Node-Locking) if specified in license
+	// Check Server Identifier (IP / Hostname / Hardware ID) if specified in license
 	if srv := strings.TrimSpace(payload.ServerHardwareID); srv != "" && srv != "*" && !strings.EqualFold(srv, "ANY") {
-		hostID := GetServerHardwareID()
-		if !strings.EqualFold(srv, strings.TrimSpace(hostID)) {
-			return &payload, &env, fmt.Errorf("LICENSE_SERVER_MISMATCH: license is locked to server hardware [%s], but current host hardware is [%s]", payload.ServerHardwareID, hostID)
+		if !MatchServerIdentifier(srv) {
+			return &payload, &env, fmt.Errorf("LICENSE_SERVER_MISMATCH: license is locked to server [%s], but current host does not match", payload.ServerHardwareID)
 		}
 	}
 
