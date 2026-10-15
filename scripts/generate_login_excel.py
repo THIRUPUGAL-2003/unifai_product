@@ -11,7 +11,7 @@ ws_setup = wb.active
 ws_setup.title = "QA Test Plan & Setup"
 ws_setup.views.sheetView[0].showGridLines = True
 
-ws_tests = wb.create_sheet(title="Login & Modals Test Cases")
+ws_tests = wb.create_sheet(title="Auth & Lifecycle Test Cases")
 ws_tests.views.sheetView[0].showGridLines = True
 
 ws_bugs = wb.create_sheet(title="Defect Log")
@@ -46,22 +46,23 @@ ws_setup.column_dimensions["B"].width = 24
 ws_setup.column_dimensions["C"].width = 68
 
 ws_setup.row_dimensions[2].height = 32
-ws_setup["B2"] = "UnifAI Enterprise Platform — QA Test Execution Plan"
+ws_setup["B2"] = "UnifAI Enterprise Platform — QA Test Execution Plan & Lifecycle Matrix"
 ws_setup["B2"].font = title_font
-ws_setup["B3"] = "End-to-End Test Plan for All Authentication Models, Modals & Sub-flows"
+ws_setup["B3"] = "End-to-End Test Plan for Authentication, User Lifecycle (Approve, Reject, Delete), and Account Block/Unblock Flows"
 ws_setup["B3"].font = subtitle_font
 
 setup_sections = [
     ("1. GENERAL PROJECT INFORMATION", [
         ("Project Name", "UnifAI Enterprise AI Control Plane & Browser Guard"),
-        ("Module Under Test", "Authentication Module (Login, Forgot Password, OTP Reset, Forgot Username, Temp Password)"),
-        ("Document Version", "v2.0 (Complete All-Modal QA Specification)"),
+        ("Module Under Test", "Authentication & User Lifecycle (Login, OTP, Temp Password, Approvals, Rejections, Deletions, Block & Unblock)"),
+        ("Document Version", "v2.5 (Complete Enterprise Auth, Approvals & Block Lifecycle Specification)"),
         ("Target Test Date", "October 2026"),
-        ("QA Objective", "Validate all 5 authentication sub-models and error handling for production readiness."),
+        ("QA Objective", "Validate all 8 authentication & user management sub-models, error handling, and security session lifecycle."),
     ]),
     ("2. TEST ENVIRONMENT & ENDPOINTS", [
-        ("Login URL", "http://localhost:3000/login"),
-        ("Backend Gateway API", "http://localhost:8080 (must be active and serving /api/auth/*)"),
+        ("Login URL", "http://localhost:3000/login (or production: https://unifai.yespanchi.com/login)"),
+        ("Users Management URL", "http://localhost:3000/workspace/users"),
+        ("Backend Gateway API", "http://localhost:6000 (or production: https://unifai.yespanchi.com)"),
         ("Supported Browsers", "Google Chrome (Latest), Microsoft Edge (Latest), Brave (Latest)"),
         ("Operating Systems", "Windows 11 / Windows 10, macOS, Linux"),
     ]),
@@ -69,14 +70,19 @@ setup_sections = [
         ("Primary Active Account", "Username: thirupugal  |  Email: thirupugals2003@gmail.com"),
         ("Admin / Corporate Account", "Username: Thirupugal (thirupugal)  |  Email: thirupugal@yespanchi.com"),
         ("Temporary Password Account", "User with 'must_change_password=true' flag set in database"),
+        ("Pending Sign-up Account", "User registered on /signup awaiting Admin acceptance"),
+        ("Blocked Account", "Account with status='disabled' for block enforcement testing"),
         ("Non-Existent Account (Negative)", "Username: non_existent_user_99  |  Email: fake_user_99@test.com"),
     ]),
-    ("4. INCLUDED AUTHENTICATION MODELS / MODALS", [
+    ("4. INCLUDED AUTHENTICATION & USER LIFECYCLE MODELS", [
         ("Model 1: Primary Login Form", "Standard sign-in with username/email, password, eye toggle, and validations."),
         ("Model 2: Forgot Password Modal", "Email/username entry to trigger one-time password (OTP) email request."),
         ("Model 3: Reset Password & OTP Modal", "6-digit OTP code verification, resend cooldown timer, and new password setup."),
         ("Model 4: Forgot Username Modal", "Email entry to retrieve registered username via email notification."),
         ("Model 5: Force Change Password Modal", "First-time temporary password replacement with 5 live complexity rules."),
+        ("Model 6: Global Navigation & Goto Redirection", "Sign-up links, deep goto redirection post-login, and home return."),
+        ("Model 7: User Approvals, Rejections & Deletions", "Admin Accept/Approve, Deny/Reject, Re-accept, and Permanent Delete actions."),
+        ("Model 8: Account Block, Unblock & Invalidation", "Admin Block action, instant active session purge, Account Blocked alert, and Unblock."),
     ]),
     ("5. QA SIGN-OFF BLOCK", [
         ("QA Lead Name", ""),
@@ -531,6 +537,214 @@ sections_data = [
                 "", "Untested", "P1 - High", "", "", ""
             ]
         ]
+    },
+
+    # --------------------------------------------------------------------------
+    # SECTION 7: REGISTRATION APPROVAL, REJECTION & DELETION LIFECYCLE
+    # --------------------------------------------------------------------------
+    {
+        "section_name": "SECTION 7: USER REGISTRATION APPROVAL, REJECTION & DELETION",
+        "cases": [
+            [
+                "TC_APPR_01",
+                "User Approvals",
+                "Verify Admin can accept/approve a pending user registration.",
+                "Admin is logged in. A pending user registration exists in Users > Pending Approvals.",
+                "1. Navigate to /workspace/users.\n2. Filter or switch to 'Pending Approvals' view.\n3. Locate the pending user row.\n4. Click 'Accept' (green check icon/button).\n5. Observe UI response and toast notifications.",
+                "Target: Pending User row\nAction: Click 'Accept'",
+                "• Target row shows loading state during submission.\n• Green toast appears: '<username> approved — notification email sent'.\n• User is removed from Pending Approvals and moved to Active Users list.\n• Approval email containing direct login URL is dispatched to the user.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_APPR_02",
+                "Approved Login",
+                "Verify user can successfully sign in after Admin approval.",
+                "User registration was previously pending and just approved by Admin.",
+                "1. Navigate to /login.\n2. Enter registered Username/Email.\n3. Enter registered Password.\n4. Click 'Sign In'.",
+                "Username: [Approved Username]\nPassword: [Registered Password]",
+                "• Credentials are authenticated successfully.\n• User session is established.\n• User is smoothly redirected to the workspace dashboard.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_APPR_03",
+                "Pending Login Block",
+                "Verify login attempt is prevented while user account is pending Admin approval.",
+                "User has completed self-registration but Admin has not approved yet.",
+                "1. Navigate to /login.\n2. Enter registered Username and Password.\n3. Click 'Sign In'.",
+                "Username: [Pending User]\nPassword: [User Password]",
+                "• Authentication is blocked (HTTP 403 / Conflict).\n• Error banner displays: 'Your account is pending administrator approval' or equivalent.\n• User cannot access workspace.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_REJ_01",
+                "User Rejection",
+                "Verify Admin can deny/reject a pending user registration.",
+                "Admin is in /workspace/users with pending users listed.",
+                "1. Locate pending user row in Users view.\n2. Click 'Deny' / 'Reject' button.\n3. Observe UI response and status changes.",
+                "Target: Pending User row\nAction: Click 'Deny'",
+                "• Target row processes request.\n• Toast notification displays: '<username> denied — notification email sent'.\n• User is moved from Pending to 'Rejected' tab with status 'rejected'.\n• Rejection notification email is dispatched to user's registered email.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_REJ_02",
+                "Rejected Login Block",
+                "Verify login attempt is prevented when an account has been rejected.",
+                "Account was rejected by Admin.",
+                "1. Navigate to /login.\n2. Enter credentials for the rejected account.\n3. Click 'Sign In'.",
+                "Username: [Rejected User]\nPassword: [User Password]",
+                "• Sign in is blocked.\n• Error banner displays notice that registration was denied/rejected.\n• Workspace access is denied.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_REJ_03",
+                "Re-accept Rejected User",
+                "Verify Admin can re-accept a previously rejected user from Rejected view.",
+                "Admin navigates to /workspace/users with 'rejected' role/status filter active.",
+                "1. Switch to 'Rejected' accounts view.\n2. Locate the rejected user row.\n3. Click the green 'Accept' button.\n4. Observe status update and notification.",
+                "Target: Rejected User row\nAction: Click 'Accept' (Re-accept)",
+                "• Action button shows loading state.\n• Toast displays: '<username> approved — notification email sent'.\n• User is removed from Rejected list and reinstated into Active Users list.\n• Approval email with login link is re-sent to user's email.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_REJ_04",
+                "Re-accepted User Login",
+                "Verify previously rejected user can log in immediately after being re-accepted.",
+                "Rejected user was re-accepted by Admin in TC_REJ_03.",
+                "1. Open /login in browser.\n2. Enter re-accepted user credentials.\n3. Click 'Sign In'.",
+                "Username: [Re-accepted User]\nPassword: [User Password]",
+                "• Login succeeds without any blocks or errors.\n• User is successfully routed into workspace dashboard.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_DEL_01",
+                "Delete Rejected User",
+                "Verify Admin can permanently delete a rejected user account.",
+                "Admin is in 'Rejected' users view.",
+                "1. In Rejected users list, click 'Delete' (red trash button) on a user.\n2. In the confirmation dialog, review warning details.\n3. Click 'Delete User' confirm button.",
+                "Target: Rejected User\nAction: Confirm Permanent Deletion",
+                "• Confirmation modal displays with destructive action styling.\n• On confirm, user record is permanently removed from the database.\n• Toast displays: 'User deleted successfully'.\n• User row disappears from the table.",
+                "", "Untested", "P2 - Medium", "", "", ""
+            ],
+            [
+                "TC_DEL_02",
+                "Delete Active User",
+                "Verify Admin can permanently delete an active user account from Active Users list.",
+                "Admin is in /workspace/users active list.",
+                "1. Locate user in Active Users table.\n2. Click the trash icon / delete action.\n3. Confirm deletion in the popup dialog.",
+                "Target: Active User\nAction: Confirm Delete",
+                "• Modal warns: 'Are you sure you want to delete this user? This action cannot be undone.'.\n• On submit, record is removed from database.\n• Any active sessions for that user are immediately invalidated.\n• Toast displays: 'User deleted successfully'.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_DEL_03",
+                "Deleted User Login Check",
+                "Verify login is completely blocked after permanent account deletion.",
+                "Account was deleted in TC_DEL_01 or TC_DEL_02.",
+                "1. Navigate to /login.\n2. Attempt to sign in with credentials of the deleted account.\n3. Click 'Sign In'.",
+                "Username: [Deleted Username]\nPassword: [Old Password]",
+                "• Login is rejected with error: 'Invalid username or password' or 'User not found'.\n• System does not recognize deleted credentials.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_DEL_04",
+                "RBAC Guard on Deletion",
+                "Verify non-admin / unauthorized roles cannot delete user accounts.",
+                "Logged in as a standard user or sub-admin without delete privileges.",
+                "1. Check if Users management is accessible or if delete buttons are disabled.\n2. Attempt direct DELETE /api/session/users/{id} call.",
+                "Role: Standard User / Sub-Admin without Delete scope",
+                "• Delete button is hidden/disabled in UI.\n• Direct API call returns HTTP 403 Forbidden.",
+                "", "Untested", "P2 - Medium", "", "", ""
+            ]
+        ]
+    },
+
+    # --------------------------------------------------------------------------
+    # SECTION 8: ACCOUNT BLOCK, UNBLOCK & SECURITY TERMINATION LIFECYCLE
+    # --------------------------------------------------------------------------
+    {
+        "section_name": "SECTION 8: ACCOUNT BLOCK, UNBLOCK & SECURITY TERMINATION",
+        "cases": [
+            [
+                "TC_BLOCK_01",
+                "Block User Action",
+                "Verify Admin can block an active user account with instant session termination.",
+                "Admin is in /workspace/users active users view. Target user is active.",
+                "1. Locate active user row.\n2. Click the 'Block' (Ban icon) button.\n3. Observe UI updates and network call to /api/session/users/{id}/block.",
+                "Target: Active User\nAction: Click 'Block'",
+                "• User status is updated to 'disabled' in database.\n• All active sessions/tokens for this user are revoked immediately.\n• Toast displays: '<username> blocked — security notification email sent'.\n• Security notice email is dispatched to user's inbox.\n• User is moved to 'Blocked Accounts' tab.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_BLOCK_02",
+                "Blocked User Login Attempt",
+                "Verify blocked user cannot sign in and sees dedicated 'Account Blocked' alert banner.",
+                "User account is in 'disabled' (blocked) status.",
+                "1. Open /login in browser.\n2. Enter blocked user credentials.\n3. Click 'Sign In'.",
+                "Username: [Blocked User]\nPassword: [Valid Password]",
+                "• Sign-in is strictly blocked.\n• Dedicated red alert banner appears with Ban icon and header: 'Account Blocked'.\n• Descriptive message informs user: 'Security Notice: Your Gateway account has been blocked by an administrator. You will not be able to sign in...'.\n• User is NOT granted access to workspace.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_BLOCK_03",
+                "Active Session Invalidation",
+                "Verify active user session is terminated immediately when account is blocked.",
+                "Target user is currently logged into dashboard in Browser Window B. Admin blocks user in Window A.",
+                "1. In Window A, Admin clicks 'Block' on target user.\n2. In Window B, target user attempts to navigate or perform any API action.",
+                "Action: User clicks any link or triggers API in Window B",
+                "• API returns HTTP 401 Unauthorized because server sessions were purged.\n• User is automatically logged out and redirected to /login.\n• Further access is prevented.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_BLOCK_04",
+                "Blocked Accounts Tab View",
+                "Verify Blocked Accounts tab displays all blocked accounts with correct metadata.",
+                "One or more accounts are blocked.",
+                "1. Navigate to /workspace/users.\n2. Select 'Blocked' role filter / tab.\n3. Inspect table columns and action buttons.",
+                "Filter: 'Blocked' accounts",
+                "• Displays total count of blocked accounts.\n• Table shows ID, Username with 'Blocked' badge, Email, Role badge, and Updated At timestamp.\n• Actions column displays 'Unblock' (green check) and 'Delete' (red trash) buttons.",
+                "", "Untested", "P2 - Medium", "", "", ""
+            ],
+            [
+                "TC_BLOCK_05",
+                "Unblock User Action",
+                "Verify Admin can unblock an account and restore user access.",
+                "Admin is in 'Blocked Accounts' view.",
+                "1. Locate blocked user row in Blocked Accounts tab.\n2. Click 'Unblock' button.\n3. Observe UI response and toast notifications.",
+                "Target: Blocked User\nAction: Click 'Unblock'",
+                "• Status switches to 'approved' in database.\n• Toast displays: '<username> unblocked — notification email sent'.\n• Unblock notification email containing sign-in link is dispatched to user.\n• User is removed from Blocked tab and restored to Active Users list.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_BLOCK_06",
+                "Unblocked User Login",
+                "Verify unblocked user can sign in normally with existing credentials.",
+                "User was unblocked in TC_BLOCK_05.",
+                "1. Navigate to /login.\n2. Enter Username and Password.\n3. Click 'Sign In'.",
+                "Username: [Unblocked User]\nPassword: [Existing Password]",
+                "• Login is authenticated smoothly without 'Account Blocked' error.\n• User is successfully directed to workspace dashboard.",
+                "", "Untested", "P1 - High", "", "", ""
+            ],
+            [
+                "TC_BLOCK_07",
+                "Delete Blocked User",
+                "Verify Admin can permanently delete an account directly from Blocked Accounts tab.",
+                "Admin is in Blocked Accounts view.",
+                "1. Click 'Delete' button on a blocked user row.\n2. Confirm deletion in the confirmation modal.\n3. Verify table updates.",
+                "Target: Blocked User\nAction: Confirm Permanent Deletion",
+                "• Modal warns of permanent deletion.\n• On confirm, user record is purged from database.\n• Toast displays: 'User deleted successfully'.\n• Row is removed from Blocked table.",
+                "", "Untested", "P2 - Medium", "", "", ""
+            ],
+            [
+                "TC_BLOCK_08",
+                "Admin Self/Peer Block Guard",
+                "Verify system prevents blocking administrator accounts.",
+                "Logged in as Admin. Viewing users list containing Admin accounts.",
+                "1. Observe 'Block' button on rows with Role = Admin.\n2. Attempt to trigger block API on an Admin user ID.",
+                "Target: Admin user row",
+                "• 'Block' button is disabled for Administrator accounts.\n• Backend API returns HTTP 403 Forbidden with: 'Cannot block an administrator account'.",
+                "", "Untested", "P2 - Medium", "", "", ""
+            ]
+        ]
     }
 ]
 
@@ -677,16 +891,24 @@ for col_num, width in bug_col_widths.items():
 
 # Save to Desktop and Workspace
 out_paths = [
+    r"d:\unifai_project\Auth_and_User_Lifecycle_Test_Cases.xlsx",
+    r"d:\unifai_project\Login_Test_Cases_Updated.xlsx",
     r"d:\unifai_project\Login_Test_Cases.xlsx",
+    r"C:\Users\sakth\OneDrive\ドキュメント\Desktop\Auth_and_User_Lifecycle_Test_Cases.xlsx",
+    r"C:\Users\sakth\OneDrive\ドキュメント\Desktop\Login_Test_Cases_Updated.xlsx",
     r"C:\Users\sakth\OneDrive\ドキュメント\Desktop\Login_Test_Cases.xlsx",
+    os.path.expanduser(r"~\Desktop\Auth_and_User_Lifecycle_Test_Cases.xlsx"),
     os.path.expanduser(r"~\Desktop\Login_Test_Cases.xlsx")
 ]
 
+saved_files = []
 for p in out_paths:
     try:
         os.makedirs(os.path.dirname(p), exist_ok=True)
         wb.save(p)
-    except Exception:
-        pass
+        saved_files.append(p)
+        print(f"Saved: {p.encode('ascii', 'replace').decode()}")
+    except Exception as e:
+        print(f"Skipped {p.encode('ascii', 'replace').decode()}: {str(e).encode('ascii', 'replace').decode()}")
 
-print("Complete All-Modals QA Test Case Workbook generated successfully.")
+print("Complete All-Modals & User Lifecycle QA Test Case Workbook generated successfully.")
