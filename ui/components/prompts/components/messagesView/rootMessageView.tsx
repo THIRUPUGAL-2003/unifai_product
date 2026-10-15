@@ -21,6 +21,7 @@ export function MessagesView() {
 		setMessages: onUpdateMessages,
 		setVariables,
 		isStreaming,
+		handleSendMessage,
 		handleSubmitToolResult,
 		handleExecuteToolCall,
 		handleSubmitAllToolResults,
@@ -72,6 +73,20 @@ export function MessagesView() {
 			recomputeVariables(result);
 		},
 		[messages, onUpdateMessages, recomputeVariables],
+	);
+
+	const handleRerunFromUserMessage = useCallback(
+		async (index: number, updatedMessage?: Message) => {
+			if (isStreaming) return;
+			const target = updatedMessage || messages[index];
+			// Keep messages up to this edited user message, clearing old errors/responses below it
+			const truncated = messages.slice(0, index);
+			truncated.push(target);
+			onUpdateMessages(truncated);
+			recomputeVariables(truncated);
+			await handleSendMessage(undefined, truncated);
+		},
+		[messages, isStreaming, onUpdateMessages, recomputeVariables, handleSendMessage],
 	);
 
 	const lastMessage = messages[messages.length - 1];
@@ -163,6 +178,7 @@ export function MessagesView() {
 									allowAttachments
 									onChange={(s) => handleMessageChange(index, s)}
 									onRemove={canRemove ? () => handleRemoveMessage(index) : undefined}
+									onSend={(updated) => handleRerunFromUserMessage(index, updated)}
 								/>
 							);
 						}

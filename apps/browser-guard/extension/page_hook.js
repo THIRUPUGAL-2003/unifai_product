@@ -4,7 +4,11 @@
 (function () {
   "use strict";
 
-  var armed = true; // Default armed, confirmed by extension
+  // Never intercept localhost or local management/dev servers
+  var isLocal = location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "0.0.0.0";
+  if (isLocal) return;
+
+  var armed = false; // Armed only when confirmed by extension for monitored AI domains
   var curScript = document.currentScript;
   var guardNonce = (curScript && curScript.dataset && curScript.dataset.guardNonce) || "";
   var passKey = false;
@@ -429,10 +433,11 @@
       };
       rImg.readAsDataURL(file);
     }
-    // 3. Read text/code/csv/json/log files
+    // 3. Read text/code/script/markup/config files
     else if (
       type.indexOf("text/") === 0 ||
-      /\.(txt|py|js|ts|json|csv|log|md|yaml|yml|sql|sh|java|cpp|c|html|xml)$/i.test(name)
+      /\.(txt|py|pyw|pyi|pyx|js|mjs|cjs|jsx|ts|tsx|mts|cts|json|jsonc|json5|csv|tsv|log|md|markdown|yaml|yml|sql|sh|bash|zsh|fish|bat|cmd|ps1|psm1|psd1|java|kt|kts|scala|sc|groovy|c|h|cpp|cc|cxx|hpp|hh|hxx|cs|csx|fs|go|rs|rlib|php|phtml|phar|rb|rake|gemspec|swift|dart|lua|r|rmd|jl|pl|pm|t|html|htm|xml|svg|xhtml|css|scss|sass|less|vue|svelte|toml|ini|conf|config|cfg|properties|env|graphql|gql|proto|dockerfile|prisma|gradle|cmake|tf|tfvars|sol|asm|s|diff|patch|ipynb)$/i.test(name) ||
+      /^(dockerfile|makefile|jenkinsfile|procfile|gemfile|rakefile|justfile|vagrantfile|license|licence|readme|\.env|\.gitignore|\.gitattributes|\.editorconfig|package\.json|cargo\.toml|go\.mod|requirements\.txt)$/i.test(name)
     ) {
       var rText = new FileReader();
       rText.onload = function (e) {
@@ -448,9 +453,32 @@
         }
       };
       rText.readAsText(file.slice(0, 500000)); // Scan first 500KB
+    }
+    // 4. Binary Documents (PDF, Word, Excel, PowerPoint, ODF, RTF, ZIP, Archives)
+    else if (
+      /\.(pdf|docx|doc|xlsx|xls|pptx|ppt|odt|ods|odp|rtf|zip|tar|gz|7z)$/i.test(name) ||
+      type.indexOf("application/pdf") >= 0 ||
+      type.indexOf("application/zip") >= 0 ||
+      type.indexOf("officedocument") >= 0
+    ) {
+      var rDoc = new FileReader();
+      rDoc.onload = function (e) {
+        if (e.target && typeof e.target.result === "string") {
+          var b64 = e.target.result.split(",")[1] || "";
+          stagedFiles.push({ name: name, size: size, type: type, base64: b64 });
+        }
+      };
+      rDoc.readAsDataURL(file.slice(0, 2000000)); // Read first 2MB for deep backend extraction
     } else {
-      // General binary file (PDF, DOCX, XLSX, ZIP)
-      stagedFiles.push({ name: name, size: size, type: type });
+      // 5. General fallback: read first 1MB as Base64 so desktop proxy/agent extracts & scans it
+      var rAny = new FileReader();
+      rAny.onload = function (e) {
+        if (e.target && typeof e.target.result === "string") {
+          var b64 = e.target.result.split(",")[1] || "";
+          stagedFiles.push({ name: name, size: size, type: type, base64: b64 });
+        }
+      };
+      rAny.readAsDataURL(file.slice(0, 1000000));
     }
     return true;
   }
@@ -681,7 +709,7 @@
           }
           result = origFetch.apply(window, nextArgs);
         });
-        if (!sent) return new Response("", { status: 204, headers: { "content-type": "text/plain" } });
+        if (!sent) return new Response(null, { status: 204 });
         return result;
       });
     };

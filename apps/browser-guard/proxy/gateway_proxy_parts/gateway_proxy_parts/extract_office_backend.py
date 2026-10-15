@@ -834,7 +834,11 @@ def _extract_zip_archive_members_text(
                     continue
                 try:
                     inner = zf.read(info)
-                except Exception:
+                except Exception as read_err:
+                    if "encrypted" in str(read_err).lower() or "password" in str(read_err).lower():
+                        piece = f"[PASSWORD_PROTECTED_FILE:{base}] (Encrypted archive member)"
+                        chunks.append(piece)
+                        total += len(piece)
                     continue
                 if not inner or len(inner) < 8:
                     continue
@@ -885,7 +889,7 @@ def _extract_tar_archive_members_text(
     max_files: int = 40,
     max_chars: int = 250_000,
 ) -> str:
-    """Unpack a .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz or standalone .gz and extract text from each member."""
+    """Unpack a .tar, .tar.gz, .tgz, .tar.bz2, .tar.xz or standalone .gz/.xz and extract text from each member."""
     if not data or depth > max_depth:
         return ""
     chunks: list[str] = []
@@ -943,7 +947,7 @@ def _extract_tar_archive_members_text(
                     chunks.append(piece)
                     total += len(piece)
     except Exception as e:
-        # If it's a standalone .gz or .bz2 file (not tar archive), decompress directly
+        # If it's a standalone .gz, .bz2, or .xz file (not tar archive), decompress directly
         if data.startswith(b"\x1f\x8b"):
             try:
                 import gzip
@@ -962,11 +966,38 @@ def _extract_tar_archive_members_text(
                     return t[:max_chars]
             except Exception:
                 pass
+        elif data.startswith(b"\xfd7zXZ\x00") or data.startswith(b"]\x00\x00"):
+            try:
+                import lzma
+                decomp = lzma.decompress(data)
+                t = _extract_text_from_file_bytes(decomp, "", "")
+                if t and t.strip():
+                    return t[:max_chars]
+            except Exception:
+                pass
     if not chunks:
         if data.startswith(b"\x1f\x8b"):
             try:
                 import gzip
                 decomp = gzip.decompress(data)
+                t = _extract_text_from_file_bytes(decomp, "", "")
+                if t and t.strip():
+                    return t[:max_chars]
+            except Exception:
+                pass
+        elif data.startswith(b"BZh"):
+            try:
+                import bz2
+                decomp = bz2.decompress(data)
+                t = _extract_text_from_file_bytes(decomp, "", "")
+                if t and t.strip():
+                    return t[:max_chars]
+            except Exception:
+                pass
+        elif data.startswith(b"\xfd7zXZ\x00") or data.startswith(b"]\x00\x00"):
+            try:
+                import lzma
+                decomp = lzma.decompress(data)
                 t = _extract_text_from_file_bytes(decomp, "", "")
                 if t and t.strip():
                     return t[:max_chars]

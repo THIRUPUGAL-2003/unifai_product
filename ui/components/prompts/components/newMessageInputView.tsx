@@ -2,9 +2,9 @@ import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Message, type MessageContent, extractVariablesFromMessages, mergeVariables } from "@/lib/message";
+import { Message, type MessageContent } from "@/lib/message";
 import { getErrorMessage, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery, useIsAuthEnabledQuery } from "@/lib/store";
-import { AlertTriangle, Paperclip, Play, Plus, Square } from "lucide-react";
+import { AlertTriangle, Loader2, Paperclip, Play, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { usePromptContext } from "../context";
@@ -25,7 +25,6 @@ export function NewMessageInputView() {
 		model,
 		requiredHeaders,
 		customHeaders,
-		setVariables,
 		selectedPrompt,
 		apiKeyId,
 		virtualKeyId,
@@ -129,9 +128,68 @@ export function NewMessageInputView() {
 		(committed?.provider && committed?.model)
 	);
 
+	interface PendingUploadItem {
+		id: string;
+		name: string;
+		size: number;
+		ext: string;
+		progressText: string;
+	}
+
+	const [pendingUploads, setPendingUploads] = useState<PendingUploadItem[]>([]);
+
 	const handleAddAttachments = useCallback((newAttachments: MessageContent[]) => {
 		setAttachments((prev) => [...prev, ...newAttachments]);
 	}, []);
+
+	const processFiles = useCallback(
+		async (filesList: File[]) => {
+			if (!filesList || filesList.length === 0) return;
+			const newPending: PendingUploadItem[] = filesList.map((f) => {
+				const ext = f.name.split(".").pop()?.toLowerCase() || "";
+				let progressText = "Extracting content...";
+				if (ext === "pdf") progressText = "Parsing PDF pages...";
+				else if (["xlsx", "xls", "csv"].includes(ext)) progressText = "Parsing sheets to tables...";
+				else if (["docx", "doc"].includes(ext)) progressText = "Extracting Word document...";
+				else if (["pptx", "ppt"].includes(ext)) progressText = "Extracting slides & notes...";
+				else if (["zip", "tar", "gz"].includes(ext)) progressText = "Unpacking archive members...";
+				else if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) progressText = "Preparing visual image...";
+				else if (["mp3", "wav", "m4a", "webm"].includes(ext)) progressText = "Transcribing with Whisper...";
+				return {
+					id: `upload_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+					name: f.name,
+					size: f.size,
+					ext,
+					progressText,
+				};
+			});
+
+			setPendingUploads((prev) => [...prev, ...newPending]);
+
+			try {
+				const newAttachments = await filesToAttachments(filesList, { apiKeyId, virtualKeyId });
+				if (newAttachments.length > 0) {
+					handleAddAttachments(newAttachments);
+				}
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Failed to process files");
+			} finally {
+				setPendingUploads((prev) => prev.filter((p) => !newPending.some((np) => np.id === p.id)));
+			}
+		},
+		[apiKeyId, virtualKeyId, handleAddAttachments],
+	);
+
+	useEffect(() => {
+		const handleGlobalAttach = (e: Event) => {
+			const ce = e as CustomEvent<File[]>;
+			if (ce.detail && Array.isArray(ce.detail) && ce.detail.length > 0) {
+				processFiles(ce.detail);
+			}
+		};
+		window.addEventListener("prompt-repo:attach-files", handleGlobalAttach);
+		return () => window.removeEventListener("prompt-repo:attach-files", handleGlobalAttach);
+	}, [processFiles]);
 
 	const textBeforeRecordingRef = useRef<string>("");
 	const [isVoiceRecording, setIsVoiceRecording] = useState(false);
@@ -161,34 +219,6 @@ export function NewMessageInputView() {
 		setIsVoiceRecording(false);
 		setTimeout(() => userInputRef.current?.focus(), 0);
 	}, []);
-
-	const handleAddMessage = useCallback(() => {
-		if (isStreaming) return;
-		const input = userInput.trim();
-		const currentAttachments = attachments.length > 0 ? [...attachments] : undefined;
-		if (!input && !currentAttachments) {
-			toast.error("Type a message or attach a file before adding");
-			return;
-		}
-		setUserInput("");
-		setAttachments([]);
-		let msg: Message;
-		if (inputRole === "user") {
-			msg = Message.request(input, 0, currentAttachments);
-		} else if (inputRole === "system") {
-			msg = Message.system(input);
-		} else {
-			msg = Message.response(input);
-		}
-		onUpdateMessages((prev) => {
-			const next = [...prev, msg];
-			const varNames = extractVariablesFromMessages(next);
-			setVariables((vars) => mergeVariables(vars, varNames));
-			return next;
-		});
-		toast.success("Message added");
-		setTimeout(() => userInputRef.current?.focus(), 0);
-	}, [userInput, attachments, isStreaming, inputRole, onUpdateMessages, setVariables]);
 
 	const handleRun = useCallback(async () => {
 		if (budgetAlert?.isExhausted) {
@@ -248,26 +278,26 @@ export function NewMessageInputView() {
 		setAttachments((prev) => prev.filter((_, i) => i !== index));
 	}, []);
 
-	const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
-		if (!canAttach) return;
-		const items = e.clipboardData?.items;
-		if (!items) return;
+	const handlePaste = useCallback(
+		async (e: React.ClipboardEvent) => {
+			if (!canAttach) return;
+			const items = e.clipboardData?.items;
+			if (!items) return;
 
-		const pastedFiles: File[] = [];
-		for (const item of Array.from(items)) {
-			if (item.kind === "file") {
-				const file = item.getAsFile();
-				if (file) pastedFiles.push(file);
+			const pastedFiles: File[] = [];
+			for (const item of Array.from(items)) {
+				if (item.kind === "file") {
+					const file = item.getAsFile();
+					if (file) pastedFiles.push(file);
+				}
 			}
-		}
-		if (pastedFiles.length === 0) return;
+			if (pastedFiles.length === 0) return;
 
-		e.preventDefault();
-		const newAttachments = await filesToAttachments(pastedFiles, { apiKeyId, virtualKeyId });
-		if (newAttachments.length > 0) {
-			handleAddAttachments(newAttachments);
-		}
-	}, [apiKeyId, virtualKeyId, canAttach, handleAddAttachments]);
+			e.preventDefault();
+			processFiles(pastedFiles);
+		},
+		[canAttach, processFiles],
+	);
 
 	const [isDragging, setIsDragging] = useState(false);
 	const dragCounterRef = useRef(0);
@@ -310,12 +340,9 @@ export function NewMessageInputView() {
 			const files = e.dataTransfer.files;
 			if (!files || files.length === 0) return;
 
-			const newAttachments = await filesToAttachments(files, { apiKeyId, virtualKeyId });
-			if (newAttachments.length > 0) {
-				handleAddAttachments(newAttachments);
-			}
+			processFiles(Array.from(files));
 		},
-		[apiKeyId, virtualKeyId, canAttach, handleAddAttachments],
+		[canAttach, processFiles],
 	);
 
 	const hasImageAttachment = attachmentNeedsVision(attachments);
@@ -330,9 +357,9 @@ export function NewMessageInputView() {
 			onDrop={handleDrop}
 		>
 			{canAttach && isDragging && (
-				<div className="bg-background/80 border-primary absolute inset-0 z-50 flex items-center justify-center rounded-sm border-2 border-dashed backdrop-blur-sm">
+				<div className="bg-background/80 border-primary absolute inset-0 z-50 flex items-center justify-center rounded-sm border-2 border-dashed backdrop-blur-sm pointer-events-none">
 					<div className="text-primary flex flex-col items-center gap-1">
-						<Paperclip className="h-5 w-5" />
+						<Paperclip className="h-5 w-5 animate-bounce" />
 						<span className="text-xs font-medium">Drop files to attach</span>
 					</div>
 				</div>
@@ -352,6 +379,7 @@ export function NewMessageInputView() {
 						className="ml-auto shrink-0"
 						disabled={isStreaming}
 						onAttachmentsAdded={handleAddAttachments}
+						onFilesSelected={processFiles}
 						onTextExtracted={handleTextExtracted}
 						onLiveTranscript={handleLiveTranscript}
 						onRecordingChange={handleRecordingChange}
@@ -371,10 +399,24 @@ export function NewMessageInputView() {
 					is sent.
 				</p>
 			)}
-			{attachments.length > 0 && (
-				<div className="mb-2 flex flex-wrap gap-2">
+			{(attachments.length > 0 || pendingUploads.length > 0) && (
+				<div className="mb-2 flex flex-wrap gap-2 items-center">
 					{attachments.map((att, index) => (
 						<AttachmentBadge key={index} attachment={att} onRemove={() => handleRemoveAttachment(index)} />
+					))}
+					{pendingUploads.map((pu) => (
+						<div
+							key={pu.id}
+							className="group/pending bg-card/90 border-primary/40 text-foreground relative flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs shadow-xs animate-pulse select-none"
+						>
+							<Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+							<div className="flex flex-col min-w-0">
+								<span className="font-medium truncate max-w-[140px] text-[11px]" title={pu.name}>
+									{pu.name}
+								</span>
+								<span className="text-[10px] text-muted-foreground">{pu.progressText}</span>
+							</div>
+						</div>
 					))}
 				</div>
 			)}
@@ -423,16 +465,6 @@ export function NewMessageInputView() {
 					disabled={isStreaming}
 				/>
 				<div className="absolute right-0 bottom-0 flex items-center gap-1">
-					<Button
-						onClick={handleAddMessage}
-						disabled={isStreaming}
-						variant={"ghost"}
-						data-testid="new-message-add"
-						className="text-muted-foreground hover:text-foreground flex items-center gap-1 rounded px-1.5 py-1 text-xs disabled:pointer-events-none disabled:opacity-50"
-					>
-						<Plus className="h-3.5 w-3.5" />
-						Add
-					</Button>
 					{isStreaming ? (
 						<Button
 							onClick={onStopStreaming}

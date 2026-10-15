@@ -50,7 +50,7 @@
           restricted_extensions: exts
         }, "*");
       })
-      .catch(function () {});
+      .catch(function () { });
   }
 
   function armIfMonitored() {
@@ -85,7 +85,7 @@
         window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
         syncRules();
       })
-      .catch(function () {});
+      .catch(function () { });
   }
 
   // Periodic rule refresh every 15 seconds and on tab focus

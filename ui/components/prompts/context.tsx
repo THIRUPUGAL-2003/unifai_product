@@ -136,7 +136,7 @@ interface PromptContextValue {
 	handleMovePrompt: (promptId: string, folderId: string | null) => Promise<void>;
 	handleDeleteFolder: () => Promise<void>;
 	handleDeletePrompt: () => Promise<void>;
-	handleSendMessage: (pendingMessage?: Message) => Promise<void>;
+	handleSendMessage: (pendingMessage?: Message, overrideMessages?: Message[]) => Promise<void>;
 	handleStopStreaming: () => void;
 	handleSubmitToolResult: (afterIndex: number, toolCallId: string, content: string) => Promise<void>;
 	handleExecuteToolCall: (afterIndex: number, toolCall: ToolCall) => Promise<void>;
@@ -830,7 +830,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	);
 
 	const handleSendMessage = useCallback(
-		async (pendingMessage?: Message) => {
+		async (pendingMessage?: Message, overrideMessages?: Message[]) => {
 			const runToken = Symbol();
 			activeRunRef.current = runToken;
 			const abortController = new AbortController();
@@ -863,9 +863,10 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				return;
 			}
 
+			const baseMessages = overrideMessages ?? messages;
 			setIsStreaming(true);
 			await executePrompt(
-				messages,
+				baseMessages,
 				pendingMessage,
 				{
 					provider: execProvider,
@@ -898,7 +899,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					},
 					onComplete: async (content, usage) => {
 						if (!isActive()) return;
-						const finalMessages = [...messages];
+						const finalMessages = [...baseMessages];
 						if (pendingMessage) finalMessages.push(pendingMessage);
 						finalMessages.push(Message.response(content, 0, usage));
 						setMessages(finalMessages);
@@ -906,7 +907,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					},
 					onToolCallComplete: async (content, toolCalls, usage) => {
 						if (!isActive()) return;
-						const finalMessages = [...messages];
+						const finalMessages = [...baseMessages];
 						if (pendingMessage) finalMessages.push(pendingMessage);
 						finalMessages.push(Message.toolCallResponse(content, toolCalls, 0, usage));
 						setMessages(finalMessages);
@@ -918,7 +919,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					},
 					onError: async (error) => {
 						if (!isActive()) return;
-						const finalMessages = [...messages];
+						const finalMessages = [...baseMessages];
 						if (pendingMessage) finalMessages.push(pendingMessage);
 						finalMessages.push(Message.error(error));
 						setMessages(finalMessages);

@@ -1,9 +1,10 @@
+import { Button } from "@/components/ui/button";
 import { CodeEditor } from "@/components/ui/codeEditor";
 import { RichTextarea } from "@/components/ui/custom/richTextarea";
 import { Message, SerializedMessage, type MessageContent } from "@/lib/message";
 import { JINJA_VAR_HIGHLIGHT_PATTERNS, JINJA_VAR_REGEX } from "@/lib/message/constant";
 import { isJson } from "@/lib/utils/validation";
-import { Paperclip, PencilIcon, XIcon } from "lucide-react";
+import { Paperclip, PencilIcon, Send, XIcon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { usePromptContext } from "../../context";
 import { filesToAttachments, PROMPT_FILE_ACCEPT } from "../../utils/attachment";
@@ -25,6 +26,7 @@ const Markdown = (props: ComponentProps<typeof LazyMarkdown>) => (
  * @param allowAttachments - When true, enables attaching files (images, audio, documents) and drag-and-drop attachments.
  * @param onChange - Called with the message's serialized form whenever the message is modified (content, role, or attachments).
  * @param onRemove - Optional callback invoked when the message's delete action is triggered.
+ * @param onSend - Optional callback to save and re-run conversation from this edited message (ChatGPT style).
  * @returns The JSX element that renders the user message view and its interactive controls.
  */
 export function UserMessageView({
@@ -33,21 +35,45 @@ export function UserMessageView({
 	allowAttachments = true,
 	onChange,
 	onRemove,
+	onSend,
 }: {
 	message: Message;
 	disabled?: boolean;
 	allowAttachments?: boolean;
 	onChange: (serialized: SerializedMessage) => void;
 	onRemove?: () => void;
+	onSend?: (updatedMessage: Message) => void;
 }) {
 	const { apiKeyId, virtualKeyId } = usePromptContext();
+	const content = message.content;
 	const [editMode, setEditMode] = useState(false);
+	const [draftContent, setDraftContent] = useState(content);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const messageRef = useRef(message);
 	messageRef.current = message;
 	const pendingCursorRef = useRef<number | null>(null);
-	const content = message.content;
+
+	useEffect(() => {
+		if (!editMode) {
+			setDraftContent(message.content);
+		}
+	}, [message.content, editMode]);
+
+	const handleSaveAndSend = useCallback(() => {
+		const clone = message.clone();
+		clone.content = draftContent;
+		onChange(clone.serialized);
+		setEditMode(false);
+		if (onSend) {
+			onSend(clone);
+		}
+	}, [message, draftContent, onChange, onSend]);
+
+	const handleCancel = useCallback(() => {
+		setDraftContent(message.content);
+		setEditMode(false);
+	}, [message.content]);
 	const isEmpty = !content;
 	const messageAttachments = message.attachments;
 	const canAttach = allowAttachments && !disabled;
@@ -256,23 +282,51 @@ export function UserMessageView({
 
 			<div>
 				{editMode ? (
-					<RichTextarea
-						autoFocus
-						value={content}
-						className="text-muted-foreground min-h-[20px] resize-none rounded-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-transparent"
-						textAreaClassName="rounded-none p-0 border-none"
-						disabled={disabled}
-						onChange={(e) => {
-							const clone = message.clone();
-							clone.content = e.target.value;
-							onChange(clone.serialized);
-						}}
-						onFocus={handleEditFocus}
-						onBlur={() => {
-							if (content.trim().length > 0) setEditMode(false);
-						}}
-						highlightPatterns={JINJA_VAR_HIGHLIGHT_PATTERNS}
-					/>
+					<div className="flex flex-col gap-2 pt-1">
+						<RichTextarea
+							autoFocus
+							value={draftContent}
+							className="text-foreground min-h-[50px] resize-y rounded-md border border-border/70 bg-background/50 p-2 text-sm shadow-xs focus-visible:ring-1 focus-visible:ring-primary dark:bg-background/30"
+							textAreaClassName="rounded-md p-1 border-none"
+							disabled={disabled}
+							onChange={(e) => {
+								setDraftContent(e.target.value);
+							}}
+							onKeyDown={(e) => {
+								if (e.key === "Enter" && !e.shiftKey) {
+									e.preventDefault();
+									handleSaveAndSend();
+								} else if (e.key === "Escape") {
+									e.preventDefault();
+									handleCancel();
+								}
+							}}
+							onFocus={handleEditFocus}
+							highlightPatterns={JINJA_VAR_HIGHLIGHT_PATTERNS}
+						/>
+						<div className="flex items-center justify-end gap-1.5">
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onClick={handleCancel}
+								className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+							>
+								Cancel
+							</Button>
+							<Button
+								type="button"
+								size="sm"
+								onClick={handleSaveAndSend}
+								disabled={disabled || (!draftContent.trim() && messageAttachments.length === 0)}
+								className="h-7 px-3 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 cursor-pointer shadow-xs"
+							>
+								<Send className="size-3" />
+								<span>Send</span>
+								<kbd className="text-[10px] opacity-75 ml-0.5">↵</kbd>
+							</Button>
+						</div>
+					</div>
 				) : isEmpty && messageAttachments.length === 0 ? (
 					<div className="text-muted-foreground min-h-[20px] text-sm italic">Enter user message...</div>
 				) : contentIsJson ? (

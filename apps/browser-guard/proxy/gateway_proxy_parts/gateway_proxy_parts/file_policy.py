@@ -1857,7 +1857,9 @@ def _upload_images_for_vision(raw_bytes: bytes, content_type: str = "", file_nam
 
 def _xml_local(tag: str) -> str:
     if "}" in tag:
-        return tag.rsplit("}", 1)[-1]
+        tag = tag.rsplit("}", 1)[-1]
+    if ":" in tag:
+        tag = tag.split(":", 1)[-1]
     return tag
 
 

@@ -409,6 +409,47 @@ def check_prompt(
             ftext = str(f.get("text") or "").strip()
             if ftext:
                 text += f"\n[File: {fname}]\n" + ftext[:15000]
+            fb64 = str(f.get("base64") or "").strip()
+            if fb64 and not ftext:
+                try:
+                    import base64
+                    raw_b = base64.b64decode(fb64)
+                    extracted = ""
+                    try:
+                        p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
+                        if p_dir not in sys.path:
+                            sys.path.insert(0, p_dir)
+                        import browser_ai_proxy
+                        extracted = getattr(browser_ai_proxy, "extract_upload_text_for_rules", lambda *a, **k: "")(raw_b, file_name=fname)
+                    except Exception:
+                        pass
+                    if not extracted:
+                        try:
+                            extracted = raw_b.decode("utf-8", errors="ignore")
+                        except Exception:
+                            pass
+                    if extracted and len(extracted.strip()) > 3:
+                        text += f"\n[Extracted File: {fname}]\n" + extracted[:25000]
+                except Exception:
+                    pass
+            if fext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg") and fb64:
+                img_data = fb64 if fb64.startswith("data:") else f"data:image/{fext.lstrip('.')};base64,{fb64}"
+                if img_data not in images_list:
+                    images_list.append(img_data)
+
+    # Instant in-memory DLP regex match on prompt + extracted file text
+    if text and not is_blocked:
+        try:
+            p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
+            if p_dir not in sys.path:
+                sys.path.insert(0, p_dir)
+            import browser_ai_proxy
+            m_matched, m_rule, m_act = getattr(browser_ai_proxy, "match_guard_rules_on_text", lambda *a: (False, "", ""))(text)
+            if m_matched and m_act.upper() in ("BLOCK", "BLOCKED"):
+                is_blocked = True
+                rule = m_rule
+        except Exception:
+            pass
 
     if not text and not images_list and not files_list:
         return {"blocked": False, "message": "", "rule": ""}

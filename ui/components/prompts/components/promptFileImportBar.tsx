@@ -51,6 +51,7 @@ function formatDuration(seconds: number): string {
 interface PromptFileImportBarProps {
 	disabled?: boolean;
 	onAttachmentsAdded: (attachments: MessageContent[]) => void;
+	onFilesSelected?: (files: File[]) => void;
 	onTextExtracted?: (text: string) => void;
 	onLiveTranscript?: (text: string) => void;
 	onRecordingChange?: (isRecording: boolean) => void;
@@ -61,6 +62,7 @@ interface PromptFileImportBarProps {
 export function PromptFileImportBar({
 	disabled,
 	onAttachmentsAdded,
+	onFilesSelected,
 	onTextExtracted,
 	onLiveTranscript,
 	onRecordingChange,
@@ -100,12 +102,17 @@ export function PromptFileImportBar({
 
 	const addFiles = useCallback(
 		async (files: FileList | File[]) => {
-			const attachments = await filesToAttachments(files, { apiKeyId, virtualKeyId });
+			const arr = Array.from(files);
+			if (onFilesSelected) {
+				onFilesSelected(arr);
+				return;
+			}
+			const attachments = await filesToAttachments(arr, { apiKeyId, virtualKeyId });
 			if (attachments.length > 0) {
 				onAttachmentsAdded(attachments);
 			}
 		},
-		[apiKeyId, virtualKeyId, onAttachmentsAdded],
+		[apiKeyId, virtualKeyId, onAttachmentsAdded, onFilesSelected],
 	);
 
 	const cleanupStream = useCallback(() => {
