@@ -1,7 +1,8 @@
 # Part of Gateway browser_ai_proxy
-import re
 import json
 import os
+import re
+import time
 import urllib.parse
 try:
     from config_caches_rules import _path_has_ignore_pattern, _is_typed_numeric_prompt, _is_symbol_prompt, _UNIVERSAL_PROMPT_KEYS

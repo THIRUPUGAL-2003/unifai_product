@@ -1,4 +1,17 @@
 # Part of Gateway browser_ai_proxy — do not import directly.
+import asyncio
+import base64
+import io
+import json
+import os
+import re
+import sys
+import threading
+import time
+import urllib
+import urllib.parse
+import urllib.request
+import zipfile
 
 
 def _run_async(coro):
@@ -1704,6 +1717,8 @@ def extract_prompt(body_bytes: bytes, content_type: str = "", host: str = "") ->
     """
     if not body_bytes:
         return None
+    if isinstance(body_bytes, str):
+        body_bytes = body_bytes.encode("utf-8", errors="ignore")
 
     try:
         text = body_bytes.decode("utf-8", errors="ignore")

@@ -3,6 +3,10 @@
 import asyncio
 import json
 import re
+import time
+import urllib
+import urllib.parse
+import uuid
 
 
 # Same rule/send must not paint 3 chat bubbles (Claude multi-request / multi-file).

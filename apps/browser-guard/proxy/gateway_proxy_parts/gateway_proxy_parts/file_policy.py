@@ -1,6 +1,16 @@
-# Part of Gateway browser_ai_proxy — do not import directly.
+import asyncio
+import base64
+import io
+import json
+import os
+import re
 import threading
 import time
+import urllib
+import urllib.parse
+import urllib.request
+import zipfile
+import xml.etree.ElementTree as ET
 
 _FILE_LOG_COALESCE: dict = {}
 _FILE_LOG_COALESCE_LOCK = threading.Lock()
@@ -2009,9 +2019,10 @@ def _extract_xlsx_text(data: bytes) -> str:
                                 values.append(shared[idx].strip())
                         except Exception:
                             pass
-                    elif cell_type == "inlineStr" and is_el is not None:
+                    elif cell_type in ("inlinestr", "str"):
+                        target_node = is_el if is_el is not None else el
                         texts = []
-                        for node in is_el.iter():
+                        for node in target_node.iter():
                             if _xml_local(node.tag) == "t" and node.text:
                                 texts.append(node.text)
                         s = "".join(texts).strip()

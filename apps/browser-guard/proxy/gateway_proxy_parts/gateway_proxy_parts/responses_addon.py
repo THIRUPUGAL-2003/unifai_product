@@ -1,5 +1,5 @@
 # BrowserAIInterceptor — mitmproxy addon (loaded after responses_inject.py via MANIFEST).
-
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 from mitmproxy.net import encoding as mitm_encoding
