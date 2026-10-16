@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
-# Gateway Guard - macOS Auto Updater
-# Double-click (or run in Terminal) to update Guard to latest version from server
+# YP Raksha - macOS Auto Updater
+# Double-click (or run in Terminal) to update YP Raksha to latest version from server
 # ==============================================================================
 
 set -euo pipefail
@@ -30,13 +30,11 @@ fi
 CURL_AUTH=()
 if [ -n "$GUARD_SECRET" ]; then
     CURL_AUTH=(-H "X-Gateway-Guard-Key: $GUARD_SECRET")
-else
-    echo -e "${YELLOW}WARNING: guard_secret missing in config — download may fail if server requires it.${RESET}"
 fi
 
 echo ""
 echo -e "${CYAN}============================================================${RESET}"
-echo -e "${CYAN}  Gateway Guard Auto-Updater (macOS)${RESET}"
+echo -e "${CYAN}  YP Raksha Auto-Updater (macOS)${RESET}"
 echo -e "${CYAN}  Server: $BACKEND_URL${RESET}"
 echo -e "${CYAN}============================================================${RESET}"
 echo ""
@@ -45,10 +43,12 @@ echo ""
 CURRENT_VERSION="unknown"
 VERSION_FILE="$SCRIPT_DIR/VERSION.txt"
 APP_VERSION_CANDIDATES=(
+    "$HOME/Applications/YP_Raksha.app/Contents/Resources/VERSION.txt"
+    "/Applications/YP_Raksha.app/Contents/Resources/VERSION.txt"
+    "$HOME/Applications/YP_Raksha.app/Contents/Info.plist"
+    "/Applications/YP_Raksha.app/Contents/Info.plist"
     "$HOME/Applications/Gateway_Guard.app/Contents/Resources/VERSION.txt"
     "/Applications/Gateway_Guard.app/Contents/Resources/VERSION.txt"
-    "$HOME/Applications/Gateway_Guard.app/Contents/Info.plist"
-    "/Applications/Gateway_Guard.app/Contents/Info.plist"
     "$VERSION_FILE"
 )
 
@@ -90,12 +90,13 @@ fi
 
 # ── Step 3: Stop running Guard ─────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}Stopping Gateway Guard...${RESET}"
+echo -e "${YELLOW}Stopping YP Raksha...${RESET}"
+pkill -f "YP_Raksha" 2>/dev/null || true
 pkill -f "Gateway_Guard" 2>/dev/null || true
 sleep 2
 
 # ── Step 4: Download latest macOS package ─────────────────────────────────────
-TEMP_ZIP="/tmp/Gateway_Guard_Update_macOS.zip"
+TEMP_ZIP="/tmp/YP_Raksha_Update_macOS.zip"
 echo -e "${GRAY}Downloading latest macOS package from server...${RESET}"
 
 if ! curl -L --max-time 180 --progress-bar "${CURL_AUTH[@]}" \
@@ -110,7 +111,7 @@ fi
 echo -e "${GREEN}Download complete! Extracting...${RESET}"
 
 # ── Step 5: Extract and Install ───────────────────────────────────────────────
-TEMP_DIR="/tmp/Gateway_Guard_Update_macOS"
+TEMP_DIR="/tmp/YP_Raksha_Update_macOS"
 rm -rf "$TEMP_DIR"
 mkdir -p "$TEMP_DIR"
 unzip -q "$TEMP_ZIP" -d "$TEMP_DIR"
@@ -120,23 +121,23 @@ echo -e "${YELLOW}Installing...${RESET}"
 
 install_app_bundle() {
     local APP="$1"
+    rm -rf "$HOME/Applications/YP_Raksha.app" 2>/dev/null || true
+    rm -rf "/Applications/YP_Raksha.app" 2>/dev/null || true
     rm -rf "$HOME/Applications/Gateway_Guard.app" 2>/dev/null || true
     rm -rf "/Applications/Gateway_Guard.app" 2>/dev/null || true
     mkdir -p "$HOME/Applications"
-    if cp -R "$APP" "$HOME/Applications/" 2>/dev/null; then
-        DEST="$HOME/Applications/Gateway_Guard.app"
+    if cp -R "$APP" "$HOME/Applications/YP_Raksha.app" 2>/dev/null; then
+        DEST="$HOME/Applications/YP_Raksha.app"
     else
-        cp -R "$APP" "/Applications/"
-        DEST="/Applications/Gateway_Guard.app"
+        cp -R "$APP" "/Applications/YP_Raksha.app"
+        DEST="/Applications/YP_Raksha.app"
     fi
-    # Ensure VERSION.txt exists for next update check
     mkdir -p "$DEST/Contents/Resources"
     if [ "$SERVER_VERSION" != "latest" ] && [ -n "$SERVER_VERSION" ]; then
         printf '%s\n' "$SERVER_VERSION" > "$DEST/Contents/Resources/VERSION.txt"
     elif [ -f "$TEMP_DIR/VERSION.txt" ]; then
         cp "$TEMP_DIR/VERSION.txt" "$DEST/Contents/Resources/VERSION.txt"
     fi
-    # Carry fleet config if present beside updater
     if [ -f "$CONFIG_FILE" ]; then
         cp "$CONFIG_FILE" "$DEST/Contents/Resources/gateway_guard_config.json" 2>/dev/null || true
     fi
@@ -148,10 +149,18 @@ if find "$TEMP_DIR" -name "*.pkg" | grep -q .; then
     PKG=$(find "$TEMP_DIR" -name "*.pkg" | head -1)
     echo "Found PKG installer: $PKG"
     sudo installer -pkg "$PKG" -target /
+elif find "$TEMP_DIR" -name "YP_Raksha.app" | grep -q .; then
+    APP=$(find "$TEMP_DIR" -name "YP_Raksha.app" | head -1)
+    echo "Found YP_Raksha.app bundle"
+    install_app_bundle "$APP"
 elif find "$TEMP_DIR" -name "Gateway_Guard.app" | grep -q .; then
     APP=$(find "$TEMP_DIR" -name "Gateway_Guard.app" | head -1)
     echo "Found .app bundle"
     install_app_bundle "$APP"
+elif find "$TEMP_DIR" -name "Install_YP_Raksha.command" | grep -q .; then
+    INSTALL_CMD=$(find "$TEMP_DIR" -name "Install_YP_Raksha.command" | head -1)
+    chmod +x "$INSTALL_CMD"
+    bash "$INSTALL_CMD"
 elif find "$TEMP_DIR" -name "Install_Gateway_Guard.command" | grep -q .; then
     INSTALL_CMD=$(find "$TEMP_DIR" -name "Install_Gateway_Guard.command" | head -1)
     chmod +x "$INSTALL_CMD"
@@ -167,10 +176,10 @@ rm -rf "$TEMP_DIR"
 
 # ── Step 7: Restart Guard ─────────────────────────────────────────────────────
 echo ""
-echo -e "${YELLOW}Starting Gateway Guard...${RESET}"
+echo -e "${YELLOW}Starting YP Raksha...${RESET}"
 
 GUARD_APP=""
-for loc in "$HOME/Applications/Gateway_Guard.app" "/Applications/Gateway_Guard.app"; do
+for loc in "$HOME/Applications/YP_Raksha.app" "/Applications/YP_Raksha.app" "$HOME/Applications/Gateway_Guard.app" "/Applications/Gateway_Guard.app"; do
     if [ -d "$loc" ]; then
         GUARD_APP="$loc"
         break
@@ -179,9 +188,9 @@ done
 
 if [ -n "$GUARD_APP" ]; then
     open "$GUARD_APP"
-    echo -e "${GREEN}Guard started!${RESET}"
+    echo -e "${GREEN}YP Raksha started!${RESET}"
 else
-    echo -e "${YELLOW}Guard app not found in standard locations — please start manually.${RESET}"
+    echo -e "${YELLOW}YP Raksha app not found in standard locations — please start manually.${RESET}"
 fi
 
 echo ""

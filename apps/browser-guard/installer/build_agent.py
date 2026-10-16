@@ -33,10 +33,12 @@ def copy_config_into_app(app_path: Path) -> None:
 
 
 def build_windows() -> Path:
-    spec = ROOT / "Gateway_Guard.spec"
+    spec = ROOT / "YP_Raksha.spec"
     if not spec.is_file():
-        raise SystemExit(f"Missing {spec}")
-    # dist\Gateway_Guard.exe can stay locked by a previous copy. Write the new
+        spec = ROOT / "Gateway_Guard.spec"
+    if not spec.is_file():
+        raise SystemExit(f"Missing spec file")
+    # dist\YP_Raksha.exe can stay locked by a previous copy. Write the new
     # binary beside the PyInstaller work dir, then publish copies that file.
     out_dir = ROOT / "build" / "exe"
     work_dir = ROOT / "build" / "pyi"
@@ -55,10 +57,14 @@ def build_windows() -> Path:
             str(spec),
         ]
     )
-    exe = out_dir / "Gateway_Guard.exe"
+    exe = out_dir / "YP_Raksha.exe"
     if not exe.is_file():
-        raise SystemExit(f"Expected {exe} after PyInstaller")
+        exe = out_dir / "Gateway_Guard.exe"
+    if not exe.is_file():
+        raise SystemExit(f"Expected YP_Raksha.exe after PyInstaller")
     RELEASE.mkdir(parents=True, exist_ok=True)
+    _replace_copy(exe, DIST / "YP_Raksha.exe")
+    _replace_copy(exe, RELEASE / "YP_Raksha.exe")
     _replace_copy(exe, DIST / "Gateway_Guard.exe")
     _replace_copy(exe, RELEASE / "Gateway_Guard.exe")
     shutil.copy2(CONFIG, RELEASE / "gateway_guard_config.json")
@@ -117,18 +123,22 @@ def build_macos() -> Path:
     if enc_script.is_file():
         subprocess.run([sys.executable, str(enc_script)], check=True)
 
-    spec = ROOT / "Gateway_Guard.macos.spec"
+    spec = ROOT / "YP_Raksha.macos.spec"
     if not spec.is_file():
-        raise SystemExit(f"Missing {spec}")
+        spec = ROOT / "Gateway_Guard.macos.spec"
+    if not spec.is_file():
+        raise SystemExit(f"Missing macos spec file")
     run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", str(spec)])
-    app = DIST / "Gateway_Guard.app"
+    app = DIST / "YP_Raksha.app"
     if not app.is_dir():
-        raise SystemExit(f"Expected {app} after PyInstaller")
+        app = DIST / "Gateway_Guard.app"
+    if not app.is_dir():
+        raise SystemExit(f"Expected YP_Raksha.app after PyInstaller")
     copy_config_into_app(app)
     strip_plain_text_sources_from_bundle(app)
 
     RELEASE.mkdir(parents=True, exist_ok=True)
-    release_app = RELEASE / "Gateway_Guard.app"
+    release_app = RELEASE / "YP_Raksha.app"
     if release_app.exists():
         if platform.system().lower() == "darwin":
             subprocess.run(["chflags", "-R", "nouchg", str(release_app)], check=False)

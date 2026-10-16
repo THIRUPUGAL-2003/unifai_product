@@ -1,6 +1,6 @@
 # ==============================================================================
-# Gateway Guard - One-Click Auto Updater
-# Double-click this script to update Guard to the latest version from server
+# YP Raksha - One-Click Auto Updater
+# Double-click this script to update YP Raksha to the latest version from server
 # ==============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -27,17 +27,15 @@ if (-not $BackendURL) {
 }
 
 $AuthHeaders = @{
-    "User-Agent" = "Gateway-Guard-Updater/ps1"
+    "User-Agent" = "YP-Raksha-Updater/ps1"
 }
 if ($GuardSecret -and $GuardSecret.Trim().Length -gt 0) {
     $AuthHeaders["X-Gateway-Guard-Key"] = $GuardSecret.Trim()
-} else {
-    Write-Host "WARNING: guard_secret missing in config — download may fail if server requires it." -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  Gateway Guard Auto-Updater" -ForegroundColor Cyan
+Write-Host "  YP Raksha Auto-Updater" -ForegroundColor Cyan
 Write-Host "  Server: $BackendURL" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -53,7 +51,6 @@ Write-Host "Current version: $CurrentVersion" -ForegroundColor Yellow
 # ── Step 2: Check server version ─────────────────────────────────────────────
 Write-Host "Checking server for latest version..." -ForegroundColor Gray
 try {
-    # Check version via HTTP header from download endpoint (no separate version API needed)
     $HeadResp = Invoke-WebRequest -Uri "$BackendURL/api/browser-ai/setup/download-windows.zip" -Method Head -Headers $AuthHeaders -UseBasicParsing -TimeoutSec 10
     $ServerVersion = $HeadResp.Headers["X-Gateway-Guard-Version"]
     if (-not $ServerVersion) { $ServerVersion = "latest" }
@@ -73,13 +70,14 @@ if ($CurrentVersion -eq $ServerVersion -and $ServerVersion -ne "unknown" -and $S
 
 # ── Step 3: Stop running Guard ────────────────────────────────────────────────
 Write-Host ""
-Write-Host "Stopping Gateway Guard..." -ForegroundColor Yellow
+Write-Host "Stopping YP Raksha..." -ForegroundColor Yellow
+Get-Process -Name "YP_Raksha" -ErrorAction SilentlyContinue | Stop-Process -Force
 Get-Process -Name "Gateway_Guard" -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 2
 
 # ── Step 4: Download latest installer (Windows ZIP) ───────────────────────────
-$TempZip   = Join-Path $env:TEMP "Gateway_Guard_Update.zip"
-$TempSetup = Join-Path $env:TEMP "Gateway_Guard_Update_Setup.exe"
+$TempZip   = Join-Path $env:TEMP "YP_Raksha_Update.zip"
+$TempSetup = Join-Path $env:TEMP "YP_Raksha_Update_Setup.exe"
 Write-Host "Downloading latest installer from server..." -ForegroundColor Gray
 
 try {
@@ -90,15 +88,14 @@ try {
         -UseBasicParsing `
         -TimeoutSec 120
     Write-Host "Download complete! Extracting..." -ForegroundColor Green
-    # Extract Setup EXE from ZIP
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($TempZip)
-    $entry = $zip.Entries | Where-Object { $_.Name -eq "Gateway_Guard_Setup.exe" } | Select-Object -First 1
+    $entry = $zip.Entries | Where-Object { $_.Name -eq "YP_Raksha_Setup.exe" -or $_.Name -eq "Gateway_Guard_Setup.exe" } | Select-Object -First 1
     if ($entry) {
         [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $TempSetup, $true)
         Write-Host "Extracted Setup EXE." -ForegroundColor Green
     } else {
-        throw "Gateway_Guard_Setup.exe not found in downloaded ZIP"
+        throw "Setup EXE not found in downloaded ZIP"
     }
     $zip.Dispose()
     Remove-Item $TempZip -ErrorAction SilentlyContinue
@@ -129,17 +126,20 @@ Remove-Item $TempSetup -ErrorAction SilentlyContinue
 
 # ── Step 7: Restart Guard ─────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "Starting Gateway Guard..." -ForegroundColor Yellow
+Write-Host "Starting YP Raksha..." -ForegroundColor Yellow
 $GuardExe = @(
+    "$env:LOCALAPPDATA\Programs\YP Raksha\YP_Raksha.exe",
+    "$env:LOCALAPPDATA\Programs\Gateway\Guard\YP_Raksha.exe",
+    "$env:PROGRAMFILES\YP Raksha\YP_Raksha.exe",
     "$env:LOCALAPPDATA\Programs\Gateway\Guard\Gateway_Guard.exe",
     "$env:PROGRAMFILES\Gateway\Guard\Gateway_Guard.exe"
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if ($GuardExe) {
     Start-Process $GuardExe
-    Write-Host "Guard started!" -ForegroundColor Green
+    Write-Host "YP Raksha started!" -ForegroundColor Green
 } else {
-    Write-Host "Guard EXE not found in default location — please start manually." -ForegroundColor Yellow
+    Write-Host "YP Raksha EXE not found in default location — please start manually." -ForegroundColor Yellow
 }
 
 Write-Host ""

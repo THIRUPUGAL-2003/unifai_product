@@ -728,16 +728,20 @@ def register_autostart(exe_path: str) -> None:
                 0,
                 winreg.KEY_SET_VALUE,  # type: ignore
             )
-            winreg.SetValueEx(key, "Gateway_Guard", 0, winreg.REG_SZ, f'"{exe_path}"')  # type: ignore
+            winreg.SetValueEx(key, "YP_Raksha", 0, winreg.REG_SZ, f'"{exe_path}"')  # type: ignore
+            try:
+                winreg.DeleteValue(key, "Gateway_Guard")  # type: ignore
+            except Exception:
+                pass
             winreg.CloseKey(key)  # type: ignore
-            print("[Gateway Guard] Autostart registered (Windows Run key).")
+            print("[YP Raksha] Autostart registered (Windows Run key).")
         except Exception as e:
-            print(f"[Gateway Guard WARNING] Autostart register failed: {e}")
+            print(f"[YP Raksha WARNING] Autostart register failed: {e}")
         return
     if IS_MAC:
         agents = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents")
         os.makedirs(agents, exist_ok=True)
-        plist_path = os.path.join(agents, "com.gateway.guard.plist")
+        plist_path = os.path.join(agents, "com.yespanchi.raksha.plist")
         # Prefer .app Contents/MacOS binary when frozen as app bundle
         program = exe_path
 
@@ -746,7 +750,7 @@ def register_autostart(exe_path: str) -> None:
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.gateway.guard</string>
+  <string>com.yespanchi.raksha</string>
   <key>ProgramArguments</key>
   <array>
     <string>{program}</string>
@@ -770,12 +774,14 @@ def register_autostart(exe_path: str) -> None:
         try:
             with open(plist_path, "w", encoding="utf-8") as f:
                 f.write(plist)
-            # Write plist only — do not launchctl load while this process is alive
-            # (would spawn a second copy). KeepAlive applies on next login when
-            # launchd starts Guard and restarts it after crash.
-            print(f"[Gateway Guard] Autostart registered (LaunchAgent KeepAlive on next login): {plist_path}")
+            # Remove legacy LaunchAgent if present
+            old_plist = os.path.join(agents, "com.gateway.guard.plist")
+            if os.path.isfile(old_plist):
+                subprocess.run(["launchctl", "unload", old_plist], check=False, capture_output=True)
+                os.remove(old_plist)
+            print(f"[YP Raksha] Autostart registered (LaunchAgent KeepAlive on next login): {plist_path}")
         except Exception as e:
-            print(f"[Gateway Guard WARNING] LaunchAgent register failed: {e}")
+            print(f"[YP Raksha WARNING] LaunchAgent register failed: {e}")
 
 
 def clear_autostart() -> None:
@@ -787,27 +793,29 @@ def clear_autostart() -> None:
                 0,
                 winreg.KEY_SET_VALUE,  # type: ignore
             )
-            try:
-                winreg.DeleteValue(key, "Gateway_Guard")  # type: ignore
-            except FileNotFoundError:
-                pass
+            for val in ("YP_Raksha", "Gateway_Guard"):
+                try:
+                    winreg.DeleteValue(key, val)  # type: ignore
+                except FileNotFoundError:
+                    pass
             winreg.CloseKey(key)  # type: ignore
         except Exception as e:
-            print(f"[Gateway Guard WARNING] Could not clear autostart: {e}")
+            print(f"[YP Raksha WARNING] Could not clear autostart: {e}")
         return
     if IS_MAC:
-        plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", "com.gateway.guard.plist")
-        try:
-            subprocess.run(["launchctl", "unload", plist_path], check=False, capture_output=True)
-            if os.path.isfile(plist_path):
-                os.remove(plist_path)
-            print("[Gateway Guard] LaunchAgent removed.")
-        except Exception as e:
-            print(f"[Gateway Guard WARNING] Could not clear LaunchAgent: {e}")
+        for p_name in ("com.yespanchi.raksha.plist", "com.gateway.guard.plist"):
+            plist_path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", p_name)
+            try:
+                subprocess.run(["launchctl", "unload", plist_path], check=False, capture_output=True)
+                if os.path.isfile(plist_path):
+                    os.remove(plist_path)
+                print(f"[YP Raksha] LaunchAgent removed: {p_name}")
+            except Exception as e:
+                print(f"[YP Raksha WARNING] Could not clear LaunchAgent: {e}")
 
 
 def register_windows_uninstall_entry(exe_path: str) -> None:
-    """Ensure Gateway Guard is registered in Windows Control Panel & Settings (Installed Apps)."""
+    """Ensure YP Raksha is registered in Windows Control Panel & Settings (Installed Apps)."""
     if not IS_WIN or not exe_path:
         return
     try:
@@ -815,9 +823,9 @@ def register_windows_uninstall_entry(exe_path: str) -> None:
         sub_key = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, sub_key)  # type: ignore
         install_dir = os.path.dirname(os.path.abspath(exe_path))
-        winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "Gateway Guard")  # type: ignore
+        winreg.SetValueEx(key, "DisplayName", 0, winreg.REG_SZ, "YP Raksha")  # type: ignore
         winreg.SetValueEx(key, "DisplayVersion", 0, winreg.REG_SZ, AGENT_VERSION)  # type: ignore
-        winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, "Gateway")  # type: ignore
+        winreg.SetValueEx(key, "Publisher", 0, winreg.REG_SZ, "YesPanchi")  # type: ignore
         winreg.SetValueEx(key, "DisplayIcon", 0, winreg.REG_SZ, exe_path)  # type: ignore
         winreg.SetValueEx(key, "InstallLocation", 0, winreg.REG_SZ, install_dir)  # type: ignore
         winreg.SetValueEx(key, "UninstallString", 0, winreg.REG_SZ, f'"{exe_path}" --uninstall-prompt')  # type: ignore

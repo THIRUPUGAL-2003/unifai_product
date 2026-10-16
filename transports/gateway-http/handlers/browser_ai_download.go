@@ -405,14 +405,29 @@ func guardPackageInfo() map[string]any {
 		"macos_ready":   false,
 		"can_rebuild":   guardRebuildAvailable(),
 	}
-	if p, ok := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_Setup.exe"]); ok {
-		info["windows_ready"] = true
-		info["windows_built_at"] = fileModTime(p)
-	} else if p, ok := findFirstExisting(browserAISetupCandidates()["Gateway_Guard.exe"]); ok {
+	if p, ok := findFirstExisting(append(
+		browserAISetupCandidates()["YP_Raksha_Setup.exe"],
+		append(browserAISetupCandidates()["YP_Raksha.exe"],
+			filepath.Join("apps", "browser-guard", "release", "YP_Raksha_Windows.zip"),
+			filepath.Join("release", "YP_Raksha_Windows.zip"),
+			"/app/release/YP_Raksha_Windows.zip",
+			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard_Windows.zip"),
+			filepath.Join("release", "Gateway_Guard_Windows.zip"),
+			"/app/release/Gateway_Guard_Windows.zip",
+		)...,
+	)); ok {
 		info["windows_ready"] = true
 		info["windows_built_at"] = fileModTime(p)
 	}
-	if p, ok := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_macOS.zip"]); ok {
+	if p, ok := findFirstExisting(append(
+		browserAISetupCandidates()["YP_Raksha_macOS.zip"],
+		filepath.Join("apps", "browser-guard", "release", "YP_Raksha_macOS.zip"),
+		filepath.Join("release", "YP_Raksha_macOS.zip"),
+		"/app/release/YP_Raksha_macOS.zip",
+		filepath.Join("apps", "browser-guard", "release", "Gateway_Guard_macOS.zip"),
+		filepath.Join("release", "Gateway_Guard_macOS.zip"),
+		"/app/release/Gateway_Guard_macOS.zip",
+	)); ok {
 		info["macos_ready"] = true
 		info["macos_built_at"] = fileModTime(p)
 	}
@@ -547,12 +562,12 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 
 	var assets []zipAsset
 	if setupOK {
-		assets = append(assets, zipAsset{name: "Gateway_Guard_Setup.exe", path: setupPath})
+		assets = append(assets, zipAsset{name: "YP_Raksha_Setup.exe", path: setupPath})
 	} else if exeOK {
-		assets = append(assets, zipAsset{name: "Gateway_Guard.exe", path: exePath})
+		assets = append(assets, zipAsset{name: "YP_Raksha.exe", path: exePath})
 	}
 	if macZipOK {
-		assets = append(assets, zipAsset{name: "Gateway_Guard_macOS.zip", path: macZipPath})
+		assets = append(assets, zipAsset{name: "YP_Raksha_macOS.zip", path: macZipPath})
 	}
 
 	cfg, cfgOK := guardConfigForDownload(ctx)

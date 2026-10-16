@@ -253,18 +253,19 @@ def update_installer_scripts(repo_root: Path, env_vars: dict[str, str]) -> int:
     bg_dir = repo_root / "apps" / "browser-guard"
     updated = 0
 
-    # 1. Gateway_Guard.iss (Inno Setup)
-    iss_file = bg_dir / "installer" / "Gateway_Guard.iss"
-    if iss_file.is_file():
-        content = iss_file.read_text(encoding="utf-8", errors="ignore")
-        new_content = re.sub(
-            r'#define\s+MyAppURL\s+"[^"]*"',
-            f'#define MyAppURL "{server_domain}"',
-            content,
-        )
-        if new_content != content:
-            iss_file.write_text(new_content, encoding="utf-8", newline="\n")
-            updated += 1
+    # 1. YP_Raksha.iss & Gateway_Guard.iss (Inno Setup)
+    for iss_name in ("YP_Raksha.iss", "Gateway_Guard.iss"):
+        iss_file = bg_dir / "installer" / iss_name
+        if iss_file.is_file():
+            content = iss_file.read_text(encoding="utf-8", errors="ignore")
+            new_content = re.sub(
+                r'#define\s+MyAppURL\s+"[^"]*"',
+                f'#define MyAppURL "{server_domain}"',
+                content,
+            )
+            if new_content != content:
+                iss_file.write_text(new_content, encoding="utf-8", newline="\n")
+                updated += 1
 
     # 2. Text guides & readmes
     docs = [

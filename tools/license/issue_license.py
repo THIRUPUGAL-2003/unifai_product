@@ -281,6 +281,7 @@ def main():
     parser.add_argument("--any-server", action="store_true", help="Allow running on any server host (floating)")
     parser.add_argument("--any-db", action="store_true", help="Allow running on any database instance (floating)")
     parser.add_argument("--license-id", default=None, help="Existing license ID when moving server or changing seats. Omit to issue a new license.")
+    parser.add_argument("--revision", type=int, default=None, help="License revision number (must be greater than active DB revision)")
     parser.add_argument("--registry", default=None, help="Vendor registry JSON updated when a key is issued or replaced")
     parser.add_argument("--out", default=None, help="Output file path (default: license_<client>.lic)")
     parser.add_argument("--key", default=None, help="Custom path to master_private.key")
@@ -327,6 +328,7 @@ def main():
             issuer=args.issuer,
             product=args.product,
             tier=args.tier,
+            revision=args.revision,
             private_key_path=args.key,
             output_path=args.out,
             registry_path=args.registry,

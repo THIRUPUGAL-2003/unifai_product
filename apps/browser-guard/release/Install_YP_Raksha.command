@@ -1,57 +1,44 @@
 #!/bin/bash
-# Double-click or run in Terminal to install Gateway Guard on this Mac.
+# Double-click or run in Terminal to install YP Raksha on this Mac.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_SRC="$DIR/Gateway_Guard.app"
-DEST="/Applications/Gateway_Guard.app"
+APP_SRC="$DIR/YP_Raksha.app"
+DEST="/Applications/YP_Raksha.app"
 
 echo "============================================================"
-echo " Gateway Guard — macOS install"
+echo " YP Raksha — macOS install"
 echo "============================================================"
 
 if [[ ! -d "$APP_SRC" ]]; then
-  osascript -e 'display dialog "Gateway_Guard.app not found next to this installer.\nUnzip Gateway_Guard_macOS.zip fully, then run Install_Gateway_Guard.command again." with title "Gateway Guard" buttons {"OK"} default button 1 with icon stop' || true
-  echo "ERROR: Missing $APP_SRC"
-  exit 1
+  if [[ -d "$DIR/Gateway_Guard.app" ]]; then
+    APP_SRC="$DIR/Gateway_Guard.app"
+  else
+    osascript -e 'display dialog "YP_Raksha.app not found next to this installer.\nUnzip YP_Raksha_macOS.zip fully, then run Install_YP_Raksha.command again." with title "YP Raksha" buttons {"OK"} default button 1 with icon stop' || true
+    echo "ERROR: Missing $APP_SRC"
+    exit 1
+  fi
 fi
 
-# An earlier build shipped as UnifAI_Guard.app with its own LaunchAgent, browser policies and
-# data dir. Left running, both Guards fight over the PAC/proxy, so stop and remove it,
-# keeping its data dir (device identity) for this build.
+# Clean previous legacy builds (UnifAI Guard / Gateway Guard)
 remove_previous_build() {
   local OLD_PLIST="$HOME/Library/LaunchAgents/com.unifai.guard.plist"
   if [[ -f "$OLD_PLIST" ]]; then
     launchctl unload "$OLD_PLIST" 2>/dev/null || true
     rm -f "$OLD_PLIST"
   fi
+  local OLD_PLIST2="$HOME/Library/LaunchAgents/com.gateway.guard.plist"
+  if [[ -f "$OLD_PLIST2" ]]; then
+    launchctl unload "$OLD_PLIST2" 2>/dev/null || true
+    rm -f "$OLD_PLIST2"
+  fi
   pkill -f "UnifAI_Guard.app/Contents/MacOS/UnifAI_Guard" 2>/dev/null || true
   pkill -f "/MacOS/UnifAI_Guard" 2>/dev/null || true
-
-  local SUPPORT="$HOME/Library/Application Support"
-  local ROOT
-  for ROOT in \
-    "$SUPPORT/Google/Chrome/policies/managed" \
-    "$SUPPORT/Google/Chrome Canary/policies/managed" \
-    "$SUPPORT/Microsoft Edge/policies/managed" \
-    "$SUPPORT/BraveSoftware/Brave-Browser/policies/managed" \
-    "$SUPPORT/Chromium/policies/managed"
-  do
-    rm -f "$ROOT/unifai_guard.json" 2>/dev/null || true
-  done
-
-  local OLD_DATA="$SUPPORT/UnifAI/Guard"
-  local NEW_DATA="$SUPPORT/Gateway/Guard"
-  if [[ -d "$OLD_DATA" ]]; then
-    # proxy_bundle targets the old app and must not be reused.
-    if [[ -d "$NEW_DATA" ]] || { mkdir -p "$NEW_DATA" && rsync -a --exclude proxy_bundle "$OLD_DATA/" "$NEW_DATA/"; }; then
-      rm -rf "$OLD_DATA"
-      rmdir "$SUPPORT/UnifAI" 2>/dev/null || true
-    fi
-  fi
+  pkill -f "Gateway_Guard.app/Contents/MacOS/Gateway_Guard" 2>/dev/null || true
+  pkill -f "/MacOS/Gateway_Guard" 2>/dev/null || true
 
   local OLD_APP
-  for OLD_APP in "/Applications/UnifAI_Guard.app" "$HOME/Applications/UnifAI_Guard.app"; do
+  for OLD_APP in "/Applications/UnifAI_Guard.app" "$HOME/Applications/UnifAI_Guard.app" "/Applications/Gateway_Guard.app" "$HOME/Applications/Gateway_Guard.app"; do
     if [[ -d "$OLD_APP" ]]; then
       echo "Removing previous build $OLD_APP"
       rm -rf "$OLD_APP" 2>/dev/null || true
@@ -64,13 +51,12 @@ xattr -dr com.apple.quarantine "$APP_SRC" 2>/dev/null || true
 
 remove_previous_build
 
-# Stop existing running Guard instances and unload LaunchAgent
-PLIST="$HOME/Library/LaunchAgents/com.gateway.guard.plist"
+# Stop existing running YP Raksha instances and unload LaunchAgent
+PLIST="$HOME/Library/LaunchAgents/com.yespanchi.raksha.plist"
 if [[ -f "$PLIST" ]]; then
   launchctl unload "$PLIST" 2>/dev/null || true
 fi
-pkill -f "Gateway_Guard.app/Contents/MacOS/Gateway_Guard" 2>/dev/null || true
-pkill -f "/MacOS/Gateway_Guard" 2>/dev/null || true
+pkill -f "YP_Raksha" 2>/dev/null || true
 sleep 1
 
 # Try /Applications first; if permission denied, fallback to ~/Applications
@@ -82,7 +68,7 @@ fi
 
 if ! cp -R "$APP_SRC" "$DEST" 2>/dev/null; then
   echo "/Applications write not permitted, falling back to $HOME/Applications ..."
-  DEST="$HOME/Applications/Gateway_Guard.app"
+  DEST="$HOME/Applications/YP_Raksha.app"
   mkdir -p "$HOME/Applications"
   chflags -R nouchg "$DEST" 2>/dev/null || true
   rm -rf "$DEST" 2>/dev/null || true
@@ -90,7 +76,9 @@ if ! cp -R "$APP_SRC" "$DEST" 2>/dev/null; then
 fi
 
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
-if [[ -f "$DEST/Contents/MacOS/Gateway_Guard" ]]; then
+if [[ -f "$DEST/Contents/MacOS/YP_Raksha" ]]; then
+  chmod +x "$DEST/Contents/MacOS/YP_Raksha"
+elif [[ -f "$DEST/Contents/MacOS/Gateway_Guard" ]]; then
   chmod +x "$DEST/Contents/MacOS/Gateway_Guard"
 fi
 
@@ -104,11 +92,10 @@ if [[ -f "$DIR/gateway_guard_config.json" ]]; then
   cp "$DIR/gateway_guard_config.json" "$USER_DATA/gateway_guard_config.json"
 fi
 
-echo "Starting Guard at $DEST ..."
+echo "Starting YP Raksha at $DEST ..."
 open "$DEST"
 
-osascript -e 'display dialog "Gateway Guard installed successfully.\n\n1) Fully quit Safari/Chrome/Edge/Firefox\n2) Reopen browsers\n3) Visit a monitored AI site\n\nHealth: http://127.0.0.1:18195/\n\nTo turn OFF / uninstall: run Uninstall_Gateway_Guard.command" with title "Gateway Guard" buttons {"OK"} default button 1 with icon note' || true
+osascript -e 'display dialog "YP Raksha installed successfully.\n\n1) Fully quit Safari/Chrome/Edge/Firefox\n2) Reopen browsers\n3) Visit a monitored AI site\n\nHealth: http://127.0.0.1:18195/\n\nTo turn OFF / uninstall: run Uninstall_YP_Raksha.command" with title "YP Raksha" buttons {"OK"} default button 1 with icon note' || true
 
 echo "Done. Health check: open http://127.0.0.1:18195"
-echo "Off / uninstall: double-click Uninstall_Gateway_Guard.command"
-
+echo "Off / uninstall: double-click Uninstall_YP_Raksha.command"

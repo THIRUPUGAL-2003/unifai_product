@@ -285,21 +285,37 @@ def main() -> int:
         print("[publish] skipped:", ", ".join(steps_skip))
     print(f"[publish] version={version or '(unchanged)'}")
 
-    win_setup = os.path.join(bg, "release", "Gateway_Guard_Setup.exe")
-    win_exe = os.path.join(bg, "release", "Gateway_Guard.exe")
+    # Mirror all release binaries between YP_Raksha and Gateway_Guard
+    pairs = [
+        ("YP_Raksha_Setup.exe", "Gateway_Guard_Setup.exe"),
+        ("YP_Raksha.exe", "Gateway_Guard.exe"),
+        ("YP_Raksha_Windows.zip", "Gateway_Guard_Windows.zip"),
+        ("YP_Raksha_macOS.zip", "Gateway_Guard_macOS.zip"),
+        ("YP_Raksha_Setup.pkg", "Gateway_Guard_Setup.pkg"),
+    ]
+    for p1, p2 in pairs:
+        src1, src2 = os.path.join(bg, "release", p1), os.path.join(bg, "release", p2)
+        if os.path.isfile(src1) and not os.path.isfile(src2):
+            shutil.copyfile(src1, src2)
+        elif os.path.isfile(src2) and not os.path.isfile(src1):
+            shutil.copyfile(src2, src1)
+
+    win_setup = os.path.join(bg, "release", "YP_Raksha_Setup.exe")
+    win_exe = os.path.join(bg, "release", "YP_Raksha.exe")
     if system == "windows" and not os.path.isfile(win_setup) and not os.path.isfile(win_exe):
         hard_errors.append("no Windows Setup/EXE in release/ after build — Windows fleet cannot update")
-    if not os.path.isfile(mac_zip):
-        if os.path.isdir(mac_app):
-            hard_errors.append("Gateway_Guard_macOS.zip missing after publish but .app exists")
+    yp_mac_zip = os.path.join(bg, "release", "YP_Raksha_macOS.zip")
+    if not os.path.isfile(yp_mac_zip) and not os.path.isfile(mac_zip):
+        if os.path.isdir(mac_app) or os.path.isdir(os.path.join(bg, "release", "YP_Raksha.app")):
+            hard_errors.append("YP_Raksha_macOS.zip missing after publish but .app exists")
         else:
             print(
-                "[publish] WARNING: Gateway_Guard_macOS.zip missing — Mac fleet cannot update "
-                "(copy a Mac-built Gateway_Guard.app then rebuild, or run make build-guard-mac on a Mac)",
+                "[publish] WARNING: YP_Raksha_macOS.zip missing — Mac fleet cannot update "
+                "(copy a Mac-built YP_Raksha.app then rebuild, or run make build-guard-mac on a Mac)",
                 file=sys.stderr,
             )
     else:
-        print("[publish] macOS ZIP ready (config/proxy refreshed; Darwin binary needs Mac host for code rebuild)")
+        print("[publish] macOS ZIP ready (YP_Raksha_macOS.zip)")
 
     if hard_errors:
         for msg in hard_errors:

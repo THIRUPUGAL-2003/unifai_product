@@ -81,9 +81,13 @@ def _is_guard_install_path(path: str) -> bool:
         return False
     if "gateway" in n and "guard" in n:
         return True
+    if "yp" in n and "raksha" in n:
+        return True
     if n.endswith("/gateway_guard.app") or n.endswith("gateway_guard.app"):
         return True
-    if n.endswith("gateway_guard.exe"):
+    if n.endswith("/yp_raksha.app") or n.endswith("yp_raksha.app"):
+        return True
+    if n.endswith("gateway_guard.exe") or n.endswith("yp_raksha.exe"):
         return True
     return False
 
@@ -108,7 +112,10 @@ def schedule_install_removal() -> None:
             allusersprofile = os.environ.get("ALLUSERSPROFILE", "")
 
             for cand in (
+                os.path.join(local, "Programs", "YP Raksha", "YP_Raksha.exe") if local else "",
+                os.path.join(local, "Programs", "Gateway", "Guard", "YP_Raksha.exe") if local else "",
                 os.path.join(local, "Programs", "Gateway", "Guard", "Gateway_Guard.exe") if local else "",
+                os.path.join(pf, "YP Raksha", "YP_Raksha.exe"),
                 os.path.join(pf, "Gateway", "Guard", "Gateway_Guard.exe"),
             ):
                 if cand and os.path.isfile(cand) and cand not in targets:
@@ -116,25 +123,32 @@ def schedule_install_removal() -> None:
 
             parts: list[str] = [
                 "ping -n 4 127.0.0.1 >nul",
+                "taskkill /F /IM YP_Raksha.exe >nul 2>&1",
                 "taskkill /F /IM Gateway_Guard.exe >nul 2>&1",
                 "ping -n 2 127.0.0.1 >nul",
                 'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}" /f >nul 2>&1',
+                'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{9A4D3B02-7C5F-5E3A-0B82-B2C3D4E5F6A7}" /f >nul 2>&1',
+                'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "YP_Raksha" /f >nul 2>&1',
                 'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "Gateway_Guard" /f >nul 2>&1',
             ]
 
             if userprofile:
+                parts.append(f'del /f /q "{userprofile}\\Desktop\\YP Raksha.lnk" >nul 2>&1')
                 parts.append(f'del /f /q "{userprofile}\\Desktop\\Gateway Guard.lnk" >nul 2>&1')
             if allusersprofile:
+                parts.append(f'del /f /q "{allusersprofile}\\Desktop\\YP Raksha.lnk" >nul 2>&1')
                 parts.append(f'del /f /q "{allusersprofile}\\Desktop\\Gateway Guard.lnk" >nul 2>&1')
 
             if appdata:
-                sm = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Gateway Guard")
-                parts.append(f'del /f /q "{sm}\\*.*" >nul 2>&1')
-                parts.append(f'rmdir /s /q "{sm}" >nul 2>&1')
+                for folder in ("YP Raksha", "Gateway Guard"):
+                    sm = os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", folder)
+                    parts.append(f'del /f /q "{sm}\\*.*" >nul 2>&1')
+                    parts.append(f'rmdir /s /q "{sm}" >nul 2>&1')
             if allusersprofile:
-                sm_all = os.path.join(allusersprofile, "Microsoft", "Windows", "Start Menu", "Programs", "Gateway Guard")
-                parts.append(f'del /f /q "{sm_all}\\*.*" >nul 2>&1')
-                parts.append(f'rmdir /s /q "{sm_all}" >nul 2>&1')
+                for folder in ("YP Raksha", "Gateway Guard"):
+                    sm_all = os.path.join(allusersprofile, "Microsoft", "Windows", "Start Menu", "Programs", folder)
+                    parts.append(f'del /f /q "{sm_all}\\*.*" >nul 2>&1')
+                    parts.append(f'rmdir /s /q "{sm_all}" >nul 2>&1')
 
             dirs: set[str] = set()
             for t in targets:
@@ -143,6 +157,7 @@ def schedule_install_removal() -> None:
                 if _is_guard_install_path(d):
                     dirs.add(d)
             if local:
+                dirs.add(os.path.join(local, "Programs", "YP Raksha"))
                 dirs.add(os.path.join(local, "Programs", "Gateway", "Guard"))
 
             for d in dirs:
@@ -163,12 +178,14 @@ def schedule_install_removal() -> None:
             si.wShowWindow = subprocess.SW_HIDE
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             subprocess.Popen(f'cmd.exe /c "{cmd}"', startupinfo=si, creationflags=flags, close_fds=True)
-            print("[Gateway Guard] Scheduled complete Windows uninstall cleanup.")
+            print("[YP Raksha] Scheduled complete Windows uninstall cleanup.")
             return
 
         if IS_MAC:
             home = os.path.expanduser("~")
             apps = [
+                "/Applications/YP_Raksha.app",
+                os.path.join(home, "Applications", "YP_Raksha.app"),
                 "/Applications/Gateway_Guard.app",
                 os.path.join(home, "Applications", "Gateway_Guard.app"),
             ]
@@ -179,24 +196,25 @@ def schedule_install_removal() -> None:
                     app = exe[: exe.replace("\\", "/").index(marker)]
                     if app.endswith(".app") and app not in apps:
                         apps.append(app)
-            plist = os.path.join(home, "Library", "LaunchAgents", "com.gateway.guard.plist")
+            plist1 = os.path.join(home, "Library", "LaunchAgents", "com.yespanchi.raksha.plist")
+            plist2 = os.path.join(home, "Library", "LaunchAgents", "com.gateway.guard.plist")
             guard_data = os.path.join(home, "Library", "Application Support", "Gateway")
             app_paths = " ".join(f'"{a}"' for a in apps)
             script = (
                 f'(sleep 3; '
-                f'launchctl unload "{plist}" 2>/dev/null; '
-                f'rm -f "{plist}"; '
-                # Remove immutable lock before deletion (authorized uninstall only reaches here after key verified)
+                f'launchctl unload "{plist1}" 2>/dev/null; '
+                f'launchctl unload "{plist2}" 2>/dev/null; '
+                f'rm -f "{plist1}" "{plist2}"; '
                 f'chflags -R nouchg {app_paths} 2>/dev/null; '
                 f'rm -rf {app_paths} "{guard_data}"; '
-                f'pkill -f "Gateway_Guard.app/Contents/MacOS/Gateway_Guard" 2>/dev/null; '
-                f'pkill -f "/MacOS/Gateway_Guard" 2>/dev/null) >/dev/null 2>&1 &'
+                f'pkill -f "YP_Raksha" 2>/dev/null; '
+                f'pkill -f "Gateway_Guard" 2>/dev/null) >/dev/null 2>&1 &'
             )
             subprocess.Popen(["/bin/bash", "-c", script], start_new_session=True)
-            print("[Gateway Guard] Scheduled complete macOS uninstall cleanup.")
+            print("[YP Raksha] Scheduled complete macOS uninstall cleanup.")
             return
     except Exception as e:
-        print(f"[Gateway Guard WARNING] Could not schedule install removal: {e}")
+        print(f"[YP Raksha WARNING] Could not schedule install removal: {e}")
 
 
 def remote_uninstall_authorized(agent_id: str) -> bool:

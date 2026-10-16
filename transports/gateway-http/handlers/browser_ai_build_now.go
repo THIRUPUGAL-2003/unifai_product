@@ -99,7 +99,7 @@ func buildWindowsPackage(config []byte) (string, error) {
 	setupPath, setupOK := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_Setup.exe"])
 	exePath, exeOK := findFirstExisting(browserAISetupCandidates()["Gateway_Guard.exe"])
 	if !setupOK && !exeOK {
-		return "", errors.New("no Windows Guard EXE on server — upload Gateway_Guard_Setup.exe / Gateway_Guard.exe to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
+		return "", errors.New("no Windows Guard EXE on server — upload YP_Raksha_Setup.exe / YP_Raksha.exe to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
 	}
 	releaseDir := filepath.Dir(setupPath)
 	if !setupOK {
@@ -107,17 +107,17 @@ func buildWindowsPackage(config []byte) (string, error) {
 	}
 	var assets []buildAsset
 	if setupOK {
-		assets = append(assets, buildAsset{name: "Gateway_Guard_Setup.exe", path: setupPath})
+		assets = append(assets, buildAsset{name: "YP_Raksha_Setup.exe", path: setupPath})
 	}
 	if exeOK {
-		assets = append(assets, buildAsset{name: "Gateway_Guard.exe", path: exePath})
+		assets = append(assets, buildAsset{name: "YP_Raksha.exe", path: exePath})
 	}
 	for _, name := range []string{"VERSION.txt"} {
 		if p, ok := findFirstExisting(browserAISetupCandidates()[name]); ok {
 			assets = append(assets, buildAsset{name: name, path: p})
 		}
 	}
-	out := filepath.Join(releaseDir, "Gateway_Guard_Windows.zip")
+	out := filepath.Join(releaseDir, "YP_Raksha_Windows.zip")
 	err := writeReleaseFileAtomic(out, func(w io.Writer) error {
 		zw := zip.NewWriter(w)
 		for _, a := range assets {
@@ -151,6 +151,9 @@ func buildWindowsPackage(config []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Clean up any legacy Gateway_Guard_Windows.zip
+	gwOut := filepath.Join(releaseDir, "Gateway_Guard_Windows.zip")
+	_ = os.Remove(gwOut)
 	_ = writeReleaseFileAtomic(filepath.Join(releaseDir, guardConfigFileName), func(w io.Writer) error {
 		_, err := w.Write(config)
 		return err
@@ -158,19 +161,24 @@ func buildWindowsPackage(config []byte) (string, error) {
 	return out, nil
 }
 
-// buildMacPackage rewrites release/Gateway_Guard_macOS.zip with a fresh config and the current
-// helper scripts. The .app itself is reused: it can only be compiled on a Mac.
+// buildMacPackage rewrites release/YP_Raksha_macOS.zip with a fresh config.
 func buildMacPackage(config []byte) (string, error) {
 	macZipPath, ok := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_macOS.zip"])
 	if !ok {
-		return "", errors.New("no macOS Guard package on server — upload Gateway_Guard_macOS.zip to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
+		return "", errors.New("no macOS Guard package on server — upload YP_Raksha_macOS.zip to apps/browser-guard/release/ (tools/upload_guard_release.ps1 or the 1Panel file manager)")
 	}
-	if err := writeReleaseFileAtomic(macZipPath, func(w io.Writer) error {
+	releaseDir := filepath.Dir(macZipPath)
+	ypMacZip := filepath.Join(releaseDir, "YP_Raksha_macOS.zip")
+	gwMacZip := filepath.Join(releaseDir, "Gateway_Guard_macOS.zip")
+
+	if err := writeReleaseFileAtomic(ypMacZip, func(w io.Writer) error {
 		return writeMacZipWithHelpers(w, macZipPath, config)
 	}); err != nil {
 		return "", err
 	}
-	return macZipPath, nil
+	// Clean up any legacy Gateway_Guard_macOS.zip
+	_ = os.Remove(gwMacZip)
+	return ypMacZip, nil
 }
 
 // buildAndServeSetupPackage handles "Build now": refresh the package on the server, publish
@@ -198,10 +206,10 @@ func (h *BrowserAIHandler) buildAndServeSetupPackage(ctx *fasthttp.RequestCtx, p
 	)
 	if isMac {
 		zipPath, err = buildMacPackage(config)
-		fileName, version = "Gateway_Guard_macOS.zip", readGuardMacReleaseVersion()
+		fileName, version = "YP_Raksha_macOS.zip", readGuardMacReleaseVersion()
 	} else {
 		zipPath, err = buildWindowsPackage(config)
-		fileName, version = "Gateway_Guard_Windows.zip", readGuardReleaseVersion()
+		fileName, version = "YP_Raksha_Windows.zip", readGuardReleaseVersion()
 	}
 	_, winOK := findFirstExisting(append(
 		browserAISetupCandidates()["Gateway_Guard_Setup.exe"],

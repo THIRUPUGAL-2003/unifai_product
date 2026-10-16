@@ -42,7 +42,9 @@ if (-not $Server) {
 }
 $releaseDir = Join-Path $PSScriptRoot "..\apps\browser-guard\release"
 # Only untracked binaries: uploading git-tracked files would make `git pull` on the server fail.
-$names = @("Gateway_Guard_Setup.exe", "Gateway_Guard.exe", "Gateway_Guard_Windows.zip", "Gateway_Guard_macOS.zip", "Gateway_Guard_Setup.pkg")
+$names = @(
+    "YP_Raksha_Windows.zip", "YP_Raksha_macOS.zip", "YP_Raksha_Setup.exe", "YP_Raksha.exe", "YP_Raksha_Setup.pkg"
+)
 
 foreach ($tool in "ssh", "scp") {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {

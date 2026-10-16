@@ -1,16 +1,16 @@
-Gateway Guard — macOS Uninstall (turn OFF)
-========================================
+YP Raksha — macOS Uninstall (turn OFF)
+======================================
 
-1. Double-click Uninstall_Gateway_Guard.command (from the install ZIP or /Applications helpers).
+1. Double-click Uninstall_YP_Raksha.command (from the install ZIP or /Applications helpers).
    - If blocked: Right-click → Open → Open
 2. Enter the company uninstall key (from Setup) or today's rotating daily Guard key (from Guard Agents menu).
-3. Wait for the success dialog — Guard stops, proxy/PAC cleared, app removed.
+3. Wait for the success dialog — YP Raksha stops, proxy/PAC cleared, app removed.
 4. Fully quit and reopen browsers (Cmd+Q).
 
 Both today's rotating daily key (rotates every 24h) and the company master key are valid.
 
-Admin remote uninstall from Browser AI also turns Guard OFF on the next heartbeat
+Admin remote uninstall from Browser AI also turns YP Raksha OFF on the next heartbeat
 (no employee key) — same as Windows.
 
 After uninstall, remove any leftover LaunchAgents if IT asks:
-  ~/Library/LaunchAgents/ (Gateway Guard entries)
+  ~/Library/LaunchAgents/ (YP Raksha / Gateway Guard entries)
