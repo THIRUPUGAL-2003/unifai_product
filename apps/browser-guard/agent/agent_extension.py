@@ -1020,7 +1020,7 @@ def _attach_browser_shortcuts(unpacked_dir: str) -> None:
         '        } catch {}\n'
         '        Get-ChildItem -Path $dir -Filter *.lnk -Depth 2 -ErrorAction SilentlyContinue | ForEach-Object {\n'
         '            $name = $_.Name.ToLower()\n'
-        '            if ($name -match "chrome" -or $name -match "edge" -or $name -match "brave") {\n'
+        '            if ($true) {\n'
         '                try {\n'
         '                    $linkPath = $_.FullName\n'
         '                    try {\n'
@@ -1102,7 +1102,7 @@ def _detach_browser_shortcuts() -> None:
         '        } catch {}\n'
         '        Get-ChildItem -Path $dir -Filter *.lnk -Depth 2 -ErrorAction SilentlyContinue | ForEach-Object {\n'
         '            $name = $_.Name.ToLower()\n'
-        '            if ($name -match "chrome" -or $name -match "edge" -or $name -match "brave") {\n'
+        '            if ($true) {\n'
         '                try {\n'
         '                    $linkPath = $_.FullName\n'
         '                    try {\n'
@@ -1134,6 +1134,17 @@ def _detach_browser_shortcuts() -> None:
         print(f"[Gateway Guard WARNING] Browser shortcut detach failed: {e}")
 
 
+def _external_extension_keys(extension_id: str) -> tuple[str, ...]:
+    """Registry keys Chrome reads for every profile (every signed-in email)."""
+    return (
+        r"Software\Google\Chrome\Extensions\\" + extension_id,
+        r"Software\Microsoft\Edge\Extensions\\" + extension_id,
+        r"Software\BraveSoftware\Brave-Browser\Extensions\\" + extension_id,
+        r"Software\BraveSoftware\Brave\Extensions\\" + extension_id,
+        r"Software\Chromium\Extensions\\" + extension_id,
+    )
+
+
 def _machine_policy_installed(extension_id: str) -> bool:
     if not IS_WIN or not extension_id:
         return False
@@ -1147,11 +1158,17 @@ def _machine_policy_installed(extension_id: str) -> bool:
         winreg.CloseKey(key)
         if extension_id not in str(val):
             return False
-        # A path install is what Chrome shows as off, with Remove. Policy install must be the only one.
+        # A folder path install is what Chrome shows as off, with Remove.
+        # update_url is the all-profile install and must stay.
         try:
             ext = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"Software\Google\Chrome\Extensions\\" + extension_id)
-            winreg.CloseKey(ext)
-            return False
+            try:
+                winreg.QueryValueEx(ext, "path")
+                winreg.CloseKey(ext)
+                return False
+            except OSError:
+                winreg.CloseKey(ext)
+                return True
         except OSError:
             return True
     except Exception:
@@ -1195,9 +1212,15 @@ def _elevate_machine_policy(extension_id: str, update_url: str) -> None:
         "  'HKLM:\\Software\\BraveSoftware\\Brave-Browser\\Extensions\\" + safe_id + "',\n"
         "  'HKCU:\\Software\\Google\\Chrome\\Extensions\\" + safe_id + "',\n"
         "  'HKCU:\\Software\\Microsoft\\Edge\\Extensions\\" + safe_id + "',\n"
-        "  'HKCU:\\Software\\BraveSoftware\\Brave\\Extensions\\" + safe_id + "'\n"
+        "  'HKCU:\\Software\\BraveSoftware\\Brave-Browser\\Extensions\\" + safe_id + "'\n"
         ")\n"
-        "foreach ($e in $exts) { Remove-Item -Path $e -Recurse -Force -ErrorAction SilentlyContinue }\n"
+        "$url = '" + safe_url + "'\n"
+        "foreach ($e in $exts) {\n"
+        "  New-Item -Path $e -Force | Out-Null\n"
+        "  New-ItemProperty -Path $e -Name 'update_url' -Value $url -PropertyType String -Force | Out-Null\n"
+        "  Remove-ItemProperty -Path $e -Name 'path' -ErrorAction SilentlyContinue\n"
+        "  Remove-ItemProperty -Path $e -Name 'version' -ErrorAction SilentlyContinue\n"
+        "}\n"
     )
     path = os.path.join(data_dir(), "yp-raksha-machine-policy.ps1")
     try:
@@ -1248,16 +1271,17 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
                 _delete_reg_value(root, path + r"\ExtensionInstallSources", "2")
                 wrote = True
 
-        # Path installs show as off, with Remove. Only the force-install policy may remain.
-        if extension_id:
-            for ext_sub in (
-                r"Software\Google\Chrome\Extensions\\" + extension_id,
-                r"Software\Microsoft\Edge\Extensions\\" + extension_id,
-                r"Software\BraveSoftware\Brave\Extensions\\" + extension_id,
-                r"Software\BraveSoftware\Brave-Browser\Extensions\\" + extension_id,
-            ):
-                for name in ("path", "version", "update_url"):
-                    _delete_reg_value(root, ext_sub, name)
+        # update_url installs this one extension into every Chrome profile on this PC.
+        # A path value is what Chrome shows as off, with Remove, so that value is removed.
+        ext_id_for_keys = extension_id or "mipfhcmlcjfhmgldkokdckhndkebkllj"
+        for ext_sub in _external_extension_keys(ext_id_for_keys):
+            _delete_reg_value(root, ext_sub, "path")
+            _delete_reg_value(root, ext_sub, "version")
+            if value:
+                if _set_reg_sz(root, ext_sub, "update_url", update_url):
+                    wrote = True
+            else:
+                _delete_reg_value(root, ext_sub, "update_url")
 
     # Also automatically attach/detach shortcuts so user launches always carry the extension
     unpacked = _unpacked_dir()
