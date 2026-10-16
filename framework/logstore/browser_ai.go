@@ -2108,10 +2108,17 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		cost = CalculateBrowserAICost(platform, domain, promptTokens, completionTokens, audioDurationSec)
 	}
 
+	canonicalPlatform := platform
+	if strings.EqualFold(platform, "chatgpt") {
+		canonicalPlatform = "ChatGPT"
+	} else if strings.EqualFold(platform, "claude") {
+		canonicalPlatform = "Claude"
+	}
+
 	logEntry := BrowserAILog{
 		ID:                uuid.New().String(),
 		Timestamp:         time.Now(),
-		Platform:          platform,
+		Platform:          canonicalPlatform,
 		Domain:            domain,
 		UserPromptPreview: preview,
 		UserPromptFull:    promptFull,
@@ -2143,8 +2150,8 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	var existing BrowserAILog
 	dedupCutoff := time.Now().Add(-6 * time.Second)
 	dedupQuery := db.WithContext(ctx).
-		Where("platform = ? AND created_at >= ?", platform, dedupCutoff).
-		Where("user_prompt_full = ? OR user_prompt_preview = ?", promptFull, preview)
+		Where("(LOWER(platform) = LOWER(?) OR platform = ?) AND created_at >= ?", canonicalPlatform, canonicalPlatform, dedupCutoff).
+		Where("TRIM(user_prompt_full) = ? OR TRIM(user_prompt_preview) = ? OR user_prompt_full = ? OR user_prompt_preview = ?", trimmedPrompt, trimmedPrompt, promptFull, preview)
 
 	if agentID != "" {
 		dedupQuery = dedupQuery.Where("agent_id = ? OR client_ip = ?", agentID, clientIP)

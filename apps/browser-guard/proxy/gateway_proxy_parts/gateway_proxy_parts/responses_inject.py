@@ -184,7 +184,13 @@ def _silent_block_response(flow: http.HTTPFlow, common_headers: dict, *, path: s
         )
         return
     # Claude / Anthropic: empty turn (no text delta).
-    if _is_anthropic_messages_api_shape(path_l, raw_body or ""):
+    if (
+        _is_anthropic_messages_api_shape(path_l, raw_body or "")
+        or "claude.ai" in host_l
+        or "anthropic.com" in host_l
+        or "claude" in plat_l
+        or "anthropic" in plat_l
+    ):
         silent = (
             'event: message_start\n'
             'data: {"type":"message_start","message":{"id":"msg_gateway_block_dup","type":"message",'
@@ -628,8 +634,17 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         target_plat = ""
     plat_l = (target_plat or "").lower()
 
+    # Claude is decided before ChatGPT. A Claude body can also contain
+    # conversation_id or parent_message_id, and that must not take the ChatGPT reply.
+    is_claude_conv = (
+        _is_anthropic_messages_api_shape(path, raw_body)
+        or "claude.ai" in host_l
+        or "anthropic.com" in host_l
+        or "claude" in plat_l
+        or "anthropic" in plat_l
+    )
     # ── ChatGPT-shaped conversation APIs (body shape or host/path, any monitored domain) ──
-    is_chatgpt_conv = (
+    is_chatgpt_conv = not is_claude_conv and (
         messages_parts_body is not None
         or "chatgpt.com" in host_l
         or "openai.com" in host_l
@@ -709,13 +724,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
 
     # ── Claude / Anthropic chat APIs (path/body shape) ──
-    if (
-        _is_anthropic_messages_api_shape(path, raw_body)
-        or "claude.ai" in host_l
-        or "anthropic.com" in host_l
-        or "claude" in plat_l
-        or "anthropic" in plat_l
-    ):
+    if is_claude_conv:
         anthropic_sse = (
             'event: message_start\n'
             'data: {"type":"message_start","message":{"id":"msg_gateway_block","type":"message",'
