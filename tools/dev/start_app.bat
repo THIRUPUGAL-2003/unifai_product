@@ -14,7 +14,7 @@ if not exist "%ENV_FILE%" (
   exit /b 1
 )
 
-for /f "usebackq tokens=1,* delims==" %%A in (`findstr /B /I /C:"GATEWAY_PROXY_ADDR=" /C:"APP_PORT=" /C:"MITM_WEB_PORT=" "%ENV_FILE%"`) do (
+for /f "usebackq tokens=1,* delims==" %%A in (`findstr /B /I /C:"GATEWAY_PROXY_ADDR=" /C:"APP_PORT=" /C:"MITM_WEB_PORT=" /C:"SERVER_DOMAIN=" "%ENV_FILE%"`) do (
   set "%%A=%%B"
 )
 
@@ -31,6 +31,11 @@ if not defined MITM_WEB_PORT (
   exit /b 1
 )
 
+set "TARGET_URL=http://localhost:%APP_PORT%/workspace/browser-ai"
+if defined SERVER_DOMAIN (
+  set "TARGET_URL=%SERVER_DOMAIN%/workspace/browser-ai"
+)
+
 for /f "tokens=2 delims=:" %%P in ("%GATEWAY_PROXY_ADDR%") do set "PROXY_PORT_ONLY=%%P"
 if not defined PROXY_PORT_ONLY (
   echo ERROR: GATEWAY_PROXY_ADDR must look like 127.0.0.1:PORT
@@ -43,11 +48,11 @@ start /b mitmweb -p %PROXY_PORT_ONLY% --web-port %MITM_WEB_PORT% -s "%PROXY_SCRI
 timeout /t 2 >nul
 
 echo 2. Opening Chrome with Proxy...
-start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --proxy-server="http://%GATEWAY_PROXY_ADDR%" --user-data-dir="%TEMP%\chrome_proxy" --ignore-certificate-errors "http://localhost:%APP_PORT%/workspace/browser-ai" "http://127.0.0.1:%MITM_WEB_PORT%"
+start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --proxy-server="http://%GATEWAY_PROXY_ADDR%" --user-data-dir="%TEMP%\chrome_proxy" --ignore-certificate-errors "%TARGET_URL%" "http://127.0.0.1:%MITM_WEB_PORT%"
 
 echo ====================================================
 echo Everything is running ^& opened in Chrome!
-echo - Dashboard UI: http://localhost:%APP_PORT%/workspace/browser-ai
+echo - Dashboard UI: %TARGET_URL%
 echo - Proxy: %GATEWAY_PROXY_ADDR%
 echo - Proxy Monitor UI: http://127.0.0.1:%MITM_WEB_PORT%
 echo ====================================================

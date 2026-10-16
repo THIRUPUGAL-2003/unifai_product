@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/gateway/gateway/framework/logstore"
@@ -52,24 +51,6 @@ func (h *BrowserAIHandler) getRules(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	SendJSON(ctx, map[string]any{"rules": rules})
-}
-
-func (h *BrowserAIHandler) getOllamaModels(ctx *fasthttp.RequestCtx) {
-	models, baseURL, err := listOllamaInstalledModels(10 * time.Second)
-	if err != nil {
-		SendJSON(ctx, map[string]any{
-			"models":    []string{},
-			"base_url":  baseURL,
-			"available": false,
-			"error":     err.Error(),
-		})
-		return
-	}
-	SendJSON(ctx, map[string]any{
-		"models":    models,
-		"base_url":  baseURL,
-		"available": true,
-	})
 }
 
 func (h *BrowserAIHandler) createRule(ctx *fasthttp.RequestCtx) {

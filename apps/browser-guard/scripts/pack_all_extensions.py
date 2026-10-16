@@ -62,7 +62,9 @@ def pack_all():
         sys.path.insert(0, agent_dir)
     try:
         from agent_extension import pack_extension, _crx_path, get_extension_id
-        crx_file = pack_extension("http://127.0.0.1:18195")
+        import agent_config
+        pac_p = getattr(agent_config, "PAC_HTTP_PORT", 18195)
+        crx_file = pack_extension(f"http://127.0.0.1:{pac_p}")
         if crx_file and os.path.isfile(crx_file):
             shutil.copy2(crx_file, os.path.join(rel_dir, "yp-raksha.crx"))
             shutil.copy2(crx_file, os.path.join(rel_dir, "guard_extension.crx"))
@@ -71,7 +73,7 @@ def pack_all():
                 '<?xml version=\'1.0\' encoding=\'UTF-8\'?>\n'
                 '<gupdate xmlns=\'http://www.google.com/update2/response\' protocol=\'2.0\'>\n'
                 f'  <app appid=\'{ext_id}\'>\n'
-                f'    <updatecheck codebase=\'http://127.0.0.1:18195/extension/yp-raksha.crx\' version=\'{version}\' />\n'
+                f'    <updatecheck codebase=\'http://127.0.0.1:{pac_p}/extension/yp-raksha.crx\' version=\'{version}\' />\n'
                 '  </app>\n'
                 '</gupdate>\n'
             )

@@ -341,10 +341,15 @@ export const PROVIDER_SUPPORTED_REQUESTS: Record<BaseProvider, string[]> = {
 	],
 };
 
-/** Prefer GATEWAY_* from vite/define / .env. */
+/** Prefer GATEWAY_* then plain key from vite/define / .env. */
 function gatewayEnv(name: string): string {
 	const key = name.replace(/^(GATEWAY_)/, "");
-	return String(process.env[`GATEWAY_${key}`] || "").trim();
+	return String(
+		process.env[`GATEWAY_${key}`] ||
+		process.env[name] ||
+		process.env[key] ||
+		""
+	).trim();
 }
 
 export const IS_ENTERPRISE = gatewayEnv("IS_ENTERPRISE") === "true";

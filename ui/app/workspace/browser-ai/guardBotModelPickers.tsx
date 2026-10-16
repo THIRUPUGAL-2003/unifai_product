@@ -1,42 +1,7 @@
 import React, { useMemo } from "react";
 import { ComboboxSelect } from "@/components/ui/combobox";
 import { useGetModelsQuery } from "@/lib/store/apis/providersApi";
-import { useGetBrowserAiOllamaModelsQuery } from "@/lib/store/apis/browserAiApi";
 import type { GuardBotModelPickerProps } from "./browserAiTypes";
-
-export function GuardBotModelPicker({ provider, value, onChange, disabled }: GuardBotModelPickerProps) {
-	const isOllama = (provider || "").toLowerCase() === "ollama";
-	const { data, isFetching, isError } = useGetBrowserAiOllamaModelsQuery(undefined, { skip: !isOllama });
-	const options = useMemo(() => {
-		const seen = new Set<string>();
-		const opts: { label: string; value: string }[] = [];
-		for (const name of data?.models || []) {
-			const trimmed = String(name || "").trim().replace(/:latest$/i, "");
-			if (!trimmed || seen.has(trimmed)) continue;
-			seen.add(trimmed);
-			opts.push({ label: trimmed, value: trimmed });
-		}
-		const current = String(value || "").trim();
-		if (current && !seen.has(current)) {
-			opts.unshift({ label: current, value: current });
-		}
-		return opts;
-	}, [data, value]);
-
-	return (
-		<ComboboxSelect
-			options={options}
-			value={value || null}
-			onValueChange={(v) => onChange(String(v || ""))}
-			placeholder={!isOllama ? "Select Download model source first" : isFetching ? "Loading models from server..." : isError ? "Could not reach Ollama server" : "Select model"}
-			hideClear
-			disabled={disabled || !isOllama}
-			emptyMessage={isError ? "Ollama server unreachable — check server Ollama" : "No models on Ollama server"}
-			searchPlaceholder="Search models..."
-			data-testid="browser-ai-guard-bot-model"
-		/>
-	);
-}
 
 export function GuardBotOutsourceModelPicker({ provider, value, onChange, disabled }: GuardBotModelPickerProps) {
 	const { data, isFetching, isError } = useGetModelsQuery(

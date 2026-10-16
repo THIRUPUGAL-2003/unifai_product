@@ -23,11 +23,30 @@ import { ModelProviderName } from "@/lib/types/config";
 import { ModelParams } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
 import { PromptDeploymentsAccordionItem } from "@enterprise/components/prompt-deployments/promptDeploymentsAccordionItem";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiKeySelectorView } from "../components/apiKeySelectorView";
 import { VariablesTableView } from "../components/variablesTableView";
 import { usePromptContext } from "../context";
 import { useIsAuthEnabledQuery } from "@/lib/store";
+
+function explicitAssignments(keys: { provider_configs?: { provider?: string; allowed_models?: string[] }[] }[]) {
+	const providers = new Set<string>();
+	const models = new Set<string>();
+	for (const key of keys) {
+		for (const config of key.provider_configs ?? []) {
+			if (config.provider && config.provider !== "*") providers.add(config.provider);
+			for (const modelName of config.allowed_models ?? []) {
+				if (modelName && modelName !== "*") models.add(modelName);
+			}
+		}
+	}
+	return { providers: [...providers], models: [...models] };
+}
+
+function isEntireCatalog(selected: string[] | null | undefined, catalog: string[]) {
+	if (!selected || catalog.length <= 1) return false;
+	return selected.length >= catalog.length && catalog.every((name) => selected.includes(name));
+}
 
 export function SettingsPanel() {
 	const {
@@ -225,28 +244,31 @@ export function SettingsPanel() {
 	}, [selectedVirtualKeys, selectedVirtualKey]);
 
 	useEffect(() => {
-		if (selectedVKProviders.length === 0) return;
-		const availableProvs = selectedVKProviders.includes("*")
-			? configuredProviders.map((p) => p.name)
-			: selectedVKProviders;
-		if (availableProvs.length > 0) {
-			if (!allowedProviders || allowedProviders.length === 0) {
-				setAllowedProviders(availableProvs);
-			}
-			if (!provider || !availableProvs.some((p) => p.toLowerCase() === provider.toLowerCase())) {
-				const nextProv = availableProvs[0] || "";
-				if (nextProv) {
-					setProvider(nextProv);
-					onModelChange("");
-					onModelParamsChange((prev) => ({
-						stream: true,
-						temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
-						max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
-					}));
-				}
+		if (selectedVirtualKeys.length === 0) return;
+		const { providers: explicit } = explicitAssignments(selectedVirtualKeys);
+		const catalog = configuredProviders.map((providerItem) => providerItem.name);
+		const unset = !allowedProviders || allowedProviders.length === 0;
+		const selectingEveryone = isEntireCatalog(allowedProviders, catalog);
+		if (explicit.length > 0 && (unset || selectingEveryone)) {
+			setAllowedProviders(explicit);
+		} else if (explicit.length === 0 && (unset || selectingEveryone)) {
+			const keep = provider && catalog.includes(provider as ModelProviderName) ? provider : catalog[0];
+			if (keep) setAllowedProviders([keep as ModelProviderName]);
+		}
+		const allowed = explicit.length > 0 ? explicit : catalog;
+		if (allowed.length > 0 && (!provider || (explicit.length > 0 && !explicit.some((name) => name.toLowerCase() === provider.toLowerCase())))) {
+			const nextProv = explicit[0] || allowed[0] || "";
+			if (nextProv && nextProv !== provider) {
+				setProvider(nextProv);
+				onModelChange("");
+				onModelParamsChange((prev) => ({
+					stream: true,
+					temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
+					max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
+				}));
 			}
 		}
-	}, [selectedVKProviders, provider, allowedProviders, configuredProviders, setAllowedProviders, setProvider, onModelChange, onModelParamsChange]);
+	}, [selectedVirtualKeys, provider, allowedProviders, configuredProviders, setAllowedProviders, setProvider, onModelChange, onModelParamsChange]);
 
 	// Ensure current provider always has a label-resolved option (even before providers query loads)
 	const providerOptions = useMemo(() => {
@@ -297,9 +319,13 @@ export function SettingsPanel() {
 		});
 	}, [virtualKeysData, provider, isMemberOnly, allowedVirtualKeys]);
 
+	const virtualKeyScopeRef = useRef("");
 	useEffect(() => {
-		if (allowedVirtualKeys !== null || !virtualKeysData) return;
+		const scopeKey = `${selectedPrompt?.id || ""}|${focusUserId}|${folders?.length || 0}`;
+		if (!virtualKeysData) return;
 		if (focusUserId && !focusUserKeysReady && !focusUserKeysFailed) return;
+		if (virtualKeyScopeRef.current === scopeKey && allowedVirtualKeys !== null) return;
+		virtualKeyScopeRef.current = scopeKey;
 		const inheritedKeyIds = new Set((focusUserKeys?.virtual_keys ?? []).map((key) => key.id));
 		const vks = (virtualKeysData.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
 
@@ -379,25 +405,21 @@ export function SettingsPanel() {
 			: [];
 
 		if (matched.length > 0) {
-			// Only select the keys assigned to that user / team / customer!
+			// Only select the keys assigned to that user / team / customer.
 			setAllowedVirtualKeys(matched);
 			if (!virtualKeyId || virtualKeyId === "__auto__" || !matched.includes(virtualKeyId)) {
 				setVirtualKeyId(matched[0]);
 			}
+		} else if (hasSpecificTarget || focusUserId) {
+			setAllowedVirtualKeys([]);
+			setVirtualKeyId("__auto__");
+			setAllowedProviders([]);
+			setAllowedModels([]);
 		} else {
-			// If no VK target matched from folder, pick the first available active key
-			const defaultVk = vks.find((vk) => !billingBlocks?.blocks?.[vk.id]) ?? vks[0];
-			if (defaultVk?.value) {
-				setAllowedVirtualKeys([defaultVk.value]);
-				if (!virtualKeyId || virtualKeyId === "__auto__") {
-					setVirtualKeyId(defaultVk.value);
-				}
-			} else {
-				setAllowedVirtualKeys([]);
-				setVirtualKeyId("__auto__");
-			}
+			setAllowedVirtualKeys([]);
+			setVirtualKeyId("__auto__");
 		}
-	}, [allowedVirtualKeys, virtualKeysData, businessUnitsData, focusUserId, focusUserKeys, focusUserKeysReady, focusUserKeysFailed, selectedPrompt, folders, promptFilters, virtualKeyId, setAllowedVirtualKeys, setVirtualKeyId]);
+	}, [allowedVirtualKeys, virtualKeysData, businessUnitsData, focusUserId, focusUserKeys, focusUserKeysReady, focusUserKeysFailed, selectedPrompt, folders, promptFilters, virtualKeyId, setAllowedVirtualKeys, setVirtualKeyId, setAllowedProviders, setAllowedModels]);
 
 	useEffect(() => {
 		if (!allowedProviders?.length || allowedProviders.includes(provider)) return;
@@ -409,19 +431,19 @@ export function SettingsPanel() {
 		onModelChange(allowedModels[0]);
 	}, [allowedModels, model, onModelChange]);
 
-	// Auto-bind first assigned VK if not already set, skipping keys whose budget is exhausted
+	// Keep the active key inside the keys already assigned to this user.
 	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined);
 	useEffect(() => {
-		const assignable = providerVirtualKeys.filter((vk) => typeof vk.value === "string" && vk.value.startsWith("sk-uf-"));
+		if (!allowedVirtualKeys || allowedVirtualKeys.length === 0) return;
+		const assignable = providerVirtualKeys.filter(
+			(vk) => allowedVirtualKeys.includes(vk.value) && typeof vk.value === "string" && vk.value.startsWith("sk-uf-"),
+		);
 		const first = assignable.find((vk) => !billingBlocks?.blocks?.[vk.id]) ?? assignable[0];
 		if (!first?.value) return;
-		if (virtualKeyId === "__auto__" || !virtualKeyId || !providerVirtualKeys.some((vk) => vk.value === virtualKeyId)) {
+		if (virtualKeyId === "__auto__" || !virtualKeyId || !assignable.some((vk) => vk.value === virtualKeyId)) {
 			setVirtualKeyId(first.value);
-			if (!allowedVirtualKeys || allowedVirtualKeys.length === 0) {
-				setAllowedVirtualKeys([first.value]);
-			}
 		}
-	}, [providerVirtualKeys, virtualKeyId, setVirtualKeyId, billingBlocks, allowedVirtualKeys, setAllowedVirtualKeys]);
+	}, [providerVirtualKeys, virtualKeyId, setVirtualKeyId, billingBlocks, allowedVirtualKeys]);
 
 	// Separate keys/vks to pass to model fetch for filtering.
 	const filterKeys = useMemo(() => {
@@ -461,45 +483,26 @@ export function SettingsPanel() {
 		return opts;
 	}, [modelsData, model]);
 
-	// Auto-select every model on every provider of the assigned virtual keys.
+	// Select only the models named on this user's keys. A wildcard must not check the whole catalog.
 	useEffect(() => {
-		const source = assignedVkModelsData?.models ?? [];
-		if (source.length === 0) return;
-		const availableModelNames = source.map((m) => m.name);
-		const selectedProvs = new Set(selectedVKProviders.map((p) => p.toLowerCase()));
-		const explicitModels = new Set<string>();
-		let hasWildcard = false;
-
-		for (const vk of selectedVirtualKeys) {
-			for (const pc of vk.provider_configs ?? []) {
-				const pcProv = (pc.provider || "").toLowerCase();
-				if (pcProv !== "*" && selectedProvs.size > 0 && !selectedProvs.has(pcProv)) continue;
-				if (!pc.allowed_models || pc.allowed_models.length === 0 || pc.allowed_models.includes("*")) {
-					hasWildcard = true;
-				} else {
-					for (const m of pc.allowed_models) {
-						if (m && m !== "*") explicitModels.add(m);
-					}
-				}
-			}
+		if (selectedVirtualKeys.length === 0) return;
+		const { models: explicit } = explicitAssignments(selectedVirtualKeys);
+		const catalog = (assignedVkModelsData?.models ?? modelsData?.models ?? []).map((item) => item.name);
+		const currentNames = (modelsData?.models ?? []).map((item) => item.name);
+		const unset = !allowedModels || allowedModels.length === 0;
+		const selectingEveryone = isEntireCatalog(allowedModels, catalog);
+		if (explicit.length > 0 && (unset || selectingEveryone)) {
+			setAllowedModels(explicit);
+		} else if (explicit.length === 0 && (unset || selectingEveryone)) {
+			const keep = model && currentNames.includes(model) ? model : currentNames[0];
+			if (keep) setAllowedModels([keep]);
 		}
-
-		let targetModels: string[] = [];
-		if (explicitModels.size > 0 && !hasWildcard) {
-			targetModels = availableModelNames.filter((m) => explicitModels.has(m));
-			if (targetModels.length === 0) targetModels = [...explicitModels];
-		} else {
-			targetModels = availableModelNames;
+		const preferred = explicit.filter((name) => currentNames.includes(name));
+		const nextModel = preferred[0] || currentNames[0] || "";
+		if (nextModel && (!model || !currentNames.includes(model))) {
+			onModelChange(nextModel);
 		}
-
-		if (targetModels.length > 0 && (!allowedModels || allowedModels.length === 0)) {
-			setAllowedModels(targetModels);
-		}
-		const currentNames = (modelsData?.models ?? []).map((m) => m.name);
-		if (currentNames.length > 0 && (!model || !currentNames.includes(model))) {
-			onModelChange(currentNames[0]);
-		}
-	}, [assignedVkModelsData, modelsData, selectedVirtualKeys, selectedVKProviders, allowedModels, model, setAllowedModels, onModelChange]);
+	}, [assignedVkModelsData, modelsData, selectedVirtualKeys, allowedModels, model, setAllowedModels, onModelChange]);
 
 	const mcpToolOptions = useMemo(() => {
 		const opts: { label: string; value: string }[] = [];

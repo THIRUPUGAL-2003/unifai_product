@@ -331,10 +331,6 @@ export const browserAiApi = baseApi.injectEndpoints({
 			providesTags: ["BrowserAiRules" as any],
 		}),
 
-		getBrowserAiOllamaModels: builder.query<{ models: string[]; base_url?: string }, void>({
-			query: () => "/browser-ai/ollama-models",
-		}),
-
 		createBrowserAiRule: builder.mutation<{ status: string; rule: BrowserGuardRule }, Partial<BrowserGuardRule>>({
 			query: (body) => ({
 				url: "/browser-ai/rules",
@@ -929,7 +925,6 @@ export const {
 	useDeleteBrowserAiSearchLogsMutation,
 	useRecordBrowserAiSearchLogMutation,
 	useGetBrowserAiRulesQuery,
-	useGetBrowserAiOllamaModelsQuery,
 	useCreateBrowserAiRuleMutation,
 	useImportBrowserAiRulesMutation,
 	useUpdateBrowserAiRuleMutation,

@@ -103,12 +103,13 @@ echo "   Proxy check: $VERIFY"
 
 # 5. Open dashboard in default browser (bypasses proxy via ProxyOverride)
 echo "5. Opening Dashboard & Proxy Monitor..."
-cmd.exe //c start "" "http://localhost:${APP_PORT}/workspace/browser-ai" >/dev/null 2>&1 &
+TARGET_DASHBOARD="${SERVER_DOMAIN:-http://localhost:${APP_PORT}}/workspace/browser-ai"
+cmd.exe //c start "" "${TARGET_DASHBOARD}" >/dev/null 2>&1 &
 cmd.exe //c start "" "http://127.0.0.1:${MITM_WEB_PORT}" >/dev/null 2>&1 &
 
 echo "===================================================="
 echo "✅ AI Guard is ON for this laptop"
-echo "   Dashboard: http://localhost:${APP_PORT}/workspace/browser-ai"
+echo "   Dashboard: ${TARGET_DASHBOARD}"
 echo "   Proxy:     ${PROXY_HOST_PORT}"
 echo "   Proxy UI:  http://127.0.0.1:${MITM_WEB_PORT}  ← must show flows when you browse"
 echo ""

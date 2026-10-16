@@ -5,12 +5,18 @@ import (
 	"strings"
 )
 
-// Get reads GATEWAY_<NAME>.
+// Get reads GATEWAY_<NAME> or <NAME> from environment.
 func Get(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return ""
 	}
-	name = strings.TrimPrefix(name, "GATEWAY_")
-	return strings.TrimSpace(os.Getenv("GATEWAY_" + name))
+	clean := strings.TrimPrefix(name, "GATEWAY_")
+	if v := strings.TrimSpace(os.Getenv("GATEWAY_" + clean)); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv(clean)); v != "" {
+		return v
+	}
+	return strings.TrimSpace(os.Getenv(name))
 }

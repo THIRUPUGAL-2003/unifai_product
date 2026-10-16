@@ -331,20 +331,18 @@ func (h *BrowserAIHandler) generateRegexFromPolicy(ctx *fasthttp.RequestCtx) {
 	}
 	provider := strings.TrimSpace(payload.BotProvider)
 	model := strings.TrimSpace(payload.BotModel)
-	if provider == "" {
-		provider = browserAIGuardBotDefaultProvider
-	}
-	if model == "" {
-		model = browserAIGuardBotDefaultModel
-	}
 	provider, model = applyGuardBotDefaults(provider, model)
+	if provider == "" || model == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "select a configured model provider and model")
+		return
+	}
 	providerName, modelName := resolveGuardBotModel(provider, model)
 	provider = string(providerName)
 	model = modelName
 
 	// Vision-only models are poor at regex generation — prefer text chat models.
 	if isVisionOnlyGuardModelName(model) {
-		SendError(ctx, fasthttp.StatusBadRequest, "pick a text model (e.g. llama3.2) to generate regex — vision models are for images")
+		SendError(ctx, fasthttp.StatusBadRequest, "pick a text model to generate regex — vision models are for images")
 		return
 	}
 
@@ -389,24 +387,7 @@ Derive the pattern only from SECURITY_POLICY.`
 
 	callModel := func(systemPrompt, user string, preferJSON bool) (string, error) {
 		if isOllamaGuardProvider(provider) {
-			runOnce := func(jsonMode bool) (string, error) {
-				return callOllamaChatAny(model, systemPrompt, user, jsonMode, 90*time.Second)
-			}
-			raw, err := runOnce(preferJSON)
-			if err != nil || strings.TrimSpace(raw) == "" {
-				raw2, err2 := runOnce(false)
-				if err2 == nil && strings.TrimSpace(raw2) != "" {
-					return raw2, nil
-				}
-				if err != nil && err2 != nil {
-					return "", fmt.Errorf("%v; retry: %v", err, err2)
-				}
-				if err != nil {
-					return "", err
-				}
-				return "", err2
-			}
-			return raw, nil
+			return "", fmt.Errorf("select a configured model provider")
 		}
 		if h.client == nil {
 			return "", fmt.Errorf("gateway client not available for outsource model")
@@ -438,10 +419,7 @@ Derive the pattern only from SECURITY_POLICY.`
 		return evaluatorChoiceText(resp), nil
 	}
 
-	genSource := "ollama"
-	if !isOllamaGuardProvider(provider) {
-		genSource = "outsource"
-	}
+	genSource := "outsource"
 
 	tryParse := func(raw string) (pattern, focus, notes string, ok bool) {
 		raw = stripEvalMarkdown(strings.TrimSpace(raw))
@@ -500,21 +478,6 @@ Derive the pattern only from SECURITY_POLICY.`
 			}
 		} else if genErr == nil {
 			genErr = err3
-		}
-	}
-	// Attempt 4: if outsource failed (e.g. OpenRouter free/code 422), fall back to Ollama.
-	if !ok && !isOllamaGuardProvider(provider) {
-		raw4, err4 := callOllamaChatAny(browserAIGuardBotDefaultModel, systemPromptRetry, userMsgRetry, false, 90*time.Second)
-		if err4 == nil {
-			if p, f, n, good := tryParse(raw4); good {
-				pat, focus, notes, ok = p, f, n, true
-				raw, genErr = raw4, nil
-				genSource = "ollama-fallback"
-				model = browserAIGuardBotDefaultModel
-				provider = browserAIGuardBotDefaultProvider
-			}
-		} else if genErr == nil {
-			genErr = err4
 		}
 	}
 	if !ok {
@@ -1166,7 +1129,7 @@ func (h *BrowserAIHandler) evaluateAIBotRuleDetailed(rule logstore.BrowserGuardR
 	strictUserMsg := browserAIGuardBotStrictUserMessage(rule.BotPrompt, userPrompt)
 
 	if isOllamaGuardProvider(string(providerName)) {
-		return runOllamaTextGuardEvalDetailed(modelName, systemPrompt, userMsg, shortUserMsg, strictUserMsg)
+		return false, "select a configured model provider and model", ""
 	}
 
 	if h.client == nil {
@@ -1256,16 +1219,6 @@ func (h *BrowserAIHandler) evaluateAIBotRuleDetailed(rule logstore.BrowserGuardR
 		return false, "", raw
 	}
 
-	// Last resort only if outsource never returned parseable JSON and budget remains.
-	if time.Until(budgetEnd) >= 3*time.Second {
-		if violated, ollamaErr, raw := runOllamaTextGuardEvalDetailed(browserAIGuardBotDefaultModel, systemPrompt, userMsg, shortUserMsg, strictUserMsg); ollamaErr == "" {
-			return violated, "", raw
-		} else if firstErr == "" {
-			return false, ollamaErr, lastRaw
-		} else {
-			return false, firstErr + "; ollama fallback: " + ollamaErr, lastRaw
-		}
-	}
 	return false, firstErr, lastRaw
 }
 
@@ -1334,82 +1287,6 @@ func buildGuardOutsourceChatRequest(provider schemas.ModelProvider, model, syste
 	}
 }
 
-// runOllamaTextGuardEval runs the text Guard Bot classifier against Ollama (JSON then plain, full then short).
-func runOllamaTextGuardEval(modelName, systemPrompt, userMsg, shortUserMsg string) (bool, string) {
-	v, e, _ := runOllamaTextGuardEvalDetailed(modelName, systemPrompt, userMsg, shortUserMsg, "")
-	return v, e
-}
-
-func runOllamaTextGuardEvalDetailed(modelName, systemPrompt, userMsg, shortUserMsg, strictUserMsg string) (bool, string, string) {
-	deadline := time.Now().Add(guardBotEvalBudget())
-	runOllama := func(system, user string, jsonMode bool) (bool, string, string) {
-		remaining := time.Until(deadline)
-		if remaining < 2*time.Second {
-			return false, "guard bot eval budget exceeded", ""
-		}
-		rawText, err := callOllamaChatAny(modelName, system, user, jsonMode, remaining)
-		if err != nil {
-			return false, truncateRunes(err.Error(), 180), ""
-		}
-		rawText = stripEvalMarkdown(rawText)
-		if rawText == "" {
-			return false, "empty evaluator response (Ollama returned no text — confirm llama3.2 is pulled and reachable)", ""
-		}
-		violated, recognized := parseAIBotDecision(rawText)
-		if !recognized {
-			return false, "evaluator returned unparseable output: " + truncateRunes(rawText, 80), rawText
-		}
-		return violated, "", rawText
-	}
-
-	// Keep attempts short — enterprise Send latency cannot afford 6×90s Ollama retries.
-	attempts := []struct {
-		system   string
-		user     string
-		jsonMode bool
-	}{
-		{systemPrompt, shortUserMsg, true},
-		{systemPrompt, userMsg, true},
-		{systemPrompt, shortUserMsg, false},
-	}
-	if strings.TrimSpace(strictUserMsg) != "" {
-		attempts = append(attempts, struct {
-			system   string
-			user     string
-			jsonMode bool
-		}{systemPrompt, strictUserMsg, true})
-	}
-
-	var firstErr string
-	var lastRaw string
-	sawClearFalse := false
-	for _, a := range attempts {
-		if time.Until(deadline) < 2*time.Second {
-			break
-		}
-		violated, errMsg, raw := runOllama(a.system, a.user, a.jsonMode)
-		if raw != "" {
-			lastRaw = raw
-		}
-		if errMsg != "" {
-			if firstErr == "" {
-				firstErr = errMsg
-			}
-			continue
-		}
-		if violated {
-			return true, "", raw
-		}
-		sawClearFalse = true
-		// First clear parse is enough — do not burn remaining budget on retries.
-		return false, "", raw
-	}
-	if sawClearFalse {
-		return false, "", lastRaw
-	}
-	return false, firstErr, lastRaw
-}
-
 func (h *BrowserAIHandler) evaluateAIBotVisionRule(rule logstore.BrowserGuardRule, userPrompt string, uploadImages []string, providerName schemas.ModelProvider, modelName string) (bool, string) {
 	systemPrompt := browserAIGuardBotVisionSystemPrompt()
 
@@ -1445,30 +1322,7 @@ JSON only: {"violation":true} or {"violation":false}`,
 	}
 
 	if isOllamaGuardProvider(string(providerName)) {
-		runOllama := func(jsonMode bool) (bool, string) {
-			rawText, err := callOllamaVisionAny(modelName, systemPrompt, userMsg, images, jsonMode, 120*time.Second)
-			if err != nil {
-				return false, truncateRunes(err.Error(), 180)
-			}
-			rawText = stripEvalMarkdown(rawText)
-			if rawText == "" {
-				return false, "empty vision evaluator response"
-			}
-			violated, recognized := parseAIBotDecision(rawText)
-			if !recognized {
-				return false, "vision evaluator returned unparseable output: " + truncateRunes(rawText, 80)
-			}
-			return violated, ""
-		}
-		violated, errMsg := runOllama(true)
-		if errMsg == "" {
-			return violated, ""
-		}
-		violated, errMsg2 := runOllama(false)
-		if errMsg2 == "" {
-			return violated, ""
-		}
-		return false, errMsg + "; retry: " + errMsg2
+		return false, "select a configured model provider and model"
 	}
 
 	if h.client == nil {
@@ -1755,11 +1609,7 @@ If the question is unsafe or asks for secrets/credentials, refuse briefly and ex
 	}
 
 	if isOllamaGuardProvider(string(providerName)) {
-		text, err := callOllamaChatAny(modelName, systemPrompt, userMsg, false, 90*time.Second)
-		if err != nil {
-			return "", err
-		}
-		return strings.TrimSpace(text), nil
+		return "", fmt.Errorf("select a configured model provider and model")
 	}
 
 	if h.client == nil {

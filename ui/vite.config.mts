@@ -50,6 +50,15 @@ export default defineConfig(({ mode }) => {
 	const trialExpiry =
 		gatewayEnv(env, "ENTERPRISE_TRIAL_EXPIRY") || String(process.env.ENTERPRISE_TRIAL_EXPIRY ?? "").trim();
 
+	const appHost = env.APP_HOST || gatewayEnv(env, "HOST") || "0.0.0.0";
+	const proxyPort = env.PROXY_PORT || gatewayEnv(env, "PROXY_PORT") || "18182";
+	const containerName = env.CONTAINER_NAME || gatewayEnv(env, "CONTAINER_NAME") || "raksha_yespanchi";
+	const gatewayProxyAddr = env.GATEWAY_PROXY_ADDR || gatewayEnv(env, "GATEWAY_PROXY_ADDR") || "127.0.0.1:18103";
+	const pacHttpPort = env.PAC_HTTP_PORT || gatewayEnv(env, "PAC_HTTP_PORT") || "18195";
+	const mitmWebPort = env.MITM_WEB_PORT || gatewayEnv(env, "MITM_WEB_PORT") || "18183";
+	const networkProxyContainerName = env.NETWORK_PROXY_CONTAINER_NAME || gatewayEnv(env, "NETWORK_PROXY_CONTAINER_NAME") || "raksha_proxy";
+	const dockerNetwork = env.DOCKER_NETWORK || gatewayEnv(env, "DOCKER_NETWORK") || "raksha-network";
+
 	return {
 		plugins: [
 		tanstackRouter({
@@ -100,6 +109,14 @@ export default defineConfig(({ mode }) => {
 		"process.env.GATEWAY_FOOTER_SUBTITLE": JSON.stringify(footerSubtitle),
 		"process.env.GATEWAY_PORT": JSON.stringify(backendPort),
 		"process.env.APP_PORT": JSON.stringify(backendPort),
+		"process.env.APP_HOST": JSON.stringify(appHost),
+		"process.env.PROXY_PORT": JSON.stringify(proxyPort),
+		"process.env.CONTAINER_NAME": JSON.stringify(containerName),
+		"process.env.GATEWAY_PROXY_ADDR": JSON.stringify(gatewayProxyAddr),
+		"process.env.PAC_HTTP_PORT": JSON.stringify(pacHttpPort),
+		"process.env.MITM_WEB_PORT": JSON.stringify(mitmWebPort),
+		"process.env.NETWORK_PROXY_CONTAINER_NAME": JSON.stringify(networkProxyContainerName),
+		"process.env.DOCKER_NETWORK": JSON.stringify(dockerNetwork),
 		"process.env.GATEWAY_BACKEND_URL": JSON.stringify(backendTarget),
 		"process.env.UI_PORT": JSON.stringify(String(uiPort)),
 	},

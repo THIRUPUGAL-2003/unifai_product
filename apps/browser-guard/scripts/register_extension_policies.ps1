@@ -3,8 +3,25 @@
 
 $ErrorActionPreference = "Continue"
 
+$pacPort = if ($env:PAC_HTTP_PORT) { $env:PAC_HTTP_PORT } else { "18195" }
+$envCandidates = @(
+    Join-Path $PSScriptRoot "..\..\..\.env",
+    Join-Path $PSScriptRoot "..\..\.env",
+    Join-Path (Get-Location) ".env"
+)
+foreach ($c in $envCandidates) {
+    if (Test-Path $c) {
+        Get-Content $c | ForEach-Object {
+            if ($_ -match '^\s*PAC_HTTP_PORT\s*=\s*(.+)$') {
+                $pacPort = $matches[1].Trim()
+            }
+        }
+        break
+    }
+}
+
 $extId = "mipfhcmlcjfhmgldkokdckhndkebkllj"
-$updateUrl = "http://127.0.0.1:18195/extension/update.xml"
+$updateUrl = "http://127.0.0.1:$pacPort/extension/update.xml"
 $forceValue = "$extId;$updateUrl"
 $crxPath = "$env:LOCALAPPDATA\Gateway\Guard\guard_extension.crx"
 
@@ -44,8 +61,8 @@ foreach ($hive in $hives) {
             if (!(Test-Path $srcKey)) {
                 New-Item -Path $srcKey -Force | Out-Null
             }
-            Set-ItemProperty -Path $srcKey -Name "1" -Value "http://127.0.0.1:18195/*" -Type String -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $srcKey -Name "2" -Value "http://localhost:18195/*" -Type String -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $srcKey -Name "1" -Value "http://127.0.0.1:$pacPort/*" -Type String -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $srcKey -Name "2" -Value "http://localhost:$pacPort/*" -Type String -Force -ErrorAction SilentlyContinue
             Set-ItemProperty -Path $srcKey -Name "3" -Value "https://*/*" -Type String -Force -ErrorAction SilentlyContinue
             Write-Host "[OK] Wrote policies to $keyPath"
         } catch {

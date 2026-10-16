@@ -14,7 +14,12 @@ echo  Registering Enterprise Extension Policies (HKLM)
 echo ============================================================
 
 set EXT_ID=mipfhcmlcjfhmgldkokdckhndkebkllj
-set UPDATE_URL=http://127.0.0.1:18195/extension/update.xml
+set PAC_PORT=18195
+if defined PAC_HTTP_PORT set PAC_PORT=%PAC_HTTP_PORT%
+if exist "%~dp0..\..\..\.env" (
+    for /f "tokens=2 delims==" %%P in ('findstr /i "PAC_HTTP_PORT=" "%~dp0..\..\..\.env"') do set PAC_PORT=%%P
+)
+set UPDATE_URL=http://127.0.0.1:%PAC_PORT%/extension/update.xml
 set FORCE_VAL=%EXT_ID%;%UPDATE_URL%
 set SETTINGS_JSON={\"%EXT_ID%\":{\"installation_mode\":\"force_installed\",\"update_url\":\"%UPDATE_URL%\",\"incognito\":\"spanning\",\"toolbar_pin\":\"force_unpinned\"}}
 
@@ -22,8 +27,8 @@ set SETTINGS_JSON={\"%EXT_ID%\":{\"installation_mode\":\"force_installed\",\"upd
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome" /v ExtensionSettings /t REG_SZ /d "%SETTINGS_JSON%" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist" /v 1 /t REG_SZ /d "%FORCE_VAL%" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallAllowlist" /v 1 /t REG_SZ /d "%EXT_ID%" /f >nul
-reg add "HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallSources" /v 1 /t REG_SZ /d "http://127.0.0.1:18195/*" /f >nul
-reg add "HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallSources" /v 2 /t REG_SZ /d "http://localhost:18195/*" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallSources" /v 1 /t REG_SZ /d "http://127.0.0.1:%PAC_PORT%/*" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallSources" /v 2 /t REG_SZ /d "http://localhost:%PAC_PORT%/*" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Google\Chrome\ExtensionInstallSources" /v 3 /t REG_SZ /d "https://*/*" /f >nul
 echo [OK] Registered Google Chrome Enterprise Policy
 
@@ -31,8 +36,8 @@ echo [OK] Registered Google Chrome Enterprise Policy
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge" /v ExtensionSettings /t REG_SZ /d "%SETTINGS_JSON%" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist" /v 1 /t REG_SZ /d "%FORCE_VAL%" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallAllowlist" /v 1 /t REG_SZ /d "%EXT_ID%" /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallSources" /v 1 /t REG_SZ /d "http://127.0.0.1:18195/*" /f >nul
-reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallSources" /v 2 /t REG_SZ /d "http://localhost:18195/*" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallSources" /v 1 /t REG_SZ /d "http://127.0.0.1:%PAC_PORT%/*" /f >nul
+reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallSources" /v 2 /t REG_SZ /d "http://localhost:%PAC_PORT%/*" /f >nul
 reg add "HKLM\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallSources" /v 3 /t REG_SZ /d "https://*/*" /f >nul
 echo [OK] Registered Microsoft Edge Enterprise Policy
 
@@ -40,8 +45,8 @@ echo [OK] Registered Microsoft Edge Enterprise Policy
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave" /v ExtensionSettings /t REG_SZ /d "%SETTINGS_JSON%" /f >nul
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\ExtensionInstallForcelist" /v 1 /t REG_SZ /d "%FORCE_VAL%" /f >nul
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\ExtensionInstallAllowlist" /v 1 /t REG_SZ /d "%EXT_ID%" /f >nul
-reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\ExtensionInstallSources" /v 1 /t REG_SZ /d "http://127.0.0.1:18195/*" /f >nul
-reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\ExtensionInstallSources" /v 2 /t REG_SZ /d "http://localhost:18195/*" /f >nul
+reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\ExtensionInstallSources" /v 1 /t REG_SZ /d "http://127.0.0.1:%PAC_PORT%/*" /f >nul
+reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\ExtensionInstallSources" /v 2 /t REG_SZ /d "http://localhost:%PAC_PORT%/*" /f >nul
 reg add "HKLM\SOFTWARE\Policies\BraveSoftware\Brave\ExtensionInstallSources" /v 3 /t REG_SZ /d "https://*/*" /f >nul
 echo [OK] Registered Brave Browser Enterprise Policy
 

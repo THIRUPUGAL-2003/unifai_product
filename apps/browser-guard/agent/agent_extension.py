@@ -1172,10 +1172,9 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
             if value:
                 if _set_reg_sz(root, list_path, "1", value):
                     wrote = True
-                if _set_reg_sz(root, path, "ExtensionSettings", settings):
-                    wrote = True
-                _set_reg_sz(root, path + r"\ExtensionInstallSources", "1", "http://127.0.0.1:18195/*")
-                _set_reg_sz(root, path + r"\ExtensionInstallSources", "2", "http://localhost:18195/*")
+                pac_p = getattr(agent_config, "PAC_HTTP_PORT", 18195)
+                _set_reg_sz(root, path + r"\ExtensionInstallSources", "1", f"http://127.0.0.1:{pac_p}/*")
+                _set_reg_sz(root, path + r"\ExtensionInstallSources", "2", f"http://localhost:{pac_p}/*")
             else:
                 _delete_reg_value(root, list_path, "1")
                 _delete_reg_value(root, path, "ExtensionSettings")
