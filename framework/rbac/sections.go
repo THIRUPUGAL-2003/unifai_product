@@ -39,6 +39,13 @@ func SectionRequirementFor(method, path string) []string {
 		}
 	case strings.HasPrefix(path, "/api/connectors"):
 		return []string{"observability/connectors"}
+	case strings.HasPrefix(path, "/api/skills"):
+		if read {
+			return []string{"skills-repository", "prompt-repository"}
+		}
+		return []string{"skills-repository"}
+	case strings.HasPrefix(path, "/api/prompt-repo"), strings.HasPrefix(path, "/api/prompt-deployments"):
+		return []string{"prompt-repository"}
 	}
 
 	if read {
@@ -90,6 +97,12 @@ func SectionsAllow(allowedSections string, required []string) bool {
 		key := strings.ToLower(strings.TrimSpace(part))
 		if key == "observability/browser-ai" {
 			key = "browser-ai"
+		}
+		if key == "skills" {
+			key = "skills-repository"
+		}
+		if key == "prompt-repo" {
+			key = "prompt-repository"
 		}
 		if key != "" {
 			grants[key] = true

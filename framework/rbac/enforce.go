@@ -54,7 +54,7 @@ func ResolvePermissions(ctx context.Context, store configstore.WorkspaceStore, r
 		return nil, err
 	}
 	roleName = strings.ToLower(strings.TrimSpace(roleName))
-	if roleName == "" || roleName == "admin" {
+	if roleName == "" || roleName == "admin" || roleName == "sub_admin" {
 		return allowAll(), nil
 	}
 	rows, err := store.ListRBACRoles(ctx)

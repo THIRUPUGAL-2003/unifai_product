@@ -146,8 +146,9 @@ func (r *UpdateFolderRequest) UnmarshalJSON(data []byte) error {
 
 // CreatePromptRequest represents the request body for creating a prompt
 type CreatePromptRequest struct {
-	Name     string  `json:"name"`
-	FolderID *string `json:"folder_id,omitempty"`
+	Name       string  `json:"name"`
+	FolderID   *string `json:"folder_id,omitempty"`
+	FolderName string  `json:"folder_name,omitempty"`
 }
 
 // UpdatePromptRequest represents the request body for updating a prompt
@@ -626,24 +627,85 @@ func (h *PromptsHandler) createPrompt(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		SendError(ctx, fasthttp.StatusBadRequest, "name is required")
 		return
 	}
+
+	// Auto-create folder if name contains a slash (e.g. "Agents/Support Bot")
+	if strings.Contains(req.Name, "/") {
+		parts := strings.Split(req.Name, "/")
+		if len(parts) >= 2 {
+			folderName := strings.TrimSpace(parts[0])
+			promptName := strings.TrimSpace(strings.Join(parts[1:], "/"))
+			if folderName != "" && promptName != "" {
+				req.Name = promptName
+				if req.FolderName == "" && (req.FolderID == nil || *req.FolderID == "") {
+					req.FolderName = folderName
+				}
+			}
+		}
+	}
+
+	// Auto-create or resolve folder by name if folder_name is provided
+	if req.FolderName != "" && (req.FolderID == nil || *req.FolderID == "") {
+		folders, _ := h.store.GetFolders(ctx)
+		var existingFolder *tables.TableFolder
+		for i := range folders {
+			if strings.EqualFold(folders[i].Name, req.FolderName) {
+				existingFolder = &folders[i]
+				break
+			}
+		}
+		if existingFolder != nil {
+			req.FolderID = &existingFolder.ID
+		} else {
+			newFolder := &tables.TableFolder{
+				ID:   uuid.New().String(),
+				Name: req.FolderName,
+			}
+			if err := h.store.CreateFolder(ctx, newFolder); err == nil {
+				req.FolderID = &newFolder.ID
+			}
+		}
+	}
+
 	// Normalize empty folder_id to nil (treat as root)
 	if req.FolderID != nil && *req.FolderID == "" {
 		req.FolderID = nil
 	}
-	// Verify folder exists if folder_id is provided
+	// Verify folder exists if folder_id is provided, or auto-create/resolve if it matches a folder name
 	if req.FolderID != nil {
 		if _, err := h.store.GetFolderByID(ctx, *req.FolderID); err != nil {
 			if errors.Is(err, configstore.ErrNotFound) {
-				SendError(ctx, fasthttp.StatusBadRequest, "folder not found")
+				folders, _ := h.store.GetFolders(ctx)
+				var match *tables.TableFolder
+				for i := range folders {
+					if strings.EqualFold(folders[i].Name, *req.FolderID) {
+						match = &folders[i]
+						break
+					}
+				}
+				if match != nil {
+					req.FolderID = &match.ID
+				} else {
+					newFolder := &tables.TableFolder{
+						ID:   uuid.New().String(),
+						Name: *req.FolderID,
+					}
+					if err := h.store.CreateFolder(ctx, newFolder); err == nil {
+						req.FolderID = &newFolder.ID
+					} else {
+						SendError(ctx, fasthttp.StatusBadRequest, "folder not found")
+						return
+					}
+				}
+			} else {
+				logger.Error("failed to get folder: %v", err)
+				SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
 				return
 			}
-			logger.Error("failed to get folder: %v", err)
-			SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
-			return
 		}
 	}
 

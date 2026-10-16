@@ -103,7 +103,7 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				next(ctx)
 				return
 			}
-			if session.Role == "admin" {
+			if session.Role == "admin" || session.Role == "sub_admin" {
 				if len(sections) > 0 && !sessionSectionsAllow(ctx, store, session.Role, session.Username, sections) {
 					SendError(ctx, fasthttp.StatusForbidden, "this section is not enabled for your account")
 					return

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -80,12 +81,47 @@ type headerResolver struct {
 // no prompt injection for this request. Version 0 means “use latest” when passed to resolveVersion.
 func (r *headerResolver) Resolve(ctx *schemas.GatewayContext, req *schemas.GatewayRequest) (string, int, error) {
 	promptID := gateway.GetStringFromContext(ctx, PromptIDKey)
-	if promptID == "" {
-		return "", 0, nil
-	}
 	versionNumber, err := parseNumberFromContext(ctx, PromptVersionKey)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to parse version number: %w", err)
+	}
+	if promptID != "" {
+		return promptID, versionNumber, nil
+	}
+
+	// Fall back to reading prompt_id and prompt_version from body (ExtraParams)
+	if req != nil && req.ChatRequest != nil && req.ChatRequest.Params != nil && req.ChatRequest.Params.ExtraParams != nil {
+		extra := req.ChatRequest.Params.ExtraParams
+		if rawID, ok := extra["prompt_id"]; ok {
+			if idStr, ok := rawID.(string); ok && strings.TrimSpace(idStr) != "" {
+				promptID = strings.TrimSpace(idStr)
+				delete(extra, "prompt_id")
+			}
+		}
+		if promptID != "" && versionNumber == 0 {
+			if rawVer, ok := extra["prompt_version"]; ok {
+				if vNum, ok := schemas.SafeExtractInt(rawVer); ok {
+					versionNumber = vNum
+					delete(extra, "prompt_version")
+				}
+			}
+		}
+	} else if req != nil && req.ResponsesRequest != nil && req.ResponsesRequest.Params != nil && req.ResponsesRequest.Params.ExtraParams != nil {
+		extra := req.ResponsesRequest.Params.ExtraParams
+		if rawID, ok := extra["prompt_id"]; ok {
+			if idStr, ok := rawID.(string); ok && strings.TrimSpace(idStr) != "" {
+				promptID = strings.TrimSpace(idStr)
+				delete(extra, "prompt_id")
+			}
+		}
+		if promptID != "" && versionNumber == 0 {
+			if rawVer, ok := extra["prompt_version"]; ok {
+				if vNum, ok := schemas.SafeExtractInt(rawVer); ok {
+					versionNumber = vNum
+					delete(extra, "prompt_version")
+				}
+			}
+		}
 	}
 	return promptID, versionNumber, nil
 }
@@ -365,8 +401,27 @@ func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayReq
 	switch {
 	case req.ChatRequest != nil:
 		applyVersionParamsToChatRequest(version, req.ChatRequest, p.logger)
+		if req.ChatRequest.Model == "" && version.Model != "" {
+			req.ChatRequest.Model = version.Model
+		}
 	case req.ResponsesRequest != nil:
 		applyVersionParamsToResponsesRequest(version, req.ResponsesRequest, p.logger)
+		if req.ResponsesRequest.Model == "" && version.Model != "" {
+			req.ResponsesRequest.Model = version.Model
+		}
+	}
+
+	// Route to virtual key if specified in prompt version and not already set
+	if version.ModelParams != nil {
+		if vkID, ok := version.ModelParams["virtual_key_id"].(string); ok && strings.TrimSpace(vkID) != "" {
+			if gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyAPIKeyID) == "" {
+				ctx.SetValue(schemas.GatewayContextKeyAPIKeyID, strings.TrimSpace(vkID))
+			}
+		} else if vkID, ok := version.ModelParams["api_key_id"].(string); ok && strings.TrimSpace(vkID) != "" {
+			if gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyAPIKeyID) == "" {
+				ctx.SetValue(schemas.GatewayContextKeyAPIKeyID, strings.TrimSpace(vkID))
+			}
+		}
 	}
 
 	template, err := chatMessagesFromVersionMessages(version.Messages)
@@ -382,55 +437,143 @@ func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayReq
 	}
 
 	// Prepend skill system message so it sits at the very top (index 0).
-	// Prefers explicit header; falls back to prompt version's configured skill_id.
-	var versionSkillID string
+	// Prefers explicit header; falls back to prompt version's configured skill_id / prompt_allowed_skills.
+	var versionSkillIDs []string
 	if version.ModelParams != nil {
 		if rawSkill, ok := version.ModelParams["skill_id"]; ok {
-			if skillStr, ok := rawSkill.(string); ok {
-				versionSkillID = strings.TrimSpace(skillStr)
+			if skillStr, ok := rawSkill.(string); ok && strings.TrimSpace(skillStr) != "" {
+				versionSkillIDs = append(versionSkillIDs, strings.TrimSpace(skillStr))
+			}
+		}
+		if rawAllowed, ok := version.ModelParams["prompt_allowed_skills"]; ok {
+			switch v := rawAllowed.(type) {
+			case []string:
+				for _, s := range v {
+					if trimmed := strings.TrimSpace(s); trimmed != "" && !slices.Contains(versionSkillIDs, trimmed) {
+						versionSkillIDs = append(versionSkillIDs, trimmed)
+					}
+				}
+			case []any:
+				for _, item := range v {
+					if s, ok := item.(string); ok {
+						if trimmed := strings.TrimSpace(s); trimmed != "" && !slices.Contains(versionSkillIDs, trimmed) {
+							versionSkillIDs = append(versionSkillIDs, trimmed)
+						}
+					}
+				}
+			case string:
+				for _, part := range strings.Split(v, ",") {
+					if trimmed := strings.TrimSpace(part); trimmed != "" && !slices.Contains(versionSkillIDs, trimmed) {
+						versionSkillIDs = append(versionSkillIDs, trimmed)
+					}
+				}
 			}
 		}
 	}
-	p.injectSkillSystemMessage(ctx, req, versionSkillID)
+	p.injectSkillSystemMessage(ctx, req, versionSkillIDs...)
 
 	return req, nil, nil
 }
 
 // injectSkillSystemMessage prepends Skills Repository skill_md_body when
-// x-uf-skill-id (or skill name) is present on the request context, or supplied via skillRefOverride.
-func (p *Plugin) injectSkillSystemMessage(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, skillRefOverride ...string) {
-	skillRef := strings.TrimSpace(gateway.GetStringFromContext(ctx, SkillIDKey))
-	if skillRef == "" && len(skillRefOverride) > 0 {
-		skillRef = strings.TrimSpace(skillRefOverride[0])
+// x-uf-skill-id (or skill name) is present on the request context, or supplied via skillRefOverrides.
+func (p *Plugin) injectSkillSystemMessage(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, skillRefOverrides ...string) {
+	var candidates []string
+
+	// 1. Context header x-uf-skill-id
+	if headerRef := strings.TrimSpace(gateway.GetStringFromContext(ctx, SkillIDKey)); headerRef != "" {
+		for _, part := range strings.Split(headerRef, ",") {
+			if trimmed := strings.TrimSpace(part); trimmed != "" && !slices.Contains(candidates, trimmed) {
+				candidates = append(candidates, trimmed)
+			}
+		}
 	}
-	if skillRef == "" {
+
+	// 2. Overrides from version ModelParams
+	for _, override := range skillRefOverrides {
+		for _, part := range strings.Split(override, ",") {
+			if trimmed := strings.TrimSpace(part); trimmed != "" && !slices.Contains(candidates, trimmed) {
+				candidates = append(candidates, trimmed)
+			}
+		}
+	}
+
+	// 3. Request ExtraParams (skill_id, skill, skills)
+	var extraMap map[string]interface{}
+	if req.ChatRequest != nil && req.ChatRequest.Params != nil && req.ChatRequest.Params.ExtraParams != nil {
+		extraMap = req.ChatRequest.Params.ExtraParams
+	} else if req.ResponsesRequest != nil && req.ResponsesRequest.Params != nil && req.ResponsesRequest.Params.ExtraParams != nil {
+		extraMap = req.ResponsesRequest.Params.ExtraParams
+	}
+
+	if extraMap != nil {
+		for _, k := range []string{"skill_id", "skill", "skills"} {
+			if val, ok := extraMap[k]; ok {
+				delete(extraMap, k)
+				switch v := val.(type) {
+				case string:
+					for _, part := range strings.Split(v, ",") {
+						if trimmed := strings.TrimSpace(part); trimmed != "" && !slices.Contains(candidates, trimmed) {
+							candidates = append(candidates, trimmed)
+						}
+					}
+				case []any:
+					for _, item := range v {
+						if s, ok := item.(string); ok {
+							if trimmed := strings.TrimSpace(s); trimmed != "" && !slices.Contains(candidates, trimmed) {
+								candidates = append(candidates, trimmed)
+							}
+						}
+					}
+				case []string:
+					for _, s := range v {
+						if trimmed := strings.TrimSpace(s); trimmed != "" && !slices.Contains(candidates, trimmed) {
+							candidates = append(candidates, trimmed)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if len(candidates) == 0 {
 		return
 	}
+
 	store, ok := p.store.(SkillBodyStore)
 	if !ok || store == nil {
 		return
 	}
-	skill, err := store.GetSkillLean(ctx, skillRef)
-	if err != nil || skill == nil {
-		skill, err = store.GetSkillByName(ctx, skillRef)
+
+	var systemMsgs []schemas.ChatMessage
+	for _, skillRef := range candidates {
+		skill, err := store.GetSkillLean(ctx, skillRef)
+		if err != nil || skill == nil {
+			skill, err = store.GetSkillByName(ctx, skillRef)
+		}
+		if err != nil || skill == nil {
+			p.logger.Warn("prompts plugin: skill not found for ref=%s: %v", skillRef, err)
+			continue
+		}
+		body := strings.TrimSpace(skill.SkillMDBody)
+		if body == "" {
+			continue
+		}
+		systemMsgs = append(systemMsgs, schemas.ChatMessage{
+			Role:    schemas.ChatMessageRoleSystem,
+			Content: &schemas.ChatMessageContent{ContentStr: &body},
+		})
 	}
-	if err != nil || skill == nil {
-		p.logger.Warn("prompts plugin: skill not found for x-uf-skill-id=%s: %v", skillRef, err)
+
+	if len(systemMsgs) == 0 {
 		return
 	}
-	body := strings.TrimSpace(skill.SkillMDBody)
-	if body == "" {
-		return
-	}
-	systemMsg := schemas.ChatMessage{
-		Role:    schemas.ChatMessageRoleSystem,
-		Content: &schemas.ChatMessageContent{ContentStr: &body},
-	}
+
 	switch {
 	case req.ChatRequest != nil:
-		mergeChatMessages(&req.ChatRequest.Input, []schemas.ChatMessage{systemMsg})
+		mergeChatMessages(&req.ChatRequest.Input, systemMsgs)
 	case req.ResponsesRequest != nil:
-		mergeResponsesMessages(&req.ResponsesRequest.Input, []schemas.ChatMessage{systemMsg})
+		mergeResponsesMessages(&req.ResponsesRequest.Input, systemMsgs)
 	}
 }
 
@@ -448,10 +591,21 @@ var knownSyntheticChatParamKeys = map[string]struct{}{
 }
 
 // playgroundOnlyParamKeys are stored in version model_params by the playground UI
-// (selected virtual key, selected skill) and must never reach a provider.
+// (selected virtual key, selected skill, allowed lists) and must never reach a provider.
 var playgroundOnlyParamKeys = map[string]struct{}{
-	"api_key_id": {},
-	"skill_id":   {},
+	"api_key_id":                 {},
+	"virtual_key_id":             {},
+	"skill_id":                   {},
+	"prompt_allowed_skills":       {},
+	"prompt_allowed_models":       {},
+	"prompt_allowed_providers":    {},
+	"prompt_allowed_virtual_keys": {},
+	"prompt_allowed_api_keys":     {},
+	"prompt_allowed_mcp_tools":    {},
+	"mcp_include_tools":          {},
+	"mcp_include_clients":        {},
+	"prompt_id":                  {},
+	"prompt_version":             {},
 }
 
 // buildMergedParamsMap builds a merged map[string]interface{} where version params
@@ -530,11 +684,21 @@ func applyVersionParamsToChatRequest(version *configstoreTables.TablePromptVersi
 		if _, synthetic := knownSyntheticChatParamKeys[k]; synthetic {
 			continue
 		}
+		if _, pgOnly := playgroundOnlyParamKeys[k]; pgOnly {
+			continue
+		}
 		if result.ExtraParams == nil {
 			result.ExtraParams = make(map[string]interface{})
 		}
 		if _, alreadySet := result.ExtraParams[k]; !alreadySet {
 			result.ExtraParams[k] = v
+		}
+	}
+
+	// Map max_tokens to MaxCompletionTokens if not set
+	if val, ok := merged["max_tokens"]; ok && result.MaxCompletionTokens == nil {
+		if ival, ok := schemas.SafeExtractIntPointer(val); ok {
+			result.MaxCompletionTokens = ival
 		}
 	}
 
@@ -591,6 +755,9 @@ func applyVersionParamsToResponsesRequest(version *configstoreTables.TablePrompt
 	}
 	for k, v := range merged {
 		if _, ok := recognizedMap[k]; ok {
+			continue
+		}
+		if _, pgOnly := playgroundOnlyParamKeys[k]; pgOnly {
 			continue
 		}
 		if result.ExtraParams == nil {
