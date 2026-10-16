@@ -55,8 +55,8 @@
     fetch(base + "/extension/rules", { method: "GET", cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        var rules = (data && data.rules) || [];
-        var exts = (data && data.restricted_extensions) || [];
+        var rules = (data && Array.isArray(data.rules)) ? data.rules : [];
+        var exts = (data && Array.isArray(data.restricted_extensions)) ? data.restricted_extensions : [];
         if (chrome.storage && chrome.storage.local) {
           chrome.storage.local.set({ cached_rules: rules, cached_exts: exts });
         }
@@ -75,17 +75,19 @@
     // 1. Check local cache first for zero-latency startup
     if (chrome.storage && chrome.storage.local) {
       chrome.storage.local.get(["cached_rules", "cached_sites", "cached_exts"], function (res) {
-        if (res && Array.isArray(res.cached_sites) && hostMatches(location.hostname, res.cached_sites)) {
+        var sites = (res && Array.isArray(res.cached_sites)) ? res.cached_sites : [];
+        if (hostMatches(location.hostname, sites)) {
           window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
-          if (Array.isArray(res.cached_rules) && res.cached_rules.length) {
-            window.postMessage({
-              source: "gateway-guard",
-              nonce: guardNonce,
-              type: "sync_rules",
-              rules: res.cached_rules,
-              restricted_extensions: res.cached_exts || []
-            }, "*");
-          }
+          window.postMessage({
+            source: "gateway-guard",
+            nonce: guardNonce,
+            type: "sync_rules",
+            rules: Array.isArray(res.cached_rules) ? res.cached_rules : [],
+            restricted_extensions: res.cached_exts || []
+          }, "*");
+        } else {
+          // Domain is not monitored or was deleted
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
         }
       });
     }
@@ -95,15 +97,45 @@
     fetch(base + "/extension/sites", { method: "GET", cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        var domains = (data && data.hosts) || [];
+        var domains = (data && Array.isArray(data.hosts)) ? data.hosts : [];
         if (chrome.storage && chrome.storage.local) {
           chrome.storage.local.set({ cached_sites: domains });
         }
-        if (!hostMatches(location.hostname, domains)) return;
+        if (!hostMatches(location.hostname, domains)) {
+          // Domain removed from target websites: disarm immediately
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+          return;
+        }
         window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
         syncRules();
       })
       .catch(function () { });
+  }
+
+  // Listen for storage changes across background worker and tabs
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener(function (changes, areaName) {
+      if (areaName !== "local") return;
+      if (changes.cached_rules) {
+        var newRules = Array.isArray(changes.cached_rules.newValue) ? changes.cached_rules.newValue : [];
+        window.postMessage({
+          source: "gateway-guard",
+          nonce: guardNonce,
+          type: "sync_rules",
+          rules: newRules,
+          restricted_extensions: (changes.cached_exts && changes.cached_exts.newValue) || []
+        }, "*");
+      }
+      if (changes.cached_sites) {
+        var newSites = Array.isArray(changes.cached_sites.newValue) ? changes.cached_sites.newValue : [];
+        if (hostMatches(location.hostname, newSites)) {
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
+        } else {
+          // Domain was deleted from target sites list: disarm immediately
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+        }
+      }
+    });
   }
 
   // Periodic rule refresh every 15 seconds and on tab focus
@@ -125,22 +157,52 @@
       window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
       return;
     }
+
+    var checkPayload = {
+      host: msg.host || location.hostname,
+      url: msg.url || location.href,
+      prompt: msg.prompt || "",
+      files: msg.files || [],
+      upload_images: msg.upload_images || [],
+      is_blocked: Boolean(msg.is_blocked),
+      rule: msg.rule || ""
+    };
+
+    // Record prompt check in chrome.storage.local (middle-box persistence)
+    if (chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({
+        last_prompt_check: {
+          timestamp: Date.now(),
+          host: checkPayload.host,
+          prompt_preview: (checkPayload.prompt || "").slice(0, 100),
+          file_count: checkPayload.files.length,
+          image_count: checkPayload.upload_images.length
+        }
+      });
+    }
+
     fetch(base + "/extension/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        host: msg.host || location.hostname,
-        url: msg.url || location.href,
-        prompt: msg.prompt || "",
-        files: msg.files || [],
-        upload_images: msg.upload_images || [],
-        is_blocked: Boolean(msg.is_blocked),
-        rule: msg.rule || ""
-      })
+      body: JSON.stringify(checkPayload)
     })
       .then(function (r) { return r.json(); })
       .then(function (decision) {
-        window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: decision || { blocked: false } }, "*");
+        var dec = decision || { blocked: false };
+        // Save EXE evaluation decision into chrome.storage.local
+        if (chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({
+            last_decision: {
+              timestamp: Date.now(),
+              host: checkPayload.host,
+              blocked: Boolean(dec.blocked),
+              action: dec.action || (dec.blocked ? "Blocked" : "Allowed"),
+              rule: dec.rule || "",
+              message: dec.message || ""
+            }
+          });
+        }
+        window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: dec }, "*");
       })
       .catch(function () {
         window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");

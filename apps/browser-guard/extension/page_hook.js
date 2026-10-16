@@ -60,33 +60,42 @@
   }
 
   function setDynamicRules(rules) {
-    if (Array.isArray(rules)) {
-      var compiled = [];
-      for (var i = 0; i < rules.length; i++) {
-        var r = rules[i];
-        if (!r || !r.pattern) continue;
-        var rx = compileRegex(r.pattern);
-        if (rx) {
-          compiled.push({
-            id: r.id || "",
-            name: r.name || "Custom Rule",
-            action: (r.action || "BLOCK").toUpperCase(),
-            msg: r.warning_message || ("Blocked by security policy: " + (r.name || "Restricted pattern")),
-            re: rx
-          });
-        }
-      }
-      dynamicRules = compiled;
+    if (!Array.isArray(rules) || rules.length === 0) {
+      dynamicRules = [];
+      return;
     }
+    var compiled = [];
+    for (var i = 0; i < rules.length; i++) {
+      var r = rules[i];
+      if (!r || !r.pattern) continue;
+      var rx = compileRegex(r.pattern);
+      if (rx) {
+        compiled.push({
+          id: r.id || "",
+          name: r.name || "Custom Rule",
+          action: (r.action || "BLOCK").toUpperCase(),
+          msg: r.warning_message || ("Blocked by security policy: " + (r.name || "Restricted pattern")),
+          re: rx
+        });
+      }
+    }
+    dynamicRules = compiled;
   }
 
   // Listen for messages from extension content script
   window.addEventListener("message", function (ev) {
     if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard") return;
     if (guardNonce && ev.data.nonce && ev.data.nonce !== guardNonce) return;
-    if (ev.data.type === "arm") armed = true;
+    if (ev.data.type === "arm") {
+      armed = true;
+    }
+    if (ev.data.type === "disarm") {
+      armed = false;
+      dynamicRules = [];
+      lastDecisionCache = { text: "", time: 0, decision: null };
+    }
     if (ev.data.type === "sync_rules") {
-      setDynamicRules(ev.data.rules);
+      setDynamicRules(ev.data.rules || []);
     }
     if (ev.data.type === "decision" && pending[ev.data.id]) {
       pending[ev.data.id](ev.data.decision || { blocked: false });

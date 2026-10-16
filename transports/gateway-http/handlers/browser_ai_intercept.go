@@ -101,7 +101,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		logstore.IsInternalHostOrDomain(metaDomain) ||
 		logstore.IsInternalHostOrDomain(metaURL) ||
 		strings.Contains(metaURL, "localhost:") || strings.Contains(metaURL, "127.0.0.1:") ||
-		strings.Contains(metaURL, "/workspace/") || strings.Contains(metaURL, "/api/") {
+		strings.Contains(metaURL, "/workspace/") {
 		SendJSON(ctx, map[string]any{
 			"status":             "success",
 			"allowed":            true,
@@ -897,7 +897,7 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		logstore.IsInternalHostOrDomain(fileMetaDomain) ||
 		logstore.IsInternalHostOrDomain(fileMetaURL) ||
 		strings.Contains(fileMetaURL, "localhost:") || strings.Contains(fileMetaURL, "127.0.0.1:") ||
-		strings.Contains(fileMetaURL, "/workspace/") || strings.Contains(fileMetaURL, "/api/") {
+		strings.Contains(fileMetaURL, "/workspace/") {
 		SendJSON(ctx, map[string]any{
 			"status":          "success",
 			"allowed":         true,

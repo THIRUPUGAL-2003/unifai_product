@@ -3398,13 +3398,12 @@ def _resolve_upload_bind_domain(flow: http.HTTPFlow, upload_host: str) -> str:
             pass
         return best
 
-    # Sticky: last admin Target Website this client used — ONLY for known cloud storage / AI CDN hosts.
+    # File hosts (ChatGPT and Claude CDNs, or any other upload host) often omit
+    # Referer. Bind the bytes to the Target Website this client just used.
     try:
-        _cloud_storage_hosts = ("oaiusercontent.com", "claudeusercontent.com", "googleapis.com", "blob.core.windows.net", "amazonaws.com", "digitaloceanspaces.com", "storage.live.com")
-        if any(cs in (upload_host or "").lower() for cs in _cloud_storage_hosts):
-            sticky = lookup_client_target_domain(get_client_ip(flow))
-            if sticky:
-                return sticky
+        sticky = lookup_client_target_domain(get_client_ip(flow))
+        if sticky:
+            return sticky
     except Exception:
         pass
     return ""

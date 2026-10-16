@@ -1820,7 +1820,7 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		IsInternalHostOrDomain(metaDom) ||
 		IsInternalHostOrDomain(metaURL) ||
 		strings.Contains(metaURL, "localhost:") || strings.Contains(metaURL, "127.0.0.1:") ||
-		strings.Contains(metaURL, "/workspace/") || strings.Contains(metaURL, "/api/") {
+		strings.Contains(metaURL, "/workspace/") {
 		return &BrowserAILog{
 			ID:                uuid.New().String(),
 			Timestamp:         time.Now(),
@@ -2145,18 +2145,22 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		CreatedAt:         time.Now(),
 	}
 
-	// Deduplicate: If an identical prompt from the same agent/IP & platform was logged within the last 6 seconds,
+	// Deduplicate: If an identical prompt from the same agent/IP & platform was logged within the last 10 seconds,
 	// merge/enrich it instead of creating a duplicate row.
 	var existing BrowserAILog
-	dedupCutoff := time.Now().Add(-6 * time.Second)
+	dedupCutoff := time.Now().UTC().Add(-10 * time.Second)
 	dedupQuery := db.WithContext(ctx).
 		Where("(LOWER(platform) = LOWER(?) OR platform = ?) AND created_at >= ?", canonicalPlatform, canonicalPlatform, dedupCutoff).
-		Where("TRIM(user_prompt_full) = ? OR TRIM(user_prompt_preview) = ? OR user_prompt_full = ? OR user_prompt_preview = ?", trimmedPrompt, trimmedPrompt, promptFull, preview)
+		Where("TRIM(user_prompt_full) = ? OR user_prompt_full = ? OR TRIM(user_prompt_preview) = ? OR user_prompt_preview = ?", trimmedPrompt, promptFull, preview, preview)
 
-	if agentID != "" {
-		dedupQuery = dedupQuery.Where("agent_id = ? OR client_ip = ?", agentID, clientIP)
+	// Extension logs 127.0.0.1 and the EXE logs the machine address. Same prompt
+	// must still collapse. Match the desktop name when we have it.
+	if agentHostname != "" {
+		dedupQuery = dedupQuery.Where("agent_hostname = ? OR agent_hostname = '' OR agent_hostname IS NULL", agentHostname)
+	} else if agentID != "" {
+		dedupQuery = dedupQuery.Where("agent_id = ? OR agent_id = '' OR agent_id IS NULL OR client_ip = ? OR client_ip IN ?", agentID, clientIP, []string{"127.0.0.1", "::1"})
 	} else if clientIP != "" {
-		dedupQuery = dedupQuery.Where("client_ip = ?", clientIP)
+		dedupQuery = dedupQuery.Where("client_ip = ? OR client_ip IN ?", clientIP, []string{"127.0.0.1", "::1"})
 	}
 
 	if err := dedupQuery.Order("created_at DESC").First(&existing).Error; err == nil && existing.ID != "" {
