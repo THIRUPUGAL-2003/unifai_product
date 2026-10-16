@@ -913,7 +913,7 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
                 return True
             if fn_clean and (fn_clean in item_files or any(fn_clean in x for x in item_files)):
                 return True
-            if clean_d and item_host and (now - item_time < 3.0):
+            if clean_d and item_host and (now - item_time < 5.0):
                 return True
     except Exception:
         pass

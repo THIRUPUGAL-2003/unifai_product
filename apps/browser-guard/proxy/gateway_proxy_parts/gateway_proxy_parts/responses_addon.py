@@ -721,6 +721,18 @@ class BrowserAIInterceptor:
             make_site_blocked_response(flow, b_domain, b_platform)
             return
 
+        # Extension Pre-Send Coordination:
+        # If the request was already intercepted and evaluated by the browser extension at the Send button,
+        # it carries the X-Guard-Handled header. Skip proxy duplicate evaluation and logging!
+        if (
+            flow.request.headers.get("x-guard-handled")
+            or flow.request.headers.get("x-gateway-guard-handled")
+            or flow.request.headers.get("X-Guard-Handled")
+            or flow.request.headers.get("X-Gateway-Guard-Handled")
+        ):
+            print(f"[Gateway Proxy] Request carries X-Guard-Handled from extension for {host}. Skipping duplicate proxy prompt evaluation.")
+            return
+
         # requestheaders already marked page/script/settings calls to stream.
         # Do not read the body — that would hold the site again.
         if getattr(flow.request, "stream", False):

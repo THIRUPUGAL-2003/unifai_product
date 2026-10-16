@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -12,6 +14,37 @@ import (
 	"github.com/gateway/gateway/framework/logstore"
 	"github.com/valyala/fasthttp"
 )
+
+type promptDedupeCacheEntry struct {
+	responseBytes []byte
+	timestamp     time.Time
+}
+
+var (
+	promptDedupeLock sync.RWMutex
+	promptDedupeMap  = make(map[string]promptDedupeCacheEntry)
+)
+
+func cleanPromptForDedupe(prompt string) string {
+	p := strings.TrimSpace(prompt)
+	if len(p) > 250 {
+		p = p[:250]
+	}
+	return strings.ToLower(p)
+}
+
+func getDedupeKey(agentID, clientIP, platform, prompt string) string {
+	ident := strings.TrimSpace(agentID)
+	if ident == "" {
+		ident = strings.TrimSpace(clientIP)
+	}
+	cp := cleanPromptForDedupe(prompt)
+	if cp == "" {
+		return ""
+	}
+	h := sha256.Sum256([]byte(cp))
+	return fmt.Sprintf("%s:%s:%x", ident, strings.ToLower(strings.TrimSpace(platform)), h[:16])
+}
 
 func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	if !h.verifyGuardSecurity(ctx) {
@@ -144,6 +177,34 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	// File-upload audit logs: proxy already decided allow/block. Do not re-run AI Guard Bot
+	// or Reply Bot on "[FILE UPLOAD] …" — that corrupts Allowed upload rows in Prompt Logs.
+	uploadScan := metadataBool(payload.Metadata, "upload_scan")
+	if strings.HasPrefix(strings.TrimSpace(payload.Prompt), "[FILE UPLOAD]") ||
+		strings.HasPrefix(strings.TrimSpace(payload.Prompt), "[VOICE UPLOAD]") {
+		uploadScan = true
+	}
+
+	// 5-second In-Memory Deduplication:
+	// If the browser extension already evaluated this prompt at the Send button,
+	// and the desktop EXE proxy intercepts the outgoing wire packet shortly after,
+	// reuse the previous verdict without writing a duplicate log to logstore!
+	dedupeKey := ""
+	if !uploadScan && !evalOnly {
+		dedupeKey = getDedupeKey(payload.AgentID, payload.ClientIP, payload.Platform, payload.Prompt)
+		if dedupeKey != "" {
+			promptDedupeLock.RLock()
+			cached, exists := promptDedupeMap[dedupeKey]
+			promptDedupeLock.RUnlock()
+			if exists && time.Since(cached.timestamp) < 5*time.Second {
+				ctx.SetStatusCode(fasthttp.StatusOK)
+				ctx.SetContentType("application/json; charset=utf-8")
+				ctx.SetBody(cached.responseBytes)
+				return
+			}
+		}
+	}
+
 	logEntry, ruleWarning, err := h.manager.InterceptPrompt(ctx, payload.Platform, payload.Prompt, payload.ClientIP, payload.Metadata)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
@@ -153,13 +214,6 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	allowed := logEntry.Action == "Allowed" || logEntry.Action == "Redacted" || logEntry.Action == "Warned"
 	isViolationBlock := !allowed
 
-	// File-upload audit logs: proxy already decided allow/block. Do not re-run AI Guard Bot
-	// or Reply Bot on "[FILE UPLOAD] …" — that corrupts Allowed upload rows in Prompt Logs.
-	uploadScan := metadataBool(payload.Metadata, "upload_scan")
-	if strings.HasPrefix(strings.TrimSpace(payload.Prompt), "[FILE UPLOAD]") ||
-		strings.HasPrefix(strings.TrimSpace(payload.Prompt), "[VOICE UPLOAD]") {
-		uploadScan = true
-	}
 	if uploadScan {
 		SendJSON(ctx, map[string]any{
 			"status":             "success",
@@ -401,7 +455,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	SendJSON(ctx, map[string]any{
+	respMap := map[string]any{
 		"status":             "success",
 		"allowed":            allowed,
 		"action":             logEntry.Action,
@@ -419,7 +473,32 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		"reply_bot_model":    replyModel,
 		"eval_error":         evalError,
 		"log":                logEntry,
-	})
+	}
+
+	respBytes, err := sonic.Marshal(respMap)
+	if err == nil {
+		if dedupeKey != "" {
+			promptDedupeLock.Lock()
+			now := time.Now()
+			if len(promptDedupeMap) > 500 {
+				for k, v := range promptDedupeMap {
+					if now.Sub(v.timestamp) > 10*time.Second {
+						delete(promptDedupeMap, k)
+					}
+				}
+			}
+			promptDedupeMap[dedupeKey] = promptDedupeCacheEntry{
+				responseBytes: respBytes,
+				timestamp:     now,
+			}
+			promptDedupeLock.Unlock()
+		}
+		ctx.SetStatusCode(fasthttp.StatusOK)
+		ctx.SetContentType("application/json; charset=utf-8")
+		ctx.SetBody(respBytes)
+		return
+	}
+	SendJSON(ctx, respMap)
 }
 
 func getMetadataString(metadata map[string]any, key string) string {

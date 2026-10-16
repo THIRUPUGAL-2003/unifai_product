@@ -35,6 +35,8 @@
   var pending = {};
   var stagedFiles = [];
   var stagedImages = [];
+  var _lastHandledPromptTime = 0;
+  var _lastHandledPromptText = "";
 
   // Rules come only from the gateway for the armed target site.
   var dynamicRules = [];
@@ -619,6 +621,8 @@
         stagedFiles = [];
         stagedImages = [];
         passKey = true;
+        _lastHandledPromptTime = Date.now();
+        _lastHandledPromptText = text;
         try {
           target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true, keyCode: 13, which: 13 }));
         } finally {
@@ -656,6 +660,8 @@
         stagedFiles = [];
         stagedImages = [];
         passClick = true;
+        _lastHandledPromptTime = Date.now();
+        _lastHandledPromptText = text;
         try {
           btn.click();
         } finally {
@@ -701,6 +707,25 @@
   if (typeof origFetch === "function") {
     window.fetch = function (input, init) {
       if (!armed) return origFetch.apply(this, arguments);
+
+      // If a prompt was evaluated at the Send button within the last 4 seconds, mark any outgoing fetch
+      if (Date.now() - _lastHandledPromptTime < 4000) {
+        try {
+          init = init ? Object.assign({}, init) : {};
+          if (!init.headers) init.headers = {};
+          if (typeof Headers !== "undefined" && init.headers instanceof Headers) {
+            init.headers.set("X-Guard-Handled", "1");
+            init.headers.set("X-Gateway-Guard-Handled", "1");
+          } else if (Array.isArray(init.headers)) {
+            init.headers.push(["X-Guard-Handled", "1"]);
+            init.headers.push(["X-Gateway-Guard-Handled", "1"]);
+          } else if (typeof init.headers === "object") {
+            init.headers["X-Guard-Handled"] = "1";
+            init.headers["X-Gateway-Guard-Handled"] = "1";
+          }
+        } catch (e) { }
+      }
+
       var url = typeof input === "string" ? input : (input && input.url) || "";
       var body = init && init.body;
       var promptText = "";
@@ -888,15 +913,29 @@
           sent = true;
           var nextArgs = args;
           var action = String((chosen && chosen.action) || "").toLowerCase();
+          var nextInit = init ? Object.assign({}, init) : {};
           if ((action === "redacted" || action === "redact") && chosen.redacted_prompt && init) {
             var rewritten = rewriteBody(init.body, chosen.redacted_prompt);
             if (rewritten) {
-              var nextInit = {};
-              for (var k in init) nextInit[k] = init[k];
               nextInit.body = rewritten;
-              nextArgs = [input, nextInit];
             }
           }
+          // Tag header so downstream Proxy skips duplicate logging
+          try {
+            if (!nextInit.headers) nextInit.headers = {};
+            if (typeof Headers !== "undefined" && nextInit.headers instanceof Headers) {
+              nextInit.headers.set("X-Guard-Handled", "1");
+              nextInit.headers.set("X-Gateway-Guard-Handled", "1");
+            } else if (Array.isArray(nextInit.headers)) {
+              nextInit.headers.push(["X-Guard-Handled", "1"]);
+              nextInit.headers.push(["X-Gateway-Guard-Handled", "1"]);
+            } else if (typeof nextInit.headers === "object") {
+              nextInit.headers["X-Guard-Handled"] = "1";
+              nextInit.headers["X-Gateway-Guard-Handled"] = "1";
+            }
+            nextArgs = [input, nextInit];
+          } catch (he) { }
+
           result = origFetch.apply(window, nextArgs);
         });
         if (!sent) return new Response(null, { status: 204 });
@@ -914,6 +953,12 @@
     return origXHROpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function (body) {
+    if (Date.now() - _lastHandledPromptTime < 4000) {
+      try {
+        this.setRequestHeader("X-Guard-Handled", "1");
+        this.setRequestHeader("X-Gateway-Guard-Handled", "1");
+      } catch (e) { }
+    }
     if (!armed || !body) return origXHRSend.apply(this, arguments);
     var promptText = "";
     if (typeof body === "string") {
