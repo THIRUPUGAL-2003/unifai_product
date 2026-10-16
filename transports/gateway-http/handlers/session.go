@@ -981,26 +981,74 @@ func generateTemporaryPassword() (string, error) {
 	return string(buf), nil
 }
 
+// parseRawStringOrSlice converts either a JSON string ("users,prompt-repo")
+// or a JSON string array (["users", "prompt-repo"]) into a single comma-separated string.
+func parseRawStringOrSlice(raw json.RawMessage) (string, bool) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return "", false
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return strings.TrimSpace(s), true
+	}
+	var arr []string
+	if err := json.Unmarshal(raw, &arr); err == nil {
+		var clean []string
+		for _, item := range arr {
+			itemTrimmed := strings.TrimSpace(item)
+			if itemTrimmed != "" {
+				clean = append(clean, itemTrimmed)
+			}
+		}
+		return strings.Join(clean, ","), true
+	}
+	return "", false
+}
+
 // createUser handles POST /api/session/users - Create a new user (Admin only)
 func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	if !h.isAdmin(ctx) {
 		SendError(ctx, fasthttp.StatusForbidden, "Forbidden")
 		return
 	}
-	var payload struct {
-		Username           string  `json:"username"`
-		Email              string  `json:"email"`
-		Password           string  `json:"password"`
-		Role               string  `json:"role"`
-		Budget             float64 `json:"budget"`
-		RateLimit          int     `json:"rate_limit"`
-		AllowedPromptRepos string  `json:"allowed_prompt_repos"`
-		AllowedSections    string  `json:"allowed_sections"`
-		AutoCreatePrompt   *bool   `json:"auto_create_prompt"`
+	var raw struct {
+		Username           string          `json:"username"`
+		Email              string          `json:"email"`
+		Password           string          `json:"password"`
+		Role               string          `json:"role"`
+		Budget             float64         `json:"budget"`
+		RateLimit          int             `json:"rate_limit"`
+		AllowedPromptRepos json.RawMessage `json:"allowed_prompt_repos"`
+		AllowedSections    json.RawMessage `json:"allowed_sections"`
+		AutoCreatePrompt   *bool           `json:"auto_create_prompt"`
 	}
-	if err := json.Unmarshal(ctx.PostBody(), &payload); err != nil {
+	if err := json.Unmarshal(ctx.PostBody(), &raw); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
 		return
+	}
+	allowedSections, _ := parseRawStringOrSlice(raw.AllowedSections)
+	allowedRepos, _ := parseRawStringOrSlice(raw.AllowedPromptRepos)
+	payload := struct {
+		Username           string
+		Email              string
+		Password           string
+		Role               string
+		Budget             float64
+		RateLimit          int
+		AllowedPromptRepos string
+		AllowedSections    string
+		AutoCreatePrompt   *bool
+	}{
+		Username:           raw.Username,
+		Email:              raw.Email,
+		Password:           raw.Password,
+		Role:               raw.Role,
+		Budget:             raw.Budget,
+		RateLimit:          raw.RateLimit,
+		AllowedPromptRepos: allowedRepos,
+		AllowedSections:    allowedSections,
+		AutoCreatePrompt:   raw.AutoCreatePrompt,
 	}
 	payload.Username = strings.TrimSpace(payload.Username)
 	payload.Email = strings.TrimSpace(strings.ToLower(payload.Email))
@@ -1927,21 +1975,52 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	prevEmail := existingUser.Email
 	roleChanged := false
 
-	var payload struct {
-		Username              string   `json:"username"`
-		Password              string   `json:"password"`
-		Role                  string   `json:"role"`
-		Email                 *string  `json:"email"`
-		Status                *string  `json:"status"`
-		Budget                *float64 `json:"budget"`
-		RateLimit             *int     `json:"rate_limit"`
-		AllowedPromptRepos    *string  `json:"allowed_prompt_repos"`
-		AllowedSections       *string  `json:"allowed_sections"`
-		SendTemporaryPassword bool     `json:"send_temporary_password"`
+	var raw struct {
+		Username              string          `json:"username"`
+		Password              string          `json:"password"`
+		Role                  string          `json:"role"`
+		Email                 *string         `json:"email"`
+		Status                *string         `json:"status"`
+		Budget                *float64        `json:"budget"`
+		RateLimit             *int            `json:"rate_limit"`
+		AllowedPromptRepos    json.RawMessage `json:"allowed_prompt_repos"`
+		AllowedSections       json.RawMessage `json:"allowed_sections"`
+		SendTemporaryPassword bool            `json:"send_temporary_password"`
 	}
-	if err := json.Unmarshal(ctx.PostBody(), &payload); err != nil {
+	if err := json.Unmarshal(ctx.PostBody(), &raw); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
 		return
+	}
+	var allowedSectionsPtr *string
+	if val, ok := parseRawStringOrSlice(raw.AllowedSections); ok {
+		allowedSectionsPtr = &val
+	}
+	var allowedPromptReposPtr *string
+	if val, ok := parseRawStringOrSlice(raw.AllowedPromptRepos); ok {
+		allowedPromptReposPtr = &val
+	}
+	payload := struct {
+		Username              string
+		Password              string
+		Role                  string
+		Email                 *string
+		Status                *string
+		Budget                *float64
+		RateLimit             *int
+		AllowedPromptRepos    *string
+		AllowedSections       *string
+		SendTemporaryPassword bool
+	}{
+		Username:              raw.Username,
+		Password:              raw.Password,
+		Role:                  raw.Role,
+		Email:                 raw.Email,
+		Status:                raw.Status,
+		Budget:                raw.Budget,
+		RateLimit:             raw.RateLimit,
+		AllowedPromptRepos:    allowedPromptReposPtr,
+		AllowedSections:       allowedSectionsPtr,
+		SendTemporaryPassword: raw.SendTemporaryPassword,
 	}
 	if msg := scopedAdminTargetGuard(ctx, h.configStore, existingUser.Username, existingUser.Role); msg != "" {
 		SendError(ctx, fasthttp.StatusForbidden, msg)

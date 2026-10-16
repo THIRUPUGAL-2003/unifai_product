@@ -1042,6 +1042,7 @@ func checkSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, token
 			path == "/api/session/is-auth-enabled" ||
 			path == "/api/session/logout" ||
 			path == "/api/session/login" ||
+			path == "/api/session/change-temporary-password" ||
 			path == "/api/session/ws-ticket" ||
 			path == "/ws" ||
 			(path == "/api/config" && string(ctx.Method()) == "GET") ||
