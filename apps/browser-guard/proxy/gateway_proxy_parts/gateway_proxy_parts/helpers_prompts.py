@@ -3,7 +3,10 @@ import re
 import json
 import os
 import urllib.parse
-from config_caches_rules import _path_has_ignore_pattern, _is_typed_numeric_prompt, _is_symbol_prompt, _UNIVERSAL_PROMPT_KEYS
+try:
+    from config_caches_rules import _path_has_ignore_pattern, _is_typed_numeric_prompt, _is_symbol_prompt, _UNIVERSAL_PROMPT_KEYS
+except Exception:
+    pass
 
 def _safe_unescape_prompt_str(raw: str) -> str:
     """Safely decode JSON string escapes without destroying UTF-8 unicode/emojis."""

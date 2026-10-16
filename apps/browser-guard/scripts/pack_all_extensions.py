@@ -21,11 +21,17 @@ def pack_all():
     rel_dir = os.path.join(bg_dir, "release")
     staging_ext = os.path.join(bg_dir, "installer", "staging", "extension")
     common_ext = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "Gateway", "Guard", "guard_extension")
+    user_ext = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Gateway", "Guard", "guard_extension")
 
     os.makedirs(rel_dir, exist_ok=True)
     os.makedirs(staging_ext, exist_ok=True)
     try:
         os.makedirs(common_ext, exist_ok=True)
+    except Exception:
+        pass
+    try:
+        if user_ext:
+            os.makedirs(user_ext, exist_ok=True)
     except Exception:
         pass
 
@@ -47,6 +53,11 @@ def pack_all():
                 shutil.copy2(fpath, os.path.join(staging_ext, fname))
                 try:
                     shutil.copy2(fpath, os.path.join(common_ext, fname))
+                except Exception:
+                    pass
+                try:
+                    if user_ext:
+                        shutil.copy2(fpath, os.path.join(user_ext, fname))
                 except Exception:
                     pass
     # Legacy alias for WebStore zip

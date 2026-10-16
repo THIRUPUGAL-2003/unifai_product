@@ -163,6 +163,9 @@ def _bundle_crypto():
         import bundle_crypto
     except ImportError:
         parts = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "proxy", "gateway_proxy_parts")
+        nested = os.path.join(parts, "gateway_proxy_parts")
+        if os.path.isdir(nested) and nested not in sys.path:
+            sys.path.insert(0, nested)
         if parts not in sys.path:
             sys.path.insert(0, parts)
         import bundle_crypto

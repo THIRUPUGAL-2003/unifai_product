@@ -72,6 +72,18 @@ def _load_parts() -> None:
                 import bundle_crypto
             code_map = bundle_crypto.decrypt_parts_bundle(enc_path)
 
+            import types
+
+            class _ProxyPartModule(types.ModuleType):
+                def __init__(self, mname: str, target_ns: dict) -> None:
+                    super().__init__(mname)
+                    self._ns = target_ns
+
+                def __getattr__(self, attr: str):
+                    if attr in self._ns:
+                        return self._ns[attr]
+                    raise AttributeError(f"module {self.__name__!r} has no attribute {attr!r}")
+
             manifest = parts / "MANIFEST.txt"
             if manifest.is_file():
                 order = [
@@ -81,6 +93,13 @@ def _load_parts() -> None:
                 ]
             else:
                 order = sorted(code_map.keys())
+
+            # Pre-register all part module shims into sys.modules so 'from <part> import ...' works
+            for name in order:
+                base_name = name[:-3] if name.endswith(".py") else name
+                mod = _ProxyPartModule(base_name, ns)
+                sys.modules[base_name] = mod
+                sys.modules[f"gateway_proxy_parts.{base_name}"] = mod
 
             loaded_count = 0
             for name in order:
@@ -110,6 +129,24 @@ def _load_parts() -> None:
         names = sorted(p.name for p in parts.glob("*.py") if not p.name.startswith("_") and p.name != "bundle_crypto.py")
     if not names:
         raise RuntimeError(f"No proxy parts found in {parts}")
+
+    import types
+
+    class _ProxyPartModule(types.ModuleType):
+        def __init__(self, mname: str, target_ns: dict) -> None:
+            super().__init__(mname)
+            self._ns = target_ns
+
+        def __getattr__(self, attr: str):
+            if attr in self._ns:
+                return self._ns[attr]
+            raise AttributeError(f"module {self.__name__!r} has no attribute {attr!r}")
+
+    for name in names:
+        base_name = name[:-3] if name.endswith(".py") else name
+        mod = _ProxyPartModule(base_name, ns)
+        sys.modules[base_name] = mod
+        sys.modules[f"gateway_proxy_parts.{base_name}"] = mod
 
     for name in names:
         path = parts / name
