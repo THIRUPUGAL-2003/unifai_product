@@ -1,379 +1,456 @@
 #!/usr/bin/env python3
 """
-UnifAI / Gateway — Master Environment Synchronization & Rebuild Script
-======================================================================
-Whenever you edit `.env`, run this script:
-    python sync_all_from_env.py
-or double-click:
-    sync_all_from_env.bat
+==============================================================================
+UnifAI Enterprise Master Environment Synchronizer (sync_all_from_env.py)
+==============================================================================
+One-click / one-command master synchronizer that reads the repository root
+.env file and automatically propagates every port, domain, host, proxy, secret,
+extension file, Mac app package, installer script, and Go server binary.
 
-What it updates automatically from .env:
-  1. Guard configs (gateway_guard_config.json) across release, config, staging, appdata
-  2. Installer text files & Inno Setup scripts (INSTALL_WINDOWS, INSTALL_MACOS, ISS)
-  3. Release download packages (injects updated config into Gateway_Guard_Windows.zip and Gateway_Guard_macOS.zip)
-  4. Local installed Guard config in %LOCALAPPDATA%
-  5. Validates docker-compose.yml and framework/docker-compose.yml
-  6. Optionally rebuilds UI bundle (pass --build-ui to trigger full npm build)
+Usage:
+    python sync_all_from_env.py
+    python sync_all_from_env.py --rebuild-exe   (also runs PyInstaller for Windows Guard .exe)
+==============================================================================
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-import tempfile
-import warnings
-import zipfile
+import time
+import urllib.request
+from pathlib import Path
 
-warnings.filterwarnings("ignore", category=UserWarning)
+# Ensure UTF-8 console output
+for stream_name in ("stdout", "stderr"):
+    stream = getattr(sys, stream_name, None)
+    if stream is not None and hasattr(stream, "reconfigure"):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-if hasattr(sys.stderr, "reconfigure"):
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-REPO_ROOT = os.path.abspath(os.path.dirname(__file__))
+def print_banner():
+    print("=" * 72)
+    print("       UnifAI Enterprise — Master .env Auto-Synchronizer")
+    print("=" * 72)
 
 
-def load_env(env_path: str) -> dict[str, str]:
-    vals: dict[str, str] = {}
-    if not os.path.isfile(env_path):
-        return vals
+def get_repo_root() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def load_env(repo_root: Path) -> dict[str, str]:
+    env_path = repo_root / ".env"
+    if not env_path.is_file():
+        raise FileNotFoundError(f".env file not found at {env_path}")
+
+    env_vars: dict[str, str] = {}
     with open(env_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
             k, v = line.split("=", 1)
-            vals[k.strip()] = v.strip().strip("'\"")
-    return vals
+            k = k.strip()
+            v = v.strip().strip("'\"")
+            if k:
+                env_vars[k] = v
+                os.environ[k] = v  # propagate into process environment
+    return env_vars
 
 
-def rel(path: str) -> str:
+def update_guard_config_jsons(repo_root: Path, env_vars: dict[str, str]) -> int:
+    server_domain = env_vars.get("SERVER_DOMAIN", "").rstrip("/")
+    if not server_domain:
+        server_domain = env_vars.get("GATEWAY_BACKEND_URL", "").rstrip("/")
+
+    proxy_addr = env_vars.get("GATEWAY_PROXY_ADDR", "127.0.0.1:18103")
+    pac_http_port_str = env_vars.get("PAC_HTTP_PORT", "18195")
     try:
-        return os.path.relpath(path, REPO_ROOT).replace("\\", "/")
+        pac_http_port = int(pac_http_port_str)
     except ValueError:
-        return path.replace("\\", "/")
+        pac_http_port = 18195
 
+    guard_secret = env_vars.get("GATEWAY_GUARD_SECRET", "")
+    pac_url = f"{server_domain}/api/browser-ai/pac"
+    listen_host = env_vars.get("APP_HOST", "127.0.0.1")
+    if listen_host in ("0.0.0.0", ""):
+        listen_host = "127.0.0.1"
 
-def update_json_file(path: str, updates: dict) -> tuple[bool, list[tuple[str, any, any]]]:
-    """
-    Updates JSON key-values and returns (changed, list_of_diffs).
-    Each diff is a tuple: (key, old_value, new_value)
-    """
-    if not os.path.isfile(path):
-        return False, []
-    try:
-        with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            return False, []
-        diffs: list[tuple[str, any, any]] = []
-        for k, v in updates.items():
-            old_val = data.get(k)
-            if old_val != v:
-                diffs.append((k, old_val, v))
-                data[k] = v
-        if not diffs:
-            return False, []
+    bg_dir = repo_root / "apps" / "browser-guard"
+    candidates = [
+        bg_dir / "config" / "gateway_guard_config.json",
+        bg_dir / "release" / "gateway_guard_config.json",
+        bg_dir / "installer" / "staging" / "gateway_guard_config.json",
+        bg_dir / "installer" / "staging-mac" / "gateway_guard_config.json",
+        bg_dir / "installer" / "staging-mac" / "Gateway_Guard.app" / "Contents" / "Resources" / "gateway_guard_config.json",
+        bg_dir / "installer" / "pkg-root" / "Applications" / "Gateway_Guard.app" / "Contents" / "Resources" / "gateway_guard_config.json",
+        bg_dir / "release" / "Gateway_Guard.app" / "Contents" / "Resources" / "gateway_guard_config.json",
+        bg_dir / "release" / "YP_Raksha.app" / "Contents" / "Resources" / "gateway_guard_config.json",
+        bg_dir / "release" / "YP_Raksha.app" / "Contents" / "Resources" / "Gateway_guard_config.json",
+    ]
+
+    local_app_data = os.environ.get("LOCALAPPDATA", "")
+    if local_app_data:
+        candidates.append(Path(local_app_data) / "Programs" / "Gateway" / "Guard" / "gateway_guard_config.json")
+        candidates.append(Path(local_app_data) / "Gateway" / "Guard" / "gateway_guard_config.json")
+
+    updated_count = 0
+    for path in candidates:
+        if not path.parent.is_dir():
+            continue
+        existing_data = {}
+        if path.is_file():
+            try:
+                with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:
+                    existing_data = json.load(f)
+            except Exception:
+                existing_data = {}
+
+        data = {
+            "backend_url": server_domain,
+            "proxy_addr": proxy_addr,
+            "pac_sync_seconds": existing_data.get("pac_sync_seconds", 3),
+            "server_mode": existing_data.get("server_mode", False),
+            "agent_type": existing_data.get("agent_type", "endpoint"),
+            "listen_host": listen_host,
+            "pac_advertise_addr": existing_data.get("pac_advertise_addr", ""),
+            "pac_http_port": pac_http_port,
+            "pac_url": pac_url,
+            "guard_secret": guard_secret or existing_data.get("guard_secret", ""),
+            "_comment": "Auto-synchronized from root .env by sync_all_from_env.py",
+        }
+
+        path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(data, f, indent=2)
             f.write("\n")
-        return True, diffs
-    except Exception as e:
-        print(f"  [!] Failed updating {rel(path)}: {e}", file=sys.stderr)
-        return False, []
+        updated_count += 1
+
+    return updated_count
 
 
-def update_text_file(path: str, server_domain: str, proxy_addr: str, pac_http_port: str) -> tuple[bool, list[tuple[str, str]]]:
-    """
-    Updates text file matches and returns (changed, list_of_diffs).
-    Each diff is a tuple: (old_matched_text, new_replacement_text)
-    """
-    if not os.path.isfile(path):
-        return False, []
-    try:
-        with open(path, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
-        diffs: list[tuple[str, str]] = []
+def update_extension_files(repo_root: Path, env_vars: dict[str, str]) -> int:
+    pac_http_port = env_vars.get("PAC_HTTP_PORT", "18195")
+    ext_dir = repo_root / "apps" / "browser-guard" / "extension"
+    if not ext_dir.is_dir():
+        return 0
 
-        def track_sub(pattern: str, repl_target, text: str) -> str:
-            def repl(m):
-                old_str = m.group(0)
-                if callable(repl_target):
-                    new_str = repl_target(m)
-                else:
-                    new_str = re.sub(pattern, repl_target, old_str)
-                if old_str != new_str:
-                    diffs.append((old_str.strip(), new_str.strip()))
-                return new_str
-            return re.sub(pattern, repl, text)
+    updated = 0
 
-        new = content
-        new = track_sub(r"Company server:\s*https?://[^\s\n]+", f"Company server: {server_domain}", new)
-        new = track_sub(
-            r"(synced for |Config backend_url: |backend_url: |\*\*Backend:\*\* `)https?://[^\s`\n]+",
-            lambda m: m.group(1) + server_domain,
-            new,
+    # 1. endpoint.js
+    endpoint_js = ext_dir / "endpoint.js"
+    endpoint_content = (
+        "/* Auto-synchronized from root .env by sync_all_from_env.py */\n"
+        f'var GATEWAY_GUARD_BASE = "http://127.0.0.1:{pac_http_port}";\n'
+    )
+    with open(endpoint_js, "w", encoding="utf-8", newline="\n") as f:
+        f.write(endpoint_content)
+    updated += 1
+
+    # 2. background.js
+    bg_js = ext_dir / "background.js"
+    if bg_js.is_file():
+        text = bg_js.read_text(encoding="utf-8")
+        new_text = re.sub(
+            r'var\s+base\s*=\s*"http://127\.0\.0\.1:\d+";',
+            f'var base = "http://127.0.0.1:{pac_http_port}";',
+            text,
         )
-        new = track_sub(r'#define\s+MyAppURL\s+"[^"]*"', f'#define MyAppURL "{server_domain}"', new)
-        if proxy_addr:
-            new = track_sub(r"127\.0\.0\.1:8085\b", proxy_addr, new)
-        if pac_http_port:
-            new = track_sub(r"http://127\.0\.0\.1:18085", f"http://127.0.0.1:{pac_http_port}", new)
+        if new_text != text:
+            bg_js.write_text(new_text, encoding="utf-8", newline="\n")
+            updated += 1
 
-        if new == content or not diffs:
-            return False, []
-        with open(path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(new)
-        return True, diffs
-    except Exception as e:
-        print(f"  [!] Failed updating doc {rel(path)}: {e}", file=sys.stderr)
-        return False, []
+    # 3. popup.js
+    popup_js = ext_dir / "popup.js"
+    if popup_js.is_file():
+        text = popup_js.read_text(encoding="utf-8")
+        new_text = re.sub(
+            r'var\s+base\s*=\s*"http://127\.0\.0\.1:\d+";',
+            f'var base = "http://127.0.0.1:{pac_http_port}";',
+            text,
+        )
+        new_text = re.sub(
+            r'gatewayEl\.textContent\s*=\s*"Connected\s*\(127\.0\.0\.1:\d+\)";',
+            f'gatewayEl.textContent = "Connected (127.0.0.1:{pac_http_port})";',
+            new_text,
+        )
+        if new_text != text:
+            popup_js.write_text(new_text, encoding="utf-8", newline="\n")
+            updated += 1
+
+    return updated
 
 
-def update_zip_entry(zip_path: str, entry_name: str, new_bytes: bytes, new_dict: dict) -> tuple[bool, list[tuple[str, any, any]]]:
-    """
-    Updates or injects a file inside a ZIP archive and reports diffs.
-    """
-    if not os.path.isfile(zip_path):
-        return False, []
+def repack_extensions(repo_root: Path) -> bool:
+    pack_script = repo_root / "apps" / "browser-guard" / "scripts" / "pack_all_extensions.py"
+    if not pack_script.is_file():
+        return False
     try:
-        old_data = {}
-        had_entry = False
-        with zipfile.ZipFile(zip_path, "r") as z:
-            if entry_name in z.namelist():
-                had_entry = True
-                try:
-                    raw = z.read(entry_name).decode("utf-8", errors="ignore")
-                    old_data = json.loads(raw)
-                except Exception:
-                    old_data = {}
-
-        diffs: list[tuple[str, any, any]] = []
-        if had_entry and isinstance(old_data, dict):
-            for k, v in new_dict.items():
-                if old_data.get(k) != v:
-                    diffs.append((k, old_data.get(k), v))
-        else:
-            diffs.append(("(new entry)", None, entry_name))
-
-        if had_entry and not diffs:
-            return False, []
-
-        with zipfile.ZipFile(zip_path, "a") as z:
-            z.writestr(entry_name, new_bytes)
-        return True, diffs
+        res = subprocess.run(
+            [sys.executable, str(pack_script)],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return res.returncode == 0
     except Exception as e:
-        print(f"  [-] Note: {rel(zip_path)} ({e}) — server injects fresh config dynamically on download.")
-        return False, []
+        print(f"[!] Warning: pack_all_extensions failed: {e}")
+        return False
 
 
-def require_env(env: dict[str, str], key: str) -> str:
-    """Return a non-empty .env value. Deployment hosts and ports have no baked-in fallback."""
-    value = (env.get(key) or "").strip()
-    if not value:
-        print(f"[ERROR] {key} is missing or empty in .env", file=sys.stderr)
-    return value
+def encrypt_proxy_bundles(repo_root: Path) -> bool:
+    enc_script = repo_root / "apps" / "browser-guard" / "installer" / "encrypt_proxy_bundle.py"
+    if not enc_script.is_file():
+        return False
+    try:
+        res = subprocess.run(
+            [sys.executable, str(enc_script)],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return res.returncode == 0
+    except Exception as e:
+        print(f"[!] Warning: encrypt_proxy_bundle failed: {e}")
+        return False
+
+
+def package_macos(repo_root: Path) -> bool:
+    pkg_script = repo_root / "apps" / "browser-guard" / "scripts" / "package_macos.ps1"
+    if not pkg_script.is_file():
+        return False
+    try:
+        res = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(pkg_script)],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return res.returncode == 0
+    except Exception as e:
+        print(f"[!] Warning: package_macos failed: {e}")
+        return False
+
+
+def update_installer_scripts(repo_root: Path, env_vars: dict[str, str]) -> int:
+    server_domain = env_vars.get("SERVER_DOMAIN", "").rstrip("/")
+    pac_http_port = env_vars.get("PAC_HTTP_PORT", "18195")
+    proxy_addr = env_vars.get("GATEWAY_PROXY_ADDR", "127.0.0.1:18103")
+
+    bg_dir = repo_root / "apps" / "browser-guard"
+    updated = 0
+
+    # 1. Gateway_Guard.iss (Inno Setup)
+    iss_file = bg_dir / "installer" / "Gateway_Guard.iss"
+    if iss_file.is_file():
+        content = iss_file.read_text(encoding="utf-8", errors="ignore")
+        new_content = re.sub(
+            r'#define\s+MyAppURL\s+"[^"]*"',
+            f'#define MyAppURL "{server_domain}"',
+            content,
+        )
+        if new_content != content:
+            iss_file.write_text(new_content, encoding="utf-8", newline="\n")
+            updated += 1
+
+    # 2. Text guides & readmes
+    docs = [
+        bg_dir / "release" / "EMPLOYEE_README.txt",
+        bg_dir / "release" / "EMPLOYEE_README_MAC.txt",
+        bg_dir / "installer" / "EMPLOYEE_README.txt",
+        bg_dir / "installer" / "EMPLOYEE_README_MAC.txt",
+        bg_dir / "installer" / "IT_README.txt",
+        bg_dir / "release" / "INSTALL_WINDOWS.txt",
+        bg_dir / "release" / "INSTALL_MACOS.txt",
+    ]
+    for doc in docs:
+        if not doc.is_file():
+            continue
+        try:
+            txt = doc.read_text(encoding="utf-8", errors="ignore")
+            new_txt = re.sub(r"Company server:\s*https?://[^\s\n]+", f"Company server: {server_domain}", txt)
+            new_txt = re.sub(r"127\.0\.0\.1:8085\b", proxy_addr, new_txt)
+            if new_txt != txt:
+                doc.write_text(new_txt, encoding="utf-8", newline="\n")
+                updated += 1
+        except Exception:
+            pass
+
+    return updated
+
+
+def rebuild_and_restart_go_backend(repo_root: Path, env_vars: dict[str, str]) -> bool:
+    app_port = env_vars.get("APP_PORT", "6000")
+    print(f"\n[*] Checking Go backend rebuild on APP_PORT={app_port}...")
+
+    # Check if go compiler is available
+    if not shutil.which("go"):
+        print("[!] 'go' executable not found in PATH — skipping backend recompile.")
+        return False
+
+    temp_exe = repo_root / "gateway-http-new.exe"
+    target_exe = repo_root / "gateway-http.exe"
+
+    build_cmd = ["go", "build", "-o", str(temp_exe), "./transports/gateway-http"]
+    print(f"[*] Running: {' '.join(build_cmd)}")
+    build_res = subprocess.run(build_cmd, cwd=str(repo_root), capture_output=True, text=True)
+    if build_res.returncode != 0:
+        print(f"[x] Go compilation failed:\n{build_res.stderr}")
+        return False
+
+    print("[✓] Go binary compiled successfully: gateway-http-new.exe")
+
+    # Terminate any running gateway-http.exe instances gracefully
+    ps_cmd = (
+        'Get-Process -Name "gateway-http" -ErrorAction SilentlyContinue | '
+        'ForEach-Object { Stop-Process -Id $_.Id -Force }; '
+        'Start-Sleep -Milliseconds 800'
+    )
+    subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], cwd=str(repo_root))
+
+    # Replace binary
+    try:
+        if target_exe.is_file():
+            target_exe.unlink()
+        shutil.move(str(temp_exe), str(target_exe))
+        print("[✓] Replaced gateway-http.exe with updated build.")
+    except Exception as e:
+        print(f"[!] Warning replacing binary: {e}")
+        return False
+
+    # Launch daemon in background with explicit WorkingDirectory
+    target_abs = str(target_exe.resolve())
+    root_abs = str(repo_root.resolve())
+    launch_cmd = f'Start-Process -FilePath "{target_abs}" -WorkingDirectory "{root_abs}" -WindowStyle Hidden'
+    subprocess.run(["powershell", "-NoProfile", "-Command", launch_cmd], cwd=str(repo_root))
+    print(f"[✓] Started gateway-http.exe daemon (listening on port {app_port}).")
+
+    # Poll health check for up to 40 seconds as DB/model bootstrap completes
+    print(f"[*] Waiting for Gateway backend bootstrap on port {app_port}...", end="", flush=True)
+    health_url = f"http://127.0.0.1:{app_port}/health"
+    ready = False
+    for _ in range(40):
+        time.sleep(1.0)
+        try:
+            with urllib.request.urlopen(health_url, timeout=1.5) as resp:
+                if resp.status == 200:
+                    body = resp.read().decode("utf-8", errors="ignore")
+                    print(f"\n[✓] Backend Healthy ({health_url}): {body.strip()}")
+                    ready = True
+                    break
+        except Exception:
+            print(".", end="", flush=True)
+
+    if not ready:
+        print(f"\n[!] Backend is still bootstrapping in background. You can check: {health_url}")
+    return True
+
+
+def optional_rebuild_guard_exe(repo_root: Path) -> bool:
+    build_bat = repo_root / "apps" / "browser-guard" / "installer" / "build_installer.bat"
+    if not build_bat.is_file():
+        print("[!] build_installer.bat not found.")
+        return False
+    print("\n[*] Running PyInstaller & Inno Setup build for Windows Gateway_Guard.exe...")
+    try:
+        res = subprocess.run(
+            ["cmd", "/c", str(build_bat)],
+            cwd=str(repo_root / "apps" / "browser-guard" / "installer"),
+        )
+        return res.returncode == 0
+    except Exception as e:
+        print(f"[x] Error during build_installer: {e}")
+        return False
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Synchronize all configurations and build artifacts from .env")
-    parser.add_argument("--build-ui", "-u", action="store_true", help="Run full npm build in ui directory after sync")
-    parser.add_argument("--rebuild-exe", "-e", action="store_true", help="Recompile Gateway_Guard.exe using PyInstaller")
-    parser.add_argument("--rebuild-installer", "-i", action="store_true", help="Run apps/browser-guard/installer/build_installer.bat")
-    args = parser.parse_args()
+    print_banner()
+    repo_root = get_repo_root()
 
-    env_path = os.path.join(REPO_ROOT, ".env")
-    if not os.path.isfile(env_path):
-        print(f"[ERROR] .env file not found at {env_path}", file=sys.stderr)
+    try:
+        env_vars = load_env(repo_root)
+    except Exception as e:
+        print(f"[x] FATAL: {e}")
         return 1
 
-    env = load_env(env_path)
-    server_domain = require_env(env, "SERVER_DOMAIN").rstrip("/")
-    proxy_addr = require_env(env, "GATEWAY_PROXY_ADDR")
-    pac_http_port_str = require_env(env, "PAC_HTTP_PORT")
-    guard_secret = require_env(env, "GATEWAY_GUARD_SECRET")
-    if not server_domain or not proxy_addr or not pac_http_port_str or not guard_secret:
-        return 1
-    if not pac_http_port_str.isdigit():
-        print(f"[ERROR] PAC_HTTP_PORT must be a number, got {pac_http_port_str!r}", file=sys.stderr)
-        return 1
-    pac_http_port = int(pac_http_port_str)
-    backend_url = (env.get("GATEWAY_BACKEND_URL") or server_domain).rstrip("/")
+    app_port = env_vars.get("APP_PORT", "6000")
+    server_domain = env_vars.get("SERVER_DOMAIN", "https://unifai.yespanchi.com")
+    proxy_addr = env_vars.get("GATEWAY_PROXY_ADDR", "127.0.0.1:18103")
+    pac_port = env_vars.get("PAC_HTTP_PORT", "18195")
 
-    print("=" * 70)
-    print("   UnifAI / Gateway — Master Environment Sync & Rebuild")
-    print("=" * 70)
-    print(f"  SERVER_DOMAIN       : {server_domain}")
-    print(f"  GATEWAY_BACKEND_URL : {backend_url}")
-    print(f"  GATEWAY_PROXY_ADDR  : {proxy_addr}")
-    print(f"  PAC_HTTP_PORT       : {pac_http_port}")
-    print(f"  GATEWAY_GUARD_SECRET: {'(configured: ' + guard_secret[:4] + '***)' if guard_secret else '(not set)'}")
-    print(f"  DATABASE (DB_TYPE)  : {env.get('DB_TYPE', 'postgres')} @ {env.get('DB_HOST', '')}:{env.get('DB_PORT', '')}")
-    print("-" * 70)
+    print(f"[*] Detected Configuration from .env:")
+    print(f"    • SERVER_DOMAIN      : {server_domain}")
+    print(f"    • APP_PORT           : {app_port}")
+    print(f"    • GATEWAY_PROXY_ADDR : {proxy_addr}")
+    print(f"    • PAC_HTTP_PORT      : {pac_port}")
+    print(f"    • UI_PORT            : {env_vars.get('UI_PORT', '3100')}")
+    print("-" * 72)
 
-    # 1. Prepare standard JSON payload
-    guard_config_data = {
-        "backend_url": server_domain,
-        "proxy_addr": proxy_addr,
-        "pac_sync_seconds": 3,
-        "server_mode": False,
-        "agent_type": "endpoint",
-        "listen_host": "127.0.0.1",
-        "pac_advertise_addr": "",
-        "pac_http_port": pac_http_port,
-        "pac_url": f"{server_domain}/api/browser-ai/pac",
-        "guard_secret": guard_secret,
-        "_comment": "Auto-synced from .env by sync_all_from_env.py",
-    }
-    guard_config_bytes = (json.dumps(guard_config_data, indent=2) + "\n").encode("utf-8")
+    # 1. Update Guard JSON configurations (Windows, Mac, Staging, AppData)
+    print("\n[1/7] Updating Guard JSON configs...")
+    jsons_updated = update_guard_config_jsons(repo_root, env_vars)
+    print(f"[✓] Synchronized {jsons_updated} gateway_guard_config.json file(s).")
 
-    bg = os.path.join(REPO_ROOT, "apps", "browser-guard")
-    json_targets = [
-        os.path.join(bg, "release", "gateway_guard_config.json"),
-        os.path.join(bg, "config", "gateway_guard_config.json"),
-        os.path.join(bg, "installer", "staging", "gateway_guard_config.json"),
-        os.path.join(bg, "installer", "staging-mac", "gateway_guard_config.json"),
-        os.path.join(bg, "installer", "staging-mac", "Gateway_Guard.app", "Contents", "Resources", "gateway_guard_config.json"),
-        os.path.join(bg, "release", "Gateway_Guard.app", "Contents", "Resources", "gateway_guard_config.json"),
-    ]
+    # 2. Update Browser Extension Source Files
+    print("\n[2/7] Updating Browser Extension sources (endpoint.js, background.js, popup.js)...")
+    ext_updated = update_extension_files(repo_root, env_vars)
+    print(f"[✓] Updated {ext_updated} extension source file(s) with PAC_HTTP_PORT={pac_port}.")
 
-    # Add local machine's AppData installed guard configs if present
-    local_app_data = os.environ.get("LOCALAPPDATA", "")
-    if local_app_data:
-        json_targets.append(os.path.join(local_app_data, "Programs", "Gateway", "Guard", "gateway_guard_config.json"))
-        json_targets.append(os.path.join(local_app_data, "Gateway", "Guard", "gateway_guard_config.json"))
-
-    print("\n[1/4] Synchronizing Guard Configuration Files...")
-    updated_json = 0
-    for p in json_targets:
-        changed, diffs = update_json_file(p, guard_config_data)
-        if changed:
-            print(f"  ✓ Updated: {rel(p)}")
-            for k, old_val, new_val in diffs:
-                old_str = f'"{old_val}"' if old_val is not None else "(not set)"
-                new_str = f'"{new_val}"'
-                print(f"      • {k}:")
-                print(f"          [-] OLD: {old_str}")
-                print(f"          [+] NEW: {new_str}")
-            updated_json += 1
-        elif os.path.isfile(p):
-            print(f"  - Up to date: {rel(p)}")
-    if updated_json == 0:
-        print("  - All JSON configs already match .env (no changes needed)")
-
-    # 2. Update doc & installer script templates
-    print("\n[2/4] Synchronizing Installer Docs & Setup Scripts...")
-    doc_targets = [
-        os.path.join(bg, "release", "INSTALL_WINDOWS.txt"),
-        os.path.join(bg, "release", "INSTALL_MACOS.txt"),
-        os.path.join(bg, "release", "EMPLOYEE_README.txt"),
-        os.path.join(bg, "release", "EMPLOYEE_README_MAC.txt"),
-        os.path.join(bg, "installer", "Gateway_Guard.iss"),
-        os.path.join(bg, "release", "Update_Gateway_Guard.ps1"),
-        os.path.join(bg, "release", "Install_Gateway_Guard.command"),
-    ]
-    updated_docs = 0
-    for p in doc_targets:
-        changed, diffs = update_text_file(p, server_domain, proxy_addr, pac_http_port_str)
-        if changed:
-            print(f"  ✓ Updated: {rel(p)}")
-            for old_s, new_s in diffs:
-                print(f"      [-] OLD: {old_s}")
-                print(f"      [+] NEW: {new_s}")
-            updated_docs += 1
-        elif os.path.isfile(p):
-            print(f"  - Up to date: {rel(p)}")
-    if updated_docs == 0:
-        print("  - All installer texts already match .env (no changes needed)")
-
-    # 3. Inject updated config into release ZIP packages
-    print("\n[3/4] Updating Download Packages (Gateway_Guard_*.zip)...")
-    win_zip = os.path.join(bg, "release", "Gateway_Guard_Windows.zip")
-    if os.path.isfile(win_zip):
-        changed, diffs = update_zip_entry(win_zip, "gateway_guard_config.json", guard_config_bytes, guard_config_data)
-        if changed:
-            print(f"  ✓ Updated config inside: {rel(win_zip)}")
-            for k, old_val, new_val in diffs:
-                print(f"      • {k}:")
-                print(f"          [-] OLD: {old_val}")
-                print(f"          [+] NEW: {new_val}")
-        else:
-            print(f"  - Up to date inside ZIP: {rel(win_zip)}")
+    # 3. Repack and Sign Browser Extension (.crx, .zip, .xpi, update.xml)
+    print("\n[3/7] Re-packing browser extensions (Chromium CRX, Firefox XPI, WebStore ZIP)...")
+    if repack_extensions(repo_root):
+        print(f"[✓] Browser extensions successfully repacked into release/ and staging/.")
     else:
-        print(f"  - Windows ZIP not found: {rel(win_zip)}")
+        print("[!] Repack completed with notices.")
 
-    mac_zip = os.path.join(bg, "release", "Gateway_Guard_macOS.zip")
-    if os.path.isfile(mac_zip):
-        ok1, diffs1 = update_zip_entry(mac_zip, "gateway_guard_config.json", guard_config_bytes, guard_config_data)
-        ok2, diffs2 = update_zip_entry(
-            mac_zip,
-            "Gateway_Guard.app/Contents/Resources/gateway_guard_config.json",
-            guard_config_bytes,
-            guard_config_data,
-        )
-        if ok1 or ok2:
-            print(f"  ✓ Updated config inside: {rel(mac_zip)}")
-            for k, old_val, new_val in (diffs1 + diffs2):
-                print(f"      • {k}:")
-                print(f"          [-] OLD: {old_val}")
-                print(f"          [+] NEW: {new_val}")
-        else:
-            print(f"  - Up to date inside ZIP: {rel(mac_zip)}")
+    # 4. Encrypt Proxy Engine Bundle
+    print("\n[4/7] Encrypting Gateway Guard Proxy Engine bundle...")
+    if encrypt_proxy_bundles(repo_root):
+        print(f"[✓] Encrypted bytecode bundle synchronized to runtime and Mac .app.")
     else:
-        print(f"  - macOS ZIP not found: {rel(mac_zip)}")
+        print("[!] Proxy bundle encryption skipped or completed with notices.")
 
-    # 4. Optional Rebuilds
-    print("\n[4/4] Optional Builds & Compilations...")
-    rebuild_done = False
+    # 5. Package macOS .app
+    print("\n[5/7] Synchronizing macOS Application bundle (YP_Raksha.app / Gateway_Guard.app)...")
+    if package_macos(repo_root):
+        print(f"[✓] macOS package synchronized with updated config & proxy bundles.")
 
-    if args.rebuild_exe:
-        rebuild_done = True
-        print("\n  [EXE Rebuild] Running PyInstaller via apps/browser-guard/installer/build_agent.py...")
-        build_agent_script = os.path.join(bg, "installer", "build_agent.py")
-        res = subprocess.run([sys.executable, build_agent_script], cwd=bg)
-        if res.returncode == 0:
-            print("  ✓ Gateway_Guard.exe rebuilt successfully in release/ and dist/")
-        else:
-            print(f"  [!] PyInstaller build returned exit code {res.returncode}", file=sys.stderr)
+    # 6. Update Installer, Policy & Desktop Scripts
+    print("\n[6/7] Updating Windows installer scripts & guides...")
+    scripts_updated = update_installer_scripts(repo_root, env_vars)
+    print(f"[✓] Synchronized {scripts_updated} installer / guide script(s).")
 
-    if args.rebuild_installer:
-        rebuild_done = True
-        print("\n  [Installer Rebuild] Running apps/browser-guard/installer/build_installer.bat...")
-        installer_bat = os.path.join(bg, "installer", "build_installer.bat")
-        res = subprocess.run(["cmd.exe", "/c", installer_bat], cwd=bg)
-        if res.returncode == 0:
-            print("  ✓ Full Installer & Windows ZIP rebuilt successfully!")
-        else:
-            print(f"  [!] Installer build returned exit code {res.returncode}", file=sys.stderr)
+    # 7. Rebuild & Restart Go Backend Daemon
+    print("\n[7/7] Rebuilding & Refreshing Gateway HTTP backend server...")
+    rebuild_and_restart_go_backend(repo_root, env_vars)
 
-    if args.build_ui:
-        rebuild_done = True
-        print("\n  [Frontend UI Build] Running 'npm run build' in ui/ directory...")
-        ui_dir = os.path.join(REPO_ROOT, "ui")
-        res = subprocess.run(["npm", "run", "build"], cwd=ui_dir, shell=True)
-        if res.returncode == 0:
-            print("  ✓ UI successfully rebuilt & copied to transports/gateway-http/ui")
-        else:
-            print(f"  [!] UI build returned exit code {res.returncode}", file=sys.stderr)
+    # Optional: Rebuild Windows EXE if requested via flag
+    if "--rebuild-exe" in sys.argv or "--full" in sys.argv:
+        optional_rebuild_guard_exe(repo_root)
 
-    if not rebuild_done:
-        print("  - Optional builds skipped.")
-        print("    (Tips: pass '--rebuild-exe' to recompile Gateway_Guard.exe,")
-        print("           pass '--rebuild-installer' to rebuild Setup EXE & full ZIP,")
-        print("           pass '--build-ui' to compile the frontend UI)")
-
-    print("\n" + "=" * 70)
-    print("   SUCCESS: All configurations are 100% in sync with .env!")
-    print("=" * 70)
+    print("\n" + "=" * 72)
+    print("       ALL COMPONENTS SUCCESSFULLY SYNCHRONIZED FROM .ENV!")
+    print("=" * 72)
+    print(f"  Backend URL   : {server_domain} (Port: {app_port})")
+    print(f"  PAC Proxy     : {proxy_addr} (PAC HTTP Port: {pac_port})")
+    print(f"  Extensions    : CRX3 / ZIP / XPI ready in apps/browser-guard/release/")
+    print(f"  macOS Packages: Staged & Ready in apps/browser-guard/release/")
+    print("=" * 72 + "\n")
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

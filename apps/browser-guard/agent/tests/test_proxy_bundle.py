@@ -147,7 +147,7 @@ class ApplyBundleTests(unittest.TestCase):
         self.assertFalse(pb.apply_bundle(info_for(self.served, ["0.0.1"]), self._restart))
 
     def test_plain_http_backend_never_downloads_code(self) -> None:
-        pb.GATEWAY_BACKEND_URL = "http://10.0.0.5:8080"
+        pb.GATEWAY_BACKEND_URL = "http://insecure-test-host.local"
         self.served = zipped(source_files())
         self.assertFalse(pb.apply_bundle(info_for(self.served), self._restart))
 

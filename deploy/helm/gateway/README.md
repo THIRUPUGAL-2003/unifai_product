@@ -631,7 +631,7 @@ vectorStore:
 
 | Parameter               | Description                       | Default   |
 | ----------------------- | --------------------------------- | --------- |
-| `gateway.port`          | Application port                  | `8080`    |
+| `gateway.port`          | Application port (reads from APP_PORT) | `${APP_PORT}` |
 | `gateway.host`          | Bind address                      | `0.0.0.0` |
 | `gateway.logLevel`      | Log level                         | `info`    |
 | `gateway.logStyle`      | Log format: `json` or `text`      | `json`    |
@@ -920,8 +920,8 @@ After installation, access Gateway using one of these methods:
 ### Port Forwarding (Development)
 
 ```bash
-kubectl port-forward svc/gateway 8080:8080
-# Then visit http://localhost:8080
+kubectl port-forward svc/gateway ${APP_PORT}:${APP_PORT}
+# Then visit http://localhost:${APP_PORT}
 ```
 
 ### LoadBalancer
@@ -941,7 +941,7 @@ Gateway exposes Prometheus metrics at `/metrics`:
 
 ```bash
 # Get metrics
-curl http://localhost:8080/metrics
+curl http://localhost:${APP_PORT}/metrics
 ```
 
 For OpenTelemetry integration:

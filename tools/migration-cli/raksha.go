@@ -20,7 +20,7 @@ var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 // GatewayClient writes entities to the Gateway management API.
 type GatewayClient struct {
-	BaseURL string // e.g. http://localhost:8080
+	BaseURL string // e.g. SERVER_DOMAIN from .env
 	APIKey  string // optional bearer token
 }
 

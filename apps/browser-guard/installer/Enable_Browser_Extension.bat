@@ -14,10 +14,14 @@ echo  Registering Enterprise Extension Policies (HKLM)
 echo ============================================================
 
 set EXT_ID=mipfhcmlcjfhmgldkokdckhndkebkllj
-set PAC_PORT=18195
+set PAC_PORT=
 if defined PAC_HTTP_PORT set PAC_PORT=%PAC_HTTP_PORT%
 if exist "%~dp0..\..\..\.env" (
     for /f "tokens=2 delims==" %%P in ('findstr /i "PAC_HTTP_PORT=" "%~dp0..\..\..\.env"') do set PAC_PORT=%%P
+)
+if not defined PAC_PORT (
+    echo ERROR: PAC_HTTP_PORT is not defined in .env!
+    exit /b 1
 )
 set UPDATE_URL=http://127.0.0.1:%PAC_PORT%/extension/update.xml
 set FORCE_VAL=%EXT_ID%;%UPDATE_URL%

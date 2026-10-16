@@ -59,7 +59,7 @@ const (
 type GlobalProxyConfig struct {
 	Enabled       bool            `json:"enabled"`
 	Type          GlobalProxyType `json:"type"`                      // "http", "socks5", "tcp"
-	URL           string          `json:"url"`                       // Proxy URL (e.g., http://proxy.example.com:8080)
+	URL           string          `json:"url"`                       // Proxy URL (e.g., http://proxy.example.com:3128)
 	Username      string          `json:"username,omitempty"`        // Optional authentication username
 	Password      string          `json:"password,omitempty"`        // Optional authentication password
 	NoProxy       string          `json:"no_proxy,omitempty"`        // Comma-separated list of hosts to bypass proxy
@@ -332,7 +332,7 @@ func (f *HTTPClientFactory) configureFasthttpProxy(client *fasthttp.Client) {
 }
 
 // dialAddrHost extracts the host from a dial target for no_proxy matching.
-// SplitHostPort unwraps IPv6 brackets ("[::1]:8080" -> "::1"); naive splitting
+// SplitHostPort unwraps IPv6 brackets ("[::1]:PORT" -> "::1"); naive splitting
 // on ":" would mangle IPv6 literals.
 func dialAddrHost(addr string) string {
 	host, _, err := net.SplitHostPort(addr)

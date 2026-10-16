@@ -1,8 +1,11 @@
 # Makefile for Gateway
 
+-include .env
+export
+
 # Variables
-HOST ?= localhost
-PORT ?= 8080
+HOST ?= $(APP_HOST)
+PORT ?= $(APP_PORT)
 APP_DIR ?=
 PROMETHEUS_LABELS ?=
 LOG_STYLE ?= json
@@ -83,8 +86,8 @@ help: ## Show this help message
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}'
 	@$(ECHO) ""
 	@$(ECHO) "$(YELLOW)Environment Variables:$(NC)"
-	@$(ECHO) "  HOST              Server host (default: localhost)"
-	@$(ECHO) "  PORT              Server port (default: 8080)"
+	@$(ECHO) "  HOST              Server host from .env (APP_HOST)"
+	@$(ECHO) "  PORT              Server port from .env (APP_PORT)"
 	@$(ECHO) "  PROMETHEUS_LABELS Labels for Prometheus metrics"
 	@$(ECHO) "  LOG_STYLE         Logger output format: json|pretty (default: json)"
 	@$(ECHO) "  LOG_LEVEL         Logger level: debug|info|warn|error (default: info)"
@@ -1359,7 +1362,7 @@ test-integrations-py: ## Run Python integration tests (Usage: make test-integrat
 	GATEWAY_STARTED=0; \
 	GATEWAY_PID=""; \
 	TAIL_PID=""; \
-	TEST_PORT=${PORT:-8080}; \
+	TEST_PORT=$${PORT:-$${APP_PORT}}; \
 	TEST_HOST=$${HOST:-localhost}; \
 	$(ECHO) "$(CYAN)Checking if Gateway is running on $$TEST_HOST:$$TEST_PORT...$(NC)"; \
 	if curl -s -o /dev/null -w "%{http_code}" http://$$TEST_HOST:$$TEST_PORT/health 2>/dev/null | grep -q "200\|404"; then \
@@ -1486,7 +1489,7 @@ test-integrations-ts: ## Run TypeScript integration tests (Usage: make test-inte
 	GATEWAY_STARTED=0; \
 	GATEWAY_PID=""; \
 	TAIL_PID=""; \
-	TEST_PORT=${PORT:-8080}; \
+	TEST_PORT=$${PORT:-$${APP_PORT}}; \
 	TEST_HOST=$${HOST:-localhost}; \
 	$(ECHO) "$(CYAN)Checking if Gateway is running on $$TEST_HOST:$$TEST_PORT...$(NC)"; \
 	if curl -s -o /dev/null -w "%{http_code}" http://$$TEST_HOST:$$TEST_PORT/health 2>/dev/null | grep -q "200\|404"; then \
@@ -1767,10 +1770,10 @@ test-cli: install-gotestsum ## Run CLI tests
 		--junitfile=../$(TEST_REPORTS_DIR)/cli.xml \
 		-- ./...
 
-run-cli-harness-test: ## Run the Claude Code + Codex + OpenCode E2E harness (non-interactive, multi-turn JSON streams). Live mirror on by default. Usage: make run-cli-harness-test [TESTCASE='TestCLIs/...'] [CLI=claude|codex|opencode] [PROVIDER=openai|anthropic|azure|gemini|bedrock|vertex] [MODEL=<id-substring>] [SCENARIO=simple-chat|conversation-memory|...] [PARALLEL=4] [BASE_URL=http://localhost:8080] [API_KEY=...] [TIMEOUT=60m] [QUIET=1]
+run-cli-harness-test: ## Run the Claude Code + Codex + OpenCode E2E harness (non-interactive, multi-turn JSON streams). Live mirror on by default. Usage: make run-cli-harness-test [TESTCASE='TestCLIs/...'] [CLI=claude|codex|opencode] [PROVIDER=openai|anthropic|azure|gemini|bedrock|vertex] [MODEL=<id-substring>] [SCENARIO=simple-chat|conversation-memory|...] [PARALLEL=4] [BASE_URL=<url>] [API_KEY=...] [TIMEOUT=60m] [QUIET=1]
 	@$(EXPOSE_ENV); \
 	$(ECHO) "$(GREEN)Running CLI harness E2E tests...$(NC)"; \
-	BASE_URL_VAL="$${BASE_URL:-$(BASE_URL)}"; BASE_URL_VAL="$${BASE_URL_VAL:-http://localhost:8080}"; \
+	BASE_URL_VAL="$${BASE_URL:-$${SERVER_DOMAIN}}"; BASE_URL_VAL="$${BASE_URL_VAL:-$${GATEWAY_BACKEND_URL}}"; BASE_URL_VAL="$${BASE_URL_VAL:-http://$${APP_HOST:-localhost}:$${APP_PORT}}"; \
 	PARALLEL_VAL="$${PARALLEL:-$(PARALLEL)}"; PARALLEL_VAL="$${PARALLEL_VAL:-4}"; \
 	$(ECHO) "$(CYAN)  Gateway:  $$BASE_URL_VAL$(NC)"; \
 	$(ECHO) "$(CYAN)  Parallel: $$PARALLEL_VAL$(NC)"; \
@@ -1836,7 +1839,7 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Gateway prov
 		printf '  %-18s %s\n' ""                "  \"cross-cut\" is a structural keyword - matches any row routed through unified /v1/chat/completions with a provider/model body, regardless of name."; \
 		printf '  %-18s %s\n' "RERUN_FAILED=1"  "Re-run only requests that failed in the prior run (reads tmp/newman-report.json)."; \
 		printf '  %-18s %s\n' ""                "  Composes with PROVIDER and FEATURE (predicates AND together)."; \
-		printf '  %-18s %s\n' "BASE_URL=<url>"  "Gateway gateway URL (default: http://localhost:8080). Skips auto-start if /health responds."; \
+		printf '  %-18s %s\n' "BASE_URL=<url>"  "Gateway URL (reads SERVER_DOMAIN / GATEWAY_BACKEND_URL / APP_PORT from .env)."; \
 		printf '  %-18s %s\n' "APP_DIR=<dir>"   "Config dir passed to 'make dev' if Gateway isn't already running (default: tests/integrations/python)."; \
 		printf '  %-18s %s\n' "FOLDER=\"<name>\"" "Newman --folder: scope to a single Postman folder (e.g. \"8. Cross-Model\"). Applied AFTER filtering."; \
 		printf '  %-18s %s\n' "ENV_FILE=<path>" "Postman environment JSON with real keys (kept out of git)."; \
@@ -1893,7 +1896,7 @@ run-provider-harness-test: $(if $(HELP),,install-newman) ## Run the Gateway prov
 	fi; \
 	$(EXPOSE_ENV); \
 	mkdir -p tmp; \
-	BASE_URL_VAL="$(or $(BASE_URL),http://localhost:8080)"; \
+	BASE_URL_VAL="$(or $(BASE_URL),$(SERVER_DOMAIN),$(GATEWAY_BACKEND_URL),http://$(or $(APP_HOST),localhost):$(APP_PORT))"; \
 	APP_DIR_VAL="$(or $(APP_DIR),tests/integrations/python)"; \
 	VIEWER_PORT_VAL="$(or $(VIEWER_PORT),8090)"; \
 	DBVERIFY_REPORTER=""; DBVERIFY_ARGS=""; DBVERIFY_READY=0; \

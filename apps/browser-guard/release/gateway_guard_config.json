@@ -9,5 +9,5 @@
   "pac_http_port": 18195,
   "pac_url": "https://unifai.yespanchi.com/api/browser-ai/pac",
   "guard_secret": "ycsKvD5uWlL1ymRZZW/3ePHqMe7sab4ZiG9L1VRMAFo=",
-  "_comment": "Generated from .env — run sync_config_from_env.py after changing SERVER_DOMAIN / GATEWAY_PROXY_ADDR / PAC_HTTP_PORT / GATEWAY_GUARD_SECRET"
+  "_comment": "Auto-synchronized from root .env by sync_all_from_env.py"
 }

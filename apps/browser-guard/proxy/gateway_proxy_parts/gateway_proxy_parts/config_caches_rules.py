@@ -66,16 +66,24 @@ def _env(*names: str, default: str = "") -> str:
 
 
 # Backend URL — strictly from env (.env). Never hardcode hosts, ports, or domains.
-_env_backend = _env("GATEWAY_BACKEND_URL", "GATEWAY_BACKEND_URL", "SERVER_DOMAIN").rstrip("/")
+_env_backend = _env("SERVER_DOMAIN", "GATEWAY_BACKEND_URL").rstrip("/")
 if not _env_backend:
-	_env_host = _env("GATEWAY_BACKEND_HOST", "GATEWAY_BACKEND_HOST", "HOST")
-	_env_port = _env("GATEWAY_BACKEND_PORT", "GATEWAY_BACKEND_PORT", "BACKEND_PORT", "PORT")
+	_env_host = _env("APP_HOST", "CONTAINER_NAME", "HOST")
+	_env_port = _env("APP_PORT", "PORT")
 	if _env_host and _env_port:
 		_env_backend = f"http://{_env_host}:{_env_port}"
+	elif _env_port:
+		_env_backend = f"http://127.0.0.1:{_env_port}"
 	elif _env_host:
 		_env_backend = f"http://{_env_host}"
 	else:
-		_env_backend = "http://127.0.0.1:8080"
+		_env_backend = ""
+
+if not _env_backend:
+	raise RuntimeError(
+		"[Gateway Guard ERROR] Backend URL could not be resolved from .env! "
+		"Please set SERVER_DOMAIN or GATEWAY_BACKEND_URL or APP_PORT in your .env file."
+	)
 
 GATEWAY_BACKEND_URL = _env_backend
 if GATEWAY_BACKEND_URL and not GATEWAY_BACKEND_URL.startswith("http://") and not GATEWAY_BACKEND_URL.startswith("https://"):

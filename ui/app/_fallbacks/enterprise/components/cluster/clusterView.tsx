@@ -33,7 +33,7 @@ export default function ClusterPage() {
 		const gatewayUrl = /^https?:\/\/[a-zA-Z0-9._-]+(:\d+)?\/?$/;
 		peers.forEach((peer) => {
 			if (!hostPort.test(peer) && !gatewayUrl.test(peer)) {
-				errors.push(`Invalid peer "${peer}" — use host:port or http(s)://host:port (e.g. 10.0.0.12:8080)`);
+				errors.push(`Invalid peer "${peer}" — use host:port or http(s)://host:port (e.g. 10.0.0.12:PORT)`);
 			}
 		});
 		if (config.enabled && peers.length === 0) {
@@ -210,8 +210,7 @@ export default function ClusterPage() {
 					<div className="space-y-1">
 						<Label>Peer gateway addresses (one per line)</Label>
 						<p className="text-muted-foreground text-xs">
-							The other nodes&apos; HTTP address — the same host:port the dashboard/API uses — e.g. <code>10.0.0.12:8080</code> or{" "}
-							<code>https://node-2.internal</code>. Not the gossip port.
+							The other nodes&apos; HTTP address — the same host:port the dashboard/API uses — e.g. <code>https://node-2.internal</code> or <code>10.0.0.12:PORT</code>. Not the gossip port.
 						</p>
 						<textarea
 							value={peerText}
@@ -225,7 +224,7 @@ export default function ClusterPage() {
 								validatePeers(peers);
 							}}
 							className="border-input bg-background min-h-28 w-full rounded-md border p-3 font-mono text-sm"
-							placeholder={"10.0.0.12:8080\nhttps://node-3.internal"}
+							placeholder={"https://node-2.internal\nhttps://node-3.internal"}
 						/>
 						{peerErrors.length > 0 && (
 							<ul className="text-destructive space-y-1 text-xs">

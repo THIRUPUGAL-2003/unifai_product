@@ -54,12 +54,12 @@ function getPortConfig(): PortConfig {
 	}
 
 	const isDevelopment = process.env.NODE_ENV === "development";
-	const port = process.env.GATEWAY_PORT || process.env.APP_PORT || "8080";
-	const effectiveBackend = configuredBackendUrl || serverDomain || `http://localhost:${port}`;
+	const port = process.env.APP_PORT || process.env.GATEWAY_PORT || (typeof window !== "undefined" ? window.location.port : "") || "";
+	const effectiveBackend = configuredBackendUrl || serverDomain || (typeof window !== "undefined" && window.location.origin ? window.location.origin : "");
 	const isHttps = effectiveBackend.startsWith("https:");
 	const wsProtocol = isHttps ? "wss:" : "ws:";
 	const host = effectiveBackend.replace(/^https?:\/\//, "");
-	const wsUrl = `${wsProtocol}//${host}`;
+	const wsUrl = effectiveBackend ? `${wsProtocol}//${host}` : "";
 
 	return {
 		port,

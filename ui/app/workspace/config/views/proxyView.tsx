@@ -138,7 +138,7 @@ export default function ProxyView() {
 									<FormItem>
 										<FormLabel>Proxy URL</FormLabel>
 										<FormControl>
-											<Input placeholder="http://proxy.example.com:8080" disabled={!watchedEnabled} {...field} />
+											<Input placeholder="http://proxy.example.com:3128" disabled={!watchedEnabled} {...field} />
 										</FormControl>
 										<FormDescription>Full URL of the proxy server including protocol and port.</FormDescription>
 										<FormMessage />

@@ -43,10 +43,10 @@ Gateway has been installed!
 {{- else }}
 
 1. Port-forward to access Gateway:
-   kubectl port-forward svc/{{ include "gateway.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+   kubectl port-forward svc/{{ include "gateway.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }} -n {{ .Release.Namespace }}
 
 2. Access Gateway at:
-   http://localhost:8080
+   http://localhost:{{ .Values.service.port }}
 
 {{- end }}
 

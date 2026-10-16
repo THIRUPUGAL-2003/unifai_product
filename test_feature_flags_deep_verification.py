@@ -6,11 +6,7 @@ import time
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-BASE_URL = "http://localhost:8080"
-ctx = ssl.create_default_context()
-ctx.check_hostname = False
-ctx.verify_mode = ssl.CERT_NONE
-
+import os
 from pathlib import Path
 env_file = Path(__file__).resolve().parent / ".env"
 env_vars = {}
@@ -20,7 +16,12 @@ if env_file.is_file():
             k, v = line.split("=", 1)
             env_vars[k.strip()] = v.strip().strip("'\"")
 
-admin_user = env_vars.get("ADMIN_EMAIL", "admin@yespanchi.com")
+BASE_URL = env_vars.get("SERVER_DOMAIN") or env_vars.get("GATEWAY_BACKEND_URL") or (f"http://127.0.0.1:{env_vars.get('APP_PORT')}" if env_vars.get('APP_PORT') else "")
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+
+admin_user = env_vars.get("ADMIN_EMAIL", "")
 admin_pass = env_vars.get("ADMIN_PASSWORD", "")
 # Login to get session token
 login_data = json.dumps({"username": admin_user, "password": admin_pass}).encode('utf-8')

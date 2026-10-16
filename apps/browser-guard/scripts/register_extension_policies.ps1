@@ -3,7 +3,7 @@
 
 $ErrorActionPreference = "Continue"
 
-$pacPort = if ($env:PAC_HTTP_PORT) { $env:PAC_HTTP_PORT } else { "18195" }
+$pacPort = $env:PAC_HTTP_PORT
 $envCandidates = @(
     Join-Path $PSScriptRoot "..\..\..\.env",
     Join-Path $PSScriptRoot "..\..\.env",
@@ -16,8 +16,12 @@ foreach ($c in $envCandidates) {
                 $pacPort = $matches[1].Trim()
             }
         }
-        break
+        if ($pacPort) { break }
     }
+}
+if (-not $pacPort) {
+    Write-Error "PAC_HTTP_PORT is not defined in .env!"
+    exit 1
 }
 
 $extId = "mipfhcmlcjfhmgldkokdckhndkebkllj"

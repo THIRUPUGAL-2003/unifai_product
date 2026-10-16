@@ -89,7 +89,7 @@ func (h *WebSocketHandler) getUpgrader() websocket.FastHTTPUpgrader {
 
 // isLocalhost checks if the given host is localhost
 func isLocalhost(host string) bool {
-	// Remove port if present; SplitHostPort also unwraps IPv6 brackets ("[::1]:8080" -> "::1")
+	// Remove port if present; SplitHostPort also unwraps IPv6 brackets ("[::1]:PORT" -> "::1")
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
 	}

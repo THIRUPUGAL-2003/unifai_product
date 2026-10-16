@@ -34,14 +34,11 @@ npm install
 npm run dev
 ```
 
-The development server runs on `http://localhost:3000` and connects to your Gateway HTTP transport backend (default: `http://localhost:8080`).
+The development server runs on `http://localhost:3100` and connects to your Gateway HTTP transport backend based on `APP_PORT` / `GATEWAY_BACKEND_URL` in `.env`.
 
 ### Environment Variables
 
-```bash
-# Development only — Gateway backend port (legacy GATEWAY_PORT still supported)
-GATEWAY_PORT=8080
-# GATEWAY_PORT=8080
+Configured directly via root `.env` (`APP_PORT`, `SERVER_DOMAIN`, `GATEWAY_BACKEND_URL`).
 ```
 
 ## Architecture
@@ -68,7 +65,7 @@ GATEWAY_PORT=8080
         └────────────────────────────────────────┘
 ```
 
-- **Development**: UI runs on port 3000, connects to Go backend on port 8080
+- **Development**: UI connects to Go backend on the port configured in `.env` (`APP_PORT`)
 - **Production**: UI built as static assets served directly by Go HTTP transport
 - **Communication**: REST API + WebSocket for real-time features
 

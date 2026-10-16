@@ -109,8 +109,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleDisplayName": "Gateway Guard",
         "CFBundleName": "Gateway Guard",
-        "CFBundleShortVersionString": "1.1.28",
-        "CFBundleVersion": "1.1.28",
+        "CFBundleShortVersionString": "1.1.29",
+        "CFBundleVersion": "1.1.29",
         "LSBackgroundOnly": False,
         "NSHighResolutionCapable": True,
     },

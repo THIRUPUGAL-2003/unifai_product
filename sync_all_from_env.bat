@@ -1,18 +1,15 @@
 @echo off
-setlocal
+title UnifAI Master Environment Synchronizer
 cd /d "%~dp0"
-echo ========================================================
-echo   UnifAI / Gateway - Sync All Configs from .env
-echo ========================================================
-echo.
+echo ============================================================
+echo   UnifAI Enterprise - Syncing all components from .env
+echo ============================================================
 python sync_all_from_env.py %*
-if %ERRORLEVEL% NEQ 0 (
+if %ERRORLEVEL% equ 0 (
     echo.
-    echo [ERROR] Synchronization encountered an issue!
+    echo [SUCCESS] Everything synchronized successfully!
 ) else (
     echo.
-    echo [DONE] Environment synchronization completed successfully.
+    echo [ERROR] Synchronization encountered an issue.
 )
-echo.
-if "%~1"=="" pause
-exit /b %ERRORLEVEL%
+pause
