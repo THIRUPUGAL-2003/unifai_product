@@ -1806,6 +1806,14 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
     """
     if not GATEWAY_BACKEND_URL:
         return True, "", "Allowed", prompt, "", "backend url not configured"
+    if not evaluation_only:
+        try:
+            from config_caches_rules import is_already_handled_by_extension
+            if is_already_handled_by_extension(domain, prompt):
+                print(f"[Gateway Proxy] Extension already handled send_to_backend for {domain}. Skipping proxy duplicate log.")
+                return True, "", "Allowed", prompt, "", ""
+        except Exception:
+            pass
     try:
         metadata = {
             "domain": domain,

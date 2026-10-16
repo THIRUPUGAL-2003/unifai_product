@@ -2145,13 +2145,39 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		CreatedAt:         time.Now(),
 	}
 
-	// Deduplicate: If an identical prompt from the same agent/IP & platform was logged within the last 10 seconds,
+	// Deduplicate: If an identical prompt from the same agent/IP & platform was logged within the last 30 seconds,
 	// merge/enrich it instead of creating a duplicate row.
 	var existing BrowserAILog
-	dedupCutoff := time.Now().UTC().Add(-10 * time.Second)
+	dbDialect := ""
+	if db.Dialector != nil {
+		dbDialect = strings.ToLower(db.Dialector.Name())
+	}
+	dedupCutoffUTC := time.Now().UTC().Add(-30 * time.Second)
+	dedupCutoffLocal := time.Now().Add(-30 * time.Second)
+
 	dedupQuery := db.WithContext(ctx).
-		Where("(LOWER(platform) = LOWER(?) OR platform = ?) AND created_at >= ?", canonicalPlatform, canonicalPlatform, dedupCutoff).
-		Where("TRIM(user_prompt_full) = ? OR user_prompt_full = ? OR TRIM(user_prompt_preview) = ? OR user_prompt_preview = ?", trimmedPrompt, promptFull, preview, preview)
+		Where("(LOWER(platform) = LOWER(?) OR platform = ?)", canonicalPlatform, canonicalPlatform)
+
+	if dbDialect == "postgres" || dbDialect == "postgresql" {
+		dedupQuery = dedupQuery.Where("(created_at >= (NOW() - INTERVAL '30 seconds') OR created_at >= ? OR created_at >= ?)", dedupCutoffUTC, dedupCutoffLocal)
+	} else {
+		dedupQuery = dedupQuery.Where("(created_at >= ? OR created_at >= ?)", dedupCutoffUTC, dedupCutoffLocal)
+	}
+
+	trimmedLower := strings.ToLower(trimmedPrompt)
+	previewLower := strings.ToLower(preview)
+
+	if attachmentName != "" {
+		dedupQuery = dedupQuery.Where(
+			"(LOWER(TRIM(user_prompt_full)) = ? OR LOWER(TRIM(user_prompt_preview)) = ? OR LOWER(attachment_name) = ? OR attachment_name LIKE ?)",
+			trimmedLower, previewLower, strings.ToLower(attachmentName), "%"+strings.ToLower(attachmentName)+"%",
+		)
+	} else {
+		dedupQuery = dedupQuery.Where(
+			"(LOWER(TRIM(user_prompt_full)) = ? OR LOWER(TRIM(user_prompt_preview)) = ? OR TRIM(user_prompt_full) = ? OR TRIM(user_prompt_preview) = ?)",
+			trimmedLower, previewLower, trimmedPrompt, preview,
+		)
+	}
 
 	// Extension logs 127.0.0.1 and the EXE logs the machine address. Same prompt
 	// must still collapse. Match the desktop name when we have it.
@@ -2176,6 +2202,9 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		}
 		if existing.Domain == "" && domain != "" {
 			updates["domain"] = domain
+		}
+		if existing.AttachmentName == "" && attachmentName != "" {
+			updates["attachment_name"] = attachmentName
 		}
 		if existing.PromptTokens == 0 && promptTokens > 0 {
 			updates["prompt_tokens"] = promptTokens

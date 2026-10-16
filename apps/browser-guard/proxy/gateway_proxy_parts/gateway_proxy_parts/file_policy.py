@@ -1514,6 +1514,14 @@ def post_upload_intercept(
 
     safe_name = (file_name or "").replace('"', "").replace("\r", "").replace("\n", "")
 
+    try:
+        from config_caches_rules import is_already_handled_by_extension
+        if is_already_handled_by_extension(domain, prompt, file_name or safe_name):
+            print(f"[Gateway Proxy] Extension already handled file upload for {domain} ({file_name or safe_name}). Skipping proxy duplicate log.")
+            return True
+    except Exception:
+        pass
+
     if "[FILE UPLOAD] attachment" in prompt:
         prompt = prompt.replace("[FILE UPLOAD] attachment", f"[FILE UPLOAD] {safe_name}")
     _mark_file_logged(safe_name)

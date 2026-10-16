@@ -259,6 +259,40 @@
     return "";
   }
 
+  // Extract file attachments currently displayed in the chat composer UI
+  function extractDOMAttachedFiles() {
+    var detected = [];
+    try {
+      var selectors = [
+        "[data-testid*='attachment']",
+        "[data-testid*='file']",
+        "div.file-item",
+        "div[data-testid='file-preview']",
+        "[aria-label*='attachment' i]",
+        "[aria-label*='file' i]",
+        "div[class*='attachment' i]",
+        "div[class*='file-tile' i]",
+        "div[class*='file-preview' i]",
+        "span[class*='file-name' i]"
+      ];
+      var nodes = document.querySelectorAll(selectors.join(", "));
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (!n) continue;
+        var txt = (n.getAttribute("aria-label") || n.getAttribute("title") || n.innerText || n.textContent || "").trim();
+        if (!txt) continue;
+        var m = txt.match(/([a-zA-Z0-9_\-\. ]+\.[a-zA-Z0-9]{2,5})/);
+        if (m && m[1]) {
+          var fn = m[1].trim();
+          if (fn && !detected.some(function (x) { return x.name === fn; })) {
+            detected.push({ name: fn, size: 0, type: "application/octet-stream" });
+          }
+        }
+      }
+    } catch (e) { }
+    return detected;
+  }
+
   // Set Composer text (for auto-redaction)
   function setComposerText(text) {
     var targets = [
@@ -557,18 +591,30 @@
 
   // --- 3. SEND INTERCEPTION (Enter Key & Send Button) ---
 
+  function mergeStagedAndDomFiles() {
+    var domFiles = extractDOMAttachedFiles();
+    var all = stagedFiles.slice();
+    for (var i = 0; i < domFiles.length; i++) {
+      if (!all.some(function (x) { return x.name === domFiles[i].name; })) {
+        all.push(domFiles[i]);
+      }
+    }
+    return all;
+  }
+
   // Keyboard Enter
   document.addEventListener("keydown", function (e) {
     if (!armed || passKey) return;
     if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
     var text = composerFrom(e.target).trim();
-    if (!text && stagedFiles.length === 0 && stagedImages.length === 0) return;
+    var effectiveFiles = mergeStagedAndDomFiles();
+    if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
     e.preventDefault();
     e.stopImmediatePropagation();
     var target = e.target;
 
-    ask(text, stagedFiles, stagedImages).then(function (decision) {
+    ask(text, effectiveFiles, stagedImages).then(function (decision) {
       handleDecision(decision, function () {
         stagedFiles = [];
         stagedImages = [];
@@ -599,12 +645,13 @@
 
     if (!sendLike) return;
     var text = (composerFrom(btn) || composerFrom(document.activeElement)).trim();
-    if (!text && stagedFiles.length === 0 && stagedImages.length === 0) return;
+    var effectiveFiles = mergeStagedAndDomFiles();
+    if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
     e.preventDefault();
     e.stopImmediatePropagation();
 
-    ask(text, stagedFiles, stagedImages).then(function (decision) {
+    ask(text, effectiveFiles, stagedImages).then(function (decision) {
       handleDecision(decision, function () {
         stagedFiles = [];
         stagedImages = [];
@@ -624,12 +671,13 @@
     var form = e.target;
     if (!form) return;
     var text = (composerFrom(form) || composerFrom(document.activeElement)).trim();
-    if (!text && stagedFiles.length === 0 && stagedImages.length === 0) return;
+    var effectiveFiles = mergeStagedAndDomFiles();
+    if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
     e.preventDefault();
     e.stopImmediatePropagation();
 
-    ask(text, stagedFiles, stagedImages).then(function (decision) {
+    ask(text, effectiveFiles, stagedImages).then(function (decision) {
       handleDecision(decision, function () {
         stagedFiles = [];
         stagedImages = [];
@@ -662,14 +710,139 @@
       if (typeof body === "string") {
         try {
           var parsed = JSON.parse(body);
-          if (parsed && typeof parsed.prompt === "string") promptText = parsed.prompt;
-          else if (parsed && Array.isArray(parsed.messages)) {
-            for (var m = parsed.messages.length - 1; m >= 0; m--) {
-              var msg = parsed.messages[m];
-              if (msg && (msg.role === "user" || (msg.author && msg.author.role === "user"))) {
-                if (typeof msg.content === "string") promptText = msg.content;
-                else if (msg.content && Array.isArray(msg.content.parts)) promptText = msg.content.parts.join(" ");
-                break;
+          if (parsed) {
+            // 1. Direct prompt fields
+            if (typeof parsed.prompt === "string") promptText = parsed.prompt;
+            else if (typeof parsed.query === "string") promptText = parsed.query;
+            else if (typeof parsed.text === "string") promptText = parsed.text;
+
+            // 2. Claude Connect-RPC / PerformAction format
+            var act = parsed.action || parsed;
+            var rpcMsg = (act && (act.createMessage || act.appendMessage || act.message)) || null;
+            if (rpcMsg) {
+              if (typeof rpcMsg.text === "string" && rpcMsg.text) promptText = rpcMsg.text;
+              if (Array.isArray(rpcMsg.attachments)) {
+                for (var r = 0; r < rpcMsg.attachments.length; r++) {
+                  var ra = rpcMsg.attachments[r];
+                  if (ra) {
+                    var rName = ra.fileName || ra.file_name || ra.name || "";
+                    if (rName && !netFiles.some(function (x) { return x.name === rName; })) {
+                      netFiles.push({ name: rName, size: ra.fileSize || ra.file_size || 0, type: ra.fileType || ra.file_type || "" });
+                    }
+                  }
+                }
+              }
+            }
+
+            // 3. Top-level attachments / files (Claude, etc.)
+            if (Array.isArray(parsed.attachments)) {
+              for (var a = 0; a < parsed.attachments.length; a++) {
+                var att = parsed.attachments[a];
+                if (att) {
+                  var aName = att.file_name || att.fileName || att.name || att.title || "";
+                  var aType = att.file_type || att.fileType || att.mime_type || "";
+                  var aSize = att.file_size || att.fileSize || att.size || 0;
+                  var aText = att.extracted_content || att.content || "";
+                  if (aName && !netFiles.some(function (x) { return x.name === aName; })) {
+                    netFiles.push({ name: aName, size: aSize, type: aType, text: aText });
+                  }
+                }
+              }
+            }
+            if (Array.isArray(parsed.files)) {
+              for (var f = 0; f < parsed.files.length; f++) {
+                var fl = parsed.files[f];
+                if (fl) {
+                  var fName = fl.name || fl.file_name || fl.fileName || "";
+                  var fType = fl.type || fl.mime_type || "";
+                  var fSize = fl.size || 0;
+                  if (fName && !netFiles.some(function (x) { return x.name === fName; })) {
+                    netFiles.push({ name: fName, size: fSize, type: fType });
+                  }
+                }
+              }
+            }
+
+            // 4. Conversation messages array (ChatGPT, Claude, Gemini, etc.)
+            if (Array.isArray(parsed.messages)) {
+              for (var m = parsed.messages.length - 1; m >= 0; m--) {
+                var msg = parsed.messages[m];
+                if (!msg) continue;
+                var role = msg.role || (msg.author && msg.author.role) || "";
+                if (role === "user") {
+                  if (typeof msg.content === "string") {
+                    promptText = msg.content;
+                  }
+                  // ChatGPT / Gemini parts array
+                  else if (msg.content && Array.isArray(msg.content.parts)) {
+                    var strParts = [];
+                    for (var p = 0; p < msg.content.parts.length; p++) {
+                      var pt = msg.content.parts[p];
+                      if (typeof pt === "string") {
+                        strParts.push(pt);
+                      } else if (pt && typeof pt === "object") {
+                        var ptName = pt.name || (pt.asset_pointer ? ("file_" + (pt.asset_pointer.split("/").pop() || "upload")) : "");
+                        if (ptName && !netFiles.some(function (x) { return x.name === ptName; })) {
+                          netFiles.push({ name: ptName, size: pt.size_bytes || 0, type: pt.content_type || "" });
+                        }
+                      }
+                    }
+                    if (strParts.length) promptText = strParts.join(" ");
+                  }
+                  // Claude content blocks array
+                  else if (Array.isArray(msg.content)) {
+                    var cParts = [];
+                    for (var c = 0; c < msg.content.length; c++) {
+                      var blk = msg.content[c];
+                      if (!blk) continue;
+                      if (blk.type === "text" && typeof blk.text === "string") {
+                        cParts.push(blk.text);
+                      } else if (blk.type === "document" || blk.type === "file") {
+                        var docName = blk.title || blk.name || "document";
+                        var docText = (blk.source && blk.source.data) ? blk.source.data : "";
+                        var docType = (blk.source && blk.source.media_type) || "application/pdf";
+                        if (!netFiles.some(function (x) { return x.name === docName; })) {
+                          netFiles.push({ name: docName, size: docText.length, type: docType, text: blk.text || "" });
+                        }
+                      } else if (blk.type === "image") {
+                        var imgName = blk.title || blk.name || "image.png";
+                        if (!netFiles.some(function (x) { return x.name === imgName; })) {
+                          netFiles.push({ name: imgName, size: 0, type: (blk.source && blk.source.media_type) || "image/png" });
+                        }
+                      }
+                    }
+                    if (cParts.length) promptText = cParts.join(" ");
+                  }
+
+                  // ChatGPT metadata.attachments
+                  if (msg.metadata && Array.isArray(msg.metadata.attachments)) {
+                    for (var ma = 0; ma < msg.metadata.attachments.length; ma++) {
+                      var matt = msg.metadata.attachments[ma];
+                      if (matt) {
+                        var mattName = matt.name || matt.file_name || matt.title || "";
+                        var mattSize = matt.size || 0;
+                        var mattType = matt.mime_type || matt.mimeType || matt.type || "";
+                        if (mattName && !netFiles.some(function (x) { return x.name === mattName; })) {
+                          netFiles.push({ name: mattName, size: mattSize, type: mattType });
+                        }
+                      }
+                    }
+                  }
+
+                  // Claude / generic msg.attachments
+                  if (Array.isArray(msg.attachments)) {
+                    for (var ma2 = 0; ma2 < msg.attachments.length; ma2++) {
+                      var matt2 = msg.attachments[ma2];
+                      if (matt2) {
+                        var m2Name = matt2.file_name || matt2.name || "";
+                        if (m2Name && !netFiles.some(function (x) { return x.name === m2Name; })) {
+                          netFiles.push({ name: m2Name, size: matt2.file_size || matt2.size || 0, type: matt2.file_type || "" });
+                        }
+                      }
+                    }
+                  }
+                  break;
+                }
               }
             }
           }
@@ -681,11 +854,26 @@
           body.forEach(function (val, key) {
             if (val && typeof val.name === "string") {
               netFiles.push({ name: val.name, size: val.size, type: val.type });
-            } else if (typeof val === "string" && key.indexOf("prompt") >= 0) {
+            } else if (typeof val === "string" && (key.indexOf("prompt") >= 0 || key.indexOf("query") >= 0 || key.indexOf("message") >= 0)) {
               promptText = val;
             }
           });
         } catch (err) { }
+      }
+
+      // Also merge any stagedFiles or DOM attachments
+      if (stagedFiles && stagedFiles.length) {
+        for (var sf = 0; sf < stagedFiles.length; sf++) {
+          if (!netFiles.some(function (x) { return x.name === stagedFiles[sf].name; })) {
+            netFiles.push(stagedFiles[sf]);
+          }
+        }
+      }
+      var domAttached = extractDOMAttachedFiles();
+      for (var da = 0; da < domAttached.length; da++) {
+        if (!netFiles.some(function (x) { return x.name === domAttached[da].name; })) {
+          netFiles.push(domAttached[da]);
+        }
       }
 
       if (!promptText && netFiles.length === 0) {

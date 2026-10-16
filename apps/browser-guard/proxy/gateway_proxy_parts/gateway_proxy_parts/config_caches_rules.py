@@ -875,6 +875,51 @@ def get_remembered_guard_decision(domain: str, prompt: str, ttl: float = BLOCK_D
     return decision
 
 
+def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: str = "") -> bool:
+    """Check if this domain/prompt/file was evaluated by the browser extension within the last 15 seconds.
+
+    If true, extension has already logged or blocked it, so proxy skips duplicate logging.
+    """
+    try:
+        from guard_platform import data_dir
+        cache_path = os.path.join(data_dir(), "recent_extension_evals.json")
+        if not os.path.isfile(cache_path):
+            return False
+        with open(cache_path, "r", encoding="utf-8") as f:
+            evals = json.load(f)
+        if not isinstance(evals, list):
+            return False
+        now = time.time()
+        clean_d = (domain or "").lower().strip(".")
+        if clean_d.startswith("www."):
+            clean_d = clean_d[4:]
+        p_clean = " ".join((prompt or "").strip().split()).lower()[:100]
+        fn_clean = (file_name or "").lower().strip()
+
+        for item in evals:
+            if not isinstance(item, dict):
+                continue
+            item_time = float(item.get("time") or 0)
+            if now - item_time > 15:
+                continue
+            item_host = (item.get("host") or "").lower().strip(".")
+            if item_host.startswith("www."):
+                item_host = item_host[4:]
+            if clean_d and item_host and not (clean_d == item_host or clean_d.endswith("." + item_host) or item_host.endswith("." + clean_d)):
+                continue
+            item_p = " ".join((item.get("preview") or "").strip().split()).lower()[:100]
+            item_files = [str(x).lower().strip() for x in (item.get("files") or [])]
+            if p_clean and item_p and (p_clean == item_p or p_clean in item_p or item_p in p_clean):
+                return True
+            if fn_clean and (fn_clean in item_files or any(fn_clean in x for x in item_files)):
+                return True
+            if clean_d and item_host and (now - item_time < 3.0):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def evaluate_prompt_coalesced(
     platform: str, domain: str, prompt: str, client_ip: str, url: str, method: str,
 ) -> tuple[bool, str, str, str, str]:
@@ -918,6 +963,11 @@ def evaluate_prompt(platform: str, domain: str, prompt: str, client_ip: str, url
     get_guard_rules()
     local = decide_prompt_locally(prompt)
     local_allowed, local_rt, local_action, local_fwd, local_reply = local
+
+    # Extension Priority: If already evaluated/logged by browser extension, skip proxy duplicate logging
+    if is_already_handled_by_extension(domain, prompt):
+        print(f"[Gateway Proxy] Extension already handled prompt for {domain}. Skipping proxy duplicate log.")
+        return local_allowed, local_rt, local_action, local_fwd, local_reply
 
     # Instant path — do not wait on AI Guard Bot (up to ~95s) when regex already blocked.
     if (not local_allowed) or (local_action or "").lower() == "blocked":
@@ -1264,6 +1314,9 @@ def _warning_forward(prompt: str, warning_message: str = "") -> str:
 
 
 def log_prompt_async(platform: str, domain: str, prompt: str, client_ip: str, url: str, method: str) -> None:
+    if is_already_handled_by_extension(domain, prompt):
+        return
+
     def _run() -> None:
         try:
             send_to_backend(platform, domain, prompt, client_ip, url, method)

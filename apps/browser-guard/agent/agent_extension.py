@@ -16,7 +16,7 @@ import subprocess
 import sys
 import threading
 
-from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL
+from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL, PAC_HTTP_PORT
 from agent_http import _http_json
 from guard_platform import IS_WIN, data_dir
 
@@ -66,7 +66,7 @@ def get_extension_version() -> str:
 
     src = extension_source_dir()
     h = hashlib.sha256()
-    for name in sorted(("manifest.json", "content.js", "page_hook.js", "endpoint.js")):
+    for name in sorted(("manifest.json", "content.js", "page_hook.js", "endpoint.js", "background.js", "popup.js")):
         p = os.path.join(src, name)
         if os.path.isfile(p):
             try:
@@ -406,6 +406,47 @@ def interpret_guard_decision(data: dict, text: str, rule: str = "") -> dict:
     }
 
 
+_RECENT_EXTENSION_EVALS_LOCK = threading.Lock()
+_RECENT_EXTENSION_EVALS: list[dict] = []
+
+
+def _record_extension_eval(host: str, prompt: str, files: list | None = None) -> None:
+    """Record that the browser extension handled this prompt/upload for proxy deduplication."""
+    try:
+        from guard_platform import data_dir
+        cache_path = os.path.join(data_dir(), "recent_extension_evals.json")
+        now = time.time()
+        fnames = []
+        if isinstance(files, list):
+            for f in files:
+                if isinstance(f, dict) and f.get("name"):
+                    fnames.append(str(f["name"]).strip())
+                elif isinstance(f, str) and f.strip():
+                    fnames.append(f.strip())
+
+        clean_h = (host or "").lower().strip(".")
+        if clean_h.startswith("www."):
+            clean_h = clean_h[4:]
+
+        entry = {
+            "host": clean_h,
+            "preview": (prompt or "").strip()[:150],
+            "files": fnames,
+            "time": now,
+        }
+        with _RECENT_EXTENSION_EVALS_LOCK:
+            global _RECENT_EXTENSION_EVALS
+            # Prune entries older than 30 seconds
+            _RECENT_EXTENSION_EVALS = [e for e in _RECENT_EXTENSION_EVALS if now - float(e.get("time") or 0) < 30]
+            _RECENT_EXTENSION_EVALS.append(entry)
+            tmp_path = cache_path + f".tmp.{os.getpid()}"
+            with open(tmp_path, "w", encoding="utf-8") as fp:
+                json.dump(_RECENT_EXTENSION_EVALS, fp)
+            os.replace(tmp_path, cache_path)
+    except Exception:
+        pass
+
+
 def check_prompt(
     host: str,
     url: str,
@@ -420,13 +461,18 @@ def check_prompt(
     files_list = files if isinstance(files, list) else []
     images_list = upload_images if isinstance(upload_images, list) else []
 
+    file_names = []
     for f in files_list:
         if isinstance(f, dict):
             fname = str(f.get("name") or "").strip()
+            if fname and fname not in file_names:
+                file_names.append(fname)
             fext = os.path.splitext(fname)[1].lower()
             ftext = str(f.get("text") or "").strip()
             if ftext:
                 text += f"\n[File: {fname}]\n" + ftext[:15000]
+            elif fname and f"[File: {fname}]" not in text:
+                text += f"\n[File: {fname}]\n"
             fb64 = str(f.get("base64") or "").strip()
             if fb64 and not ftext:
                 try:
@@ -454,6 +500,15 @@ def check_prompt(
                 img_data = fb64 if fb64.startswith("data:") else f"data:image/{fext.lstrip('.')};base64,{fb64}"
                 if img_data not in images_list:
                     images_list.append(img_data)
+        elif isinstance(f, str) and f.strip():
+            fn = f.strip()
+            if fn not in file_names:
+                file_names.append(fn)
+            if f"[File: {fn}]" not in text:
+                text += f"\n[File: {fn}]\n"
+
+    if file_names and not text.strip():
+        text = f"[FILE UPLOAD] {', '.join(file_names)}"
 
     # Instant in-memory DLP regex match on prompt + extracted file text
     if text and not is_blocked:
@@ -515,9 +570,14 @@ def check_prompt(
         "file_count": len(files_list),
         "image_count": len(images_list),
     }
+    if file_names:
+        meta["file_name"] = ", ".join(file_names)
+        meta["upload_scan"] = True
     if is_blocked:
         meta["is_blocked"] = True
         meta["blocked_reason"] = rule or "Client Security Rule"
+
+    _record_extension_eval(clean_host or host, text, file_names)
 
     payload = {
         "platform": platform,
@@ -843,8 +903,13 @@ def install_guard_extension(base_url: str) -> None:
         return
     crx = _crx_path()
     source_mtime = 0.0
-    for name in ("manifest.json", "content.js", "page_hook.js", "endpoint.js"):
+    for name in ("manifest.json", "content.js", "page_hook.js", "endpoint.js", "background.js", "popup.js"):
         path = os.path.join(extension_source_dir(), name)
+        if os.path.isfile(path):
+            try:
+                source_mtime = max(source_mtime, os.path.getmtime(path))
+            except Exception:
+                pass
     cur_ver = get_extension_version()
     unpacked_man = os.path.join(_unpacked_dir(), "manifest.json")
     ver_mismatch = False
@@ -1172,9 +1237,10 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
             if value:
                 if _set_reg_sz(root, list_path, "1", value):
                     wrote = True
-                pac_p = getattr(agent_config, "PAC_HTTP_PORT", 18195)
-                _set_reg_sz(root, path + r"\ExtensionInstallSources", "1", f"http://127.0.0.1:{pac_p}/*")
-                _set_reg_sz(root, path + r"\ExtensionInstallSources", "2", f"http://localhost:{pac_p}/*")
+                if _set_reg_sz(root, path, "ExtensionSettings", settings):
+                    wrote = True
+                _set_reg_sz(root, path + r"\ExtensionInstallSources", "1", f"http://127.0.0.1:{PAC_HTTP_PORT}/*")
+                _set_reg_sz(root, path + r"\ExtensionInstallSources", "2", f"http://localhost:{PAC_HTTP_PORT}/*")
             else:
                 _delete_reg_value(root, list_path, "1")
                 _delete_reg_value(root, path, "ExtensionSettings")
