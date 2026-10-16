@@ -2,6 +2,7 @@ import { Message, type CompletionUsage, type MessageContent, type ToolCall, type
 import { getErrorMessage } from "@/lib/store";
 import type { ModelParams } from "@/lib/types/prompts";
 import { transcribeAudioFile, voiceTranscriptAttachment } from "./transcribeAudio";
+import { ocrImageFile, ocrTextAttachment } from "./ocrImage";
 
 export interface ExecutionConfig {
 	provider: string;
@@ -19,6 +20,8 @@ export interface ExecutionConfig {
 	promptId?: string;
 	/** Ticked MCP tools (`client-tool`). Omit to allow every tool on the virtual key. */
 	mcpIncludeTools?: string[];
+	/** Internal retry flag when upstream model does not support image input (error 3051) */
+	_retryWithoutImages?: boolean;
 }
 
 function getBaseUrl() {
@@ -86,8 +89,8 @@ function formatPlaygroundError(raw: string, status?: number): string {
 	if (lower.includes("audio") && (lower.includes("format") || lower.includes("unsupported") || lower.includes("invalid"))) {
 		return `${text} — Voice was converted to WAV when possible. Prefer an audio-capable model, or attach a wav/mp3 file.`;
 	}
-	if (lower.includes("vision") || (lower.includes("image") && lower.includes("not support"))) {
-		return `${text} — Select a vision-capable model for images.`;
+	if (lower.includes("vision") || (lower.includes("image") && lower.includes("not support")) || lower.includes("3051") || lower.includes("image input is not enabled")) {
+		return `${text} — Select a vision-capable model (e.g. Pixtral, GPT-4o, Claude 3) for direct image inputs, or OCR extracted text will be used automatically.`;
 	}
 	if (lower.includes("guardrail")) {
 		let cleaned = text.replace(/\s*\(guardrail_violation\)\s*$/i, "").trim();
@@ -100,6 +103,15 @@ function formatPlaygroundError(raw: string, status?: number): string {
 		return text;
 	}
 	if (status === 402 || lower.includes("budget exceeded") || lower.includes("budget_exceeded") || lower.includes("insufficient balance") || lower.includes("payment required")) {
+		if (lower.includes("team budget exceeded")) {
+			return `Team Budget Exhausted: ${text}. Please contact your Team Administrator or Workspace Admin to increase the Team budget.`;
+		}
+		if (lower.includes("customer budget exceeded")) {
+			return `Customer Budget Exhausted: ${text}. Please contact your Customer Administrator to replenish the customer budget.`;
+		}
+		if (lower.includes("user budget exceeded")) {
+			return `User Budget Exhausted: ${text}. Your personal user budget allocation has been reached.`;
+		}
 		return `Budget is used up: ${text}. Please select another virtual key or contact your administrator.`;
 	}
 	if (status === 401 || status === 403 || lower.includes("unauthorized") || lower.includes("authentication fails") || lower.includes("permission denied")) {
@@ -150,7 +162,6 @@ export interface ExecutionCallbacks {
 	onFinally: () => void;
 }
 
-
 async function enrichVoiceWithWhisper(messages: Message[], apiKeyId: string, signal?: AbortSignal): Promise<Message[]> {
 	const out: Message[] = [];
 	for (const msg of messages) {
@@ -193,6 +204,69 @@ async function enrichVoiceWithWhisper(messages: Message[], apiKeyId: string, sig
 	return out;
 }
 
+/**
+ * Background OCR extraction safeguard before execution:
+ * Ensures any image attachment has its text extracted so text-only and non-vision
+ * models can accurately respond to image receipts/documents without error 3051.
+ */
+async function enrichImagesWithOcr(
+	messages: Message[],
+	opts?: { apiKeyId?: string; virtualKeyId?: string; signal?: AbortSignal },
+): Promise<Message[]> {
+	const out: Message[] = [];
+	for (const msg of messages) {
+		const attachments = msg.attachments;
+		const imageAttachments = attachments.filter((a) => a.type === "image_url" && a.image_url?.url);
+		if (imageAttachments.length === 0) {
+			out.push(msg);
+			continue;
+		}
+
+		// Detect if an OCR text part already exists for attached images
+		const existingFilenames = new Set(
+			attachments
+				.filter((a) => a.type === "text" && a.text && a.text.includes("--- OCR extracted content ---"))
+				.map((a) => {
+					const m = a.text?.match(/^Attached file:\s*([^\n]+)/i);
+					return m?.[1]?.trim().toLowerCase() || "";
+				})
+				.filter(Boolean),
+		);
+
+		let changed = false;
+		const nextAttachments = [...attachments];
+
+		for (const img of imageAttachments) {
+			const fn = (img.image_url?.filename || "image").toLowerCase();
+			if (existingFilenames.has(fn)) continue;
+
+			const url = img.image_url?.url || "";
+			if (!url || !url.startsWith("data:")) continue;
+
+			try {
+				const ocr = await ocrImageFile(url, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId, signal: opts?.signal });
+				if (ocr?.text?.trim()) {
+					nextAttachments.push(ocrTextAttachment(img.image_url?.filename || "image", ocr.text.trim()));
+					existingFilenames.add(fn);
+					changed = true;
+				}
+			} catch (err) {
+				console.warn("Background OCR fallback failed during prompt execution:", err);
+			}
+		}
+
+		if (!changed) {
+			out.push(msg);
+			continue;
+		}
+
+		const clone = msg.clone();
+		clone.attachments = nextAttachments;
+		out.push(clone);
+	}
+	return out;
+}
+
 export async function executePrompt(
 	currentMessages: Message[],
 	pendingMessage: Message | undefined,
@@ -218,6 +292,11 @@ export async function executePrompt(
 
 	try {
 		resolvedMessages = await enrichVoiceWithWhisper(resolvedMessages, config.apiKeyId, signal);
+		resolvedMessages = await enrichImagesWithOcr(resolvedMessages, {
+			apiKeyId: config.apiKeyId,
+			virtualKeyId: config.virtualKeyId,
+			signal,
+		});
 		const headers = buildHeaders(config);
 
 		const {
@@ -228,11 +307,17 @@ export async function executePrompt(
 			prompt_allowed_virtual_keys: _vks,
 			prompt_allowed_api_keys: _apiKeys,
 			prompt_allowed_mcp_tools: _mcpTools,
+			_retryWithoutImages: retryWithoutImages,
 			...rawParams
 		} = config.modelParams || {};
+
+		// If retrying without images due to upstream non-vision error (3051),
+		// force vision capability to false so toAPIMessages sends pure text
+		const effectiveModel = retryWithoutImages ? "text-fallback" : config.model;
+
 		const payload: Record<string, any> = {
 			model: `${config.provider}/${config.model}`,
-			messages: Message.toAPIMessages(resolvedMessages),
+			messages: Message.toAPIMessages(resolvedMessages, effectiveModel, config.provider),
 			...rawParams,
 			stream: rawParams.stream !== false,
 		};
@@ -268,6 +353,28 @@ export async function executePrompt(
 			} catch (error) {
 				console.error("Failed to parse error response:", error);
 			}
+
+			// If upstream rejected image input (code 3051 or similar non-vision error),
+			// transparently retry without raw image_url blocks using the background-extracted OCR text!
+			const lowerErr = errorMessage.toLowerCase();
+			const isImageInputError =
+				response.status === 400 &&
+				(lowerErr.includes("3051") ||
+					lowerErr.includes("image input is not enabled") ||
+					lowerErr.includes("not support image") ||
+					lowerErr.includes("does not support image"));
+
+			if (isImageInputError && !config._retryWithoutImages) {
+				console.warn("Provider rejected image input (3051). Transparently retrying with OCR extracted text...");
+				return executePrompt(
+					currentMessages,
+					pendingMessage,
+					{ ...config, _retryWithoutImages: true },
+					callbacks,
+					signal,
+				);
+			}
+
 			throw new Error(formatPlaygroundError(errorMessage, response.status));
 		}
 

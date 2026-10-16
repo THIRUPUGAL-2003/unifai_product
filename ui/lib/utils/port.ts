@@ -20,74 +20,82 @@ interface PortConfig {
  * Gets the current port configuration based on environment
  */
 function getPortConfig(): PortConfig {
-	const isDevelopment = process.env.NODE_ENV === "development";
+	const serverDomain = (
+		process.env.SERVER_DOMAIN ||
+		process.env.GATEWAY_SERVER_DOMAIN ||
+		""
+	).trim().replace(/\/+$/, "");
 
-	if (isDevelopment) {
-		// Development mode: Vite dev server connects to configured backend
-		const configuredBackendUrl = (
-			process.env.GATEWAY_BACKEND_URL ||
-			""
-		).trim();
-		const port = process.env.GATEWAY_PORT || process.env.APP_PORT || "6000";
-		const baseUrl = configuredBackendUrl || `http://localhost:${port}`;
-		const isHttps = baseUrl.startsWith("https:");
-		const wsProtocol = isHttps ? "wss:" : "ws:";
-		const host = baseUrl.replace(/^https?:\/\//, "");
-		const wsUrl = `${wsProtocol}//${host}`;
+	const configuredBackendUrl = (
+		process.env.GATEWAY_BACKEND_URL ||
+		serverDomain ||
+		""
+	).trim().replace(/\/+$/, "");
 
-		return {
-			port,
-			isDevelopment: true,
-			baseUrl,
-			wsUrl,
-			host,
-		};
-	} else {
-		// Production mode: UI is served by the same Go server or under SERVER_DOMAIN
-		// Use current window location for automatic port detection
-		if (typeof window !== "undefined") {
-			const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-			const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+	// In browser, dynamically follow the actual window location
+	if (typeof window !== "undefined" && window.location) {
+		const isHttps = window.location.protocol === "https:" || serverDomain.startsWith("https:");
+		const isRemoteHost = window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1";
+
+		if (isRemoteHost || (serverDomain && !serverDomain.includes("localhost") && !serverDomain.includes("127.0.0.1"))) {
+			const targetHost = isRemoteHost ? window.location.host : serverDomain.replace(/^https?:\/\//, "");
+			const protocol = isHttps ? "https:" : "http:";
+			const wsProtocol = isHttps ? "wss:" : "ws:";
+			const port = window.location.port || (isHttps ? "443" : "80");
 
 			return {
-				port: window.location.port || (window.location.protocol === "https:" ? "443" : "80"),
-				isDevelopment: false,
-				baseUrl: `${protocol}//${window.location.host}`,
-				wsUrl: `${wsProtocol}//${window.location.host}`,
-				host: window.location.host,
-			};
-		} else {
-			// Server-side rendering fallback
-			const serverDomain = (process.env.SERVER_DOMAIN || "").trim().replace(/\/+$/, "");
-			return {
-				port: process.env.APP_PORT || "6000",
-				isDevelopment: false,
-				baseUrl: serverDomain || "",
-				wsUrl: "",
-				host: "",
+				port,
+				isDevelopment: process.env.NODE_ENV === "development",
+				baseUrl: `${protocol}//${targetHost}`,
+				wsUrl: `${wsProtocol}//${targetHost}`,
+				host: targetHost,
 			};
 		}
 	}
+
+	const isDevelopment = process.env.NODE_ENV === "development";
+	const port = process.env.GATEWAY_PORT || process.env.APP_PORT || "8080";
+	const effectiveBackend = configuredBackendUrl || serverDomain || `http://localhost:${port}`;
+	const isHttps = effectiveBackend.startsWith("https:");
+	const wsProtocol = isHttps ? "wss:" : "ws:";
+	const host = effectiveBackend.replace(/^https?:\/\//, "");
+	const wsUrl = `${wsProtocol}//${host}`;
+
+	return {
+		port,
+		isDevelopment,
+		baseUrl: effectiveBackend,
+		wsUrl,
+		host,
+	};
 }
 
 /**
  * Gets the deployment origin for remote installers, agent scripts, and curl one-liners.
  * Precedence:
  * 1. SERVER_DOMAIN from .env (e.g. https://unifai.yespanchi.com)
- * 2. GATEWAY_BACKEND_URL from .env
+ * 2. GATEWAY_BACKEND_URL from .env (if non-localhost)
  * 3. window.location.origin in browser
  * 4. getPortConfig().baseUrl
  */
 export function getDeploymentOrigin(): string {
-	if (typeof process !== "undefined" && process.env) {
-		const domain = (process.env.SERVER_DOMAIN || "").trim().replace(/\/+$/, "");
-		if (domain) return domain;
-		const backend = (process.env.GATEWAY_BACKEND_URL || "").trim().replace(/\/+$/, "");
-		if (backend) return backend;
+	const serverDomain = (
+		process.env.SERVER_DOMAIN ||
+		process.env.GATEWAY_SERVER_DOMAIN ||
+		""
+	).trim().replace(/\/+$/, "");
+	if (serverDomain && !serverDomain.includes("localhost") && !serverDomain.includes("127.0.0.1")) {
+		return serverDomain;
 	}
-	if (typeof window !== "undefined" && window.location?.origin) {
+	if (typeof window !== "undefined" && window.location?.origin && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
 		return window.location.origin;
 	}
+	const backend = (process.env.GATEWAY_BACKEND_URL || "").trim().replace(/\/+$/, "");
+	if (backend && !backend.includes("localhost") && !backend.includes("127.0.0.1")) {
+		return backend;
+	}
+	if (serverDomain) return serverDomain;
+	if (typeof window !== "undefined" && window.location?.origin) return window.location.origin;
 	return getPortConfig().baseUrl || "";
 }
 

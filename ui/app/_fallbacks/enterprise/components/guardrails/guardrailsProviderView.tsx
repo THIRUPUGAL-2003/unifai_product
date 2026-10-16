@@ -9,7 +9,7 @@ import {
 } from "@/lib/store/apis/guardrailsApi";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,6 +30,8 @@ export default function GuardrailsProviderView() {
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [editingProvider, setEditingProvider] = useState<Partial<GuardrailProvider> | null>(null);
+	const [deletingProvider, setDeletingProvider] = useState<GuardrailProvider | null>(null);
+	const [isDeleting, setIsDeleting] = useState(false);
 	const [offset, setOffset] = useState(0);
 	const [limit, setLimit] = useState(10);
 
@@ -205,7 +207,12 @@ export default function GuardrailsProviderView() {
 										>
 											<Edit className="h-4 w-4" />
 										</Button>
-										<Button variant="ghost" size="icon" onClick={() => handleDeleteProvider(provider.id)}>
+										<Button
+											variant="ghost"
+											size="icon"
+											onClick={() => setDeletingProvider(provider)}
+											title="Delete Provider"
+										>
 											<Trash className="text-destructive h-4 w-4" />
 										</Button>
 									</TableCell>
@@ -285,6 +292,38 @@ export default function GuardrailsProviderView() {
 							data-testid="guardrails-provider-save-button"
 						>
 							Save Provider
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={!!deletingProvider} onOpenChange={(open) => { if (!open && !isDeleting) setDeletingProvider(null); }}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete Guardrail Provider</DialogTitle>
+						<DialogDescription>
+							Are you sure you want to delete <span className="font-semibold text-foreground">{deletingProvider?.provider_name} ({deletingProvider?.policy_name})</span>? This action cannot be undone.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter className="gap-2 sm:gap-0">
+						<Button variant="outline" disabled={isDeleting} onClick={() => setDeletingProvider(null)}>
+							Cancel
+						</Button>
+						<Button
+							variant="destructive"
+							disabled={isDeleting}
+							onClick={async () => {
+								if (!deletingProvider) return;
+								setIsDeleting(true);
+								try {
+									await handleDeleteProvider(deletingProvider.id);
+									setDeletingProvider(null);
+								} finally {
+									setIsDeleting(false);
+								}
+							}}
+						>
+							{isDeleting ? "Deleting..." : "Delete"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

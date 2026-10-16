@@ -2225,10 +2225,24 @@ func sanitizePromptMessageJSON(raw tables.PromptMessage) tables.PromptMessage {
 					if fn, ok := imgObj["filename"].(string); ok && fn != "" {
 						filename = fn
 					}
-					newContent = append(newContent, map[string]any{
-						"type": "text",
-						"text": fmt.Sprintf("Attached image: %s\n\n[Visual text content preserved — raw image binary purged]", filename),
-					})
+					// If content already contains extracted OCR text for this image, do not add a redundant placeholder
+					hasOcrText := false
+					for _, other := range content {
+						if oMap, ok := other.(map[string]any); ok {
+							if oType, _ := oMap["type"].(string); oType == "text" {
+								if oText, _ := oMap["text"].(string); strings.Contains(oText, filename) && strings.Contains(oText, "OCR extracted content") {
+									hasOcrText = true
+									break
+								}
+							}
+						}
+					}
+					if !hasOcrText {
+						newContent = append(newContent, map[string]any{
+							"type": "text",
+							"text": fmt.Sprintf("Attached file: %s\n\n[Visual text content preserved — raw image binary purged]", filename),
+						})
+					}
 					continue
 				}
 			}

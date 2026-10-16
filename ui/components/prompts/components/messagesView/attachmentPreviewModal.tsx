@@ -86,6 +86,10 @@ export function AttachmentPreviewModal({
 		let isImage = attachment.type === "image_url";
 		let isAudio = attachment.type === "input_audio";
 
+		if (attachment.type === "image_url" && attachment.image_url?.extracted_text) {
+			rawExtractedText = attachment.image_url.extracted_text.trim();
+		}
+
 		if (attachment.type === "text" && attachment.text) {
 			const t = attachment.text;
 			if (t.startsWith("Voice transcript")) {
@@ -118,6 +122,7 @@ export function AttachmentPreviewModal({
 			lineCount,
 			wordCount,
 			imageUrl: attachment.image_url?.url || "",
+			imageExtractedText: attachment.image_url?.extracted_text || "",
 			audioFormat: attachment.input_audio?.format || "wav",
 			audioDataUrl: attachment.input_audio?.data ? `data:audio/${attachment.input_audio.format || "wav"};base64,${attachment.input_audio.data}` : "",
 		};
@@ -236,6 +241,16 @@ export function AttachmentPreviewModal({
 								<ZoomIn className="h-3.5 w-3.5" />
 								<span>Full multimodal resolution sent to Vision-capable models</span>
 							</div>
+							{parsed.imageExtractedText ? (
+								<div className="mt-4 w-full text-left">
+									<h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+										Extracted text
+									</h4>
+									<div className="p-4 rounded-lg border bg-card text-foreground font-mono text-xs leading-relaxed whitespace-pre-wrap overflow-x-auto max-h-[40vh] select-text">
+										{parsed.imageExtractedText}
+									</div>
+								</div>
+							) : null}
 						</div>
 					) : parsed.isAudio && parsed.audioDataUrl ? (
 						<div className="flex flex-col gap-4">

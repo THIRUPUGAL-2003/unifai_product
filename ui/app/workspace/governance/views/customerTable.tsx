@@ -313,7 +313,7 @@ export default function CustomersTable({
 												data-testid={`customer-row-${customer.name}`}
 												className={cn(
 													"group cursor-pointer transition-colors",
-													isExhausted ? "bg-red-500/5 hover:bg-red-500/10" : "hover:bg-muted/50",
+													isExhausted ? "bg-red-500/10 border-l-4 border-l-red-500 hover:bg-red-500/15 dark:bg-red-950/20" : "hover:bg-muted/50",
 												)}
 												role="button"
 												tabIndex={0}
@@ -329,11 +329,15 @@ export default function CustomersTable({
 												<TableCell className="max-w-[200px] py-4">
 													<div className="flex flex-col gap-2">
 														<span className="truncate font-medium">{customer.name}</span>
-														{isExhausted && (
-															<Badge variant="destructive" className="w-fit text-xs">
-																Limit Reached
+														{isBudgetExhausted ? (
+															<Badge variant="destructive" className="w-fit text-xs bg-red-600 hover:bg-red-700 text-white font-medium">
+																Budget Exhausted
 															</Badge>
-														)}
+														) : isExhausted ? (
+															<Badge variant="destructive" className="w-fit text-xs">
+																Rate Limit Reached
+															</Badge>
+														) : null}
 													</div>
 												</TableCell>
 												<TableCell>

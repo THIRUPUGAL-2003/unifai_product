@@ -676,6 +676,54 @@ export class Message {
 	}
 
 	/**
+	 * Helper to determine if a model supports multimodal image input (vision).
+	 * If false, image_url content blocks must not be sent to avoid provider error 3051.
+	 */
+	static isVisionCapable(modelName?: string, provider?: string): boolean {
+		if (!modelName) return false;
+		const m = modelName.toLowerCase();
+
+		// Explicit non-vision models:
+		if (
+			m.includes("codestral") ||
+			m.includes("mistral-large") ||
+			m.includes("mistral-small") ||
+			m.includes("mistral-medium") ||
+			m.includes("ministral") ||
+			m.includes("open-mistral") ||
+			m.includes("mistral-tiny") ||
+			m.includes("mistral-embed") ||
+			m.includes("mistral-moderation")
+		) {
+			return false;
+		}
+		if (m.includes("deepseek") && !m.includes("vl")) {
+			return false;
+		}
+		if (m.includes("command-r") && !m.includes("vision")) {
+			return false;
+		}
+
+		// Known vision-capable models:
+		if (
+			m.includes("pixtral") ||
+			m.includes("vision") ||
+			m.includes("vl") ||
+			m.includes("4o") ||
+			m.includes("gpt-4-turbo") ||
+			m.includes("claude-3") ||
+			m.includes("gemini") ||
+			m.includes("llava") ||
+			m.includes("cogvlm") ||
+			m.includes("internvl")
+		) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
 	 * Strips raw base64 data URLs from file_data, image_url, and input_audio,
 	 * retaining only extracted plain text and human-readable references.
 	 */
@@ -687,37 +735,71 @@ export class Message {
 			if (!payload) return clone;
 
 			if (Array.isArray(payload.content)) {
-				payload.content = payload.content.map((item: any) => {
-					if (!item || typeof item !== "object") return item;
+				// Detect filenames that already have extracted or OCR text preserved in this payload
+				const existingTextFilenames = new Set<string>();
+				for (const item of payload.content) {
+					if (item && item.type === "text" && typeof item.text === "string") {
+						const parsed = parseAttachmentPart(item);
+						if (parsed?.filename) {
+							existingTextFilenames.add(parsed.filename.toLowerCase());
+						}
+					}
+				}
 
-					// If it's a file attachment, keep extracted text or metadata only - purge raw file_data
-					if (item.type === "file") {
-						const filename = item.file?.filename || "";
-						return {
-							type: "text",
-							text: `Attached file: ${filename}\n\n[Extracted text preserved — raw binary file purged]`,
-						};
+				const sanitizedContent: any[] = [];
+				for (const item of payload.content) {
+					if (!item || typeof item !== "object") {
+						sanitizedContent.push(item);
+						continue;
 					}
 
-					// If it's an image, keep filename and note - purge giant base64 data URL
+					// If it's a file attachment:
+					if (item.type === "file") {
+						const filename = item.file?.filename || "";
+						if (filename && !existingTextFilenames.has(filename.toLowerCase())) {
+							sanitizedContent.push({
+								type: "text",
+								text: `Attached file: ${filename}\n\n[Extracted text preserved — raw binary file purged]`,
+							});
+						}
+						continue;
+					}
+
+					// If it's an image:
 					if (item.type === "image_url") {
 						const filename = item.image_url?.filename || "";
-						return {
-							type: "text",
-							text: `Attached image: ${filename}\n\n[Extracted visual text preserved — raw image binary purged]`,
-						};
+						// If OCR text is already preserved as a separate content part for this file,
+						// we do NOT push a duplicate dummy card! The real OCR text part is kept!
+						if (!filename || !existingTextFilenames.has(filename.toLowerCase())) {
+							sanitizedContent.push({
+								type: "text",
+								text: `Attached file: ${filename || "image"}\n\n[Extracted visual text preserved — raw image binary purged]`,
+							});
+						}
+						continue;
 					}
 
 					// If it's an audio attachment, purge raw audio data
 					if (item.type === "input_audio") {
-						return {
-							type: "text",
-							text: `Attached voice audio\n\n[Transcribed audio text preserved — raw audio binary purged]`,
-						};
+						const hasTranscript = payload.content.some(
+							(c: any) =>
+								c.type === "text" &&
+								typeof c.text === "string" &&
+								(c.text.startsWith("Voice transcript") || c.text.includes("voice recording attached")),
+						);
+						if (!hasTranscript) {
+							sanitizedContent.push({
+								type: "text",
+								text: `Attached voice audio\n\n[Transcribed audio text preserved — raw audio binary purged]`,
+							});
+						}
+						continue;
 					}
 
-					return item;
-				});
+					sanitizedContent.push(item);
+				}
+
+				payload.content = sanitizedContent;
 			}
 
 			return clone;
@@ -727,8 +809,12 @@ export class Message {
 	/**
 	 * Convert to OpenAI-compatible API format for chat completions.
 	 * Excludes error messages and unaccepted requests that immediately failed.
+	 *
+	 * When targetModel is not vision-capable, image_url blocks are omitted
+	 * so the provider never rejects the request with code 3051. The extracted
+	 * OCR text in the unified text content is sent instead.
 	 */
-	static toAPIMessages(messages: Message[]): APIMessage[] {
+	static toAPIMessages(messages: Message[], targetModel?: string, provider?: string): APIMessage[] {
 		const validMessages: Message[] = [];
 		for (let i = 0; i < messages.length; i++) {
 			const m = messages[i];
@@ -746,6 +832,8 @@ export class Message {
 			}
 			validMessages.push(m);
 		}
+
+		const isVision = Message.isVisionCapable(targetModel, provider);
 
 		return validMessages.map((m): APIMessage => {
 				const p = m._payload as CompletionRequest;
@@ -812,21 +900,23 @@ export class Message {
 					}
 
 					const userQuery = userTextParts.join("\n\n");
+					// Only send raw image parts if the target model supports vision
+					const shouldSendImages = isVision && cleanedImageParts.length > 0;
 
 					// If attachments are present (files or images)
 					if (extractedFiles.length > 0 || imageInfos.length > 0) {
 						const formattedUnifiedText = formatUnifiedMultiFileContent(userQuery, extractedFiles, imageInfos);
-						if (cleanedImageParts.length === 0 && otherParts.length === 0) {
-							// Text-only with file extractions: return single clean string for maximum model accuracy
+						if (!shouldSendImages && otherParts.length === 0) {
+							// Text-only with file extractions / OCR: return single clean string for maximum model accuracy
 							const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: formattedUnifiedText };
 							if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
 							if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;
 							return msg;
 						} else {
-							// Multimodal (images or audio): 1 unified text block + image blocks
+							// Multimodal (images or audio): 1 unified text block + image blocks (if vision supported)
 							const finalParts: MessageContent[] = [
 								{ type: "text", text: formattedUnifiedText },
-								...cleanedImageParts,
+								...(shouldSendImages ? cleanedImageParts : []),
 								...otherParts,
 							];
 							const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: finalParts as any };
@@ -837,7 +927,7 @@ export class Message {
 					}
 
 					// No attachments: ordinary multi-part text or empty
-					if (cleanedImageParts.length === 0 && otherParts.length === 0) {
+					if (!shouldSendImages && otherParts.length === 0) {
 						const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: userQuery || "" };
 						if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
 						if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;
@@ -846,7 +936,8 @@ export class Message {
 
 					const fallbackParts: MessageContent[] = [];
 					if (userQuery) fallbackParts.push({ type: "text", text: userQuery });
-					fallbackParts.push(...cleanedImageParts, ...otherParts);
+					if (shouldSendImages) fallbackParts.push(...cleanedImageParts);
+					fallbackParts.push(...otherParts);
 					const msg: APIMessage = { role: m.role ?? MessageRole.USER, content: fallbackParts as any };
 					if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
 					if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;

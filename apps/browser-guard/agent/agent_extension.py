@@ -154,6 +154,37 @@ def host_monitored(host: str, domains: list[str]) -> bool:
     return False
 
 
+def is_internal_host(host: str) -> bool:
+    """Check if host is internal/localhost/private network or the Unifai portal itself."""
+    h = (host or "").lower().strip(".")
+    if h.startswith("www."):
+        h = h[4:]
+    if ":" in h:
+        h = h.split(":", 1)[0]
+    if not h or h in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        return True
+    if h.endswith(".local") or h.endswith(".internal") or h.endswith(".lan") or h.endswith(".home") or h.endswith(".corp"):
+        return True
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(h)
+        if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_unspecified:
+            return True
+    except Exception:
+        pass
+    backend = GATEWAY_BACKEND_URL or ""
+    if backend:
+        b_host = backend.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+        if b_host and (h == b_host or h.endswith("." + b_host)):
+            return True
+    server_dom = os.environ.get("SERVER_DOMAIN") or ""
+    if server_dom:
+        s_host = server_dom.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+        if s_host and (h == s_host or h.endswith("." + s_host)):
+            return True
+    return False
+
+
 def monitored_hosts() -> list[str]:
     """Domains the gateway monitors. Strictly synchronized live with PostgreSQL Target Websites."""
     import time
@@ -298,13 +329,6 @@ def dynamic_rules() -> list[dict]:
     return []
 
 
-
-_RESTRICTED_EXTENSIONS = {
-    ".env", ".pem", ".key", ".cert", ".crt", ".id_rsa", ".id_ed25519",
-    ".kdbx", ".sql", ".dump", ".bak", ".pfx", ".p12", ".ovpn", ".secret"
-}
-
-
 def _compile_rule_pattern(raw: str):
     import re
     pattern = (raw or "").strip()
@@ -396,16 +420,10 @@ def check_prompt(
     files_list = files if isinstance(files, list) else []
     images_list = upload_images if isinstance(upload_images, list) else []
 
-    file_restricted_rule = ""
-    # 1. Immediate scan of attached file names and extensions
     for f in files_list:
         if isinstance(f, dict):
             fname = str(f.get("name") or "").strip()
             fext = os.path.splitext(fname)[1].lower()
-            if fext in _RESTRICTED_EXTENSIONS:
-                file_restricted_rule = f"Restricted File Extension ({fext})"
-                is_blocked = True
-                rule = file_restricted_rule
             ftext = str(f.get("text") or "").strip()
             if ftext:
                 text += f"\n[File: {fname}]\n" + ftext[:15000]
@@ -461,6 +479,10 @@ def check_prompt(
     if clean_host.startswith("www."):
         clean_host = clean_host[4:]
 
+    # STRICT BYPASS: Never monitor, check, or log internal websites / local portal
+    if is_internal_host(clean_host) or is_internal_host(host):
+        return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
+
     platform = ""
     with _sites_lock:
         platform = _domain_platform_map.get(clean_host, "")
@@ -470,8 +492,13 @@ def check_prompt(
                     platform = p
                     break
 
+    # STRICT BYPASS: ONLY outside monitored websites in Target Websites are evaluated/logged!
     if not platform:
-        # Resolve platform dynamically without static hardcoding (e.g. "gemini.google.com" -> "Gemini", "chatgpt.com" -> "Chatgpt")
+        hosts = monitored_hosts()
+        if not host_monitored(clean_host, hosts):
+            # Not an outside monitored AI website — ignore completely (NO logging)
+            return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
+        # Fallback platform name only for confirmed monitored hosts
         parts = clean_host.split(".")
         main_part = parts[0] if parts and parts[0] not in ("www", "chat", "app", "api", "m") else (parts[1] if len(parts) > 1 else clean_host)
         platform = main_part.title() if main_part else (clean_host or "Browser AI")
@@ -501,9 +528,7 @@ def check_prompt(
         "upload_images": images_list[:5],
         "metadata": meta,
     }
-    # If already flagged by client-side DLP rule or restricted file extension
-    if is_blocked or file_restricted_rule:
-        # Fire-and-forget logging to backend
+    if is_blocked:
         try:
             _http_json("POST", f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept", payload, timeout=3)
         except Exception:
@@ -511,8 +536,8 @@ def check_prompt(
         return {
             "blocked": True,
             "action": "Blocked",
-            "message": "Uploading restricted credential/code file is blocked by company security policy." if file_restricted_rule else (f"Blocked by security policy: {rule}" if rule else "Blocked by security policy."),
-            "rule": file_restricted_rule or rule or "Data Loss Prevention Rule",
+            "message": f"Blocked by security policy: {rule}" if rule else "Blocked by security policy.",
+            "rule": rule or "Data Loss Prevention Rule",
             "redacted_prompt": "",
         }
 

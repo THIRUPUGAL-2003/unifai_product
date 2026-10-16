@@ -352,13 +352,13 @@ export default function ObservabilityView() {
 				</div>
 			</div>
 			<div className="w-full pt-4">
-				{selectedPluginId === "prometheus" && <PrometheusView onDelete={handleDelete} isDeleting={isDeleting} />}
-				{selectedPluginId === "otel" && <OtelView onDelete={handleDelete} isDeleting={isDeleting} />}
-				{selectedPluginId === "kafka" && <KafkaView onDelete={handleDelete} isDeleting={isDeleting} />}
-				{selectedPluginId === "datadog" && <DatadogView onDelete={handleDelete} isDeleting={isDeleting} />}
-				{selectedPluginId === "bigquery" && <BigQueryView onDelete={handleDelete} isDeleting={isDeleting} />}
-				{selectedPluginId === "pubsub" && <PubSubView onDelete={handleDelete} isDeleting={isDeleting} />}
-				{selectedPluginId === "newrelic" && <NewrelicView onDelete={handleDelete} isDeleting={isDeleting} />}
+				{selectedPluginId === "prometheus" && <PrometheusView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}
+				{selectedPluginId === "otel" && <OtelView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}
+				{selectedPluginId === "kafka" && <KafkaView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}
+				{selectedPluginId === "datadog" && <DatadogView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}
+				{selectedPluginId === "bigquery" && <BigQueryView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}
+				{selectedPluginId === "pubsub" && <PubSubView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}
+				{selectedPluginId === "newrelic" && <NewrelicView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}
 			</div>
 
 			<AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>

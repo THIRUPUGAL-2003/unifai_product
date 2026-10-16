@@ -1540,13 +1540,32 @@ export default function UsersView() {
 										</TableRow>
 									</TableHeader>
 									<TableBody>
-										{pagedActiveUsers.map((user: SessionUser) => (
-											<TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
+										{pagedActiveUsers.map((user: SessionUser) => {
+											const isUserBudgetExhausted =
+												!isWorkspaceAdminRole(user.role) &&
+												user.budget > 0 &&
+												(user.budget_current_usage ?? 0) >= user.budget;
+
+											return (
+											<TableRow
+												key={user.id}
+												className={cn(
+													"transition-colors",
+													isUserBudgetExhausted
+														? "bg-red-500/10 border-l-4 border-l-red-500 hover:bg-red-500/15 dark:bg-red-950/20"
+														: "hover:bg-muted/20",
+												)}
+											>
 												<TableCell className="flex items-center gap-2 font-medium">
 													<div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-500/10 text-xs font-bold text-teal-400 uppercase">
 														{user.username.slice(0, 2)}
 													</div>
 													{user.username}
+													{isUserBudgetExhausted && (
+														<span className="rounded-full border border-red-500/30 bg-red-600 px-2 py-0.5 text-[10px] font-semibold text-white shadow-xs">
+															Budget Exhausted
+														</span>
+													)}
 													{user.status === "disabled" && (
 														<span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-medium text-rose-400">
 															Disabled
@@ -1664,7 +1683,8 @@ export default function UsersView() {
 													</div>
 												</TableCell>
 											</TableRow>
-										))}
+										);
+									})}
 									</TableBody>
 								</Table>
 								<DataTablePagination

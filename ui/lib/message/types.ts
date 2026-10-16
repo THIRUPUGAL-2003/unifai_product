@@ -36,6 +36,8 @@ export type MessageImageURL = {
 	url: string;
 	detail?: "auto" | "low" | "high";
 	filename?: string;
+	/** Shown in the image preview. Not sent to the model; the OCR text part is. */
+	extracted_text?: string;
 };
 
 export type MessageInputAudio = {

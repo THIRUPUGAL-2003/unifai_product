@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -60,9 +62,26 @@ func (h *WebSocketHandler) getUpgrader() websocket.FastHTTPUpgrader {
 			if origin == "" {
 				// If no Origin header, check the Host header for direct connections
 				host := string(ctx.Request.Header.Peek("Host"))
-				return isLocalhost(host)
+				if isLocalhost(host) {
+					return true
+				}
+				serverDomain := strings.TrimRight(strings.TrimSpace(os.Getenv("SERVER_DOMAIN")), "/")
+				if serverDomain != "" {
+					u, err := url.Parse(serverDomain)
+					if err == nil {
+						reqHost := host
+						if h, _, err := net.SplitHostPort(reqHost); err == nil {
+							reqHost = h
+						}
+						targetHost := u.Hostname()
+						if strings.EqualFold(reqHost, targetHost) {
+							return true
+						}
+					}
+				}
+				return false
 			}
-			// Check if origin is allowed (localhost always allowed + configured origins)
+			// Check if origin is allowed (localhost always allowed + configured origins + SERVER_DOMAIN)
 			return IsOriginAllowed(origin, h.allowedOrigins)
 		},
 	}

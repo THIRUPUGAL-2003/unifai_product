@@ -4,6 +4,29 @@
 (function () {
   "use strict";
 
+  // STRICT BYPASS: Never attach interceptors on internal portals, localhost, or private networks
+  var curHost = (location.hostname || "").toLowerCase().trim();
+  if (curHost.indexOf("www.") === 0) curHost = curHost.slice(4);
+  if (curHost.indexOf(":") >= 0) curHost = curHost.split(":")[0];
+  if (
+    !curHost ||
+    curHost === "localhost" ||
+    curHost === "127.0.0.1" ||
+    curHost === "::1" ||
+    curHost === "0.0.0.0" ||
+    curHost.endsWith(".local") ||
+    curHost.endsWith(".internal") ||
+    curHost.endsWith(".lan") ||
+    curHost.endsWith(".home") ||
+    curHost.endsWith(".corp") ||
+    /^10\.\d+\.\d+\.\d+$/.test(curHost) ||
+    /^192\.168\.\d+\.\d+$/.test(curHost) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(curHost) ||
+    /^127\.\d+\.\d+\.\d+$/.test(curHost)
+  ) {
+    return;
+  }
+
   var armed = false; // Armed only when confirmed by extension for monitored AI domains
   var curScript = document.currentScript;
   var guardNonce = (curScript && curScript.dataset && curScript.dataset.guardNonce) || "";
@@ -13,9 +36,8 @@
   var stagedFiles = [];
   var stagedImages = [];
 
-  // 1. Dynamic DLP Rules fetched live from PostgreSQL Database (No hardcoded static rules!)
+  // Rules come only from the gateway for the armed target site.
   var dynamicRules = [];
-  var restrictedExtensions = /\.(env|pem|key|cert|crt|id_rsa|id_ed25519|kdbx|sql|dump|bak|pfx|p12|ovpn|secret)$/i;
 
   function compileRegex(rawPattern) {
     if (!rawPattern || typeof rawPattern !== "string") return null;
@@ -37,7 +59,7 @@
     }
   }
 
-  function setDynamicRules(rules, exts) {
+  function setDynamicRules(rules) {
     if (Array.isArray(rules)) {
       var compiled = [];
       for (var i = 0; i < rules.length; i++) {
@@ -56,14 +78,6 @@
       }
       dynamicRules = compiled;
     }
-    if (Array.isArray(exts) && exts.length > 0) {
-      var escaped = exts.map(function (e) {
-        return (e.startsWith(".") ? e.slice(1) : e).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      });
-      try {
-        restrictedExtensions = new RegExp("\\.(" + escaped.join("|") + ")$", "i");
-      } catch (e) {}
-    }
   }
 
   // Listen for messages from extension content script
@@ -72,7 +86,7 @@
     if (guardNonce && ev.data.nonce && ev.data.nonce !== guardNonce) return;
     if (ev.data.type === "arm") armed = true;
     if (ev.data.type === "sync_rules") {
-      setDynamicRules(ev.data.rules, ev.data.restricted_extensions);
+      setDynamicRules(ev.data.rules);
     }
     if (ev.data.type === "decision" && pending[ev.data.id]) {
       pending[ev.data.id](ev.data.decision || { blocked: false });
@@ -82,21 +96,7 @@
 
   // Client-Side Fast Evaluation against live DB rules
   function evaluateClientRules(text, files) {
-    // Check restricted file extensions
-    if (Array.isArray(files)) {
-      for (var i = 0; i < files.length; i++) {
-        var fname = (files[i] && files[i].name) || "";
-        if (restrictedExtensions.test(fname)) {
-          return {
-            blocked: true,
-            message: "Uploading restricted credential/code file '" + fname + "' is blocked by company security policy.",
-            rule: "Restricted File Extension"
-          };
-        }
-      }
-    }
-
-    // Check prompt text and file text content against dynamic DB rules
+    // Check prompt text and file text content against the target site's rules.
     var fullContent = text || "";
     if (Array.isArray(files)) {
       for (var j = 0; j < files.length; j++) {
@@ -148,6 +148,9 @@
 
   // Ask Gateway Guard Engine (Async verify with PAC server & Gateway backend)
   function ask(prompt, files, images) {
+    if (!armed) {
+      return Promise.resolve({ blocked: false, passthrough: true });
+    }
     var trimmed = (prompt || "").trim();
     if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
       if (lastDecisionCache.text === trimmed && (Date.now() - lastDecisionCache.time < 5000) && lastDecisionCache.decision) {
@@ -283,9 +286,6 @@
     var titleText = isWarn ? "YP-Raksha Warning" : (isRedact ? "YP-Raksha Redacted" : "YP-Raksha Blocked");
     var iconText = isWarn ? "⚠️" : (isRedact ? "✂️" : "🛡️");
     var text = (message || (isWarn ? "Security Warning: Policy match detected." : (isRedact ? "Sensitive information was redacted." : "This request was blocked by YP-Raksha."))).trim();
-    if (ruleName && text.indexOf(ruleName) < 0) {
-      text = text + " (" + ruleName + ")";
-    }
     var modalId = "yp-raksha-alert-card";
     var old = document.getElementById(modalId);
     if (old) old.remove();
@@ -413,13 +413,7 @@
     var size = file.size || 0;
     var type = file.type || "";
 
-    // 1. Instant check file extension
-    if (restrictedExtensions.test(name)) {
-      showBubble("Uploading '" + name + "' is blocked by company security policy (restricted credential/code file).", "Restricted File Extension");
-      return false;
-    }
-
-    // 2. Read images as Base64 for Vision check
+    // Read images as Base64 for Vision check
     if (type.indexOf("image/") === 0 || /\.(png|jpg|jpeg|webp|bmp|svg)$/i.test(name)) {
       var rImg = new FileReader();
       rImg.onload = function (e) {
@@ -549,7 +543,7 @@
           return;
         }
       }
-    } catch (pasteErr) {}
+    } catch (pasteErr) { }
   }, true);
 
   // --- 3. SEND INTERCEPTION (Enter Key & Send Button) ---
@@ -670,7 +664,7 @@
               }
             }
           }
-        } catch (err) {}
+        } catch (err) { }
       }
       // Handle FormData body (File uploads)
       else if (body && typeof body.forEach === "function") {
@@ -682,7 +676,7 @@
               promptText = val;
             }
           });
-        } catch (err) {}
+        } catch (err) { }
       }
 
       if (!promptText && netFiles.length === 0) {
@@ -729,7 +723,7 @@
       try {
         var parsed = JSON.parse(body);
         if (parsed && typeof parsed.prompt === "string") promptText = parsed.prompt;
-      } catch (e) {}
+      } catch (e) { }
     }
     if (promptText) {
       var clientDecision = evaluateClientRules(promptText, []);

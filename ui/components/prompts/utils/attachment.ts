@@ -2,7 +2,7 @@ import { type MessageContent } from "@/lib/message";
 import { toast } from "sonner";
 import { audioFormatFromMimeOrName, normalizeAudioToWavFile } from "./audioNormalize";
 import { extractPromptFileText } from "./extractFileText";
-import { extractZipInnerFiles } from "./extractZip";
+import { extractArchiveInnerFiles, isPromptArchive } from "./extractArchive";
 import { isThinExtractedText, ocrImageFile, ocrPdfFile, ocrTextAttachment } from "./ocrImage";
 import { transcribeAudioFile, voiceTranscriptAttachment } from "./transcribeAudio";
 
@@ -827,8 +827,7 @@ export async function normalizeImageForModel(file: File, mimeType: string): Prom
 }
 
 function isZipFile(file: File, mimeType: string): boolean {
-	const lower = file.name.toLowerCase();
-	return lower.endsWith(".zip") || mimeType === "application/zip" || mimeType === "application/x-zip-compressed";
+	return isPromptArchive(file, mimeType);
 }
 
 function isPdfFile(file: File, mimeType: string): boolean {
@@ -840,7 +839,7 @@ function isPdfFile(file: File, mimeType: string): boolean {
  * Convert one or more files into message attachments.
  * Zip archives are expanded and each supported inner file is imported.
  */
-export type AttachmentImportOptions = { apiKeyId?: string; virtualKeyId?: string };
+export type AttachmentImportOptions = { apiKeyId?: string; virtualKeyId?: string; archiveDepth?: number };
 
 export async function filesToAttachments(files: FileList | File[], opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	const attachments: MessageContent[] = [];
@@ -868,16 +867,22 @@ export async function filesToAttachments(files: FileList | File[], opts?: Attach
 }
 
 async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
+	const depth = opts?.archiveDepth ?? 0;
+	if (depth > 3) {
+		toast.error(`"${zipFile.name}" is nested too deeply to unpack`);
+		return [];
+	}
 	toast.message(`Unpacking ${zipFile.name}…`);
-	const { files, skipped, errors } = await extractZipInnerFiles(zipFile);
+	const { files, skipped, errors } = await extractArchiveInnerFiles(zipFile);
 	if (files.length === 0) {
-		toast.error(`No supported files found in "${zipFile.name}"`, {
-			description: "Include PDF, Office, text, image, or audio files inside the zip.",
+		toast.error(`No files found in "${zipFile.name}"`, {
+			description: errors[0] || "The archive is empty or could not be opened.",
 		});
 		return [];
 	}
 	toast.message(`Importing ${files.length} file(s) from ${zipFile.name}…`);
 	const out: MessageContent[] = [];
+	const nextOpts = { ...opts, archiveDepth: depth + 1 };
 	for (const inner of files) {
 		const error = validatePromptAttachmentFile(inner);
 		if (error) {
@@ -885,10 +890,12 @@ async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions)
 			continue;
 		}
 		try {
-			if (isImageFile(inner)) {
-				out.push(...(await imageFileAttachments(inner, resolveFileMimeType(inner), opts)));
+			if (isPromptArchive(inner, resolveFileMimeType(inner))) {
+				out.push(...(await attachmentsFromZip(inner, nextOpts)));
+			} else if (isImageFile(inner)) {
+				out.push(...(await imageFileAttachments(inner, resolveFileMimeType(inner), nextOpts)));
 			} else {
-				const attachment = await fileToAttachment(inner, opts);
+				const attachment = await fileToAttachment(inner, nextOpts);
 				if (attachment) out.push(attachment);
 			}
 		} catch (err) {
@@ -939,14 +946,21 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 		const ocr = await ocrImageFile(ocrSource, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
 		if (ocr?.text?.trim()) extracted = ocr.text.trim();
 	}
-	if (!extracted && (file.name.toLowerCase().endsWith(".svg") || mimeType.includes("svg"))) {
-		const svgText = await extractPromptFileText(file, mimeType);
-		if (svgText?.trim()) extracted = svgText.trim();
+	if (!extracted) {
+		const fallback = await extractPromptFileText(file, mimeType);
+		if (fallback?.trim() && !fallback.startsWith("[Binary File:") && !fallback.includes("[No readable text content found")) {
+			extracted = fallback.trim();
+		}
 	}
 	if (dataUrl) {
 		out.push({
 			type: "image_url",
-			image_url: { url: dataUrl, detail: "auto", filename: file.name },
+			image_url: {
+				url: dataUrl,
+				detail: "auto",
+				filename: file.name,
+				extracted_text: extracted || undefined,
+			},
 		});
 	}
 	if (extracted) {
@@ -1014,39 +1028,39 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 		return parts[0] ?? null;
 	}
 
-	// Only these 9 formats are accepted by Whisper / transcription APIs.
-	// All other audio-like files (wma, aiff, mid, sf2, als, band, flp, ptx, …)
-	// fall through to extractPromptFileText which returns binary-strings metadata.
-	const WHISPER_EXTS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm"]);
+	const WHISPER_EXTS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm", "aac", "opus", "weba"]);
 	const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
-	const isTranscribableAudio = WHISPER_EXTS.has(fileExt) || (mimeType.startsWith("audio/") && ["audio/flac", "audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/webm", "audio/x-wav", "audio/wave", "audio/vnd.wav"].includes(mimeType));
-	const isTranscribableVideo = isVideoFile(file, mimeType) && ["mp4", "mpeg", "mpg", "webm", "m4v"].includes(fileExt);
+	const audioLike = mimeType.startsWith("audio/") || ["mp3", "wav", "m4a", "flac", "ogg", "opus", "aac", "wma", "aiff", "aif", "amr", "weba", "mpga"].includes(fileExt);
+	const videoLike = isVideoFile(file, mimeType);
 
-	if (isTranscribableAudio || isTranscribableVideo) {
-		const normalized = (await normalizeAudioToWavFile(file)) || file;
-		toast.message("Transcribing voice with Whisper…");
-		const transcript = await transcribeAudioFile(normalized, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
-		if (transcript && transcript.text) {
-			toast.success(`Voice transcribed (${transcript.model})`);
-			return voiceTranscriptAttachment(file.name, transcript.text);
-		}
-		try {
-			const b64Url = await fileToBase64(normalized);
-			const commaIdx = b64Url.indexOf(",");
-			const rawB64 = commaIdx >= 0 ? b64Url.slice(commaIdx + 1) : b64Url;
-			const fmt = (fileExt === "mp3" || fileExt === "wav" ? fileExt : "wav") as "mp3" | "wav";
-			toast.message(`Attached audio: ${file.name}`);
-			return {
-				type: "input_audio",
-				input_audio: {
-					data: rawB64,
-					format: fmt,
-				},
-			};
-		} catch {
-			const reason = transcript && "error" in transcript ? transcript.error : "no transcript";
-			toast.error(`Voice was not transcribed: ${reason}`);
-			return null;
+	if (audioLike || videoLike) {
+		const normalized = (await normalizeAudioToWavFile(file)) || (WHISPER_EXTS.has(fileExt) ? file : null);
+		if (normalized) {
+			toast.message(videoLike ? "Transcribing video audio with Whisper…" : "Transcribing voice with Whisper…");
+			const transcript = await transcribeAudioFile(normalized, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
+			if (transcript && transcript.text) {
+				toast.success(`Voice transcribed (${transcript.model})`);
+				return voiceTranscriptAttachment(file.name, transcript.text);
+			}
+			if (audioLike) {
+				try {
+					const b64Url = await fileToBase64(normalized);
+					const commaIdx = b64Url.indexOf(",");
+					const rawB64 = commaIdx >= 0 ? b64Url.slice(commaIdx + 1) : b64Url;
+					const fmt = (fileExt === "mp3" || fileExt === "wav" ? fileExt : "wav") as "mp3" | "wav";
+					toast.message(`Attached audio: ${file.name}`);
+					return {
+						type: "input_audio",
+						input_audio: {
+							data: rawB64,
+							format: fmt,
+						},
+					};
+				} catch {
+					const reason = transcript && "error" in transcript ? transcript.error : "no transcript";
+					toast.error(`Voice was not transcribed: ${reason}`);
+				}
+			}
 		}
 	}
 

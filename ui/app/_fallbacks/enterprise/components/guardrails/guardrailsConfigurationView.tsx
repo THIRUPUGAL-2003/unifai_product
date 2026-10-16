@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -63,6 +63,8 @@ export default function GuardrailsConfigurationView() {
 
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [editingRule, setEditingRule] = useState<Partial<GuardrailRule> | null>(null);
+	const [deletingRule, setDeletingRule] = useState<GuardrailRule | null>(null);
+	const [isDeleting, setIsDeleting] = useState(false);
 	const [promptScope, setPromptScope] = useState<GuardrailPromptScope>("all");
 	const [selectedPromptIds, setSelectedPromptIds] = useState<string[]>([]);
 	const [offset, setOffset] = useState(0);
@@ -380,7 +382,12 @@ export default function GuardrailsConfigurationView() {
 										>
 											<Edit className="h-4 w-4" />
 										</Button>
-										<Button variant="ghost" size="icon" onClick={() => void handleDeleteRule(rule.id)}>
+										<Button
+											variant="ghost"
+											size="icon"
+											onClick={() => setDeletingRule(rule)}
+											title="Delete Rule"
+										>
 											<Trash className="text-destructive h-4 w-4" />
 										</Button>
 									</TableCell>
@@ -600,6 +607,38 @@ export default function GuardrailsConfigurationView() {
 							data-testid="guardrails-rule-save-button"
 						>
 							Save Rule
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={!!deletingRule} onOpenChange={(open) => { if (!open && !isDeleting) setDeletingRule(null); }}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete Guardrail Rule</DialogTitle>
+						<DialogDescription>
+							Are you sure you want to delete <span className="font-semibold text-foreground">{deletingRule?.name}</span>? This action cannot be undone.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter className="gap-2 sm:gap-0">
+						<Button variant="outline" disabled={isDeleting} onClick={() => setDeletingRule(null)}>
+							Cancel
+						</Button>
+						<Button
+							variant="destructive"
+							disabled={isDeleting}
+							onClick={async () => {
+								if (!deletingRule) return;
+								setIsDeleting(true);
+								try {
+									await handleDeleteRule(deletingRule.id);
+									setDeletingRule(null);
+								} finally {
+									setIsDeleting(false);
+								}
+							}}
+						>
+							{isDeleting ? "Deleting..." : "Delete"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

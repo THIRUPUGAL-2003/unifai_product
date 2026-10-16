@@ -93,6 +93,34 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		payload.Metadata["agent_type"] = logstore.NormalizeBrowserAIAgentType(agentType)
 	}
 
+	// Filter out internal application / localhost / private network traffic so ONLY external AI browser traffic is recorded
+	metaDomain := strings.ToLower(strings.TrimSpace(getMetadataString(payload.Metadata, "domain")))
+	metaURL := strings.ToLower(strings.TrimSpace(getMetadataString(payload.Metadata, "url")))
+	if strings.EqualFold(payload.Platform, "localhost") ||
+		logstore.IsInternalHostOrDomain(payload.Platform) ||
+		logstore.IsInternalHostOrDomain(metaDomain) ||
+		logstore.IsInternalHostOrDomain(metaURL) ||
+		strings.Contains(metaURL, "localhost:") || strings.Contains(metaURL, "127.0.0.1:") ||
+		strings.Contains(metaURL, "/workspace/") || strings.Contains(metaURL, "/api/") {
+		SendJSON(ctx, map[string]any{
+			"status":             "success",
+			"allowed":            true,
+			"action":             "Allowed",
+			"rule_triggered":     "",
+			"warning_message":    "",
+			"redacted_prompt":    payload.Prompt,
+			"forward_prompt":     payload.Prompt,
+			"risk_score":         0,
+			"predictive_risk":    "LOW",
+			"predicted_category": "SAFE",
+			"reply_text":         "",
+			"reply_bot_provider": "",
+			"reply_bot_model":    "",
+			"eval_error":         "",
+		})
+		return
+	}
+
 	evalOnly := metadataBool(payload.Metadata, "evaluation_only")
 	if evalOnly {
 		allowed, action, ruleTriggered, ruleWarning, evalError, securityVerdict := h.evaluateGuardOnly(ctx, payload.Prompt, payload.UploadImages)
@@ -860,6 +888,24 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 	if fileName == "" && uploadName != "" {
 		fileName = uploadName
 		metadata["file_name"] = fileName
+	}
+
+	fileMetaDomain := strings.ToLower(strings.TrimSpace(getMetadataString(metadata, "domain")))
+	fileMetaURL := strings.ToLower(strings.TrimSpace(getMetadataString(metadata, "url")))
+	if strings.EqualFold(platform, "localhost") ||
+		logstore.IsInternalHostOrDomain(platform) ||
+		logstore.IsInternalHostOrDomain(fileMetaDomain) ||
+		logstore.IsInternalHostOrDomain(fileMetaURL) ||
+		strings.Contains(fileMetaURL, "localhost:") || strings.Contains(fileMetaURL, "127.0.0.1:") ||
+		strings.Contains(fileMetaURL, "/workspace/") || strings.Contains(fileMetaURL, "/api/") {
+		SendJSON(ctx, map[string]any{
+			"status":          "success",
+			"allowed":         true,
+			"action":          "Allowed",
+			"rule_triggered":  "",
+			"warning_message": "",
+		})
+		return
 	}
 
 	logEntry, ruleWarning, err := h.manager.InterceptPrompt(ctx, platform, prompt, clientIP, metadata)

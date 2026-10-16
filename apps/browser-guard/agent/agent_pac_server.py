@@ -126,10 +126,9 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
             self._json(200, {"hosts": monitored_hosts()})
             return
         if path == "/extension/rules":
-            from agent_extension import dynamic_rules, _RESTRICTED_EXTENSIONS
+            from agent_extension import dynamic_rules
             self._json(200, {
                 "rules": dynamic_rules(),
-                "restricted_extensions": sorted(list(_RESTRICTED_EXTENSIONS)),
             })
             return
         if path == "/extension/update.xml":

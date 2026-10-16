@@ -1,8 +1,8 @@
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 const MAX_EXTRACT_CHARS = 120_000;
-const MAX_PDF_PAGES = 50;
-const MAX_PPTX_SLIDES = 50;
+const MAX_PDF_PAGES = 200;
+const MAX_PPTX_SLIDES = 200;
 
 let pdfjsReady: Promise<typeof import("pdfjs-dist")> | null = null;
 
@@ -193,13 +193,16 @@ async function extractPptxText(buf: ArrayBuffer): Promise<string> {
 		.slice(0, MAX_PPTX_SLIDES);
 
 	const parts: string[] = [];
+	let visitedSlides = 0;
 	for (const name of slideNames) {
+		visitedSlides += 1;
 		const xml = await zip.files[name].async("string");
 		const texts = [...xml.matchAll(/<a:t[^>]*>([\s\S]*?)<\/a:t>/g)].map((m) => decodeXmlEntities(m[1] || "").trim());
 		const slideText = texts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 		if (slideText) {
 			const num = name.match(/slide(\d+)/i)?.[1] || "?";
 			parts.push(`## Slide ${num}\n${slideText}`);
+			if (parts.join("\n\n").length >= MAX_EXTRACT_CHARS) break;
 		}
 	}
 
@@ -215,7 +218,12 @@ async function extractPptxText(buf: ArrayBuffer): Promise<string> {
 		}
 	}
 
-	return parts.join("\n\n").trim();
+	let text = parts.join("\n\n").trim();
+	const totalSlides = Object.keys(zip.files).filter((n: string) => /^ppt\/slides\/slide\d+\.xml$/i.test(n)).length;
+	if (visitedSlides > 0 && visitedSlides < totalSlides) {
+		text += `\n\n[Truncated: showed first ${visitedSlides} of ${totalSlides} slides]`;
+	}
+	return text;
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
@@ -223,6 +231,7 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
 	const doc = await pdfjs.getDocument({ data: bytes.slice() }).promise;
 	const parts: string[] = [];
 	const maxPages = Math.min(doc.numPages, MAX_PDF_PAGES);
+	let reached = 0;
 	for (let i = 1; i <= maxPages; i++) {
 		const page = await doc.getPage(i);
 		const content = await page.getTextContent();
@@ -245,13 +254,15 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
 			if (y !== null) lastY = y;
 		}
 		const trimmedPage = pageText.trim();
+		reached = i;
 		if (trimmedPage) {
-			parts.push(maxPages > 1 ? `[Page ${i} of ${doc.numPages}]\n${trimmedPage}` : trimmedPage);
+			parts.push(doc.numPages > 1 ? `[Page ${i} of ${doc.numPages}]\n${trimmedPage}` : trimmedPage);
+			if (parts.join("\n\n").length >= MAX_EXTRACT_CHARS) break;
 		}
 	}
-	const text = parts.join("\n\n").trim();
-	if (doc.numPages > maxPages) {
-		return `${text}\n\n[Truncated: showed first ${maxPages} of ${doc.numPages} pages]`;
+	let text = parts.join("\n\n").trim();
+	if (reached > 0 && reached < doc.numPages) {
+		text += `\n\n[Truncated: showed first ${reached} of ${doc.numPages} pages]`;
 	}
 	return text;
 }
@@ -273,14 +284,22 @@ async function extractSpreadsheetText(buf: ArrayBuffer): Promise<string> {
 	const XLSX = XLSXmod.default ?? XLSXmod;
 	const wb = XLSX.read(buf, { type: "array" });
 	const chunks: string[] = [];
-	for (const sheetName of wb.SheetNames.slice(0, 10)) {
+	const names: string[] = wb.SheetNames || [];
+	let visited = 0;
+	for (const sheetName of names) {
+		if (chunks.join("\n\n").length >= MAX_EXTRACT_CHARS) break;
+		visited += 1;
 		const sheet = wb.Sheets[sheetName];
 		const csv = XLSX.utils.sheet_to_csv(sheet);
 		if (csv?.trim()) {
 			chunks.push(`## Sheet: ${sheetName}\n${csv.trim()}`);
 		}
 	}
-	return chunks.join("\n\n");
+	let text = chunks.join("\n\n");
+	if (visited < names.length) {
+		text += `\n\n[Truncated: showed first ${visited} of ${names.length} sheets]`;
+	}
+	return text;
 }
 
 function looksLikeZipOffice(bytes: Uint8Array): boolean {
@@ -455,6 +474,26 @@ const TEXT_STANDALONE_NAMES = new Set([
 	"merges.txt",
 ]);
 
+function clipExtract(text: string | null | undefined): string | null {
+	const t = (text || "").trim();
+	if (!t) return null;
+	return t.slice(0, MAX_EXTRACT_CHARS);
+}
+
+/** Try each reader. One failure must not skip the readers after it. */
+async function firstExtracted(steps: Array<() => Promise<string | null | undefined>>): Promise<string | null> {
+	for (const step of steps) {
+		try {
+			const text = clipExtract(await step());
+			if (!text) continue;
+			if (isUsefulExtractedText(text) || text.length >= 4) return text;
+		} catch (error) {
+			console.warn("Prompt file extract step failed:", error);
+		}
+	}
+	return null;
+}
+
 /** Best-effort plain text for prompt-repo attachments (PDF / Office / Code / Text). */
 export async function extractPromptFileText(file: File, mimeType: string): Promise<string | null> {
 	const buf = await file.arrayBuffer();
@@ -467,11 +506,15 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 	const baseName = name.split("/").pop()?.split("\\").pop() || name;
 	const mime = (mimeType || file.type || "").toLowerCase();
 
+	const isPdf = mime.includes("pdf") || name.endsWith(".pdf") || (bytes.length >= 5 && new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-");
+	const isZip = looksLikeZipOffice(bytes);
+
 	try {
+		const steps: Array<() => Promise<string | null | undefined>> = [];
+
 		// PDF
-		if (mime.includes("pdf") || name.endsWith(".pdf") || (bytes.length >= 5 && new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-")) {
-			const text = await extractPdfText(bytes);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		if (isPdf) {
+			steps.push(() => extractPdfText(bytes));
 		}
 
 		const wordOoxml = /\.(docx|docm|dotx|dotm)$/i.test(name) || mime.includes("wordprocessingml");
@@ -491,38 +534,37 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			mime.includes("opendocument.graphics");
 
 		// Word OOXML: .docx .docm .dotx .dotm — mammoth reads the document XML.
-		if (wordOoxml || (looksLikeZipOffice(bytes) && /\.(docx|docm|dotx|dotm)$/i.test(name))) {
-			const text = await extractDocxText(buf);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		if (wordOoxml || (isZip && /\.(docx|docm|dotx|dotm)$/i.test(name))) {
+			steps.push(() => extractDocxText(buf));
 		}
 
 		// Legacy Word .doc is an OLE compound file, not a zip.
-		if (!looksLikeZipOffice(bytes) && (name.endsWith(".doc") || mime.includes("msword") || (looksLikeOleCompound(bytes) && name.endsWith(".doc")))) {
-			const text = await extractDocText(buf);
-			if (text && isUsefulExtractedText(text)) return text.slice(0, MAX_EXTRACT_CHARS);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		if (!isZip && (name.endsWith(".doc") || name.endsWith(".dot") || mime.includes("msword") || (looksLikeOleCompound(bytes) && (name.endsWith(".doc") || name.endsWith(".dot"))))) {
+			steps.push(async () => {
+				const text = await extractDocText(buf);
+				return text && isUsefulExtractedText(text) ? text : null;
+			});
 		}
 
 		// PowerPoint OOXML, including macro and template packages.
 		if (pptOoxml) {
-			const text = await extractPptxText(buf);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+			steps.push(() => extractPptxText(buf));
 		}
 
 		// Legacy PowerPoint .ppt / .pps is OLE. A zip package must not take this path.
 		if (
-			!looksLikeZipOffice(bytes) &&
-			(name.endsWith(".ppt") || name.endsWith(".pps") || (mime.includes("ms-powerpoint") && !mime.includes("macroenabled")))
+			!isZip &&
+			(name.endsWith(".ppt") || name.endsWith(".pps") || name.endsWith(".pot") || (mime.includes("ms-powerpoint") && !mime.includes("macroenabled")))
 		) {
-			const text = await extractPptBinaryText(buf);
-			if (text && isUsefulExtractedText(text)) return text.slice(0, MAX_EXTRACT_CHARS);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+			steps.push(async () => {
+				const text = await extractPptBinaryText(buf);
+				return text && isUsefulExtractedText(text) ? text : null;
+			});
 		}
 
 		// OpenDocument text, presentation, and drawing share content.xml.
 		if (odfText) {
-			const text = await extractOdfText(buf);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+			steps.push(() => extractOdfText(buf));
 		}
 
 		// Spreadsheets: SheetJS for workbooks, plain decode for CSV/TSV.
@@ -534,31 +576,40 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 			mime.includes("tab-separated")
 		) {
 			if (name.endsWith(".csv") || name.endsWith(".tsv") || mime.includes("csv") || mime.includes("tab-separated")) {
-				const text = new TextDecoder().decode(bytes);
-				return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+				steps.push(async () => new TextDecoder().decode(bytes));
+			} else {
+				steps.push(() => extractSpreadsheetText(buf));
 			}
-			const text = await extractSpreadsheetText(buf);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
 		}
 
 		// Jupyter Notebook (.ipynb)
 		if (name.endsWith(".ipynb")) {
-			const raw = new TextDecoder().decode(bytes);
-			const text = extractJupyterNotebookText(raw);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+			steps.push(async () => extractJupyterNotebookText(new TextDecoder().decode(bytes)));
 		}
 
 		// Rich Text Format (.rtf)
-		if (name.endsWith(".rtf") || mime.includes("rtf")) {
-			const raw = new TextDecoder().decode(bytes);
-			const text = extractRtfText(raw);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+		if (name.endsWith(".rtf") || mime.includes("rtf") || (bytes.length >= 5 && new TextDecoder().decode(bytes.slice(0, 5)) === "{\\rtf")) {
+			steps.push(async () => extractRtfText(new TextDecoder().decode(bytes)));
 		}
 
 		// EPUB is a zip of HTML/XHTML chapters.
 		if (name.endsWith(".epub") || mime.includes("epub")) {
-			const text = await extractEpubText(buf);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+			steps.push(() => extractEpubText(buf));
+		}
+
+		// Magic fallbacks when the extension was wrong or the first reader returned nothing.
+		if (isZip && !name.endsWith(".epub")) {
+			steps.push(() => extractDocxText(buf));
+			steps.push(() => extractSpreadsheetText(buf));
+			steps.push(() => extractPptxText(buf));
+			steps.push(() => extractOdfText(buf));
+			steps.push(() => extractEpubText(buf));
+		}
+		if (looksLikeOleCompound(bytes)) {
+			steps.push(async () => {
+				const text = await extractFromOleCompound(buf, []);
+				return text && isUsefulExtractedText(text) ? text : null;
+			});
 		}
 
 		// Code, Markdown, Config, Markup, Text files
@@ -574,25 +625,30 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 
 		const hasNul = bytes.subarray(0, Math.min(bytes.length, 8192)).includes(0);
 		if (!hasNul && (isKnownTextExt || isTextMime || isTextBytes(bytes))) {
-			let text = new TextDecoder().decode(bytes);
-			if (name.endsWith(".json") || name.endsWith(".jsonc") || mime.includes("json")) {
-				try {
-					text = JSON.stringify(JSON.parse(text), null, 2);
-				} catch {
-					/* keep raw text */
+			steps.push(async () => {
+				let text = new TextDecoder().decode(bytes);
+				if (name.endsWith(".json") || name.endsWith(".jsonc") || mime.includes("json")) {
+					try {
+						text = JSON.stringify(JSON.parse(text), null, 2);
+					} catch {
+						/* keep raw text */
+					}
 				}
-			}
-			if (name.endsWith(".html") || name.endsWith(".htm") || name.endsWith(".xhtml") || mime.includes("html")) {
-				text = htmlToPlainText(text);
-			}
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
+				if (
+					name.endsWith(".html") ||
+					name.endsWith(".htm") ||
+					name.endsWith(".xhtml") ||
+					name.endsWith(".fb2") ||
+					mime.includes("html")
+				) {
+					text = htmlToPlainText(text);
+				}
+				return text;
+			});
 		}
 
-		// Unknown OLE compound files (old Office without a matching extension).
-		if (looksLikeOleCompound(bytes)) {
-			const text = await extractFromOleCompound(buf, []);
-			return text.trim() ? text.slice(0, MAX_EXTRACT_CHARS) : null;
-		}
+		const extracted = await firstExtracted(steps);
+		if (extracted) return extracted;
 
 		// ── Binary / unknown fallback ─────────────────────────────────────────
 		// For AI models, databases, executables, CAD binary, fonts, game assets,

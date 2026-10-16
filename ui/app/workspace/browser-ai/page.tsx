@@ -1214,6 +1214,73 @@ export default function BrowserAiPage() {
 	const [guardKeyLoading, setGuardKeyLoading] = useState(false);
 	const [guardKeyHint, setGuardKeyHint] = useState("");
 
+	// Confirm Dialog for actions & deletions across Browser AI
+	const [genericConfirmDialog, setGenericConfirmDialog] = useState<{
+		open: boolean;
+		title: string;
+		description: string;
+		actionLabel: string;
+		isDestructive: boolean;
+		onConfirm: () => void | Promise<void>;
+	}>({
+		open: false,
+		title: "",
+		description: "",
+		actionLabel: "Confirm",
+		isDestructive: false,
+		onConfirm: () => {},
+	});
+
+	const handleConfirmDeleteRule = (rule: BrowserGuardRule) => {
+		setGenericConfirmDialog({
+			open: true,
+			title: "Delete Guard Rule?",
+			description: `Are you sure you want to delete rule "${rule.name}"? This action cannot be undone.`,
+			actionLabel: "Delete Rule",
+			isDestructive: true,
+			onConfirm: async () => {
+				try {
+					await deleteRule(rule.id).unwrap();
+					toast({
+						title: "Rule Deleted",
+						description: `Rule "${rule.name}" was removed.`,
+					});
+				} catch (err: any) {
+					toast({
+						variant: "destructive",
+						title: "Error",
+						description: getErrorMessage(err) || "Failed to delete rule",
+					});
+				}
+			},
+		});
+	};
+
+	const handleConfirmDeleteTarget = (tgt: BrowserTargetWebsite) => {
+		setGenericConfirmDialog({
+			open: true,
+			title: "Delete Target Domain?",
+			description: `Are you sure you want to delete "${tgt.domain}" from monitored target websites? This action cannot be undone.`,
+			actionLabel: "Delete Target",
+			isDestructive: true,
+			onConfirm: async () => {
+				try {
+					await deleteTarget(tgt.id).unwrap();
+					toast({
+						title: "Target Deleted",
+						description: `Domain "${tgt.domain}" was removed.`,
+					});
+				} catch (err: any) {
+					toast({
+						variant: "destructive",
+						title: "Error",
+						description: getErrorMessage(err) || "Failed to delete target",
+					});
+				}
+			},
+		});
+	};
+
 
 	const [selectedAgentDetails, setSelectedAgentDetails] = useState<BrowserAIAgent | null>(null);
 	const [agentDetailsKey, setAgentDetailsKey] = useState<string>("");
@@ -1250,32 +1317,40 @@ export default function BrowserAiPage() {
 		}
 	};
 
-	const handleRotateDetailsKey = async () => {
+	const handleRotateDetailsKey = () => {
 		if (!selectedAgentDetails) return;
-		if (!confirm(`Force rotate daily uninstall key for ${selectedAgentDetails.hostname || selectedAgentDetails.id} now? Old key will immediately stop working.`)) return;
-		try {
-			const res = await rotateAgentUninstallKey(selectedAgentDetails.id).unwrap();
-			if (res?.uninstall_key) {
-				setAgentDetailsKey(res.uninstall_key);
-				if (res.uninstall_key_rotated_at) {
-					setAgentDetailsKeyRotatedAt(res.uninstall_key_rotated_at);
+		setGenericConfirmDialog({
+			open: true,
+			title: "Force Rotate Daily Uninstall Key?",
+			description: `Force rotate daily uninstall key for ${selectedAgentDetails.hostname || selectedAgentDetails.id} now? Old key will immediately stop working.`,
+			actionLabel: "Rotate Key",
+			isDestructive: false,
+			onConfirm: async () => {
+				try {
+					const res = await rotateAgentUninstallKey(selectedAgentDetails.id).unwrap();
+					if (res?.uninstall_key) {
+						setAgentDetailsKey(res.uninstall_key);
+						if (res.uninstall_key_rotated_at) {
+							setAgentDetailsKeyRotatedAt(res.uninstall_key_rotated_at);
+						}
+						await navigator.clipboard.writeText(res.uninstall_key);
+						setAgentDetailsKeyCopied(true);
+						setTimeout(() => setAgentDetailsKeyCopied(false), 2000);
+						toast({
+							title: "Key Rotated",
+							description: `New daily uninstall key generated and copied to clipboard.`,
+						});
+					}
+					refetchAgents();
+				} catch (err: any) {
+					toast({
+						variant: "destructive",
+						title: "Rotation Failed",
+						description: getErrorMessage(err) || "Failed to rotate Guard uninstall key",
+					});
 				}
-				await navigator.clipboard.writeText(res.uninstall_key);
-				setAgentDetailsKeyCopied(true);
-				setTimeout(() => setAgentDetailsKeyCopied(false), 2000);
-				toast({
-					title: "Key Rotated",
-					description: `New daily uninstall key generated and copied to clipboard.`,
-				});
-			}
-			refetchAgents();
-		} catch (err: any) {
-			toast({
-				variant: "destructive",
-				title: "Rotation Failed",
-				description: getErrorMessage(err) || "Failed to rotate Guard uninstall key",
-			});
-		}
+			},
+		});
 	};
 
 	const handleSaveContactEmail = async (override?: string) => {
@@ -1351,25 +1426,33 @@ export default function BrowserAiPage() {
 		}
 	};
 
-	const handleRotateGuardUninstallKey = async (agent: BrowserAIAgent) => {
-		if (!confirm(`Manually rotate uninstall key for ${agent.hostname || agent.id} now? Note: Guard keys auto-rotate daily every 24h, but you can force rotate immediately.`)) return;
-		try {
-			const res = await rotateAgentUninstallKey(agent.id).unwrap();
-			if (res?.uninstall_key) {
-				await navigator.clipboard.writeText(res.uninstall_key);
-				toast({
-					title: "Key Rotated",
-					description: `New daily Guard uninstall key generated and copied to clipboard for ${res.hostname || res.agent_id}.`,
-				});
-			}
-			refetchAgents();
-		} catch (err: any) {
-			toast({
-				variant: "destructive",
-				title: "Error",
-				description: getErrorMessage(err) || "Failed to rotate Guard uninstall key",
-			});
-		}
+	const handleRotateGuardUninstallKey = (agent: BrowserAIAgent) => {
+		setGenericConfirmDialog({
+			open: true,
+			title: "Rotate Guard Uninstall Key?",
+			description: `Manually rotate uninstall key for ${agent.hostname || agent.id} now? Note: Guard keys auto-rotate daily every 24h, but you can force rotate immediately.`,
+			actionLabel: "Rotate Key",
+			isDestructive: false,
+			onConfirm: async () => {
+				try {
+					const res = await rotateAgentUninstallKey(agent.id).unwrap();
+					if (res?.uninstall_key) {
+						await navigator.clipboard.writeText(res.uninstall_key);
+						toast({
+							title: "Key Rotated",
+							description: `New daily Guard uninstall key generated and copied to clipboard for ${res.hostname || res.agent_id}.`,
+						});
+					}
+					refetchAgents();
+				} catch (err: any) {
+					toast({
+						variant: "destructive",
+						title: "Error",
+						description: getErrorMessage(err) || "Failed to rotate Guard uninstall key",
+					});
+				}
+			},
+		});
 	};
 
 	const handleConfirmRemoteUninstall = async () => {
@@ -1451,18 +1534,30 @@ export default function BrowserAiPage() {
 		}
 	};
 
-	const handleDeleteSingleAgent = async (agent: BrowserAIAgent) => {
-		if (!confirm(`Remove ${agent.hostname || agent.id} from this dashboard fleet list?`)) return;
-		try {
-			await deleteSingleAgent(agent.id).unwrap();
-			refetchAgents();
-		} catch (err: any) {
-			toast({
-				variant: "destructive",
-				title: "Error",
-				description: err?.data?.message || err?.message || "Failed to remove agent",
-			});
-		}
+	const handleDeleteSingleAgent = (agent: BrowserAIAgent) => {
+		setGenericConfirmDialog({
+			open: true,
+			title: "Remove Guard from Fleet?",
+			description: `Are you sure you want to remove ${agent.hostname || agent.id} from this dashboard fleet list?`,
+			actionLabel: "Remove",
+			isDestructive: true,
+			onConfirm: async () => {
+				try {
+					await deleteSingleAgent(agent.id).unwrap();
+					refetchAgents();
+					toast({
+						title: "Agent Removed",
+						description: `${agent.hostname || agent.id} has been removed from the fleet list.`,
+					});
+				} catch (err: any) {
+					toast({
+						variant: "destructive",
+						title: "Error",
+						description: err?.data?.message || err?.message || "Failed to remove agent",
+					});
+				}
+			},
+		});
 	};
 
 	const toggleSelectAllVisibleAgents = (checked: boolean) => {
@@ -4140,7 +4235,7 @@ export default function BrowserAiPage() {
 													<Button
 														variant="ghost"
 														size="icon"
-														onClick={() => deleteRule(rule.id)}
+														onClick={() => handleConfirmDeleteRule(rule)}
 														className="h-8 w-8 text-muted-foreground hover:text-destructive"
 														title="Delete Guard Rule"
 													>
@@ -4579,7 +4674,7 @@ export default function BrowserAiPage() {
 														<Button
 															variant="ghost"
 															size="icon"
-															onClick={() => deleteTarget(tgt.id)}
+															onClick={() => handleConfirmDeleteTarget(tgt)}
 															className="h-8 w-8 text-muted-foreground hover:text-destructive"
 															title="Delete Target Domain"
 														>
@@ -7598,6 +7693,36 @@ export default function BrowserAiPage() {
 							) : (
 								"Delete"
 							)}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
+			{/* Generic Confirmation Dialog for safe interactive actions */}
+			<AlertDialog
+				open={genericConfirmDialog.open}
+				onOpenChange={(open) => {
+					if (!open) setGenericConfirmDialog((prev) => ({ ...prev, open: false }));
+				}}
+			>
+				<AlertDialogContent className="bg-card border-border text-foreground">
+					<AlertDialogHeader>
+						<AlertDialogTitle>{genericConfirmDialog.title}</AlertDialogTitle>
+						<AlertDialogDescription>{genericConfirmDialog.description}</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel onClick={() => setGenericConfirmDialog((prev) => ({ ...prev, open: false }))}>
+							Cancel
+						</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={async (e) => {
+								e.preventDefault();
+								await genericConfirmDialog.onConfirm();
+								setGenericConfirmDialog((prev) => ({ ...prev, open: false }));
+							}}
+							className={genericConfirmDialog.isDestructive ? "bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium" : ""}
+						>
+							{genericConfirmDialog.actionLabel}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>

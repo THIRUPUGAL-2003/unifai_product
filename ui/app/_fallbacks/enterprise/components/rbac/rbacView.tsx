@@ -1,7 +1,7 @@
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -297,7 +297,8 @@ export default function RBACView() {
 	const [createRole, { isLoading: isCreatingRole }] = useCreateRoleMutation();
 	const [updatePerms, { isLoading: isUpdatingPerms }] = useUpdateRolePermissionsMutation();
 	const [updateScopeGrant, { isLoading: isSavingScope }] = useUpdateRBACScopeGrantMutation();
-	const [deleteRole] = useDeleteRoleMutation();
+	const [deleteRole, { isLoading: isDeletingRole }] = useDeleteRoleMutation();
+	const [deletingRole, setDeletingRole] = useState<RBACRole | null>(null);
 	const [assignUserRole] = useAssignUserRoleMutation();
 	const [updateSessionUser, { isLoading: isUpdatingUser }] = useUpdateSessionUserMutation();
 
@@ -628,17 +629,8 @@ export default function RBACView() {
 	};
 
 	// Delete Role
-	const handleDeleteRole = async (role: RBACRole) => {
-		if (!confirm(`Delete role '${role.name}'?`)) return;
-		try {
-			await deleteRole(role.id).unwrap();
-			if (target.type === "role" && target.role.id === role.id) {
-				setTarget({ type: "all_sub_admins" });
-			}
-			toast.success(`Role '${role.name}' deleted`);
-		} catch (err) {
-			toast.error(getErrorMessage(err));
-		}
+	const handleDeleteRole = (role: RBACRole) => {
+		setDeletingRole(role);
 	};
 
 	// Direct User Role Assignment
@@ -1383,6 +1375,41 @@ export default function RBACView() {
 						</Button>
 						<Button onClick={() => void handleCreateRole()} disabled={isCreatingRole} className="bg-emerald-600 text-white hover:bg-emerald-700">
 							Create Role
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={!!deletingRole} onOpenChange={(open) => { if (!open && !isDeletingRole) setDeletingRole(null); }}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete Role</DialogTitle>
+						<DialogDescription>
+							Are you sure you want to delete role <span className="font-semibold text-foreground">{deletingRole?.name}</span>? This action cannot be undone.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter className="gap-2 sm:gap-0">
+						<Button variant="outline" disabled={isDeletingRole} onClick={() => setDeletingRole(null)}>
+							Cancel
+						</Button>
+						<Button
+							variant="destructive"
+							disabled={isDeletingRole}
+							onClick={async () => {
+								if (!deletingRole) return;
+								try {
+									await deleteRole(deletingRole.id).unwrap();
+									if (target.type === "role" && target.role.id === deletingRole.id) {
+										setTarget({ type: "all_sub_admins" });
+									}
+									toast.success(`Role '${deletingRole.name}' deleted`);
+									setDeletingRole(null);
+								} catch (err) {
+									toast.error(getErrorMessage(err));
+								}
+							}}
+						>
+							{isDeletingRole ? "Deleting..." : "Delete"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

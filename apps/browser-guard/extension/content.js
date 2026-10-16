@@ -9,6 +9,24 @@
 
   var guardNonce = "yp_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
 
+  function isInternalHost(host) {
+    host = (host || "").toLowerCase().trim();
+    if (host.indexOf("www.") === 0) host = host.slice(4);
+    if (host.indexOf(":") >= 0) host = host.split(":")[0];
+    if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "0.0.0.0") return true;
+    if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".lan") || host.endsWith(".home") || host.endsWith(".corp")) return true;
+    if (/^10\.\d+\.\d+\.\d+$/.test(host)) return true;
+    if (/^192\.168\.\d+\.\d+$/.test(host)) return true;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true;
+    if (/^127\.\d+\.\d+\.\d+$/.test(host)) return true;
+    return false;
+  }
+
+  // STRICT BYPASS: Never monitor, inject, or intercept on internal portals / localhost / private networks
+  if (isInternalHost(location.hostname)) {
+    return;
+  }
+
   function hostMatches(host, domains) {
     host = (host || "").toLowerCase();
     if (host.indexOf("www.") === 0) host = host.slice(4);
@@ -103,7 +121,7 @@
       (Array.isArray(msg.files) && msg.files.length) ||
       (Array.isArray(msg.upload_images) && msg.upload_images.length)
     );
-    if (!base || !hasContent) {
+    if (!base || !hasContent || isInternalHost(location.hostname) || isInternalHost(msg.host)) {
       window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
       return;
     }

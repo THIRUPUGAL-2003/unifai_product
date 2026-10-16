@@ -2,7 +2,7 @@ import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ComboboxSelect } from "@/components/ui/combobox";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ModelMultiselect } from "@/components/ui/modelMultiselect";
@@ -141,7 +141,8 @@ export default function AccessProfilesIndexView() {
 	const [createProfile] = useCreateAccessProfileMutation();
 	const [activateProfile] = useActivateAccessProfileMutation();
 	const [cloneProfile] = useCloneAccessProfileMutation();
-	const [deleteProfile] = useDeleteAccessProfileMutation();
+	const [deleteProfile, { isLoading: isDeleting }] = useDeleteAccessProfileMutation();
+	const [deletingProfile, setDeletingProfile] = useState<AccessProfile | null>(null);
 	const [updateProfile] = useUpdateAccessProfileMutation();
 
 	const profiles = data?.access_profiles || [];
@@ -449,14 +450,8 @@ export default function AccessProfilesIndexView() {
 							toast.error(getErrorMessage(err));
 						}
 					}}
-					onDelete={async (id) => {
-						if (!window.confirm("Delete this access profile? This cannot be undone.")) return;
-						try {
-							await deleteProfile(id).unwrap();
-							toast.success("Profile deleted");
-						} catch (err) {
-							toast.error(getErrorMessage(err));
-						}
+					onDelete={(profile) => {
+						setDeletingProfile(profile);
 					}}
 				/>
 			)}
@@ -502,6 +497,51 @@ export default function AccessProfilesIndexView() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+
+			<Dialog
+				open={!!deletingProfile}
+				onOpenChange={(isOpen) => {
+					if (!isOpen && !isDeleting) setDeletingProfile(null);
+				}}
+			>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle>Delete Access Profile</DialogTitle>
+						<DialogDescription>
+							Are you sure you want to delete{" "}
+							<span className="font-semibold text-foreground">
+								{deletingProfile?.name}
+							</span>
+							? This action cannot be undone.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter className="gap-2 sm:gap-0">
+						<Button
+							variant="outline"
+							disabled={isDeleting}
+							onClick={() => setDeletingProfile(null)}
+						>
+							Cancel
+						</Button>
+						<Button
+							variant="destructive"
+							disabled={isDeleting}
+							onClick={async () => {
+								if (!deletingProfile) return;
+								try {
+									await deleteProfile(deletingProfile.id).unwrap();
+									toast.success("Profile deleted");
+									setDeletingProfile(null);
+								} catch (err) {
+									toast.error(getErrorMessage(err));
+								}
+							}}
+						>
+							{isDeleting ? "Deleting..." : "Delete"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</div>
 	);
 }
@@ -519,7 +559,7 @@ function TableView({
 	onEdit: (profile: AccessProfile) => void;
 	onToggle: (profile: AccessProfile) => void;
 	onClone: (id: number) => void;
-	onDelete: (id: number) => void;
+	onDelete: (profile: AccessProfile) => void;
 }) {
 	const [offset, setOffset] = useState(0);
 	const [limit, setLimit] = useState(10);
@@ -599,7 +639,7 @@ function TableView({
 								<Button size="icon" variant="ghost" onClick={() => onClone(profile.id)} title="Clone">
 									<Copy className="h-4 w-4" />
 								</Button>
-								<Button size="icon" variant="ghost" onClick={() => onDelete(profile.id)}>
+								<Button size="icon" variant="ghost" onClick={() => onDelete(profile)} title="Delete">
 									<Trash2 className="h-4 w-4" />
 								</Button>
 							</TableCell>

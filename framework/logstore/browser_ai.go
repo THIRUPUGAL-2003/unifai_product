@@ -66,6 +66,68 @@ func IsOpaqueOrWirePrompt(s string) bool {
 	return looksLikeBinaryOrWireGarbage(s)
 }
 
+// IsInternalHostOrDomain reports whether a host, domain, or raw URL represents an internal loopback,
+// private network (RFC 1918), internal portal (SERVER_DOMAIN), or gateway infrastructure.
+func IsInternalHostOrDomain(rawHost string) bool {
+	h := strings.ToLower(strings.TrimSpace(rawHost))
+	if h == "" {
+		return false
+	}
+	if idx := strings.Index(h, "://"); idx != -1 {
+		h = h[idx+3:]
+	}
+	if idx := strings.Index(h, "/"); idx != -1 {
+		h = h[:idx]
+	}
+	if hostOnly, _, err := net.SplitHostPort(h); err == nil {
+		h = hostOnly
+	}
+	h = strings.Trim(h, "[]")
+
+	if h == "localhost" || h == "127.0.0.1" || h == "::1" || h == "0.0.0.0" {
+		return true
+	}
+	if strings.HasSuffix(h, ".local") || strings.HasSuffix(h, ".internal") || strings.HasSuffix(h, ".lan") || strings.HasSuffix(h, ".home") || strings.HasSuffix(h, ".corp") {
+		return true
+	}
+	if ip := net.ParseIP(h); ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			return true
+		}
+	}
+	serverDom := strings.ToLower(strings.TrimSpace(os.Getenv("SERVER_DOMAIN")))
+	if serverDom != "" {
+		if idx := strings.Index(serverDom, "://"); idx != -1 {
+			serverDom = serverDom[idx+3:]
+		}
+		if idx := strings.Index(serverDom, "/"); idx != -1 {
+			serverDom = serverDom[:idx]
+		}
+		if sHost, _, err := net.SplitHostPort(serverDom); err == nil {
+			serverDom = sHost
+		}
+		if h == serverDom || strings.HasSuffix(h, "."+serverDom) {
+			return true
+		}
+	}
+	backendURL := strings.ToLower(strings.TrimSpace(os.Getenv("GATEWAY_BACKEND_URL")))
+	if backendURL != "" {
+		if idx := strings.Index(backendURL, "://"); idx != -1 {
+			backendURL = backendURL[idx+3:]
+		}
+		if idx := strings.Index(backendURL, "/"); idx != -1 {
+			backendURL = backendURL[:idx]
+		}
+		if bHost, _, err := net.SplitHostPort(backendURL); err == nil {
+			backendURL = bHost
+		}
+		if h == backendURL || strings.HasSuffix(h, "."+backendURL) {
+			return true
+		}
+	}
+	return false
+}
+
 func defaultProxyAddrFromEnv() string {
 	if v := envutil.Get("PROXY_ADDR"); v != "" {
 		return v
@@ -1742,7 +1804,42 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		strings.HasPrefix(trimmedPrompt, "[VOICE UPLOAD]") ||
 		strings.HasPrefix(trimmedPrompt, "[SITE BLOCKED")
 
+	// Never persist internal loopback, private networks, or internal portal traffic as Browser AI Prompt Logs
+	metaDom := ""
+	metaURL := ""
+	if metadata != nil {
+		if d, ok := metadata["domain"].(string); ok {
+			metaDom = strings.ToLower(strings.TrimSpace(d))
+		}
+		if u, ok := metadata["url"].(string); ok {
+			metaURL = strings.ToLower(strings.TrimSpace(u))
+		}
+	}
+	if strings.EqualFold(platform, "localhost") ||
+		IsInternalHostOrDomain(platform) ||
+		IsInternalHostOrDomain(metaDom) ||
+		IsInternalHostOrDomain(metaURL) ||
+		strings.Contains(metaURL, "localhost:") || strings.Contains(metaURL, "127.0.0.1:") ||
+		strings.Contains(metaURL, "/workspace/") || strings.Contains(metaURL, "/api/") {
+		return &BrowserAILog{
+			ID:                uuid.New().String(),
+			Timestamp:         time.Now(),
+			Platform:          platform,
+			UserPromptPreview: "",
+			UserPromptFull:    "",
+			EstTokens:         0,
+			ClientIP:          clientIP,
+			Status:            "Skipped (internal portal/traffic)",
+			Action:            "Allowed",
+			RiskScore:         0,
+			PredictiveRisk:    "LOW",
+			PredictedCategory: "SAFE",
+			CreatedAt:         time.Now(),
+		}, "", nil
+	}
+
 	if !isUpload {
+
 		if trimmedPrompt == "" || lowTrimmed == "ping" || lowTrimmed == "pong" || lowTrimmed == "heartbeat" || strings.HasPrefix(lowTrimmed, "count=") {
 			return &BrowserAILog{
 				ID:                uuid.New().String(),

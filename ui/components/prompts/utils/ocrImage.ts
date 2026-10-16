@@ -116,6 +116,12 @@ export async function ocrDocument(
 	return null;
 }
 
+/** Helper to safely load Tesseract.js across ESM/CJS bundler boundaries */
+async function getTesseract() {
+	const mod = await import("tesseract.js");
+	return (mod as any).default || mod;
+}
+
 /**
  * Run client-side OCR on an image data URL using in-browser Tesseract.js.
  * Zero external API dependencies, zero rate limits, works completely offline.
@@ -123,7 +129,7 @@ export async function ocrDocument(
 export async function clientSideOcr(dataUrl: string): Promise<string> {
 	if (!dataUrl?.startsWith("data:image/")) return "";
 	try {
-		const { default: Tesseract } = await import("tesseract.js");
+		const Tesseract = await getTesseract();
 		const res = await Tesseract.recognize(dataUrl, "eng");
 		return res?.data?.text?.trim() || "";
 	} catch (err) {
@@ -177,7 +183,7 @@ export async function ocrPdfFile(
 
 			const doc = await pdfjs.getDocument({ data: bytes }).promise;
 			const pagesToScan = Math.min(doc.numPages, 5);
-			const { default: Tesseract } = await import("tesseract.js");
+			const Tesseract = await getTesseract();
 			const pageTexts: string[] = [];
 
 			for (let p = 1; p <= pagesToScan; p++) {

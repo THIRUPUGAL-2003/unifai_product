@@ -114,20 +114,6 @@ const INNER_EXT_MIME: Record<string, string> = {
 	aac: "audio/aac",
 };
 
-const SUPPORTED_INNER_EXT = new Set(Object.keys(INNER_EXT_MIME));
-const KNOWN_STANDALONE_NAMES = new Set([
-	"dockerfile",
-	"makefile",
-	"license",
-	"licence",
-	"readme",
-	"changelog",
-	"gemfile",
-	"procfile",
-	"vagrantfile",
-	"jenkinsfile",
-]);
-
 function baseName(path: string): string {
 	const parts = path.replace(/\\/g, "/").split("/");
 	return parts[parts.length - 1] || path;
@@ -159,10 +145,7 @@ export async function extractZipInnerFiles(zipFile: File): Promise<{
 			if (!entry || entry.dir) return false;
 			if (SKIP_NAME_RE.test(name)) return false;
 			const bName = baseName(name);
-			const ext = extOf(bName);
-			const lowerName = bName.toLowerCase();
-			if (!SUPPORTED_INNER_EXT.has(ext) && !KNOWN_STANDALONE_NAMES.has(lowerName)) return false;
-			if (ext === "zip") return false; // no nested zip recursion
+			if (!bName || bName === "." || bName === "..") return false;
 			return true;
 		})
 		.sort((a, b) => a.localeCompare(b));

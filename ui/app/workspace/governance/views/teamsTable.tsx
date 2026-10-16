@@ -305,16 +305,23 @@ export default function TeamsTable({
 											<TableRow
 												key={team.id}
 												data-testid={`team-row-${team.name}`}
-												className={cn("group transition-colors", isExhausted && "bg-red-500/5 hover:bg-red-500/10")}
+												className={cn(
+													"group transition-colors",
+													isExhausted && "bg-red-500/10 border-l-4 border-l-red-500 hover:bg-red-500/15 dark:bg-red-950/20",
+												)}
 											>
 												<TableCell className="max-w-[200px] py-4">
 													<div className="flex flex-col gap-2">
 														<span className="truncate font-medium">{team.name}</span>
-														{isExhausted && (
-															<Badge variant="destructive" className="w-fit text-xs">
-																Limit Reached
+														{isBudgetExhausted ? (
+															<Badge variant="destructive" className="w-fit text-xs bg-red-600 hover:bg-red-700 text-white font-medium">
+																Budget Exhausted
 															</Badge>
-														)}
+														) : isExhausted ? (
+															<Badge variant="destructive" className="w-fit text-xs">
+																Rate Limit Reached
+															</Badge>
+														) : null}
 													</div>
 												</TableCell>
 												<TableCell data-testid={`team-row-${team.name}-customer`}>

@@ -152,7 +152,7 @@ export function NewMessageInputView() {
 				else if (["xlsx", "xls", "csv"].includes(ext)) progressText = "Parsing sheets to tables...";
 				else if (["docx", "doc"].includes(ext)) progressText = "Extracting Word document...";
 				else if (["pptx", "ppt"].includes(ext)) progressText = "Extracting slides & notes...";
-				else if (["zip", "tar", "gz"].includes(ext)) progressText = "Unpacking archive members...";
+				else if (["zip", "tar", "tgz", "gz", "bz2", "xz", "7z", "rar", "cab", "iso", "jar", "war", "apk", "ear", "zst"].includes(ext) || f.name.toLowerCase().endsWith(".tar.gz")) progressText = "Unpacking archive members...";
 				else if (["png", "jpg", "jpeg", "webp", "gif", "bmp"].includes(ext)) progressText = "Scanning image with OCR...";
 				else if (["mp3", "wav", "m4a", "webm"].includes(ext)) progressText = "Transcribing with Whisper...";
 				return {

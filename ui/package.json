@@ -58,6 +58,7 @@
 		"html2canvas-pro": "2.0.2",
 		"jspdf": "4.2.1",
 		"jszip": "3.10.1",
+		"libarchive.js": "2.0.2",
 		"lodash.isequal": "4.5.0",
 		"lucide-react": "0.552.0",
 		"mammoth": "1.9.0",

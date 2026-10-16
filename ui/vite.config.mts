@@ -25,9 +25,13 @@ export default defineConfig(({ mode }) => {
 	const rootDir = path.resolve(__dirname, "..");
 	const env = loadEnv(mode, rootDir, "");
 
-	const backendPort = env.APP_PORT || gatewayEnv(env, "PORT") || "6000";
-	const backendTarget = gatewayEnv(env, "BACKEND_URL") || env.GATEWAY_BACKEND_URL || `http://localhost:${backendPort}`;
-	const serverDomain = (env.SERVER_DOMAIN || gatewayEnv(env, "SERVER_DOMAIN") || "").trim();
+	const serverDomain = (env.SERVER_DOMAIN || gatewayEnv(env, "SERVER_DOMAIN") || "").trim().replace(/\/+$/, "");
+	const backendPort = env.APP_PORT || gatewayEnv(env, "PORT") || "8080";
+	const backendTarget =
+		serverDomain ||
+		gatewayEnv(env, "BACKEND_URL") ||
+		env.GATEWAY_BACKEND_URL ||
+		`http://127.0.0.1:${backendPort}`;
 	const brandName = gatewayEnv(env, "BRAND_NAME") || env.GATEWAY_BRAND_NAME || "Raksha";
 	const uiPort = Number(env.UI_PORT || process.env.UI_PORT || 3100);
 	const companyName = gatewayEnv(env, "COMPANY_NAME") || "YesPanchi Group of Companies";
@@ -105,10 +109,18 @@ export default defineConfig(({ mode }) => {
 			"/api": {
 				target: backendTarget,
 				changeOrigin: true,
+				secure: false,
 			},
 			"/v1": {
 				target: backendTarget,
 				changeOrigin: true,
+				secure: false,
+			},
+			"/ws": {
+				target: backendTarget,
+				changeOrigin: true,
+				secure: false,
+				ws: true,
 			},
 		},
 	},

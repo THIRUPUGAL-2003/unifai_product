@@ -44,9 +44,8 @@ def _load_dotenv() -> None:
 _load_dotenv()
 
 DEFAULT_BACKEND = (
-    os.environ.get("GATEWAY_BACKEND_URL")
+    os.environ.get("SERVER_DOMAIN")
     or os.environ.get("GATEWAY_BACKEND_URL")
-    or os.environ.get("SERVER_DOMAIN")
     or ""
 ).strip().rstrip("/")
 AGENT_VERSION_BAKED = "1.1.28"
@@ -276,9 +275,12 @@ def load_runtime_config() -> dict:
             return str(val).strip()
         return default
 
+    server_dom = (os.environ.get("SERVER_DOMAIN") or "").strip().rstrip("/")
     backend = pick("GATEWAY_BACKEND_URL", "backend_url", "").rstrip("/")
-    if not backend:
-        backend = (os.environ.get("SERVER_DOMAIN") or DEFAULT_BACKEND or "").strip().rstrip("/")
+    if server_dom and (not backend or "localhost" in backend or "127.0.0.1" in backend):
+        backend = server_dom
+    elif not backend:
+        backend = (server_dom or DEFAULT_BACKEND or "").strip().rstrip("/")
     if not backend:
         print(
             "[Gateway Guard ERROR] backend_url missing — set GATEWAY_BACKEND_URL / SERVER_DOMAIN "
