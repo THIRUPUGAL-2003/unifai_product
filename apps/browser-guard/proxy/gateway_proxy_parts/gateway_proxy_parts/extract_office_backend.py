@@ -673,7 +673,7 @@ def _classify_upload_kind(data: bytes, content_type: str = "", file_name: str = 
         ):
             return "image"
         if "audio/" in ct or ext in (
-            ".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac", ".aac",
+            ".wav", ".mp3", ".m4a", ".ogg", ".flac", ".aac",
             ".wma", ".aiff", ".aif", ".opus", ".ra", ".ram", ".au", ".caf",
             ".ape", ".ac3", ".dts", ".weba", ".pcm", ".amr", ".mid", ".midi",
             ".sf2", ".sfz", ".aup3", ".band", ".als", ".flp", ".logicx", ".ptx",
@@ -1031,8 +1031,9 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
         ("strings-extract", lambda: _extract_binary_strings(data)),
     ]
     try:
+        found = ""
         if kind == "pdf":
-            return _try_file_extract_chain(data, ct, fn, kind, [
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("pdf-smart", lambda: _extract_pdf_text_smart(data)),
                 ("pdf-pypdf", lambda: _extract_pdf_pypdf(data)),
                 ("pdf-ocr", lambda: _extract_pdf_ocr(data)),
@@ -1040,26 +1041,26 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
-        if kind == "docx":
+        elif kind == "docx":
             steps = _office_extract_steps(data, "docx")
             steps.append(("ole-office", lambda: _extract_ole_office_text(data, ct, fn)))
             steps.append(("plain-decode", lambda: _extract_plain_text_bytes(data)))
-            return _try_file_extract_chain(data, ct, fn, kind, steps)
+            found = _try_file_extract_chain(data, ct, fn, kind, steps)
 
-        if kind == "xlsx":
+        elif kind == "xlsx":
             steps = _office_extract_steps(data, "xlsx")
             steps.append(("ole-office", lambda: _extract_ole_office_text(data, ct, fn)))
             steps.append(("plain-decode", lambda: _extract_plain_text_bytes(data)))
-            return _try_file_extract_chain(data, ct, fn, kind, steps)
+            found = _try_file_extract_chain(data, ct, fn, kind, steps)
 
-        if kind == "pptx":
+        elif kind == "pptx":
             steps = _office_extract_steps(data, "pptx")
             steps.append(("ole-office", lambda: _extract_ole_office_text(data, ct, fn)))
             steps.append(("plain-decode", lambda: _extract_plain_text_bytes(data)))
-            return _try_file_extract_chain(data, ct, fn, kind, steps)
+            found = _try_file_extract_chain(data, ct, fn, kind, steps)
 
-        if kind == "ole":
-            return _try_file_extract_chain(data, ct, fn, kind, [
+        elif kind == "ole":
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("ole-office", lambda: _extract_ole_office_text(data, ct, fn)),
                 ("docx-xml", lambda: _extract_docx_text(data)),
                 ("xlsx-xml", lambda: _extract_xlsx_text(data)),
@@ -1067,14 +1068,14 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
-        if kind == "rtf":
-            return _try_file_extract_chain(data, ct, fn, kind, [
+        elif kind == "rtf":
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("rtf", lambda: _extract_rtf_text(data)),
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
-        if kind == "odf":
-            return _try_file_extract_chain(data, ct, fn, kind, [
+        elif kind == "odf":
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("odf", lambda: _extract_opendocument_text(data)),
                 ("docx-xml", lambda: _extract_docx_text(data)),
                 ("xlsx-xml", lambda: _extract_xlsx_text(data)),
@@ -1082,35 +1083,35 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
-        if kind == "html":
-            return _try_file_extract_chain(data, ct, fn, kind, [
+        elif kind == "html":
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("html", lambda: _extract_html_text(data)),
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
-        if kind == "image":
-            return _try_file_extract_chain(data, ct, fn, kind, [
+        elif kind == "image":
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("image-windows-ocr", lambda: _extract_image_windows_ocr(data)),
                 ("image-tesseract", lambda: _extract_image_tesseract(data)),
                 ("pdf-pypdf", lambda: _extract_pdf_pypdf(data)),
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
-        if kind == "audio":
-            return _try_file_extract_chain(data, ct, fn, kind, [
+        elif kind == "audio":
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("audio-stt", lambda: _extract_audio_text(data, ct, fn)),
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
         if kind == "video":
             # Pull spoken track via ffmpeg→WAV→STT (same pipeline as voice).
-            return _try_file_extract_chain(data, ct, fn, kind, [
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("video-audio-stt", lambda: _extract_audio_text(data, ct, fn)),
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
-        if kind == "plain":
-            return _try_file_extract_chain(data, ct, fn, kind, [
+        elif kind == "plain":
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("plain-utf8", lambda: _extract_plain_text_bytes(data)),
                 ("strings-extract", lambda: _extract_binary_strings(data)),
                 ("html", lambda: _extract_html_text(data)),
@@ -1119,16 +1120,16 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
                 ("docx-xml", lambda: _extract_docx_text(data)),
             ])
 
-        if kind == "binary":
-            return _try_file_extract_chain(data, ct, fn, kind, [
+        elif kind == "binary":
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("strings-extract", lambda: _extract_binary_strings(data)),
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
                 ("pdf-pypdf", lambda: _extract_pdf_pypdf(data)),
             ])
 
-        if kind in ("zip", "tar"):
+        elif kind in ("zip", "tar"):
             # Real archives (resumes.zip, code.tar.gz): unpack members → PDF/Office/image/plain → rules.
-            return _try_file_extract_chain(data, ct, fn, kind, [
+            found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("zip-members", lambda: _extract_zip_archive_members_text(data)),
                 ("tar-members", lambda: _extract_tar_archive_members_text(data)),
                 ("odf", lambda: _extract_opendocument_text(data)),
@@ -1136,8 +1137,8 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
-        # Unknown: try every sensible extractor in order (never crash the proxy)
-        return _try_file_extract_chain(data, ct, fn, kind or "unknown", [
+        else:
+            found = _try_file_extract_chain(data, ct, fn, kind or "unknown", [
             ("pdf-smart", lambda: _extract_pdf_text_smart(data)),
             ("pdf-pypdf", lambda: _extract_pdf_pypdf(data)),
             ("pdf-regex", lambda: _extract_pdf_regex(data)),
@@ -1155,7 +1156,17 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
             ("audio-stt", lambda: _extract_audio_text(data, ct, fn)),
             ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ("strings-extract", lambda: _extract_binary_strings(data)),
-        ])
+            ])
+        if found:
+            return found
+        for label, fn_step in common_fallbacks:
+            try:
+                t = (fn_step() or "").strip()
+            except Exception:
+                continue
+            if t:
+                print(f"[Gateway Proxy] file extract emergency OK ({label}) | {fn or kind}")
+                return t[:200_000]
     except Exception as e:
         print(f"[Gateway Proxy] file extract ({kind}) failed — allowed: {e}")
         # Last-resort safe extract so regex still has a chance

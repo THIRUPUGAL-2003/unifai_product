@@ -3626,6 +3626,22 @@ def take_all_cached_uploads_for_send(
                     add_entry(entry)
                     _remove_cache_keys_for_entry(entry, aliases)
 
+        for ext_name in extract_all_attachment_filenames_from_send(raw_text or ""):
+            name_l = ext_name.strip().lower()
+            if (
+                not name_l
+                or name_l in ("attachment", "file", "document", "untitled")
+                or _is_fake_upload_name(ext_name)
+                or not _is_real_user_upload_name(ext_name)
+            ):
+                continue
+            for alias in aliases:
+                key = f"{alias}|name|{name_l}"
+                if key in _UPLOAD_FILE_CACHE:
+                    entry = _UPLOAD_FILE_CACHE.pop(key)
+                    add_entry(entry)
+                    _remove_cache_keys_for_entry(entry, aliases)
+
         expected_n = 0
         try:
             expected_n = _expected_send_attachment_count(active_text)

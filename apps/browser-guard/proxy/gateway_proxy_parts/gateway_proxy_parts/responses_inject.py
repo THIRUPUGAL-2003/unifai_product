@@ -907,12 +907,6 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         return
 
     # ── Gemini (request shape or dynamic platform / domain) ──
-    target_plat = ""
-    try:
-        _, _, target_plat = detect_target(host_l)
-    except Exception:
-        target_plat = ""
-    plat_l = (target_plat or "").lower()
     is_gemini = (
         "gemini" in plat_l
         or "gemini" in host_l
@@ -1027,7 +1021,6 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         or "/api/chat" in path
         or "/stream" in path
         or path.endswith("/stream")
-        or ("mistral" in host_l and ("/chat" in path or "/api" in path))
         or "stream" in path and ("completion" in path or "chat" in path or "generate" in path)
         or '"stream":true' in raw_low.replace(" ", "")
         or '"stream": true' in raw_low

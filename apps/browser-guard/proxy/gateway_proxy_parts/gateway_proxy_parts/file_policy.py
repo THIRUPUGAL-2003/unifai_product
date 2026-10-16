@@ -421,21 +421,36 @@ def enforce_file_send_policy(
     # Cache miss but Send clearly carries file/voice — never fail-open for Block Upload.
     if not cached_list and has_attach:
         get_control_settings()
-        hint = (file_name_hint or "").strip() or extract_attachment_filename_from_send(raw_text or "") or ""
-        if not _is_real_user_upload_name(hint):
+        all_hints: list[str] = []
+        for n in extract_all_attachment_filenames_from_send(raw_text or ""):
+            n_clean = (n or "").strip()
+            if " -- $" in n_clean:
+                n_clean = n_clean.split(" -- $", 1)[0].strip()
+            if _is_real_user_upload_name(n_clean) and n_clean not in all_hints:
+                all_hints.append(n_clean)
+        if file_name_hint:
+            fnh = (file_name_hint or "").strip()
+            if " -- $" in fnh:
+                fnh = fnh.split(" -- $", 1)[0].strip()
+            if _is_real_user_upload_name(fnh) and fnh not in all_hints:
+                all_hints.insert(0, fnh)
+        if not all_hints:
             try:
-                hint = peek_pending_upload_name_for_domain(domain) or hint
+                p = peek_pending_upload_name_for_domain(domain)
+                if p and _is_real_user_upload_name(p):
+                    all_hints.append(p)
             except Exception:
                 pass
-            if not hint:
-                for n in extract_all_attachment_filenames_from_send(raw_text or ""):
-                    if _is_real_user_upload_name(n):
-                        hint = n
-                        break
-        if not hint:
-            hint = "attachment"
-        elif " -- $" in hint:
-            hint = hint.split(" -- $", 1)[0].strip()
+        if not all_hints:
+            single = extract_attachment_filename_from_send(raw_text or "")
+            if single and _is_real_user_upload_name(single):
+                all_hints.append(single)
+        if not all_hints:
+            all_hints = ["attachment"]
+
+        n_files = len(all_hints)
+        hint = all_hints[0]
+
         if (
             hint == "attachment"
             and not _extract_file_ids_from_chat(raw_text or "")
@@ -450,26 +465,28 @@ def enforce_file_send_policy(
         if controls_active("block_upload"):
             warn = (get_control_settings().get("upload_warning") or "").strip() or "File/voice uploads are blocked by admin policy."
             msg = warn
-            dedupe_key = f"upload-send-block-all-nocache|{hint}"
-            if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
-                print(f"[Gateway Proxy] FILE/VOICE SEND BLOCKED (no cache, Block Upload ON) | {client_ip} -> {host}")
-                ok = post_upload_intercept(
-                    platform=platform,
-                    prompt=_user_prompt_log_text(voice=is_voice, file_label=hint),
-                    client_ip=client_ip,
-                    domain=domain,
-                    url=url,
-                    method=method,
-                    file_name=hint,
-                    is_blocked=True,
-                    blocked_reason="Block Upload",
-                    scan_guard={"cache_miss": True},
-                )
-                if ok:
-                    mark_duplicate_event(domain, dedupe_key)
+            for idx, h_item in enumerate(all_hints):
+                dedupe_key = f"upload-send-block-all-nocache|{h_item}"
+                if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
+                    print(f"[Gateway Proxy] FILE/VOICE SEND BLOCKED (no cache, Block Upload ON) | {client_ip} -> {host} | {h_item} ({idx + 1}/{n_files})")
+                    p_log = _user_prompt_log_text(voice=is_voice, file_label=h_item, index=idx + 1, total=n_files)
+                    ok = post_upload_intercept(
+                        platform=platform,
+                        prompt=p_log,
+                        client_ip=client_ip,
+                        domain=domain,
+                        url=url,
+                        method=method,
+                        file_name=h_item,
+                        is_blocked=True,
+                        blocked_reason="Block Upload",
+                        scan_guard={"cache_miss": True, "multi_file_count": n_files, "multi_file_index": idx + 1},
+                    )
+                    if ok:
+                        mark_duplicate_event(domain, dedupe_key)
             remember_file_send_block(
                 domain,
-                names=[hint],
+                names=all_hints,
                 ids=_extract_file_ids_from_chat(raw_text or ""),
                 message=msg,
             )
@@ -511,113 +528,128 @@ def enforce_file_send_policy(
             cap_done = bool(caption)
             if rule_hit and rule_action == "BLOCK":
                 msg = _security_reply_text(rule_name, "") or f"Blocked by Guard Rule ({rule_name})"
-                dedupe_key = f"upload-send-block-nocache|{rule_name}|{hint}"
-                if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
-                    print(f"[Gateway Proxy] FILE/VOICE SEND BLOCKED (transcript/caption) | {rule_name}")
-                    ok = post_upload_intercept(
-                        platform=platform,
-                        prompt=_user_prompt_log_text(voice=is_voice, file_label=hint, caption=(caption or transcript or "")[:500]),
-                        client_ip=client_ip,
-                        domain=domain,
-                        url=url,
-                        method=method,
-                        file_name=hint,
-                        is_blocked=True,
-                        blocked_reason=rule_name,
-                        extracted_text=scan_text[:50_000],
-                        scan_guard={
-                            "cache_miss": True,
-                            "scan_rule_hit": True,
-                            "scan_rule_name": rule_name,
-                            "scan_rule_action": "BLOCK",
-                        },
-                    )
-                    if ok:
-                        mark_duplicate_event(domain, dedupe_key)
+                for idx, h_item in enumerate(all_hints):
+                    dedupe_key = f"upload-send-block-nocache|{rule_name}|{h_item}"
+                    if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
+                        print(f"[Gateway Proxy] FILE/VOICE SEND BLOCKED (transcript/caption) | {rule_name} | {h_item} ({idx + 1}/{n_files})")
+                        p_log = _user_prompt_log_text(voice=is_voice, file_label=h_item, caption=(caption or transcript or "")[:500], index=idx + 1, total=n_files)
+                        ok = post_upload_intercept(
+                            platform=platform,
+                            prompt=p_log,
+                            client_ip=client_ip,
+                            domain=domain,
+                            url=url,
+                            method=method,
+                            file_name=h_item,
+                            is_blocked=True,
+                            blocked_reason=rule_name,
+                            extracted_text=scan_text[:50_000],
+                            scan_guard={
+                                "cache_miss": True,
+                                "scan_rule_hit": True,
+                                "scan_rule_name": rule_name,
+                                "scan_rule_action": "BLOCK",
+                                "multi_file_count": n_files,
+                                "multi_file_index": idx + 1,
+                            },
+                        )
+                        if ok:
+                            mark_duplicate_event(domain, dedupe_key)
                 remember_file_send_block(
                     domain,
-                    names=[hint],
+                    names=all_hints,
                     ids=_extract_file_ids_from_chat(raw_text or ""),
                     message=msg,
                 )
                 return True, msg, "", 1, cap_done
             if rule_hit and rule_action == "REDACT":
                 notice = _warning_for_rule_name(rule_name) or "Gateway Guard redaction policy."
-                dedupe_key = f"upload-send-redact-nocache|{rule_name}|{hint}"
-                if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
-                    post_upload_intercept(
-                        platform=platform,
-                        prompt=_user_prompt_log_text(voice=is_voice, file_label=hint, caption=(caption or transcript or "")[:500]),
-                        client_ip=client_ip,
-                        domain=domain,
-                        url=url,
-                        method=method,
-                        file_name=hint,
-                        extracted_text=scan_text[:50_000],
-                        scan_guard={
-                            "cache_miss": True,
-                            "scan_rule_hit": True,
-                            "scan_rule_name": rule_name,
-                            "scan_rule_action": "REDACT",
-                        },
-                    )
-                    mark_duplicate_event(domain, dedupe_key)
+                for idx, h_item in enumerate(all_hints):
+                    dedupe_key = f"upload-send-redact-nocache|{rule_name}|{h_item}"
+                    if not is_duplicate_event(domain, dedupe_key, ttl=BLOCK_DEDUPE_TTL, mark=False):
+                        p_log = _user_prompt_log_text(voice=is_voice, file_label=h_item, caption=(caption or transcript or "")[:500], index=idx + 1, total=n_files)
+                        post_upload_intercept(
+                            platform=platform,
+                            prompt=p_log,
+                            client_ip=client_ip,
+                            domain=domain,
+                            url=url,
+                            method=method,
+                            file_name=h_item,
+                            extracted_text=scan_text[:50_000],
+                            scan_guard={
+                                "cache_miss": True,
+                                "scan_rule_hit": True,
+                                "scan_rule_name": rule_name,
+                                "scan_rule_action": "REDACT",
+                                "multi_file_count": n_files,
+                                "multi_file_index": idx + 1,
+                            },
+                        )
+                        mark_duplicate_event(domain, dedupe_key)
                 return False, "", notice, 1, cap_done
             log_caption = (caption or "")[:500]
-            prompt_log = _user_prompt_log_text(voice=is_voice, file_label=hint, caption=log_caption)
+            for idx, h_item in enumerate(all_hints):
+                prompt_log = _user_prompt_log_text(voice=is_voice, file_label=h_item, caption=log_caption, index=idx + 1, total=n_files)
 
-            def _post_nocache(
-                _prompt=prompt_log,
-                _caption=log_caption,
-                _hint=hint,
-            ) -> None:
-                if not _claim_file_row_post(_hint, bool(_caption)):
-                    return
-                post_upload_intercept(
-                    platform=platform,
-                    prompt=_prompt,
-                    client_ip=client_ip,
-                    domain=domain,
-                    url=url,
-                    method=method,
-                    file_name=_hint,
-                    extracted_text=scan_text[:50_000],
-                    scan_guard={
-                        "cache_miss": True,
-                        "scan_guard_decided": True,
-                        "scan_guard_action": "Allowed",
-                    },
-                )
+                def _make_post_nocache(_prompt=prompt_log, _caption=log_caption, _hint=h_item, _i=idx):
+                    def _post_nocache() -> None:
+                        if not _claim_file_row_post(_hint, bool(_caption)):
+                            return
+                        post_upload_intercept(
+                            platform=platform,
+                            prompt=_prompt,
+                            client_ip=client_ip,
+                            domain=domain,
+                            url=url,
+                            method=method,
+                            file_name=_hint,
+                            extracted_text=scan_text[:50_000],
+                            scan_guard={
+                                "cache_miss": True,
+                                "scan_guard_decided": True,
+                                "scan_guard_action": "Allowed",
+                                "multi_file_count": n_files,
+                                "multi_file_index": _i + 1,
+                            },
+                        )
+                    return _post_nocache
 
-            _coalesce_file_log(domain, hint, has_caption=bool(log_caption), post=_post_nocache)
+                _coalesce_file_log(domain, h_item, has_caption=bool(log_caption), post=_make_post_nocache())
             return False, "", "", 1, cap_done
 
         # Cache miss + real attachment markers, but no caption/transcript text
         # (Claude/Gemini often attach-then-auto-read with empty user text).
         # Still log the file so Prompt Logs + rules are not silent.
         # A second wire for the same file must not add another row.
-        print(f"[Gateway Proxy] FILE/VOICE SEND (cache miss, no caption) | {hint} | {client_ip} -> {host}")
+        for idx, h_item in enumerate(all_hints):
+            print(f"[Gateway Proxy] FILE/VOICE SEND (cache miss, no caption) | {h_item} | {client_ip} -> {host} ({idx + 1}/{n_files})")
+            prompt_log = _user_prompt_log_text(voice=is_voice, file_label=h_item, caption="", index=idx + 1, total=n_files)
 
-        def _post_empty(_hint=hint) -> None:
-            if not _claim_file_row_post(_hint, False):
-                return
-            post_upload_intercept(
-                platform=platform,
-                prompt=_user_prompt_log_text(voice=is_voice, file_label=_hint),
-                client_ip=client_ip,
-                domain=domain,
-                url=url,
-                method=method,
-                file_name=_hint,
-                scan_guard={
-                    "cache_miss": True,
-                    "scan_guard_decided": True,
-                    "scan_guard_action": "Allowed",
-                    "empty_caption": True,
-                },
-            )
+            def _make_post_empty(_prompt=prompt_log, _hint=h_item, _i=idx):
+                def _post_empty() -> None:
+                    if not _claim_file_row_post(_hint, False):
+                        return
+                    post_upload_intercept(
+                        platform=platform,
+                        prompt=_prompt,
+                        client_ip=client_ip,
+                        domain=domain,
+                        url=url,
+                        method=method,
+                        file_name=_hint,
+                        scan_guard={
+                            "cache_miss": True,
+                            "scan_guard_decided": True,
+                            "scan_guard_action": "Allowed",
+                            "empty_caption": True,
+                            "multi_file_count": n_files,
+                            "multi_file_index": _i + 1,
+                        },
+                    )
+                return _post_empty
 
-        _coalesce_file_log(domain, hint, has_caption=False, post=_post_empty)
+            _coalesce_file_log(domain, h_item, has_caption=False, post=_make_post_empty())
         return False, "", "", 1, False
 
     # Dedup by cache_uid ONLY — many ChatGPT/Claude images share name "attachment".
