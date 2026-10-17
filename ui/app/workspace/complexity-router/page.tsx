@@ -337,7 +337,7 @@ export default function ComplexityRouterPage() {
 	const hasErrors = Boolean(boundaryErrors || keywordErrors);
 
 	return (
-		<ScrollArea className="no-padding-parent h-[calc(100vh_-_16px)] w-full px-14 pt-4">
+		<ScrollArea className="no-padding-parent h-full min-h-0 w-full px-14 pt-4">
 			<form className="mx-auto w-full max-w-7xl space-y-8" onSubmit={handleSubmit(onValid)} noValidate>
 				{/* ── Page header ── */}
 				<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

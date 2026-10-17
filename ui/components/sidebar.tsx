@@ -1457,10 +1457,7 @@ export default function AppSidebar() {
 		}
 	}, [promoCards]);
 
-	const hasPromoCards = promoCards.length > 0 && !areCardsEmpty;
-	// When cards are present: 13rem (header 3rem + bottom section ~10rem)
-	// When no cards: 8rem (header 3rem + bottom section without cards ~5rem)
-	const sidebarGroupHeight = hasPromoCards ? "h-[calc(100vh-13rem)]" : "h-[calc(100vh-8rem)]";
+	const sidebarGroupHeight = "h-full min-h-0";
 
 	const handleCardsEmpty = () => {
 		setAreCardsEmpty(true);

@@ -642,12 +642,12 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* CAPABILITIES SECTION */}
-				<section id="features" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
+				<section id="features" className="py-8 px-6 lg:px-10 xl:px-14 scroll-mt-24">
 					<div id="capabilities" className="scroll-mt-24" />
 					<div className="max-w-[1440px] mx-auto">
-						<div className="text-center max-w-2xl mx-auto mb-14">
-							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">Capabilities</div>
-							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-4">
+						<div className="text-center max-w-2xl mx-auto mb-6">
+							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-2">Capabilities</div>
+							<h2 className="text-3xl sm:text-4xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-3">
 								Enterprise grade from day one
 							</h2>
 							<p className="text-slate-600 text-sm sm:text-base">
@@ -655,7 +655,7 @@ console.log(response.choices[0].message.content);`
 							</p>
 						</div>
 
-						<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+						<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 							{[
 								{
 									icon: <Lock className="h-5 w-5 text-[#2f6bff]" />,
@@ -690,7 +690,7 @@ console.log(response.choices[0].message.content);`
 							].map((feature, idx) => (
 								<div
 									key={idx}
-									className="group border border-[#e3ebf8] hover:border-[#2f6bff]/30 rounded-2xl bg-white p-6 space-y-3.5 transition-all shadow-[0_12px_30px_rgba(47,107,255,0.06)] hover:-translate-y-0.5"
+									className="group border border-[#e3ebf8] hover:border-[#2f6bff]/30 rounded-2xl bg-white p-4 space-y-2 transition-all shadow-[0_12px_30px_rgba(47,107,255,0.06)] hover:-translate-y-0.5"
 								>
 									<div className="h-11 w-11 rounded-xl bg-[#eef3ff] border border-[#d7e4ff] flex items-center justify-center group-hover:scale-105 transition-transform">
 										{feature.icon}

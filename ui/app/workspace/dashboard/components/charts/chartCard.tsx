@@ -132,7 +132,7 @@ export function ChartCard({
 }: ChartCardProps) {
 	if (loading) {
 		return (
-			<Card className={cn("min-w-0 rounded-sm p-2 shadow-none h-[330px]", className)} data-testid={testId}>
+			<Card className={cn("min-w-0 rounded-sm p-2 shadow-none h-[clamp(200px,28vh,330px)]", className)} data-testid={testId}>
 				<Header
 					title={title}
 					controls={controls}
@@ -153,7 +153,7 @@ export function ChartCard({
 	}
 
 	return (
-		<Card className={cn("min-w-0 rounded-sm p-2 shadow-none h-[330px]", className)} data-testid={testId}>
+		<Card className={cn("min-w-0 rounded-sm p-2 shadow-none h-[clamp(200px,28vh,330px)]", className)} data-testid={testId}>
 			<Header
 				title={title}
 				controls={controls}

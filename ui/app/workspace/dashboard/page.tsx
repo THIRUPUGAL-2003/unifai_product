@@ -507,7 +507,7 @@ export default function DashboardPage() {
 	);
 
 	return (
-		<div id="dashboard-root" className="no-padding-parent no-border-parent bg-background flex h-[calc(100vh_-_16px)] w-full gap-3">
+		<div id="dashboard-root" className="no-padding-parent no-border-parent bg-background flex h-full min-h-0 w-full gap-3">
 			{/* Sidebar Filters */}
 			<LogsFilterSidebar filters={filters} onFiltersChange={setFilters} />
 
