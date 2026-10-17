@@ -1673,6 +1673,15 @@ def _extract_pdf_pypdf(data: bytes) -> str:
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(data), strict=False)
+        if getattr(reader, "is_encrypted", False):
+            try:
+                reader.decrypt("")
+            except Exception:
+                pass
+            try:
+                _ = len(reader.pages)
+            except Exception:
+                return "[ENCRYPTED_FILE: Password-Protected PDF Document]"
         parts: list[str] = []
         for page in reader.pages[:50]:
             try:
@@ -1818,7 +1827,36 @@ def _extract_pdf_text_smart(data: bytes) -> str:
     data = _normalize_pdf_bytes(data)
     if not data:
         return ""
+    # 1. Primary: PyMuPDF (fitz) — fast, handles complex ligatures and Type3/CID font encodings
+    try:
+        import pymupdf as fitz
+        doc = fitz.open(stream=data, filetype="pdf")
+        if getattr(doc, "is_encrypted", False):
+            try:
+                doc.authenticate("")
+            except Exception:
+                pass
+            if getattr(doc, "is_encrypted", False) and getattr(doc, "needs_pass", 0):
+                doc.close()
+                return "[ENCRYPTED_FILE: Password-Protected PDF Document]"
+        parts = []
+        for i, page in enumerate(doc):
+            if i >= 50:
+                break
+            t = page.get_text() or ""
+            if t.strip():
+                parts.append(t.strip())
+        doc.close()
+        fitz_t = "\n".join(parts).strip()
+        if _pdf_text_sufficient(fitz_t):
+            return fitz_t[:200_000]
+    except Exception:
+        pass
+
+    # 2. PyPDF fallback
     text = _extract_pdf_pypdf(data)
+    if text.startswith("[ENCRYPTED_FILE"):
+        return text
     if _pdf_text_sufficient(text):
         return text[:200_000]
     regex_t = _extract_pdf_regex(data)
@@ -1828,7 +1866,7 @@ def _extract_pdf_text_smart(data: bytes) -> str:
     if ocr_t.strip():
         print(f"[Gateway Proxy] PDF OCR extracted {len(ocr_t.strip())} chars (scanned/low-text PDF)")
         return ocr_t[:200_000]
-    return (text or regex_t or "")[:200_000]
+    return (fitz_t if "fitz_t" in locals() and fitz_t else (text or regex_t or ""))[:200_000]
 
 
 def _extract_pdf_images(data: bytes, max_images: int = 10) -> list[str]:
@@ -1926,8 +1964,26 @@ def _office_zip_bytes(data: bytes) -> bytes | None:
     return None
 
 
+def _is_encrypted_office_document(data: bytes) -> bool:
+    """True when Office file is password-protected/encrypted (stored in OLE compound wrapper)."""
+    if not data or len(data) < 512:
+        return False
+    if data[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        head = data[:8192]
+        if (
+            b"EncryptedPackage" in head
+            or b"EncryptionInfo" in head
+            or b"E\x00n\x00c\x00r\x00y\x00p\x00t\x00e\x00d\x00P\x00a\x00c\x00k\x00a\x00g\x00e" in head
+            or b"E\x00n\x00c\x00r\x00y\x00p\x00t\x00i\x00o\x00n\x00I\x00n\x00f\x00o" in head
+        ):
+            return True
+    return False
+
+
 def _extract_docx_text(data: bytes) -> str:
     """Extract paragraph text from .docx (OOXML ZIP) without third-party libs."""
+    if _is_encrypted_office_document(data):
+        return "[ENCRYPTED_FILE: Password-Protected Word Document]"
     zdata = _office_zip_bytes(data)
     if not zdata:
         return ""
@@ -1968,6 +2024,8 @@ def _extract_docx_text(data: bytes) -> str:
 
 def _extract_xlsx_text(data: bytes) -> str:
     """Extract cell values from .xlsx (shared strings + sheet cells)."""
+    if _is_encrypted_office_document(data):
+        return "[ENCRYPTED_FILE: Password-Protected Excel Spreadsheet]"
     zdata = _office_zip_bytes(data)
     if not zdata:
         return ""
@@ -2051,6 +2109,8 @@ def _extract_xlsx_text(data: bytes) -> str:
 
 def _extract_pptx_text(data: bytes) -> str:
     """Extract text from .pptx slide XMLs."""
+    if _is_encrypted_office_document(data):
+        return "[ENCRYPTED_FILE: Password-Protected PowerPoint Presentation]"
     zdata = _office_zip_bytes(data)
     if not zdata:
         return ""
@@ -2239,6 +2299,8 @@ def _extract_ole_office_text(data: bytes, content_type: str = "", file_name: str
     """Best-effort text from legacy .doc / .xls / .ppt (OLE CFB) without third-party libs."""
     if not data:
         return ""
+    if _is_encrypted_office_document(data):
+        return "[ENCRYPTED_FILE: Password-Protected Office Document]"
     try:
         if not _looks_like_ole(data, content_type, file_name) and data[:8] != b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
             fn = (file_name or "").lower()

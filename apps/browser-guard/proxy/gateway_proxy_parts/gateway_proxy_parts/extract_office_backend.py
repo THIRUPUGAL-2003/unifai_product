@@ -63,7 +63,11 @@ async def _windows_ocr_pil(img) -> str:
 
     engine = OcrEngine.try_create_from_user_profile_languages()
     if engine is None:
-        for tag in ("en", "en-US", "en-GB"):
+        for tag in (
+            "en-US", "en-GB", "en", "es-ES", "es", "fr-FR", "fr", "de-DE", "de",
+            "zh-Hans-CN", "zh-CN", "zh", "ja-JP", "ja", "ko-KR", "ko", "ru-RU", "ru",
+            "pt-BR", "pt", "it-IT", "it", "hi-IN", "hi", "ta-IN", "ta", "ar-SA", "ar",
+        ):
             try:
                 if OcrEngine.is_language_supported(Language(tag)):
                     engine = OcrEngine.try_create_from_language(Language(tag))
@@ -401,12 +405,71 @@ def _whisper_stt(path: str) -> str:
     return ""
 
 
+def _extract_audio_metadata_text(data: bytes) -> str:
+    """Extract embedded ID3, MP4 metadata, and text tags from audio files without FFmpeg."""
+    if not data or len(data) < 32:
+        return ""
+    tags: list[str] = []
+    # 1. ID3v2 for MP3 / AIFF / WAV
+    if data[:3] == b"ID3" and len(data) >= 10:
+        try:
+            size = ((data[6] & 0x7F) << 21) | ((data[7] & 0x7F) << 14) | ((data[8] & 0x7F) << 7) | (data[9] & 0x7F)
+            tag_data = data[10 : 10 + min(size, len(data) - 10)]
+            idx = 0
+            while idx < len(tag_data) - 10:
+                fid = tag_data[idx : idx + 4]
+                if fid == b"\x00\x00\x00\x00":
+                    break
+                fsize = int.from_bytes(tag_data[idx + 4 : idx + 8], "big")
+                if fsize <= 0 or idx + 10 + fsize > len(tag_data):
+                    break
+                fbody = tag_data[idx + 10 : idx + 10 + fsize]
+                idx += 10 + fsize
+                if fid in (b"TIT2", b"TPE1", b"TALB", b"COMM", b"USLT", b"TXXX", b"TIT3", b"TCON", b"TIT1"):
+                    enc = fbody[0] if fbody else 0
+                    raw_text = fbody[1:]
+                    encoding = "latin-1" if enc == 0 else ("utf-16" if enc in (1, 2) else "utf-8")
+                    try:
+                        t = raw_text.decode(encoding, errors="ignore").strip("\x00").strip()
+                        if t and len(t) >= 2 and t not in tags:
+                            tags.append(t)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # 2. OGG / Vorbis / Opus comment headers
+    if b"OggS" in data[:64] or b"OpusTags" in data[:2048] or b"vorbis" in data[:2048]:
+        try:
+            for m in re.finditer(rb'(?:TITLE|ARTIST|ALBUM|DESCRIPTION|COMMENT|TRANSCRIPT)=([^\x00\r\n]{2,500})', data[:65536], re.I):
+                val = m.group(1).decode("utf-8", errors="ignore").strip()
+                if val and val not in tags:
+                    tags.append(val)
+        except Exception:
+            pass
+
+    # 3. MP4 / M4A metadata atoms
+    if b"ftyp" in data[:32] or b"moov" in data[:4096]:
+        try:
+            for m in re.finditer(rb'(?:\xa9nam|\xa9ART|\xa9alb|\xa9cmt|desc)\x00[^\x00]{4,8}\x00([A-Za-z0-9 _\-\.,;:\(\)\?!]{3,200})', data[:65536]):
+                val = m.group(1).decode("utf-8", errors="ignore").strip()
+                if val and val not in tags:
+                    tags.append(val)
+        except Exception:
+            pass
+
+    if tags:
+        return "[AUDIO METADATA: " + " | ".join(tags) + "]"
+    return ""
+
+
 def _extract_audio_text(data: bytes, content_type: str = "", file_name: str = "") -> str:
     """
     Speech-to-text for voice / audio uploads so Guard Rules can scan spoken content.
-    Order: site-provided transcript fields are handled separately; here we STT the bytes.
     1) Windows System.Speech on WAV (built-in)
     2) Optional Whisper / faster-whisper if installed
+    3) Pure Python ID3 / Vorbis / MP4 embedded tags & description
+    4) Transparent media label fallback for DLP rule matching
     """
     import os
 
@@ -415,23 +478,21 @@ def _extract_audio_text(data: bytes, content_type: str = "", file_name: str = ""
     path = None
     try:
         path = _audio_to_wav_path(data, content_type, file_name)
-        if not path:
-            return ""
-        # Prefer WAV for System.Speech
-        wav = path if path.lower().endswith(".wav") else None
-        if wav:
-            text = _windows_system_speech_stt(wav)
+        if path:
+            wav = path if path.lower().endswith(".wav") else None
+            if wav:
+                text = _windows_system_speech_stt(wav)
+                if text:
+                    print(f"[Gateway Proxy] Voice STT (Windows) | {len(text)} chars | {file_name or 'audio'}")
+                    return text
+            text = _whisper_stt(path)
             if text:
-                print(f"[Gateway Proxy] Voice STT (Windows) | {len(text)} chars | {file_name or 'audio'}")
+                print(f"[Gateway Proxy] Voice STT (Whisper) | {len(text)} chars | {file_name or 'audio'}")
                 return text
-        text = _whisper_stt(path)
-        if text:
-            print(f"[Gateway Proxy] Voice STT (Whisper) | {len(text)} chars | {file_name or 'audio'}")
-            return text
-        if wav is None and path.lower().endswith((".wav",)):
-            text = _windows_system_speech_stt(path)
-            if text:
-                return text
+            if wav is None and path.lower().endswith((".wav",)):
+                text = _windows_system_speech_stt(path)
+                if text:
+                    return text
     except Exception as e:
         print(f"[Gateway Proxy] Voice STT error: {e}")
     finally:
@@ -445,7 +506,15 @@ def _extract_audio_text(data: bytes, content_type: str = "", file_name: str = ""
                     os.remove(path + ".wav")
             except Exception:
                 pass
-    return ""
+
+    # Fallback 1: Pure-Python embedded ID3 / MP4 / Vorbis tags without FFmpeg
+    meta = _extract_audio_metadata_text(data)
+    if meta:
+        return meta
+
+    # Fallback 2: Audio media content tag so DLP rule can match filename and audio presence
+    label = file_name or "audio"
+    return f"[AUDIO_MEDIA: {label}] (Spoken Audio Media File)"
 
 
 def _extract_plain_text_bytes(data: bytes) -> str:
@@ -1024,6 +1093,90 @@ def _extract_tar_archive_members_text(
     return out[:max_chars]
 
 
+def _extract_archive_via_system_tar(data: bytes, file_name: str = "", max_chars: int = 250_000) -> str:
+    """Extract .7z, .cab, .iso, and nested archives using Windows built-in tar.exe (bsdtar)."""
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+
+    if not data or len(data) < 32:
+        return ""
+    ext = os.path.splitext(file_name or "")[1].lower() or ".7z"
+    temp_dir = tempfile.mkdtemp(prefix="gateway_tar_")
+    archive_path = os.path.join(temp_dir, f"archive{ext}")
+    try:
+        with open(archive_path, "wb") as fp:
+            fp.write(data)
+        out_dir = os.path.join(temp_dir, "extracted")
+        os.makedirs(out_dir, exist_ok=True)
+        proc = subprocess.run(
+            ["tar.exe", "-xf", archive_path, "-C", out_dir],
+            capture_output=True,
+            timeout=20,
+        )
+        chunks: list[str] = []
+        total = 0
+        for root, _dirs, files in os.walk(out_dir):
+            for fname in files:
+                if total >= max_chars or len(chunks) >= 40:
+                    break
+                fpath = os.path.join(root, fname)
+                try:
+                    fsize = os.path.getsize(fpath)
+                    if fsize <= 0 or fsize > 25 * 1024 * 1024:
+                        continue
+                    with open(fpath, "rb") as ifp:
+                        inner_data = ifp.read(25 * 1024 * 1024)
+                    inner_text = _extract_text_from_file_bytes(inner_data, "", fname)
+                    if inner_text and inner_text.strip():
+                        piece = f"[FILE:{fname}]\n{inner_text.strip()}"
+                        chunks.append(piece)
+                        total += len(piece)
+                except Exception:
+                    continue
+        if chunks:
+            print(f"[Gateway Proxy] System tar archive extract | files={len(chunks)} | {total} chars")
+            return "\n\n".join(chunks)[:max_chars]
+    except Exception as e:
+        print(f"[Gateway Proxy] System tar extract skipped: {e}")
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+    return ""
+
+
+def _extract_rar_archive_text(data: bytes, file_name: str = "", max_chars: int = 250_000) -> str:
+    """Best-effort extract for RAR archives using system tar or RAR member header scan + binary strings."""
+    if not data or len(data) < 16:
+        return ""
+    # 1. Try system tar (some Windows bsdtar builds handle RAR)
+    try:
+        res = _extract_archive_via_system_tar(data, file_name or ".rar", max_chars=max_chars)
+        if res and res.strip():
+            return res
+    except Exception:
+        pass
+    # 2. Parse RAR member filenames from archive headers
+    files_found: list[str] = []
+    try:
+        is_rar = data.startswith((b"Rar!\x1a\x07\x00", b"Rar!\x1a\x07\x01\x00", b"Rar!"))
+        if is_rar:
+            for m in re.finditer(rb'[\w\.-]+\.(?:pdf|docx?|xlsx?|pptx?|txt|csv|png|jpg|json|py|md|log|sql|xml|html)', data[:131072], re.I):
+                fn_str = m.group(0).decode("utf-8", errors="ignore").strip()
+                if fn_str and fn_str.lower() not in [x.lower() for x in files_found]:
+                    files_found.append(fn_str)
+    except Exception:
+        pass
+    # 3. String extraction
+    strings = _extract_binary_strings(data, min_len=5, max_chars=max_chars)
+    out_parts: list[str] = []
+    if files_found:
+        out_parts.append("[ARCHIVE MEMBERS: " + ", ".join(files_found) + "]")
+    if strings:
+        out_parts.append(strings)
+    return "\n\n".join(out_parts)[:max_chars]
+
+
 def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name: str = "") -> str:
     """Extract scannable text — primary method per file type, then fallbacks until one succeeds."""
     if not data:
@@ -1033,6 +1186,8 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
     fn = file_name
     # Shared fallbacks used by several kinds + unknown
     common_fallbacks = [
+        ("system-tar", lambda: _extract_archive_via_system_tar(data, fn)),
+        ("rar-archive", lambda: _extract_rar_archive_text(data, fn)),
         ("rtf", lambda: _extract_rtf_text(data)),
         ("html", lambda: _extract_html_text(data)),
         ("odf", lambda: _extract_opendocument_text(data)),
@@ -1141,10 +1296,12 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
             ])
 
         elif kind in ("zip", "tar"):
-            # Real archives (resumes.zip, code.tar.gz): unpack members → PDF/Office/image/plain → rules.
+            # Real archives (resumes.zip, code.tar.gz, backup.7z, files.rar): unpack members → PDF/Office/image/plain → rules.
             found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("zip-members", lambda: _extract_zip_archive_members_text(data)),
                 ("tar-members", lambda: _extract_tar_archive_members_text(data)),
+                ("system-tar-members", lambda: _extract_archive_via_system_tar(data, fn)),
+                ("rar-members", lambda: _extract_rar_archive_text(data, fn)),
                 ("odf", lambda: _extract_opendocument_text(data)),
             ] + _office_extract_steps(data, "docx") + [
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
@@ -1157,6 +1314,8 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
             ("pdf-regex", lambda: _extract_pdf_regex(data)),
             ("zip-members", lambda: _extract_zip_archive_members_text(data)),
             ("tar-members", lambda: _extract_tar_archive_members_text(data)),
+            ("system-tar-members", lambda: _extract_archive_via_system_tar(data, fn)),
+            ("rar-members", lambda: _extract_rar_archive_text(data, fn)),
             ("rtf", lambda: _extract_rtf_text(data)),
             ("html", lambda: _extract_html_text(data)),
             ("odf", lambda: _extract_opendocument_text(data)),
