@@ -27,6 +27,7 @@ try:
         _path_looks_like_upload,
         BATCHEXECUTE_LOCALE_JUNK,
         NOISE_EXTENSIONS,
+        _GENERIC_UPLOAD_PATH_MARKERS,
     )
 except Exception:
     _CONTROL_PLANE_PROMPT_TOKENS = frozenset({"ping", "pong", "heartbeat", "ready", "ack", "sync"})
@@ -36,6 +37,10 @@ except Exception:
     _is_file_content_part = lambda x: False
     BATCHEXECUTE_LOCALE_JUNK = {"en", "ta-in", "hi-in", "es", "fr", "de"}
     NOISE_EXTENSIONS = re.compile(r"\.(png|jpg|jpeg|gif|webp|svg|css|js|woff|woff2|ttf|ico|map)$", re.IGNORECASE)
+    _GENERIC_UPLOAD_PATH_MARKERS = (
+        "/upload", "/uploads", "/files", "/file/", "/attachment", "/attachments",
+        "/media/upload", "/convert_document", "/filepush", "/process_upload",
+    )
 
 def _safe_unescape_prompt_str(raw: str) -> str:
     """Safely decode JSON string escapes without destroying UTF-8 unicode/emojis."""

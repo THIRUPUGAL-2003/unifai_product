@@ -1298,7 +1298,7 @@ def _extract_text_from_file_bytes(data: bytes, content_type: str = "", file_name
                 ("plain-decode", lambda: _extract_plain_text_bytes(data)),
             ])
 
-        if kind == "video":
+        elif kind == "video":
             # Pull spoken track via ffmpeg→WAV→STT (same pipeline as voice).
             found = _try_file_extract_chain(data, ct, fn, kind, [
                 ("video-audio-stt", lambda: _extract_audio_text(data, ct, fn)),

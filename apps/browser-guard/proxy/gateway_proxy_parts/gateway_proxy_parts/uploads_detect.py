@@ -744,7 +744,18 @@ def _isolate_active_send_message(raw_text: str) -> str:
                             author = m.get("author") if isinstance(m.get("author"), dict) else {}
                             role = (author.get("role") or m.get("role") or "").lower()
                             if role in ("user", ""):
-                                return json.dumps(m)
+                                # Preserve top-level attachments/files from data (DeepSeek, Perplexity, Mistral, Lovable)
+                                top_keys = (
+                                    "files", "file_ids", "file_uuids", "attachments", "documents",
+                                    "document_ids", "uploads", "uploaded_files", "media", "assets",
+                                    "sources", "docs", "ref_file_ids", "file_list", "filelist",
+                                    "input_files", "input_images",
+                                )
+                                combined = dict(m)
+                                for tk in top_keys:
+                                    if tk in data and tk not in combined:
+                                        combined[tk] = data[tk]
+                                return json.dumps(combined)
         except Exception:
             pass
     return raw_text
@@ -1481,45 +1492,86 @@ def _upload_content_fingerprint(entry: dict) -> str:
 
 
 def _prefer_named_upload(a: dict, b: dict) -> dict:
-    """Keep the entry with the more user-real filename."""
+    """Keep the entry with the more user-real filename and more complete bytes."""
     an = (a.get("file_name") or "").strip()
     bn = (b.get("file_name") or "").strip()
     a_real = _is_real_user_upload_name(an)
     b_real = _is_real_user_upload_name(bn)
-    if a_real and not b_real:
-        return a
-    if b_real and not a_real:
-        return b
+
     ar = a.get("raw_bytes") or b""
     br = b.get("raw_bytes") or b""
-    if isinstance(ar, (bytes, bytearray)) and isinstance(br, (bytes, bytearray)):
-        if len(br) > len(ar) + 64:
-            return b
-        if len(ar) > len(br) + 64:
-            return a
-    if len(an) >= len(bn):
+    ar_len = len(ar) if isinstance(ar, (bytes, bytearray)) else 0
+    br_len = len(br) if isinstance(br, (bytes, bytearray)) else 0
+
+    if a_real and not b_real:
+        if br_len > ar_len:
+            a["raw_bytes"] = br
+            if b.get("content_type"):
+                a["content_type"] = b.get("content_type")
         return a
-    return b
+    if b_real and not a_real:
+        if ar_len > br_len:
+            b["raw_bytes"] = ar
+            if a.get("content_type"):
+                b["content_type"] = a.get("content_type")
+        return b
+
+    # Both real or both placeholder: prefer the one with more bytes
+    if br_len > ar_len:
+        return b
+    if ar_len > br_len:
+        return a
+
+    # Same bytes: prefer longer name, or newer timestamp
+    if len(bn) > len(an):
+        return b
+    if len(an) > len(bn):
+        return a
+    if float(b.get("ts") or 0) > float(a.get("ts") or 0):
+        return b
+    return a
 
 
 def _dedupe_cached_uploads_by_bytes(cached_list: list[dict]) -> list[dict]:
-    """One row per distinct file bytes — ChatGPT often caches the same PDF as name + attachment."""
+    """One row per distinct file — deduplicates across chunks, file_id aliases, and duplicate caches."""
     if not cached_list or len(cached_list) <= 1:
         return cached_list
-    # Same bytes + same/placeholder name = duplicate; two distinct real names = two files.
-    groups: dict[str, list[dict]] = {}
-    no_fp: list[dict] = []
+
+    # Step 1: Group by non-empty file_id (normalizing "file-" prefix)
+    id_groups: dict[str, list[dict]] = {}
+    remaining: list[dict] = []
     for e in cached_list:
-        fp = _upload_content_fingerprint(e)
-        if not fp or fp.startswith("empty|"):
-            raw = e.get("raw_bytes") or b""
-            if isinstance(raw, (bytes, bytearray)) and len(raw) < 96:
-                continue
-            no_fp.append(e)
-            continue
-        groups.setdefault(fp, []).append(e)
-    out: list[dict] = []
-    for members in groups.values():
+        fid = (e.get("file_id") or "").strip().lower()
+        if fid and fid not in ("null", "none", "undefined"):
+            norm_fid = fid if not fid.startswith("file-") else fid[5:]
+            id_groups.setdefault(norm_fid, []).append(e)
+        else:
+            remaining.append(e)
+
+    collapsed_from_id: list[dict] = []
+    for fid, members in id_groups.items():
+        best = members[0]
+        for m in members[1:]:
+            best = _prefer_named_upload(best, m)
+        collapsed_from_id.append(best)
+
+    all_candidates = collapsed_from_id + remaining
+    if len(all_candidates) <= 1:
+        return all_candidates
+
+    # Step 2: Group by identical content bytes
+    bytes_groups: dict[str, list[dict]] = {}
+    no_bytes: list[dict] = []
+    for e in all_candidates:
+        raw = e.get("raw_bytes") or b""
+        if isinstance(raw, (bytes, bytearray)) and len(raw) >= 16:
+            fp = _bytes_name_fingerprint(bytes(raw))
+            bytes_groups.setdefault(fp, []).append(e)
+        else:
+            no_bytes.append(e)
+
+    collapsed_from_bytes: list[dict] = []
+    for fp, members in bytes_groups.items():
         named: dict[str, dict] = {}
         unnamed: list[dict] = []
         for e in members:
@@ -1530,15 +1582,37 @@ def _dedupe_cached_uploads_by_bytes(cached_list: list[dict]) -> list[dict]:
             else:
                 unnamed.append(e)
         if named:
-            out.extend(named.values())
+            collapsed_from_bytes.extend(named.values())
         else:
             best = unnamed[0]
             for e in unnamed[1:]:
                 best = _prefer_named_upload(best, e)
-            out.append(best)
-    if out:
-        return out
-    return no_fp or cached_list
+            collapsed_from_bytes.append(best)
+
+    final_candidates = collapsed_from_bytes + no_bytes
+    if len(final_candidates) <= 1:
+        return final_candidates
+
+    # Step 3: Group by identical real filename uploaded within the same 90-second burst
+    # (merges chunk 1 and chunk 2 with different byte lengths into the complete file)
+    out: list[dict] = []
+    name_seen: dict[str, dict] = {}
+    for e in final_candidates:
+        n = (e.get("file_name") or "").strip()
+        if _is_real_user_upload_name(n):
+            k = n.lower()
+            if k in name_seen:
+                prev = name_seen[k]
+                time_diff = abs(float(e.get("ts") or 0) - float(prev.get("ts") or 0))
+                if time_diff < 90.0:
+                    name_seen[k] = _prefer_named_upload(prev, e)
+                    continue
+            name_seen[k] = e
+        else:
+            out.append(e)
+    out.extend(name_seen.values())
+    out.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
+    return out
 
 
 _UPLOAD_BURST_WINDOW = 180.0  # files of ONE Send are uploaded within this many seconds (supports 10+ files)
@@ -2433,19 +2507,38 @@ def upload_domain_aliases(domain: str) -> list[str]:
     if not d:
         return []
 
+    fam_set: set[str] = set()
     fam = _cached_families.get(d)
     if fam:
-        return sorted(fam)
+        fam_set.update(fam)
 
     # Longest-suffix match by walking labels: O(labels), not O(#targets).
     labels = d.split(".")
     for i in range(1, len(labels)):
-        fam = _cached_families.get(".".join(labels[i:]))
-        if fam:
-            return sorted(fam)
+        sfam = _cached_families.get(".".join(labels[i:]))
+        if sfam:
+            fam_set.update(sfam)
 
-    # Single monitored domain with no siblings in Target Websites.
-    return [d]
+    # Built-in platform family siblings (ChatGPT, Claude, Gemini, Perplexity, DeepSeek, Copilot, Mistral, Lovable)
+    if any(x in d for x in ("chatgpt", "openai")):
+        fam_set.update(["chatgpt.com", "openai.com", "api.openai.com", "cdn.oaistatic.com", "files.oaiusercontent.com"])
+    elif any(x in d for x in ("claude", "anthropic")):
+        fam_set.update(["claude.ai", "anthropic.com", "api.anthropic.com"])
+    elif any(x in d for x in ("gemini", "bard")):
+        fam_set.update(["gemini.google.com", "google.com", "generativelanguage.googleapis.com"])
+    elif "perplexity" in d:
+        fam_set.update(["perplexity.ai", "www.perplexity.ai", "api.perplexity.ai"])
+    elif "deepseek" in d:
+        fam_set.update(["deepseek.com", "chat.deepseek.com", "api.deepseek.com"])
+    elif any(x in d for x in ("copilot", "sydney", "edgeservices")):
+        fam_set.update(["copilot.microsoft.com", "edgeservices.bing.com", "bing.com", "sydney.bing.com"])
+    elif "mistral" in d:
+        fam_set.update(["mistral.ai", "chat.mistral.ai", "console.mistral.ai", "api.mistral.ai"])
+    elif "lovable" in d:
+        fam_set.update(["lovable.dev", "lovable.app", "api.lovable.dev"])
+
+    fam_set.add(d)
+    return sorted(fam_set)
 
 
 def _is_file_metadata_handshake(raw_bytes: bytes = b"", raw_text: str = "", path: str = "") -> bool:
@@ -2804,7 +2897,47 @@ def cache_upload_file(
         for alias in aliases:
             qkey = _upload_queue_key(alias)
             q = _UPLOAD_FILE_QUEUES.setdefault(qkey, [])
-            q.append(entry)
+            # Deduplicate queue: check if this upload already exists in queue
+            existing_idx = -1
+            now_ts = entry["ts"]
+            for idx, existing in enumerate(q):
+                e_fid = (existing.get("file_id") or "").strip()
+                e_fn = (existing.get("file_name") or "").strip().lower()
+                e_raw = existing.get("raw_bytes") or b""
+                # Match by file_id
+                if file_id and e_fid and file_id == e_fid:
+                    existing_idx = idx
+                    break
+                # Match by identical non-empty bytes
+                if stored and e_raw and stored == e_raw:
+                    existing_idx = idx
+                    break
+                # Match by real filename within recent burst (90s)
+                if (
+                    fname_key
+                    and _is_real_user_upload_name(entry["file_name"])
+                    and e_fn == fname_key
+                    and abs(now_ts - float(existing.get("ts") or 0)) < 90.0
+                ):
+                    existing_idx = idx
+                    break
+            if existing_idx >= 0:
+                old = q[existing_idx]
+                merged = _prefer_named_upload(old, entry)
+                if not merged.get("file_id") and (old.get("file_id") or entry.get("file_id")):
+                    merged["file_id"] = old.get("file_id") or entry.get("file_id")
+                if len(stored) >= len(old.get("raw_bytes") or b""):
+                    merged["raw_bytes"] = stored
+                    merged["content_type"] = final_ct
+                if entry.get("rule_hit"):
+                    merged["rule_hit"] = True
+                    merged["rule_name"] = entry.get("rule_name") or merged.get("rule_name")
+                    merged["rule_action"] = entry.get("rule_action") or merged.get("rule_action")
+                merged["ts"] = now_ts
+                merged["cache_uid"] = f"{now_ts:.6f}|{fname_key}|{len(merged.get('raw_bytes') or b'')}"
+                q[existing_idx] = merged
+            else:
+                q.append(entry)
             if len(q) > _UPLOAD_FILE_QUEUE_MAX:
                 _UPLOAD_FILE_QUEUES[qkey] = q[-_UPLOAD_FILE_QUEUE_MAX:]
     print(
@@ -2828,9 +2961,15 @@ def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
         re.I,
     ):
         chunk = m.group(1) or ""
+        _JSON_KEY_SKIP = frozenset({
+            "id", "name", "type", "size", "url", "uri", "mime", "mimetype", "path",
+            "title", "status", "created_at", "metadata", "data", "source", "content",
+            "width", "height", "true", "false", "null", "file", "document", "upload",
+            "text", "role", "assistant", "user", "model",
+        })
         for sm in re.finditer(r'["\']([a-zA-Z0-9_\-\.]{1,128})["\']', chunk):
             val = sm.group(1).strip()
-            if not _POSITIONAL_NAME_RE.match(val):
+            if val.lower() not in _JSON_KEY_SKIP and len(val) >= 2 and not _POSITIONAL_NAME_RE.match(val):
                 ids.append(val)
     for pat in (
         r'"file_id"\s*:\s*"([^"]+)"',
@@ -2860,6 +2999,7 @@ def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
         r'"sourceId"\s*:\s*"([^"]+)"',
         r'"storage_id"\s*:\s*"([^"]+)"',
         r'"storageId"\s*:\s*"([^"]+)"',
+        r'"uuid"\s*:\s*"([a-zA-Z0-9_\-\.]{4,128})"',
         r'/c/api/attachments/([^"?\s]+)',
         r'file-service://(file-[a-zA-Z0-9_-]+)',
         r'file-service://file-([a-zA-Z0-9_-]+)',
@@ -2886,7 +3026,7 @@ def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
 
 
 def _expected_send_attachment_count(raw_text: str) -> int:
-    """How many distinct files this Send references (ChatGPT/Gemini/Claude multi-upload)."""
+    """How many distinct files this Send references (ChatGPT/Gemini/Claude/Perplexity/DeepSeek/Copilot/Mistral/Lovable)."""
     body = _isolate_active_send_message(raw_text or "")
     if not body:
         return 0
@@ -2897,10 +3037,12 @@ def _expected_send_attachment_count(raw_text: str) -> int:
     if names:
         return len(names)
     ids = _extract_file_ids_from_chat(body)
+    if ids:
+        return len(ids)
     # Non-empty attachments / files / documents object or string arrays
     n_objs = 0
     for m in re.finditer(
-        r'"(?:attachments|files|documents|uploadedFiles|uploaded_files|media|fileattachments|imageattachments|file_list|filelist|assets|sources|docs)"\s*:\s*\[(.*?)\]',
+        r'"(?:attachments|files|documents|uploadedFiles|uploaded_files|media|fileattachments|imageattachments|file_list|filelist|assets|sources|docs|ref_file_ids)"\s*:\s*\[(.*?)\]',
         body,
         re.I | re.S,
     ):
@@ -2910,8 +3052,8 @@ def _expected_send_attachment_count(raw_text: str) -> int:
         n_braces = len(re.findall(r'\{', chunk))
         n_strings = len(re.findall(r'["\'][a-zA-Z0-9_\-\.]{1,}["\']', chunk)) if not n_braces else 0
         n_objs = max(n_objs, n_braces, n_strings)
-    n_content_blocks = len(re.findall(r'"type"\s*:\s*"(?:document|image|file|audio)"', body, re.I))
-    return max(len(ids), n_objs, n_content_blocks, 0)
+    n_content_blocks = len(re.findall(r'"type"\s*:\s*"(?:document|image|file|audio|input_image|input_file)"', body, re.I))
+    return max(n_objs, n_content_blocks, 0)
 
 
 def chat_carries_attachment(raw_text: str) -> bool:
@@ -3659,7 +3801,8 @@ def take_all_cached_uploads_for_send(
                     if expected_n > 0 and len(found) >= expected_n:
                         break
                     age = now - float(entry.get("ts") or 0)
-                    if age <= min(_UPLOAD_LATEST_MATCH_TTL, 45.0):
+                    max_ttl = min(_UPLOAD_LATEST_MATCH_TTL, 45.0) if expected_n > 0 else 15.0
+                    if age <= max_ttl:
                         add_entry(entry)
                         _remove_cache_keys_for_entry(entry, aliases)
                 if qkey in _UPLOAD_FILE_QUEUES:
@@ -3669,9 +3812,12 @@ def take_all_cached_uploads_for_send(
                     ]
                 if not found:
                     latest = _UPLOAD_FILE_CACHE.get(f"{alias}|latest")
-                    if latest and (now - float(latest.get("ts") or 0)) <= min(_UPLOAD_LATEST_MATCH_TTL, 45.0):
+                    max_ttl = min(_UPLOAD_LATEST_MATCH_TTL, 45.0) if expected_n > 0 else 15.0
+                    if latest and (now - float(latest.get("ts") or 0)) <= max_ttl:
                         add_entry(latest)
                         _remove_cache_keys_for_entry(latest, aliases)
+        if expected_n > 0 and len(found) > expected_n:
+            found = found[:expected_n]
     return _dedupe_cached_uploads_by_bytes(found)
 
 

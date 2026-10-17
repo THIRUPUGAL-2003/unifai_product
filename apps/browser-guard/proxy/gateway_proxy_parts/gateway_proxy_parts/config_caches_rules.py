@@ -1835,14 +1835,17 @@ def is_event_send_chat_submit(path: str, body: str = "") -> bool:
 
     `/c/api/chat` is a long-lived WebSocket URL. Path alone is never a Send.
     """
-    if _is_gateway_inject_frame(body or ""):
+    fn_inject = globals().get("_is_gateway_inject_frame")
+    if fn_inject and fn_inject(body or ""):
         return False
-    if _copilot_frame_is_user_send(body or ""):
+    fn_copilot_send = globals().get("_copilot_frame_is_user_send")
+    if fn_copilot_send and fn_copilot_send(body or ""):
         return True
     path_l = (path or "").lower().split("?", 1)[0]
     body_l = (body or "").lower()
     # Persistent chat WS: body already decided above.
-    if _is_persistent_chat_websocket(path) and ("\x1e" in (body or "") or '"target":' in body_l or '"invocationid"' in body_l):
+    fn_persistent = globals().get("_is_persistent_chat_websocket")
+    if fn_persistent and fn_persistent(path) and ("\x1e" in (body or "") or '"target":' in body_l or '"invocationid"' in body_l):
         return False
     if not path_l:
         return False

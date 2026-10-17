@@ -365,8 +365,12 @@ def enforce_file_send_policy(
         ]
         if clustered:
             cached_list = clustered
+        try:
+            cached_list = _dedupe_cached_uploads_by_bytes(cached_list)
+        except Exception:
+            pass
     if expected_n > 0 and len(cached_list) > expected_n:
-        cached_list.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
+        cached_list.sort(key=lambda x: (float(x.get("ts") or 0), len(x.get("raw_bytes") or b"")), reverse=True)
         cached_list = cached_list[:expected_n]
 
     if not has_attach and not cached_list:
@@ -674,6 +678,10 @@ def enforce_file_send_policy(
     cached_list = deduped[:_UPLOAD_FILE_QUEUE_MAX]
     # Prefer real filenames from Send body over placeholders.
     cached_list = _bind_real_filenames_to_cached_uploads(cached_list, raw_text or "")
+    try:
+        cached_list = _dedupe_cached_uploads_by_bytes(cached_list)
+    except Exception:
+        pass
 
     caption = ""
     try:

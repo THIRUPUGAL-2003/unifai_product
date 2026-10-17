@@ -8,6 +8,51 @@ import urllib
 import urllib.parse
 import uuid
 
+try:
+    from mitmproxy import http
+except Exception:
+    class _MockResponse:
+        @classmethod
+        def make(cls, status_code=200, content=b"", headers=None):
+            resp = cls()
+            resp.status_code = status_code
+            resp.content = content if isinstance(content, (bytes, bytearray)) else (content or "").encode("utf-8")
+            resp.headers = headers or {}
+            return resp
+    class _MockHttp:
+        Response = _MockResponse
+        HTTPFlow = object
+    http = _MockHttp
+
+try:
+    from config_caches_rules import (
+        detect_target,
+        get_guard_rules,
+        _cached_rules,
+        _cached_rule_catalog,
+    )
+except Exception:
+    detect_target = lambda h: (False, h, "")
+    get_guard_rules = lambda: []
+    _cached_rules = []
+    _cached_rule_catalog = {}
+
+try:
+    from helpers_prompts import (
+        is_batchexecute_chat_submit,
+        _path_looks_like_upload,
+        _is_anthropic_messages_api_shape,
+        is_event_send_chat_submit,
+        is_rest_sse_ask_submit,
+        websocket_frame_text,
+    )
+except Exception:
+    is_batchexecute_chat_submit = lambda p, b: ("batchexecute" in (p or "").lower() or "streamgenerate" in (p or "").lower())
+    _path_looks_like_upload = lambda p: any(x in (p or "").lower() for x in ("/upload", "/files", "/attachment", "/convert_document"))
+    _is_anthropic_messages_api_shape = lambda p, b: any(x in (p or "").lower() for x in ("claude", "anthropic", "messages"))
+    is_event_send_chat_submit = lambda p, b: any(x in (p or "").lower() for x in ("eventsend", "chathub", "sydney", "signalr"))
+    is_rest_sse_ask_submit = lambda p, b: any(x in (p or "").lower() for x in ("perplexity", "ask", "query"))
+    websocket_frame_text = lambda m: getattr(m, "text", "") or ""
 
 # Same rule/send must not paint 3 chat bubbles (Claude multi-request / multi-file).
 _BLOCK_UI_DEDUPE_TTL = 15.0
@@ -71,7 +116,7 @@ def _gemini_block_body(msg: str, rpc: str = "") -> bytes:
 
 
 def _is_deepseek_completion(path: str, host_l: str) -> bool:
-    """DeepSeek web uses singular /chat/completion or /api/v0/chat/completion."""
+    """DeepSeek web uses singular /chat/completion or /api/v0/chat/completion (not plural /completions)."""
     p = (path or "").lower().split("?", 1)[0]
     h = (host_l or "").lower()
     plat_l = ""
@@ -80,11 +125,11 @@ def _is_deepseek_completion(path: str, host_l: str) -> bool:
         plat_l = (target_plat or "").lower()
     except Exception:
         pass
-    if "deepseek" in h or "deepseek" in plat_l:
-        # Match only completion endpoints, never general background APIs like /chat_session or /pow
-        return "completion" in p
-    if "/chat/completions" in p:
+    if "completions" in p:
         return False
+    if "deepseek" in h or "deepseek" in plat_l:
+        # Match only web completion endpoints, never general background APIs like /chat_session or /pow
+        return "completion" in p
     return "/api/v0/chat/completion" in p or p.rstrip("/").endswith("/chat/completion")
 
 
@@ -782,8 +827,8 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         signalr_ack = {"type": 3, "invocationId": "0"}
 
         event_send_sse = (
-            f"data: {json.dumps(signalr_complete, ensure_ascii=False)}\x1e\n\n"
-            f"data: {json.dumps(signalr_ack, ensure_ascii=False)}\x1e\n\n"
+            f"data: {json.dumps(signalr_complete, ensure_ascii=False)}\n\n"
+            f"data: {json.dumps(signalr_ack, ensure_ascii=False)}\n\n"
             f'data: {{"choices":[{{"index":0,"delta":{{"role":"assistant","content":{msg_json}}},"finish_reason":null}}]}}\n\n'
             'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
             "data: [DONE]\n\n"
@@ -863,6 +908,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             f"event: message\ndata: {ask_json}\n\n"
             f'data: {{"text":{msg_json},"answer":{msg_json},"status":"completed","final":true}}\n\n'
             "event: end_of_stream\ndata: {}\n\n"
+            "data: [DONE]\n\n"
         )
         if "application/json" in accept and "event-stream" not in accept and "/sse" not in path:
             flow.response = http.Response.make(
@@ -945,8 +991,8 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         )
         return
 
-    # ── DeepSeek web chat (singular /chat/completion) ──
-    if _is_deepseek_completion(path, host_l) or "deepseek" in plat_l:
+    # ── DeepSeek web chat (singular /chat/completion) vs API (/chat/completions) ──
+    if _is_deepseek_completion(path, host_l) or ("deepseek" in plat_l and "completions" not in path):
         flow.response = http.Response.make(
             200,
             _deepseek_block_sse(msg, raw_body or ""),
@@ -954,7 +1000,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         )
         return
 
-    # ── Lovable AI (lovable.dev) ──
+    # ── Lovable AI (lovable.dev / lovable.app) ──
     if "lovable" in host_l or "lovable.dev" in host_l or "lovable" in plat_l:
         lovable_chunk = {
             "id": "gateway-security-block",
@@ -963,12 +1009,19 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             "text": msg,
             "content": msg,
             "delta": {"role": "assistant", "content": msg, "text": msg},
-            "choices": [{"delta": {"content": msg}, "message": {"role": "assistant", "content": msg}, "finish_reason": "stop"}],
+            "choices": [{"index": 0, "delta": {"content": msg, "role": "assistant"}, "message": {"role": "assistant", "content": msg}, "finish_reason": None}],
             "status": "blocked",
+            "finish_reason": None,
+        }
+        lovable_done = {
+            "id": "gateway-security-block",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "status": "completed",
             "finish_reason": "stop",
         }
         lovable_sse = (
             f"data: {json.dumps(lovable_chunk, ensure_ascii=False)}\n\n"
+            f"data: {json.dumps(lovable_done, ensure_ascii=False)}\n\n"
             "data: [DONE]\n\n"
         )
         if "event-stream" in accept or "stream" in path or "/chat" in path:
@@ -980,16 +1033,27 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             return
         flow.response = http.Response.make(
             200,
-            json.dumps(lovable_chunk, ensure_ascii=False).encode("utf-8"),
+            json.dumps({
+                "id": "gateway-security-block",
+                "message": msg,
+                "text": msg,
+                "content": msg,
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": msg}, "finish_reason": "stop"}],
+                "status": "blocked",
+                "success": True,
+            }, ensure_ascii=False).encode("utf-8"),
             {**common_headers, "Content-Type": "application/json; charset=utf-8"},
         )
         return
 
-    # ── Mistral AI (chat.mistral.ai) ──
+    # ── Mistral AI (chat.mistral.ai / console.mistral.ai) ──
     if "mistral.ai" in host_l or "mistral" in host_l or "mistral" in plat_l:
+        now_t = int(time.time())
         mistral_chunk = {
             "id": "gateway-reply",
             "object": "chat.completion.chunk",
+            "created": now_t,
+            "model": "mistral-large-latest",
             "choices": [{
                 "index": 0,
                 "delta": {"role": "assistant", "content": msg, "text": msg},
@@ -1001,6 +1065,8 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         mistral_done = {
             "id": "gateway-reply",
             "object": "chat.completion.chunk",
+            "created": now_t,
+            "model": "mistral-large-latest",
             "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
         }
         mistral_sse = (
@@ -1008,6 +1074,21 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
             f"data: {json.dumps(mistral_done, ensure_ascii=False)}\n\n"
             "data: [DONE]\n\n"
         )
+        if "application/json" in accept and "event-stream" not in accept and "/stream" not in path:
+            mistral_json = {
+                "id": "gateway-reply",
+                "object": "chat.completion",
+                "created": now_t,
+                "model": "mistral-large-latest",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": msg}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": max(1, len(msg) // 4), "total_tokens": 10 + max(1, len(msg) // 4)},
+            }
+            flow.response = http.Response.make(
+                200,
+                json.dumps(mistral_json, ensure_ascii=False).encode("utf-8"),
+                {**common_headers, "Content-Type": "application/json; charset=utf-8"},
+            )
+            return
         flow.response = http.Response.make(
             200,
             mistral_sse.encode("utf-8"),
