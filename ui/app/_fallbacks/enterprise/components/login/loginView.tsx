@@ -459,11 +459,8 @@ export default function LoginView() {
 	};
 
 	return (
-		<div className="relative flex h-screen flex-col overflow-hidden bg-[#090b12] font-sans text-slate-100 selection:bg-[#45f3ff] selection:text-black">
-			{/* Ambient Gradient Glows */}
-			<div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 h-[500px] w-[800px] rounded-full bg-gradient-to-tr from-indigo-500/15 via-[#45f3ff]/15 to-transparent blur-[140px]" />
-			<div className="pointer-events-none absolute right-[-5%] bottom-[-10%] h-[420px] w-[420px] rounded-full bg-blue-600/10 blur-[130px]" />
-			<div className="pointer-events-none absolute inset-0 bg-[radial-gradient(#ffffff08_1px,transparent_1px)] [background-size:24px_24px] opacity-70" />
+		<div className="relative flex h-screen flex-col overflow-hidden bg-[#f6f8fd] font-sans text-slate-600 selection:bg-blue-500/20 selection:text-[#0b1b3a]">
+			<div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_70%_80%_at_50%_-20%,#d9e6ff_0%,rgba(246,248,253,0)_70%)]" />
 
 			{/* Fixed Top Navigation Header */}
 			<header className="relative z-20 flex-shrink-0 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-5">
@@ -471,18 +468,18 @@ export default function LoginView() {
 					<button
 						type="button"
 						onClick={() => window.location.assign("/")}
-						className="group inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-md transition-all hover:border-white/20 hover:bg-white/10 hover:text-white cursor-pointer shadow-sm"
+						className="group inline-flex items-center gap-2 rounded-full border border-[#e3ebf8] bg-white px-4 py-1.5 text-xs font-medium text-[#0b1b3a] transition-all hover:border-[#2f6bff]/40 hover:text-[#2f6bff] cursor-pointer shadow-sm"
 						title="Return to Landing Page"
 					>
-						<ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1 text-[#45f3ff]" />
+						<ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1 text-[#2f6bff]" />
 						<span>Back to Home</span>
 					</button>
 
-					<div className="hidden h-5 w-px bg-white/15 sm:block" />
+					<div className="hidden h-5 w-px bg-[#dbe4f5] sm:block" />
 
 					<div className="hidden sm:flex items-center gap-2.5">
 						<img src={branding.companyLogo} alt={branding.companyName} className="h-7 w-auto object-contain" />
-						<span className="text-sm font-bold tracking-tight text-white">{branding.companyName}</span>
+						<span className="text-sm font-bold tracking-tight text-[#0b1b3a]">{branding.companyName}</span>
 					</div>
 				</div>
 
@@ -490,10 +487,9 @@ export default function LoginView() {
 					<span className="hidden text-xs text-slate-400 md:inline">Don't have an account?</span>
 					<Button
 						type="button"
-						variant="outline"
 						size="sm"
 						onClick={() => window.location.assign("/signup")}
-						className="h-8.5 rounded-lg border-white/15 bg-white/[0.04] px-4 text-xs font-semibold text-white hover:border-[#45f3ff]/60 hover:bg-[#45f3ff]/10 hover:text-[#45f3ff] transition-all cursor-pointer shadow-sm"
+						className="h-8.5 rounded-full border-[#2f6bff] bg-[#2f6bff] px-4 text-xs font-semibold text-white hover:bg-[#2457d6] transition-all cursor-pointer shadow-sm"
 					>
 						Sign Up
 						<ArrowRight className="ml-1.5 h-3.5 w-3.5" />
@@ -508,14 +504,14 @@ export default function LoginView() {
 					{/* Left Column: Enterprise Highlights */}
 					<section className="hidden flex-col justify-center space-y-8 lg:col-span-6 lg:flex">
 						<div className="space-y-4">
-							<div className="inline-flex items-center gap-2 rounded-full border border-[#45f3ff]/20 bg-[#45f3ff]/10 px-3.5 py-1 text-xs font-semibold tracking-wide text-[#89f7ff]">
+							<div className="inline-flex items-center gap-2 rounded-full border border-[#d5e2ff] bg-white px-3.5 py-1 text-xs font-semibold tracking-wide text-[#2f6bff] shadow-sm">
 								<span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
 								<span>Gateway Active • Zero-Trust Control Plane</span>
 							</div>
 
-							<h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl leading-[1.12]">
+							<h1 className="text-4xl font-extrabold tracking-tight text-[#0b1b3a] sm:text-5xl leading-[1.08]">
 								Enterprise AI,{" "}
-								<span className="bg-gradient-to-r from-[#45f3ff] via-[#7dd3fc] to-white bg-clip-text text-transparent">
+								<span className="bg-gradient-to-r from-[#2f6bff] to-[#7a5cff] bg-clip-text text-transparent">
 									Governed & Unified.
 								</span>
 							</h1>
@@ -527,36 +523,36 @@ export default function LoginView() {
 
 						{/* Feature Benefit Cards */}
 						<div className="space-y-3.5 max-w-lg">
-							<div className="flex items-start gap-3.5 rounded-xl border border-white/8 bg-white/[0.02] p-4 backdrop-blur-md transition-colors hover:border-white/15 hover:bg-white/[0.04]">
-								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#45f3ff]/10 text-[#45f3ff]">
+							<div className="flex items-start gap-3.5 rounded-xl border border-[#e6edf8] bg-white p-4 shadow-sm transition-colors hover:border-[#2f6bff]/30">
+								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#eef3ff] text-[#2f6bff]">
 									<Cpu className="h-5 w-5" />
 								</div>
 								<div>
-									<h3 className="text-sm font-semibold text-white">Unified LLM Gateway</h3>
+									<h3 className="text-sm font-semibold text-[#0b1b3a]">Unified LLM Gateway</h3>
 									<p className="text-xs text-slate-400 leading-relaxed mt-0.5">
 										Route dynamically through OpenAI, Claude, Gemini, DeepSeek, and local models with a single API key.
 									</p>
 								</div>
 							</div>
 
-							<div className="flex items-start gap-3.5 rounded-xl border border-white/8 bg-white/[0.02] p-4 backdrop-blur-md transition-colors hover:border-white/15 hover:bg-white/[0.04]">
+							<div className="flex items-start gap-3.5 rounded-xl border border-[#e6edf8] bg-white p-4 shadow-sm transition-colors hover:border-[#2f6bff]/30">
 								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400">
 									<Sparkles className="h-5 w-5" />
 								</div>
 								<div>
-									<h3 className="text-sm font-semibold text-white">Prompt Repository & Vision</h3>
+									<h3 className="text-sm font-semibold text-[#0b1b3a]">Prompt Repository & Vision</h3>
 									<p className="text-xs text-slate-400 leading-relaxed mt-0.5">
 										ChatGPT-style multimodal image support, folder-based team access, and persistent chat sessions.
 									</p>
 								</div>
 							</div>
 
-							<div className="flex items-start gap-3.5 rounded-xl border border-white/8 bg-white/[0.02] p-4 backdrop-blur-md transition-colors hover:border-white/15 hover:bg-white/[0.04]">
+							<div className="flex items-start gap-3.5 rounded-xl border border-[#e6edf8] bg-white p-4 shadow-sm transition-colors hover:border-[#2f6bff]/30">
 								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
 									<Shield className="h-5 w-5" />
 								</div>
 								<div>
-									<h3 className="text-sm font-semibold text-white">Zero-Trust Guardrails & Budgets</h3>
+									<h3 className="text-sm font-semibold text-[#0b1b3a]">Zero-Trust Guardrails & Budgets</h3>
 									<p className="text-xs text-slate-400 leading-relaxed mt-0.5">
 										Enforce personal user and team spending limits, real-time PII redaction, and compliance auditing.
 									</p>
@@ -567,7 +563,7 @@ export default function LoginView() {
 
 					{/* Right Column: Sleek Authentication Card */}
 					<section className="flex items-center justify-center lg:col-span-6">
-						<div className="w-full max-w-[440px] rounded-2xl border border-white/10 bg-[#0f121d]/90 p-8 shadow-[0_25px_70px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
+						<div className="w-full max-w-[440px] rounded-3xl border border-[#e6edf8] bg-white p-8 shadow-[0_24px_60px_rgba(47,107,255,0.10)]">
 							{mode !== "login" && (
 								<button
 									type="button"
@@ -584,7 +580,7 @@ export default function LoginView() {
 										setNewPassword("");
 										setConfirmPassword("");
 									}}
-									className="group mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-[#45f3ff] transition-colors cursor-pointer"
+									className="group mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-[#2f6bff] transition-colors cursor-pointer"
 								>
 									<ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1" />
 									<span>{mode === "reset" ? "Back to forgot password" : "Back to Sign In"}</span>
@@ -592,7 +588,7 @@ export default function LoginView() {
 							)}
 
 							<div className="mb-6 space-y-1.5">
-								<h2 className="text-2xl font-bold tracking-tight text-white">
+								<h2 className="text-2xl font-bold tracking-tight text-[#0b1b3a]">
 									{mode === "login"
 										? "Sign In"
 										: mode === "forgot"
@@ -623,7 +619,7 @@ export default function LoginView() {
 										<span>{lockedAccount?.reason || "Account Locked Out"}</span>
 									</div>
 									<p className="text-slate-300 leading-relaxed text-[11px]">
-										Too many failed attempts for <span className="font-semibold text-white">"{activeInputIdentifier || lockedAccount?.identifier}"</span>. Please wait{" "}
+										Too many failed attempts for <span className="font-semibold text-[#0b1b3a]">"{activeInputIdentifier || lockedAccount?.identifier}"</span>. Please wait{" "}
 										<span className="font-mono font-bold text-amber-300">{lockoutCountdown}</span> before trying again.
 									</p>
 								</div>
@@ -660,7 +656,7 @@ export default function LoginView() {
 									<>
 										<div className="space-y-1.5">
 											<div className="flex items-center justify-between">
-												<Label htmlFor="username" className="text-xs font-medium text-slate-200">
+												<Label htmlFor="username" className="text-xs font-medium text-slate-700">
 													Username or email <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
 												</Label>
 												{fieldErrors.username && (
@@ -691,10 +687,10 @@ export default function LoginView() {
 															setErrorMessage("");
 														}
 													}}
-													className={`h-10.5 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+													className={`h-10.5 pl-10 rounded-xl bg-white text-sm text-[#0b1b3a] placeholder:text-slate-400 transition-all dark:bg-white [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_#ffffff] [&:-webkit-autofill]:[-webkit-text-fill-color:#0b1b3a] [&:-webkit-autofill:hover]:shadow-[inset_0_0_0px_1000px_#ffffff] [&:-webkit-autofill:focus]:shadow-[inset_0_0_0px_1000px_#ffffff] ${
 														fieldErrors.username
 															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
-															: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+															: "border-[#e3ebf8] focus:border-[#2f6bff] focus:ring-1 focus:ring-[#2f6bff]/25"
 													}`}
 													autoComplete="username"
 												/>
@@ -703,7 +699,7 @@ export default function LoginView() {
 
 										<div className="space-y-1.5">
 											<div className="flex items-center justify-between">
-												<Label htmlFor="password" className="text-xs font-medium text-slate-200">
+												<Label htmlFor="password" className="text-xs font-medium text-slate-700">
 													Password <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
 												</Label>
 												<div className="flex items-center gap-3">
@@ -715,7 +711,7 @@ export default function LoginView() {
 													)}
 													<button
 														type="button"
-														className="text-[11px] font-medium text-[#45f3ff] hover:underline cursor-pointer"
+														className="text-[11px] font-medium text-[#2f6bff] hover:underline cursor-pointer"
 														onClick={() => {
 															setMode("forgot");
 															if (username.trim()) {
@@ -755,17 +751,17 @@ export default function LoginView() {
 															setErrorMessage("");
 														}
 													}}
-													className={`h-10.5 pl-10 pr-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+													className={`h-10.5 pl-10 pr-10 rounded-xl bg-white text-sm text-[#0b1b3a] placeholder:text-slate-400 transition-all dark:bg-white [&:-webkit-autofill]:shadow-[inset_0_0_0px_1000px_#ffffff] [&:-webkit-autofill]:[-webkit-text-fill-color:#0b1b3a] [&:-webkit-autofill:hover]:shadow-[inset_0_0_0px_1000px_#ffffff] [&:-webkit-autofill:focus]:shadow-[inset_0_0_0px_1000px_#ffffff] ${
 														fieldErrors.password
 															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
-															: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+															: "border-[#e3ebf8] focus:border-[#2f6bff] focus:ring-1 focus:ring-[#2f6bff]/25"
 													}`}
 													autoComplete="current-password"
 												/>
 												<button
 													type="button"
 													onClick={() => setShowPassword(!showPassword)}
-													className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
+													className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-[#0b1b3a] cursor-pointer"
 												>
 													{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 												</button>
@@ -778,7 +774,7 @@ export default function LoginView() {
 								{mode === "forgot" && (
 									<div className="space-y-1.5">
 										<div className="flex items-center justify-between">
-											<Label htmlFor="email" className="text-xs font-medium text-slate-200">
+											<Label htmlFor="email" className="text-xs font-medium text-slate-700">
 												Email Address or Username <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
 											</Label>
 											{fieldErrors.email && (
@@ -809,10 +805,10 @@ export default function LoginView() {
 														setErrorMessage("");
 													}
 												}}
-												className={`h-10.5 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+												className={`h-10.5 pl-10 rounded-xl bg-[#f7f9ff] text-sm text-[#0b1b3a] placeholder:text-slate-400 transition-all ${
 													fieldErrors.email
 														? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
-														: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+														: "border-[#e3ebf8] focus:border-[#2f6bff] focus:ring-1 focus:ring-[#2f6bff]/25"
 												}`}
 												autoComplete="email username"
 											/>
@@ -824,7 +820,7 @@ export default function LoginView() {
 								{mode === "forgot_username" && (
 									<div className="space-y-1.5">
 										<div className="flex items-center justify-between">
-											<Label htmlFor="forgot-user-email" className="text-xs font-medium text-slate-200">
+											<Label htmlFor="forgot-user-email" className="text-xs font-medium text-slate-700">
 												Email Address <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
 											</Label>
 											{fieldErrors.email && (
@@ -855,10 +851,10 @@ export default function LoginView() {
 														setErrorMessage("");
 													}
 												}}
-												className={`h-10.5 pl-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+												className={`h-10.5 pl-10 rounded-xl bg-[#f7f9ff] text-sm text-[#0b1b3a] placeholder:text-slate-400 transition-all ${
 													fieldErrors.email
 														? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
-														: "border-white/10 focus:border-[#45f3ff] focus:ring-1 focus:ring-[#45f3ff]/40"
+														: "border-[#e3ebf8] focus:border-[#2f6bff] focus:ring-1 focus:ring-[#2f6bff]/25"
 												}`}
 												autoComplete="email"
 											/>
@@ -872,8 +868,8 @@ export default function LoginView() {
 										{mode === "reset" && (
 											<>
 												<div className="space-y-1.5">
-													<Label className="text-xs font-medium text-slate-200">Target Account</Label>
-													<div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/30 px-3.5 py-2 text-xs text-slate-300">
+													<Label className="text-xs font-medium text-slate-700">Target Account</Label>
+													<div className="flex items-center justify-between rounded-xl border border-[#e3ebf8] bg-[#f7f9ff] px-3.5 py-2 text-xs text-slate-600">
 														<span className="truncate">{email || "Account"}</span>
 														<button
 															type="button"
@@ -883,7 +879,7 @@ export default function LoginView() {
 																setInfoMessage("");
 																setFieldErrors({});
 															}}
-															className="text-xs font-semibold text-[#45f3ff] hover:underline cursor-pointer"
+															className="text-xs font-semibold text-[#2f6bff] hover:underline cursor-pointer"
 														>
 															Change
 														</button>
@@ -892,7 +888,7 @@ export default function LoginView() {
 
 												<div className="space-y-1.5">
 													<div className="flex items-center justify-between">
-														<Label htmlFor="otp" className="text-xs font-medium text-slate-200">
+														<Label htmlFor="otp" className="text-xs font-medium text-slate-700">
 															Verification OTP Code <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
 														</Label>
 														<div className="flex items-center gap-2">
@@ -911,7 +907,7 @@ export default function LoginView() {
 																	type="button"
 														disabled={isSendingOtp || resendCooldown > 0}
 														onClick={handleResendOtp}
-														className="text-[11px] font-medium text-[#45f3ff] hover:underline disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+														className="text-[11px] font-medium text-[#2f6bff] hover:underline disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
 													>
 														{resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Code"}
 														</button>
@@ -932,10 +928,10 @@ export default function LoginView() {
 																	setOtp(e.target.value.replace(/\D/g, ""));
 																	clearFieldError("otp");
 																}}
-																className={`h-10.5 pl-10 rounded-xl bg-black/40 font-mono tracking-widest text-sm text-white placeholder:tracking-normal transition-all disabled:opacity-50 ${
+																className={`h-10.5 pl-10 rounded-xl bg-[#f7f9ff] font-mono tracking-widest text-sm text-[#0b1b3a] placeholder:tracking-normal transition-all disabled:opacity-50 ${
 																	fieldErrors.otp
 																		? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
-																		: "border-white/10 focus:border-[#45f3ff]"
+																		: "border-[#e3ebf8] focus:border-[#2f6bff]"
 																}`}
 															/>
 														</div>
@@ -944,7 +940,7 @@ export default function LoginView() {
 																type="button"
 																disabled={isVerifyingOtp}
 																onClick={handleVerifyOtp}
-																className="h-10.5 px-4 rounded-xl bg-white/10 text-xs font-semibold text-white hover:bg-white/20 border border-white/15 cursor-pointer"
+																className="h-10.5 px-4 rounded-xl bg-[#eef3ff] text-xs font-semibold text-[#2f6bff] hover:bg-[#e0e9ff] border border-[#d5e2ff] cursor-pointer"
 															>
 																{isVerifyingOtp ? "Verifying..." : "Verify Code"}
 															</Button>
@@ -956,7 +952,7 @@ export default function LoginView() {
 
 										<div className="space-y-1.5">
 											<div className="flex items-center justify-between">
-												<Label htmlFor="newPassword" className="text-xs font-medium text-slate-200">
+												<Label htmlFor="newPassword" className="text-xs font-medium text-slate-700">
 													New Password <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
 												</Label>
 												{fieldErrors.newPassword && (
@@ -977,16 +973,16 @@ export default function LoginView() {
 														setNewPassword(e.target.value);
 														clearFieldError("newPassword");
 													}}
-													className={`h-10.5 pl-10 pr-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+													className={`h-10.5 pl-10 pr-10 rounded-xl bg-[#f7f9ff] text-sm text-[#0b1b3a] placeholder:text-slate-400 transition-all ${
 														fieldErrors.newPassword
 															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
-															: "border-white/10 focus:border-[#45f3ff]"
+															: "border-[#e3ebf8] focus:border-[#2f6bff]"
 													}`}
 												/>
 												<button
 													type="button"
 													onClick={() => setShowNewPassword(!showNewPassword)}
-													className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
+													className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-[#0b1b3a] cursor-pointer"
 												>
 													{showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 												</button>
@@ -995,7 +991,7 @@ export default function LoginView() {
 
 										<div className="space-y-1.5">
 											<div className="flex items-center justify-between">
-												<Label htmlFor="confirmPassword" className="text-xs font-medium text-slate-200">
+												<Label htmlFor="confirmPassword" className="text-xs font-medium text-slate-700">
 													Confirm New Password <span className="text-rose-400 font-bold ml-0.5" aria-hidden="true">*</span>
 												</Label>
 												{fieldErrors.confirmPassword && (
@@ -1016,16 +1012,16 @@ export default function LoginView() {
 														setConfirmPassword(e.target.value);
 														clearFieldError("confirmPassword");
 													}}
-													className={`h-10.5 pl-10 pr-10 rounded-xl bg-black/40 text-sm text-white placeholder:text-slate-500 transition-all ${
+													className={`h-10.5 pl-10 pr-10 rounded-xl bg-[#f7f9ff] text-sm text-[#0b1b3a] placeholder:text-slate-400 transition-all ${
 														fieldErrors.confirmPassword
 															? "border-rose-500/80 ring-1 ring-rose-500/30 focus:border-rose-500 focus:ring-rose-500/40"
-															: "border-white/10 focus:border-[#45f3ff]"
+															: "border-[#e3ebf8] focus:border-[#2f6bff]"
 													}`}
 												/>
 												<button
 													type="button"
 													onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-													className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-white cursor-pointer"
+													className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-[#0b1b3a] cursor-pointer"
 												>
 													{showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 												</button>
@@ -1033,7 +1029,7 @@ export default function LoginView() {
 										</div>
 
 										{/* Password requirements checklist - single compact row */}
-										<div className="flex items-center justify-between rounded-xl border border-white/5 bg-black/20 px-3 py-2 text-[11px]">
+										<div className="flex items-center justify-between rounded-xl border border-[#e3ebf8] bg-[#f7f9ff] px-3 py-2 text-[11px]">
 											<span className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
 												<Check className="h-3 w-3 shrink-0" /> 8+ chars
 											</span>
@@ -1058,7 +1054,7 @@ export default function LoginView() {
 
 								<Button
 									type="submit"
-									className="mt-2 h-11 w-full rounded-xl bg-gradient-to-r from-[#45f3ff] to-[#38bdf8] font-bold text-[#090b12] shadow-[0_0_24px_rgba(69,243,255,0.25)] hover:shadow-[0_0_32px_rgba(69,243,255,0.4)] hover:brightness-105 transition-all cursor-pointer disabled:opacity-40"
+									className="mt-2 h-11 w-full rounded-full bg-[#2f6bff] hover:bg-[#2457d6] font-bold text-white shadow-[0_10px_24px_rgba(47,107,255,0.28)] transition-all cursor-pointer disabled:opacity-40"
 									disabled={
 										isLoading ||
 										isLoggingIn ||
@@ -1093,10 +1089,10 @@ export default function LoginView() {
 								</Button>
 
 								{mode === "login" && (
-									<div className="pt-2 text-center text-xs text-slate-400">
+									<div className="pt-2 text-center text-xs">
 										<button
 											type="button"
-											className="hover:text-slate-200 transition-colors cursor-pointer"
+											className="font-medium text-[#2f6bff] hover:underline transition-colors cursor-pointer"
 											onClick={() => {
 												setMode("forgot_username");
 												setEmail("");
@@ -1116,7 +1112,7 @@ export default function LoginView() {
 			</main>
 
 			{/* Minimal Sleek Footer */}
-			<footer className="relative z-10 mx-auto w-full max-w-[1400px] border-t border-white/5 px-6 py-4 text-center text-xs text-slate-500">
+			<footer className="relative z-10 mx-auto w-full max-w-[1400px] border-t border-[#e6edf8] px-6 py-4 text-center text-xs text-slate-500">
 				<span>{branding.footerText}</span>
 			</footer>
 		</div>

@@ -80,14 +80,9 @@ export default function LandingPage() {
 		setMobileMenuOpen(false);
 		const targetId = id === "capabilities" ? "features" : id === "developers" ? "quickstart" : id;
 		const element = document.getElementById(targetId) || document.getElementById(id);
-		if (element) {
-			const navHeight = 85;
-			const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
-			window.scrollTo({
-				top: elementPosition - navHeight,
-				behavior: "smooth",
-			});
-		}
+		if (!element) return;
+		const top = element.getBoundingClientRect().top + window.scrollY - 72;
+		window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 	};
 
 	const handleCopyCode = (text: string) => {
@@ -225,24 +220,18 @@ console.log(response.choices[0].message.content);`
 	const companyFullName = branding.companyName;
 
 	return (
-		<div className="bg-[#07090e] text-[#cbd5e1] min-h-screen font-sans selection:bg-sky-500/25 selection:text-white antialiased relative w-full overflow-y-visible">
-			{/* High-Contrast Luxury Ambient Lighting */}
+		<div className="bg-[#f6f8fd] text-slate-600 min-h-screen font-sans selection:bg-blue-500/20 selection:text-[#0b1b3a] antialiased relative w-full overflow-y-visible">
 			<div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-				{/* Crisp Grid Texture */}
-				<div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_70%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-80" />
-				{/* Top Hero Glow */}
-				<div className="absolute -top-[20%] left-1/2 -translate-x-1/2 w-[1100px] h-[550px] bg-gradient-to-b from-sky-500/15 via-indigo-600/10 to-transparent rounded-full blur-[140px]" />
-				{/* Side Accent Glow */}
-				<div className="absolute top-[35%] right-[-10%] w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[140px]" />
-				<div className="absolute top-[60%] left-[-10%] w-[500px] h-[500px] bg-sky-600/10 rounded-full blur-[140px]" />
+				<div className="absolute inset-x-0 top-0 h-[640px] bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,#d9e6ff_0%,rgba(255,255,255,0)_70%)]" />
+				<div className="absolute top-28 right-[8%] w-56 h-56 rounded-full bg-[#e7e2ff]/70 blur-3xl" />
+				<div className="absolute top-40 left-[6%] w-48 h-48 rounded-full bg-[#d7e8ff]/80 blur-3xl" />
 			</div>
 
-			{/* HIGH-VISIBILITY TOP NAVIGATION BAR - FIXED TO TOP ACROSS ALL SCROLL */}
-			<header className="fixed top-0 left-0 right-0 z-50 w-full border-b border-white/[0.14] bg-[#0c0e17]/95 backdrop-blur-2xl shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
-				<div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+			<header className="fixed top-0 left-0 right-0 z-50 w-full border-b border-[#dbe4f5] bg-white/85 backdrop-blur-xl shadow-[0_8px_30px_rgba(47,107,255,0.06)]">
+				<div className="max-w-[1440px] mx-auto px-6 lg:px-10 xl:px-14 h-16 flex items-center justify-between">
 					{/* Brand Logo & Tag */}
 					<a href="/" className="flex items-center gap-3.5 group cursor-pointer" aria-label={productName}>
-						<div className="flex items-center justify-center p-1.5 rounded-xl bg-white/[0.06] border border-white/[0.12] group-hover:border-sky-400/50 transition-all shadow-sm">
+						<div className="flex items-center justify-center p-1.5 rounded-xl bg-white border border-[#e3ebf8] group-hover:border-[#2f6bff]/40 transition-all shadow-sm">
 							<img
 								src={companyLogoSrc}
 								alt={companyFullName}
@@ -257,7 +246,7 @@ console.log(response.choices[0].message.content);`
 						</div>
 						<div className="flex flex-col">
 							<div className="flex items-center gap-2">
-								<span className="text-xl font-extrabold tracking-tight text-white group-hover:text-sky-300 transition-colors">
+								<span className="text-xl font-extrabold tracking-tight text-[#0b1b3a] group-hover:text-[#2f6bff] transition-colors">
 									{productName}
 								</span>
 								<span className="flex h-2 w-2 relative">
@@ -269,34 +258,34 @@ console.log(response.choices[0].message.content);`
 					</a>
 
 					{/* Navigation Links with Smooth Scroll Click */}
-					<nav className="hidden md:flex items-center gap-2 text-sm font-semibold text-slate-300 bg-white/[0.03] px-3 py-1.5 rounded-full border border-white/[0.08]">
+					<nav className="hidden md:flex items-center gap-1 text-sm font-semibold text-slate-600 bg-white px-2 py-1.5 rounded-full border border-[#e3ebf8] shadow-sm">
 						<button
 							onClick={() => scrollToSection("products")}
-							className="px-3.5 py-1.5 rounded-full text-slate-300 hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer"
+							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
 							Products
 						</button>
 						<button
 							onClick={() => scrollToSection("features")}
-							className="px-3.5 py-1.5 rounded-full text-slate-300 hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer"
+							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
 							Capabilities
 						</button>
 						<button
 							onClick={() => scrollToSection("quickstart")}
-							className="px-3.5 py-1.5 rounded-full text-slate-300 hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer"
+							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
 							Developers
 						</button>
 						<button
 							onClick={() => scrollToSection("models")}
-							className="px-3.5 py-1.5 rounded-full text-slate-300 hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer"
+							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
 							Models
 						</button>
 						<button
 							onClick={() => scrollToSection("faq")}
-							className="px-3.5 py-1.5 rounded-full text-slate-300 hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer"
+							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
 							FAQ
 						</button>
@@ -306,31 +295,31 @@ console.log(response.choices[0].message.content);`
 					<div className="hidden md:flex items-center gap-3">
 						<button
 							onClick={() => setIsDemoModalOpen(true)}
-							className="text-xs font-bold text-slate-200 hover:text-white border border-white/[0.18] hover:border-white/30 bg-white/[0.05] hover:bg-white/[0.1] px-4 py-2 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+							className="text-xs font-bold text-[#0b1b3a] hover:text-[#2f6bff] border border-[#d5e0f2] hover:border-[#2f6bff]/40 bg-white hover:bg-[#f4f7ff] px-4 py-2 rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
 						>
-							<Calendar className="w-3.5 h-3.5 text-sky-400" />
+							<Calendar className="w-3.5 h-3.5 text-[#2f6bff]" />
 							Book a Demo
 						</button>
 
 						{isLoggedIn ? (
 							<Button
 								onClick={() => navigate({ to: "/workspace" })}
-								className="bg-white hover:bg-slate-100 text-[#07090e] font-bold text-xs h-9 px-5 rounded-xl transition-all shadow-[0_0_20px_rgba(255,255,255,0.25)] hover:shadow-[0_0_30px_rgba(255,255,255,0.4)] cursor-pointer"
+								className="bg-[#2f6bff] hover:bg-[#2457d6] text-white font-bold text-xs h-9 px-5 rounded-xl transition-all shadow-[0_8px_20px_rgba(47,107,255,0.28)] cursor-pointer"
 							>
 								Dashboard
-								<ArrowRight className="h-3.5 w-3.5 ml-1.5 text-slate-800" />
+								<ArrowRight className="h-3.5 w-3.5 ml-1.5" />
 							</Button>
 						) : (
 							<div className="flex items-center gap-2.5">
 								<Link
 									to="/login"
-									className="text-xs font-semibold text-slate-300 hover:text-white px-3.5 py-2 rounded-xl hover:bg-white/[0.06] transition-all cursor-pointer"
+									className="text-xs font-semibold text-slate-600 hover:text-[#2f6bff] px-3.5 py-2 rounded-xl hover:bg-[#eef3ff] transition-all cursor-pointer"
 								>
 									Sign In
 								</Link>
 								<Button
 									onClick={() => navigate({ to: "/signup" })}
-									className="bg-white hover:bg-slate-100 text-[#07090e] font-bold text-xs h-9 px-5 rounded-xl transition-all shadow-[0_0_25px_rgba(255,255,255,0.3)] hover:shadow-[0_0_35px_rgba(255,255,255,0.45)] cursor-pointer"
+									className="bg-[#2f6bff] hover:bg-[#2457d6] text-white font-bold text-xs h-9 px-5 rounded-xl transition-all shadow-[0_8px_20px_rgba(47,107,255,0.28)] cursor-pointer"
 								>
 									Get Started
 								</Button>
@@ -341,7 +330,7 @@ console.log(response.choices[0].message.content);`
 					{/* Mobile Menu Toggle */}
 					<button
 						onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-						className="md:hidden text-slate-200 hover:text-white p-2 rounded-xl bg-white/[0.05] border border-white/[0.12] cursor-pointer"
+						className="md:hidden text-[#0b1b3a] hover:text-[#2f6bff] p-2 rounded-xl bg-white border border-[#dbe4f5] cursor-pointer"
 						aria-label="Toggle menu"
 					>
 						{mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -350,25 +339,25 @@ console.log(response.choices[0].message.content);`
 
 				{/* Mobile Menu Dropdown */}
 				{mobileMenuOpen && (
-					<div className="md:hidden border-b border-white/[0.12] bg-[#0c0e17]/98 backdrop-blur-2xl px-6 py-5 space-y-3">
-						<button onClick={() => scrollToSection("products")} className="block w-full text-left py-2 text-sm font-semibold text-slate-200 hover:text-white">Products</button>
-						<button onClick={() => scrollToSection("features")} className="block w-full text-left py-2 text-sm font-semibold text-slate-200 hover:text-white">Capabilities</button>
-						<button onClick={() => scrollToSection("quickstart")} className="block w-full text-left py-2 text-sm font-semibold text-slate-200 hover:text-white">Developers</button>
-						<button onClick={() => scrollToSection("models")} className="block w-full text-left py-2 text-sm font-semibold text-slate-200 hover:text-white">Models</button>
-						<button onClick={() => scrollToSection("faq")} className="block w-full text-left py-2 text-sm font-semibold text-slate-200 hover:text-white">FAQ</button>
+					<div className="md:hidden border-b border-[#dbe4f5] bg-white/98 backdrop-blur-xl px-6 py-5 space-y-3">
+						<button onClick={() => scrollToSection("products")} className="block w-full text-left py-2 text-sm font-semibold text-[#0b1b3a] hover:text-[#2f6bff]">Products</button>
+						<button onClick={() => scrollToSection("features")} className="block w-full text-left py-2 text-sm font-semibold text-[#0b1b3a] hover:text-[#2f6bff]">Capabilities</button>
+						<button onClick={() => scrollToSection("quickstart")} className="block w-full text-left py-2 text-sm font-semibold text-[#0b1b3a] hover:text-[#2f6bff]">Developers</button>
+						<button onClick={() => scrollToSection("models")} className="block w-full text-left py-2 text-sm font-semibold text-[#0b1b3a] hover:text-[#2f6bff]">Models</button>
+						<button onClick={() => scrollToSection("faq")} className="block w-full text-left py-2 text-sm font-semibold text-[#0b1b3a] hover:text-[#2f6bff]">FAQ</button>
 						
-						<div className="pt-4 border-t border-white/[0.1] flex flex-col gap-2.5">
+						<div className="pt-4 border-t border-[#e3ebf8] flex flex-col gap-2.5">
 							<button
 								onClick={() => { setMobileMenuOpen(false); setIsDemoModalOpen(true); }}
-								className="w-full py-2.5 rounded-xl border border-white/[0.2] bg-white/[0.05] text-slate-200 font-bold text-xs text-center cursor-pointer flex items-center justify-center gap-2"
+								className="w-full py-2.5 rounded-xl border border-[#d5e0f2] bg-white text-[#0b1b3a] font-bold text-xs text-center cursor-pointer flex items-center justify-center gap-2"
 							>
-								<Calendar className="w-3.5 h-3.5 text-sky-400" />
+								<Calendar className="w-3.5 h-3.5 text-[#2f6bff]" />
 								Book a Demo
 							</button>
 							{isLoggedIn ? (
 								<Button
 									onClick={() => { setMobileMenuOpen(false); navigate({ to: "/workspace" }); }}
-									className="w-full bg-white text-[#07090e] font-bold text-xs h-9 rounded-xl"
+									className="w-full bg-[#2f6bff] text-white font-bold text-xs h-9 rounded-xl"
 								>
 									Go to Workspace
 								</Button>
@@ -377,13 +366,13 @@ console.log(response.choices[0].message.content);`
 									<Link
 										to="/login"
 										onClick={() => setMobileMenuOpen(false)}
-										className="border border-white/[0.15] bg-white/[0.04] text-center font-bold text-slate-200 text-xs py-2.5 rounded-xl"
+										className="border border-[#d5e0f2] bg-white text-center font-bold text-[#0b1b3a] text-xs py-2.5 rounded-xl"
 									>
 										Sign In
 									</Link>
 									<Button
 										onClick={() => { setMobileMenuOpen(false); navigate({ to: "/signup" }); }}
-										className="bg-white text-[#07090e] font-bold text-xs h-9 rounded-xl shadow-sm"
+										className="bg-[#2f6bff] text-white font-bold text-xs h-9 rounded-xl shadow-sm"
 									>
 										Get Started
 									</Button>
@@ -395,237 +384,195 @@ console.log(response.choices[0].message.content);`
 			</header>
 
 			{/* MAIN BODY CONTENT (SCROLLABLE UNDER FIXED HEADER) */}
-			<main className="relative z-10 w-full pt-20">
-				{/* HERO SECTION */}
-				<section className="pt-16 pb-16 md:pt-24 md:pb-24 px-6 max-w-5xl mx-auto text-center">
-					{/* Glowing Platform Pill */}
-					<div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full border border-sky-400/30 bg-sky-500/10 text-xs font-semibold text-sky-300 mb-8 backdrop-blur-md shadow-[0_0_20px_rgba(56,189,248,0.2)]">
-						<Sparkles className="w-4 h-4 text-sky-400 animate-pulse" />
-						<span>
-							{productName} — {productFullName}
-						</span>
-						<ChevronRight className="w-3.5 h-3.5 text-sky-400/80" />
+			<main className="relative z-10 w-full pt-16">
+				<section className="px-6 lg:px-10 xl:px-14 min-h-[calc(100vh-4rem)] flex items-center py-6">
+					<div className="max-w-[1440px] mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-8 xl:gap-14 items-center">
+					<div className="text-left">
+					<div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#d5e2ff] bg-white text-[13px] font-semibold text-[#2f6bff] mb-4 shadow-[0_6px_18px_rgba(47,107,255,0.08)]">
+						<Sparkles className="w-3.5 h-3.5" />
+						<span>{productName} — {productFullName}</span>
 					</div>
 
-					{/* Balanced Headline (NO awkward line break) */}
-					<h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight text-white mb-6 leading-[1.12] max-w-4xl mx-auto">
-						Secure, Govern, and Accelerate{" "}
-						<span className="bg-gradient-to-r from-sky-400 via-indigo-200 to-white bg-clip-text text-transparent">
-							AI Across Your Organization
+					<h1 className="text-4xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] leading-[1.08]">
+						Secure, govern, and
+						<span className="block bg-gradient-to-r from-[#2f6bff] to-[#7a5cff] bg-clip-text text-transparent">
+							accelerate AI
 						</span>
 					</h1>
-
-					<p className="text-base sm:text-lg text-slate-300 max-w-2xl mx-auto mb-10 leading-relaxed font-normal">
-						GATEWAY provides in-flight DLP protection for employee AI browser sessions, while delivering a drop-in high-performance reverse proxy for production LLM APIs.
+					<p className="mt-4 text-base text-slate-500 max-w-xl leading-relaxed">
+						In-flight protection for employee AI sessions, and a drop-in gateway for production LLM APIs. One control plane for both.
 					</p>
 
-					{/* Dual High-Contrast CTAs */}
-					<div className="flex flex-col sm:flex-row items-center justify-center gap-4 max-w-md mx-auto">
+					<div className="mt-6 flex flex-col sm:flex-row items-start sm:items-center gap-3">
 						<button
 							onClick={() => setIsDemoModalOpen(true)}
-							className="w-full sm:w-auto h-12 px-7 bg-white hover:bg-slate-100 text-[#07090e] font-extrabold rounded-xl text-sm transition-all shadow-[0_0_30px_rgba(255,255,255,0.25)] hover:shadow-[0_0_40px_rgba(255,255,255,0.4)] flex items-center justify-center gap-2 cursor-pointer"
+							className="w-full sm:w-auto h-12 px-7 bg-[#2f6bff] hover:bg-[#2457d6] text-white font-bold rounded-full text-sm transition-all shadow-[0_10px_24px_rgba(47,107,255,0.28)] flex items-center justify-center gap-2 cursor-pointer"
 						>
-							<Calendar className="h-4 w-4 text-slate-800" />
 							Schedule Demo
+							<ArrowRight className="h-4 w-4" />
 						</button>
-
 						{isLoggedIn ? (
 							<Button
 								onClick={() => navigate({ to: "/workspace" })}
-								className="w-full sm:w-auto h-12 px-7 bg-white/[0.08] hover:bg-white/[0.15] text-white border border-white/[0.18] font-bold rounded-xl text-sm transition-all shadow-sm"
+								className="w-full sm:w-auto h-12 px-7 bg-white hover:bg-[#f4f7ff] text-[#0b1b3a] border border-[#d7e0f0] font-bold rounded-full text-sm shadow-sm"
 							>
 								Open Control Plane
-								<ArrowRight className="h-4 w-4 ml-1.5 text-slate-300" />
 							</Button>
 						) : (
 							<Button
 								onClick={() => navigate({ to: "/signup" })}
-								className="w-full sm:w-auto h-12 px-7 bg-white/[0.08] hover:bg-white/[0.15] text-white border border-white/[0.18] font-bold rounded-xl text-sm transition-all shadow-sm"
+								className="w-full sm:w-auto h-12 px-7 bg-white hover:bg-[#f4f7ff] text-[#0b1b3a] border border-[#d7e0f0] font-bold rounded-full text-sm shadow-sm"
 							>
 								Start Free Trial
-								<ArrowRight className="h-4 w-4 ml-1.5 text-slate-300" />
 							</Button>
 						)}
 					</div>
-
-					{/* Supported Models Strip */}
-					<div id="models" className="mt-12 scroll-mt-28 flex flex-wrap items-center justify-center gap-2.5 max-w-3xl mx-auto">
-						<span className="text-xs font-mono text-slate-400 mr-2 uppercase tracking-wider font-semibold">Unified Provider Access:</span>
+					<div className="mt-5 flex flex-wrap items-center gap-2">
 						{supportedModels.map((m, idx) => (
-							<div
-								key={idx}
-								className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/[0.1] bg-white/[0.03] text-xs font-semibold text-slate-200 hover:text-white hover:border-white/20 transition-all shadow-sm"
-							>
-								<span className={`w-2 h-2 rounded-full ${m.color}`} />
+							<div key={idx} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#e6edf8] bg-white text-xs font-semibold text-slate-600">
+								<span className={`w-1.5 h-1.5 rounded-full ${m.color}`} />
 								<span>{m.name}</span>
 							</div>
 						))}
 					</div>
+					</div>
 
-					{/* Control Plane Interactive Preview Card */}
-					<div className="mt-14 sm:mt-16 border border-white/[0.12] rounded-3xl bg-[#0c0e17]/90 backdrop-blur-2xl p-6 sm:p-8 text-left shadow-[0_25px_60px_rgba(0,0,0,0.7)]">
-						{/* Card Window Header */}
-						<div className="flex items-center justify-between pb-5 border-b border-white/[0.08]">
+					<div className="relative w-full">
+					<div className="relative border border-[#e6edf8] rounded-[28px] bg-white p-4 sm:p-5 text-left shadow-[0_24px_60px_rgba(47,107,255,0.10)]">
+						<div className="flex items-center justify-between pb-3 border-b border-[#e8eef8]">
 							<div className="flex items-center gap-3">
 								<div className="flex items-center gap-1.5">
-									<div className="h-3 w-3 rounded-full bg-red-500/90" />
-									<div className="h-3 w-3 rounded-full bg-amber-500/90" />
-									<div className="h-3 w-3 rounded-full bg-emerald-500/90" />
+									<div className="h-3 w-3 rounded-full bg-red-400" />
+									<div className="h-3 w-3 rounded-full bg-amber-400" />
+									<div className="h-3 w-3 rounded-full bg-emerald-400" />
 								</div>
-								<span className="text-xs font-mono font-semibold text-slate-300 ml-2">
-									gateway-perimeter :: active security enforcement
+								<span className="text-xs font-semibold text-slate-500 ml-2">
+									Control plane
 								</span>
 							</div>
 							<div className="flex items-center gap-3 text-xs font-mono">
 								<span className="hidden sm:inline text-slate-400">Node: v2.4-edge</span>
-								<span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
-									<span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-									System 100% Operational
+								<span className="flex items-center gap-1.5 text-emerald-600 font-semibold">
+									<span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+									Live
 								</span>
 							</div>
 						</div>
 
-						{/* Live Telemetry Metric Strip */}
-						<div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-5 border-b border-white/[0.08] text-xs font-mono">
-							<div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-								<div className="text-slate-400 text-[10px] font-bold">IN-FLIGHT OVERHEAD</div>
-								<div className="text-emerald-400 font-extrabold text-base mt-0.5">&lt; 0.8 ms</div>
+						<div className="grid grid-cols-4 gap-2 py-3 border-b border-[#e8eef8] text-xs">
+							<div className="p-2.5 rounded-xl bg-[#f4f7ff] border border-[#e3ebf8]">
+								<div className="text-slate-500 text-[10px] font-bold tracking-wide">OVERHEAD</div>
+								<div className="text-emerald-600 font-extrabold text-base mt-0.5">&lt; 0.8 ms</div>
 							</div>
-							<div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-								<div className="text-slate-400 text-[10px] font-bold">SEMANTIC CACHE RATIO</div>
-								<div className="text-sky-400 font-extrabold text-base mt-0.5">86.4% Hit Rate</div>
+							<div className="p-2.5 rounded-xl bg-[#f4f7ff] border border-[#e3ebf8]">
+								<div className="text-slate-500 text-[10px] font-bold tracking-wide">CACHE</div>
+								<div className="text-[#2f6bff] font-extrabold text-base mt-0.5">86.4%</div>
 							</div>
-							<div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-								<div className="text-slate-400 text-[10px] font-bold">REDACTED LEAKS</div>
-								<div className="text-amber-400 font-extrabold text-base mt-0.5">14,290 Blocked</div>
+							<div className="p-2.5 rounded-xl bg-[#f4f7ff] border border-[#e3ebf8]">
+								<div className="text-slate-500 text-[10px] font-bold tracking-wide">BLOCKED</div>
+								<div className="text-amber-600 font-extrabold text-base mt-0.5">14,290</div>
 							</div>
-							<div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-								<div className="text-slate-400 text-[10px] font-bold">DROP-IN COMPATIBILITY</div>
-								<div className="text-indigo-400 font-extrabold text-base mt-0.5">OpenAI SDK 100%</div>
+							<div className="p-2.5 rounded-xl bg-[#f4f7ff] border border-[#e3ebf8]">
+								<div className="text-slate-500 text-[10px] font-bold tracking-wide">SDK</div>
+								<div className="text-indigo-600 font-extrabold text-base mt-0.5">100%</div>
 							</div>
 						</div>
 
 						{/* Two Connected Core Engines */}
-						<div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6">
-							{/* Component 1: Browser Guard */}
-							<div className="border border-white/[0.08] hover:border-sky-500/40 rounded-2xl bg-gradient-to-b from-white/[0.04] to-transparent p-5 space-y-4 transition-all">
-								<div className="flex items-center justify-between">
-									<div className="flex items-center gap-3">
-										<div className="h-10 w-10 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400">
-											<Shield className="h-5 w-5" />
+						<div className="grid grid-cols-1 gap-3 pt-3">
+							<div className="border border-[#d7e4ff] rounded-2xl bg-[#f7f9ff] px-4 py-3">
+								<div className="flex items-center justify-between gap-3">
+									<div className="flex items-center gap-3 min-w-0">
+										<div className="h-9 w-9 shrink-0 rounded-xl bg-[#2f6bff] flex items-center justify-center text-white">
+											<Shield className="h-4 w-4" />
 										</div>
-										<div>
-											<h3 className="text-sm font-bold text-white">Browser Guard DLP Engine</h3>
-											<p className="text-xs text-slate-400">Client Agent (Windows & macOS)</p>
+										<div className="min-w-0">
+											<h3 className="text-sm font-bold text-[#0b1b3a]">Browser Guard</h3>
+											<p className="text-xs text-slate-500 truncate">ChatGPT, Claude, Grok, Gemini · PII and file scan</p>
 										</div>
 									</div>
-									<span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-bold">
+									<span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold shrink-0">
 										ACTIVE
 									</span>
 								</div>
-
-								<div className="text-xs text-slate-300 space-y-2 border-t border-white/[0.06] pt-3 font-mono">
-									<div className="flex items-center justify-between text-slate-400">
-										<span>Target AI Consoles:</span>
-										<span className="text-white font-medium">ChatGPT, Claude, Grok, Gemini</span>
-									</div>
-									<div className="flex items-center justify-between text-slate-400">
-										<span>Sanitization Action:</span>
-										<span className="text-amber-300 font-medium">Live Token / PII Scrubbing</span>
-									</div>
-									<div className="flex items-center justify-between text-slate-400">
-										<span>Attachment Engine:</span>
-										<span className="text-sky-300 font-medium">PDF, OCR, Source Code Inspection</span>
-									</div>
-								</div>
 							</div>
 
-							{/* Component 2: AI Gateway */}
-							<div className="border border-white/[0.08] hover:border-indigo-500/40 rounded-2xl bg-gradient-to-b from-white/[0.04] to-transparent p-5 space-y-4 transition-all">
-								<div className="flex items-center justify-between">
-									<div className="flex items-center gap-3">
-										<div className="h-10 w-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-											<Zap className="h-5 w-5" />
+							<div className="border border-[#e4e0ff] rounded-2xl bg-[#f8f7ff] px-4 py-3">
+								<div className="flex items-center justify-between gap-3">
+									<div className="flex items-center gap-3 min-w-0">
+										<div className="h-9 w-9 shrink-0 rounded-xl bg-[#6d5ef7] flex items-center justify-center text-white">
+											<Zap className="h-4 w-4" />
 										</div>
-										<div>
-											<h3 className="text-sm font-bold text-white">Universal AI Gateway</h3>
-											<p className="text-xs text-slate-400">Application Reverse Proxy</p>
+										<div className="min-w-0">
+											<h3 className="text-sm font-bold text-[#0b1b3a]">Universal Gateway</h3>
+											<p className="text-xs text-slate-500 truncate">100+ models · cache · virtual keys</p>
 										</div>
 									</div>
-									<span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/25 font-bold">
+									<span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-blue-50 text-[#2f6bff] border border-blue-200 font-bold shrink-0">
 										CONNECTED
 									</span>
 								</div>
-
-								<div className="text-xs text-slate-300 space-y-2 border-t border-white/[0.06] pt-3 font-mono">
-									<div className="flex items-center justify-between text-slate-400">
-										<span>Model Integration:</span>
-										<span className="text-white font-medium">100+ Models Unified</span>
-									</div>
-									<div className="flex items-center justify-between text-slate-400">
-										<span>Semantic Caching:</span>
-										<span className="text-emerald-400 font-medium">pgvector Active (-85% Cost)</span>
-									</div>
-									<div className="flex items-center justify-between text-slate-400">
-										<span>Governance:</span>
-										<span className="text-purple-300 font-medium">Virtual Keys & Hard Budgets</span>
-									</div>
-								</div>
 							</div>
 						</div>
+					</div>
+					</div>
 					</div>
 				</section>
 
 				{/* TRUST & COMPLIANCE METRICS STRIP */}
-				<section className="border-y border-white/[0.1] bg-[#090b14]/80 py-12 px-6 backdrop-blur-md">
-					<div className="max-w-6xl mx-auto flex flex-wrap items-center justify-around gap-8 text-center">
-						<div className="space-y-1">
-							<div className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">50M+</div>
-							<div className="text-xs text-slate-400 font-semibold">Prompts Protected</div>
+				<section className="px-6 lg:px-10 xl:px-14 pt-2 pb-2">
+					<div className="max-w-[1440px] mx-auto rounded-[28px] border border-[#e6edf8] bg-white shadow-[0_12px_40px_rgba(15,23,42,0.04)] py-8 px-4 sm:px-8">
+					<div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-0 md:divide-x md:divide-[#e8eef8] text-center">
+						<div className="space-y-1 px-3">
+							<div className="text-3xl sm:text-4xl font-extrabold text-[#2f6bff] tracking-tight">50M+</div>
+							<div className="text-xs text-slate-500 font-medium">Prompts protected</div>
 						</div>
-						<div className="space-y-1">
-							<div className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">&lt; 0.8ms</div>
-							<div className="text-xs text-slate-400 font-semibold">Interception Overhead</div>
+						<div className="space-y-1 px-3">
+							<div className="text-3xl sm:text-4xl font-extrabold text-[#0b1b3a] tracking-tight">&lt; 0.8ms</div>
+							<div className="text-xs text-slate-500 font-medium">Inspection overhead</div>
 						</div>
-						<div className="space-y-1">
-							<div className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">85%</div>
-							<div className="text-xs text-slate-400 font-semibold">API Spend Saved via Cache</div>
+						<div className="space-y-1 px-3">
+							<div className="text-3xl sm:text-4xl font-extrabold text-[#0b1b3a] tracking-tight">85%</div>
+							<div className="text-xs text-slate-500 font-medium">API spend saved</div>
 						</div>
-						<div className="space-y-1">
-							<div className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">99.99%</div>
-							<div className="text-xs text-slate-400 font-semibold">Enterprise Availability</div>
+						<div className="space-y-1 px-3">
+							<div className="text-3xl sm:text-4xl font-extrabold text-[#0b1b3a] tracking-tight">99.99%</div>
+							<div className="text-xs text-slate-500 font-medium">Enterprise availability</div>
 						</div>
 					</div>
 
-					<div className="max-w-4xl mx-auto mt-8 pt-6 border-t border-white/[0.08] flex flex-wrap items-center justify-center gap-6 text-xs text-slate-400 font-medium">
-						<span className="flex items-center gap-1.5"><CheckCircle className="h-4 w-4 text-emerald-400" /> SOC 2 Type II Certified</span>
-						<span className="flex items-center gap-1.5"><CheckCircle className="h-4 w-4 text-emerald-400" /> HIPAA & GDPR Compliant</span>
-						<span className="flex items-center gap-1.5"><CheckCircle className="h-4 w-4 text-emerald-400" /> Zero-Trust Architecture</span>
-						<span className="flex items-center gap-1.5"><CheckCircle className="h-4 w-4 text-emerald-400" /> ISO/IEC 27001 Aligned</span>
+					<div className="max-w-4xl mx-auto mt-8 pt-6 border-t border-[#e8eef8] flex flex-wrap items-center justify-center gap-3 text-xs text-slate-600 font-medium">
+						<span className="flex items-center gap-1.5 rounded-full bg-[#f4f7ff] border border-[#e3ebf8] px-3 py-1.5"><CheckCircle className="h-4 w-4 text-emerald-500" /> SOC 2 Type II Certified</span>
+						<span className="flex items-center gap-1.5 rounded-full bg-[#f4f7ff] border border-[#e3ebf8] px-3 py-1.5"><CheckCircle className="h-4 w-4 text-emerald-500" /> HIPAA & GDPR Compliant</span>
+						<span className="flex items-center gap-1.5 rounded-full bg-[#f4f7ff] border border-[#e3ebf8] px-3 py-1.5"><CheckCircle className="h-4 w-4 text-emerald-500" /> Zero-Trust Architecture</span>
+						<span className="flex items-center gap-1.5 rounded-full bg-[#f4f7ff] border border-[#e3ebf8] px-3 py-1.5"><CheckCircle className="h-4 w-4 text-emerald-500" /> ISO/IEC 27001 Aligned</span>
+					</div>
 					</div>
 				</section>
 
 				{/* PRODUCTS SECTION (TWO PILLARS) */}
-				<section id="products" className="py-24 px-6 max-w-6xl mx-auto scroll-mt-24">
-					<div className="text-center max-w-2xl mx-auto mb-16">
-						<h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white mb-4">
-							Two Products. One Architecture.
+				<section id="products" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
+					<div className="max-w-[1440px] mx-auto">
+					<div className="text-center max-w-2xl mx-auto mb-14">
+						<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">Platform</div>
+						<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-4">
+							Two products. One architecture.
 						</h2>
-						<p className="text-slate-400 text-sm sm:text-base leading-relaxed">
+						<p className="text-slate-600 text-sm sm:text-base leading-relaxed">
 							Arm enterprise security teams with real-time DLP over consumer web AI, while giving developers a blisteringly fast LLM gateway with strict budget governance.
 						</p>
 					</div>
 
 					<div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 						{/* Product 1: Browser Guard */}
-						<div className="group border border-white/[0.1] hover:border-sky-500/40 rounded-3xl bg-[#0c0e17]/80 p-8 space-y-6 transition-all duration-300 shadow-xl">
-							<div className="h-12 w-12 rounded-2xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 group-hover:scale-105 transition-transform">
+						<div className="group border border-[#e3ebf8] hover:border-[#2f6bff]/40 rounded-3xl bg-white p-8 space-y-6 transition-all duration-300 shadow-[0_18px_50px_rgba(47,107,255,0.08)] hover:-translate-y-1">
+							<div className="h-12 w-12 rounded-2xl bg-[#2f6bff] flex items-center justify-center text-white group-hover:scale-105 transition-transform shadow-[0_10px_20px_rgba(47,107,255,0.25)]">
 								<Shield className="h-6 w-6" />
 							</div>
 
 							<div className="space-y-2">
-								<h3 className="text-2xl font-bold text-white">GATEWAY Browser Guard</h3>
-								<p className="text-slate-400 text-sm leading-relaxed">
+								<h3 className="text-2xl font-bold text-[#0b1b3a]">GATEWAY Browser Guard</h3>
+								<p className="text-slate-600 text-sm leading-relaxed">
 									Endpoint DLP daemon for macOS and Windows. Automatically protects confidential IP whenever employees utilize ChatGPT, Claude, Grok, or custom AI portals.
 								</p>
 							</div>
@@ -637,8 +584,8 @@ console.log(response.choices[0].message.content);`
 									"Complete coverage for Grok, ChatGPT, Claude, and Gemini",
 									"Silent fleet rollout via Jamf, Microsoft Intune, or GPO"
 								].map((item, idx) => (
-									<div key={idx} className="flex items-center gap-2.5 text-xs text-slate-300 font-medium">
-										<CheckCircle2 className="h-4 w-4 text-sky-400 shrink-0" />
+									<div key={idx} className="flex items-center gap-2.5 text-xs text-slate-700 font-medium">
+										<CheckCircle2 className="h-4 w-4 text-[#2f6bff] shrink-0" />
 										<span>{item}</span>
 									</div>
 								))}
@@ -647,7 +594,7 @@ console.log(response.choices[0].message.content);`
 							<div className="pt-2">
 								<button
 									onClick={() => setIsDemoModalOpen(true)}
-									className="text-xs font-bold text-sky-400 hover:text-sky-300 flex items-center gap-1.5 cursor-pointer"
+									className="text-xs font-bold text-[#2f6bff] hover:text-[#2457d6] flex items-center gap-1.5 cursor-pointer"
 								>
 									Explore Browser Guard Specs <ArrowRight className="h-3.5 w-3.5" />
 								</button>
@@ -655,14 +602,14 @@ console.log(response.choices[0].message.content);`
 						</div>
 
 						{/* Product 2: AI Gateway */}
-						<div className="group border border-white/[0.1] hover:border-indigo-500/40 rounded-3xl bg-[#0c0e17]/80 p-8 space-y-6 transition-all duration-300 shadow-xl">
-							<div className="h-12 w-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400 group-hover:scale-105 transition-transform">
+						<div className="group border border-[#e4e0ff] hover:border-[#6d5ef7]/40 rounded-3xl bg-white p-8 space-y-6 transition-all duration-300 shadow-[0_18px_50px_rgba(109,94,247,0.08)] hover:-translate-y-1">
+							<div className="h-12 w-12 rounded-2xl bg-[#6d5ef7] flex items-center justify-center text-white group-hover:scale-105 transition-transform shadow-[0_10px_20px_rgba(109,94,247,0.25)]">
 								<Zap className="h-6 w-6" />
 							</div>
 
 							<div className="space-y-2">
-								<h3 className="text-2xl font-bold text-white">GATEWAY Universal Gateway</h3>
-								<p className="text-slate-400 text-sm leading-relaxed">
+								<h3 className="text-2xl font-bold text-[#0b1b3a]">GATEWAY Universal Gateway</h3>
+								<p className="text-slate-600 text-sm leading-relaxed">
 									Centralized LLM reverse proxy for production apps. Unifies model routing, semantic vector caching, rate limits, and team access tokens behind a single drop-in API.
 								</p>
 							</div>
@@ -674,8 +621,8 @@ console.log(response.choices[0].message.content);`
 									"Multi-entity Virtual Keys with strict team & user spend caps",
 									"Automated cross-provider failover during LLM outages"
 								].map((item, idx) => (
-									<div key={idx} className="flex items-center gap-2.5 text-xs text-slate-300 font-medium">
-										<CheckCircle2 className="h-4 w-4 text-indigo-400 shrink-0" />
+									<div key={idx} className="flex items-center gap-2.5 text-xs text-slate-700 font-medium">
+										<CheckCircle2 className="h-4 w-4 text-[#6d5ef7] shrink-0" />
 										<span>{item}</span>
 									</div>
 								))}
@@ -684,24 +631,26 @@ console.log(response.choices[0].message.content);`
 							<div className="pt-2">
 								<button
 									onClick={() => setIsDemoModalOpen(true)}
-									className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 cursor-pointer"
+									className="text-xs font-bold text-[#6d5ef7] hover:text-[#5648d6] flex items-center gap-1.5 cursor-pointer"
 								>
 									Explore Gateway Specs <ArrowRight className="h-3.5 w-3.5" />
 								</button>
 							</div>
 						</div>
 					</div>
+					</div>
 				</section>
 
 				{/* CAPABILITIES SECTION */}
-				<section id="features" className="py-24 px-6 border-t border-white/[0.1] bg-[#090b14]/60 scroll-mt-24">
+				<section id="features" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
 					<div id="capabilities" className="scroll-mt-24" />
-					<div className="max-w-6xl mx-auto">
-						<div className="text-center max-w-2xl mx-auto mb-16">
-							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white mb-4">
-								Enterprise Grade from Day One
+					<div className="max-w-[1440px] mx-auto">
+						<div className="text-center max-w-2xl mx-auto mb-14">
+							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">Capabilities</div>
+							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-4">
+								Enterprise grade from day one
 							</h2>
-							<p className="text-slate-400 text-sm sm:text-base">
+							<p className="text-slate-600 text-sm sm:text-base">
 								Everything required to satisfy stringent enterprise InfoSec, compliance, and developer productivity demands.
 							</p>
 						</div>
@@ -709,45 +658,45 @@ console.log(response.choices[0].message.content);`
 						<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 							{[
 								{
-									icon: <Lock className="h-5 w-5 text-sky-400" />,
+									icon: <Lock className="h-5 w-5 text-[#2f6bff]" />,
 									title: "In-Flight Data Redaction",
 									desc: "API credentials, customer PII, and sensitive source code are sanitized before requests ever leave your perimeter."
 								},
 								{
-									icon: <Layers className="h-5 w-5 text-indigo-400" />,
+									icon: <Layers className="h-5 w-5 text-[#2f6bff]" />,
 									title: "Semantic Vector Caching",
 									desc: "High-performance vector embeddings catch semantically identical questions, answering in < 10ms at 0 token cost."
 								},
 								{
-									icon: <Key className="h-5 w-5 text-amber-400" />,
+									icon: <Key className="h-5 w-5 text-[#2f6bff]" />,
 									title: "Virtual Keys & Quotas",
 									desc: "Provision scoped virtual API keys for teams and microservices with hard spend limits and budget double-locks."
 								},
 								{
-									icon: <Activity className="h-5 w-5 text-emerald-400" />,
+									icon: <Activity className="h-5 w-5 text-[#2f6bff]" />,
 									title: "Audit Logs & Tracing",
 									desc: "Full observability into prompt metadata, token usage, latency metrics, and policy trigger events across your company."
 								},
 								{
-									icon: <Laptop className="h-5 w-5 text-cyan-400" />,
+									icon: <Laptop className="h-5 w-5 text-[#2f6bff]" />,
 									title: "Cross-Platform Agents",
 									desc: "Lightweight, silent installers for macOS and Windows, manageable through existing MDM fleets."
 								},
 								{
-									icon: <Cpu className="h-5 w-5 text-violet-400" />,
+									icon: <Cpu className="h-5 w-5 text-[#2f6bff]" />,
 									title: "Automatic Model Fallbacks",
 									desc: "Configure automated multi-model failover chains so applications remain resilient during third-party AI outages."
 								}
 							].map((feature, idx) => (
 								<div
 									key={idx}
-									className="group border border-white/[0.08] hover:border-white/[0.22] rounded-2xl bg-[#0c0e17]/80 p-6 space-y-3.5 transition-all shadow-md hover:-translate-y-0.5"
+									className="group border border-[#e3ebf8] hover:border-[#2f6bff]/30 rounded-2xl bg-white p-6 space-y-3.5 transition-all shadow-[0_12px_30px_rgba(47,107,255,0.06)] hover:-translate-y-0.5"
 								>
-									<div className="h-11 w-11 rounded-xl bg-white/[0.05] border border-white/[0.1] flex items-center justify-center group-hover:scale-105 transition-transform">
+									<div className="h-11 w-11 rounded-xl bg-[#eef3ff] border border-[#d7e4ff] flex items-center justify-center group-hover:scale-105 transition-transform">
 										{feature.icon}
 									</div>
-									<h3 className="text-base font-bold text-white">{feature.title}</h3>
-									<p className="text-xs text-slate-400 leading-relaxed font-normal">{feature.desc}</p>
+									<h3 className="text-base font-bold text-[#0b1b3a]">{feature.title}</h3>
+									<p className="text-xs text-slate-600 leading-relaxed font-normal">{feature.desc}</p>
 								</div>
 							))}
 						</div>
@@ -755,20 +704,21 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* DEVELOPER QUICKSTART CODE SECTION */}
-				<section id="quickstart" className="py-24 px-6 max-w-6xl mx-auto scroll-mt-24">
+				<section id="quickstart" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
+					<div className="max-w-[1440px] mx-auto">
 					<div id="developers" className="scroll-mt-24" />
 					<div id="code-preview" className="scroll-mt-24" />
 					<div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
 						<div className="space-y-6">
-							<div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-xs font-semibold text-indigo-300">
+							<div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#d7d2ff] bg-white text-xs font-semibold text-[#6d5ef7] shadow-sm">
 								<Terminal className="w-3.5 h-3.5" />
 								<span>Zero SDK Refactoring</span>
 							</div>
 
-							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight">
-								One Line of Code to Supercharge AI
+							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] leading-tight">
+								One line of code to route every model
 							</h2>
-							<p className="text-slate-300 text-sm sm:text-base leading-relaxed">
+							<p className="text-slate-600 text-sm sm:text-base leading-relaxed">
 								GATEWAY is 100% compliant with standard OpenAI SDKs and specs. Simply update your connection base URL to instantly unlock semantic caching, virtual key quotas, and automatic multi-model failover.
 							</p>
 
@@ -778,7 +728,7 @@ console.log(response.choices[0].message.content);`
 									"Compatible with Python, Node.js, Go, LangChain, and cURL",
 									"Seamless fallback between OpenAI, Anthropic, Gemini, and DeepSeek"
 								].map((item, idx) => (
-									<div key={idx} className="flex items-center gap-2 text-xs text-slate-300 font-medium">
+									<div key={idx} className="flex items-center gap-2 text-xs text-slate-700 font-medium">
 										<Check className="h-4 w-4 text-emerald-400 shrink-0" />
 										<span>{item}</span>
 									</div>
@@ -787,8 +737,8 @@ console.log(response.choices[0].message.content);`
 						</div>
 
 						{/* Terminal Code Box with macOS controls */}
-						<div className="border border-white/[0.12] rounded-2xl bg-[#090b12] overflow-hidden shadow-2xl">
-							<div className="flex bg-white/[0.04] border-b border-white/[0.1] px-4 py-3 justify-between items-center">
+						<div className="border border-[#1e293b] rounded-2xl bg-[#0f172a] overflow-hidden shadow-[0_24px_50px_rgba(15,23,42,0.18)]">
+							<div className="flex bg-[#111c33] border-b border-white/10 px-4 py-3 justify-between items-center">
 								<div className="flex items-center gap-2">
 									<div className="flex gap-1.5 mr-2">
 										<div className="w-3 h-3 rounded-full bg-red-500/80" />
@@ -836,35 +786,59 @@ console.log(response.choices[0].message.content);`
 							</div>
 						</div>
 					</div>
+					</div>
+				</section>
+
+				<section id="models" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
+					<div className="max-w-[1440px] mx-auto">
+						<div className="text-center max-w-2xl mx-auto mb-10">
+							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">Models</div>
+							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-4">
+								One gateway. Every model.
+							</h2>
+							<p className="text-slate-600 text-sm sm:text-base">
+								The same API key reaches each provider. No separate console for each model.
+							</p>
+						</div>
+						<div className="flex flex-wrap items-center justify-center gap-3">
+							{supportedModels.map((m, idx) => (
+								<div key={idx} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full border border-[#e6edf8] bg-white text-sm font-semibold text-slate-700 shadow-sm">
+									<span className={`w-2 h-2 rounded-full ${m.color}`} />
+									<span>{m.name}</span>
+								</div>
+							))}
+						</div>
+					</div>
 				</section>
 
 				{/* FAQ SECTION */}
-				<section id="faq" className="py-24 px-6 border-t border-white/[0.1] bg-[#090b14]/60 scroll-mt-24">
-					<div className="max-w-3xl mx-auto">
+				<section id="faq" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
+					<div className="max-w-[1440px] mx-auto">
 						<div className="text-center mb-12">
-							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white mb-3">
-								Frequently Asked Questions
+							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">FAQ</div>
+							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-3">
+								Questions teams ask first
 							</h2>
-							<p className="text-slate-400 text-sm">
+							<p className="text-slate-600 text-sm">
 								Answers to common enterprise security, performance, and deployment inquiries.
 							</p>
 						</div>
 
-						<div className="space-y-3.5">
+						<div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
 							{faqs.map((faq, idx) => (
 								<div
 									key={idx}
-									className="border border-white/[0.1] rounded-2xl bg-[#0c0e17]/80 overflow-hidden shadow-sm transition-all"
+									className="border border-[#e3ebf8] rounded-2xl bg-white overflow-hidden shadow-[0_10px_24px_rgba(47,107,255,0.05)] transition-all"
 								>
 									<button
 										onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
-										className="w-full p-5 text-left font-bold text-sm text-white flex items-center justify-between gap-4 hover:text-slate-200 transition-colors cursor-pointer"
+										className="w-full p-5 text-left font-bold text-sm text-[#0b1b3a] flex items-center justify-between gap-4 hover:text-[#2f6bff] transition-colors cursor-pointer"
 									>
 										<span>{faq.q}</span>
-										<ChevronDown className={`h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200 ${openFaq === idx ? "rotate-180" : ""}`} />
+										<ChevronDown className={`h-4 w-4 text-[#2f6bff] shrink-0 transition-transform duration-200 ${openFaq === idx ? "rotate-180" : ""}`} />
 									</button>
 									{openFaq === idx && (
-										<div className="px-5 pb-5 text-xs sm:text-sm text-slate-300 leading-relaxed border-t border-white/[0.06] pt-3.5">
+										<div className="px-5 pb-5 text-xs sm:text-sm text-slate-600 leading-relaxed border-t border-[#e8eef8] pt-3.5">
 											{faq.a}
 										</div>
 									)}
@@ -875,60 +849,62 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* BOTTOM HIGH-CONVERTING CTA BANNER */}
-				<section className="py-28 px-6 text-center max-w-4xl mx-auto">
-					<div className="p-8 sm:p-14 rounded-3xl border border-white/[0.15] bg-gradient-to-b from-[#0c0e1a] to-[#07080f] shadow-2xl relative overflow-hidden">
-						<div className="absolute -top-[50%] left-1/2 -translate-x-1/2 w-[550px] h-[320px] bg-sky-500/15 rounded-full blur-[110px] pointer-events-none" />
+				<section className="py-16 px-6 lg:px-10 xl:px-14">
+					<div className="max-w-[1440px] mx-auto text-center">
+					<div className="p-8 sm:p-14 rounded-3xl bg-gradient-to-br from-[#2f6bff] via-[#4d6bff] to-[#6d5ef7] shadow-[0_24px_60px_rgba(47,107,255,0.28)] relative overflow-hidden">
+						<div className="absolute -top-16 right-0 w-64 h-64 rounded-full bg-white/15 blur-2xl pointer-events-none" />
 						
-						<h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white mb-4 relative z-10">
-							Ready to Standardize Your AI Perimeter?
+						<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-white mb-4 relative z-10">
+							Ready to standardize your AI perimeter?
 						</h2>
-						<p className="text-slate-300 text-sm sm:text-base max-w-xl mx-auto mb-8 relative z-10 leading-relaxed">
+						<p className="text-blue-50 text-sm sm:text-base max-w-xl mx-auto mb-8 relative z-10 leading-relaxed">
 							Connect with our enterprise security team for a customized deployment plan or start immediately in our cloud sandbox.
 						</p>
 						<div className="flex flex-col sm:flex-row items-center justify-center gap-4 relative z-10">
 							<button
 								onClick={() => setIsDemoModalOpen(true)}
-								className="w-full sm:w-auto h-12 px-8 bg-white hover:bg-slate-100 text-[#07090e] font-extrabold rounded-xl text-sm transition-all shadow-[0_0_30px_rgba(255,255,255,0.3)] flex items-center justify-center gap-2 cursor-pointer"
+								className="w-full sm:w-auto h-12 px-8 bg-white hover:bg-blue-50 text-[#2f6bff] font-extrabold rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
 							>
-								<Calendar className="h-4 w-4 text-slate-800" />
+								<Calendar className="h-4 w-4" />
 								Schedule a Demo
 							</button>
 							{isLoggedIn ? (
 								<Button
 									onClick={() => navigate({ to: "/workspace" })}
-									className="w-full sm:w-auto h-12 px-8 bg-white/[0.08] hover:bg-white/[0.15] text-white border border-white/[0.18] font-bold rounded-xl text-sm shadow-sm cursor-pointer"
+									className="w-full sm:w-auto h-12 px-8 bg-white/15 hover:bg-white/25 text-white border border-white/30 font-bold rounded-xl text-sm shadow-sm cursor-pointer"
 								>
 									Go to Workspace
 								</Button>
 							) : (
 								<Button
 									onClick={() => navigate({ to: "/signup" })}
-									className="w-full sm:w-auto h-12 px-8 bg-white/[0.08] hover:bg-white/[0.15] text-white border border-white/[0.18] font-bold rounded-xl text-sm shadow-sm cursor-pointer"
+									className="w-full sm:w-auto h-12 px-8 bg-white/15 hover:bg-white/25 text-white border border-white/30 font-bold rounded-xl text-sm shadow-sm cursor-pointer"
 								>
 									Get Started Free
 								</Button>
 							)}
 						</div>
 					</div>
+					</div>
 				</section>
 			</main>
 
 			{/* HIGH-END FOOTER - PERFECT SINGLE-LINE ALIGNMENT */}
-			<footer className="border-t border-white/[0.1] bg-[#05060a] py-8 px-6 w-full">
-				<div className="max-w-[1400px] mx-auto flex flex-col lg:flex-row items-center justify-between gap-6 text-xs text-slate-400">
+			<footer className="border-t border-[#e3ebf8] bg-white py-8 px-6 w-full">
+				<div className="max-w-[1400px] mx-auto flex flex-col lg:flex-row items-center justify-between gap-6 text-xs text-slate-500">
 					{/* Brand Logo & Company */}
 					<div className="flex items-center gap-3 shrink-0">
 						<img src={companyLogoSrc} alt={companyFullName} className="h-6 w-auto object-contain opacity-90 shrink-0" />
-						<span className="font-bold text-slate-200 whitespace-nowrap">{companyFullName}</span>
+						<span className="font-bold text-[#0b1b3a] whitespace-nowrap">{companyFullName}</span>
 					</div>
 
 					{/* Navigation Links - Perfect single line, never wrap or split words */}
 					<nav aria-label="Footer Navigation" className="flex items-center gap-6 sm:gap-8 whitespace-nowrap shrink-0">
-						<button type="button" onClick={() => scrollToSection("products")} className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Products</button>
-						<button type="button" onClick={() => scrollToSection("features")} className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Capabilities</button>
-						<button type="button" onClick={() => setIsDemoModalOpen(true)} className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Book Demo</button>
-						<Link to="/login" className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Sign In</Link>
-						<Link to="/signup" className="hover:text-white transition-colors cursor-pointer whitespace-nowrap">Sign Up</Link>
+						<button type="button" onClick={() => scrollToSection("products")} className="hover:text-[#2f6bff] transition-colors cursor-pointer whitespace-nowrap">Products</button>
+						<button type="button" onClick={() => scrollToSection("features")} className="hover:text-[#2f6bff] transition-colors cursor-pointer whitespace-nowrap">Capabilities</button>
+						<button type="button" onClick={() => setIsDemoModalOpen(true)} className="hover:text-[#2f6bff] transition-colors cursor-pointer whitespace-nowrap">Book Demo</button>
+						<Link to="/login" className="hover:text-[#2f6bff] transition-colors cursor-pointer whitespace-nowrap">Sign In</Link>
+						<Link to="/signup" className="hover:text-[#2f6bff] transition-colors cursor-pointer whitespace-nowrap">Sign Up</Link>
 					</nav>
 
 					{/* Copyright Text */}
@@ -940,13 +916,13 @@ console.log(response.choices[0].message.content);`
 
 			{/* BOOK A DEMO MODAL */}
 			<Dialog open={isDemoModalOpen} onOpenChange={setIsDemoModalOpen}>
-				<DialogContent className="bg-[#0c0e17] border border-white/[0.15] text-slate-200 sm:max-w-lg p-6 shadow-2xl rounded-2xl">
+				<DialogContent className="bg-white border border-[#e3ebf8] text-slate-700 sm:max-w-lg p-6 shadow-2xl rounded-2xl">
 					<DialogHeader>
-						<DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
-							<Calendar className="h-4 w-4 text-sky-400" />
+						<DialogTitle className="text-lg font-bold text-[#0b1b3a] flex items-center gap-2">
+							<Calendar className="h-4 w-4 text-[#2f6bff]" />
 							Schedule an Enterprise Demo
 						</DialogTitle>
-						<DialogDescription className="text-slate-400 text-xs">
+						<DialogDescription className="text-slate-500 text-xs">
 							Our engineering team will provide a tailored 20-minute architecture demonstration of Browser Guard and the Universal AI Gateway.
 						</DialogDescription>
 					</DialogHeader>
@@ -956,14 +932,14 @@ console.log(response.choices[0].message.content);`
 							<div className="h-12 w-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto">
 								<CheckCircle2 className="h-6 w-6" />
 							</div>
-							<h3 className="text-base font-bold text-white">Demo Request Received</h3>
-							<p className="text-xs text-slate-300 max-w-sm mx-auto leading-relaxed">
-								Thank you, <strong className="text-white">{demoForm.fullName}</strong>. A technical architect has sent a calendar invitation to <strong className="text-white">{demoForm.email}</strong>.
+							<h3 className="text-base font-bold text-[#0b1b3a]">Demo Request Received</h3>
+							<p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
+								Thank you, <strong className="text-[#0b1b3a]">{demoForm.fullName}</strong>. A technical architect has sent a calendar invitation to <strong className="text-[#0b1b3a]">{demoForm.email}</strong>.
 							</p>
 							<div className="pt-2">
 								<Button
 									onClick={resetDemoModal}
-									className="bg-white text-[#07090e] font-bold text-xs h-8 px-5 rounded-lg cursor-pointer"
+									className="bg-[#2f6bff] text-white font-bold text-xs h-8 px-5 rounded-lg cursor-pointer"
 								>
 									Done
 								</Button>
@@ -978,46 +954,46 @@ console.log(response.choices[0].message.content);`
 							)}
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 								<div className="space-y-1">
-									<label className="text-xs font-semibold text-slate-300">Full Name *</label>
+									<label className="text-xs font-semibold text-slate-700">Full Name *</label>
 									<Input
 										required
 										placeholder="Jane Doe"
 										value={demoForm.fullName}
 										onChange={(e) => setDemoForm({ ...demoForm, fullName: e.target.value })}
-										className="bg-white/[0.04] border-white/[0.12] text-white text-xs h-9 focus:border-white/[0.3] rounded-lg"
+										className="bg-[#f7f9ff] border-[#e3ebf8] text-[#0b1b3a] text-xs h-9 focus:border-[#2f6bff] rounded-lg"
 									/>
 								</div>
 
 								<div className="space-y-1">
-									<label className="text-xs font-semibold text-slate-300">Work Email *</label>
+									<label className="text-xs font-semibold text-slate-700">Work Email *</label>
 									<Input
 										type="email"
 										required
 										placeholder="jane@company.com"
 										value={demoForm.email}
 										onChange={(e) => setDemoForm({ ...demoForm, email: e.target.value })}
-										className="bg-white/[0.04] border-white/[0.12] text-white text-xs h-9 focus:border-white/[0.3] rounded-lg"
+										className="bg-[#f7f9ff] border-[#e3ebf8] text-[#0b1b3a] text-xs h-9 focus:border-[#2f6bff] rounded-lg"
 									/>
 								</div>
 							</div>
 
 							<div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
 								<div className="space-y-1">
-									<label className="text-xs font-semibold text-slate-300">Company</label>
+									<label className="text-xs font-semibold text-slate-700">Company</label>
 									<Input
 										placeholder="Acme Corp"
 										value={demoForm.company}
 										onChange={(e) => setDemoForm({ ...demoForm, company: e.target.value })}
-										className="bg-white/[0.04] border-white/[0.12] text-white text-xs h-9 focus:border-white/[0.3] rounded-lg"
+										className="bg-[#f7f9ff] border-[#e3ebf8] text-[#0b1b3a] text-xs h-9 focus:border-[#2f6bff] rounded-lg"
 									/>
 								</div>
 
 								<div className="space-y-1">
-									<label className="text-xs font-semibold text-slate-300">Team Size</label>
+									<label className="text-xs font-semibold text-slate-700">Team Size</label>
 									<select
 										value={demoForm.teamSize}
 										onChange={(e) => setDemoForm({ ...demoForm, teamSize: e.target.value })}
-										className="w-full bg-[#0c0e17] border border-white/[0.12] text-white text-xs h-9 rounded-lg px-2.5 focus:outline-none focus:border-white/[0.3]"
+										className="w-full bg-[#f7f9ff] border border-[#e3ebf8] text-[#0b1b3a] text-xs h-9 rounded-lg px-2.5 focus:outline-none focus:border-[#2f6bff]"
 									>
 										<option value="1-50">1 - 50 employees</option>
 										<option value="50-250">50 - 250 employees</option>
@@ -1028,7 +1004,7 @@ console.log(response.choices[0].message.content);`
 							</div>
 
 							<div className="space-y-1">
-								<label className="text-xs font-semibold text-slate-300">Primary Focus</label>
+								<label className="text-xs font-semibold text-slate-700">Primary Focus</label>
 								<div className="grid grid-cols-3 gap-2 text-xs">
 									{[
 										{ id: "guard", label: "Browser DLP" },
@@ -1041,8 +1017,8 @@ console.log(response.choices[0].message.content);`
 											onClick={() => setDemoForm({ ...demoForm, interest: opt.id })}
 											className={`py-2 px-2 text-center rounded-lg border text-xs font-medium transition-all cursor-pointer ${
 												demoForm.interest === opt.id
-													? "border-sky-400 bg-sky-500/15 text-white font-bold"
-													: "border-white/[0.1] bg-white/[0.02] text-slate-400 hover:text-white"
+													? "border-[#2f6bff] bg-[#eef3ff] text-[#2f6bff] font-bold"
+													: "border-[#e3ebf8] bg-white text-slate-500 hover:text-[#0b1b3a]"
 											}`}
 										>
 											{opt.label}
@@ -1052,13 +1028,13 @@ console.log(response.choices[0].message.content);`
 							</div>
 
 							<div className="space-y-1">
-								<label className="text-xs font-semibold text-slate-300">Architecture Requirements (Optional)</label>
+								<label className="text-xs font-semibold text-slate-700">Architecture Requirements (Optional)</label>
 								<textarea
 									rows={2}
 									placeholder="Tell us about your current AI models, team size, or security needs..."
 									value={demoForm.notes}
 									onChange={(e) => setDemoForm({ ...demoForm, notes: e.target.value })}
-									className="w-full bg-white/[0.04] border border-white/[0.12] rounded-lg p-2.5 text-white text-xs focus:outline-none focus:border-white/[0.3] resize-none"
+									className="w-full bg-[#f7f9ff] border border-[#e3ebf8] rounded-lg p-2.5 text-[#0b1b3a] text-xs focus:outline-none focus:border-[#2f6bff] resize-none"
 								/>
 							</div>
 
@@ -1068,14 +1044,14 @@ console.log(response.choices[0].message.content);`
 									variant="ghost"
 									disabled={isSubmittingDemo}
 									onClick={() => setIsDemoModalOpen(false)}
-									className="text-xs h-8 text-slate-400 hover:text-white cursor-pointer"
+									className="text-xs h-8 text-slate-500 hover:text-[#0b1b3a] cursor-pointer"
 								>
 									Cancel
 								</Button>
 								<Button
 									type="submit"
 									disabled={isSubmittingDemo}
-									className="bg-white hover:bg-slate-100 text-[#07090e] font-bold text-xs h-8 px-5 rounded-lg shadow-sm cursor-pointer disabled:opacity-50"
+									className="bg-[#2f6bff] hover:bg-[#2457d6] text-white font-bold text-xs h-8 px-5 rounded-lg shadow-sm cursor-pointer disabled:opacity-50"
 								>
 									{isSubmittingDemo ? (
 										<span className="flex items-center gap-1.5">
