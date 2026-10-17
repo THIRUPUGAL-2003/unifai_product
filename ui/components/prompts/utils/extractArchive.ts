@@ -2,7 +2,7 @@
 
 import { extractZipInnerFiles } from "./extractZip";
 
-const MAX_ARCHIVE_ENTRIES = 50;
+const MAX_ARCHIVE_ENTRIES = 1000;
 const SKIP_NAME_RE = /(^|\/)(__MACOSX|\.DS_Store|Thumbs\.db)(\/|$)/i;
 
 function baseName(path: string): string {

@@ -187,8 +187,21 @@ export function NewMessageInputView() {
 				processFiles(ce.detail);
 			}
 		};
+		const handleSetInput = (e: Event) => {
+			const ce = e as CustomEvent<string>;
+			if (typeof ce.detail === "string") {
+				setUserInput(ce.detail);
+				setTimeout(() => {
+					userInputRef.current?.focus();
+				}, 50);
+			}
+		};
 		window.addEventListener("prompt-repo:attach-files", handleGlobalAttach);
-		return () => window.removeEventListener("prompt-repo:attach-files", handleGlobalAttach);
+		window.addEventListener("prompt-repo:set-input", handleSetInput);
+		return () => {
+			window.removeEventListener("prompt-repo:attach-files", handleGlobalAttach);
+			window.removeEventListener("prompt-repo:set-input", handleSetInput);
+		};
 	}, [processFiles]);
 
 	const textBeforeRecordingRef = useRef<string>("");
@@ -404,20 +417,34 @@ export function NewMessageInputView() {
 					{attachments.map((att, index) => (
 						<AttachmentBadge key={index} attachment={att} onRemove={() => handleRemoveAttachment(index)} />
 					))}
-					{pendingUploads.map((pu) => (
-						<div
-							key={pu.id}
-							className="group/pending bg-card/90 border-primary/40 text-foreground relative flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs shadow-xs animate-pulse select-none"
-						>
-							<Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
-							<div className="flex flex-col min-w-0">
-								<span className="font-medium truncate max-w-[140px] text-[11px]" title={pu.name}>
-									{pu.name}
+					{pendingUploads.length <= 5 ? (
+						pendingUploads.map((pu) => (
+							<div
+								key={pu.id}
+								className="group/pending bg-card/90 border-primary/40 text-foreground relative flex items-center gap-2 rounded-md border px-2.5 py-1 text-xs shadow-xs animate-pulse select-none"
+							>
+								<Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0" />
+								<div className="flex flex-col min-w-0">
+									<span className="font-medium truncate max-w-[140px] text-[11px]" title={pu.name}>
+										{pu.name}
+									</span>
+									<span className="text-[10px] text-muted-foreground">{pu.progressText}</span>
+								</div>
+							</div>
+						))
+					) : (
+						<div className="bg-card/90 border-primary/40 text-foreground relative flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs shadow-xs animate-pulse select-none">
+							<Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+							<div className="flex items-center gap-2">
+								<span className="font-medium text-xs">
+									Processing {pendingUploads.length} files in parallel...
 								</span>
-								<span className="text-[10px] text-muted-foreground">{pu.progressText}</span>
+								<span className="text-[11px] text-muted-foreground">
+									({pendingUploads[0]?.name || "files"})
+								</span>
 							</div>
 						</div>
-					))}
+					)}
 				</div>
 			)}
 			{vkBillingQueryFailed ? (

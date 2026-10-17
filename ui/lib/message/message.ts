@@ -20,9 +20,13 @@ function isEmbeddedAttachmentText(part: MessageContent): boolean {
 		part.text.startsWith("Attached file:") ||
 		part.text.startsWith("Attached zip:") ||
 		part.text.startsWith("Attached image:") ||
+		part.text.startsWith("Attached video:") ||
 		part.text.startsWith("Voice transcript") ||
 		part.text.includes("--- extracted content ---") ||
-		part.text.includes("--- OCR extracted content ---")
+		part.text.includes("--- OCR extracted content ---") ||
+		part.text.includes("--- Video Speech Transcript ---") ||
+		part.text.includes("--- Video Audio Transcript ---") ||
+		part.text.includes("--- Video Screen OCR Content ---")
 	);
 }
 
@@ -236,6 +240,27 @@ function parseAttachmentPart(part: MessageContent): ExtractedFileInfo | null {
 		const lang = detectLanguageFromExt(ext);
 		const category = getCategoryFromExt(ext);
 		return { filename, language: lang, category, content, kind: "extracted" };
+	}
+
+	// Check Video
+	if (
+		text.startsWith("Attached video:") ||
+		text.includes("--- Video Speech Transcript ---") ||
+		text.includes("--- Video Audio Transcript ---") ||
+		text.includes("--- Video Screen OCR Content ---")
+	) {
+		const lines = text.split("\n");
+		const fileLine = lines.find((l) => l.startsWith("Attached video:")) || "";
+		const filename = fileLine.replace(/^Attached video:\s*/i, "").trim() || "";
+		let content = text;
+		if (text.includes("--- Video Speech Transcript ---")) {
+			content = text.split("--- Video Speech Transcript ---")[1]?.trim() || text;
+		} else if (text.includes("--- Video Audio Transcript ---")) {
+			content = text.split("--- Video Audio Transcript ---")[1]?.trim() || text;
+		} else if (text.includes("--- Video Screen OCR Content ---")) {
+			content = text.split("--- Video Screen OCR Content ---")[1]?.trim() || text;
+		}
+		return { filename: filename || "Video", category: "Video Recording", content, kind: "video" as any };
 	}
 
 	// Check Voice transcript
@@ -894,6 +919,22 @@ export class Message {
 									detail: part.image_url.detail || "auto",
 								},
 							});
+						} else if ((part.type === "video_url" as any) || (part as any).video_url) {
+							const v = (part as any).video_url;
+							const filename = v?.filename || "video";
+							const transcript = v?.extracted_text?.trim() || "";
+							if (transcript) {
+								extractedFiles.push({
+									filename,
+									category: "Video Recording",
+									content: transcript,
+									kind: "video" as any,
+								});
+							} else if (part.text?.trim() && !part.text.includes("[Visual video media attached for playback]")) {
+								userTextParts.push(part.text.trim());
+							} else {
+								userTextParts.push(`[Attached Video: ${filename}]`);
+							}
 						} else {
 							otherParts.push(part);
 						}

@@ -48,7 +48,7 @@ DEFAULT_BACKEND = (
     or os.environ.get("GATEWAY_BACKEND_URL")
     or ""
 ).strip().rstrip("/")
-AGENT_VERSION_BAKED = "1.1.29"
+AGENT_VERSION_BAKED = "1.1.30"
 
 
 def _read_version_file(path: str) -> str:

@@ -252,13 +252,22 @@ func guardSeverityScore(severity string) (int, string) {
 	}
 }
 
-// CompileGuardRegex builds a case-insensitive RE2 pattern, stripping leading flags and PCRE lookaround syntax.
+// CompileGuardRegex builds a case-insensitive RE2 pattern, stripping leading flags, PCRE lookaround syntax,
+// and normalizing full-string anchors (^...$) into word boundaries for reliable DLP sentence inspection.
 func CompileGuardRegex(pattern string) (*regexp.Regexp, error) {
 	p := strings.TrimSpace(pattern)
 	if len(p) >= 4 && strings.EqualFold(p[:4], "(?i)") {
 		p = p[4:]
 	} else if len(p) >= 5 && strings.EqualFold(p[:5], "(?-i)") {
 		p = p[5:]
+	}
+	// In DLP prompt/file scanning, normalize full-string anchors ^...$ so patterns like ^[1-9][0-9]{5}$
+	// match sensitive tokens inside full sentences (e.g. "613002 this is new")
+	if strings.HasPrefix(p, "^") && strings.HasSuffix(p, "$") && len(p) > 2 {
+		inner := p[1 : len(p)-1]
+		if !strings.Contains(inner, "^") && !strings.Contains(inner, "$") {
+			p = `\b(?:` + inner + `)\b`
+		}
 	}
 	re, err := regexp.Compile("(?i)" + p)
 	if err == nil {
@@ -1019,7 +1028,7 @@ func (m *BrowserAIManager) GetSearchLogs(ctx context.Context, engine, browser, i
 	}
 	if search != "" {
 		s := "%" + strings.ToLower(search) + "%"
-		query = query.Where("LOWER(query) LIKE ? OR LOWER(clicked_url) LIKE ? OR LOWER(clicked_title) LIKE ? OR LOWER(agent_hostname) LIKE ? OR LOWER(client_ip) LIKE ?", s, s, s, s, s)
+		query = query.Where("LOWER(query) LIKE ? OR LOWER(clicked_url) LIKE ? OR LOWER(clicked_title) LIKE ? OR LOWER(agent_hostname) LIKE ? OR LOWER(client_ip) LIKE ? OR LOWER(browser) LIKE ? OR LOWER(engine) LIKE ?", s, s, s, s, s, s, s)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -1994,11 +2003,32 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	}
 	regexScanText := promptFull
 	if uploadScan {
-		if ext, ok := metadata["extracted_text"].(string); ok && strings.TrimSpace(ext) != "" {
-			regexScanText = strings.TrimSpace(ext)
-		} else {
-			regexScanText = ""
+		ext := ""
+		if v, ok := metadata["extracted_text"].(string); ok && strings.TrimSpace(v) != "" {
+			ext = strings.TrimSpace(v)
 		}
+		userCap := ""
+		if capVal, ok := metadata["user_caption"].(string); ok && strings.TrimSpace(capVal) != "" {
+			userCap = strings.TrimSpace(capVal)
+		}
+		extractedPrompt := promptFull
+		if idx := strings.Index(promptFull, " -- "); idx != -1 {
+			extractedPrompt = strings.TrimSpace(promptFull[idx+4:])
+		}
+		var parts []string
+		if strings.TrimSpace(promptFull) != "" {
+			parts = append(parts, promptFull)
+		}
+		if userCap != "" && userCap != promptFull {
+			parts = append(parts, userCap)
+		}
+		if extractedPrompt != "" && extractedPrompt != promptFull {
+			parts = append(parts, extractedPrompt)
+		}
+		if ext != "" {
+			parts = append(parts, ext)
+		}
+		regexScanText = strings.Join(parts, "\n")
 	}
 
 	for _, rule := range rules {

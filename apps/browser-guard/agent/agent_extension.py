@@ -11,10 +11,13 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import threading
+import time
+import urllib.request
 
 from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL, PAC_HTTP_PORT
 from agent_http import _http_json
@@ -447,6 +450,84 @@ def _record_extension_eval(host: str, prompt: str, files: list | None = None) ->
         pass
 
 
+_RECENT_FILE_POSTS_LOCK = threading.Lock()
+_RECENT_FILE_POSTS: dict[str, float] = {}
+
+
+def _is_duplicate_file_post(key: str, ttl: float = 15.0) -> bool:
+    now = time.time()
+    with _RECENT_FILE_POSTS_LOCK:
+        last = _RECENT_FILE_POSTS.get(key, 0)
+        if now - last < ttl:
+            return True
+        _RECENT_FILE_POSTS[key] = now
+        if len(_RECENT_FILE_POSTS) > 200:
+            for k in list(_RECENT_FILE_POSTS):
+                if now - _RECENT_FILE_POSTS[k] > 60:
+                    del _RECENT_FILE_POSTS[k]
+        return False
+
+
+def _post_intercept_file(
+    platform: str,
+    prompt: str,
+    file_name: str,
+    content_type: str,
+    file_payload: bytes,
+    metadata: dict,
+    client_ip: str = "127.0.0.1",
+    agent_id: str = "",
+    agent_hostname: str = "",
+) -> bool:
+    """Post single file upload to /api/browser-ai/intercept-file so backend stores attachment and activates View."""
+    dedupe_key = f"{platform}|{file_name}|{len(file_payload)}|{prompt[:100]}"
+    if _is_duplicate_file_post(dedupe_key, ttl=15.0):
+        print(f"[agent_extension] Skipping duplicate file post for {file_name}")
+        return True
+    try:
+        from agent_http import _guard_headers
+        boundary = f"----Gateway{int(time.time() * 1000)}"
+        parts: list[bytes] = []
+
+        def add_field(name: str, value: str) -> None:
+            parts.append(
+                f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode("utf-8")
+            )
+
+        add_field("platform", platform)
+        add_field("prompt", prompt)
+        add_field("client_ip", client_ip)
+        add_field("agent_id", agent_id or "")
+        add_field("agent_hostname", agent_hostname or "")
+        add_field("agent_type", "endpoint")
+        add_field("file_name", file_name)
+        add_field("content_type", content_type or "application/octet-stream")
+        add_field("metadata", json.dumps(metadata))
+        if file_payload and len(file_payload) <= 20 * 1024 * 1024:
+            hdr = (
+                f"--{boundary}\r\n"
+                f"Content-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\n"
+                f"Content-Type: {content_type or 'application/octet-stream'}\r\n\r\n"
+            ).encode("utf-8")
+            parts.append(hdr)
+            parts.append(file_payload)
+            parts.append(b"\r\n")
+        parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+        body = b"".join(parts)
+        req = urllib.request.Request(
+            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept-file",
+            data=body,
+            headers=_guard_headers({"Content-Type": f"multipart/form-data; boundary={boundary}"}),
+            method="POST",
+        )
+        timeout = 10 if file_payload else 4
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return 200 <= getattr(resp, "status", 200) < 300
+    except Exception as e:
+        print(f"[agent_extension] _post_intercept_file failed: {e}")
+        return False
+
+
 def check_prompt(
     host: str,
     url: str,
@@ -570,14 +651,78 @@ def check_prompt(
         "file_count": len(files_list),
         "image_count": len(images_list),
     }
+    user_caption = (prompt or "").strip()
+    user_caption = re.sub(r'\[(?:File|Extracted File):.*?\]', '', user_caption).strip()
+
     if file_names:
         meta["file_name"] = ", ".join(file_names)
+        meta["user_caption"] = user_caption
         meta["upload_scan"] = True
     if is_blocked:
         meta["is_blocked"] = True
         meta["blocked_reason"] = rule or "Client Security Rule"
 
-    _record_extension_eval(clean_host or host, text, file_names)
+    _record_extension_eval(clean_host or host, user_caption or text, file_names)
+
+    # Multi-file support: If files are attached, post each file individually to /api/browser-ai/intercept-file
+    if files_list:
+        total_files = len(files_list)
+        for idx, f in enumerate(files_list):
+            fname = ""
+            raw_b = b""
+            ctype = "application/octet-stream"
+            ftext = ""
+            if isinstance(f, dict):
+                fname = str(f.get("name") or "").strip()
+                ctype = str(f.get("type") or "application/octet-stream").strip()
+                ftext = str(f.get("text") or "").strip()
+                fb64 = str(f.get("base64") or "").strip()
+                if fb64:
+                    try:
+                        import base64
+                        raw_b = base64.b64decode(fb64)
+                    except Exception:
+                        pass
+                elif ftext:
+                    raw_b = ftext.encode("utf-8")
+            elif isinstance(f, str) and f.strip():
+                fname = f.strip()
+
+            if not fname:
+                fname = f"file_{idx+1}"
+
+            file_label = f"{fname}({idx+1}/{total_files})" if total_files > 1 else fname
+            row_prompt = f"{file_label} -- {user_caption}" if user_caption else f"[FILE UPLOAD] {file_label}"
+
+            f_meta = dict(meta)
+            f_meta["file_name"] = fname
+            f_meta["user_caption"] = user_caption
+            f_meta["upload_scan"] = True
+            if is_blocked:
+                f_meta["is_blocked"] = True
+                f_meta["blocked_reason"] = rule or "Client Security Rule"
+
+            _post_intercept_file(
+                platform=platform,
+                prompt=row_prompt,
+                file_name=fname,
+                content_type=ctype,
+                file_payload=raw_b,
+                metadata=f_meta,
+                client_ip="127.0.0.1",
+                agent_id=agent_id,
+                agent_hostname=agent_hostname,
+            )
+
+        if is_blocked:
+            return {
+                "blocked": True,
+                "action": "Blocked",
+                "message": f"Blocked by security policy: {rule}" if rule else "Blocked by security policy.",
+                "rule": rule or "Data Loss Prevention Rule",
+                "redacted_prompt": "",
+            }
+        return {"blocked": False, "action": "Allowed", "message": "", "rule": ""}
 
     payload = {
         "platform": platform,

@@ -81,6 +81,27 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	normPrompt := strings.ToLower(strings.TrimSpace(payload.Prompt))
+	if normPrompt == "set" || normPrompt == "ping" || normPrompt == "pong" || normPrompt == "heartbeat" || normPrompt == "ready" || normPrompt == "ack" || normPrompt == "sync" {
+		SendJSON(ctx, map[string]any{
+			"status":             "success",
+			"allowed":            true,
+			"action":             "Allowed",
+			"rule_triggered":     "",
+			"warning_message":    "",
+			"redacted_prompt":    payload.Prompt,
+			"forward_prompt":     payload.Prompt,
+			"risk_score":         0,
+			"predictive_risk":    "LOW",
+			"predicted_category": "SAFE",
+			"reply_text":         "",
+			"reply_bot_provider": "",
+			"reply_bot_model":    "",
+			"eval_error":         "",
+		})
+		return
+	}
+
 	if len(payload.Prompt) > browserAIMaxPromptChars {
 		payload.Prompt = logstore.SafePromptPreview(payload.Prompt, browserAIMaxPromptChars)
 	}
@@ -551,7 +572,16 @@ func rulePatternMatches(rule logstore.BrowserGuardRule, text string) bool {
 	if err != nil {
 		return false
 	}
-	return re.MatchString(text)
+	if re.MatchString(text) {
+		return true
+	}
+	if strings.Contains(text, " -- ") {
+		parts := strings.SplitN(text, " -- ", 2)
+		if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
+			return re.MatchString(strings.TrimSpace(parts[1]))
+		}
+	}
+	return false
 }
 
 // aiBotViolationLikelyFalsePositive only drops non-prompt wire/IDE junk.
@@ -592,7 +622,17 @@ func (h *BrowserAIHandler) evaluateGuardOnly(ctx *fasthttp.RequestCtx, prompt st
 			continue
 		}
 		re, err := logstore.CompileGuardRegex(rule.Pattern)
-		if err != nil || !re.MatchString(prompt) {
+		if err != nil {
+			continue
+		}
+		matched := re.MatchString(prompt)
+		if !matched && strings.Contains(prompt, " -- ") {
+			parts := strings.SplitN(prompt, " -- ", 2)
+			if len(parts) > 1 && strings.TrimSpace(parts[1]) != "" {
+				matched = re.MatchString(strings.TrimSpace(parts[1]))
+			}
+		}
+		if !matched {
 			continue
 		}
 		ruleTriggered = rule.Name

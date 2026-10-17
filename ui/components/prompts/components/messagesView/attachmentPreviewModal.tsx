@@ -15,6 +15,7 @@ import {
 	Headphones,
 	Image as ImageIcon,
 	Mic,
+	Video,
 	ZoomIn,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -58,6 +59,9 @@ export function getFileTypeBadge(ext: string, type: string, name?: string) {
 	if (["zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar"].includes(e)) {
 		return { label: "ZIP", bg: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30", icon: Archive };
 	}
+	if (type === "video_url" || ["mp4", "webm", "mov", "mkv", "avi", "m4v", "wmv", "flv", "3gp", "ogv"].includes(e)) {
+		return { label: "VIDEO", bg: "bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/30", icon: Video };
+	}
 	if (type === "image_url" || ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"].includes(e)) {
 		return { label: "IMG", bg: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/30", icon: ImageIcon };
 	}
@@ -85,6 +89,13 @@ export function AttachmentPreviewModal({
 		let isVoice = false;
 		let isImage = attachment.type === "image_url";
 		let isAudio = attachment.type === "input_audio";
+		let isVideo = attachment.type === "video_url" || !!attachment.video_url || ["mp4", "webm", "mov", "mkv", "avi", "m4v", "wmv", "flv", "3gp", "ogv"].includes(ext);
+		let videoUrl = attachment.video_url?.url || "";
+		let videoExtractedText = attachment.video_url?.extracted_text || "";
+
+		if (attachment.type === "video_url" && attachment.video_url?.extracted_text) {
+			rawExtractedText = attachment.video_url.extracted_text.trim();
+		}
 
 		if (attachment.type === "image_url" && attachment.image_url?.extracted_text) {
 			rawExtractedText = attachment.image_url.extracted_text.trim();
@@ -92,7 +103,13 @@ export function AttachmentPreviewModal({
 
 		if (attachment.type === "text" && attachment.text) {
 			const t = attachment.text;
-			if (t.startsWith("Voice transcript")) {
+			if (t.startsWith("Attached video:") || t.includes("--- Video Speech Transcript ---")) {
+				isVideo = true;
+				if (t.includes("--- Video Speech Transcript ---")) {
+					rawExtractedText = t.split("--- Video Speech Transcript ---")[1]?.trim() || "";
+					videoExtractedText = rawExtractedText;
+				}
+			} else if (t.startsWith("Voice transcript")) {
 				isVoice = true;
 				rawExtractedText = t.replace(/^Voice transcript\s*\([^)]*\):\s*/i, "").trim();
 			} else if (t.includes("--- extracted content ---")) {
@@ -118,11 +135,14 @@ export function AttachmentPreviewModal({
 			isVoice,
 			isImage,
 			isAudio,
+			isVideo,
 			charCount,
 			lineCount,
 			wordCount,
 			imageUrl: attachment.image_url?.url || "",
 			imageExtractedText: attachment.image_url?.extracted_text || "",
+			videoUrl,
+			videoExtractedText,
 			audioFormat: attachment.input_audio?.format || "wav",
 			audioDataUrl: attachment.input_audio?.data ? `data:audio/${attachment.input_audio.format || "wav"};base64,${attachment.input_audio.data}` : "",
 		};
@@ -143,6 +163,16 @@ export function AttachmentPreviewModal({
 	};
 
 	const handleDownload = () => {
+		if (parsed.isVideo && parsed.videoUrl) {
+			const a = document.createElement("a");
+			a.href = parsed.videoUrl;
+			a.download = parsed.name || "video.mp4";
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			toast.success(`Downloaded ${parsed.name}`);
+			return;
+		}
 		if (parsed.isImage && parsed.imageUrl) {
 			const a = document.createElement("a");
 			a.href = parsed.imageUrl;
@@ -187,7 +217,9 @@ export function AttachmentPreviewModal({
 								{parsed.name}
 							</DialogTitle>
 							<DialogDescription className="text-[11px] text-muted-foreground flex items-center gap-2 mt-0.5">
-								{parsed.isImage ? (
+								{parsed.isVideo ? (
+									<span>Video Media Attachment & Audio Transcript</span>
+								) : parsed.isImage ? (
 									<span>Visual Image Attachment for Multimodal AI</span>
 								) : parsed.isVoice || parsed.isAudio ? (
 									<span>Voice Recording & Speech Transcript</span>
@@ -229,7 +261,30 @@ export function AttachmentPreviewModal({
 
 				{/* Preview Body */}
 				<div className="flex-1 overflow-y-auto p-5 custom-scrollbar min-h-[220px]">
-					{parsed.isImage && parsed.imageUrl ? (
+					{parsed.isVideo && parsed.videoUrl ? (
+						<div className="flex flex-col items-center justify-center p-4 bg-muted/20 rounded-lg border">
+							<video
+								src={parsed.videoUrl}
+								controls
+								playsInline
+								className="max-h-[60vh] max-w-full rounded-md shadow-md bg-black"
+							/>
+							<div className="mt-3 text-xs text-muted-foreground flex items-center gap-2">
+								<Video className="h-3.5 w-3.5 text-violet-500" />
+								<span>Video playback preview ({parsed.name})</span>
+							</div>
+							{parsed.videoExtractedText || parsed.rawExtractedText ? (
+								<div className="mt-4 w-full text-left">
+									<h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+										Whisper Speech-To-Text Transcript
+									</h4>
+									<div className="p-4 rounded-lg border bg-card text-foreground text-sm font-sans leading-relaxed whitespace-pre-wrap select-text">
+										{parsed.videoExtractedText || parsed.rawExtractedText}
+									</div>
+								</div>
+							) : null}
+						</div>
+					) : parsed.isImage && parsed.imageUrl ? (
 						<div className="flex flex-col items-center justify-center p-4 bg-muted/20 rounded-lg border">
 							{/* eslint-disable-next-line @next/next/no-img-element */}
 							<img

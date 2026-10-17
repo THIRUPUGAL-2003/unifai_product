@@ -1,7 +1,7 @@
 import { MessageContent } from "@/lib/message";
 import { getAttachmentDisplayName } from "../../utils/attachment";
 import { AttachmentPreviewModal, getFileTypeBadge } from "./attachmentPreviewModal";
-import { Eye, FileIcon, Mic, XIcon } from "lucide-react";
+import { Eye, FileIcon, Mic, Video, XIcon } from "lucide-react";
 import { useState } from "react";
 
 /** Helper to extract extension */
@@ -30,6 +30,7 @@ export function AttachmentBadge({
 	const name = getAttachmentDisplayName(attachment);
 	const ext = getFileExtension(name);
 	const badge = getFileTypeBadge(ext, attachment.type, name);
+	const isVideo = attachment.type === "video_url" || !!attachment.video_url || badge.label === "VIDEO";
 	const BadgeIcon = badge.icon;
 
 	return (
@@ -51,6 +52,20 @@ export function AttachmentBadge({
 							</span>
 							<span className="text-[10px] text-muted-foreground flex items-center gap-1">
 								<span className="text-sky-500 font-semibold">IMG</span> • Click to view
+							</span>
+						</div>
+					</>
+				) : isVideo ? (
+					<>
+						<div className="h-7 w-7 rounded flex items-center justify-center shrink-0 bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+							<Video className="size-3.5" />
+						</div>
+						<div className="flex flex-col min-w-0">
+							<span className="text-foreground font-medium max-w-[130px] truncate text-[11px]" title={name}>
+								{name || "Video"}
+							</span>
+							<span className="text-[10px] text-muted-foreground flex items-center gap-1">
+								<span className="text-violet-500 font-semibold">VIDEO</span> • Click to play
 							</span>
 						</div>
 					</>
@@ -162,6 +177,44 @@ export function AttachmentDisplay({
 											onRemoveAttachment(i);
 										}}
 										className="bg-background/90 text-muted-foreground hover:bg-card hover:text-destructive absolute -top-1.5 -right-1.5 cursor-pointer rounded-full border p-1 opacity-0 transition-opacity group-hover/att:opacity-100 shadow-xs"
+									>
+										<XIcon className="size-3" />
+									</button>
+								)}
+							</div>
+						);
+					}
+
+					if ((att.type === "video_url" || att.video_url) && att.video_url?.url) {
+						return (
+							<div
+								key={i}
+								className="group/att relative max-w-sm rounded-lg overflow-hidden border border-border shadow-xs bg-black"
+							>
+								<video
+									src={att.video_url.url}
+									controls
+									playsInline
+									preload="metadata"
+									className="max-h-56 w-full object-contain bg-black"
+								/>
+								<div className="flex items-center justify-between text-[11px] text-muted-foreground p-2 bg-card/90 border-t border-border/40">
+									<span className="truncate font-medium text-foreground max-w-[180px]">{att.video_url.filename || "Video"}</span>
+									<button
+										onClick={() => setActivePreview(att)}
+										className="text-[10px] text-violet-500 hover:underline flex items-center gap-1 shrink-0 cursor-pointer"
+										title="View video details and transcript"
+									>
+										<Eye className="size-2.5" /> Details
+									</button>
+								</div>
+								{editable && onRemoveAttachment && (
+									<button
+										onClick={(e) => {
+											e.stopPropagation();
+											onRemoveAttachment(i);
+										}}
+										className="bg-background/90 text-muted-foreground hover:bg-card hover:text-destructive absolute top-1.5 right-1.5 cursor-pointer rounded-full border p-1 opacity-0 transition-opacity group-hover/att:opacity-100 shadow-xs z-10"
 									>
 										<XIcon className="size-3" />
 									</button>

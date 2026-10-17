@@ -267,6 +267,221 @@ async function enrichImagesWithOcr(
 	return out;
 }
 
+interface ResolvedTarget {
+	model: string;
+	provider: string;
+	cleanPrompt: string;
+	candidates: string[];
+}
+
+/** Resolves the target image model across all supported providers (OpenAI, Gemini, Replicate, Bedrock, xAI, Runway, etc.) */
+function resolveImageModel(prompt: string, currentProvider: string, currentModel: string): ResolvedTarget {
+	let cleanPrompt = prompt;
+	let preferredModel = "";
+	let preferredProvider = currentProvider;
+
+	// Check if user explicitly mentioned a model or provider in the prompt
+	const explicitMatch = cleanPrompt.match(/(?:\s+(?:using|with|via|in|on)\s+(dall-?e(?:-3|-2)?|imagen(?:-3)?|flux(?:-schnell|-dev|-pro)?|stable-?diffusion|sdxl|titan|grok|runway|runware|fireworks|together))/i);
+	if (explicitMatch) {
+		const keyword = explicitMatch[1].toLowerCase().replace(/\s+/g, "");
+		cleanPrompt = cleanPrompt.replace(explicitMatch[0], "").trim();
+		if (keyword.includes("dall")) {
+			preferredModel = keyword.includes("2") ? "openai/dall-e-2" : "openai/dall-e-3";
+			preferredProvider = "openai";
+		} else if (keyword.includes("imagen")) {
+			preferredModel = "gemini/imagen-3.0-generate-001";
+			preferredProvider = "gemini";
+		} else if (keyword.includes("flux")) {
+			preferredModel = "replicate/black-forest-labs/flux-schnell";
+			preferredProvider = "replicate";
+		} else if (keyword.includes("titan")) {
+			preferredModel = "bedrock/amazon.titan-image-generator-v1";
+			preferredProvider = "bedrock";
+		} else if (keyword.includes("stable") || keyword.includes("sdxl")) {
+			preferredModel = "bedrock/stability.stable-diffusion-xl-v1";
+			preferredProvider = "bedrock";
+		} else if (keyword.includes("grok")) {
+			preferredModel = "xai/grok-2-image";
+			preferredProvider = "xai";
+		} else if (keyword.includes("runway")) {
+			preferredModel = "runway/gen-3-alpha";
+			preferredProvider = "runway";
+		} else if (keyword.includes("runware")) {
+			preferredModel = "runware/runware:100@1";
+			preferredProvider = "runware";
+		}
+	}
+
+	const prov = (currentProvider || "").toLowerCase();
+	const mod = (currentModel || "").toLowerCase();
+
+	if (!preferredModel) {
+		if (prov === "openai" || mod.includes("gpt") || mod.includes("dall")) {
+			preferredModel = mod.includes("dall") ? `${prov}/${currentModel}` : "openai/dall-e-3";
+			preferredProvider = "openai";
+		} else if (prov === "gemini" || prov === "vertex" || mod.includes("gemini") || mod.includes("imagen")) {
+			preferredModel = mod.includes("imagen") ? `${prov}/${currentModel}` : "gemini/imagen-3.0-generate-001";
+			preferredProvider = "gemini";
+		} else if (prov === "replicate" || mod.includes("flux")) {
+			preferredModel = mod.includes("flux") ? `${prov}/${currentModel}` : "replicate/black-forest-labs/flux-schnell";
+			preferredProvider = "replicate";
+		} else if (prov === "bedrock" || mod.includes("titan")) {
+			preferredModel = "bedrock/amazon.titan-image-generator-v1";
+			preferredProvider = "bedrock";
+		} else if (prov === "xai" || mod.includes("grok")) {
+			preferredModel = "xai/grok-2-image";
+			preferredProvider = "xai";
+		} else if (prov === "runway") {
+			preferredModel = "runway/gen-3-alpha";
+			preferredProvider = "runway";
+		} else if (prov === "runware") {
+			preferredModel = "runware/runware:100@1";
+			preferredProvider = "runware";
+		} else if (prov === "fireworks") {
+			preferredModel = "fireworks/accounts/fireworks/models/flux-1-schnell";
+			preferredProvider = "fireworks";
+		} else if (prov === "together") {
+			preferredModel = "together/black-forest-labs/FLUX.1-schnell";
+			preferredProvider = "together";
+		} else {
+			// Current provider is text-only (e.g. mistral, anthropic, deepseek).
+			// Use gateway cross-provider routing with standard defaults
+			preferredModel = "gemini/imagen-3.0-generate-001";
+			preferredProvider = "gemini";
+		}
+	}
+
+	const allImageModels = [
+		preferredModel,
+		"gemini/imagen-3.0-generate-001",
+		"openai/dall-e-3",
+		"replicate/black-forest-labs/flux-schnell",
+		"bedrock/amazon.titan-image-generator-v1",
+		"xai/grok-2-image",
+	];
+	const candidates = Array.from(new Set(allImageModels.filter(Boolean)));
+
+	return { model: preferredModel, provider: preferredProvider, cleanPrompt, candidates };
+}
+
+/** Resolves the target video model across all supported providers (Gemini/Veo, Runway, Luma, Kling, Sora, Replicate) */
+function resolveVideoModel(prompt: string, currentProvider: string, currentModel: string): ResolvedTarget {
+	let cleanPrompt = prompt;
+	let preferredModel = "";
+	let preferredProvider = currentProvider;
+
+	const explicitMatch = cleanPrompt.match(/(?:\s+(?:using|with|via|in|on)\s+(veo(?:-2|-3)?|runway|gen-3|luma|dream-machine|kling|sora|replicate|cogvideo))/i);
+	if (explicitMatch) {
+		const keyword = explicitMatch[1].toLowerCase().replace(/\s+/g, "");
+		cleanPrompt = cleanPrompt.replace(explicitMatch[0], "").trim();
+		if (keyword.includes("veo")) {
+			preferredModel = "gemini/veo-2.0-generate-001";
+			preferredProvider = "gemini";
+		} else if (keyword.includes("runway") || keyword.includes("gen-3")) {
+			preferredModel = "runway/gen-3-alpha";
+			preferredProvider = "runway";
+		} else if (keyword.includes("luma") || keyword.includes("dream")) {
+			preferredModel = "luma/dream-machine";
+			preferredProvider = "luma";
+		} else if (keyword.includes("kling")) {
+			preferredModel = "kling/kling-v1";
+			preferredProvider = "kling";
+		} else if (keyword.includes("sora")) {
+			preferredModel = "openai/sora";
+			preferredProvider = "openai";
+		} else if (keyword.includes("replicate") || keyword.includes("cogvideo")) {
+			preferredModel = "replicate/lucataco/animate-diff";
+			preferredProvider = "replicate";
+		}
+	}
+
+	const prov = (currentProvider || "").toLowerCase();
+	const mod = (currentModel || "").toLowerCase();
+
+	if (!preferredModel) {
+		if (prov === "runway" || mod.includes("runway") || mod.includes("gen-3")) {
+			preferredModel = "runway/gen-3-alpha";
+			preferredProvider = "runway";
+		} else if (prov === "gemini" || prov === "vertex" || mod.includes("gemini") || mod.includes("veo")) {
+			preferredModel = "gemini/veo-2.0-generate-001";
+			preferredProvider = "gemini";
+		} else if (prov === "luma" || mod.includes("luma")) {
+			preferredModel = "luma/dream-machine";
+			preferredProvider = "luma";
+		} else if (prov === "kling" || mod.includes("kling")) {
+			preferredModel = "kling/kling-v1";
+			preferredProvider = "kling";
+		} else if (prov === "openai" || mod.includes("sora")) {
+			preferredModel = "openai/sora";
+			preferredProvider = "openai";
+		} else if (prov === "replicate") {
+			preferredModel = "replicate/lucataco/animate-diff";
+			preferredProvider = "replicate";
+		} else {
+			preferredModel = "gemini/veo-2.0-generate-001";
+			preferredProvider = "gemini";
+		}
+	}
+
+	const allVideoModels = [
+		preferredModel,
+		"gemini/veo-2.0-generate-001",
+		"runway/gen-3-alpha",
+		"luma/dream-machine",
+		"kling/kling-v1",
+		"replicate/lucataco/animate-diff",
+	];
+	const candidates = Array.from(new Set(allVideoModels.filter(Boolean)));
+
+	return { model: preferredModel, provider: preferredProvider, cleanPrompt, candidates };
+}
+
+/** Detects if a user message is explicitly asking to generate an image */
+function extractImageGenerationPrompt(text: string): string | null {
+	const t = (text || "").trim();
+	if (!t) return null;
+	const patterns = [
+		/^(?:please\s+)?(?:generate|create|draw|make|paint)\s+(?:an?\s+)?image\s+(?:of|for|showing|depicting)?\s*:?\s*(.+)$/i,
+		/^(?:please\s+)?(?:generate|create|draw|make|paint)\s+(?:a\s+)?picture\s+(?:of|for|showing|depicting)?\s*:?\s*(.+)$/i,
+		/^(?:image|picture)\s+(?:generation|generate)\s*:?\s*(.+)$/i,
+		/^(?:image|picture|படம்)\s*(?:generate|create|வரைஞ்சு|பண்ணு)\s*:?\s*(.+)$/i,
+		/^draw\s+(?:me\s+)?(?:an?\s+)?(.+)$/i,
+	];
+	for (const p of patterns) {
+		const m = t.match(p);
+		if (m && m[1]?.trim()) {
+			const candidate = m[1].trim();
+			if (/(?:in\s+(?:react|python|css|html|javascript|typescript|code)|component|function|code)/i.test(candidate)) {
+				continue;
+			}
+			return candidate;
+		}
+	}
+	return null;
+}
+
+/** Detects if a user message is explicitly asking to generate a video */
+function extractVideoGenerationPrompt(text: string): string | null {
+	const t = (text || "").trim();
+	if (!t) return null;
+	const patterns = [
+		/^(?:please\s+)?(?:generate|create|make)\s+(?:a\s+)?video\s+(?:of|for|showing|depicting)?\s*:?\s*(.+)$/i,
+		/^video\s+(?:generation|generate)\s*:?\s*(.+)$/i,
+		/^(?:video|வீடியோ)\s*(?:generate|create|பண்ணு)\s*:?\s*(.+)$/i,
+	];
+	for (const p of patterns) {
+		const m = t.match(p);
+		if (m && m[1]?.trim()) {
+			const candidate = m[1].trim();
+			if (/(?:in\s+(?:react|python|css|html|javascript|typescript|code)|component|function|code|player)/i.test(candidate)) {
+				continue;
+			}
+			return candidate;
+		}
+	}
+	return null;
+}
+
 export async function executePrompt(
 	currentMessages: Message[],
 	pendingMessage: Message | undefined,
@@ -298,6 +513,176 @@ export async function executePrompt(
 			signal,
 		});
 		const headers = buildHeaders(config);
+
+		// Check for Image / Video generation intent from the latest user message
+		const lastUserMsg = [...resolvedMessages].reverse().find((m) => m.role === "user");
+		const userText = lastUserMsg?.content || "";
+
+		const imagePrompt = extractImageGenerationPrompt(userText);
+		if (imagePrompt && !config._retryWithoutImages) {
+			const imageTarget = resolveImageModel(imagePrompt, config.provider, config.model);
+			callbacks.onStreamChunk(`🎨 Generating image for: **"${imageTarget.cleanPrompt}"**...\n\nTrying model: \`${imageTarget.model}\`...`);
+
+			let lastError = "";
+			let generatedImageUrl = "";
+			let usedModel = "";
+
+			for (const candidateModel of imageTarget.candidates) {
+				try {
+					callbacks.onStreamChunk(`🎨 Requesting image generation with **${candidateModel}** for: *"${imageTarget.cleanPrompt}"*...`);
+					const imgRes = await fetch(`${getBaseUrl()}/v1/images/generations`, {
+						method: "POST",
+						headers,
+						credentials: "include",
+						signal,
+						body: JSON.stringify({
+							prompt: imageTarget.cleanPrompt,
+							model: candidateModel,
+							n: 1,
+							size: "1024x1024",
+						}),
+					});
+
+					if (imgRes.ok) {
+						const imgData = await imgRes.json();
+						const item = imgData.data?.[0];
+						const url = item?.url || (item?.b64_json ? `data:image/png;base64,${item.b64_json}` : "");
+						if (url) {
+							generatedImageUrl = url;
+							usedModel = candidateModel;
+							break;
+						}
+					} else {
+						let errText = `HTTP ${imgRes.status}`;
+						try {
+							const errData = await imgRes.json();
+							errText = parseErrorPayload(errData, errText);
+						} catch {}
+						lastError = `${candidateModel}: ${errText}`;
+						console.warn(`Image generation with ${candidateModel} failed:`, errText);
+						if (imageTarget.candidates.length === 1) break;
+					}
+				} catch (err: any) {
+					lastError = `${candidateModel}: ${err?.message || "Network error"}`;
+					console.warn(`Image generation attempt error:`, err);
+					if (imageTarget.candidates.length === 1) break;
+				}
+			}
+
+			if (generatedImageUrl) {
+				callbacks.onComplete(
+					`Here is your generated image for **"${imageTarget.cleanPrompt}"**:\n\n` +
+					`![${imageTarget.cleanPrompt}](${generatedImageUrl})\n\n` +
+					`*(Generated via **${usedModel}**)*`
+				);
+				callbacks.onFinally();
+				return;
+			}
+
+			callbacks.onComplete(
+				`### 🎨 Image Generation Status\n\n` +
+				`**Prompt:** *"${imageTarget.cleanPrompt}"*\n\n` +
+				`⚠️ **Image generation could not be completed:**\n${lastError || "No active image generation provider credentials found"}\n\n` +
+				`💡 **Supported Image Models across Providers:**\n` +
+				`• **Google Gemini:** \`gemini/imagen-3.0-generate-001\`\n` +
+				`• **OpenAI:** \`openai/dall-e-3\`, \`openai/dall-e-2\`\n` +
+				`• **Replicate (Flux / SDXL):** \`replicate/black-forest-labs/flux-schnell\`\n` +
+				`• **AWS Bedrock:** \`bedrock/amazon.titan-image-generator-v1\`, \`bedrock/stability.stable-diffusion-xl-v1\`\n` +
+				`• **xAI:** \`xai/grok-2-image\`\n` +
+				`• **Runway / Runware / Fireworks / Together**\n\n` +
+				`👉 **Fix:** Add an API Key for any of the above image providers under **Workspace > Providers**!`
+			);
+			callbacks.onFinally();
+			return;
+		}
+
+		const videoPrompt = extractVideoGenerationPrompt(userText);
+		if (videoPrompt && !config._retryWithoutImages) {
+			const videoTarget = resolveVideoModel(videoPrompt, config.provider, config.model);
+			callbacks.onStreamChunk(`🎥 Submitting video generation request for: **"${videoTarget.cleanPrompt}"**...\n\nTrying model: \`${videoTarget.model}\`...`);
+
+			let lastVidError = "";
+			let generatedVideoUrl = "";
+			let generatedVideoId = "";
+			let usedVidModel = "";
+
+			for (const candidateModel of videoTarget.candidates) {
+				try {
+					callbacks.onStreamChunk(`🎥 Requesting video generation with **${candidateModel}** for: *"${videoTarget.cleanPrompt}"*...`);
+					const vidRes = await fetch(`${getBaseUrl()}/v1/videos/generations`, {
+						method: "POST",
+						headers,
+						credentials: "include",
+						signal,
+						body: JSON.stringify({
+							prompt: videoTarget.cleanPrompt,
+							model: candidateModel,
+						}),
+					});
+
+					if (vidRes.ok) {
+						const vidData = await vidRes.json();
+						const url = vidData.videos?.[0]?.url || vidData.video_url || "";
+						const id = vidData.id || "";
+						if (url || id) {
+							generatedVideoUrl = url;
+							generatedVideoId = id;
+							usedVidModel = candidateModel;
+							break;
+						}
+					} else {
+						let errText = `HTTP ${vidRes.status}`;
+						try {
+							const errData = await vidRes.json();
+							errText = parseErrorPayload(errData, errText);
+						} catch {}
+						lastVidError = `${candidateModel}: ${errText}`;
+						console.warn(`Video generation with ${candidateModel} failed:`, errText);
+						if (videoTarget.candidates.length === 1) break;
+					}
+				} catch (err: any) {
+					lastVidError = `${candidateModel}: ${err?.message || "Network error"}`;
+					console.warn(`Video generation attempt error:`, err);
+					if (videoTarget.candidates.length === 1) break;
+				}
+			}
+
+			if (generatedVideoUrl) {
+				callbacks.onComplete(
+					`Here is your generated video for **"${videoTarget.cleanPrompt}"**:\n\n` +
+					`<video controls playsinline src="${generatedVideoUrl}" style="max-width: 100%; border-radius: 8px; margin-top: 8px;"></video>\n\n` +
+					`*(Generated via **${usedVidModel}**)*`
+				);
+				callbacks.onFinally();
+				return;
+			} else if (generatedVideoId) {
+				callbacks.onComplete(
+					`### 🎥 Video Generation Started!\n\n` +
+					`**Model:** \`${usedVidModel}\`\n` +
+					`**Job ID:** \`${generatedVideoId}\`\n` +
+					`**Prompt:** *"${videoTarget.cleanPrompt}"*\n\n` +
+					`The video is being rendered. You can view the live progress and watch the generated video in **Workspace > Logs**!`
+				);
+				callbacks.onFinally();
+				return;
+			}
+
+			callbacks.onComplete(
+				`### 🎥 Video Generation Status\n\n` +
+				`**Prompt:** *"${videoTarget.cleanPrompt}"*\n\n` +
+				`⚠️ **Video generation could not be completed:**\n${lastVidError || "No active video generation provider credentials found"}\n\n` +
+				`💡 **Supported Video Models across Providers:**\n` +
+				`• **Google Gemini / Veo:** \`gemini/veo-2.0-generate-001\`\n` +
+				`• **Runway:** \`runway/gen-3-alpha\`\n` +
+				`• **Luma AI:** \`luma/dream-machine\`\n` +
+				`• **Kling AI:** \`kling/kling-v1\`\n` +
+				`• **OpenAI Sora:** \`openai/sora\`\n` +
+				`• **Replicate:** \`replicate/lucataco/animate-diff\`\n\n` +
+				`👉 **Fix:** Add an API Key for any of the above video providers under **Workspace > Providers**!`
+			);
+			callbacks.onFinally();
+			return;
+		}
 
 		const {
 			api_key_id: _,
@@ -358,11 +743,15 @@ export async function executePrompt(
 			// transparently retry without raw image_url blocks using the background-extracted OCR text!
 			const lowerErr = errorMessage.toLowerCase();
 			const isImageInputError =
-				response.status === 400 &&
+				(response.status === 400 || response.status === 422) &&
 				(lowerErr.includes("3051") ||
 					lowerErr.includes("image input is not enabled") ||
 					lowerErr.includes("not support image") ||
-					lowerErr.includes("does not support image"));
+					lowerErr.includes("does not support image") ||
+					lowerErr.includes("image_url") ||
+					lowerErr.includes("multimodal") ||
+					(lowerErr.includes("vision") && lowerErr.includes("not")) ||
+					(lowerErr.includes("image") && lowerErr.includes("not supported")));
 
 			if (isImageInputError && !config._retryWithoutImages) {
 				console.warn("Provider rejected image input (3051). Transparently retrying with OCR extracted text...");

@@ -25,9 +25,10 @@ export type ToolCall = {
 };
 
 export type MessageContent = {
-	type: "text" | "image_url" | "input_audio" | "file";
+	type: "text" | "image_url" | "input_audio" | "file" | "video_url";
 	text?: string;
 	image_url?: MessageImageURL;
+	video_url?: MessageVideoURL;
 	input_audio?: MessageInputAudio;
 	file?: MessageFile;
 };
@@ -37,6 +38,13 @@ export type MessageImageURL = {
 	detail?: "auto" | "low" | "high";
 	filename?: string;
 	/** Shown in the image preview. Not sent to the model; the OCR text part is. */
+	extracted_text?: string;
+};
+
+export type MessageVideoURL = {
+	url: string;
+	filename?: string;
+	mimeType?: string;
 	extracted_text?: string;
 };
 

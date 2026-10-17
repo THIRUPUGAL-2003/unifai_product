@@ -1660,7 +1660,13 @@ def extract_batchexecute_prompt(content: str) -> str:
             return False
         if "[null,[[" in s:
             return False
-        low = s.lower()
+        low = s.strip().lower()
+        if low in ("null", "me", "true", "false", "undefined", "none", "ok", "set", "ping", "pong", "unknown"):
+            return False
+        if _is_google_wire_blob(s):
+            return False
+        if s.startswith("Cgo") and len(s) > 20:
+            return False
         if any(bad in low for bad in (
             "bard activity", "generic", "batchexecute", "wrb.fr",
             "assistant.lamda", "bardfrontendservice", "google account",
@@ -1668,6 +1674,7 @@ def extract_batchexecute_prompt(content: str) -> str:
         )):
             return False
         return len(s) >= 1
+
 
     def _is_code_or_doc_dump(s: str) -> bool:
         if not s:
@@ -1772,34 +1779,39 @@ def extract_batchexecute_prompt(content: str) -> str:
                             payload = json.loads(payload_str)
                             if isinstance(payload, list):
                                 got = _from_stream_inner(payload)
-                                if got:
+                                if got and _is_valid_user_prompt(got):
                                     return got
                                 if len(payload) >= 2 and isinstance(payload[1], str):
                                     try:
                                         sub = json.loads(payload[1])
                                         got = _from_stream_inner(sub)
-                                        if got:
+                                        if got and _is_valid_user_prompt(got):
                                             return got
                                     except Exception:
                                         pass
                         except Exception:
                             pass
-            # Priority 2: Fallback to any other RPC item in data (resilient to Google rotations)
+            # Priority 2: Fallback to other RPCs only if NOT in non-chat RPC blacklist and passes strict user prompt check
+            non_chat_ids = {
+                "l5adhe", "o30o0e", "mkgd2d", "xbfoee", "r9d32d", "g8utld", "apya6c",
+                "k06x8e", "esy5d", "umjey", "vxubxb", "xyhald", "gmailhttp", "log2", "playlog"
+            }
             for item in items_to_check:
-                if str(item[0]) not in GEMINI_CHAT_RPCS:
+                rpc_name = str(item[0]).strip().lower()
+                if str(item[0]) not in GEMINI_CHAT_RPCS and rpc_name not in non_chat_ids:
                     payload_str = item[1]
                     if isinstance(payload_str, str) and payload_str not in ("", "[]", "[[]]"):
                         try:
                             payload = json.loads(payload_str)
                             if isinstance(payload, list):
                                 got = _from_stream_inner(payload)
-                                if got:
+                                if got and len(got.strip()) >= 3 and _is_valid_user_prompt(got):
                                     return got
                                 if len(payload) >= 2 and isinstance(payload[1], str):
                                     try:
                                         sub = json.loads(payload[1])
                                         got = _from_stream_inner(sub)
-                                        if got:
+                                        if got and len(got.strip()) >= 3 and _is_valid_user_prompt(got):
                                             return got
                                     except Exception:
                                         pass

@@ -231,7 +231,8 @@ func (h *BrowserAIHandler) getSearchLogs(ctx *fasthttp.RequestCtx) {
 			qMatch := strings.Contains(strings.ToLower(entry.Query), searchFilter)
 			cMatch := strings.Contains(strings.ToLower(entry.ClickedURL), searchFilter) || strings.Contains(strings.ToLower(entry.ClickedTitle), searchFilter)
 			hMatch := strings.Contains(strings.ToLower(entry.AgentHostname), searchFilter) || strings.Contains(strings.ToLower(entry.ClientIP), searchFilter)
-			if !qMatch && !cMatch && !hMatch {
+			bMatch := strings.Contains(strings.ToLower(entry.Browser), searchFilter) || strings.Contains(strings.ToLower(entry.Engine), searchFilter)
+			if !qMatch && !cMatch && !hMatch && !bMatch {
 				continue
 			}
 		}

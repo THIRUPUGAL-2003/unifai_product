@@ -28,10 +28,6 @@ import {
 	Layers,
 	Sparkles,
 	Terminal,
-	Globe,
-	ChevronRight,
-	SlidersHorizontal,
-	Database,
 	Loader2
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -81,7 +77,7 @@ export default function LandingPage() {
 		const targetId = id === "capabilities" ? "features" : id === "developers" ? "quickstart" : id;
 		const element = document.getElementById(targetId) || document.getElementById(id);
 		if (!element) return;
-		const top = element.getBoundingClientRect().top + window.scrollY - 72;
+		const top = element.getBoundingClientRect().top + window.scrollY - 64;
 		window.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
 	};
 
@@ -182,12 +178,12 @@ console.log(response.choices[0].message.content);`
 	};
 
 	const supportedModels = [
-		{ name: "OpenAI GPT-4o", color: "bg-emerald-400" },
-		{ name: "Anthropic Claude 3.7", color: "bg-amber-400" },
-		{ name: "Google Gemini 2.0", color: "bg-sky-400" },
-		{ name: "DeepSeek R1", color: "bg-blue-400" },
-		{ name: "Meta Llama 3.3", color: "bg-purple-400" },
-		{ name: "Mistral Large", color: "bg-orange-400" },
+		{ name: "OpenAI GPT-4o", color: "bg-emerald-400", note: "Chat, tools, and vision on one route." },
+		{ name: "Anthropic Claude 3.7", color: "bg-amber-400", note: "Long context and careful reasoning." },
+		{ name: "Google Gemini 2.0", color: "bg-sky-400", note: "Multimodal requests on the same API." },
+		{ name: "DeepSeek R1", color: "bg-blue-400", note: "Reasoning models without a second client." },
+		{ name: "Meta Llama 3.3", color: "bg-purple-400", note: "Open models behind the same virtual key." },
+		{ name: "Mistral Large", color: "bg-orange-400", note: "Additional providers on the same gateway." },
 	];
 
 	const faqs = [
@@ -260,30 +256,35 @@ console.log(response.choices[0].message.content);`
 					{/* Navigation Links with Smooth Scroll Click */}
 					<nav className="hidden md:flex items-center gap-1 text-sm font-semibold text-slate-600 bg-white px-2 py-1.5 rounded-full border border-[#e3ebf8] shadow-sm">
 						<button
+							type="button"
 							onClick={() => scrollToSection("products")}
 							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
 							Products
 						</button>
 						<button
+							type="button"
 							onClick={() => scrollToSection("features")}
 							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
 							Capabilities
 						</button>
 						<button
+							type="button"
 							onClick={() => scrollToSection("quickstart")}
 							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
 							Developers
 						</button>
 						<button
+							type="button"
 							onClick={() => scrollToSection("models")}
 							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
 							Models
 						</button>
 						<button
+							type="button"
 							onClick={() => scrollToSection("faq")}
 							className="px-3.5 py-1.5 rounded-full text-slate-600 hover:text-[#2f6bff] hover:bg-[#eef3ff] transition-all cursor-pointer"
 						>
@@ -551,8 +552,8 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* PRODUCTS SECTION (TWO PILLARS) */}
-				<section id="products" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
-					<div className="max-w-[1440px] mx-auto">
+				<section id="products" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-10 lg:px-10 xl:px-14 scroll-mt-16">
+					<div className="mx-auto w-full max-w-[1440px]">
 					<div className="text-center max-w-2xl mx-auto mb-14">
 						<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">Platform</div>
 						<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-4">
@@ -642,9 +643,8 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* CAPABILITIES SECTION */}
-				<section id="features" className="py-8 px-6 lg:px-10 xl:px-14 scroll-mt-24">
-					<div id="capabilities" className="scroll-mt-24" />
-					<div className="max-w-[1440px] mx-auto">
+				<section id="features" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-8 lg:px-10 xl:px-14 scroll-mt-16">
+					<div className="mx-auto w-full max-w-[1440px]">
 						<div className="text-center max-w-2xl mx-auto mb-6">
 							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-2">Capabilities</div>
 							<h2 className="text-3xl sm:text-4xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-3">
@@ -704,8 +704,8 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* DEVELOPER QUICKSTART CODE SECTION */}
-				<section id="quickstart" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
-					<div className="max-w-[1440px] mx-auto">
+				<section id="quickstart" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-10 lg:px-10 xl:px-14 scroll-mt-16">
+					<div className="mx-auto w-full max-w-[1440px]">
 					<div id="developers" className="scroll-mt-24" />
 					<div id="code-preview" className="scroll-mt-24" />
 					<div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -729,7 +729,7 @@ console.log(response.choices[0].message.content);`
 									"Seamless fallback between OpenAI, Anthropic, Gemini, and DeepSeek"
 								].map((item, idx) => (
 									<div key={idx} className="flex items-center gap-2 text-xs text-slate-700 font-medium">
-										<Check className="h-4 w-4 text-emerald-400 shrink-0" />
+										<Check className="h-4 w-4 text-emerald-600 shrink-0" />
 										<span>{item}</span>
 									</div>
 								))}
@@ -789,8 +789,8 @@ console.log(response.choices[0].message.content);`
 					</div>
 				</section>
 
-				<section id="models" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
-					<div className="max-w-[1440px] mx-auto">
+				<section id="models" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-10 lg:px-10 xl:px-14 scroll-mt-16">
+					<div className="mx-auto w-full max-w-[1440px]">
 						<div className="text-center max-w-2xl mx-auto mb-10">
 							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">Models</div>
 							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-4">
@@ -800,11 +800,26 @@ console.log(response.choices[0].message.content);`
 								The same API key reaches each provider. No separate console for each model.
 							</p>
 						</div>
-						<div className="flex flex-wrap items-center justify-center gap-3">
-							{supportedModels.map((m, idx) => (
-								<div key={idx} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full border border-[#e6edf8] bg-white text-sm font-semibold text-slate-700 shadow-sm">
-									<span className={`w-2 h-2 rounded-full ${m.color}`} />
-									<span>{m.name}</span>
+						<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+							{supportedModels.map((m) => (
+								<div key={m.name} className="rounded-2xl border border-[#e6edf8] bg-white p-5 shadow-[0_12px_30px_rgba(47,107,255,0.06)]">
+									<div className="mb-3 flex items-center gap-2">
+										<span className={`h-2.5 w-2.5 rounded-full ${m.color}`} />
+										<h3 className="text-base font-bold text-[#0b1b3a]">{m.name}</h3>
+									</div>
+									<p className="text-sm leading-relaxed text-slate-600">{m.note}</p>
+								</div>
+							))}
+						</div>
+						<div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+							{[
+								{ title: "One virtual key", text: "Every provider is reached with the same key. Teams do not keep a separate console for each model." },
+								{ title: "Automatic failover", text: "If a model is unavailable, the gateway moves the request to the next model in the chain." },
+								{ title: "Same SDK", text: "Keep the OpenAI client. Change only the base URL to send traffic through the gateway." },
+							].map((item) => (
+								<div key={item.title} className="rounded-2xl border border-[#e3ebf8] bg-white px-5 py-4">
+									<h3 className="text-sm font-bold text-[#0b1b3a]">{item.title}</h3>
+									<p className="mt-1.5 text-sm leading-relaxed text-slate-600">{item.text}</p>
 								</div>
 							))}
 						</div>
@@ -812,8 +827,8 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* FAQ SECTION */}
-				<section id="faq" className="py-16 px-6 lg:px-10 xl:px-14 scroll-mt-24">
-					<div className="max-w-[1440px] mx-auto">
+				<section id="faq" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-10 lg:px-10 xl:px-14 scroll-mt-16">
+					<div className="mx-auto w-full max-w-[1440px]">
 						<div className="text-center mb-12">
 							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">FAQ</div>
 							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-3">
@@ -824,24 +839,28 @@ console.log(response.choices[0].message.content);`
 							</p>
 						</div>
 
-						<div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
-							{faqs.map((faq, idx) => (
-								<div
-									key={idx}
-									className="border border-[#e3ebf8] rounded-2xl bg-white overflow-hidden shadow-[0_10px_24px_rgba(47,107,255,0.05)] transition-all"
-								>
-									<button
-										onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
-										className="w-full p-5 text-left font-bold text-sm text-[#0b1b3a] flex items-center justify-between gap-4 hover:text-[#2f6bff] transition-colors cursor-pointer"
-									>
-										<span>{faq.q}</span>
-										<ChevronDown className={`h-4 w-4 text-[#2f6bff] shrink-0 transition-transform duration-200 ${openFaq === idx ? "rotate-180" : ""}`} />
-									</button>
-									{openFaq === idx && (
-										<div className="px-5 pb-5 text-xs sm:text-sm text-slate-600 leading-relaxed border-t border-[#e8eef8] pt-3.5">
-											{faq.a}
+						<div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-2">
+							{[0, 1].map((column) => (
+								<div key={column} className="flex flex-col gap-3.5">
+									{faqs.map((faq, idx) => idx % 2 === column ? (
+										<div
+											key={idx}
+											className="border border-[#e3ebf8] rounded-2xl bg-white overflow-hidden shadow-[0_10px_24px_rgba(47,107,255,0.05)]"
+										>
+											<button
+												onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
+												className="w-full p-5 text-left font-bold text-sm text-[#0b1b3a] flex items-center justify-between gap-4 hover:text-[#2f6bff] transition-colors cursor-pointer"
+											>
+												<span>{faq.q}</span>
+												<ChevronDown className={`h-4 w-4 text-[#2f6bff] shrink-0 transition-transform duration-200 ${openFaq === idx ? "rotate-180" : ""}`} />
+											</button>
+											{openFaq === idx && (
+												<div className="px-5 pb-5 text-xs sm:text-sm text-slate-600 leading-relaxed border-t border-[#e8eef8] pt-3.5">
+													{faq.a}
+												</div>
+											)}
 										</div>
-									)}
+									) : null)}
 								</div>
 							))}
 						</div>

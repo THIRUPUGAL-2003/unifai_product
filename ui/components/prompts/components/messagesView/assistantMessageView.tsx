@@ -1,11 +1,19 @@
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Message, SerializedMessage } from "@/lib/message";
-import { InfoIcon, PencilIcon, XIcon } from "lucide-react";
+import { InfoIcon, PencilIcon, XIcon, FileDown, FileText, FileSpreadsheet, Code2, FolderArchive, Sparkles } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import MessageRoleSwitcher from "./messageRoleSwitcher";
 import { isJson } from "@/lib/utils/validation";
 import { CodeEditor } from "@/components/ui/codeEditor";
+import {
+	detectGeneratableFiles,
+	exportToPdf,
+	exportToWordDocx,
+	exportToExcel,
+	exportCodeFile,
+	exportAllCodeFilesZip,
+} from "../../utils/generateFiles";
 
 const LazyMarkdown = lazy(() => import("@/components/ui/markdown").then((m) => ({ default: m.Markdown })));
 const Markdown = (props: ComponentProps<typeof LazyMarkdown>) => (
@@ -63,6 +71,11 @@ export function AssistantMessageView({
 			jsonBufferRef.current = null;
 		}
 	};
+
+	const generatable = useMemo(() => {
+		if (isEmpty || isStreaming) return null;
+		return detectGeneratableFiles(content);
+	}, [content, isEmpty, isStreaming]);
 
 	useEffect(() => {
 		const handleClick = (e: MouseEvent) => {
@@ -191,6 +204,109 @@ export function AssistantMessageView({
 						}}
 					>
 						<Markdown content={content} isStreaming={isStreaming} className="text-muted-foreground" />
+					</div>
+				)}
+
+				{!isEmpty && !isStreaming && !editMode && generatable && (generatable.canPdf || generatable.canExcel || generatable.canCode) && (
+					<div className="mt-2.5 pt-2 border-t border-border/40 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground select-none">
+						<span className="text-[11px] font-medium text-muted-foreground/80 flex items-center gap-1 mr-1">
+							<FileDown className="size-3.5 text-primary" /> Generate & Export:
+						</span>
+
+						{generatable.canPdf && (
+							<button
+								type="button"
+								onClick={() => exportToPdf(content)}
+								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
+								title="Compile and download formatted PDF document"
+							>
+								<FileText className="size-3 text-rose-500" />
+								PDF
+							</button>
+						)}
+
+						{generatable.canDocx && (
+							<button
+								type="button"
+								onClick={() => exportToWordDocx(content)}
+								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
+								title="Compile and download Microsoft Word document (.docx)"
+							>
+								<FileText className="size-3 text-blue-500" />
+								Word (.docx)
+							</button>
+						)}
+
+						{generatable.canExcel && (
+							<button
+								type="button"
+								onClick={() => exportToExcel(content)}
+								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
+								title="Compile and download genuine Microsoft Excel spreadsheet (.xlsx)"
+							>
+								<FileSpreadsheet className="size-3 text-emerald-500" />
+								Excel (.xlsx)
+							</button>
+						)}
+
+						{generatable.canCode && generatable.codeBlocks.length === 1 && (
+							<button
+								type="button"
+								onClick={() => exportCodeFile(generatable.codeBlocks[0])}
+								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
+								title={`Download ${generatable.codeBlocks[0].filename}`}
+							>
+								<Code2 className="size-3 text-amber-500" />
+								{generatable.codeBlocks[0].filename}
+							</button>
+						)}
+
+						{generatable.canCode && generatable.codeBlocks.length > 1 && (
+							<>
+								<button
+									type="button"
+									onClick={() => exportAllCodeFilesZip(generatable.codeBlocks)}
+									className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
+									title="Bundle all code files into a Project ZIP"
+								>
+									<FolderArchive className="size-3 text-amber-500" />
+									Project ZIP ({generatable.codeBlocks.length} files)
+								</button>
+								{generatable.codeBlocks.map((b, idx) => (
+									<button
+										key={idx}
+										type="button"
+										onClick={() => exportCodeFile(b)}
+										className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-muted/40 hover:bg-muted text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+										title={`Download ${b.filename}`}
+									>
+										<Code2 className="size-2.5 text-amber-500/80" />
+										{b.filename}
+									</button>
+								))}
+							</>
+						)}
+
+						<button
+							type="button"
+							onClick={() => {
+								const target = generatable.canExcel
+									? "Excel table"
+									: generatable.canCode
+									? "code"
+									: "document";
+								window.dispatchEvent(
+									new CustomEvent("prompt-repo:set-input", {
+										detail: `Please alter and update the generated ${target} with the following changes: `,
+									})
+								);
+							}}
+							className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-medium transition-colors cursor-pointer"
+							title="Instruct model to alter/modify this generated file"
+						>
+							<Sparkles className="size-3" />
+							Alter / Modify
+						</button>
 					</div>
 				)}
 			</div>

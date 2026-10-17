@@ -10,9 +10,9 @@ import { transcribeAudioFile, voiceTranscriptAttachment } from "./transcribeAudi
 export const PROMPT_FILE_ACCEPT = "*/*";
 
 export const PROMPT_FILE_ACCEPT_LABEL =
-	"All file types: Images (PNG, JPG, WEBP, GIF, SVG, etc.), Code, PDF, Word, Excel, PowerPoint, Zip archives, Audio, and Text files";
+	"All file types: Videos (MP4, WEBM, MOV, MKV, AVI, M4V), Images (PNG, JPG, WEBP, GIF, SVG), Code, PDF, Word, Excel, PowerPoint, Zip archives, Audio, and Text files";
 
-export const MAX_PROMPT_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB
+export const MAX_PROMPT_ATTACHMENT_BYTES = 2048 * 1024 * 1024; // 2 GB (supports large files and media)
 
 const EXTENSION_MIME: Record<string, string> = {
 	// 1. Documents and Office Files
@@ -839,54 +839,123 @@ function isPdfFile(file: File, mimeType: string): boolean {
  * Convert one or more files into message attachments.
  * Zip archives are expanded and each supported inner file is imported.
  */
-export type AttachmentImportOptions = { apiKeyId?: string; virtualKeyId?: string; archiveDepth?: number };
+export type AttachmentImportOptions = {
+	apiKeyId?: string;
+	virtualKeyId?: string;
+	archiveDepth?: number;
+	silent?: boolean;
+};
+
+/** Run tasks in parallel with a controlled concurrency limit to avoid freezing the browser on 100+ files */
+async function runConcurrentPool<T, R>(items: T[], concurrency: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+	const results: R[] = new Array(items.length);
+	let nextIndex = 0;
+	const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+		while (nextIndex < items.length) {
+			const index = nextIndex++;
+			results[index] = await fn(items[index], index);
+		}
+	});
+	await Promise.all(workers);
+	return results;
+}
 
 export async function filesToAttachments(files: FileList | File[], opts?: AttachmentImportOptions): Promise<MessageContent[]> {
-	const attachments: MessageContent[] = [];
-	for (const file of Array.from(files)) {
+	const filesList = Array.from(files);
+	if (filesList.length === 0) return [];
+
+	const isBulk = filesList.length > 4;
+	const bulkToastId = "bulk-import-progress";
+	const effectiveOpts: AttachmentImportOptions = {
+		...opts,
+		silent: isBulk ? true : opts?.silent,
+	};
+
+	if (isBulk) {
+		toast.loading(`Importing ${filesList.length} files (0/${filesList.length})...`, { id: bulkToastId });
+	}
+
+	let completedCount = 0;
+	const failedFiles: { name: string; error: string }[] = [];
+
+	const perFileResults = await runConcurrentPool(filesList, 6, async (file) => {
 		const error = validatePromptAttachmentFile(file);
 		if (error) {
-			toast.error(error);
-			continue;
+			if (!effectiveOpts.silent) toast.error(error);
+			failedFiles.push({ name: file.name, error });
+			completedCount++;
+			if (isBulk && (completedCount % 5 === 0 || completedCount === filesList.length)) {
+				toast.loading(`Importing ${filesList.length} files (${completedCount}/${filesList.length})...`, { id: bulkToastId });
+			}
+			return [];
 		}
+
 		try {
 			const mimeType = resolveFileMimeType(file);
+			let res: MessageContent[] = [];
 			if (isZipFile(file, mimeType)) {
-				const fromZip = await attachmentsFromZip(file, opts);
-				attachments.push(...fromZip);
-				continue;
+				res = await attachmentsFromZip(file, effectiveOpts);
+			} else {
+				res = await expandFileAttachments(file, effectiveOpts);
 			}
-			const expanded = await expandFileAttachments(file, opts);
-			attachments.push(...expanded);
+			completedCount++;
+			if (isBulk && (completedCount % 5 === 0 || completedCount === filesList.length)) {
+				toast.loading(`Importing ${filesList.length} files (${completedCount}/${filesList.length})...`, { id: bulkToastId });
+			}
+			return res;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : `Failed to import "${file.name}"`;
-			toast.error(message);
+			if (!effectiveOpts.silent) toast.error(message);
+			failedFiles.push({ name: file.name, error: message });
+			completedCount++;
+			if (isBulk && (completedCount % 5 === 0 || completedCount === filesList.length)) {
+				toast.loading(`Importing ${filesList.length} files (${completedCount}/${filesList.length})...`, { id: bulkToastId });
+			}
+			return [];
+		}
+	});
+
+	const attachments: MessageContent[] = perFileResults.flat();
+
+	if (isBulk) {
+		if (failedFiles.length === 0) {
+			toast.success(`Successfully imported all ${filesList.length} files! (${attachments.length} attachments ready)`, {
+				id: bulkToastId,
+			});
+		} else {
+			toast.warning(`Imported ${attachments.length} attachments (${failedFiles.length} file(s) failed)`, {
+				id: bulkToastId,
+				description: failedFiles.slice(0, 3).map((f) => f.name).join(", "),
+			});
 		}
 	}
+
 	return attachments;
 }
 
 async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	const depth = opts?.archiveDepth ?? 0;
 	if (depth > 3) {
-		toast.error(`"${zipFile.name}" is nested too deeply to unpack`);
+		if (!opts?.silent) toast.error(`"${zipFile.name}" is nested too deeply to unpack`);
 		return [];
 	}
-	toast.message(`Unpacking ${zipFile.name}…`);
+	if (!opts?.silent) toast.message(`Unpacking ${zipFile.name}…`);
 	const { files, skipped, errors } = await extractArchiveInnerFiles(zipFile);
 	if (files.length === 0) {
-		toast.error(`No files found in "${zipFile.name}"`, {
-			description: errors[0] || "The archive is empty or could not be opened.",
-		});
+		if (!opts?.silent) {
+			toast.error(`No files found in "${zipFile.name}"`, {
+				description: errors[0] || "The archive is empty or could not be opened.",
+			});
+		}
 		return [];
 	}
-	toast.message(`Importing ${files.length} file(s) from ${zipFile.name}…`);
+	if (!opts?.silent) toast.message(`Importing ${files.length} file(s) from ${zipFile.name}…`);
 	const out: MessageContent[] = [];
 	const nextOpts = { ...opts, archiveDepth: depth + 1 };
 	for (const inner of files) {
 		const error = validatePromptAttachmentFile(inner);
 		if (error) {
-			toast.error(error);
+			if (!opts?.silent) toast.error(error);
 			continue;
 		}
 		try {
@@ -899,10 +968,10 @@ async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions)
 				if (attachment) out.push(attachment);
 			}
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : `Failed to import "${inner.name}"`);
+			if (!opts?.silent) toast.error(err instanceof Error ? err.message : `Failed to import "${inner.name}"`);
 		}
 	}
-	if (out.length > 0) {
+	if (out.length > 0 && !opts?.silent) {
 		const extra =
 			skipped > 0 || errors.length > 0
 				? ` (${skipped} skipped${errors.length ? `; ${errors[0]}` : ""})`
@@ -986,6 +1055,155 @@ async function imageFileAttachments(file: File, mimeType: string, opts?: Attachm
 	return out;
 }
 
+/** Capture a representative frame from a video file in the browser for visual analysis and screen OCR */
+async function extractVideoKeyframe(file: File): Promise<string | null> {
+	if (typeof window === "undefined" || typeof document === "undefined") return null;
+	return new Promise((resolve) => {
+		try {
+			const video = document.createElement("video");
+			video.preload = "metadata";
+			video.muted = true;
+			video.playsInline = true;
+			const objUrl = URL.createObjectURL(file);
+			video.src = objUrl;
+
+			let finished = false;
+			const cleanup = (res: string | null) => {
+				if (finished) return;
+				finished = true;
+				try {
+					URL.revokeObjectURL(objUrl);
+				} catch {}
+				resolve(res);
+			};
+
+			video.onloadedmetadata = () => {
+				const duration = video.duration || 1;
+				video.currentTime = Math.min(1.0, duration * 0.3);
+			};
+
+			video.onseeked = () => {
+				try {
+					const canvas = document.createElement("canvas");
+					canvas.width = Math.min(video.videoWidth || 1280, 1280);
+					canvas.height = Math.min(video.videoHeight || 720, 720);
+					const ctx = canvas.getContext("2d");
+					if (ctx) {
+						ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+						const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+						cleanup(dataUrl);
+						return;
+					}
+				} catch {
+					/* ignore */
+				}
+				cleanup(null);
+			};
+
+			video.onerror = () => cleanup(null);
+			setTimeout(() => cleanup(null), 3500);
+		} catch {
+			resolve(null);
+		}
+	});
+}
+
+/** Video attachment creation with instant local preview URL, Whisper speech-to-text, and visual Screen OCR fallback */
+async function videoFileAttachments(file: File, mimeType: string, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
+	let videoUrl = "";
+	try {
+		videoUrl = URL.createObjectURL(file);
+	} catch (e) {
+		console.warn("Could not create object URL for video:", e);
+	}
+
+	const WHISPER_EXTS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm", "aac", "opus", "weba"]);
+	const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
+	let transcriptText = "";
+
+	const normalized = (await normalizeAudioToWavFile(file)) || (WHISPER_EXTS.has(fileExt) ? file : null);
+	if (normalized) {
+		toast.message(`Transcribing speech in video ${file.name}…`);
+		try {
+			const transcript = await transcribeAudioFile(normalized, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
+			if (transcript && transcript.text?.trim()) {
+				transcriptText = transcript.text.trim();
+				toast.success(`Video speech transcribed (${transcript.model})`);
+			}
+		} catch (err) {
+			console.warn("Video speech transcription skipped:", err);
+		}
+	}
+
+	let screenOcrText = "";
+	let keyframeDataUrl: string | null = null;
+
+	// If no speech was found (e.g. silent screen recording), extract a keyframe from the video and run OCR
+	if (!transcriptText) {
+		try {
+			keyframeDataUrl = await extractVideoKeyframe(file);
+			if (keyframeDataUrl) {
+				const ocr = await ocrImageFile(keyframeDataUrl, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
+				if (ocr?.text?.trim()) {
+					screenOcrText = ocr.text.trim();
+					toast.success(`Extracted on-screen text from video (${file.name})`);
+				}
+			}
+		} catch (err) {
+			console.warn("Keyframe OCR failed:", err);
+		}
+	}
+
+	if (!transcriptText && !screenOcrText) {
+		toast.success(`Video attached: ${file.name}`);
+	}
+
+	const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+	const effectiveExtracted = transcriptText || screenOcrText;
+
+	const textContent = transcriptText
+		? `Attached video: ${file.name}\n\n--- Video Speech Transcript ---\n${transcriptText}`
+		: screenOcrText
+		? `Attached video: ${file.name}\n\n--- Video Screen OCR Content ---\n${screenOcrText}`
+		: `Attached video: ${file.name} (${sizeMb} MB | ${mimeType || "video"})\n\n[Visual video media attached for playback preview]`;
+
+	const out: MessageContent[] = [];
+
+	out.push({
+		type: "video_url",
+		video_url: {
+			url: videoUrl,
+			filename: file.name,
+			mimeType: mimeType || "video/mp4",
+			extracted_text: effectiveExtracted || undefined,
+		},
+		text: textContent,
+	});
+
+	if (transcriptText) {
+		out.push({
+			type: "text",
+			text: `Attached video: ${file.name}\n\n--- Video Speech Transcript ---\n${transcriptText}`,
+		});
+	} else if (screenOcrText) {
+		out.push(ocrTextAttachment(file.name + " (Screen Recording Content)", screenOcrText));
+	}
+
+	if (keyframeDataUrl) {
+		out.push({
+			type: "image_url",
+			image_url: {
+				url: keyframeDataUrl,
+				detail: "auto",
+				filename: `${file.name} (frame preview)`,
+				extracted_text: screenOcrText || undefined,
+			},
+		});
+	}
+
+	return out;
+}
+
 /** One picked file can become several message parts (image + extracted text, zip members, etc.). */
 async function expandFileAttachments(file: File, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
 	const mimeType = resolveFileMimeType(file);
@@ -994,6 +1212,9 @@ async function expandFileAttachments(file: File, opts?: AttachmentImportOptions)
 	}
 	if (isImageFile(file, mimeType)) {
 		return imageFileAttachments(file, mimeType, opts);
+	}
+	if (isVideoFile(file, mimeType)) {
+		return videoFileAttachments(file, mimeType, opts);
 	}
 	const one = await fileToAttachment(file, opts);
 	return one ? [one] : [];
@@ -1011,6 +1232,7 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 			.map((a) => {
 				if (a.type === "text" && a.text) return a.text;
 				if (a.type === "image_url") return "[Image attachment]";
+				if (a.type === "video_url") return a.video_url?.filename ? `[Video: ${a.video_url.filename}]` : "[Video attachment]";
 				if (a.type === "input_audio") return "[Audio attachment]";
 				if (a.type === "file") return a.file?.filename ? `[File: ${a.file.filename}]` : "[File]";
 				return "";
@@ -1028,15 +1250,19 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 		return parts[0] ?? null;
 	}
 
+	if (isVideoFile(file, mimeType)) {
+		const parts = await videoFileAttachments(file, mimeType, opts);
+		return parts[0] ?? null;
+	}
+
 	const WHISPER_EXTS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm", "aac", "opus", "weba"]);
 	const fileExt = file.name.split(".").pop()?.toLowerCase() || "";
 	const audioLike = mimeType.startsWith("audio/") || ["mp3", "wav", "m4a", "flac", "ogg", "opus", "aac", "wma", "aiff", "aif", "amr", "weba", "mpga"].includes(fileExt);
-	const videoLike = isVideoFile(file, mimeType);
 
-	if (audioLike || videoLike) {
+	if (audioLike) {
 		const normalized = (await normalizeAudioToWavFile(file)) || (WHISPER_EXTS.has(fileExt) ? file : null);
 		if (normalized) {
-			toast.message(videoLike ? "Transcribing video audio with Whisper…" : "Transcribing voice with Whisper…");
+			toast.message("Transcribing voice with Whisper…");
 			const transcript = await transcribeAudioFile(normalized, { apiKeyId: opts?.apiKeyId, virtualKeyId: opts?.virtualKeyId });
 			if (transcript && transcript.text) {
 				toast.success(`Voice transcribed (${transcript.model})`);
@@ -1102,8 +1328,13 @@ export async function fileToAttachment(file: File, opts?: AttachmentImportOption
 }
 
 export function getAttachmentDisplayName(attachment: MessageContent): string {
+	if (attachment.type === "video_url" || attachment.video_url) return attachment.video_url?.filename || "Video";
 	if (attachment.type === "image_url") return attachment.image_url?.filename || "";
 	if (attachment.type === "input_audio") return attachment.input_audio?.format?.toUpperCase() || "";
+	if (attachment.type === "text" && attachment.text?.startsWith("Attached video:")) {
+		const firstLine = attachment.text.split("\n")[0] || "";
+		return firstLine.replace(/^Attached video:\s*/i, "").trim() || "Video";
+	}
 	if (attachment.type === "text" && attachment.text?.startsWith("Voice transcript")) return "Voice transcript";
 	if (attachment.type === "text" && attachment.text?.includes("--- OCR extracted content ---")) {
 		const firstLine = attachment.text.split("\n")[0] || "";
@@ -1119,6 +1350,10 @@ export function getAttachmentDisplayName(attachment: MessageContent): string {
 
 export function attachmentNeedsVision(attachments: MessageContent[]): boolean {
 	return attachments.some((a) => a.type === "image_url");
+}
+
+export function attachmentNeedsVideo(attachments: MessageContent[]): boolean {
+	return attachments.some((a) => a.type === "video_url" || !!a.video_url);
 }
 
 export function attachmentNeedsAudio(attachments: MessageContent[]): boolean {

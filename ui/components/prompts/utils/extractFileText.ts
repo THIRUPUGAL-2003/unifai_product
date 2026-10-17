@@ -1,8 +1,8 @@
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-const MAX_EXTRACT_CHARS = 120_000;
-const MAX_PDF_PAGES = 200;
-const MAX_PPTX_SLIDES = 200;
+const MAX_EXTRACT_CHARS = 10_000_000; // 10M characters (full context for long books & documents)
+const MAX_PDF_PAGES = 10_000; // Unlimited PDF pages
+const MAX_PPTX_SLIDES = 5_000; // Unlimited PowerPoint slides
 
 let pdfjsReady: Promise<typeof import("pdfjs-dist")> | null = null;
 

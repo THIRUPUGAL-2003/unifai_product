@@ -30,7 +30,14 @@ try:
         _GENERIC_UPLOAD_PATH_MARKERS,
     )
 except Exception:
-    _CONTROL_PLANE_PROMPT_TOKENS = frozenset({"ping", "pong", "heartbeat", "ready", "ack", "sync"})
+    _CONTROL_PLANE_PROMPT_TOKENS = frozenset({
+        "set", "get", "put", "post", "patch", "delete",
+        "ping", "pong", "heartbeat", "ready", "ack", "sync",
+        "true", "false", "none", "null", "ok", "on", "off",
+        "enable", "disable", "enabled", "disabled",
+        "success", "error", "default", "auto", "manual",
+        "user", "system", "assistant", "tool",
+    })
     _is_google_wire_blob = lambda x: False
     _is_opaque_wire_blob = lambda x: False
     _looks_like_document_body_dump = lambda x: False

@@ -3478,6 +3478,7 @@ export default function BrowserAiPage() {
 										<SelectItem value="firefox">Firefox</SelectItem>
 										<SelectItem value="brave">Brave</SelectItem>
 										<SelectItem value="opera">Opera</SelectItem>
+										<SelectItem value="opera mini">Opera Mini</SelectItem>
 										<SelectItem value="vivaldi">Vivaldi</SelectItem>
 									</SelectContent>
 								</Select>

@@ -1,7 +1,7 @@
 /** Zip archive helpers for Prompt Repo file import. */
 
-const MAX_ZIP_ENTRIES = 50;
-const MAX_NESTED_ZIP_BYTES = 20 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 1000;
+const MAX_NESTED_ZIP_BYTES = 1024 * 1024 * 1024; // 1 GB
 const SKIP_NAME_RE = /(^|\/)(__MACOSX|\.DS_Store|Thumbs\.db)(\/|$)/i;
 
 const INNER_EXT_MIME: Record<string, string> = {

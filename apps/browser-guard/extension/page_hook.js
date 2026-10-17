@@ -53,6 +53,14 @@
       flags += "m";
       pattern = pattern.slice(4);
     }
+    // In DLP prompt/file scanning, normalize full-string anchors ^...$ so patterns like ^[1-9][0-9]{5}$
+    // match sensitive tokens inside full sentences (e.g. "613002 this is new")
+    if (pattern.startsWith("^") && pattern.endsWith("$") && pattern.length > 2) {
+      var inner = pattern.slice(1, -1);
+      if (!/(?:^|[^\\])[\^$]/.test(inner)) {
+        pattern = "\\b(?:" + inner + ")\\b";
+      }
+    }
     try {
       return new RegExp(pattern, flags);
     } catch (e) {
@@ -155,7 +163,9 @@
     return null;
   }
 
-  var lastDecisionCache = { text: "", time: 0, decision: null };
+  var _lastAskSig = "";
+  var _lastAskTime = 0;
+  var _lastAskDecision = null;
 
   // Ask Gateway Guard Engine (Async verify with PAC server & Gateway backend)
   function ask(prompt, files, images) {
@@ -163,6 +173,11 @@
       return Promise.resolve({ blocked: false, passthrough: true });
     }
     var trimmed = (prompt || "").trim();
+    var fileNamesSig = (files || []).map(function (f) { return (f && (f.name || f)) || ""; }).sort().join(",");
+    var sig = trimmed + "||" + fileNamesSig + "||" + ((images || []).length);
+    if (sig && (Date.now() - _lastAskTime < 4000) && _lastAskSig === sig && _lastAskDecision) {
+      return Promise.resolve(_lastAskDecision);
+    }
     if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
       if (lastDecisionCache.text === trimmed && (Date.now() - lastDecisionCache.time < 5000) && lastDecisionCache.decision) {
         return Promise.resolve(lastDecisionCache.decision);
@@ -172,6 +187,9 @@
       // 1. First run fast client-side check
       var clientDecision = evaluateClientRules(prompt, files);
       if (clientDecision && clientDecision.blocked) {
+        _lastAskSig = sig;
+        _lastAskTime = Date.now();
+        _lastAskDecision = clientDecision;
         if (trimmed) {
           lastDecisionCache = { text: trimmed, time: Date.now(), decision: clientDecision };
         }
@@ -203,6 +221,9 @@
       pending[id] = function (decision) {
         clearTimeout(timer);
         var res = decision || clientDecision || { blocked: false };
+        _lastAskSig = sig;
+        _lastAskTime = Date.now();
+        _lastAskDecision = res;
         if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
           lastDecisionCache = { text: trimmed, time: Date.now(), decision: res };
         }
@@ -234,6 +255,16 @@
         return root.innerText || root.textContent || "";
       }
     }
+    // Check surrounding form / fieldset / composer container of the clicked button
+    var container = (el && el.closest && el.closest("fieldset, form, [class*='composer' i], [class*='input' i], div[data-testid*='composer' i], div.relative")) || null;
+    if (container) {
+      var innerEd = container.querySelector("div.ProseMirror, [contenteditable='true'], textarea, input[type='text']");
+      if (innerEd) {
+        if (innerEd.tagName === "TEXTAREA" || innerEd.tagName === "INPUT") return innerEd.value || "";
+        var ct = (innerEd.innerText || innerEd.textContent || "").trim();
+        if (ct) return ct;
+      }
+    }
     var active = document.activeElement;
     if (active && active !== el) {
       if (active.tagName === "TEXTAREA" || active.tagName === "INPUT") return active.value || "";
@@ -242,8 +273,11 @@
         return aroot.innerText || aroot.textContent || "";
       }
     }
-    // Specific platform selectors (chat, search, multimodal image/video/audio generation)
-    var specific = document.querySelector(
+    // Specific platform selectors across document (filtering out conversation turn history)
+    var candidates = document.querySelectorAll(
+      "fieldset div.ProseMirror, " +
+      "fieldset [contenteditable='true'], " +
+      "form div.ProseMirror, " +
       "div#prompt-textarea, " +
       "div.ProseMirror, " +
       "rich-textarea div[contenteditable], " +
@@ -261,9 +295,19 @@
       "[data-testid*='prompt' i], " +
       "[contenteditable='true'][role='textbox']"
     );
-    if (specific) {
-      if (specific.tagName === "TEXTAREA" || specific.tagName === "INPUT") return specific.value || "";
-      return specific.innerText || specific.textContent || "";
+    for (var j = 0; j < candidates.length; j++) {
+      var c = candidates[j];
+      if (!c) continue;
+      // Skip editors in chat history
+      if (c.closest && c.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], div.group")) {
+        continue;
+      }
+      var t = (c.tagName === "TEXTAREA" || c.tagName === "INPUT") ? (c.value || "") : (c.innerText || c.textContent || "");
+      if (t && t.trim()) return t.trim();
+    }
+    if (candidates.length) {
+      var last = candidates[candidates.length - 1];
+      return (last.tagName === "TEXTAREA" || last.tagName === "INPUT") ? (last.value || "") : (last.innerText || last.textContent || "");
     }
     return "";
   }
@@ -272,6 +316,11 @@
   function extractDOMAttachedFiles() {
     var detected = [];
     try {
+      // STRICT SCOPE: Only look inside the active composer/upload container (NOT in previous message history)
+      var activeContainer = document.querySelector(
+        "fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]"
+      ) || document.body;
+
       var selectors = [
         "[data-testid*='attachment']",
         "[data-testid*='file']",
@@ -284,13 +333,17 @@
         "div[class*='file-preview' i]",
         "span[class*='file-name' i]"
       ];
-      var nodes = document.querySelectorAll(selectors.join(", "));
+      var nodes = activeContainer.querySelectorAll(selectors.join(", "));
       for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i];
         if (!n) continue;
+        // Never scrape files from conversation message history
+        if (n.closest && n.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group")) {
+          continue;
+        }
         var txt = (n.getAttribute("aria-label") || n.getAttribute("title") || n.innerText || n.textContent || "").trim();
         if (!txt) continue;
-        var m = txt.match(/([a-zA-Z0-9_\-\. ]+\.[a-zA-Z0-9]{2,5})/);
+        var m = txt.match(/([a-zA-Z0-9_\-\. ]+\.[a-zA-Z0-9]{1,8})/);
         if (m && m[1]) {
           var fn = m[1].trim();
           if (fn && !detected.some(function (x) { return x.name === fn; })) {
@@ -619,24 +672,67 @@
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    var target = e.target;
+    var clientDecision = evaluateClientRules(text, effectiveFiles);
+    if (clientDecision && clientDecision.blocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(clientDecision.message, clientDecision.rule, "block");
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: text,
+        files: effectiveFiles || [],
+        upload_images: stagedImages || [],
+        host: location.hostname,
+        url: location.href,
+        is_blocked: true,
+        rule: clientDecision.rule || ""
+      }, "*");
+      return;
+    }
 
-    ask(text, effectiveFiles, stagedImages).then(function (decision) {
-      handleDecision(decision, function () {
-        stagedFiles = [];
-        stagedImages = [];
-        passKey = true;
-        _lastHandledPromptTime = Date.now();
-        _lastHandledPromptText = text;
-        try {
-          target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true, keyCode: 13, which: 13 }));
-        } finally {
-          passKey = false;
-        }
+    if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      var target = e.target;
+      ask(text, effectiveFiles, stagedImages).then(function (decision) {
+        handleDecision(decision, function () {
+          stagedFiles = [];
+          stagedImages = [];
+          passKey = true;
+          _lastHandledPromptTime = Date.now();
+          _lastHandledPromptText = text;
+          try {
+            var sendBtn = document.querySelector("button[aria-label*='Send' i], button.send-button, [data-testid*='send-button' i]");
+            if (sendBtn) {
+              sendBtn.click();
+            } else {
+              target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true, keyCode: 13, which: 13 }));
+            }
+          } finally {
+            passKey = false;
+          }
+        });
       });
-    });
+      return;
+    }
+
+    // Fast path: Clean text prompt without files sends instantly with native Enter (0ms delay)
+    _lastHandledPromptTime = Date.now();
+    _lastHandledPromptText = text;
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      prompt: text,
+      files: [],
+      upload_images: [],
+      host: location.hostname,
+      url: location.href,
+      is_blocked: false,
+      rule: ""
+    }, "*");
   }, true);
 
   // Send Button Click
@@ -670,23 +766,61 @@
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
-    e.preventDefault();
-    e.stopImmediatePropagation();
+    var clientDecision = evaluateClientRules(text, effectiveFiles);
+    if (clientDecision && clientDecision.blocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(clientDecision.message, clientDecision.rule, "block");
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: text,
+        files: effectiveFiles || [],
+        upload_images: stagedImages || [],
+        host: location.hostname,
+        url: location.href,
+        is_blocked: true,
+        rule: clientDecision.rule || ""
+      }, "*");
+      return;
+    }
 
-    ask(text, effectiveFiles, stagedImages).then(function (decision) {
-      handleDecision(decision, function () {
-        stagedFiles = [];
-        stagedImages = [];
-        passClick = true;
-        _lastHandledPromptTime = Date.now();
-        _lastHandledPromptText = text;
-        try {
-          btn.click();
-        } finally {
-          passClick = false;
-        }
+    if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      ask(text, effectiveFiles, stagedImages).then(function (decision) {
+        handleDecision(decision, function () {
+          stagedFiles = [];
+          stagedImages = [];
+          passClick = true;
+          _lastHandledPromptTime = Date.now();
+          _lastHandledPromptText = text;
+          try {
+            btn.click();
+          } finally {
+            passClick = false;
+          }
+        });
       });
-    });
+      return;
+    }
+
+    // Fast path: Clean text prompt without files proceeds with native click instantly (0ms delay)
+    _lastHandledPromptTime = Date.now();
+    _lastHandledPromptText = text;
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      prompt: text,
+      files: [],
+      upload_images: [],
+      host: location.hostname,
+      url: location.href,
+      is_blocked: false,
+      rule: ""
+    }, "*");
   }, true);
 
   // Form Submit Interception (Catches Enter in simple forms or form.requestSubmit)
@@ -698,25 +832,50 @@
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
-    e.preventDefault();
-    e.stopImmediatePropagation();
+    var clientDecision = evaluateClientRules(text, effectiveFiles);
+    if (clientDecision && clientDecision.blocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(clientDecision.message, clientDecision.rule, "block");
+      return;
+    }
 
-    ask(text, effectiveFiles, stagedImages).then(function (decision) {
-      handleDecision(decision, function () {
-        stagedFiles = [];
-        stagedImages = [];
-        passClick = true;
-        try {
-          if (typeof form.requestSubmit === "function") {
-            form.requestSubmit();
-          } else {
-            form.submit();
+    if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      ask(text, effectiveFiles, stagedImages).then(function (decision) {
+        handleDecision(decision, function () {
+          stagedFiles = [];
+          stagedImages = [];
+          passClick = true;
+          try {
+            if (typeof form.requestSubmit === "function") {
+              form.requestSubmit();
+            } else {
+              form.submit();
+            }
+          } finally {
+            passClick = false;
           }
-        } finally {
-          passClick = false;
-        }
+        });
       });
-    });
+      return;
+    }
+
+    _lastHandledPromptTime = Date.now();
+    _lastHandledPromptText = text;
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      prompt: text,
+      files: [],
+      upload_images: [],
+      host: location.hostname,
+      url: location.href,
+      is_blocked: false,
+      rule: ""
+    }, "*");
   }, true);
 
   // --- 4. NETWORK LAYER HOOK (fetch, XMLHttpRequest & WebSocket) ---
@@ -742,6 +901,13 @@
             init.headers["X-Gateway-Guard-Handled"] = "1";
           }
         } catch (e) { }
+        return origFetch.apply(this, [input, init]);
+      }
+
+      var method = (init && init.method) || (input && input.method) || "GET";
+      method = String(method).toUpperCase();
+      if (method !== "POST" && method !== "PUT" && method !== "PATCH") {
+        return origFetch.apply(this, arguments);
       }
 
       var url = typeof input === "string" ? input : (input && input.url) || "";
@@ -904,22 +1070,14 @@
         } catch (err) { }
       }
 
-      // Also merge any stagedFiles or DOM attachments
-      if (stagedFiles && stagedFiles.length) {
-        for (var sf = 0; sf < stagedFiles.length; sf++) {
-          if (!netFiles.some(function (x) { return x.name === stagedFiles[sf].name; })) {
-            netFiles.push(stagedFiles[sf]);
-          }
-        }
-      }
-      var domAttached = extractDOMAttachedFiles();
-      for (var da = 0; da < domAttached.length; da++) {
-        if (!netFiles.some(function (x) { return x.name === domAttached[da].name; })) {
-          netFiles.push(domAttached[da]);
-        }
+      // Only inspect if this specific request body actually carries a typed prompt or attached files
+      if (!promptText && netFiles.length === 0) {
+        return origFetch.apply(this, arguments);
       }
 
-      if (!promptText && netFiles.length === 0) {
+      var ptClean = (promptText || "").trim().toLowerCase();
+      var isNoisePrompt = !promptText || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me";
+      if (isNoisePrompt && netFiles.length === 0) {
         return origFetch.apply(this, arguments);
       }
 

@@ -1124,6 +1124,13 @@ def _compile_guard_regex(pattern: str):
     """Compile admin regex once with IGNORECASE (same as backend "(?i)"+pattern). Safe against ReDoS."""
     p = _hoist_inline_flags((pattern or "").strip())
 
+    # In DLP prompt/file scanning, normalize full-string anchors ^...$ so patterns like ^[1-9][0-9]{5}$
+    # match sensitive tokens inside full sentences (e.g. "613002 this is new")
+    if p.startswith("^") and p.endswith("$") and len(p) > 2:
+        inner = p[1:-1]
+        if not re.search(r'(?<!\\)[\^$]', inner):
+            p = r"\b(?:" + inner + r")\b"
+
     if _HAS_RE2:
         try:
             return _google_re2.compile(p, _google_re2.IGNORECASE)
@@ -1155,6 +1162,20 @@ def rule_matches_prompt(rule: dict, prompt: str) -> bool:
                 if start >= 2 and eval_text[start - 2:start].lower() == "0x":
                     continue
             return True
+        # If prompt has "<filename> -- <caption/prompt>", also check caption part individually
+        if " -- " in eval_text:
+            parts = eval_text.split(" -- ", 1)
+            if len(parts) > 1 and parts[1].strip():
+                sub_text = parts[1].strip()
+                for m in regex.finditer(sub_text):
+                    tok = m.group(0)
+                    if tok.isdigit():
+                        start = m.start()
+                        if start > 0 and sub_text[start - 1] in ("#", "&"):
+                            continue
+                        if start >= 2 and sub_text[start - 2:start].lower() == "0x":
+                            continue
+                    return True
         return False
     except Exception as e:
         print(f"[Gateway Proxy] Evaluation failed: {e}")
@@ -1283,6 +1304,16 @@ def _merge_guard_decisions(
     elif _action_rank(action) == 1 and action not in ("Warned",):
         action = "Warned"
     return allowed, rule, action, forward, reply
+
+
+def _security_reply_text(rule_triggered: str, warning_message: str = "") -> str:
+    w = (warning_message or "").strip()
+    if w:
+        return w
+    name = (rule_triggered or "").strip()
+    if name:
+        return f"Blocked by Gateway Guard ({name})."
+    return "This request was blocked by Gateway Guard."
 
 
 def decide_prompt_locally(prompt: str) -> tuple[bool, str, str, str, str]:
@@ -1496,10 +1527,13 @@ def is_batchexecute_chat_submit(path: str, body: str = "") -> bool:
 
     if "batchexecute" in path_l and body:
         body_dec = urllib.parse.unquote(body) if "%" in body else body
-        # Non-chat background RPCs: draft autosave, sidebar list, conversation loader, user settings
-        non_chat_rpcs = ("aPya6c", "k06x8e", "ESY5D", "umJEY", "VxUbXb", "xyhAld", "GmailHttp")
+        # Non-chat background RPCs: draft autosave, sidebar list, conversation loader, user settings, telemetry
+        non_chat_rpcs = (
+            "aPya6c", "k06x8e", "ESY5D", "umJEY", "VxUbXb", "xyhAld", "GmailHttp",
+            "L5adhe", "o30O0e", "mKgD2d", "xbfOee", "r9d32d", "G8uTld", "log2", "playlog"
+        )
         for rpc in non_chat_rpcs:
-            if rpc in body or rpc in body_dec:
+            if rpc in body or rpc in body_dec or rpc.lower() in path_l:
                 return False
 
         # Chat send RPCs (query param or body, case-insensitive)
@@ -1520,7 +1554,12 @@ def is_batchexecute_chat_submit(path: str, body: str = "") -> bool:
             fn = globals().get("extract_batchexecute_prompt")
             if fn:
                 p = fn(body)
-                if p and len(p.strip()) >= 1 and not globals().get("_is_google_wire_blob", lambda x: False)(p):
+                if (
+                    p
+                    and len(p.strip()) >= 3
+                    and p.strip().lower() not in ("null", "me", "true", "false", "undefined", "none", "ok", "set", "ping", "pong")
+                    and not globals().get("_is_google_wire_blob", lambda x: False)(p)
+                ):
                     return True
         except Exception:
             pass

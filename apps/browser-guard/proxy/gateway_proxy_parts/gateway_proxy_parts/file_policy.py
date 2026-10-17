@@ -1150,11 +1150,32 @@ def enforce_file_send_policy(
             file_status = f"Blocked ({row_name or 'policy'})"
             file_reason = row_name or "Guard Rule (file content)"
             dedupe_type = f"block|{file_reason}"
+        elif caption_blocked:
+            file_is_blocked = True
+            file_status = f"Blocked ({blocking_rule or cap_name or 'Guard Rule (prompt)'})"
+            file_reason = blocking_rule or cap_name or "Guard Rule (prompt)"
+            dedupe_type = f"block|{file_reason}"
+            this_scan_guard["scan_guard_decided"] = True
+            this_scan_guard["scan_guard_action"] = "Blocked"
+            this_scan_guard["scan_rule_triggered"] = file_reason
+        elif any_file_blocked:
+            file_is_blocked = True
+            file_status = f"Blocked ({blocking_rule or 'policy'})"
+            file_reason = blocking_rule or "Guard Rule (sibling file)"
+            dedupe_type = f"block|{file_reason}"
+            this_scan_guard["scan_guard_decided"] = True
+            this_scan_guard["scan_guard_action"] = "Blocked"
+            this_scan_guard["scan_rule_triggered"] = file_reason
         elif row_hit and row_act == "REDACT":
             file_is_blocked = False
             file_status = f"Redacted ({row_name or 'policy'})"
             file_reason = ""
             dedupe_type = f"redact|{row_name}"
+        elif caption_redacted:
+            file_is_blocked = False
+            file_status = f"Redacted ({redact_rule or cap_name or 'policy'})"
+            file_reason = ""
+            dedupe_type = f"redact|{redact_rule}"
         elif row_hit and row_act in ("WARN", "ALERT"):
             file_is_blocked = False
             file_status = f"Warned ({row_name or 'policy'})"

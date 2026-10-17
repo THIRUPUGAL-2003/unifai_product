@@ -74,9 +74,11 @@ def _search_browser_label(user_agent: str, sec_ch_ua: str) -> str:
     sec = (sec_ch_ua or "").lower()
     if "edg/" in ua or "edga/" in ua or "edgios/" in ua or "microsoft edge" in sec:
         return "Edge"
-    if "opr/" in ua or "opera" in sec:
+    if "opera mini" in ua:
+        return "Opera Mini"
+    if "opr/" in ua or "opera" in sec or "opera/" in ua:
         return "Opera"
-    if "brave" in sec or "brave/" in ua:
+    if "brave" in sec or "brave/" in ua or "bravesoftware" in ua:
         return "Brave"
     if "vivaldi" in ua or "vivaldi" in sec:
         return "Vivaldi"
@@ -93,7 +95,7 @@ def _search_browser_label(user_agent: str, sec_ch_ua: str) -> str:
     if named:
         return named[-1]
 
-    if ("safari/" in ua or "version/" in ua) and "chrome" not in ua and "chromium" not in ua:
+    if ("safari/" in ua or "version/" in ua or "applewebkit" in ua) and "chrome" not in ua and "chromium" not in ua and "crios" not in ua:
         return "Safari"
     if "chrome/" in ua or "crios/" in ua or "google chrome" in sec or "chromium" in sec:
         return "Chrome"
@@ -119,6 +121,11 @@ def _should_stream_without_inspection(flow: http.HTTPFlow) -> bool:
     host = flow.request.pretty_host or ""
     is_target, _domain, _platform = detect_target(host)
     if is_target:
+        # Fast streaming for Gemini: Google background batchexecute, telemetry, and keepalive calls stream directly
+        if "gemini.google.com" in host or "bard.google.com" in host:
+            full_path = (flow.request.path or "").lower()
+            if not _path_looks_like_upload(path) and not _path_has_chat_marker(path) and not is_batchexecute_chat_submit(full_path, ""):
+                return True
         # Unknown POST on a monitored host may be a custom chat API. Keep the body.
         return False
     if is_noise_host(host):
@@ -1260,6 +1267,11 @@ class BrowserAIInterceptor:
         """
         resp = flow.response
         if resp is None or resp.stream or (resp.status_code or 0) == 101:
+            return
+        host = (flow.request.pretty_host or "").lower()
+        path = (flow.request.path or "").lower()
+        if "gemini.google.com" in host or "bard.google.com" in host or "streamgenerate" in path:
+            resp.stream = True
             return
         resp.stream = _tee_response_body(flow) if _response_body_worth_learning(flow) else True
 

@@ -27,11 +27,11 @@ export default defineConfig(({ mode }) => {
 
 	const serverDomain = (env.SERVER_DOMAIN || gatewayEnv(env, "SERVER_DOMAIN") || "").trim().replace(/\/+$/, "");
 	const backendPort = env.APP_PORT || gatewayEnv(env, "PORT") || "";
+	const localBackend = backendPort ? `http://127.0.0.1:${backendPort}` : "http://127.0.0.1:6000";
 	const backendTarget =
-		serverDomain ||
-		gatewayEnv(env, "BACKEND_URL") ||
-		env.GATEWAY_BACKEND_URL ||
-		(backendPort ? `http://127.0.0.1:${backendPort}` : "");
+		mode === "development" && !env.USE_REMOTE_BACKEND
+			? localBackend
+			: serverDomain || gatewayEnv(env, "BACKEND_URL") || env.GATEWAY_BACKEND_URL || localBackend;
 	const brandName = gatewayEnv(env, "BRAND_NAME") || env.GATEWAY_BRAND_NAME || "Raksha";
 	const uiPort = Number(env.UI_PORT || process.env.UI_PORT || 3100);
 	const companyName = gatewayEnv(env, "COMPANY_NAME") || "YesPanchi Group of Companies";
