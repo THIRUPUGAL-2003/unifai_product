@@ -242,16 +242,23 @@
         return aroot.innerText || aroot.textContent || "";
       }
     }
-    // Specific platform selectors
+    // Specific platform selectors (chat, search, multimodal image/video/audio generation)
     var specific = document.querySelector(
       "div#prompt-textarea, " +
       "div.ProseMirror, " +
       "rich-textarea div[contenteditable], " +
       "textarea#searchbox, " +
-      "textarea[placeholder*='message'], " +
-      "textarea[placeholder*='Ask'], " +
+      "textarea[placeholder*='message' i], " +
+      "textarea[placeholder*='Ask' i], " +
+      "textarea[placeholder*='prompt' i], " +
+      "textarea[placeholder*='describe' i], " +
+      "textarea[placeholder*='generate' i], " +
+      "textarea[placeholder*='image' i], " +
+      "textarea[placeholder*='video' i], " +
+      "textarea[placeholder*='music' i], " +
       "textarea[placeholder*='DeepSeek'], " +
-      "[data-testid='chat-input'], " +
+      "[data-testid*='chat-input' i], " +
+      "[data-testid*='prompt' i], " +
       "[contenteditable='true'][role='textbox']"
     );
     if (specific) {
@@ -639,11 +646,22 @@
     if (!btn) return;
 
     var label = ((btn.getAttribute("aria-label") || "") + " " + (btn.getAttribute("data-testid") || "") + " " + (btn.title || "")).toLowerCase();
+    var btnText = (btn.innerText || btn.textContent || "").toLowerCase().trim();
     var form = btn.closest ? btn.closest("form") : null;
     var sendLike =
       label.indexOf("send") >= 0 ||
       label.indexOf("submit") >= 0 ||
       label.indexOf("ask") >= 0 ||
+      label.indexOf("generate") >= 0 ||
+      label.indexOf("create") >= 0 ||
+      label.indexOf("run") >= 0 ||
+      label.indexOf("draw") >= 0 ||
+      btnText === "generate" ||
+      btnText === "create" ||
+      btnText === "send" ||
+      btnText === "submit" ||
+      btnText === "ask" ||
+      btnText === "run" ||
       btn.getAttribute("data-testid") === "send-button" ||
       (form && form.contains(document.activeElement));
 

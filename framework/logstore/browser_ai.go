@@ -672,6 +672,32 @@ func cleanDomainInput(raw string) string {
 	return strings.TrimSpace(domain)
 }
 
+// SanitizeDBString strips NUL bytes (0x00) which PostgreSQL strictly rejects in
+// text/varchar columns (SQLSTATE 22021) and ensures valid UTF-8 encoding.
+func SanitizeDBString(s string) string {
+	if s == "" {
+		return ""
+	}
+	if strings.ContainsRune(s, '\x00') {
+		s = strings.ReplaceAll(s, "\x00", "")
+	}
+	return strings.ToValidUTF8(s, "")
+}
+
+// SafePromptPreview generates a clean preview truncated safely by runes (not bytes)
+// to prevent corrupting multi-byte UTF-8 sequences (Tamil, Chinese, Japanese, emojis, etc.).
+func SafePromptPreview(s string, maxRunes int) string {
+	s = SanitizeDBString(s)
+	r := []rune(s)
+	if len(r) <= maxRunes {
+		return s
+	}
+	if maxRunes > 3 {
+		return string(r[:maxRunes-3]) + "..."
+	}
+	return string(r[:maxRunes])
+}
+
 type BrowserAIManager struct {
 	db       *gorm.DB
 	migrated bool
@@ -936,7 +962,29 @@ func (m *BrowserAIManager) RecordSearchLog(ctx context.Context, entry *BrowserAI
 	if entry.CreatedAt.IsZero() {
 		entry.CreatedAt = entry.Timestamp
 	}
-	return db.WithContext(ctx).Create(entry).Error
+	entry.Query = SanitizeDBString(entry.Query)
+	entry.ClickedURL = SanitizeDBString(entry.ClickedURL)
+	entry.ClickedTitle = SanitizeDBString(entry.ClickedTitle)
+	entry.URL = SanitizeDBString(entry.URL)
+	entry.Host = SanitizeDBString(entry.Host)
+	entry.ClientIP = SanitizeDBString(entry.ClientIP)
+	entry.AgentHostname = SanitizeDBString(entry.AgentHostname)
+	entry.AgentID = SanitizeDBString(entry.AgentID)
+	entry.Engine = SanitizeDBString(entry.Engine)
+	entry.Browser = SanitizeDBString(entry.Browser)
+	entry.RiskCategory = SanitizeDBString(entry.RiskCategory)
+	entry.PredictiveRisk = SanitizeDBString(entry.PredictiveRisk)
+
+	if err := db.WithContext(ctx).Create(entry).Error; err != nil {
+		log.Printf("[BrowserAI] Database create failed for search log: %v — attempting fallback insert", err)
+		entry.ClickedTitle = SafePromptPreview(entry.ClickedTitle, 200)
+		entry.Query = SafePromptPreview(entry.Query, 500)
+		if retryErr := db.WithContext(ctx).Create(entry).Error; retryErr == nil {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (m *BrowserAIManager) GetSearchLogs(ctx context.Context, engine, browser, isIncognito, search string, limit, offset int) ([]BrowserAISearchLog, int64, int64, int64, int64, error) {
@@ -1202,12 +1250,12 @@ func (m *BrowserAIManager) UpdateLogRuleViolation(ctx context.Context, id, actio
 		return nil
 	}
 	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", id).Updates(map[string]any{
-		"action":             action,
-		"status":             status,
-		"rule_triggered":     ruleTriggered,
+		"action":             SanitizeDBString(action),
+		"status":             SafePromptPreview(status, 250),
+		"rule_triggered":     SafePromptPreview(ruleTriggered, 250),
 		"risk_score":         riskScore,
-		"predictive_risk":    predictiveRisk,
-		"predicted_category": predictedCategory,
+		"predictive_risk":    SanitizeDBString(predictiveRisk),
+		"predicted_category": SanitizeDBString(predictedCategory),
 	}).Error
 }
 
@@ -1880,10 +1928,7 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 
 	estTokens := CountAccurateTokens(promptFull)
 
-	preview := promptFull
-	if len(preview) > 100 {
-		preview = preview[:97] + "..."
-	}
+	preview := SafePromptPreview(promptFull, 100)
 
 	var rules []BrowserGuardRule
 	_ = db.WithContext(ctx).Where("active = ?", true).Find(&rules).Error
@@ -2037,10 +2082,7 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		predictiveRisk = "MEDIUM"
 	}
 
-	preview = promptFull
-	if len(preview) > 100 {
-		preview = preview[:97] + "..."
-	}
+	preview = SafePromptPreview(promptFull, 100)
 
 	metaBytes, _ := json.Marshal(metadata)
 
@@ -2115,33 +2157,49 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		canonicalPlatform = "Claude"
 	}
 
+	cleanPromptFull := SanitizeDBString(promptFull)
+	cleanPreview := SafePromptPreview(preview, 100)
+	cleanPlatform := SanitizeDBString(canonicalPlatform)
+	cleanDomain := SanitizeDBString(domain)
+	cleanClientIP := SanitizeDBString(clientIP)
+	cleanAgentID := SanitizeDBString(agentID)
+	cleanAgentHostname := SanitizeDBString(agentHostname)
+	cleanADDomain := SanitizeDBString(adDomain)
+	cleanADUpn := SanitizeDBString(adUpn)
+	cleanDomainUser := SanitizeDBString(domainUser)
+	cleanStatus := SanitizeDBString(status)
+	cleanAction := SanitizeDBString(action)
+	cleanRuleTriggered := SanitizeDBString(ruleTriggered)
+	cleanAttachmentName := SanitizeDBString(attachmentName)
+	cleanMeta := SanitizeDBString(string(metaBytes))
+
 	logEntry := BrowserAILog{
 		ID:                uuid.New().String(),
 		Timestamp:         time.Now(),
-		Platform:          canonicalPlatform,
-		Domain:            domain,
-		UserPromptPreview: preview,
-		UserPromptFull:    promptFull,
+		Platform:          cleanPlatform,
+		Domain:            cleanDomain,
+		UserPromptPreview: cleanPreview,
+		UserPromptFull:    cleanPromptFull,
 		EstTokens:         estTokens,
 		PromptTokens:      promptTokens,
 		CompletionTokens:  completionTokens,
 		TotalTokens:       totalTokens,
 		AudioDurationSec:  audioDurationSec,
 		Cost:              cost,
-		ClientIP:          clientIP,
-		AgentID:           agentID,
-		AgentHostname:     agentHostname,
-		ADDomain:          adDomain,
-		ADUpn:             adUpn,
-		DomainUser:        domainUser,
-		Status:            status,
-		Action:            action,
-		RuleTriggered:     ruleTriggered,
+		ClientIP:          cleanClientIP,
+		AgentID:           cleanAgentID,
+		AgentHostname:     cleanAgentHostname,
+		ADDomain:          cleanADDomain,
+		ADUpn:             cleanADUpn,
+		DomainUser:        cleanDomainUser,
+		Status:            cleanStatus,
+		Action:            cleanAction,
+		RuleTriggered:     cleanRuleTriggered,
 		RiskScore:         riskScore,
 		PredictiveRisk:    predictiveRisk,
 		PredictedCategory: predictedCategory,
-		AttachmentName:    attachmentName,
-		Metadata:          string(metaBytes),
+		AttachmentName:    cleanAttachmentName,
+		Metadata:          cleanMeta,
 		CreatedAt:         time.Now(),
 	}
 
@@ -2156,7 +2214,7 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	dedupCutoffLocal := time.Now().Add(-30 * time.Second)
 
 	dedupQuery := db.WithContext(ctx).
-		Where("(LOWER(platform) = LOWER(?) OR platform = ?)", canonicalPlatform, canonicalPlatform)
+		Where("(LOWER(platform) = LOWER(?) OR platform = ?)", cleanPlatform, cleanPlatform)
 
 	if dbDialect == "postgres" || dbDialect == "postgresql" {
 		dedupQuery = dedupQuery.Where("(created_at >= (NOW() - INTERVAL '30 seconds') OR created_at >= ? OR created_at >= ?)", dedupCutoffUTC, dedupCutoffLocal)
@@ -2164,47 +2222,47 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		dedupQuery = dedupQuery.Where("(created_at >= ? OR created_at >= ?)", dedupCutoffUTC, dedupCutoffLocal)
 	}
 
-	trimmedLower := strings.ToLower(trimmedPrompt)
-	previewLower := strings.ToLower(preview)
+	trimmedLower := strings.ToLower(SanitizeDBString(trimmedPrompt))
+	previewLower := strings.ToLower(cleanPreview)
 
-	if attachmentName != "" {
+	if cleanAttachmentName != "" {
 		dedupQuery = dedupQuery.Where(
 			"(LOWER(TRIM(user_prompt_full)) = ? OR LOWER(TRIM(user_prompt_preview)) = ? OR LOWER(attachment_name) = ? OR attachment_name LIKE ?)",
-			trimmedLower, previewLower, strings.ToLower(attachmentName), "%"+strings.ToLower(attachmentName)+"%",
+			trimmedLower, previewLower, strings.ToLower(cleanAttachmentName), "%"+strings.ToLower(cleanAttachmentName)+"%",
 		)
 	} else {
 		dedupQuery = dedupQuery.Where(
 			"(LOWER(TRIM(user_prompt_full)) = ? OR LOWER(TRIM(user_prompt_preview)) = ? OR TRIM(user_prompt_full) = ? OR TRIM(user_prompt_preview) = ?)",
-			trimmedLower, previewLower, trimmedPrompt, preview,
+			trimmedLower, previewLower, SanitizeDBString(trimmedPrompt), cleanPreview,
 		)
 	}
 
 	// Extension logs 127.0.0.1 and the EXE logs the machine address. Same prompt
 	// must still collapse. Match the desktop name when we have it.
-	if agentHostname != "" {
-		dedupQuery = dedupQuery.Where("agent_hostname = ? OR agent_hostname = '' OR agent_hostname IS NULL", agentHostname)
-	} else if agentID != "" {
-		dedupQuery = dedupQuery.Where("agent_id = ? OR agent_id = '' OR agent_id IS NULL OR client_ip = ? OR client_ip IN ?", agentID, clientIP, []string{"127.0.0.1", "::1"})
-	} else if clientIP != "" {
-		dedupQuery = dedupQuery.Where("client_ip = ? OR client_ip IN ?", clientIP, []string{"127.0.0.1", "::1"})
+	if cleanAgentHostname != "" {
+		dedupQuery = dedupQuery.Where("agent_hostname = ? OR agent_hostname = '' OR agent_hostname IS NULL", cleanAgentHostname)
+	} else if cleanAgentID != "" {
+		dedupQuery = dedupQuery.Where("agent_id = ? OR agent_id = '' OR agent_id IS NULL OR client_ip = ? OR client_ip IN ?", cleanAgentID, cleanClientIP, []string{"127.0.0.1", "::1"})
+	} else if cleanClientIP != "" {
+		dedupQuery = dedupQuery.Where("client_ip = ? OR client_ip IN ?", cleanClientIP, []string{"127.0.0.1", "::1"})
 	}
 
 	if err := dedupQuery.Order("created_at DESC").First(&existing).Error; err == nil && existing.ID != "" {
 		updates := map[string]any{}
-		if existing.DomainUser == "" && domainUser != "" {
-			updates["domain_user"] = domainUser
+		if existing.DomainUser == "" && cleanDomainUser != "" {
+			updates["domain_user"] = cleanDomainUser
 		}
-		if existing.ADDomain == "" && adDomain != "" {
-			updates["ad_domain"] = adDomain
+		if existing.ADDomain == "" && cleanADDomain != "" {
+			updates["ad_domain"] = cleanADDomain
 		}
-		if existing.ADUpn == "" && adUpn != "" {
-			updates["ad_upn"] = adUpn
+		if existing.ADUpn == "" && cleanADUpn != "" {
+			updates["ad_upn"] = cleanADUpn
 		}
-		if existing.Domain == "" && domain != "" {
-			updates["domain"] = domain
+		if existing.Domain == "" && cleanDomain != "" {
+			updates["domain"] = cleanDomain
 		}
-		if existing.AttachmentName == "" && attachmentName != "" {
-			updates["attachment_name"] = attachmentName
+		if existing.AttachmentName == "" && cleanAttachmentName != "" {
+			updates["attachment_name"] = cleanAttachmentName
 		}
 		if existing.PromptTokens == 0 && promptTokens > 0 {
 			updates["prompt_tokens"] = promptTokens
@@ -2213,9 +2271,9 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 			updates["cost"] = cost
 		}
 		if existing.Action == "Allowed" && action == "Blocked" {
-			updates["action"] = action
-			updates["status"] = status
-			updates["rule_triggered"] = ruleTriggered
+			updates["action"] = cleanAction
+			updates["status"] = cleanStatus
+			updates["rule_triggered"] = cleanRuleTriggered
 			updates["risk_score"] = riskScore
 			updates["predictive_risk"] = predictiveRisk
 			updates["predicted_category"] = predictedCategory
@@ -2227,6 +2285,19 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	}
 
 	if err := db.WithContext(ctx).Create(&logEntry).Error; err != nil {
+		log.Printf("[BrowserAI] Database create failed: %v — attempting fallback insert with truncated secondary fields", err)
+		logEntry.Status = SafePromptPreview(logEntry.Status, 200)
+		logEntry.RuleTriggered = SafePromptPreview(logEntry.RuleTriggered, 200)
+		logEntry.AttachmentName = SafePromptPreview(logEntry.AttachmentName, 200)
+		logEntry.Platform = SafePromptPreview(logEntry.Platform, 80)
+		logEntry.Domain = SafePromptPreview(logEntry.Domain, 120)
+		logEntry.UserPromptPreview = SafePromptPreview(logEntry.UserPromptPreview, 90)
+		if retryErr := db.WithContext(ctx).Create(&logEntry).Error; retryErr == nil {
+			if domain != "" {
+				_ = db.WithContext(ctx).Model(&BrowserTargetWebsite{}).Where("domain = ?", domain).UpdateColumn("intercepted_count", gorm.Expr("intercepted_count + 1")).Error
+			}
+			return &logEntry, matchedWarning, nil
+		}
 		return nil, "", err
 	}
 
@@ -2251,19 +2322,19 @@ func (m *BrowserAIManager) UpdateLogAttachmentMeta(ctx context.Context, logID, n
 	}
 	updates := map[string]any{}
 	if n := strings.TrimSpace(name); n != "" {
-		updates["attachment_name"] = n
+		updates["attachment_name"] = SafePromptPreview(n, 250)
 	}
 	if s := strings.TrimSpace(storedName); s != "" {
-		updates["attachment_stored_name"] = s
+		updates["attachment_stored_name"] = SanitizeDBString(s)
 	}
 	if c := strings.TrimSpace(contentType); c != "" {
-		updates["attachment_content_type"] = c
+		updates["attachment_content_type"] = SafePromptPreview(c, 100)
 	}
 	if sizeBytes > 0 {
 		updates["attachment_size_bytes"] = sizeBytes
 	}
 	if p := strings.TrimSpace(relPath); p != "" {
-		updates["attachment_path"] = p
+		updates["attachment_path"] = SanitizeDBString(p)
 	}
 	if expiresAt != nil {
 		updates["attachment_expires_at"] = *expiresAt
@@ -2493,9 +2564,9 @@ func (m *BrowserAIManager) UpdateLogReplyBot(ctx context.Context, logID, provide
 	cost := CalculateBrowserAICost(existing.Platform, model, promptTokens, completionTokens, existing.AudioDurationSec)
 
 	return db.WithContext(ctx).Model(&BrowserAILog{}).Where("id = ?", logID).Updates(map[string]any{
-		"reply_bot_provider": provider,
-		"reply_bot_model":    model,
-		"reply_bot_text":     text,
+		"reply_bot_provider": SafePromptPreview(provider, 100),
+		"reply_bot_model":    SafePromptPreview(model, 100),
+		"reply_bot_text":     SanitizeDBString(text),
 		"completion_tokens":  completionTokens,
 		"total_tokens":       totalTokens,
 		"cost":               cost,

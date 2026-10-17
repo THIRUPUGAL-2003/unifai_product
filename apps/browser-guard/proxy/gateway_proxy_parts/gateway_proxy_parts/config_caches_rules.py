@@ -340,9 +340,23 @@ CHAT_PATH_MARKERS = [
     "/sydney/chat", "/fetchresponse", "/chat/stream",
     # OpenAI Realtime Voice & WebSocket APIs
     "/v1/realtime", "/realtime",
+    # Multimodal: Image Generation (OpenAI DALL-E, Midjourney, Stable Diffusion, Leonardo, Ideogram)
+    "/v1/images/generations", "/images/generations", "/v1/images/edits", "/images/edits",
+    "/api/generate_image", "/api/generate-image", "/api/images/generate", "/api/image",
+    "/imagefx", "/imagen", "/draw", "/text2img", "/txt2img",
+    # Multimodal: Video Generation (Sora, Runway, Kling, Pika, Luma, Haiper)
+    "/v1/videos/generations", "/videos/generations", "/api/generate_video", "/api/generate-video",
+    "/api/video", "/text2video", "/txt2video", "/sora", "/runway",
+    # Multimodal: Audio / Music / Voice (Suno, Udio, ElevenLabs, Gemini Voice)
+    "/v1/audio/speech", "/audio/speech", "/v1/audio/transcriptions", "/audio/transcriptions",
+    "/api/generate_music", "/api/generate_audio", "/musicfx", "/api/tts", "/text2speech", "/txt2speech", "/synthesize",
 ]
 
-GEMINI_CHAT_RPCS = {"hR32Ce", "vyAQhe", "wXbdQc", "StreamGenerate", "GenerateContent"}
+GEMINI_CHAT_RPCS = {
+    "hR32Ce", "vyAQhe", "wXbdQc", "StreamGenerate", "GenerateContent",
+    "qXbBfe", "otAQvf", "f6B7Re", "u0s7Td", "mK44yd", "wQ49ae", "cMcP0b",
+    "ImageFX", "MusicFX", "VideoFX", "GenerateImages", "StreamGenerateImages",
+}
 
 BATCHEXECUTE_LOCALE_JUNK = {
     "en", "en-in", "en-us", "en-gb", "en-au", "ta-in", "hi-in",
@@ -416,6 +430,15 @@ _UNIVERSAL_PROMPT_KEYS = (
     "action_input", "thought_input", "template_inputs", "agent_task",
     "goal", "user_goal", "user_query_string", "chat_prompt", "direct_prompt",
     "user_text_input", "completion_input", "generate_input", "instances",
+    # Multimodal: Image Generation (Gemini Imagen, DALL-E, Midjourney, Leonardo, Ideogram)
+    "image_prompt", "image_description", "positive_prompt", "negative_prompt",
+    "text_prompt", "text_prompts", "art_style", "aspect_ratio_prompt", "caption",
+    "image_query", "visual_prompt", "style_prompt", "img_prompt", "generation_prompt",
+    # Multimodal: Video Generation (Sora, Runway, Kling, Pika, Luma)
+    "video_prompt", "motion_prompt", "camera_prompt", "script", "scene_description", "video_text",
+    # Multimodal: Audio / Music / Voice (Suno, Udio, ElevenLabs, Gemini Voice)
+    "lyrics", "song_description", "style_tags", "music_prompt", "sound_prompt",
+    "voice_style", "tts_text", "audio_prompt", "audio_query",
 )
 
 # Deduplicate identical events per domain within this window (seconds).
@@ -1480,7 +1503,11 @@ def is_batchexecute_chat_submit(path: str, body: str = "") -> bool:
                 return False
 
         # Chat send RPCs (query param or body, case-insensitive)
-        chat_rpcs = ("wXbdQc", "vyAQhe", "hR32Ce", "StreamGenerate", "GenerateContent", "otAQvf", "f6B7Re", "u0s7Td", "mK44yd")
+        chat_rpcs = (
+            "wXbdQc", "vyAQhe", "hR32Ce", "StreamGenerate", "GenerateContent",
+            "otAQvf", "f6B7Re", "u0s7Td", "mK44yd", "qXbBfe", "wQ49ae", "cMcP0b",
+            "ImageFX", "MusicFX", "VideoFX", "GenerateImages", "StreamGenerateImages",
+        )
         body_low = body.lower()
         if any(rpc in body or rpc in body_dec or rpc.lower() in path_l or rpc.lower() in body_low for rpc in chat_rpcs):
             return True

@@ -5,9 +5,37 @@ import re
 import time
 import urllib.parse
 try:
-    from config_caches_rules import _path_has_ignore_pattern, _is_typed_numeric_prompt, _is_symbol_prompt, _UNIVERSAL_PROMPT_KEYS
+    from config_caches_rules import (
+        _path_has_ignore_pattern,
+        _is_typed_numeric_prompt,
+        _is_symbol_prompt,
+        _UNIVERSAL_PROMPT_KEYS,
+        _CONTROL_PLANE_PROMPT_TOKENS,
+        _is_google_wire_blob,
+        _is_opaque_wire_blob,
+        is_batchexecute_chat_submit,
+        is_event_send_chat_submit,
+        is_rest_sse_ask_submit,
+        _path_has_chat_marker,
+        _looks_like_messages_parts_body,
+        _body_has_user_send_payload,
+        _looks_like_document_body_dump,
+        _is_file_content_part,
+        is_noise,
+        is_unsubmitted_chat_body,
+        is_event_sync_noise_content,
+        _path_looks_like_upload,
+        BATCHEXECUTE_LOCALE_JUNK,
+        NOISE_EXTENSIONS,
+    )
 except Exception:
-    pass
+    _CONTROL_PLANE_PROMPT_TOKENS = frozenset({"ping", "pong", "heartbeat", "ready", "ack", "sync"})
+    _is_google_wire_blob = lambda x: False
+    _is_opaque_wire_blob = lambda x: False
+    _looks_like_document_body_dump = lambda x: False
+    _is_file_content_part = lambda x: False
+    BATCHEXECUTE_LOCALE_JUNK = {"en", "ta-in", "hi-in", "es", "fr", "de"}
+    NOISE_EXTENSIONS = re.compile(r"\.(png|jpg|jpeg|gif|webp|svg|css|js|woff|woff2|ttf|ico|map)$", re.IGNORECASE)
 
 def _safe_unescape_prompt_str(raw: str) -> str:
     """Safely decode JSON string escapes without destroying UTF-8 unicode/emojis."""
@@ -1747,13 +1775,8 @@ def _extract_from_json(data) -> str | None:
                 if got:
                     return got
 
-    # Perplexity / Copilot / Bing / generic query fields across ANY Target Website
-    for key in (
-        "query", "query_str", "prompt", "input", "input_text", "inputs", "text",
-        "message", "question", "user_input", "last_query", "user_query",
-        "rawUserQuery", "utterance", "userMessage", "content", "instruction",
-        "search_query", "q",
-    ):
+    # Prompt / Query fields across ANY Target Website (chat, search, image, video, audio)
+    for key in _UNIVERSAL_PROMPT_KEYS:
         val = data.get(key)
         if isinstance(val, (str, int, float)):
             sval = str(val)
@@ -1770,7 +1793,7 @@ def _extract_from_json(data) -> str | None:
             got = _extract_from_message_obj(val)
             if got:
                 return got
-            for nk in ("query", "text", "prompt", "question", "rawUserQuery", "content", "input", "message"):
+            for nk in ("query", "text", "prompt", "question", "rawUserQuery", "content", "input", "message", "image_prompt", "text_prompt", "video_prompt", "lyrics", "audio_prompt"):
                 if isinstance(val.get(nk), (str, int, float)):
                     sval = str(val[nk])
                     if _is_opaque_wire_blob(sval):

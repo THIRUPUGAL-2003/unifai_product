@@ -8,10 +8,37 @@ import re
 import sys
 import threading
 import time
-import urllib
 import urllib.parse
 import urllib.request
 import zipfile
+
+try:
+    from config_caches_rules import (
+        GEMINI_CHAT_RPCS,
+        BATCHEXECUTE_LOCALE_JUNK,
+        _is_google_wire_blob,
+        _looks_like_document_body_dump,
+        _struct_value_ok,
+        _UNIVERSAL_PROMPT_KEYS,
+    )
+except Exception:
+    GEMINI_CHAT_RPCS = {"hR32Ce", "vyAQhe", "wXbdQc", "StreamGenerate", "GenerateContent", "qXbBfe", "otAQvf", "ImageFX"}
+    BATCHEXECUTE_LOCALE_JUNK = {"en", "ta-in", "hi-in", "es", "fr", "de"}
+    _is_google_wire_blob = lambda x: False
+    _looks_like_document_body_dump = lambda x: False
+    _struct_value_ok = lambda x: True
+    _UNIVERSAL_PROMPT_KEYS = ("prompt", "query", "text", "input", "image_prompt")
+
+try:
+    from helpers_prompts import (
+        looks_like_user_prompt,
+        _is_ai_chrome_url,
+        _clean_prompt_text,
+    )
+except Exception:
+    looks_like_user_prompt = lambda x: bool(x and len(x.strip()) > 0)
+    _is_ai_chrome_url = lambda x: False
+    _clean_prompt_text = lambda x: x.strip() if x else ""
 
 
 def _run_async(coro):
@@ -1688,6 +1715,20 @@ def extract_batchexecute_prompt(content: str) -> str:
                     cands.append(elem[0])
                 elif isinstance(elem, str):
                     cands.append(elem)
+        if not cands and isinstance(inner, list):
+            for item in inner:
+                if isinstance(item, str) and len(item.strip()) >= 1:
+                    cands.append(item)
+                elif isinstance(item, list):
+                    for sub in item:
+                        if isinstance(sub, str) and len(sub.strip()) >= 1:
+                            cands.append(sub)
+                        elif isinstance(sub, list) and sub and isinstance(sub[0], str):
+                            cands.append(sub[0])
+                elif isinstance(item, dict):
+                    for k in ("prompt", "image_prompt", "query", "text", "input"):
+                        if isinstance(item.get(k), str):
+                            cands.append(item[k])
         if trusted and cands:
             non_dumps = [s for s in cands if not _is_code_or_doc_dump(s)]
             if non_dumps:

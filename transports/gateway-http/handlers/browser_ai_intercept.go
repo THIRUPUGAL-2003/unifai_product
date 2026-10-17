@@ -82,8 +82,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	}
 
 	if len(payload.Prompt) > browserAIMaxPromptChars {
-		SendError(ctx, fasthttp.StatusBadRequest, "Prompt payload exceeds maximum allowed size")
-		return
+		payload.Prompt = logstore.SafePromptPreview(payload.Prompt, browserAIMaxPromptChars)
 	}
 
 	if payload.ClientIP == "" {
