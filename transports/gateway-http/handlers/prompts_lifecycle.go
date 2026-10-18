@@ -73,7 +73,7 @@ func (m *PromptLifecycleManager) RepairDuplicateFolders(ctx context.Context) {
 	}
 
 	var entityFolders []tables.TableFolder
-	if err := db.Where("type IN ? AND entity_id IS NOT NULL AND entity_id <> ''", []string{"team", "customer"}).
+	if err := db.Where("type IN ? AND entity_id IS NOT NULL AND entity_id <> ''", []string{"team", "customer", "business_unit"}).
 		Order("created_at asc, id asc").Find(&entityFolders).Error; err == nil {
 		mergeDuplicateFolders(db, entityFolders, func(f tables.TableFolder) string { return f.Type + "/" + *f.EntityID })
 	}
@@ -175,13 +175,15 @@ func mergeDuplicateFolders(db *gorm.DB, folders []tables.TableFolder, key func(t
 	}
 }
 
-// EnsureAllSystemRoots guarantees that the 6 system root folders exist:
+// EnsureAllSystemRoots guarantees that the 8 system root folders exist:
 // 1. Customers (system_customers_root)
 // 2. Removed Customers (system_removed_customers_root)
-// 3. Teams (system_teams_root)
-// 4. Removed Teams (system_removed_teams_root)
-// 5. Users (system_users_root)
-// 6. Removed Users (system_removed_users_root)
+// 3. Business Units (system_business_units_root)
+// 4. Removed Business Units (system_removed_business_units_root)
+// 5. Teams (system_teams_root)
+// 6. Removed Teams (system_removed_teams_root)
+// 7. Users (system_users_root)
+// 8. Removed Users (system_removed_users_root)
 func (m *PromptLifecycleManager) EnsureAllSystemRoots(ctx context.Context) error {
 	if m == nil || m.store == nil || m.store.DB() == nil {
 		return nil
@@ -193,6 +195,8 @@ func (m *PromptLifecycleManager) EnsureAllSystemRoots(ctx context.Context) error
 	}{
 		{"Customers", "system_customers_root"},
 		{"Removed Customers", "system_removed_customers_root"},
+		{"Business Units", "system_business_units_root"},
+		{"Removed Business Units", "system_removed_business_units_root"},
 		{"Teams", "system_teams_root"},
 		{"Removed Teams", "system_removed_teams_root"},
 		{"Users", "system_users_root"},
@@ -538,6 +542,13 @@ func (m *PromptLifecycleManager) OnCustomerDeleted(ctx context.Context, customer
 				m.revokePromptFromTeams(ctx, p.ID, teams, nil)
 			}
 		}
+		// Reparent active child BUs to root "Business Units" folder so active BUs aren't trapped in Removed Customers
+		buRoot, bErr := m.EnsureSystemFolder(ctx, "Business Units", "system_business_units_root", nil)
+		if bErr == nil && buRoot != nil {
+			_ = db.Model(&tables.TableFolder{}).
+				Where("parent_id = ? AND type = 'business_unit'", custFolder.ID).
+				Update("parent_id", buRoot.ID).Error
+		}
 		// Reparent active child teams to root "Teams" folder so active teams aren't trapped in Removed Customers
 		teamsRoot, tErr := m.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil)
 		if tErr == nil && teamsRoot != nil {
@@ -579,7 +590,282 @@ func (m *PromptLifecycleManager) OnCustomerUpdated(ctx context.Context, customer
 	return nil
 }
 
-// OnTeamCreated creates a team subfolder under its customer folder if linked to a Customer,
+// findTeamBusinessUnit locates the business unit the team belongs to, either via BusinessUnitID or ParsedTeamIDs.
+func (m *PromptLifecycleManager) findTeamBusinessUnit(ctx context.Context, team *tables.TableTeam) *tables.TableBusinessUnit {
+	if m == nil || m.store == nil || m.store.DB() == nil || team == nil {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+	if team.BusinessUnitID != nil && *team.BusinessUnitID != "" {
+		var bu tables.TableBusinessUnit
+		if err := db.Where("id = ?", *team.BusinessUnitID).First(&bu).Error; err == nil && bu.ID != "" {
+			return &bu
+		}
+	}
+	var bus []tables.TableBusinessUnit
+	if err := db.Where("team_ids_json LIKE ?", "%"+team.ID+"%").Find(&bus).Error; err == nil {
+		for i := range bus {
+			for _, tid := range bus[i].ParsedTeamIDs {
+				if tid == team.ID {
+					return &bus[i]
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// OnBusinessUnitCreated creates a folder under "Customers/<customer_name>/<bu_name>" if linked to a Customer,
+// or under root "Business Units/<bu_name>" if standalone.
+func (m *PromptLifecycleManager) OnBusinessUnitCreated(ctx context.Context, bu *tables.TableBusinessUnit) error {
+	if m == nil || m.store == nil || m.store.DB() == nil || bu == nil {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+
+	var parentFolderID *string
+	if bu.CustomerID != nil && *bu.CustomerID != "" {
+		var custFolder tables.TableFolder
+		err := db.Where("entity_id = ? OR (type = 'customer' AND entity_id = ?)", *bu.CustomerID, *bu.CustomerID).First(&custFolder).Error
+		if err != nil {
+			customer, getErr := m.store.GetCustomer(ctx, *bu.CustomerID)
+			if getErr == nil && customer != nil {
+				_ = m.OnCustomerCreated(ctx, customer)
+				_ = db.Where("entity_id = ?", customer.ID).First(&custFolder).Error
+			}
+		}
+		if custFolder.ID != "" {
+			parentFolderID = &custFolder.ID
+		}
+	}
+
+	// Standalone BU -> place under root "Business Units"
+	if parentFolderID == nil {
+		buRoot, err := m.EnsureSystemFolder(ctx, "Business Units", "system_business_units_root", nil)
+		if err == nil && buRoot != nil {
+			parentFolderID = &buRoot.ID
+		}
+	}
+
+	if parentFolderID == nil {
+		return errors.New("parent folder for business unit not available")
+	}
+
+	var existing tables.TableFolder
+	err := db.Where("entity_id = ? OR (name = ? AND parent_id = ?)", bu.ID, bu.Name, *parentFolderID).First(&existing).Error
+	if err == nil {
+		updates := map[string]any{"entity_id": bu.ID, "type": "business_unit"}
+		if existing.ParentID == nil || *existing.ParentID != *parentFolderID {
+			updates["parent_id"] = *parentFolderID
+		}
+		_ = db.Model(&existing).Updates(updates).Error
+		return nil
+	}
+
+	now := time.Now()
+	buFolder := &tables.TableFolder{
+		ID:        uuid.New().String(),
+		Name:      bu.Name,
+		ParentID:  parentFolderID,
+		Type:      "business_unit",
+		EntityID:  &bu.ID,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if err := m.store.CreateFolder(ctx, buFolder); err != nil {
+		return err
+	}
+
+	for _, tid := range bu.ParsedTeamIDs {
+		if tid != "" {
+			_ = m.OnTeamAssignedToBusinessUnit(ctx, tid, bu.ID)
+		}
+	}
+
+	return nil
+}
+
+// OnBusinessUnitDeleted moves the BU folder to "Removed Business Units/"
+// and reparents child teams to Customer folder (if linked to customer) or root "Teams" folder.
+func (m *PromptLifecycleManager) OnBusinessUnitDeleted(ctx context.Context, bu *tables.TableBusinessUnit) error {
+	if m == nil || m.store == nil || m.store.DB() == nil || bu == nil {
+		return nil
+	}
+
+	removedBURoot, err := m.EnsureSystemFolder(ctx, "Removed Business Units", "system_removed_business_units_root", nil)
+	if err != nil {
+		logger.Error("PromptLifecycle: failed to ensure 'Removed Business Units' folder: %v", err)
+		return err
+	}
+
+	db := m.store.DB().WithContext(ctx)
+	buFolder, err := findEntityFolder(db, bu.ID, bu.Name, "business_unit")
+	if err != nil || buFolder == nil {
+		return nil
+	}
+
+	// Reparent active child teams to Customer folder or root "Teams" folder so active teams aren't trapped
+	var targetParentID string
+	if bu.CustomerID != nil && *bu.CustomerID != "" {
+		if custFolder, cErr := findEntityFolder(db, *bu.CustomerID, "", "customer"); cErr == nil && custFolder != nil {
+			targetParentID = custFolder.ID
+		}
+	}
+	if targetParentID == "" {
+		if teamsRoot, tErr := m.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil); tErr == nil && teamsRoot != nil {
+			targetParentID = teamsRoot.ID
+		}
+	}
+	if targetParentID != "" {
+		_ = db.Model(&tables.TableFolder{}).
+			Where("parent_id = ? AND type = 'team'", buFolder.ID).
+			Update("parent_id", targetParentID).Error
+	}
+
+	_ = db.Model(buFolder).
+		Updates(map[string]any{
+			"parent_id": removedBURoot.ID,
+			"type":      "archived_business_unit",
+			"name":      bu.Name + " (Archived)",
+		}).Error
+
+	return nil
+}
+
+// OnBusinessUnitUpdated renames the BU folder and reparents it if customer association changed.
+func (m *PromptLifecycleManager) OnBusinessUnitUpdated(ctx context.Context, bu *tables.TableBusinessUnit, oldName string, oldCustomerID *string) error {
+	if m == nil || m.store == nil || m.store.DB() == nil || bu == nil {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+
+	var newParentFolderID *string
+	if bu.CustomerID != nil && *bu.CustomerID != "" {
+		var custFolder tables.TableFolder
+		err := db.Where("entity_id = ? OR (type = 'customer' AND entity_id = ?)", *bu.CustomerID, *bu.CustomerID).First(&custFolder).Error
+		if err != nil {
+			customer, getErr := m.store.GetCustomer(ctx, *bu.CustomerID)
+			if getErr == nil && customer != nil {
+				_ = m.OnCustomerCreated(ctx, customer)
+				_ = db.Where("entity_id = ?", customer.ID).First(&custFolder).Error
+			}
+		}
+		if custFolder.ID != "" {
+			newParentFolderID = &custFolder.ID
+		}
+	}
+	if newParentFolderID == nil {
+		buRoot, err := m.EnsureSystemFolder(ctx, "Business Units", "system_business_units_root", nil)
+		if err == nil && buRoot != nil {
+			newParentFolderID = &buRoot.ID
+		}
+	}
+
+	buFolder, err := findEntityFolder(db, bu.ID, oldName, "business_unit")
+	if err != nil || buFolder == nil {
+		return m.OnBusinessUnitCreated(ctx, bu)
+	}
+
+	updates := map[string]any{
+		"name":      bu.Name,
+		"entity_id": bu.ID,
+		"type":      "business_unit",
+	}
+	if newParentFolderID != nil && (buFolder.ParentID == nil || *buFolder.ParentID != *newParentFolderID) {
+		updates["parent_id"] = *newParentFolderID
+	}
+
+	if err := db.Model(buFolder).Updates(updates).Error; err != nil {
+		return err
+	}
+
+	for _, tid := range bu.ParsedTeamIDs {
+		if tid != "" {
+			_ = m.OnTeamAssignedToBusinessUnit(ctx, tid, bu.ID)
+		}
+	}
+	return nil
+}
+
+// OnTeamAssignedToBusinessUnit moves the team folder under the specified BU folder.
+func (m *PromptLifecycleManager) OnTeamAssignedToBusinessUnit(ctx context.Context, teamID string, businessUnitID string) error {
+	if m == nil || m.store == nil || m.store.DB() == nil || teamID == "" || businessUnitID == "" {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+
+	var bu tables.TableBusinessUnit
+	if err := db.Where("id = ?", businessUnitID).First(&bu).Error; err != nil {
+		return err
+	}
+
+	buFolder, err := findEntityFolder(db, bu.ID, bu.Name, "business_unit")
+	if err != nil || buFolder == nil {
+		_ = m.OnBusinessUnitCreated(ctx, &bu)
+		buFolder, _ = findEntityFolder(db, bu.ID, bu.Name, "business_unit")
+	}
+	if buFolder == nil || buFolder.ID == "" {
+		return errors.New("business unit folder not found")
+	}
+
+	team, err := m.store.GetTeam(ctx, teamID)
+	if err != nil || team == nil {
+		return err
+	}
+
+	teamFolder, err := findEntityFolder(db, team.ID, team.Name, "team")
+	if err != nil || teamFolder == nil {
+		team.BusinessUnitID = &bu.ID
+		return m.OnTeamCreated(ctx, team)
+	}
+
+	if teamFolder.ParentID == nil || *teamFolder.ParentID != buFolder.ID {
+		_ = db.Model(teamFolder).Update("parent_id", buFolder.ID).Error
+	}
+	_ = db.Model(&tables.TableTeam{}).Where("id = ?", team.ID).Update("business_unit_id", bu.ID).Error
+
+	return nil
+}
+
+// OnTeamRemovedFromBusinessUnit moves the team folder back to Customer folder (if customer linked) or root "Teams".
+func (m *PromptLifecycleManager) OnTeamRemovedFromBusinessUnit(ctx context.Context, teamID string, businessUnitID string) error {
+	if m == nil || m.store == nil || m.store.DB() == nil || teamID == "" {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+
+	team, err := m.store.GetTeam(ctx, teamID)
+	if err != nil || team == nil {
+		return err
+	}
+
+	teamFolder, err := findEntityFolder(db, team.ID, team.Name, "team")
+	if err != nil || teamFolder == nil {
+		return nil
+	}
+
+	var targetParentID string
+	if team.CustomerID != nil && *team.CustomerID != "" {
+		if custFolder, cErr := findEntityFolder(db, *team.CustomerID, "", "customer"); cErr == nil && custFolder != nil {
+			targetParentID = custFolder.ID
+		}
+	}
+	if targetParentID == "" {
+		if teamsRoot, tErr := m.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil); tErr == nil && teamsRoot != nil {
+			targetParentID = teamsRoot.ID
+		}
+	}
+	if targetParentID != "" {
+		_ = db.Model(teamFolder).Update("parent_id", targetParentID).Error
+	}
+	_ = db.Model(&tables.TableTeam{}).Where("id = ?", team.ID).Update("business_unit_id", nil).Error
+
+	return nil
+}
+
+// OnTeamCreated creates a team subfolder under its BU folder if linked to a Business Unit,
+// or under its customer folder if linked directly to a Customer,
 // or under the root "Teams/" folder if standalone.
 func (m *PromptLifecycleManager) OnTeamCreated(ctx context.Context, team *tables.TableTeam) error {
 	if m == nil || m.store == nil || m.store.DB() == nil || team == nil {
@@ -589,7 +875,22 @@ func (m *PromptLifecycleManager) OnTeamCreated(ctx context.Context, team *tables
 	db := m.store.DB().WithContext(ctx)
 
 	var parentFolderID *string
-	if team.CustomerID != nil && *team.CustomerID != "" {
+
+	// 1. Check if team belongs to a Business Unit
+	if bu := m.findTeamBusinessUnit(ctx, team); bu != nil {
+		var buFolder *tables.TableFolder
+		var err error
+		if buFolder, err = findEntityFolder(db, bu.ID, bu.Name, "business_unit"); err != nil || buFolder == nil {
+			_ = m.OnBusinessUnitCreated(ctx, bu)
+			buFolder, _ = findEntityFolder(db, bu.ID, bu.Name, "business_unit")
+		}
+		if buFolder != nil && buFolder.ID != "" {
+			parentFolderID = &buFolder.ID
+		}
+	}
+
+	// 2. If no BU, check if team is linked directly to a Customer
+	if parentFolderID == nil && team.CustomerID != nil && *team.CustomerID != "" {
 		// Locate parent customer folder
 		var custFolder tables.TableFolder
 		err := db.Where("entity_id = ? OR (type = 'customer' AND entity_id = ?)", *team.CustomerID, *team.CustomerID).First(&custFolder).Error
@@ -605,7 +906,7 @@ func (m *PromptLifecycleManager) OnTeamCreated(ctx context.Context, team *tables
 		}
 	}
 
-	// Standalone team (no customer) -> place under root "Teams" folder
+	// 3. Standalone team (no BU, no customer) -> place under root "Teams" folder
 	if parentFolderID == nil {
 		teamsRoot, err := m.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil)
 		if err == nil && teamsRoot != nil {
@@ -690,7 +991,19 @@ func (m *PromptLifecycleManager) OnTeamUpdated(ctx context.Context, team *tables
 
 	// Determine new parent folder
 	var newParentFolderID *string
-	if team.CustomerID != nil && *team.CustomerID != "" {
+	if bu := m.findTeamBusinessUnit(ctx, team); bu != nil {
+		var buFolder *tables.TableFolder
+		var err error
+		if buFolder, err = findEntityFolder(db, bu.ID, bu.Name, "business_unit"); err != nil || buFolder == nil {
+			_ = m.OnBusinessUnitCreated(ctx, bu)
+			buFolder, _ = findEntityFolder(db, bu.ID, bu.Name, "business_unit")
+		}
+		if buFolder != nil && buFolder.ID != "" {
+			newParentFolderID = &buFolder.ID
+		}
+	}
+
+	if newParentFolderID == nil && team.CustomerID != nil && *team.CustomerID != "" {
 		var custFolder tables.TableFolder
 		err := db.Where("entity_id = ? OR (type = 'customer' AND entity_id = ?)", *team.CustomerID, *team.CustomerID).First(&custFolder).Error
 		if err != nil {
@@ -705,7 +1018,7 @@ func (m *PromptLifecycleManager) OnTeamUpdated(ctx context.Context, team *tables
 		}
 	}
 
-	// Standalone team (no customer) -> place under root "Teams" folder
+	// Standalone team (no BU, no customer) -> place under root "Teams" folder
 	if newParentFolderID == nil {
 		teamsRoot, err := m.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil)
 		if err == nil && teamsRoot != nil {
@@ -1160,6 +1473,18 @@ func (m *PromptLifecycleManager) resolveTeamIDFromFolder(ctx context.Context, fo
 				return team.ID
 			}
 		}
+		if currentFolder.Type == "business_unit" {
+			if currentFolder.EntityID != nil && *currentFolder.EntityID != "" {
+				var bu tables.TableBusinessUnit
+				if err := db.Where("id = ?", *currentFolder.EntityID).First(&bu).Error; err == nil && len(bu.ParsedTeamIDs) > 0 {
+					return bu.ParsedTeamIDs[0]
+				}
+				var directTeam tables.TableTeam
+				if err := db.Where("business_unit_id = ?", *currentFolder.EntityID).Order("created_at asc").First(&directTeam).Error; err == nil && directTeam.ID != "" {
+					return directTeam.ID
+				}
+			}
+		}
 		if currentFolder.Type == "customer" {
 			if currentFolder.EntityID != nil && *currentFolder.EntityID != "" {
 				var team tables.TableTeam
@@ -1208,7 +1533,7 @@ func (m *PromptLifecycleManager) assignPromptToTeamMembers(ctx context.Context, 
 const maxFolderDepth = 32
 
 // folderAudienceTeams returns the teams whose members are granted prompts stored in folderID:
-// the nearest enclosing team folder's team, or every team of the nearest enclosing customer folder.
+// the nearest enclosing team folder's team, every team of the enclosing BU, or every team of the nearest enclosing customer folder.
 func (m *PromptLifecycleManager) folderAudienceTeams(ctx context.Context, folderID string) []string {
 	db := m.store.DB().WithContext(ctx)
 	currID := folderID
@@ -1221,6 +1546,33 @@ func (m *PromptLifecycleManager) folderAudienceTeams(ctx context.Context, folder
 			switch folder.Type {
 			case "team":
 				return []string{*folder.EntityID}
+			case "business_unit":
+				teamSet := map[string]bool{}
+				var bu tables.TableBusinessUnit
+				if err := db.Where("id = ?", *folder.EntityID).First(&bu).Error; err == nil {
+					for _, tid := range bu.ParsedTeamIDs {
+						if tid != "" {
+							teamSet[tid] = true
+						}
+					}
+				}
+				var directTeams []tables.TableTeam
+				_ = db.Where("business_unit_id = ?", *folder.EntityID).Find(&directTeams).Error
+				for _, dt := range directTeams {
+					teamSet[dt.ID] = true
+				}
+				var childTeamFolders []tables.TableFolder
+				_ = db.Where("parent_id = ? AND type = 'team' AND entity_id IS NOT NULL", folder.ID).Find(&childTeamFolders).Error
+				for _, ctf := range childTeamFolders {
+					if ctf.EntityID != nil && *ctf.EntityID != "" {
+						teamSet[*ctf.EntityID] = true
+					}
+				}
+				res := make([]string, 0, len(teamSet))
+				for tid := range teamSet {
+					res = append(res, tid)
+				}
+				return res
 			case "customer":
 				var teams []tables.TableTeam
 				_ = db.Where("customer_id = ?", *folder.EntityID).Find(&teams).Error
@@ -1240,7 +1592,7 @@ func (m *PromptLifecycleManager) folderAudienceTeams(ctx context.Context, folder
 }
 
 // audienceFolderIDs returns rootID plus its descendants that share its audience, i.e. without
-// descending into nested team/customer folders (those have an audience of their own).
+// descending into nested team/customer/business_unit folders (those have an audience of their own).
 func (m *PromptLifecycleManager) audienceFolderIDs(ctx context.Context, rootID string) []string {
 	db := m.store.DB().WithContext(ctx)
 	ids := []string{rootID}
@@ -1253,7 +1605,7 @@ func (m *PromptLifecycleManager) audienceFolderIDs(ctx context.Context, rootID s
 		}
 		frontier = frontier[:0]
 		for _, c := range children {
-			if seen[c.ID] || ((c.Type == "team" || c.Type == "customer") && c.EntityID != nil && *c.EntityID != "") {
+			if seen[c.ID] || ((c.Type == "team" || c.Type == "customer" || c.Type == "business_unit") && c.EntityID != nil && *c.EntityID != "") {
 				continue
 			}
 			seen[c.ID] = true
@@ -1265,7 +1617,7 @@ func (m *PromptLifecycleManager) audienceFolderIDs(ctx context.Context, rootID s
 }
 
 // teamPromptIDs returns every prompt a member of teamID is granted through the team: prompts
-// in the team folder subtree plus prompts kept at the team's customer folder level.
+// in the team folder subtree plus prompts kept at the team's BU and customer folder levels.
 func (m *PromptLifecycleManager) teamPromptIDs(ctx context.Context, teamID string) []string {
 	db := m.store.DB().WithContext(ctx)
 	var folderIDs []string
@@ -1273,9 +1625,23 @@ func (m *PromptLifecycleManager) teamPromptIDs(ctx context.Context, teamID strin
 		folderIDs = append(folderIDs, m.audienceFolderIDs(ctx, f.ID)...)
 	}
 	var team tables.TableTeam
-	if err := db.Where("id = ?", teamID).First(&team).Error; err == nil && team.CustomerID != nil && *team.CustomerID != "" {
-		if f, err := findEntityFolder(db, *team.CustomerID, "", "customer"); err == nil {
-			folderIDs = append(folderIDs, m.audienceFolderIDs(ctx, f.ID)...)
+	if err := db.Where("id = ?", teamID).First(&team).Error; err == nil {
+		if bu := m.findTeamBusinessUnit(ctx, &team); bu != nil {
+			if f, err := findEntityFolder(db, bu.ID, "", "business_unit"); err == nil {
+				folderIDs = append(folderIDs, m.audienceFolderIDs(ctx, f.ID)...)
+			}
+		}
+		customerID := team.CustomerID
+		if (customerID == nil || *customerID == "") && team.BusinessUnitID != nil {
+			var bu tables.TableBusinessUnit
+			if db.Where("id = ?", *team.BusinessUnitID).First(&bu).Error == nil && bu.CustomerID != nil {
+				customerID = bu.CustomerID
+			}
+		}
+		if customerID != nil && *customerID != "" {
+			if f, err := findEntityFolder(db, *customerID, "", "customer"); err == nil {
+				folderIDs = append(folderIDs, m.audienceFolderIDs(ctx, f.ID)...)
+			}
 		}
 	}
 	if len(folderIDs) == 0 {

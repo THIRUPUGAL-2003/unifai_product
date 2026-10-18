@@ -132,6 +132,9 @@ func (h *WorkspaceHandler) createBusinessUnit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	h.reloadBusinessUnitIndex(ctx)
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnBusinessUnitCreated(ctx, &row)
+	}
 	SendJSON(ctx, map[string]any{"business_unit": businessUnitFromRow(row)})
 }
 
@@ -170,6 +173,8 @@ func (h *WorkspaceHandler) updateBusinessUnit(ctx *fasthttp.RequestCtx) {
 			}
 		}
 	}
+	oldName := row.Name
+	oldCustomerID := row.CustomerID
 	row.Name = name
 	if body.CustomerID != nil {
 		if strings.TrimSpace(*body.CustomerID) != "" {
@@ -191,6 +196,9 @@ func (h *WorkspaceHandler) updateBusinessUnit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	h.reloadBusinessUnitIndex(ctx)
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnBusinessUnitUpdated(ctx, row, oldName, oldCustomerID)
+	}
 	SendJSON(ctx, map[string]any{"business_unit": businessUnitFromRow(*row)})
 }
 
@@ -221,7 +229,9 @@ func (h *WorkspaceHandler) deleteBusinessUnit(ctx *fasthttp.RequestCtx) {
 	if store == nil {
 		return
 	}
-	if err := store.DeleteBusinessUnit(ctx, pathID(ctx, "id")); isStoreNotFound(err) {
+	id := pathID(ctx, "id")
+	row, _ := store.GetBusinessUnit(ctx, id)
+	if err := store.DeleteBusinessUnit(ctx, id); isStoreNotFound(err) {
 		SendError(ctx, fasthttp.StatusNotFound, "business unit not found")
 		return
 	} else if err != nil {
@@ -229,6 +239,9 @@ func (h *WorkspaceHandler) deleteBusinessUnit(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	h.reloadBusinessUnitIndex(ctx)
+	if h.promptLifecycle != nil && row != nil {
+		_ = h.promptLifecycle.OnBusinessUnitDeleted(ctx, row)
+	}
 	SendJSON(ctx, map[string]string{"message": "deleted"})
 }
 
@@ -311,6 +324,9 @@ func (h *WorkspaceHandler) assignBusinessUnitTeam(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	h.reloadBusinessUnitIndex(ctx)
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnTeamAssignedToBusinessUnit(ctx, body.TeamID, row.ID)
+	}
 	SendJSON(ctx, map[string]string{"message": "team assigned"})
 }
 
@@ -342,6 +358,9 @@ func (h *WorkspaceHandler) removeBusinessUnitTeam(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	h.reloadBusinessUnitIndex(ctx)
+	if h.promptLifecycle != nil {
+		_ = h.promptLifecycle.OnTeamRemovedFromBusinessUnit(ctx, teamID, row.ID)
+	}
 	SendJSON(ctx, map[string]string{"message": "team removed"})
 }
 

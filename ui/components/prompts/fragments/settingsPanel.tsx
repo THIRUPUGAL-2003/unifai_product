@@ -367,6 +367,8 @@ export function SettingsPanel() {
 						targetUserIds.add(cur.entity_id);
 					} else if (cur.type === "system_teams_root" || parent?.name === "Teams" || parent?.type === "system_teams_root") {
 						targetTeamIds.add(cur.entity_id);
+					} else if (cur.type === "system_business_units_root" || parent?.name === "Business Units" || parent?.type === "system_business_units_root" || cur.type === "business_unit") {
+						// business unit folder
 					} else if (cur.type === "system_customers_root" || parent?.name === "Customers" || parent?.type === "system_customers_root") {
 						targetCustomerIds.add(cur.entity_id);
 					}

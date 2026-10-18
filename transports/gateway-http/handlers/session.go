@@ -1500,6 +1500,18 @@ func (h *SessionHandler) verifyOTP(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
+	for _, key := range []string{targetUsername, targetEmail} {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, key); locked {
+			mins := lockoutRetryMinutes(ctx, retryAfter)
+			ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+			SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
+			return
+		}
+	}
+
 	otpRow, err := h.configStore.GetLatestPasswordResetOTP(ctx, targetUsername)
 	if (err != nil || otpRow == nil) && targetEmail != "" && targetEmail != targetUsername {
 		otpRow, err = h.configStore.GetLatestPasswordResetOTP(ctx, targetEmail)
@@ -1839,6 +1851,23 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	checkKeys := []string{claims.Username, claims.Email, payload.Username, payload.Email}
+	if user != nil {
+		checkKeys = append(checkKeys, user.Username, user.Email)
+	}
+	for _, rawKey := range checkKeys {
+		k := strings.TrimSpace(rawKey)
+		if k == "" {
+			continue
+		}
+		if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, k); locked {
+			mins := lockoutRetryMinutes(ctx, retryAfter)
+			ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+			SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
+			return
+		}
+	}
+
 	if user != nil {
 		if !user.IsApproved() {
 			SendError(ctx, fasthttp.StatusUnauthorized, invalidResetMsg)
@@ -1878,7 +1907,6 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 		// The emailed code proves ownership, so the failed-login lock (which only guards
 		// the old password) is lifted. The per-IP limit still applies.
 		clearAccountLockouts(h.configStore, ctx, user.Username, user.Email)
-		clearLoginIPFailures(h.configStore, ctx)
 		SendJSON(ctx, map[string]any{"message": "Password updated. You can sign in now."})
 		return
 	}
@@ -1940,7 +1968,6 @@ func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
 	}
 
 	clearAccountLockouts(h.configStore, ctx, adminName, adminEmail, "admin")
-	clearLoginIPFailures(h.configStore, ctx)
 	SendJSON(ctx, map[string]any{"message": "Password updated. You can sign in now."})
 }
 
@@ -2240,6 +2267,12 @@ func (h *SessionHandler) deleteUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusForbidden, msg)
 		return
 	}
+	if token := sessionToken(ctx); token != "" {
+		if sess, _ := h.configStore.GetSession(ctx, token); sess != nil && strings.EqualFold(sess.Username, existing.Username) {
+			SendError(ctx, fasthttp.StatusBadRequest, "You cannot delete your own account")
+			return
+		}
+	}
 
 	// Clean related governance rows before deleting the user so DB stays consistent.
 	purgeUserRelations(ctx, h.configStore, h.promptLifecycle, existing)
@@ -2505,6 +2538,14 @@ func (h *SessionHandler) reviewTargetGuard(ctx *fasthttp.RequestCtx, user *table
 		SendError(ctx, fasthttp.StatusForbidden, msg)
 		return false
 	}
+	if !forApprove {
+		if token := sessionToken(ctx); token != "" {
+			if sess, _ := h.configStore.GetSession(ctx, token); sess != nil && strings.EqualFold(sess.Username, user.Username) {
+				SendError(ctx, fasthttp.StatusBadRequest, "You cannot deny your own account")
+				return false
+			}
+		}
+	}
 	return true
 }
 
@@ -2609,6 +2650,16 @@ func (h *SessionHandler) blockUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusForbidden, "Cannot block an administrator account")
 		return
 	}
+	if token := sessionToken(ctx); token != "" {
+		if sess, _ := h.configStore.GetSession(ctx, token); sess != nil && strings.EqualFold(sess.Username, user.Username) {
+			SendError(ctx, fasthttp.StatusBadRequest, "You cannot block your own account")
+			return
+		}
+	}
+	if user.Status != tables.UserStatusApproved && user.Status != tables.UserStatusRejected {
+		SendError(ctx, fasthttp.StatusBadRequest, "Only approved or denied accounts can be blocked")
+		return
+	}
 	now := time.Now()
 	user.Status = tables.UserStatusDisabled
 	user.UpdatedAt = now
@@ -2640,6 +2691,10 @@ func (h *SessionHandler) unblockUser(ctx *fasthttp.RequestCtx) {
 	user, err := h.configStore.GetUserByID(ctx, id)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusNotFound, "User not found")
+		return
+	}
+	if user.Status != tables.UserStatusDisabled {
+		SendError(ctx, fasthttp.StatusBadRequest, "Only blocked users can be unblocked")
 		return
 	}
 	now := time.Now()
@@ -2711,6 +2766,14 @@ func (h *SessionHandler) changeTemporaryPassword(ctx *fasthttp.RequestCtx) {
 	dbUser, err := h.configStore.GetUserByUsername(ctx, sess.Username)
 	if err != nil || dbUser == nil {
 		SendError(ctx, fasthttp.StatusNotFound, "User not found")
+		return
+	}
+	if !dbUser.IsApproved() {
+		SendError(ctx, fasthttp.StatusForbidden, "Account is not active")
+		return
+	}
+	if !dbUser.MustChangePassword {
+		SendError(ctx, fasthttp.StatusBadRequest, "Account does not require a temporary password change")
 		return
 	}
 	sameAsTemporary, cmpErr := encrypt.CompareHash(dbUser.Password, payload.NewPassword)

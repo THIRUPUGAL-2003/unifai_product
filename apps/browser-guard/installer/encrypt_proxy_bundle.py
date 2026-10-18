@@ -52,18 +52,19 @@ def main() -> int:
         except Exception as e:
             print(f"  -> Mirror parent failed: {e}")
     local_app_data = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    installed_guard_dir = Path(local_app_data) / "Programs" / "Gateway" / "Guard"
-    if installed_guard_dir.is_dir():
-        try:
-            shutil.copy2(code_enc, installed_guard_dir / "gateway_guard_code.enc")
-            print(f"  -> Deployed to {installed_guard_dir / 'gateway_guard_code.enc'}")
-        except Exception as e:
-            print(f"  -> Deploy to installed guard failed: {e}")
-        try:
-            shutil.copy2(OUTPUT_ENC, installed_guard_dir / "gateway_proxy_parts.enc")
-            print(f"  -> Deployed to {installed_guard_dir / 'gateway_proxy_parts.enc'}")
-        except Exception as e:
-            pass
+    for sub in [Path("Programs") / "Gateway" / "Guard", Path("Programs") / "YP" / "Raksha"]:
+        installed_guard_dir = Path(local_app_data) / sub
+        if installed_guard_dir.is_dir():
+            try:
+                shutil.copy2(code_enc, installed_guard_dir / "gateway_guard_code.enc")
+                print(f"  -> Deployed to {installed_guard_dir / 'gateway_guard_code.enc'}")
+            except Exception as e:
+                print(f"  -> Deploy to {installed_guard_dir} failed: {e}")
+            try:
+                shutil.copy2(OUTPUT_ENC, installed_guard_dir / "gateway_proxy_parts.enc")
+                print(f"  -> Deployed to {installed_guard_dir / 'gateway_proxy_parts.enc'}")
+            except Exception as e:
+                pass
 
     print("Encryption: AES-256-GCM + Hardware Acceleration + In-Memory Decryption")
     print("=" * 60)

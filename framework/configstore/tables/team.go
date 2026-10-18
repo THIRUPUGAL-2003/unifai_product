@@ -12,13 +12,15 @@ import (
 type TableTeam struct {
 	ID          string  `gorm:"primaryKey;type:varchar(255)" json:"id"`
 	Name        string  `gorm:"type:varchar(255);not null;uniqueIndex" json:"name"`
-	CustomerID  *string `gorm:"type:varchar(255);index" json:"customer_id,omitempty"` // A team can belong to a customer
-	RateLimitID *string `gorm:"type:varchar(255);index" json:"rate_limit_id,omitempty"`
-	SourceID    *string `gorm:"type:varchar(255);uniqueIndex" json:"source_id,omitempty"`
+	CustomerID     *string `gorm:"type:varchar(255);index" json:"customer_id,omitempty"`      // A team can belong to a customer
+	BusinessUnitID *string `gorm:"type:varchar(255);index" json:"business_unit_id,omitempty"` // A team can belong to a business unit
+	RateLimitID    *string `gorm:"type:varchar(255);index" json:"rate_limit_id,omitempty"`
+	SourceID       *string `gorm:"type:varchar(255);uniqueIndex" json:"source_id,omitempty"`
 
 	// Relationships
-	Customer    *TableCustomer    `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
-	Budgets     []TableBudget     `gorm:"foreignKey:TeamID;constraint:OnDelete:CASCADE" json:"budgets,omitempty"` // Multiple budgets with different reset intervals
+	Customer     *TableCustomer     `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
+	BusinessUnit *TableBusinessUnit `gorm:"foreignKey:BusinessUnitID" json:"business_unit,omitempty"`
+	Budgets      []TableBudget      `gorm:"foreignKey:TeamID;constraint:OnDelete:CASCADE" json:"budgets,omitempty"` // Multiple budgets with different reset intervals
 	RateLimit   *TableRateLimit   `gorm:"foreignKey:RateLimitID" json:"rate_limit,omitempty"`
 	VirtualKeys []TableVirtualKey `gorm:"many2many:governance_virtual_key_teams;foreignKey:ID;joinForeignKey:TeamID;references:ID;joinReferences:VirtualKeyID" json:"virtual_keys,omitempty"`
 

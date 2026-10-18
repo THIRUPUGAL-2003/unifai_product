@@ -1100,6 +1100,7 @@ func collectProviderConfigDeleteIDs(
 type CreateTeamRequest struct {
 	Name            string                  `json:"name" validate:"required"`
 	CustomerID      *string                 `json:"customer_id,omitempty"`      // Team can belong to a customer
+	BusinessUnitID  *string                 `json:"business_unit_id,omitempty"` // Team can belong to a business unit
 	Budgets         []CreateBudgetRequest   `json:"budgets,omitempty"`          // Multi-budget: each must have a unique reset_duration
 	RateLimit       *CreateRateLimitRequest `json:"rate_limit,omitempty"`       // Team can have its own rate limit
 	CalendarAligned bool                    `json:"calendar_aligned,omitempty"` // Team-wide: snap all team budgets and rate-limit resets to calendar boundaries
@@ -1109,6 +1110,7 @@ type CreateTeamRequest struct {
 type UpdateTeamRequest struct {
 	Name            *string                 `json:"name,omitempty"`
 	CustomerID      *string                 `json:"customer_id,omitempty"`
+	BusinessUnitID  *string                 `json:"business_unit_id,omitempty"`
 	Budgets         []CreateBudgetRequest   `json:"budgets,omitempty"` // Multi-budget: replaces all team budgets
 	RateLimit       *UpdateRateLimitRequest `json:"rate_limit,omitempty"`
 	CalendarAligned *bool                   `json:"calendar_aligned,omitempty"` // Team-wide setting; nil means "leave unchanged"
@@ -2744,6 +2746,7 @@ func (h *GovernanceHandler) createTeam(ctx *fasthttp.RequestCtx) {
 			ID:              uuid.NewString(),
 			Name:            req.Name,
 			CustomerID:      req.CustomerID,
+			BusinessUnitID:  req.BusinessUnitID,
 			CalendarAligned: req.CalendarAligned,
 		}
 		if req.RateLimit != nil {
@@ -2933,6 +2936,13 @@ func (h *GovernanceHandler) updateTeam(ctx *fasthttp.RequestCtx) {
 				team.CustomerID = nil
 			} else {
 				team.CustomerID = req.CustomerID
+			}
+		}
+		if req.BusinessUnitID != nil {
+			if *req.BusinessUnitID == "" {
+				team.BusinessUnitID = nil
+			} else {
+				team.BusinessUnitID = req.BusinessUnitID
 			}
 		}
 		// Resolve team-level calendar alignment for this update:

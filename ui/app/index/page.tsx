@@ -428,7 +428,12 @@ console.log(response.choices[0].message.content);`
 							</Button>
 						)}
 					</div>
-					<div className="mt-5 flex flex-wrap items-center gap-2">
+					<div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-slate-600">
+						<span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> Browser and desktop apps</span>
+						<span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> One virtual key</span>
+						<span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-emerald-600" /> Under 0.8 ms overhead</span>
+					</div>
+					<div className="mt-4 flex flex-wrap items-center gap-2">
 						{supportedModels.map((m, idx) => (
 							<div key={idx} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#e6edf8] bg-white text-xs font-semibold text-slate-600">
 								<span className={`w-1.5 h-1.5 rounded-full ${m.color}`} />
@@ -521,8 +526,8 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* TRUST & COMPLIANCE METRICS STRIP */}
-				<section className="px-6 lg:px-10 xl:px-14 pt-2 pb-2">
-					<div className="max-w-[1440px] mx-auto rounded-[28px] border border-[#e6edf8] bg-white shadow-[0_12px_40px_rgba(15,23,42,0.04)] py-8 px-4 sm:px-8">
+				<section className="px-6 lg:px-10 xl:px-14 py-3">
+					<div className="max-w-[1440px] mx-auto rounded-[28px] border border-[#e6edf8] bg-white shadow-[0_12px_40px_rgba(15,23,42,0.04)] py-6 px-4 sm:px-8">
 					<div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-0 md:divide-x md:divide-[#e8eef8] text-center">
 						<div className="space-y-1 px-3">
 							<div className="text-3xl sm:text-4xl font-extrabold text-[#2f6bff] tracking-tight">50M+</div>
@@ -552,9 +557,9 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* PRODUCTS SECTION (TWO PILLARS) */}
-				<section id="products" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-10 lg:px-10 xl:px-14 scroll-mt-16">
+				<section id="products" className="flex min-h-[calc(100dvh-4rem)] items-start bg-white/70 px-6 py-12 lg:px-10 xl:px-14 scroll-mt-16">
 					<div className="mx-auto w-full max-w-[1440px]">
-					<div className="text-center max-w-2xl mx-auto mb-14">
+					<div className="text-center max-w-2xl mx-auto mb-8">
 						<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">Platform</div>
 						<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-4">
 							Two products. One architecture.
@@ -643,7 +648,7 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* CAPABILITIES SECTION */}
-				<section id="features" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-8 lg:px-10 xl:px-14 scroll-mt-16">
+				<section id="features" className="flex min-h-[calc(100dvh-4rem)] items-start px-6 py-12 lg:px-10 xl:px-14 scroll-mt-16">
 					<div className="mx-auto w-full max-w-[1440px]">
 						<div className="text-center max-w-2xl mx-auto mb-6">
 							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-2">Capabilities</div>
@@ -704,7 +709,7 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* DEVELOPER QUICKSTART CODE SECTION */}
-				<section id="quickstart" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-10 lg:px-10 xl:px-14 scroll-mt-16">
+				<section id="quickstart" className="flex min-h-[calc(100dvh-4rem)] items-start bg-white/70 px-6 py-12 lg:px-10 xl:px-14 scroll-mt-16">
 					<div className="mx-auto w-full max-w-[1440px]">
 					<div id="developers" className="scroll-mt-24" />
 					<div id="code-preview" className="scroll-mt-24" />
@@ -781,7 +786,7 @@ console.log(response.choices[0].message.content);`
 								</button>
 							</div>
 
-							<div className="p-5 overflow-x-auto text-xs font-mono leading-relaxed bg-[#050609] text-slate-300 max-h-[340px]">
+							<div className="p-5 overflow-x-auto text-xs font-mono leading-relaxed bg-[#050609] text-slate-300">
 								<pre className="whitespace-pre">{codeExamples[codeTab]}</pre>
 							</div>
 						</div>
@@ -789,9 +794,9 @@ console.log(response.choices[0].message.content);`
 					</div>
 				</section>
 
-				<section id="models" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-10 lg:px-10 xl:px-14 scroll-mt-16">
+				<section id="models" className="flex min-h-[calc(100dvh-4rem)] items-start px-6 py-12 lg:px-10 xl:px-14 scroll-mt-16">
 					<div className="mx-auto w-full max-w-[1440px]">
-						<div className="text-center max-w-2xl mx-auto mb-10">
+						<div className="text-center max-w-2xl mx-auto mb-6">
 							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">Models</div>
 							<h2 className="text-3xl sm:text-5xl font-extrabold tracking-[-0.03em] text-[#0b1b3a] mb-4">
 								One gateway. Every model.
@@ -827,7 +832,7 @@ console.log(response.choices[0].message.content);`
 				</section>
 
 				{/* FAQ SECTION */}
-				<section id="faq" className="flex min-h-[calc(100dvh-4rem)] items-center px-6 py-10 lg:px-10 xl:px-14 scroll-mt-16">
+				<section id="faq" className="flex min-h-[calc(100dvh-4rem)] items-start bg-white/70 px-6 py-12 lg:px-10 xl:px-14 scroll-mt-16">
 					<div className="mx-auto w-full max-w-[1440px]">
 						<div className="text-center mb-12">
 							<div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#2f6bff] mb-3">FAQ</div>

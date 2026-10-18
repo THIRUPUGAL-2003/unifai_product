@@ -746,6 +746,18 @@ def check_prompt(
             "redacted_prompt": "",
         }
 
+    # Filter out noise prompts and internal RPC protobuf blobs
+    t_clean = text.strip()
+    if t_clean.lower() in ("set", "ping", "pong", "heartbeat", "null", "me", "true", "false"):
+        return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
+    if len(t_clean) > 40 and " " not in t_clean and re.match(r"^[A-Za-z0-9+/=]+$", t_clean):
+        return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
+
+    # Deduplicate non-blocked prompts within 8 seconds
+    prompt_dedupe_key = f"{platform}|{text[:100]}"
+    if _is_duplicate_file_post("prompt|" + prompt_dedupe_key, ttl=8.0):
+        return {"blocked": False, "action": "Allowed", "message": "", "rule": ""}
+
     try:
         code, data = _http_json(
             "POST",

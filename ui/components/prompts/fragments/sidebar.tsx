@@ -20,6 +20,7 @@ import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	Archive,
+	Briefcase,
 	Building,
 	ChevronDown,
 	ChevronRight,
@@ -170,15 +171,17 @@ export function PromptSidebar() {
 			}
 		}
 
-		// Sort root folders: Customers (1), Teams (2), Users (3), custom folders (5), Removed archives (10-12)
+		// Sort root folders: Customers (1), Business Units (2), Teams (3), Users (4), custom folders (5), Removed archives (10-13)
 		const order = (f: Folder) => {
 			if (f.name === "Customers" || f.type === "system_customers_root") return 1;
-			if (f.name === "Teams" || f.type === "system_teams_root") return 2;
-			if (f.name === "Users" || f.type === "system_users_root") return 3;
+			if (f.name === "Business Units" || f.type === "system_business_units_root") return 2;
+			if (f.name === "Teams" || f.type === "system_teams_root") return 3;
+			if (f.name === "Users" || f.type === "system_users_root") return 4;
 			if (f.name === "Removed Customers" || f.type === "system_removed_customers_root") return 10;
-			if (f.name === "Removed Users" || f.type === "system_removed_users_root") return 11;
+			if (f.name === "Removed Business Units" || f.type === "system_removed_business_units_root") return 11;
 			if (f.name === "Removed Teams" || f.type === "system_removed_teams_root") return 12;
-			if (f.name.startsWith("Removed") || f.type?.startsWith("archived_")) return 13;
+			if (f.name === "Removed Users" || f.type === "system_removed_users_root") return 13;
+			if (f.name.startsWith("Removed") || f.type?.startsWith("archived_")) return 14;
 			return 5;
 		};
 		root.sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
@@ -803,13 +806,16 @@ function DroppableFolder({
 		folder.type?.startsWith("system_") ||
 		folder.name === "Users" ||
 		folder.name === "Customers" ||
+		folder.name === "Business Units" ||
 		folder.name === "Teams" ||
 		folder.name === "Removed Users" ||
 		folder.name === "Removed Customers" ||
+		folder.name === "Removed Business Units" ||
 		folder.name === "Removed Teams";
 
 	const isArchiveFolder = folder.type?.startsWith("archived_") || folder.name.startsWith("Removed");
 	const isCustomersFolder = folder.type === "system_customers_root" || folder.name === "Customers";
+	const isBusinessUnitsFolder = folder.type === "system_business_units_root" || folder.name === "Business Units";
 	const isTeamsFolder = folder.type === "system_teams_root" || folder.name === "Teams";
 	const isUsersFolder = folder.type === "system_users_root" || folder.name === "Users";
 
@@ -846,6 +852,8 @@ function DroppableFolder({
 					<Archive className="text-muted-foreground h-4 w-4 shrink-0" />
 				) : isCustomersFolder ? (
 					<Building className="text-primary h-4 w-4 shrink-0" />
+				) : isBusinessUnitsFolder ? (
+					<Briefcase className="text-primary h-4 w-4 shrink-0" />
 				) : isTeamsFolder ? (
 					<Users className="text-primary h-4 w-4 shrink-0" />
 				) : isUsersFolder ? (

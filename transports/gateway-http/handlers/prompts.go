@@ -495,6 +495,9 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 		case "customer":
 			targetRootType = "system_removed_customers_root"
 			targetRootName = "Removed Customers"
+		case "business_unit":
+			targetRootType = "system_removed_business_units_root"
+			targetRootName = "Removed Business Units"
 		case "team":
 			targetRootType = "system_removed_teams_root"
 			targetRootName = "Removed Teams"

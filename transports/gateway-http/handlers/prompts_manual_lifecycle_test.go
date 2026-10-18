@@ -22,6 +22,26 @@ func (s *lifecycleTestStore) DB() *gorm.DB {
 	return s.db
 }
 
+func (s *lifecycleTestStore) CreateCustomer(ctx context.Context, customer *tables.TableCustomer, tx ...*gorm.DB) error {
+	return s.db.WithContext(ctx).Create(customer).Error
+}
+
+func (s *lifecycleTestStore) GetCustomer(ctx context.Context, id string) (*tables.TableCustomer, error) {
+	var customer tables.TableCustomer
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&customer).Error; err != nil {
+		return nil, err
+	}
+	return &customer, nil
+}
+
+func (s *lifecycleTestStore) GetBusinessUnit(ctx context.Context, id string) (*tables.TableBusinessUnit, error) {
+	var bu tables.TableBusinessUnit
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&bu).Error; err != nil {
+		return nil, err
+	}
+	return &bu, nil
+}
+
 func (s *lifecycleTestStore) CreateTeam(ctx context.Context, team *tables.TableTeam, tx ...*gorm.DB) error {
 	return s.db.WithContext(ctx).Create(team).Error
 }
@@ -87,6 +107,7 @@ func setupLifecycleTestStore(t *testing.T) *lifecycleTestStore {
 
 	err = db.AutoMigrate(
 		&tables.TableCustomer{},
+		&tables.TableBusinessUnit{},
 		&tables.TableTeam{},
 		&tables.TableTeamMember{},
 		&tables.TableUser{},
@@ -738,5 +759,273 @@ func TestPromptLifecycle_SCIMUserAndGroupFlow(t *testing.T) {
 	_ = store.DB().Where("id = ?", hankPrompt.ID).First(&promptAfterRemove)
 	if promptAfterRemove.FolderID == nil || *promptAfterRemove.FolderID != usersFolder.ID {
 		t.Fatalf("expected Hank's prompt to return to Users folder %s, got %v", usersFolder.ID, promptAfterRemove.FolderID)
+	}
+}
+
+func TestPromptLifecycle_FiveFolderHierarchiesAndRemovedBU(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	// 1. Ensure all 8 system roots exist
+	_ = lifecycle.EnsureAllSystemRoots(ctx)
+
+	var custRoot, buRoot, teamRoot, userRoot, remCustRoot, remBURoot, remTeamRoot, remUserRoot tables.TableFolder
+	if err := store.DB().Where("type = 'system_customers_root'").First(&custRoot).Error; err != nil {
+		t.Fatalf("missing system_customers_root: %v", err)
+	}
+	if err := store.DB().Where("type = 'system_business_units_root'").First(&buRoot).Error; err != nil {
+		t.Fatalf("missing system_business_units_root: %v", err)
+	}
+	if err := store.DB().Where("type = 'system_teams_root'").First(&teamRoot).Error; err != nil {
+		t.Fatalf("missing system_teams_root: %v", err)
+	}
+	if err := store.DB().Where("type = 'system_users_root'").First(&userRoot).Error; err != nil {
+		t.Fatalf("missing system_users_root: %v", err)
+	}
+	if err := store.DB().Where("type = 'system_removed_customers_root'").First(&remCustRoot).Error; err != nil {
+		t.Fatalf("missing system_removed_customers_root: %v", err)
+	}
+	if err := store.DB().Where("type = 'system_removed_business_units_root'").First(&remBURoot).Error; err != nil {
+		t.Fatalf("missing system_removed_business_units_root: %v", err)
+	}
+	if err := store.DB().Where("type = 'system_removed_teams_root'").First(&remTeamRoot).Error; err != nil {
+		t.Fatalf("missing system_removed_teams_root: %v", err)
+	}
+	if err := store.DB().Where("type = 'system_removed_users_root'").First(&remUserRoot).Error; err != nil {
+		t.Fatalf("missing system_removed_users_root: %v", err)
+	}
+
+	// -------------------------------------------------------------
+	// Hierarchy 1: Customer -> BU -> Teams -> Users
+	// -------------------------------------------------------------
+	cust1 := &tables.TableCustomer{ID: "cust_h1_" + uuid.New().String()[:8], Name: "Global Enterprises"}
+	_ = store.CreateCustomer(ctx, cust1)
+	if err := lifecycle.OnCustomerCreated(ctx, cust1); err != nil {
+		t.Fatalf("OnCustomerCreated failed: %v", err)
+	}
+	var cust1Folder tables.TableFolder
+	if err := store.DB().Where("entity_id = ?", cust1.ID).First(&cust1Folder).Error; err != nil {
+		t.Fatalf("cust1Folder missing: %v", err)
+	}
+	if *cust1Folder.ParentID != custRoot.ID {
+		t.Fatalf("cust1Folder should be under Customers root %s, got %v", custRoot.ID, cust1Folder.ParentID)
+	}
+
+	bu1 := &tables.TableBusinessUnit{
+		ID:         "bu_h1_" + uuid.New().String()[:8],
+		Name:       "FinTech Division",
+		CustomerID: &cust1.ID,
+	}
+	_ = store.DB().Create(bu1)
+	if err := lifecycle.OnBusinessUnitCreated(ctx, bu1); err != nil {
+		t.Fatalf("OnBusinessUnitCreated failed: %v", err)
+	}
+	var bu1Folder tables.TableFolder
+	if err := store.DB().Where("entity_id = ?", bu1.ID).First(&bu1Folder).Error; err != nil {
+		t.Fatalf("bu1Folder missing: %v", err)
+	}
+	if bu1Folder.ParentID == nil || *bu1Folder.ParentID != cust1Folder.ID {
+		t.Fatalf("bu1Folder should be under cust1Folder %s, got %v", cust1Folder.ID, bu1Folder.ParentID)
+	}
+
+	team1 := &tables.TableTeam{
+		ID:             "team_h1_" + uuid.New().String()[:8],
+		Name:           "Core Payments",
+		CustomerID:     &cust1.ID,
+		BusinessUnitID: &bu1.ID,
+	}
+	_ = store.CreateTeam(ctx, team1)
+	if err := lifecycle.OnTeamCreated(ctx, team1); err != nil {
+		t.Fatalf("OnTeamCreated failed: %v", err)
+	}
+	var team1Folder tables.TableFolder
+	if err := store.DB().Where("entity_id = ?", team1.ID).First(&team1Folder).Error; err != nil {
+		t.Fatalf("team1Folder missing: %v", err)
+	}
+	if team1Folder.ParentID == nil || *team1Folder.ParentID != bu1Folder.ID {
+		t.Fatalf("Hierarchy 1 failed: team1Folder should be under bu1Folder %s, got %v", bu1Folder.ID, team1Folder.ParentID)
+	}
+
+	user1 := &tables.TableUser{ID: "usr_h1_" + uuid.New().String()[:8], Username: "alice_fintech", Email: "alice@fintech.com"}
+	_ = store.CreateUser(ctx, user1)
+	_ = lifecycle.OnUserCreated(ctx, user1, true)
+	_ = lifecycle.OnTeamMemberAdded(ctx, team1.ID, user1.ID)
+
+	var user1Prompt tables.TablePrompt
+	_ = store.DB().Where("owner_user_id = ?", user1.ID).First(&user1Prompt)
+	if user1Prompt.FolderID == nil || *user1Prompt.FolderID != team1Folder.ID {
+		t.Fatalf("Hierarchy 1 failed: user1 prompt should be inside team1Folder %s, got %v", team1Folder.ID, user1Prompt.FolderID)
+	}
+
+	// -------------------------------------------------------------
+	// Hierarchy 2: Customer -> Team -> Users
+	// -------------------------------------------------------------
+	team2 := &tables.TableTeam{
+		ID:         "team_h2_" + uuid.New().String()[:8],
+		Name:       "Customer Direct Team",
+		CustomerID: &cust1.ID, // No BU
+	}
+	_ = store.CreateTeam(ctx, team2)
+	if err := lifecycle.OnTeamCreated(ctx, team2); err != nil {
+		t.Fatalf("OnTeamCreated H2 failed: %v", err)
+	}
+	var team2Folder tables.TableFolder
+	if err := store.DB().Where("entity_id = ?", team2.ID).First(&team2Folder).Error; err != nil {
+		t.Fatalf("team2Folder missing: %v", err)
+	}
+	if team2Folder.ParentID == nil || *team2Folder.ParentID != cust1Folder.ID {
+		t.Fatalf("Hierarchy 2 failed: team2Folder should be under cust1Folder %s, got %v", cust1Folder.ID, team2Folder.ParentID)
+	}
+
+	user2 := &tables.TableUser{ID: "usr_h2_" + uuid.New().String()[:8], Username: "bob_direct", Email: "bob@direct.com"}
+	_ = store.CreateUser(ctx, user2)
+	_ = lifecycle.OnUserCreated(ctx, user2, true)
+	_ = lifecycle.OnTeamMemberAdded(ctx, team2.ID, user2.ID)
+
+	var user2Prompt tables.TablePrompt
+	_ = store.DB().Where("owner_user_id = ?", user2.ID).First(&user2Prompt)
+	if user2Prompt.FolderID == nil || *user2Prompt.FolderID != team2Folder.ID {
+		t.Fatalf("Hierarchy 2 failed: user2 prompt should be inside team2Folder %s, got %v", team2Folder.ID, user2Prompt.FolderID)
+	}
+
+	// -------------------------------------------------------------
+	// Hierarchy 3: BU -> Teams -> Users
+	// -------------------------------------------------------------
+	bu3 := &tables.TableBusinessUnit{
+		ID:         "bu_h3_" + uuid.New().String()[:8],
+		Name:       "Independent Research BU",
+		CustomerID: nil, // Standalone BU
+	}
+	_ = store.DB().Create(bu3)
+	if err := lifecycle.OnBusinessUnitCreated(ctx, bu3); err != nil {
+		t.Fatalf("OnBusinessUnitCreated H3 failed: %v", err)
+	}
+	var bu3Folder tables.TableFolder
+	if err := store.DB().Where("entity_id = ?", bu3.ID).First(&bu3Folder).Error; err != nil {
+		t.Fatalf("bu3Folder missing: %v", err)
+	}
+	if bu3Folder.ParentID == nil || *bu3Folder.ParentID != buRoot.ID {
+		t.Fatalf("Hierarchy 3 failed: bu3Folder should be under Business Units root %s, got %v", buRoot.ID, bu3Folder.ParentID)
+	}
+
+	team3 := &tables.TableTeam{
+		ID:             "team_h3_" + uuid.New().String()[:8],
+		Name:           "AI Research Lab",
+		BusinessUnitID: &bu3.ID,
+	}
+	_ = store.CreateTeam(ctx, team3)
+	if err := lifecycle.OnTeamCreated(ctx, team3); err != nil {
+		t.Fatalf("OnTeamCreated H3 failed: %v", err)
+	}
+	var team3Folder tables.TableFolder
+	if err := store.DB().Where("entity_id = ?", team3.ID).First(&team3Folder).Error; err != nil {
+		t.Fatalf("team3Folder missing: %v", err)
+	}
+	if team3Folder.ParentID == nil || *team3Folder.ParentID != bu3Folder.ID {
+		t.Fatalf("Hierarchy 3 failed: team3Folder should be under bu3Folder %s, got %v", bu3Folder.ID, team3Folder.ParentID)
+	}
+
+	user3 := &tables.TableUser{ID: "usr_h3_" + uuid.New().String()[:8], Username: "clara_ai", Email: "clara@ai.com"}
+	_ = store.CreateUser(ctx, user3)
+	_ = lifecycle.OnUserCreated(ctx, user3, true)
+	_ = lifecycle.OnTeamMemberAdded(ctx, team3.ID, user3.ID)
+
+	var user3Prompt tables.TablePrompt
+	_ = store.DB().Where("owner_user_id = ?", user3.ID).First(&user3Prompt)
+	if user3Prompt.FolderID == nil || *user3Prompt.FolderID != team3Folder.ID {
+		t.Fatalf("Hierarchy 3 failed: user3 prompt should be inside team3Folder %s, got %v", team3Folder.ID, user3Prompt.FolderID)
+	}
+
+	// -------------------------------------------------------------
+	// Hierarchy 4: Teams -> Users
+	// -------------------------------------------------------------
+	team4 := &tables.TableTeam{
+		ID:   "team_h4_" + uuid.New().String()[:8],
+		Name: "Standalone Engineering Team",
+	}
+	_ = store.CreateTeam(ctx, team4)
+	if err := lifecycle.OnTeamCreated(ctx, team4); err != nil {
+		t.Fatalf("OnTeamCreated H4 failed: %v", err)
+	}
+	var team4Folder tables.TableFolder
+	if err := store.DB().Where("entity_id = ?", team4.ID).First(&team4Folder).Error; err != nil {
+		t.Fatalf("team4Folder missing: %v", err)
+	}
+	if team4Folder.ParentID == nil || *team4Folder.ParentID != teamRoot.ID {
+		t.Fatalf("Hierarchy 4 failed: team4Folder should be under Teams root %s, got %v", teamRoot.ID, team4Folder.ParentID)
+	}
+
+	user4 := &tables.TableUser{ID: "usr_h4_" + uuid.New().String()[:8], Username: "dan_eng", Email: "dan@eng.com"}
+	_ = store.CreateUser(ctx, user4)
+	_ = lifecycle.OnUserCreated(ctx, user4, true)
+	_ = lifecycle.OnTeamMemberAdded(ctx, team4.ID, user4.ID)
+
+	var user4Prompt tables.TablePrompt
+	_ = store.DB().Where("owner_user_id = ?", user4.ID).First(&user4Prompt)
+	if user4Prompt.FolderID == nil || *user4Prompt.FolderID != team4Folder.ID {
+		t.Fatalf("Hierarchy 4 failed: user4 prompt should be inside team4Folder %s, got %v", team4Folder.ID, user4Prompt.FolderID)
+	}
+
+	// -------------------------------------------------------------
+	// Hierarchy 5: Users
+	// -------------------------------------------------------------
+	user5 := &tables.TableUser{ID: "usr_h5_" + uuid.New().String()[:8], Username: "eve_individual", Email: "eve@individual.com"}
+	_ = store.CreateUser(ctx, user5)
+	_ = lifecycle.OnUserCreated(ctx, user5, true)
+
+	var user5Prompt tables.TablePrompt
+	_ = store.DB().Where("owner_user_id = ?", user5.ID).First(&user5Prompt)
+	if user5Prompt.FolderID == nil || *user5Prompt.FolderID != userRoot.ID {
+		t.Fatalf("Hierarchy 5 failed: user5 prompt should be inside Users root %s, got %v", userRoot.ID, user5Prompt.FolderID)
+	}
+
+	// -------------------------------------------------------------
+	// Deletion & Removed Business Units / Archival Verifications
+	// -------------------------------------------------------------
+	// Delete BU 3: BU folder moves to Removed Business Units, active child team3 reparented to Teams root!
+	if err := lifecycle.OnBusinessUnitDeleted(ctx, bu3); err != nil {
+		t.Fatalf("OnBusinessUnitDeleted failed: %v", err)
+	}
+	var bu3AfterDelete tables.TableFolder
+	_ = store.DB().Where("entity_id = ?", bu3.ID).First(&bu3AfterDelete)
+	if bu3AfterDelete.ParentID == nil || *bu3AfterDelete.ParentID != remBURoot.ID {
+		t.Fatalf("bu3AfterDelete should be under Removed Business Units %s, got %v", remBURoot.ID, bu3AfterDelete.ParentID)
+	}
+	if bu3AfterDelete.Type != "archived_business_unit" {
+		t.Fatalf("expected archived_business_unit type, got %s", bu3AfterDelete.Type)
+	}
+
+	// Team 3 should be reparented to root Teams folder so it is not trapped!
+	var team3AfterBUDelete tables.TableFolder
+	_ = store.DB().Where("entity_id = ?", team3.ID).First(&team3AfterBUDelete)
+	if team3AfterBUDelete.ParentID == nil || *team3AfterBUDelete.ParentID != teamRoot.ID {
+		t.Fatalf("team3 should be reparented to Teams root %s, got %v", teamRoot.ID, team3AfterBUDelete.ParentID)
+	}
+
+	// Delete Customer 1: Customer folder moves to Removed Customers, child BU 1 reparented to Business Units root!
+	if err := lifecycle.OnCustomerDeleted(ctx, cust1); err != nil {
+		t.Fatalf("OnCustomerDeleted failed: %v", err)
+	}
+	var cust1AfterDelete tables.TableFolder
+	_ = store.DB().Where("entity_id = ?", cust1.ID).First(&cust1AfterDelete)
+	if cust1AfterDelete.ParentID == nil || *cust1AfterDelete.ParentID != remCustRoot.ID {
+		t.Fatalf("cust1AfterDelete should be under Removed Customers %s, got %v", remCustRoot.ID, cust1AfterDelete.ParentID)
+	}
+
+	var bu1AfterCustDelete tables.TableFolder
+	_ = store.DB().Where("entity_id = ?", bu1.ID).First(&bu1AfterCustDelete)
+	if bu1AfterCustDelete.ParentID == nil || *bu1AfterCustDelete.ParentID != buRoot.ID {
+		t.Fatalf("bu1 should be reparented to Business Units root %s, got %v", buRoot.ID, bu1AfterCustDelete.ParentID)
+	}
+
+	// Delete User 5: Prompt moves to Removed Users root!
+	if err := lifecycle.OnUserDeleted(ctx, user5); err != nil {
+		t.Fatalf("OnUserDeleted failed: %v", err)
+	}
+	var user5PromptAfterDelete tables.TablePrompt
+	_ = store.DB().Where("owner_user_id = ?", user5.ID).First(&user5PromptAfterDelete)
+	if user5PromptAfterDelete.FolderID == nil || *user5PromptAfterDelete.FolderID != remUserRoot.ID {
+		t.Fatalf("user5 prompt should be moved to Removed Users root %s, got %v", remUserRoot.ID, user5PromptAfterDelete.FolderID)
 	}
 }
