@@ -464,6 +464,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_governance_scoping_to_prompts"}, run: migrationAddGovernanceScopingToPrompts},
 	{IDs: []string{"add_must_change_password_to_governance_users"}, run: migrationAddMustChangePasswordToGovernanceUsers},
 	{IDs: []string{"ensure_governance_users_email_unique_index"}, run: migrationEnsureGovernanceUsersEmailUniqueIndex},
+	{IDs: []string{"add_business_unit_id_to_governance_teams"}, run: migrationAddBusinessUnitIDToGovernanceTeams},
 }
 
 // migrationWidenPromptMessageJSONMySQL turns prompt message_json columns into LONGTEXT on MySQL,
@@ -11573,4 +11574,30 @@ func migrationEnsureGovernanceUsersEmailUniqueIndex(ctx context.Context, db *gor
 	}
 	return nil
 }
+
+// migrationAddBusinessUnitIDToGovernanceTeams ensures governance_teams has business_unit_id column.
+func migrationAddBusinessUnitIDToGovernanceTeams(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_business_unit_id_to_governance_teams"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := addColumnIfNotExists(tx, logger, &tables.TableTeam{}, "business_unit_id"); err != nil {
+				return err
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			return dropColumnIfExists(tx, logger, &tables.TableTeam{}, "business_unit_id")
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		logger.Warn("[configstore] %s warning: %v", migrationName, err)
+	}
+	return nil
+}
+
 
