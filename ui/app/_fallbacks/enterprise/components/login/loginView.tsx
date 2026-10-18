@@ -305,6 +305,14 @@ export default function LoginView() {
 				setErrorMessage("Please enter a valid email address");
 				return;
 			}
+			if (
+				lockedAccount &&
+				cleanInput.toLowerCase() === lockedAccount.identifier &&
+				now < lockedAccount.endsAt
+			) {
+				setErrorMessage(`This account is temporarily locked for ${lockoutCountdown}. Forgot username is not allowed during lockout.`);
+				return;
+			}
 		}
 
 		if (mode === "reset") {

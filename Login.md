@@ -48,6 +48,7 @@ Every password submitted during **Sign Up**, **Temporary Password Change**, **Pa
    * **If SMTP is disabled:** The account is saved with status `pending` directly, and the applicant is told to wait for admin approval.
 
 ### 3.2 Exact Sign-Up Verification Email Template
+* **Sender Display Name:** `Raksha Security System`
 * **Recipient:** Registered Email
 * **Subject:** `Gateway sign-up verification code`
 * **Message Body:**
@@ -90,9 +91,60 @@ If you did not sign up, ignore this email.
 * **Message:** *"Too many failed login attempts. Account locked for about 20 minutes"*
 * **Strict Lockout Enforcement (Zero Bypass):**
   * **Mandatory Wait:** The user **MUST wait the full 20 minutes**. There is **NO BYPASS**.
-  * **All Recovery Blocked for this ID:** During these 20 minutes, `Sign In`, `Forgot Password`, `Verify OTP`, and `Password Reset` are all **completely blocked** for that specific account ID (`429 Too Many Requests`).
+  * **All Recovery Blocked for this ID:** During these 20 minutes, `Sign In`, `Forgot Password`, `Forgot Username`, `Verify OTP`, and `Password Reset` are all **completely blocked** for that specific account ID (`429 Too Many Requests`).
   * **Isolated to that Account ID:** Only that specific account identifier is locked. Other accounts, users, and administrators on the system continue working normally without disruption.
-  * **After 20 Minutes:** Once the 20-minute waiting window ends, the user can either sign in with their correct password or use Forgot Password to reset it.
+  * **After 20 Minutes:** Once the 20-minute waiting window ends, the user can either sign in with their correct password or use Forgot Password / Username to recover it.
+
+### 4.3 Role-Based Redirection & Scoped Feature Access
+Upon successful authentication, the frontend (`workspaceAccess.ts`) inspects the user's `role` and `allowed_sections` to redirect them:
+
+1. **Administrator / Super Admin:**
+   * **Destination:** `/workspace/dashboard` (Full admin portal).
+   * **Access:** Full access to all workspace features (Virtual Keys, Governance, Models, Teams, Customers, Business Units, Audit Logs, Settings).
+2. **Standard User (`role: "user"`):**
+   * **Destination:** `/workspace/prompt-repository` (User page / Playground).
+   * **Access:** Dedicated user interface for prompt engineering, chat sessions, model playground, and team prompt sharing. Admin configuration menus are hidden.
+3. **Sub-Administrator / Scoped Roles (`allowed_sections`):**
+   * **Destination:** Redirected to their first allowed feature path (e.g., `/workspace/analytics` or `/workspace/governance`).
+   * **Access Filter:** The navigation sidebar renders **only their permitted features**. Any direct navigation to unauthorized sections is intercepted by `getWorkspaceAccessRedirect` and blocked with HTTP 403 by `rbac_enforce.go`.
+
+### 4.4 Sign-In Security Alerts (First Login, New Device/System & Dormant Return)
+When SMTP is enabled, the backend (`smtp.go`: `trySendLoginNoticeEmail`) records the device fingerprint (hash of client IP + User-Agent header) in `login_devices`:
+
+1. **Sign-In from New Device / Different System / First-Time Login:**
+   * **Trigger:** If the IP or Browser User-Agent is new, or if this is the user's first login.
+   * **Sender Display Name:** `Raksha Security System`
+   * **Recipient:** User's registered email address.
+   * **Subject:** `Security Alert: Sign-in from new device or first-time login`
+   * **Message Template:**
+   ```text
+   Hello {username},
+
+   Your Gateway account signed in from a new device or for the first time.
+
+   • Account: {username}
+   • IP Address: {client_ip}
+   • Device / Browser: {user_agent}
+   • Timestamp: {RFC1123_timestamp}
+
+   If this was not you, secure your account and reset your password immediately here:
+   https://unifai.yespanchi.com/login?mode=forgot&email={encoded_email}
+
+   Please keep your credentials confidential. If you authorized this sign-in, no action is needed.
+   ```
+2. **Sign-In After Extended Inactivity (> 7 Days):**
+   * **Trigger:** If a user logs in from an existing device after more than 7 days of inactivity.
+   * **Subject:** `Security Alert: Sign-in after extended inactivity`
+   * **Message Template:** Same detailed metadata (IP, Device, Timestamp) with reason: *"Your Gateway account was signed into after an extended period of inactivity."*
+
+### 4.5 Error Handling & Account Enumeration Defense
+* **Wrong Email or Non-Existent Account:**
+  * To prevent attackers from enumerating valid emails or usernames, the system responds with:
+    `401 Unauthorized: "Invalid username or password"`
+  * Dummy password hashing (`padPasswordCompare`) is executed so response time is identical to an existing account, preventing timing attacks.
+* **Wrong Password:**
+  * Returns `401 Unauthorized: "Invalid username or password"` and increments the failed attempt counter.
+  * Once 3 failed attempts are reached, transitions into the 20-minute account lockout described in Section 4.2.
 
 ---
 
@@ -101,6 +153,7 @@ If you did not sign up, ignore this email.
 When an administrator creates a user under **Governance $\rightarrow$ Users** and selects "Send Temporary Password" (or leaves the password empty for auto-generation):
 
 ### 5.1 Temporary Password Welcome Email Template
+* **Sender Display Name:** `Raksha Security System`
 * **Recipient:** Employee's Email Address
 * **Subject:** `Your Gateway Account - Login Credentials`
 * **Message Body:**
@@ -155,12 +208,16 @@ Please keep your credentials confidential.
 
 ### 6.1 Forgot Password Request
 * The user enters their email or username on `/login?mode=forgot`.
-* **Anti-Account Enumeration:** To prevent attackers from harvesting valid usernames or emails, the server **always returns a generic response** regardless of whether the account exists:
+* **Anti-Account Enumeration:** The Reset Password screen always shows the same green notice, whether or not that email has an account:
   ```json
   {"message": "If an account matches, a one-time code was sent by email"}
   ```
+* **No account for that email:** No code is generated and no mail is sent. The green notice still appears. This is intentional. A different error such as "this email has no account" would tell an outsider which addresses are registered.
+* **Account exists and is approved:** The 6-digit code is emailed, and the screen shows the same green notice.
+* **Account is inside the 20-minute login lock:** Forgot Password does not continue. The API returns `429` and tells that identifier to wait. Other accounts are not locked.
 
 ### 6.2 Password Reset OTP Email Template
+* **Sender Display Name:** `Raksha Security System`
 * **Recipient:** User's Email Address
 * **Subject:** `Gateway password reset code`
 * **Message Body:**
@@ -189,12 +246,16 @@ It expires in 15 minutes. If you did not request this, ignore this email.
 
 ### 7.1 Forgot Username Request
 * The user inputs their email address on `/login?mode=forgot_username`.
-* The server responds with:
+* The server always responds with the same sentence, whether or not that email has an account:
   ```json
   {"message": "If an account matches, your username was sent to your email."}
   ```
+* **No account for that email:** No mail is sent. The same sentence is still shown, so outsiders cannot learn which emails are registered.
+* **Account exists and is approved:** The username is emailed, and the screen shows the same sentence.
+* **Account is inside the 20-minute login lock:** Forgot Username does not continue for that identifier. Other accounts still work.
 
 ### 7.2 Forgot Username Email Template
+* **Sender Display Name:** `Raksha Security System`
 * **Recipient:** User's Email Address
 * **Subject:** `Your Gateway Username`
 * **Message Body:**
@@ -214,6 +275,7 @@ Administrators manage accounts either via one-click signed links in registration
 
 ### 8.1 Admin Registration Notification Email (Accept / Deny Links)
 When a new user signs up and verifies their email, all administrators receive an email containing HMAC-SHA256 signed tokens valid for **48 hours**:
+* **Sender Display Name:** `Raksha Security System`
 * **Recipient:** Admin Email Address
 * **Subject:** `Gateway registration pending: {applicant_username}`
 * **Message Body:**
@@ -241,6 +303,7 @@ These links expire in 48 hours.
 * **Allowed Target Statuses:** `pending`, `rejected`, or `disabled`.
 * **Action:** Sets `user.Status = "approved"`.
 * **Applicant Email Notification:**
+  * **Sender Display Name:** `Raksha Security System`
   * **Subject:** `Gateway account approved`
   * **Message Body:**
 ```text
@@ -262,6 +325,7 @@ If you forgot your password, use Forgot password on the login page.
 * **Self-Action Guard:** An admin cannot deny their own account.
 * **Action:** Sets `user.Status = "rejected"` and immediately terminates any active sessions.
 * **Applicant Email Notification:**
+  * **Sender Display Name:** `Raksha Security System`
   * **Subject:** `Gateway registration not approved`
   * **Message Body:**
 ```text
@@ -275,12 +339,14 @@ You will not be able to sign in with this account. Contact your administrator if
 ---
 
 ### 8.4 Admin Action: Block User
-* **Allowed Target Statuses:** `approved` or `rejected` accounts only.
-* **Admin & Self Protection:**
-  * Standard admins cannot block other admin accounts (only Super Admin can).
-  * An administrator **cannot block their own account** (`sessionToken` check).
+* **Allowed Target Roles & Statuses:** `approved` or `rejected` accounts across all roles (**User**, **Sub-Admin**, and **Admin**).
+* **Self-Action & Root Protection Guards:**
+  * **Self-Block Strictly Blocked:** An administrator **cannot block their own account** under any circumstances (enforced in UI with disabled button and in backend `session.go` with HTTP 400).
+  * **Primary Root Admin Protected:** The bootstrap root administrator credentials defined in `.env` cannot be blocked (HTTP 403).
+  * **Sub-Admin Restrictions:** Sub-administrators cannot block full administrator accounts.
 * **Action:** Sets `user.Status = "disabled"` and immediately purges all active sessions from the database.
 * **User Email Notification:**
+  * **Sender Display Name:** `Raksha Security System`
   * **Subject:** `Security Notice: Your Account Has Been Blocked`
   * **Message Body:**
 ```text
@@ -297,6 +363,7 @@ You will not be able to sign in while your account is blocked. Please contact yo
 * **Allowed Target Statuses:** Only accounts with status `disabled` (blocked) can be unblocked.
 * **Action:** Sets `user.Status = "approved"`.
 * **User Email Notification:**
+  * **Sender Display Name:** `Raksha Security System`
   * **Subject:** `Account Notice: Your Account Has Been Unblocked`
   * **Message Body:**
 ```text
@@ -338,6 +405,7 @@ If you have any questions, please contact your administrator.
 When SMTP is enabled, the system monitors login signatures (IP address, User-Agent, and last sign-in timestamp). If an anomaly is detected, an automated security alert is instantly dispatched to the user's email:
 
 * **Scenario A: New Device or First-Time Login**
+  * **Sender Display Name:** `Raksha Security System`
   * **Subject:** `Security Alert: Sign-in from new device or first-time login`
   * **Email Body:**
 ```text
@@ -357,6 +425,7 @@ Please keep your credentials confidential. If you authorized this sign-in, no ac
 ```
 
 * **Scenario B: Sign-in After Extended Inactivity**
+  * **Sender Display Name:** `Raksha Security System`
   * **Subject:** `Security Alert: Sign-in after extended inactivity`
   * **Email Body:**
 ```text

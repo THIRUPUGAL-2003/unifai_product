@@ -198,6 +198,17 @@ func smtpToMailer(row *tables.TableSMTPConfig) mailer.Config {
 	if row == nil {
 		return mailer.Config{}
 	}
+	fromName := strings.TrimSpace(row.FromName)
+	if fromName == "" {
+		fromName = strings.TrimSpace(os.Getenv("SMTP_FROM_NAME"))
+	}
+	if fromName == "" {
+		brand := strings.TrimSpace(os.Getenv("GATEWAY_BRAND_NAME"))
+		if brand == "" {
+			brand = "Raksha"
+		}
+		fromName = brand + " Security System"
+	}
 	return mailer.Config{
 		Enabled:   row.Enabled,
 		Host:      row.Host,
@@ -205,7 +216,7 @@ func smtpToMailer(row *tables.TableSMTPConfig) mailer.Config {
 		Username:  row.Username,
 		Password:  row.Password,
 		FromEmail: row.FromEmail,
-		FromName:  row.FromName,
+		FromName:  fromName,
 		UseTLS:    row.UseTLS,
 	}
 }
@@ -239,7 +250,11 @@ func sendSMTPEmail(ctx context.Context, store configstore.ConfigStore, to, subje
 			}
 			fromName := strings.TrimSpace(os.Getenv("SMTP_FROM_NAME"))
 			if fromName == "" {
-				fromName = "Gateway Security"
+				brand := strings.TrimSpace(os.Getenv("GATEWAY_BRAND_NAME"))
+				if brand == "" {
+					brand = "Raksha"
+				}
+				fromName = brand + " Security System"
 			}
 			useTLS := os.Getenv("SMTP_USE_TLS") != "false"
 			row = &tables.TableSMTPConfig{

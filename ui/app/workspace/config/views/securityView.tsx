@@ -6,7 +6,7 @@ import { SecretVarInput } from "@/components/ui/secretVarInput";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { IS_ENTERPRISE, PRODUCT_NAME } from "@/lib/constants/config";
+import { BRAND_NAME, IS_ENTERPRISE, PRODUCT_NAME } from "@/lib/constants/config";
 import {
 	getErrorMessage,
 	useGetCoreConfigQuery,
@@ -72,7 +72,7 @@ export default function SecurityView() {
 		username: "",
 		password: "",
 		from_email: "",
-		from_name: PRODUCT_NAME,
+		from_name: `${BRAND_NAME} Security System`,
 		use_tls: true,
 		notify_on_login: false,
 		notify_on_user_create: true,
@@ -122,7 +122,7 @@ export default function SecurityView() {
 			username: smtpData.username || "",
 			password: "",
 			from_email: smtpData.from_email || "",
-			from_name: smtpData.from_name || PRODUCT_NAME,
+			from_name: smtpData.from_name || `${BRAND_NAME} Security System`,
 			use_tls: smtpData.use_tls,
 			notify_on_login: smtpData.notify_on_login,
 			notify_on_user_create: smtpData.notify_on_user_create,

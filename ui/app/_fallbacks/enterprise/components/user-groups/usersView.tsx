@@ -48,6 +48,7 @@ import {
 	useGetPromptsQuery,
 	useGetSessionUsersQuery,
 	useGetProductUserQuotaQuery,
+	useIsAuthEnabledQuery,
 	useRejectSessionUserMutation,
 	useUpdateSessionUserMutation,
 	useGetTeamsQuery,
@@ -204,6 +205,10 @@ export default function UsersView() {
 		error: usersErrorDetail,
 		refetch: refetchUsers,
 	} = useGetSessionUsersQuery(undefined, { pollingInterval: usersPollMs, refetchOnFocus: true });
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const currentUserId = authStatus?.user_id;
+	const currentUsername = (authStatus?.username || "").trim().toLowerCase();
+	const currentUserEmail = (authStatus?.email || "").trim().toLowerCase();
 	const { data: userQuota } = useGetProductUserQuotaQuery(undefined, { pollingInterval: usersPollMs, refetchOnFocus: true });
 	useEffect(() => {
 		setUsersPollMs(usersError ? 0 : 15_000);
@@ -1317,7 +1322,14 @@ export default function UsersView() {
 									</TableRow>
 								</TableHeader>
 								<TableBody>
-									{filteredRejectedUsers.map((user) => (
+									{filteredRejectedUsers.map((user) => {
+										const isSelf = Boolean(
+											(currentUserId && user.id === currentUserId) ||
+											(currentUsername && user.username?.trim().toLowerCase() === currentUsername) ||
+											(currentUserEmail && user.email?.trim().toLowerCase() === currentUserEmail)
+										);
+
+										return (
 										<TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
 											<TableCell className="font-mono text-[11px] text-muted-foreground max-w-[140px] truncate" title={user.id}>
 												{user.id}
@@ -1356,7 +1368,7 @@ export default function UsersView() {
 														size="sm"
 														disabled={actionBusyId === user.id || !hasUpdateAccess}
 														onClick={() => handleApprove(user)}
-														className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-500 text-white"
+														className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
 														title="Re-accept user and send approval email with login link"
 														data-testid="rejected-user-accept"
 													>
@@ -1366,10 +1378,13 @@ export default function UsersView() {
 													<Button
 														size="sm"
 														variant="outline"
-														disabled={actionBusyId === user.id || !hasUpdateAccess}
+														disabled={actionBusyId === user.id || !hasUpdateAccess || isSelf}
 														onClick={() => handleBlock(user)}
-														className="h-8 gap-1 border-amber-500/40 text-amber-400 hover:bg-amber-950/40"
-														title="Block user account and send security email"
+														className={cn(
+															"h-8 gap-1 border-amber-500/40 text-amber-400 hover:bg-amber-950/40",
+															isSelf ? "opacity-30 cursor-not-allowed" : "cursor-pointer"
+														)}
+														title={isSelf ? "You cannot block your own account" : "Block user account and send security email"}
 														data-testid="rejected-user-block"
 													>
 														<Ban className="h-3.5 w-3.5" />
@@ -1378,10 +1393,13 @@ export default function UsersView() {
 													<Button
 														size="sm"
 														variant="outline"
-														disabled={actionBusyId === user.id || !hasDeleteAccess}
+														disabled={actionBusyId === user.id || !hasDeleteAccess || isSelf}
 														onClick={() => openDeleteModal(user)}
-														className="h-8 gap-1 border-rose-500/40 text-rose-400 hover:bg-rose-950/40"
-														title="Permanently delete user record"
+														className={cn(
+															"h-8 gap-1 border-rose-500/40 text-rose-400 hover:bg-rose-950/40",
+															isSelf ? "opacity-30 cursor-not-allowed" : "cursor-pointer"
+														)}
+														title={isSelf ? "You cannot delete your own account" : "Permanently delete user record"}
 														data-testid="rejected-user-delete"
 													>
 														<Trash2 className="h-3.5 w-3.5" />
@@ -1390,7 +1408,8 @@ export default function UsersView() {
 												</div>
 											</TableCell>
 										</TableRow>
-									))}
+										);
+									})}
 								</TableBody>
 							</Table>
 						</div>
@@ -1546,6 +1565,12 @@ export default function UsersView() {
 												user.budget > 0 &&
 												(user.budget_current_usage ?? 0) >= user.budget;
 
+											const isSelf = Boolean(
+												(currentUserId && user.id === currentUserId) ||
+												(currentUsername && user.username?.trim().toLowerCase() === currentUsername) ||
+												(currentUserEmail && user.email?.trim().toLowerCase() === currentUserEmail)
+											);
+
 											return (
 											<TableRow
 												key={user.id}
@@ -1654,10 +1679,13 @@ export default function UsersView() {
 														<Button
 															size="icon"
 															variant="ghost"
-															disabled={!hasUpdateAccess || user.role === "admin"}
+															disabled={!hasUpdateAccess || isSelf || actionBusyId === user.id}
 															onClick={() => handleBlock(user)}
-															title="Block user account"
-															className="text-muted-foreground h-8 w-8 rounded-lg transition-colors hover:text-amber-400"
+															title={isSelf ? "You cannot block your own account" : "Block user account"}
+															className={cn(
+																"text-muted-foreground h-8 w-8 rounded-lg transition-colors",
+																isSelf ? "opacity-30 cursor-not-allowed" : "hover:text-amber-400 cursor-pointer",
+															)}
 															data-testid={`user-block-${user.id}`}
 														>
 															<Ban className="h-4 w-4" />
@@ -1667,16 +1695,20 @@ export default function UsersView() {
 															variant="ghost"
 															disabled={!hasUpdateAccess}
 															onClick={() => openEditModal(user)}
-															className="text-muted-foreground h-8 w-8 rounded-lg transition-colors hover:text-teal-400"
+															className="text-muted-foreground h-8 w-8 rounded-lg transition-colors hover:text-teal-400 cursor-pointer"
 														>
 															<Edit2 className="h-4 w-4" />
 														</Button>
 														<Button
 															size="icon"
 															variant="ghost"
-															disabled={!hasDeleteAccess}
+															disabled={!hasDeleteAccess || isSelf || actionBusyId === user.id}
 															onClick={() => openDeleteModal(user)}
-															className="text-muted-foreground h-8 w-8 rounded-lg transition-colors hover:text-red-400"
+															title={isSelf ? "You cannot delete your own account" : "Delete user account"}
+															className={cn(
+																"text-muted-foreground h-8 w-8 rounded-lg transition-colors",
+																isSelf ? "opacity-30 cursor-not-allowed" : "hover:text-red-400 cursor-pointer",
+															)}
 														>
 															<Trash2 className="h-4 w-4" />
 														</Button>

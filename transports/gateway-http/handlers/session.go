@@ -2646,14 +2646,25 @@ func (h *SessionHandler) blockUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusNotFound, "User not found")
 		return
 	}
+	adminName, adminEmail := h.getAdminCredentials(ctx)
+	if isMatchingAdminIdentity(user.Username, adminName, adminEmail) || (user.Email != "" && isMatchingAdminIdentity(user.Email, adminName, adminEmail)) {
+		SendError(ctx, fasthttp.StatusForbidden, "Cannot block the primary root administrator")
+		return
+	}
 	if user.Role == "admin" && !h.isSuperAdmin(ctx) {
 		SendError(ctx, fasthttp.StatusForbidden, "Cannot block an administrator account")
 		return
 	}
 	if token := sessionToken(ctx); token != "" {
-		if sess, _ := h.configStore.GetSession(ctx, token); sess != nil && strings.EqualFold(sess.Username, user.Username) {
-			SendError(ctx, fasthttp.StatusBadRequest, "You cannot block your own account")
-			return
+		if sess, _ := h.configStore.GetSession(ctx, token); sess != nil {
+			if strings.EqualFold(sess.Username, user.Username) || (user.Email != "" && strings.EqualFold(sess.Username, user.Email)) {
+				SendError(ctx, fasthttp.StatusBadRequest, "You cannot block your own account")
+				return
+			}
+			if isMatchingAdminIdentity(sess.Username, adminName, adminEmail) && isMatchingAdminIdentity(user.Username, adminName, adminEmail) {
+				SendError(ctx, fasthttp.StatusBadRequest, "You cannot block your own account")
+				return
+			}
 		}
 	}
 	if user.Status != tables.UserStatusApproved && user.Status != tables.UserStatusRejected {
