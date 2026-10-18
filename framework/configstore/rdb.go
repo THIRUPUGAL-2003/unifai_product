@@ -4660,6 +4660,12 @@ func (s *RDBConfigStore) DeleteCustomer(ctx context.Context, id string, tx ...*g
 	if err := txDB.WithContext(ctx).Model(&tables.TableTeam{}).Where("customer_id = ?", id).Update("customer_id", nil).Error; err != nil {
 		return err
 	}
+	// Set customer_id to null for all business units associated with the customer
+	if txDB.Migrator().HasTable(&tables.TableBusinessUnit{}) {
+		if err := txDB.WithContext(ctx).Model(&tables.TableBusinessUnit{}).Where("customer_id = ?", id).Update("customer_id", nil).Error; err != nil {
+			return err
+		}
+	}
 	// Explicitly clean up junction table entries for customer virtual keys
 	if txDB.Migrator().HasTable(&tables.TableVirtualKeyCustomer{}) {
 		_ = txDB.WithContext(ctx).Where("customer_id = ?", id).Delete(&tables.TableVirtualKeyCustomer{}).Error

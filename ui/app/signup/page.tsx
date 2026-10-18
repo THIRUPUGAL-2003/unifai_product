@@ -342,8 +342,8 @@ export default function SignupPage() {
 									</div>
 
 									{errorMessage && (
-										<div className="flex items-center gap-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
-											<ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+										<div className="flex items-center gap-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-800">
+											<ShieldAlert className="h-4 w-4 shrink-0 text-rose-700" />
 											<span>{errorMessage}</span>
 										</div>
 									)}
@@ -435,8 +435,8 @@ export default function SignupPage() {
 									</div>
 
 									{errorMessage && (
-										<div className="flex items-center gap-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
-											<ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+										<div className="flex items-center gap-2.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-800">
+											<ShieldAlert className="h-4 w-4 shrink-0 text-rose-700" />
 											<span>{errorMessage}</span>
 										</div>
 									)}
@@ -590,22 +590,22 @@ export default function SignupPage() {
 
 										{/* Password requirements checklist - single compact row */}
 										<div className="flex flex-wrap gap-x-3 gap-y-2 rounded-xl border border-[#e3ebf8] bg-[#f7f9ff] px-3 py-2.5 text-[11px]">
-											<span className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
+											<span className={has8Chars ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
 												<Check className="h-3 w-3 shrink-0" /> 8+ chars
 											</span>
-											<span className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
+											<span className={hasUpper ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
 												<Check className="h-3 w-3 shrink-0" /> A-Z
 											</span>
-											<span className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
+											<span className={hasLower ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
 												<Check className="h-3 w-3 shrink-0" /> a-z
 											</span>
-											<span className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
+											<span className={hasDigit ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
 												<Check className="h-3 w-3 shrink-0" /> 0-9
 											</span>
-											<span className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
+											<span className={hasSpecial ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
 												<Check className="h-3 w-3 shrink-0" /> Symbol
 											</span>
-											<span className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
+											<span className={passwordsMatch ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
 												<Check className="h-3 w-3 shrink-0" /> Match
 											</span>
 										</div>

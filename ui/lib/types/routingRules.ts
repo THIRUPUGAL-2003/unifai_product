@@ -89,6 +89,7 @@ export interface RoutingRuleFormData {
 
 export enum RoutingRuleScope {
 	Global = "global",
+	BusinessUnit = "business_unit",
 	Team = "team",
 	Customer = "customer",
 	VirtualKey = "virtual_key",
@@ -97,9 +98,10 @@ export enum RoutingRuleScope {
 
 export const ROUTING_RULE_SCOPES = [
 	{ value: RoutingRuleScope.Global, label: "Global" },
+	{ value: RoutingRuleScope.VirtualKey, label: "Virtual Key" },
+	{ value: RoutingRuleScope.BusinessUnit, label: "Business Unit" },
 	{ value: RoutingRuleScope.Team, label: "Team" },
 	{ value: RoutingRuleScope.Customer, label: "Customer" },
-	{ value: RoutingRuleScope.VirtualKey, label: "Virtual Key" },
 	{ value: RoutingRuleScope.User, label: "User" },
 ];
 

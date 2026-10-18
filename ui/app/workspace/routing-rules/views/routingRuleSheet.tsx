@@ -18,6 +18,7 @@ import { ProviderIconType, RenderProviderIcon } from "@/lib/constants/icons";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { getErrorMessage } from "@/lib/store";
 import { useGetCustomersQuery, useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store/apis/governanceApi";
+import { useGetBusinessUnitsQuery } from "@enterprise/lib/store/apis/businessUnitsApi";
 import { useGetSessionUsersQuery } from "@/lib/store/apis/sessionUsersApi";
 import { useGetAllKeysQuery, useGetProvidersQuery } from "@/lib/store/apis/providersApi";
 import { useCreateRoutingRuleMutation, useGetRoutingRulesQuery, useUpdateRoutingRuleMutation } from "@/lib/store/apis/routingRulesApi";
@@ -71,13 +72,14 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 	const { data: vksData, isError: vksError, error: vksErr } = useGetVirtualKeysQuery();
 	const { data: teamsData, isError: teamsError, error: teamsErr } = useGetTeamsQuery();
 	const { data: customersData, isError: customersError, error: customersErr } = useGetCustomersQuery();
+	const { data: businessUnitsData, isError: busError, error: busErr } = useGetBusinessUnitsQuery();
 	const { data: usersData, isError: usersError, error: usersErr } = useGetSessionUsersQuery();
 	const [createRoutingRule, { isLoading: isCreating }] = useCreateRoutingRuleMutation();
 	const [updateRoutingRule, { isLoading: isUpdating }] = useUpdateRoutingRuleMutation();
 
 	const helperQueryFailed =
-		rulesError || providersError || keysError || vksError || teamsError || customersError || usersError;
-	const helperQueryError = rulesErr || providersErr || keysErr || vksErr || teamsErr || customersErr || usersErr;
+		rulesError || providersError || keysError || vksError || teamsError || customersError || busError || usersError;
+	const helperQueryError = rulesErr || providersErr || keysErr || vksErr || teamsErr || customersErr || busErr || usersErr;
 
 	useEffect(() => {
 		if (!open) return;
@@ -122,6 +124,10 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 	const customers = useMemo(
 		() => (Array.isArray(customersData?.customers) ? customersData.customers : []),
 		[customersData],
+	);
+	const businessUnits = useMemo(
+		() => (Array.isArray(businessUnitsData?.business_units) ? businessUnitsData.business_units : []),
+		[businessUnitsData],
 	);
 
 	// State for targets and query (managed outside react-hook-form for complex nested structures)
@@ -464,9 +470,22 @@ export function RoutingRuleSheet({ open, onOpenChange, editingRule, onSuccess }:
 						{scope !== "global" && (
 							<div className="space-y-2">
 								<Label htmlFor="scope_id">
-									{scope === "team" ? "Team" : scope === "customer" ? "Customer" : scope === "user" ? "User" : "Virtual Key"}{" "}
+									{scope === "team" ? "Team" : scope === "business_unit" ? "Business Unit" : scope === "customer" ? "Customer" : scope === "user" ? "User" : "Virtual Key"}{" "}
 									<span className="text-red-500">*</span>
 								</Label>
+								{scope === "business_unit" && (
+									<ComboboxSelect
+										multiple
+										options={businessUnits.map((bu) => ({ label: bu.name || bu.id || "Unnamed Business Unit", value: bu.id }))}
+										value={getMultiScopeValues(scopeId, businessUnits.map((b) => b.id))}
+										onValueChange={(values: string[]) => handleMultiScopeChange(values, businessUnits.map((b) => b.id))}
+										placeholder="Select business units..."
+										selectAllValue={ROUTING_RULE_ALL_SCOPE_ID}
+										selectAllLabel="(Select All)"
+										selectAllTriggerLabel="All business units"
+										noPortal
+									/>
+								)}
 								{scope === "team" && (
 									<ComboboxSelect
 										multiple

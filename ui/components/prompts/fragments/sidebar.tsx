@@ -16,7 +16,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scrollArea";
 import { CreateSessionRequest, Folder, Prompt } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
-import { DragDropProvider, useDraggable, useDroppable } from "@dnd-kit/react";
+import { PointerActivationConstraints } from "@dnd-kit/dom";
+import { DragDropProvider, PointerSensor, useDraggable, useDroppable } from "@dnd-kit/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	Archive,
@@ -527,6 +528,11 @@ export function PromptSidebar() {
 
 	return (
 		<DragDropProvider
+			sensors={[
+				PointerSensor.configure({
+					activationConstraints: [new PointerActivationConstraints.Distance({ value: 18 })],
+				}),
+			]}
 			onDragOver={(event) => {
 				if (!canUpdate) return;
 				const targetId = event.operation.target?.id as string | undefined;
@@ -549,6 +555,25 @@ export function PromptSidebar() {
 
 				let targetFolderId: string | null = null;
 				if (targetId === "root-drop-zone") {
+					// Guard: Disallow moving governance-linked or owned prompts into root-drop-zone.
+					// Governance hierarchy prompts (Customers / BU / Teams / Users) must never be
+					// ejected to root on accidental clicks, double clicks, or drops onto empty space.
+					const isGovernancePrompt = Boolean(
+						prompt.owner_user_id ||
+						prompt.team_ids ||
+						prompt.customer_ids ||
+						(prompt.folder_id && folderAncestry(prompt.folder_id, folderMap).some((fid) => {
+							const f = folderMap.get(fid);
+							return (
+								f?.type?.startsWith("system_") ||
+								f?.type?.startsWith("archived_") ||
+								["Customers", "Business Units", "Teams", "Users"].includes(f?.name ?? "")
+							);
+						}))
+					);
+					if (isGovernancePrompt) {
+						return;
+					}
 					targetFolderId = null;
 				} else if (targetId.startsWith("folder-")) {
 					targetFolderId = targetId.slice(7);
@@ -826,7 +851,7 @@ function DroppableFolder({
 		<div ref={ref} className="mb-0.5 last:mb-0">
 			<div
 				className={cn(
-					"hover:bg-muted/50 group relative flex h-[30px] cursor-pointer items-center gap-1 rounded-sm px-2 transition-colors",
+					"hover:bg-muted/50 group relative flex h-[30px] cursor-pointer select-none items-center gap-1 rounded-sm px-2 transition-colors",
 					isDragOver && "bg-primary/10 ring-primary/30 ring-1",
 					isArchiveFolder && "opacity-80 text-muted-foreground",
 				)}
@@ -1021,12 +1046,18 @@ function DraggablePromptItem({
 			ref={ref}
 			data-testid={`sidebar-prompt-${prompt.id}`}
 			className={cn(
-				"group mb-1 flex h-[30px] cursor-pointer items-center gap-2 rounded-sm px-2 last:mb-0",
+				"group mb-1 flex h-[30px] cursor-pointer select-none items-center gap-2 rounded-sm px-2 last:mb-0",
 				isSelected ? "bg-primary/10 text-primary" : "hover:bg-muted/50",
 				isDragging && "opacity-50",
 			)}
-			onClick={() => {
-				// Don't navigate if this was a drag
+			onClick={(e) => {
+				e.stopPropagation();
+				if (isDragging) return;
+				onSelect();
+			}}
+			onDoubleClick={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
 				if (isDragging) return;
 				onSelect();
 			}}

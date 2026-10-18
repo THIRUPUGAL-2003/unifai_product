@@ -5326,11 +5326,12 @@ func normalizeOptionalString(value *string) *string {
 
 // validRoutingScopes contains the allowed scope values for routing rules
 var validRoutingScopes = map[string]bool{
-	"global":      true,
-	"team":        true,
-	"customer":    true,
-	"virtual_key": true,
-	"user":        true,
+	"global":        true,
+	"business_unit": true,
+	"team":          true,
+	"customer":      true,
+	"virtual_key":   true,
+	"user":          true,
 }
 
 // validateRoutingScope validates that the scope value is one of the allowed values
@@ -5339,7 +5340,7 @@ func validateRoutingScope(scope string) error {
 		return nil // Empty scope will default to "global" later
 	}
 	if !validRoutingScopes[scope] {
-		return fmt.Errorf("invalid scope %q: must be one of: global, team, customer, virtual_key, user", scope)
+		return fmt.Errorf("invalid scope %q: must be one of: global, business_unit, team, customer, virtual_key, user", scope)
 	}
 	return nil
 }

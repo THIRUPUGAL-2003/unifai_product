@@ -768,8 +768,10 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.GatewayContext, req *s
 	}
 
 	var billedTeamID, billedTeamName, billedCustomerID, billedCustomerName string
+	var billedBusinessUnitIDs []string
 	if local, ok := p.store.(*LocalGovernanceStore); ok && virtualKey != nil {
 		billedTeamID, billedTeamName, billedCustomerID, billedCustomerName = local.billedIdentity(ctx, virtualKey)
+		billedBusinessUnitIDs = local.billedBusinessUnitIDs(virtualKey, billedTeamID)
 	}
 	routingCtx := &RoutingContext{
 		VirtualKey:               virtualKey,
@@ -777,6 +779,7 @@ func (p *GovernancePlugin) applyRoutingRules(ctx *schemas.GatewayContext, req *s
 		BilledTeamName:           billedTeamName,
 		BilledCustomerID:         billedCustomerID,
 		BilledCustomerName:       billedCustomerName,
+		BilledBusinessUnitIDs:    billedBusinessUnitIDs,
 		UserID:                   gateway.GetStringFromContext(ctx, schemas.GatewayContextKeyUserID),
 		Provider:                 provider,
 		Model:                    model,

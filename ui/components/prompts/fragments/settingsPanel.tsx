@@ -182,13 +182,16 @@ export function SettingsPanel() {
 	// Collect all VKs that are currently selected (from allowedVirtualKeys or virtualKeyId)
 	const selectedVirtualKeys = useMemo(() => {
 		const vks = virtualKeysData?.virtual_keys ?? [];
+		if (isMemberOnly && virtualKeyId && virtualKeyId !== "__auto__") {
+			return vks.filter((vk) => vk.value === virtualKeyId || vk.id === virtualKeyId);
+		}
 		const activeIds = new Set(
 			allowedVirtualKeys && allowedVirtualKeys.length > 0
 				? allowedVirtualKeys
 				: (virtualKeyId && virtualKeyId !== "__auto__" ? [virtualKeyId] : [])
 		);
 		return vks.filter((vk) => activeIds.has(vk.value) || activeIds.has(vk.id));
-	}, [virtualKeysData, allowedVirtualKeys, virtualKeyId]);
+	}, [virtualKeysData, allowedVirtualKeys, virtualKeyId, isMemberOnly]);
 
 	// Primary single virtual key (if only 1 key is selected, or matching virtualKeyId)
 	const selectedVirtualKey = useMemo(() => {
@@ -249,14 +252,15 @@ export function SettingsPanel() {
 		const catalog = configuredProviders.map((providerItem) => providerItem.name);
 		const unset = !allowedProviders || allowedProviders.length === 0;
 		const selectingEveryone = isEntireCatalog(allowedProviders, catalog);
-		if (explicit.length > 0 && (unset || selectingEveryone)) {
+		const providersMismatch = explicit.length > 0 && !allowedProviders?.every((p) => explicit.some((e) => e.toLowerCase() === p.toLowerCase()));
+		if (explicit.length > 0 && (unset || selectingEveryone || isMemberOnly || providersMismatch)) {
 			setAllowedProviders(explicit);
 		} else if (explicit.length === 0 && (unset || selectingEveryone)) {
 			const keep = provider && catalog.includes(provider as ModelProviderName) ? provider : catalog[0];
 			if (keep) setAllowedProviders([keep as ModelProviderName]);
 		}
 		const allowed = explicit.length > 0 ? explicit : catalog;
-		if (allowed.length > 0 && (!provider || (explicit.length > 0 && !explicit.some((name) => name.toLowerCase() === provider.toLowerCase())))) {
+		if (allowed.length > 0 && (!provider || !allowed.some((name) => name.toLowerCase() === provider.toLowerCase()))) {
 			const nextProv = explicit[0] || allowed[0] || "";
 			if (nextProv && nextProv !== provider) {
 				setProvider(nextProv);
@@ -268,7 +272,7 @@ export function SettingsPanel() {
 				}));
 			}
 		}
-	}, [selectedVirtualKeys, provider, allowedProviders, configuredProviders, setAllowedProviders, setProvider, onModelChange, onModelParamsChange]);
+	}, [selectedVirtualKeys, provider, allowedProviders, configuredProviders, setAllowedProviders, setProvider, onModelChange, onModelParamsChange, isMemberOnly]);
 
 	// Ensure current provider always has a label-resolved option (even before providers query loads)
 	const providerOptions = useMemo(() => {
@@ -329,9 +333,10 @@ export function SettingsPanel() {
 		const inheritedKeyIds = new Set((focusUserKeys?.virtual_keys ?? []).map((key) => key.id));
 		const vks = (virtualKeysData.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
 
-		// Collect target user, team, customer IDs from selectedPrompt, promptFilters, and folder tree
+		// Collect target user, team, business unit, customer IDs from selectedPrompt, promptFilters, and folder tree
 		const targetUserIds = new Set<string>();
 		const targetTeamIds = new Set<string>();
+		const targetBusinessUnitIds = new Set<string>();
 		const targetCustomerIds = new Set<string>();
 
 		if (selectedPrompt?.user_ids) {
@@ -368,7 +373,7 @@ export function SettingsPanel() {
 					} else if (cur.type === "system_teams_root" || parent?.name === "Teams" || parent?.type === "system_teams_root") {
 						targetTeamIds.add(cur.entity_id);
 					} else if (cur.type === "system_business_units_root" || parent?.name === "Business Units" || parent?.type === "system_business_units_root" || cur.type === "business_unit") {
-						// business unit folder
+						targetBusinessUnitIds.add(cur.entity_id);
 					} else if (cur.type === "system_customers_root" || parent?.name === "Customers" || parent?.type === "system_customers_root") {
 						targetCustomerIds.add(cur.entity_id);
 					}
@@ -377,7 +382,7 @@ export function SettingsPanel() {
 			}
 		}
 
-		const hasSpecificTarget = targetUserIds.size > 0 || targetTeamIds.size > 0 || targetCustomerIds.size > 0;
+		const hasSpecificTarget = targetUserIds.size > 0 || targetTeamIds.size > 0 || targetBusinessUnitIds.size > 0 || targetCustomerIds.size > 0;
 
 		const matched = hasSpecificTarget
 			? vks
@@ -399,6 +404,7 @@ export function SettingsPanel() {
 							inheritedKeyIds.has(vk.id) ||
 							[...targetUserIds].some((id) => vkUsers.has(id)) ||
 							[...targetTeamIds].some((id) => vkTeams.has(id as string)) ||
+							[...targetBusinessUnitIds].some((id) => vkUnits.has(id as string)) ||
 							[...targetCustomerIds].some((id) => vkCustomers.has(id as string)) ||
 							teamInAssignedUnit
 						);
@@ -493,7 +499,8 @@ export function SettingsPanel() {
 		const currentNames = (modelsData?.models ?? []).map((item) => item.name);
 		const unset = !allowedModels || allowedModels.length === 0;
 		const selectingEveryone = isEntireCatalog(allowedModels, catalog);
-		if (explicit.length > 0 && (unset || selectingEveryone)) {
+		const modelsMismatch = explicit.length > 0 && !allowedModels?.every((m) => explicit.includes(m));
+		if (explicit.length > 0 && (unset || selectingEveryone || isMemberOnly || modelsMismatch)) {
 			setAllowedModels(explicit);
 		} else if (explicit.length === 0 && (unset || selectingEveryone)) {
 			const keep = model && currentNames.includes(model) ? model : currentNames[0];
@@ -501,10 +508,10 @@ export function SettingsPanel() {
 		}
 		const preferred = explicit.filter((name) => currentNames.includes(name));
 		const nextModel = preferred[0] || currentNames[0] || "";
-		if (nextModel && (!model || !currentNames.includes(model))) {
+		if (nextModel && (!model || (explicit.length > 0 && !explicit.includes(model)) || !currentNames.includes(model))) {
 			onModelChange(nextModel);
 		}
-	}, [assignedVkModelsData, modelsData, selectedVirtualKeys, allowedModels, model, setAllowedModels, onModelChange]);
+	}, [assignedVkModelsData, modelsData, selectedVirtualKeys, allowedModels, model, setAllowedModels, onModelChange, isMemberOnly]);
 
 	const mcpToolOptions = useMemo(() => {
 		const opts: { label: string; value: string }[] = [];

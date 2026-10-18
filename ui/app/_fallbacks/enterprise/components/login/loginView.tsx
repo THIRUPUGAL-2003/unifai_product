@@ -621,39 +621,47 @@ export default function LoginView() {
 							</div>
 
 							{isLockedOut ? (
-								<div className="mb-4 flex flex-col gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300 shadow-sm animate-in fade-in duration-150">
-									<div className="flex items-center gap-2 font-semibold text-rose-200">
-										<ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+								<div className="mb-4 flex flex-col gap-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-800 shadow-sm animate-in fade-in duration-150">
+									<div className="flex items-center gap-2 font-semibold text-rose-800">
+										<ShieldAlert className="h-4 w-4 shrink-0 text-rose-700" />
 										<span>{lockedAccount?.reason || "Account Locked Out"}</span>
 									</div>
-									<p className="text-slate-300 leading-relaxed text-[11px]">
+									<p className="text-rose-900 leading-relaxed text-[11px]">
 										Too many failed attempts for <span className="font-semibold text-[#0b1b3a]">"{activeInputIdentifier || lockedAccount?.identifier}"</span>. Please wait{" "}
-										<span className="font-mono font-bold text-amber-300">{lockoutCountdown}</span> before trying again.
+										<span className="font-mono font-bold text-amber-800">{lockoutCountdown}</span> before trying again.
 									</p>
 								</div>
 							) : errorMessage ? (
-								<div className="mb-4 flex flex-col gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-300">
-									<div className="flex items-center gap-2 font-semibold text-rose-200">
+								<div className="mb-4 flex flex-col gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs text-rose-800">
+									<div className="flex items-center gap-2 font-semibold text-rose-800">
 										{errorMessage.toLowerCase().includes("blocked") ? (
-											<Ban className="h-4 w-4 shrink-0 text-rose-400" />
+											<Ban className="h-4 w-4 shrink-0 text-rose-700" />
 										) : (
-											<ShieldAlert className="h-4 w-4 shrink-0 text-rose-400" />
+											<ShieldAlert className="h-4 w-4 shrink-0 text-rose-700" />
 										)}
 										<span>
 											{errorMessage.toLowerCase().includes("blocked")
 												? "Account Blocked"
-												: "Sign In Error"}
+												: mode === "forgot"
+													? "Forgot Password Error"
+													: mode === "reset"
+														? "Reset Password Error"
+														: mode === "forgot_username"
+															? "Forgot Username Error"
+															: mode === "force_change_password"
+																? "Password Change Error"
+																: "Sign In Error"}
 										</span>
 									</div>
-									<p className="text-slate-300 leading-relaxed text-[11px] pl-6">
+									<p className="text-rose-900 leading-relaxed text-[11px] pl-6">
 										{errorMessage}
 									</p>
 								</div>
 							) : null}
 
 							{infoMessage && (
-								<div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
-									<CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+								<div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-800">
+									<CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700" />
 									<span>{infoMessage}</span>
 								</div>
 							)}
@@ -907,7 +915,7 @@ export default function LoginView() {
 																</span>
 															)}
 															{isOtpVerified ? (
-																<span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400">
+																<span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
 																	<CheckCircle2 className="h-3.5 w-3.5" /> Verified
 																</span>
 															) : (
@@ -1038,22 +1046,22 @@ export default function LoginView() {
 
 										{/* Password requirements checklist - single compact row */}
 										<div className="flex items-center justify-between rounded-xl border border-[#e3ebf8] bg-[#f7f9ff] px-3 py-2 text-[11px]">
-											<span className={has8Chars ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+											<span className={has8Chars ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
 												<Check className="h-3 w-3 shrink-0" /> 8+ chars
 											</span>
-											<span className={hasUpper ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+											<span className={hasUpper ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
 												<Check className="h-3 w-3 shrink-0" /> A-Z
 											</span>
-											<span className={hasLower ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+											<span className={hasLower ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
 												<Check className="h-3 w-3 shrink-0" /> a-z
 											</span>
-											<span className={hasDigit ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+											<span className={hasDigit ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
 												<Check className="h-3 w-3 shrink-0" /> 0-9
 											</span>
-											<span className={hasSpecial ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+											<span className={hasSpecial ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
 												<Check className="h-3 w-3 shrink-0" /> Symbol
 											</span>
-											<span className={passwordsMatch ? "text-emerald-400 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
+											<span className={passwordsMatch ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
 												<Check className="h-3 w-3 shrink-0" /> Match
 											</span>
 										</div>

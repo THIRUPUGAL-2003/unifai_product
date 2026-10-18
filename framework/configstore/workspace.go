@@ -416,6 +416,9 @@ func (s *RDBConfigStore) UpdateBusinessUnit(ctx context.Context, row *tables.Tab
 }
 
 func (s *RDBConfigStore) DeleteBusinessUnit(ctx context.Context, id string) error {
+	if s.DB().Migrator().HasTable(&tables.TableTeam{}) {
+		_ = s.DB().WithContext(ctx).Model(&tables.TableTeam{}).Where("business_unit_id = ?", id).Update("business_unit_id", nil).Error
+	}
 	res := s.DB().WithContext(ctx).Where("id = ?", id).Delete(&tables.TableBusinessUnit{})
 	if res.Error != nil {
 		return res.Error

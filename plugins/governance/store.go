@@ -4356,9 +4356,13 @@ func (gs *LocalGovernanceStore) reloadBusinessUnitTeamIndex(ctx context.Context)
 			if cu, ok := row.ParsedBudget["current_usage"].(float64); ok {
 				curUsage = cu
 			}
+			lastReset := time.Now()
 			if existingRaw, exists := gs.budgets.Load(buBudgetID); exists && existingRaw != nil {
 				if existing, ok := existingRaw.(*configstoreTables.TableBudget); ok && existing != nil {
 					curUsage = existing.CurrentUsage
+					if !existing.LastReset.IsZero() {
+						lastReset = existing.LastReset
+					}
 				}
 			}
 			gs.budgets.Store(buBudgetID, &configstoreTables.TableBudget{
@@ -4366,7 +4370,7 @@ func (gs *LocalGovernanceStore) reloadBusinessUnitTeamIndex(ctx context.Context)
 				MaxLimit:      maxLimit,
 				ResetDuration: resetDur,
 				CurrentUsage:  curUsage,
-				LastReset:     time.Now(),
+				LastReset:     lastReset,
 			})
 		}
 		gs.indexBusinessUnitRateLimit(row)

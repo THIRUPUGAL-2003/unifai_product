@@ -21,6 +21,37 @@ The following table summarizes all cryptographic tokens, session durations, rate
 
 ---
 
+## 1.1 Master Authentication & Identity Error Handling Matrix
+
+The following matrix documents every error condition across Authentication, Registration, Password Management, OTP Verification, and Lockout, detailing HTTP status codes, exact server message strings, root causes, frontend UX handling, and recovery actions:
+
+| HTTP Status | Exact Error Message String | Trigger / Root Cause | Frontend UX & Banner Handling | Recovery / Resolution Action |
+| :--- | :--- | :--- | :--- | :--- |
+| **`400 Bad Request`** | `"Username and password are required"` | Submitting login form with blank username or password field. | Form error highlight on missing input fields. | Enter both username and password. |
+| **`400 Bad Request`** | `"Email is required"` | Requesting OTP on Sign Up or Forgot Password without an email. | Input validation border turns red. | Provide a valid, registered email address. |
+| **`400 Bad Request`** | `"Password must be at least 8 characters long and contain uppercase, lowercase, numbers, and special characters"` | Password violates one or more of the 5 password policy rules. | Password policy checklist displays missing criteria in red bullets. | Choose a password satisfying all 5 criteria. |
+| **`400 Bad Request`** | `"New password cannot be the same as the temporary password"` | User attempting to reuse temporary password during force-change-password. | Alert banner: *"Cannot reuse temporary password"*. | Choose a completely new permanent password. |
+| **`400 Bad Request`** | `"New password cannot match your current active password"` | Attempting to reset password to the existing current password. | Warning notice: *"New password must differ from current password"*. | Choose a different password. |
+| **`400 Bad Request`** | `"Invalid or malformed verification code"` | Submitting non-numeric or length $\neq 6$ OTP code. | OTP input boxes shake; error text displays below inputs. | Enter the complete 6-digit numeric code from the email. |
+| **`400 Bad Request`** | `"Passwords do not match"` | Password and Confirm Password fields do not match in registration or reset form. | Form validation error under Confirm Password. | Retype password to ensure exact match. |
+| **`401 Unauthorized`** | `"Invalid username or password"` | Incorrect password entered, or account does not exist. Dummy hashing executed to prevent timing-based user enumeration. | Error banner on login card. Increments failed attempt counter for this identifier. | Re-enter correct password or click "Forgot Password". |
+| **`401 Unauthorized`** | `"Invalid or expired session token"` | Request made with an expired, tampered, or missing session cookie. | Automatically redirects browser to `/login` with clean query params. | Sign in again to establish a fresh session. |
+| **`401 Unauthorized`** | `"Invalid or expired verification code"` | The entered 6-digit OTP does not match or has expired past its 15-minute TTL. | Red inline alert: *"Incorrect code. Please try again."* Increments OTP failure counter. | Enter correct code from recent email or click "Resend Code". |
+| **`403 Forbidden`** | `"Security Notice: Your Gateway account has been blocked by an administrator..."` | Account status is set to `disabled` (blocked). | Full-width warning banner: *"Account Blocked"*. Immediate session revocation. | Contact system administrator to unblock the account. |
+| **`403 Forbidden`** | `"Your registration is waiting for admin approval"` | Account status is `pending` approval. | Informational notice: *"Waiting for Admin Approval"*. Login blocked. | Wait for administrator email notification. |
+| **`403 Forbidden`** | `"Admin has not accepted your request"` | Account status is `rejected` (denied). | Alert notice: *"Registration Denied"*. | Contact workspace administrator. |
+| **`403 Forbidden`** | `"Verify your email first — enter the code we emailed you on the Sign Up page"` | Account status is `email_unverified`. | Warning redirect to OTP verification screen on `/signup`. | Enter the 6-digit verification code emailed during sign-up. |
+| **`403 Forbidden`** | `"Access forbidden: You do not have permission to access this workspace section"` | User or sub-admin attempted to navigate to an unauthorized section. | Redirected to primary allowed section via `getWorkspaceAccessRedirect`. | Request permission from administrator. |
+| **`409 Conflict`** | `"Username is already taken"` | Sign Up or user creation with an existing username (case-insensitive check). | Form field error directly below Username input. | Select a different, unique username. |
+| **`409 Conflict`** | `"Email is already registered"` | Sign Up with an email address that already belongs to an existing account. | Form field error directly below Email input. | Sign in with existing credentials or use Forgot Password. |
+| **`429 Too Many Requests`** | `"Too many failed login attempts. Account locked for about 20 minutes"` | **3 consecutive incorrect passwords** entered for this specific account identifier. | Login card transitions into Locked State with 20-minute countdown timer. | **Must wait the full 20 minutes**. No bypass allowed. |
+| **`429 Too Many Requests`** | `"Too many failed login attempts from this network. Try again later"` | **30 failed login attempts within 15 minutes** originating from the same client IP. | Rate limit warning modal. All requests from that IP blocked for 15 minutes. | Wait 15 minutes for network lockout window to expire. |
+| **`429 Too Many Requests`** | `"Too many attempts. Verification code has been invalidated"` | **5 consecutive incorrect OTP attempts** submitted. | OTP input disabled; notice: *"Code expired due to too many failed attempts."* Row burned. | Click "Resend Code" to generate a fresh OTP. |
+| **`429 Too Many Requests`** | `"Please wait {seconds} seconds before requesting another verification code"` | User clicked "Resend Code" before the 2-minute cooldown timer elapsed. | Button disabled with countdown timer: *"Resend in {seconds}s"*. | Wait for countdown timer to reach zero before resending. |
+| **`500 Internal Server Error`** | `"Failed to send email: SMTP server unreachable"` | SMTP credentials misconfigured or network timeout reaching mail host. | Error toast: *"Failed to send email. Please contact administrator."* | Administrator must verify SMTP configuration in Settings. |
+
+---
+
 ## 2. Password Security Policy
 
 Every password submitted during **Sign Up**, **Temporary Password Change**, **Password Reset**, or **Admin User Creation** must meet all five strict criteria (tested and validated by `getPasswordPolicyFailures` in `config.go`):
@@ -99,17 +130,19 @@ If you did not sign up, ignore this email.
 Upon successful authentication, the frontend (`workspaceAccess.ts`) inspects the user's `role` and `allowed_sections` to redirect them:
 
 1. **Administrator / Super Admin:**
-   * **Destination:** `/workspace/dashboard` (Full admin portal).
-   * **Access:** Full access to all workspace features (Virtual Keys, Governance, Models, Teams, Customers, Business Units, Audit Logs, Settings).
+   * **Destination:** `/workspace/dashboard`.
+   * **Access:** Every workspace section. `getScopedWorkspaceSections` returns no limit.
 2. **Standard User (`role: "user"`):**
-   * **Destination:** `/workspace/prompt-repository` (User page / Playground).
-   * **Access:** Dedicated user interface for prompt engineering, chat sessions, model playground, and team prompt sharing. Admin configuration menus are hidden.
-3. **Sub-Administrator / Scoped Roles (`allowed_sections`):**
-   * **Destination:** Redirected to their first allowed feature path (e.g., `/workspace/analytics` or `/workspace/governance`).
-   * **Access Filter:** The navigation sidebar renders **only their permitted features**. Any direct navigation to unauthorized sections is intercepted by `getWorkspaceAccessRedirect` and blocked with HTTP 403 by `rbac_enforce.go`.
+   * **Destination:** `/workspace/prompt-repo`.
+   * **Access:** The sections an administrator selected for that user, plus Prompt Repository. Prompt Repository is added even when it was not ticked. If no sections were selected, the user sees only Prompt Repository. The sidebar lists those sections. Other workspace pages return HTTP 403.
+3. **Sub-Administrator and custom roles:**
+   * **Destination:** The first path in `allowed_sections`.
+   * **Access:** Only the sections stored in `allowed_sections`. Prompt Repository is not added automatically. A direct visit to another section is redirected by `getWorkspaceAccessRedirect` and blocked with HTTP 403 by `rbac_enforce.go`.
 
 ### 4.4 Sign-In Security Alerts (First Login, New Device/System & Dormant Return)
-When SMTP is enabled, the backend (`smtp.go`: `trySendLoginNoticeEmail`) records the device fingerprint (hash of client IP + User-Agent header) in `login_devices`:
+Mail is sent only when SMTP is enabled and **Notify on login** is on. The built-in administrator has no stored email, so that account receives no login mail. A database user is mailed at `dbUser.Email`. The same browser signing in again does not send another mail.
+
+The backend (`smtp.go`: `trySendLoginNoticeEmail`) records the device fingerprint (hash of client IP + User-Agent header) in `login_devices`:
 
 1. **Sign-In from New Device / Different System / First-Time Login:**
    * **Trigger:** If the IP or Browser User-Agent is new, or if this is the user's first login.
@@ -150,7 +183,7 @@ When SMTP is enabled, the backend (`smtp.go`: `trySendLoginNoticeEmail`) records
 
 ## 5. Flow 3: First-Time Login with Temporary Password
 
-When an administrator creates a user under **Governance $\rightarrow$ Users** and selects "Send Temporary Password" (or leaves the password empty for auto-generation):
+When an administrator creates a user under **Governance → Users**, the account is saved as `approved` and `MustChangePassword` is set to `true`, whether the administrator typed a password or left it blank. A blank password is generated and emailed. The typed or generated password is not returned in the API response. If the email fails, the account still exists and the person cannot sign in until another temporary password is sent. The **Auto create prompt** choice starts off; see `Governance.md`.
 
 ### 5.1 Temporary Password Welcome Email Template
 * **Sender Display Name:** `Raksha Security System`
@@ -200,7 +233,9 @@ Please keep your credentials confidential.
 8. **Activation:** 
    * The new password is encrypted with Bcrypt.
    * `user.MustChangePassword` is set to `false`.
-   * Live sessions are refreshed, and the user is redirected into the workspace dashboard.
+   * The change does not ask for the temporary password again. The person just signed in with it.
+   * All sessions for that username are deleted, then the current session is recreated.
+   * The browser then follows the role redirect in section 4.3. A standard user lands on `/workspace/prompt-repo`. An administrator lands on `/workspace/dashboard`.
 
 ---
 
@@ -361,7 +396,7 @@ You will not be able to sign in while your account is blocked. Please contact yo
 
 ### 8.5 Admin Action: Unblock User
 * **Allowed Target Statuses:** Only accounts with status `disabled` (blocked) can be unblocked.
-* **Action:** Sets `user.Status = "approved"`.
+* **Action:** Sets `user.Status = "approved"`. A rejected account that was later blocked also becomes `approved`. Unblock does not put the account back to `rejected`.
 * **User Email Notification:**
   * **Sender Display Name:** `Raksha Security System`
   * **Subject:** `Account Notice: Your Account Has Been Unblocked`
@@ -383,9 +418,9 @@ If you have any questions, please contact your administrator.
 ### 8.6 Admin Action: Delete User
 * **Self-Action Guard:** An administrator **cannot delete their own account**.
 * **Action:**
-  1. Purges user relations across Governance, Teams, Prompt Repositories, and Quotas.
-  2. Permanently removes the record from the database.
-  3. Immediately invalidates all active sessions for that username.
+  1. `purgeUserRelations` removes budget, virtual-key links, model configs, rate limit, and team memberships, then `OnUserDeleted` moves that user's own prompt to **Removed Users**. Chat history stays.
+  2. The user row is deleted. The same username and email can be registered again as a new account.
+  3. Active sessions for that username are deleted.
 
 ---
 
@@ -447,9 +482,9 @@ Please keep your credentials confidential. If you authorized this sign-in, no ac
 ---
 
 ### 10.2 Network-Wide IP Rate Limiting (Anti-Password Spraying)
-* While Account Lockout (3 attempts) protects individual accounts, **Network IP Rate Limiting** (`checkLoginIPRateLimit`) protects the infrastructure against automated password-spraying attacks where an attacker cycles through dozens of accounts from the same IP.
-* If an IP exceeds threshold failures, that IP is temporarily blocked with HTTP `429 Too Many Requests`:
-  * **Message:** *"Too many login attempts from this network. Try again in about 20 minutes"*
+* Account lockout (3 attempts, 20 minutes) applies to one identifier. A separate counter applies to the client IP (`recordLoginIPFailure` in `auth_security.go`).
+* **30** failed sign-in attempts from one IP inside a **15-minute** window lock that IP for **15 minutes**. The response is HTTP `429`.
+* A successful sign-in clears that account's failure counter. It does not clear the IP counter. `clearLoginIPFailures` exists and is not called from `login()`.
 
 ---
 
@@ -460,7 +495,7 @@ Please keep your credentials confidential. If you authorized this sign-in, no ac
 ---
 
 ### 10.4 Resend Code Anti-Spam Cooldown
-* Both `/signup` and `/login?mode=forgot` enforce a **60-second cooldown timer** (`CODE_RESEND_COOLDOWN_SECONDS`) between OTP resend requests to protect mail server reputation and prevent email inbox flooding.
+* Both `/signup` and `/login?mode=forgot` enforce a **2-minute cooldown** (`forgotPasswordCooldown = 2 * time.Minute` in `session.go`) between OTP resend requests to protect mail server reputation and prevent email inbox flooding. The sign-up screen timer is `CODE_RESEND_COOLDOWN_SECONDS` (120). The forgot-password screen timer is `OTP_RESEND_COOLDOWN_SECONDS` (120). A resend inside that window is dropped and the screen still shows the generic success notice.
 
 ---
 
@@ -510,4 +545,4 @@ stateDiagram-v2
 
 ---
 
-*Document compiled and verified against Gateway Enterprise Codebase.*
+*Document compiled and verified against Gateway Enterprise Codebase. Governance create, connect, prompt-folder, and budget behavior is in `Governance.md`.*
