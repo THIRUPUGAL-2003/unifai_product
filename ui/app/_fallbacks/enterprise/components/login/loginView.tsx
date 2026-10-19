@@ -471,23 +471,29 @@ export default function LoginView() {
 			<div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_70%_80%_at_50%_-20%,#d9e6ff_0%,rgba(246,248,253,0)_70%)]" />
 
 			{/* Fixed Top Navigation Header */}
-			<header className="relative z-20 flex-shrink-0 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-5">
-				<div className="flex items-center gap-4">
+			<header className="relative z-20 flex-shrink-0 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-4">
+				<div className="flex min-w-0 items-center gap-4">
 					<button
 						type="button"
 						onClick={() => window.location.assign("/")}
-						className="group inline-flex items-center gap-2 rounded-full border border-[#e3ebf8] bg-white px-4 py-1.5 text-xs font-medium text-[#0b1b3a] transition-all hover:border-[#2f6bff]/40 hover:text-[#2f6bff] cursor-pointer shadow-sm"
+						className="group inline-flex shrink-0 items-center gap-2 rounded-full border border-[#e3ebf8] bg-white px-4 py-1.5 text-xs font-medium text-[#0b1b3a] transition-all hover:border-[#2f6bff]/40 hover:text-[#2f6bff] cursor-pointer shadow-sm"
 						title="Return to Landing Page"
 					>
 						<ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1 text-[#2f6bff]" />
 						<span>Back to Home</span>
 					</button>
-
-					<div className="hidden h-5 w-px bg-[#dbe4f5] sm:block" />
-
-					<div className="hidden sm:flex items-center gap-2.5">
-						<img src={branding.companyLogo} alt={branding.companyName} className="h-7 w-auto object-contain" />
-						<span className="text-sm font-bold tracking-tight text-[#0b1b3a]">{branding.companyName}</span>
+					<div className="hidden h-5 w-px shrink-0 bg-[#dbe4f5] sm:block" />
+					<div className="flex min-w-0 items-center gap-2.5">
+						<img
+							src={branding.companyLogo}
+							alt={branding.companyName}
+							className="h-10 w-auto max-w-[180px] object-contain"
+						/>
+						<span className="truncate text-lg font-extrabold tracking-tight text-[#0b1b3a]">Raksha</span>
+						<span className="relative flex h-2 w-2 shrink-0">
+							<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+							<span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+						</span>
 					</div>
 				</div>
 

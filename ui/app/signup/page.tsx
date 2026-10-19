@@ -9,7 +9,6 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowLeft,
 	ArrowRight,
-	Check,
 	CheckCircle,
 	Clock,
 	Cpu,
@@ -66,13 +65,6 @@ export default function SignupPage() {
 	}, [resendCooldown]);
 
 	const apiError = (data: any, fallback: string) => data?.error?.message || data?.message || data?.error || fallback;
-
-	const has8Chars = password.length >= 8;
-	const hasUpper = /[A-Z]/.test(password);
-	const hasLower = /[a-z]/.test(password);
-	const hasDigit = /[0-9]/.test(password);
-	const hasSpecial = /[^A-Za-z0-9]/.test(password);
-	const passwordsMatch = password.length > 0 && password === confirmPassword;
 
 	const handleVerifyCode = async (e: React.FormEvent<HTMLFormElement>) => {
 		e.preventDefault();
@@ -215,23 +207,29 @@ export default function SignupPage() {
 			<div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(ellipse_70%_80%_at_50%_-20%,#d9e6ff_0%,rgba(246,248,253,0)_70%)]" />
 
 			{/* Fixed Top Navigation Header */}
-			<header className="relative z-20 flex-shrink-0 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-5">
-				<div className="flex items-center gap-4">
+			<header className="relative z-20 flex-shrink-0 mx-auto flex w-full max-w-[1400px] items-center justify-between px-6 py-4">
+				<div className="flex min-w-0 items-center gap-4">
 					<button
 						type="button"
 						onClick={() => navigate({ to: "/" })}
-						className="group inline-flex items-center gap-2 rounded-full border border-[#e3ebf8] bg-white px-4 py-1.5 text-xs font-medium text-[#0b1b3a] transition-all hover:border-[#2f6bff]/40 hover:text-[#2f6bff] cursor-pointer shadow-sm"
+						className="group inline-flex shrink-0 items-center gap-2 rounded-full border border-[#e3ebf8] bg-white px-4 py-1.5 text-xs font-medium text-[#0b1b3a] transition-all hover:border-[#2f6bff]/40 hover:text-[#2f6bff] cursor-pointer shadow-sm"
 						title="Return to Landing Page"
 					>
 						<ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1 text-[#2f6bff]" />
 						<span>Back to Home</span>
 					</button>
-
-					<div className="hidden h-5 w-px bg-[#dbe4f5] sm:block" />
-
-					<div className="hidden sm:flex items-center gap-2.5">
-						<img src={branding.companyLogo} alt={branding.companyName} className="h-7 w-auto object-contain" />
-						<span className="text-sm font-bold tracking-tight text-[#0b1b3a]">{branding.companyName}</span>
+					<div className="hidden h-5 w-px shrink-0 bg-[#dbe4f5] sm:block" />
+					<div className="flex min-w-0 items-center gap-2.5">
+						<img
+							src={branding.companyLogo}
+							alt={branding.companyName}
+							className="h-10 w-auto max-w-[180px] object-contain"
+						/>
+						<span className="truncate text-lg font-extrabold tracking-tight text-[#0b1b3a]">Raksha</span>
+						<span className="relative flex h-2 w-2 shrink-0">
+							<span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+							<span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+						</span>
 					</div>
 				</div>
 
@@ -588,28 +586,6 @@ export default function SignupPage() {
 											</div>
 										</div>
 
-										{/* Password requirements checklist - single compact row */}
-										<div className="flex flex-wrap gap-x-3 gap-y-2 rounded-xl border border-[#e3ebf8] bg-[#f7f9ff] px-3 py-2.5 text-[11px]">
-											<span className={has8Chars ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
-												<Check className="h-3 w-3 shrink-0" /> 8+ chars
-											</span>
-											<span className={hasUpper ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
-												<Check className="h-3 w-3 shrink-0" /> A-Z
-											</span>
-											<span className={hasLower ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
-												<Check className="h-3 w-3 shrink-0" /> a-z
-											</span>
-											<span className={hasDigit ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
-												<Check className="h-3 w-3 shrink-0" /> 0-9
-											</span>
-											<span className={hasSpecial ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
-												<Check className="h-3 w-3 shrink-0" /> Symbol
-											</span>
-											<span className={passwordsMatch ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-normal" : "text-slate-500 flex items-center gap-1 whitespace-normal"}>
-												<Check className="h-3 w-3 shrink-0" /> Match
-											</span>
-										</div>
-
 										<Button
 											type="submit"
 											disabled={isLoading}
@@ -660,8 +636,8 @@ export default function SignupPage() {
 			</main>
 
 			{/* Minimal Sleek Footer */}
-			<footer className="relative z-10 mt-auto w-full border-t border-[#e6edf8] bg-[#f6f8fd] px-6 py-4 text-center text-xs text-slate-500">
-				<span className="mx-auto block max-w-[1440px]">{branding.footerText}</span>
+			<footer className="relative z-10 mx-auto mt-auto w-full max-w-[1400px] border-t border-[#e6edf8] bg-[#f6f8fd] px-6 py-4 text-center text-xs text-slate-500">
+				<span>{branding.footerText}</span>
 			</footer>
 		</div>
 	);

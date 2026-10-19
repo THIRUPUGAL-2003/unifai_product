@@ -227,19 +227,17 @@ console.log(response.choices[0].message.content);`
 				<div className="max-w-[1440px] mx-auto px-6 lg:px-10 xl:px-14 h-16 flex items-center justify-between">
 					{/* Brand Logo & Tag */}
 					<a href="/" className="flex items-center gap-3.5 group cursor-pointer" aria-label={productName}>
-						<div className="flex items-center justify-center p-1.5 rounded-xl bg-white border border-[#e3ebf8] group-hover:border-[#2f6bff]/40 transition-all shadow-sm">
-							<img
-								src={companyLogoSrc}
-								alt={companyFullName}
-								className="h-8 w-auto max-w-[150px] object-contain shrink-0"
-								onError={(e) => {
-									const target = e.currentTarget;
-									if (!target.src.endsWith("/yes-panchi-logo.png")) {
-										target.src = "/yes-panchi-logo.png";
-									}
-								}}
-							/>
-						</div>
+						<img
+							src={companyLogoSrc}
+							alt={companyFullName}
+							className="h-11 w-auto max-w-[220px] object-contain shrink-0"
+							onError={(e) => {
+								const target = e.currentTarget;
+								if (!target.src.endsWith("/yes-panchi-logo.png")) {
+									target.src = "/yes-panchi-logo.png";
+								}
+							}}
+						/>
 						<div className="flex flex-col">
 							<div className="flex items-center gap-2">
 								<span className="text-xl font-extrabold tracking-tight text-[#0b1b3a] group-hover:text-[#2f6bff] transition-colors">
@@ -914,12 +912,11 @@ console.log(response.choices[0].message.content);`
 			</main>
 
 			{/* HIGH-END FOOTER - PERFECT SINGLE-LINE ALIGNMENT */}
-			<footer className="border-t border-[#e3ebf8] bg-white py-8 px-6 w-full">
-				<div className="max-w-[1400px] mx-auto flex flex-col lg:flex-row items-center justify-between gap-6 text-xs text-slate-500">
+			<footer className="w-full border-t border-[#e3ebf8] bg-white py-8">
+				<div className="max-w-[1440px] mx-auto px-6 lg:px-10 xl:px-14 flex flex-col items-start lg:flex-row lg:items-center justify-between gap-6 text-xs text-slate-500">
 					{/* Brand Logo & Company */}
-					<div className="flex items-center gap-3 shrink-0">
-						<img src={companyLogoSrc} alt={companyFullName} className="h-6 w-auto object-contain opacity-90 shrink-0" />
-						<span className="font-bold text-[#0b1b3a] whitespace-nowrap">{companyFullName}</span>
+					<div className="flex items-center shrink-0">
+						<img src={companyLogoSrc} alt={companyFullName} className="h-10 w-auto object-contain opacity-90 shrink-0" />
 					</div>
 
 					{/* Navigation Links - Perfect single line, never wrap or split words */}

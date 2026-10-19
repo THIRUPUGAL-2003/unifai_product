@@ -1504,7 +1504,7 @@ export default function AppSidebar() {
 				{/* Expanded state: horizontal layout */}
 				<div className="flex h-10 w-full items-center justify-between px-1.5 group-data-[collapsible=icon]:hidden">
 					<Link to="/workspace/logs" className="group flex items-center gap-2 pl-2">
-						<img className="h-8 w-auto max-w-[180px] object-contain" src={logoSrc} alt={branding.companyName} width={180} height={32} />
+						<img className="h-11 w-auto max-w-[220px] object-contain" src={logoSrc} alt={branding.companyName} width={220} height={44} />
 					</Link>
 					<button
 						onClick={toggleSidebar}

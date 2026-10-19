@@ -597,12 +597,20 @@ func usernameCaseConflict(ctx context.Context, store configstore.ConfigStore, na
 }
 
 func checkLoginLockout(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username string) (locked bool, retryAfter time.Duration, err error) {
-	row, err := store.GetLoginLockout(ctx, loginUsernameKey(username))
+	key := loginUsernameKey(username)
+	if isLocked, retry, found := GetAuthCache().GetLockout(key); found {
+		if isLocked {
+			return true, retry, nil
+		}
+	}
+	row, err := store.GetLoginLockout(ctx, key)
 	if err != nil || row == nil || row.LockedUntil == nil {
 		return false, 0, err
 	}
 	if time.Now().Before(*row.LockedUntil) {
-		return true, time.Until(*row.LockedUntil), nil
+		dur := time.Until(*row.LockedUntil)
+		GetAuthCache().SetLockout(key, *row.LockedUntil)
+		return true, dur, nil
 	}
 	return false, 0, nil
 }
@@ -615,7 +623,9 @@ func recordLoginFailure(store configstore.ConfigStore, ctx *fasthttp.RequestCtx,
 		row = &tables.TableLoginLockout{UsernameKey: key}
 	}
 	if row.LockedUntil != nil && now.Before(*row.LockedUntil) {
-		return true, time.Until(*row.LockedUntil)
+		dur := time.Until(*row.LockedUntil)
+		GetAuthCache().SetLockout(key, *row.LockedUntil)
+		return true, dur
 	}
 	// Fresh window after lockout expired.
 	if row.LockedUntil != nil && now.After(*row.LockedUntil) {
@@ -628,6 +638,7 @@ func recordLoginFailure(store configstore.ConfigStore, ctx *fasthttp.RequestCtx,
 		until := now.Add(loginLockoutDuration)
 		row.LockedUntil = &until
 		row.FailedCount = 0
+		GetAuthCache().SetLockout(key, until)
 		_ = store.UpsertLoginLockout(ctx, row)
 		return true, loginLockoutDuration
 	}
@@ -636,7 +647,9 @@ func recordLoginFailure(store configstore.ConfigStore, ctx *fasthttp.RequestCtx,
 }
 
 func clearLoginFailures(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, username string) {
-	_ = store.ClearLoginLockout(ctx, loginUsernameKey(username))
+	key := loginUsernameKey(username)
+	GetAuthCache().ClearLockout(key)
+	_ = store.ClearLoginLockout(ctx, key)
 }
 
 // clearAccountLockouts lifts the failed-login lock under every identifier an account
@@ -658,17 +671,20 @@ func lockAccountIdentifiers(store configstore.ConfigStore, ctx *fasthttp.Request
 	if store == nil {
 		return
 	}
+	seen := make(map[string]bool)
+	cache := GetAuthCache()
 	for _, id := range identifiers {
 		key := loginUsernameKey(id)
-		if key == "" {
+		if key == "" || seen[key] {
 			continue
 		}
-		row, _ := store.GetLoginLockout(ctx, key)
-		if row == nil {
-			row = &tables.TableLoginLockout{UsernameKey: key}
+		seen[key] = true
+		cache.SetLockout(key, until)
+		row := &tables.TableLoginLockout{
+			UsernameKey: key,
+			LockedUntil: &until,
+			FailedCount: 0,
 		}
-		row.LockedUntil = &until
-		row.FailedCount = 0
 		_ = store.UpsertLoginLockout(ctx, row)
 	}
 }

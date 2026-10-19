@@ -657,6 +657,7 @@ func (h *SessionHandler) logout(ctx *fasthttp.RequestCtx) {
 
 	// delete session from database if token exists
 	if token != "" {
+		GetAuthCache().InvalidateSession(token)
 		err := h.configStore.DeleteSession(ctx, token)
 		if err != nil && !errors.Is(err, configstore.ErrNotFound) {
 			logger.Error("failed to delete session during logout: %v", err)
@@ -2679,6 +2680,7 @@ func (h *SessionHandler) blockUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	_ = h.configStore.DeleteSessionsByUsername(ctx, user.Username)
+	GetAuthCache().InvalidateUserSessions(user.Username)
 	emailSent, emailErr := trySendAccountBlockStatusEmail(h.configStore, ctx, user.Username, user.Email, true)
 	SendJSON(ctx, map[string]any{
 		"message":     "User blocked",
@@ -2714,6 +2716,10 @@ func (h *SessionHandler) unblockUser(ctx *fasthttp.RequestCtx) {
 	if err := h.configStore.UpdateUser(ctx, user); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to unblock user: "+err.Error())
 		return
+	}
+	GetAuthCache().ClearLockout(loginUsernameKey(user.Username))
+	if user.Email != "" {
+		GetAuthCache().ClearLockout(loginUsernameKey(user.Email))
 	}
 	userEmail := strings.TrimSpace(user.Email)
 	if userEmail == "" && strings.Contains(user.Username, "@") {

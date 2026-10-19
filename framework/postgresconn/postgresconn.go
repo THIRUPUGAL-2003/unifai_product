@@ -92,7 +92,7 @@ func BuildDSN(config *Config) string {
 	if config.Password != nil {
 		password = config.Password.GetValue()
 	}
-	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s connect_timeout=10",
+	return fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s connect_timeout=30",
 		quoteLibpqValue(config.Host.GetValue()), quoteLibpqValue(config.Port.GetValue()), quoteLibpqValue(config.User.GetValue()),
 		quoteLibpqValue(password), quoteLibpqValue(config.DBName.GetValue()), quoteLibpqValue(config.SSLMode.GetValue()))
 }
@@ -155,6 +155,8 @@ func ApplyPoolTuning(db *gorm.DB, config *Config) error {
 			return err
 		}
 		sqlDB.SetConnMaxLifetime(lifetime)
+	} else {
+		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 	}
 	return nil
 }

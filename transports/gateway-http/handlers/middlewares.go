@@ -1005,33 +1005,45 @@ func validateSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, to
 }
 
 func checkSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, token string) sessionCheckResult {
-	session, err := store.GetSession(context.Background(), token)
-	if err != nil || session == nil {
-		return sessionInvalid
-	}
-	if session.ExpiresAt.Before(time.Now()) {
-		return sessionInvalid
-	}
+	cache := GetAuthCache()
+	var session *tables.SessionsTable
+	var dbUser *tables.TableUser
+	var isBootstrapAdmin bool
 
-	// Verify user account still exists and is approved (unless bootstrap admin)
-	authConfig, _ := store.GetAuthConfig(context.Background())
-	isBootstrapAdmin := false
-	if authConfig != nil {
-		// Must mirror getAdminCredentials: login names the admin session "admin" when no
-		// admin username is configured.
-		adminName := strings.TrimSpace(authConfig.AdminUserName.GetValue())
-		if adminName == "" {
-			adminName = "admin"
-		}
-		isBootstrapAdmin = session.Username == adminName
-	}
-	if !isBootstrapAdmin {
-		dbUser, err := store.GetUserByUsername(context.Background(), session.Username)
-		if err != nil || dbUser == nil || !dbUser.IsApproved() {
-			// Invalidate ghost session immediately (CWE-613)
-			_ = store.DeleteSession(context.Background(), token)
+	if cached, hit := cache.GetSession(token); hit && cached != nil {
+		session = cached.Session
+		dbUser = cached.User
+		isBootstrapAdmin = cached.IsBootstrapAdmin
+	} else {
+		var err error
+		session, err = store.GetSession(context.Background(), token)
+		if err != nil || session == nil {
 			return sessionInvalid
 		}
+		if session.ExpiresAt.Before(time.Now()) {
+			return sessionInvalid
+		}
+
+		// Verify user account still exists and is approved (unless bootstrap admin)
+		authConfig, _ := store.GetAuthConfig(context.Background())
+		if authConfig != nil {
+			adminName := strings.TrimSpace(authConfig.AdminUserName.GetValue())
+			if adminName == "" {
+				adminName = "admin"
+			}
+			isBootstrapAdmin = session.Username == adminName
+		}
+		if !isBootstrapAdmin {
+			dbUser, err = store.GetUserByUsername(context.Background(), session.Username)
+			if err != nil || dbUser == nil || !dbUser.IsApproved() {
+				// Invalidate ghost session immediately (CWE-613)
+				_ = store.DeleteSession(context.Background(), token)
+				return sessionInvalid
+			}
+		}
+
+		// Cache validated session for 60 seconds (sub-millisecond lookups)
+		cache.SetSession(token, session, dbUser, isBootstrapAdmin, 60*time.Second)
 	}
 
 	// Non-admin: Prompt Repository + inference + read-only config needed for playground.
