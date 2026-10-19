@@ -365,7 +365,9 @@ func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayReq
 
 	promptID, versionNumber, err := p.resolver.Resolve(ctx, req)
 	if err != nil {
-		p.logger.Warn("prompts plugin: failed to resolve prompt: %v", err)
+		if p.logger != nil {
+			p.logger.Warn("prompts plugin: failed to resolve prompt: %v", err)
+		}
 		return req, nil, nil
 	}
 	if promptID == "" {
@@ -375,13 +377,17 @@ func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayReq
 
 	prompt, version, found := p.resolveVersion(promptID, versionNumber)
 	if !found {
-		p.logger.Warn("prompts plugin: prompt or version not found: promptID=%s versionNumber=%d", promptID, versionNumber)
+		if p.logger != nil {
+			p.logger.Warn("prompts plugin: prompt or version not found: promptID=%s versionNumber=%d", promptID, versionNumber)
+		}
 		p.injectSkillSystemMessage(ctx, req)
 		return req, nil, nil
 	}
 
 	if version == nil {
-		p.logger.Warn("prompts plugin: prompt has no resolved version: promptID=%s", promptID)
+		if p.logger != nil {
+			p.logger.Warn("prompts plugin: prompt has no resolved version: promptID=%s", promptID)
+		}
 		p.injectSkillSystemMessage(ctx, req)
 		return req, nil, nil
 	}
@@ -480,7 +486,7 @@ func (p *Plugin) PreLLMHook(ctx *schemas.GatewayContext, req *schemas.GatewayReq
 func (p *Plugin) injectSkillSystemMessage(ctx *schemas.GatewayContext, req *schemas.GatewayRequest, skillRefOverrides ...string) {
 	var candidates []string
 
-	// 1. Context header x-uf-skill-id
+	// 1. Context header x-uf-skill-id (explicit client override)
 	if headerRef := strings.TrimSpace(gateway.GetStringFromContext(ctx, SkillIDKey)); headerRef != "" {
 		for _, part := range strings.Split(headerRef, ",") {
 			if trimmed := strings.TrimSpace(part); trimmed != "" && !slices.Contains(candidates, trimmed) {
@@ -489,16 +495,7 @@ func (p *Plugin) injectSkillSystemMessage(ctx *schemas.GatewayContext, req *sche
 		}
 	}
 
-	// 2. Overrides from version ModelParams
-	for _, override := range skillRefOverrides {
-		for _, part := range strings.Split(override, ",") {
-			if trimmed := strings.TrimSpace(part); trimmed != "" && !slices.Contains(candidates, trimmed) {
-				candidates = append(candidates, trimmed)
-			}
-		}
-	}
-
-	// 3. Request ExtraParams (skill_id, skill, skills)
+	// 2. Request ExtraParams (skill_id, skill, skills)
 	var extraMap map[string]interface{}
 	if req.ChatRequest != nil && req.ChatRequest.Params != nil && req.ChatRequest.Params.ExtraParams != nil {
 		extraMap = req.ChatRequest.Params.ExtraParams
@@ -510,27 +507,40 @@ func (p *Plugin) injectSkillSystemMessage(ctx *schemas.GatewayContext, req *sche
 		for _, k := range []string{"skill_id", "skill", "skills"} {
 			if val, ok := extraMap[k]; ok {
 				delete(extraMap, k)
-				switch v := val.(type) {
-				case string:
-					for _, part := range strings.Split(v, ",") {
-						if trimmed := strings.TrimSpace(part); trimmed != "" && !slices.Contains(candidates, trimmed) {
-							candidates = append(candidates, trimmed)
+				if len(candidates) == 0 {
+					switch v := val.(type) {
+					case string:
+						for _, part := range strings.Split(v, ",") {
+							if trimmed := strings.TrimSpace(part); trimmed != "" && !slices.Contains(candidates, trimmed) {
+								candidates = append(candidates, trimmed)
+							}
 						}
-					}
-				case []any:
-					for _, item := range v {
-						if s, ok := item.(string); ok {
+					case []any:
+						for _, item := range v {
+							if s, ok := item.(string); ok {
+								if trimmed := strings.TrimSpace(s); trimmed != "" && !slices.Contains(candidates, trimmed) {
+									candidates = append(candidates, trimmed)
+								}
+							}
+						}
+					case []string:
+						for _, s := range v {
 							if trimmed := strings.TrimSpace(s); trimmed != "" && !slices.Contains(candidates, trimmed) {
 								candidates = append(candidates, trimmed)
 							}
 						}
 					}
-				case []string:
-					for _, s := range v {
-						if trimmed := strings.TrimSpace(s); trimmed != "" && !slices.Contains(candidates, trimmed) {
-							candidates = append(candidates, trimmed)
-						}
-					}
+				}
+			}
+		}
+	}
+
+	// 3. Prompt version defaults from ModelParams (used when no explicit client skill is provided)
+	if len(candidates) == 0 {
+		for _, override := range skillRefOverrides {
+			for _, part := range strings.Split(override, ",") {
+				if trimmed := strings.TrimSpace(part); trimmed != "" && !slices.Contains(candidates, trimmed) {
+					candidates = append(candidates, trimmed)
 				}
 			}
 		}
@@ -552,7 +562,9 @@ func (p *Plugin) injectSkillSystemMessage(ctx *schemas.GatewayContext, req *sche
 			skill, err = store.GetSkillByName(ctx, skillRef)
 		}
 		if err != nil || skill == nil {
-			p.logger.Warn("prompts plugin: skill not found for ref=%s: %v", skillRef, err)
+			if p.logger != nil {
+				p.logger.Warn("prompts plugin: skill not found for ref=%s: %v", skillRef, err)
+			}
 			continue
 		}
 		body := strings.TrimSpace(skill.SkillMDBody)

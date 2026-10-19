@@ -237,3 +237,142 @@ func TestOnUserUpdated_UsernameChangeDoesNotDuplicateEmailPrompt(t *testing.T) {
 		t.Fatalf("unrelated prompt must keep its name")
 	}
 }
+
+func TestSameNameRecreateRestoresRemovedPromptAndFolder(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+	users := usersTestRoot(t, lifecycle, "Users", "system_users_root")
+	removedUsers := usersTestRoot(t, lifecycle, "Removed Users", "system_removed_users_root")
+	customers := usersTestRoot(t, lifecycle, "Customers", "system_customers_root")
+	removedCustomers := usersTestRoot(t, lifecycle, "Removed Customers", "system_removed_customers_root")
+	teams := usersTestRoot(t, lifecycle, "Teams", "system_teams_root")
+	_ = usersTestRoot(t, lifecycle, "Removed Teams", "system_removed_teams_root")
+
+	customer := &tables.TableCustomer{ID: syncTestID("cust"), Name: "Acme"}
+	_ = store.CreateCustomer(ctx, customer)
+	if err := lifecycle.OnCustomerCreated(ctx, customer); err != nil {
+		t.Fatalf("OnCustomerCreated: %v", err)
+	}
+	var customerFolder tables.TableFolder
+	if err := store.DB().Where("entity_id = ?", customer.ID).First(&customerFolder).Error; err != nil {
+		t.Fatalf("customer folder: %v", err)
+	}
+	if err := lifecycle.OnCustomerDeleted(ctx, customer); err != nil {
+		t.Fatalf("OnCustomerDeleted: %v", err)
+	}
+
+	same := &tables.TableCustomer{ID: syncTestID("cust"), Name: "Acme"}
+	_ = store.CreateCustomer(ctx, same)
+	if err := lifecycle.OnCustomerCreated(ctx, same); err != nil {
+		t.Fatalf("recreate customer: %v", err)
+	}
+	var restored tables.TableFolder
+	if err := store.DB().Where("id = ?", customerFolder.ID).First(&restored).Error; err != nil {
+		t.Fatalf("restored folder: %v", err)
+	}
+	if restored.Type != "customer" || restored.ParentID == nil || *restored.ParentID != customers.ID || restored.Name != "Acme" {
+		t.Fatalf("same customer name must restore the folder, got %+v", restored)
+	}
+	if restored.EntityID == nil || *restored.EntityID != same.ID {
+		t.Fatalf("restored folder must belong to the new customer")
+	}
+	var stillRemoved int64
+	store.DB().Model(&tables.TableFolder{}).Where("id = ? AND parent_id = ?", customerFolder.ID, removedCustomers.ID).Count(&stillRemoved)
+	if stillRemoved != 0 {
+		t.Fatalf("restored customer folder must leave Removed Customers")
+	}
+
+	other := &tables.TableCustomer{ID: syncTestID("cust"), Name: "Other Co"}
+	_ = store.CreateCustomer(ctx, other)
+	if err := lifecycle.OnCustomerDeleted(ctx, same); err != nil {
+		t.Fatalf("delete restored customer: %v", err)
+	}
+	if err := lifecycle.OnCustomerCreated(ctx, other); err != nil {
+		t.Fatalf("different customer: %v", err)
+	}
+	var otherFolder tables.TableFolder
+	if err := store.DB().Where("entity_id = ?", other.ID).First(&otherFolder).Error; err != nil {
+		t.Fatalf("other folder: %v", err)
+	}
+	if otherFolder.ID == customerFolder.ID {
+		t.Fatalf("a different customer name must create a new folder")
+	}
+	var archived tables.TableFolder
+	if err := store.DB().Where("id = ?", customerFolder.ID).First(&archived).Error; err != nil {
+		t.Fatalf("archived folder: %v", err)
+	}
+	if archived.ParentID == nil || *archived.ParentID != removedCustomers.ID {
+		t.Fatalf("different name must leave the old folder in Removed Customers")
+	}
+
+	team := &tables.TableTeam{ID: syncTestID("team"), Name: "Platform"}
+	_ = store.CreateTeam(ctx, team)
+	if err := lifecycle.OnTeamCreated(ctx, team); err != nil {
+		t.Fatalf("OnTeamCreated: %v", err)
+	}
+	var teamFolder tables.TableFolder
+	_ = store.DB().Where("entity_id = ?", team.ID).First(&teamFolder).Error
+	if err := lifecycle.OnTeamDeleted(ctx, team); err != nil {
+		t.Fatalf("OnTeamDeleted: %v", err)
+	}
+	newTeam := &tables.TableTeam{ID: syncTestID("team"), Name: "Platform"}
+	_ = store.CreateTeam(ctx, newTeam)
+	if err := lifecycle.OnTeamCreated(ctx, newTeam); err != nil {
+		t.Fatalf("recreate team: %v", err)
+	}
+	var teamBack tables.TableFolder
+	_ = store.DB().Where("id = ?", teamFolder.ID).First(&teamBack).Error
+	if teamBack.Type != "team" || teamBack.ParentID == nil || *teamBack.ParentID != teams.ID {
+		t.Fatalf("same team name must restore the folder under Teams")
+	}
+
+	user := syncTestUser(t, store)
+	if err := lifecycle.OnUserCreated(ctx, user, true); err != nil {
+		t.Fatalf("OnUserCreated: %v", err)
+	}
+	prompt := usersTestPrompt(t, store, user.Email)
+	if err := lifecycle.OnUserDeleted(ctx, user); err != nil {
+		t.Fatalf("OnUserDeleted: %v", err)
+	}
+	_ = store.DB().Delete(&tables.TableUser{}, "id = ?", user.ID).Error
+
+	recreated := &tables.TableUser{ID: syncTestID("uid"), Username: user.Username, Email: user.Email}
+	if err := store.CreateUser(ctx, recreated); err != nil {
+		t.Fatalf("recreate user: %v", err)
+	}
+	if err := lifecycle.OnUserCreated(ctx, recreated, true); err != nil {
+		t.Fatalf("recreate user prompt: %v", err)
+	}
+	if usersTestPromptCount(store, user.Email) != 1 {
+		t.Fatalf("same email must not create a second prompt")
+	}
+	back := usersTestPrompt(t, store, user.Email)
+	if back.ID != prompt.ID || back.FolderID == nil || *back.FolderID != users.ID {
+		t.Fatalf("same email must bring the Removed prompt back to Users")
+	}
+	if back.OwnerUserID == nil || *back.OwnerUserID != recreated.ID {
+		t.Fatalf("restored prompt must belong to the new user")
+	}
+	if !syncTestHasPrompt(t, store, recreated.ID, prompt.ID) {
+		t.Fatalf("new user must be allowed to open the restored prompt")
+	}
+
+	different := &tables.TableUser{ID: syncTestID("uid"), Username: syncTestID("other"), Email: syncTestID("other") + "@example.com"}
+	if err := store.CreateUser(ctx, different); err != nil {
+		t.Fatalf("create different user: %v", err)
+	}
+	if err := lifecycle.OnUserDeleted(ctx, recreated); err != nil {
+		t.Fatalf("delete recreated user: %v", err)
+	}
+	_ = store.DB().Delete(&tables.TableUser{}, "id = ?", recreated.ID).Error
+	if err := lifecycle.OnUserCreated(ctx, different, true); err != nil {
+		t.Fatalf("different user: %v", err)
+	}
+	if usersTestPrompt(t, store, user.Email).FolderID == nil || *usersTestPrompt(t, store, user.Email).FolderID != removedUsers.ID {
+		t.Fatalf("a different user must leave the old prompt in Removed Users")
+	}
+	if usersTestPromptCount(store, different.Email) != 1 {
+		t.Fatalf("a different email must get its own new prompt")
+	}
+}

@@ -2,6 +2,9 @@
 
 Welcome to the definitive reference manual for the Gateway Identity & Access Management system. This document outlines every authentication flow, UI/API interaction, security constraint, email dispatch template, and timeout threshold implemented in the system.
 
+For organization hierarchies, spend budgets, token rate limits, and team membership structures, refer to [`Governance.md`](file:///d:/unifai_project/Governance.md).  
+For the prompt engineering playground, immutable version control, session management, and prompt history retention policies, refer to [`Prompt_Repository.md`](file:///d:/unifai_project/Prompt_Repository.md).
+
 ---
 
 ## 1. Master Security Limits & Timing Thresholds
@@ -16,7 +19,8 @@ The following table summarizes all cryptographic tokens, session durations, rate
 | **Password Reset OTP** | **15 Minutes** | `session.go` (`passwordResetOTPTTL = 15m`) | 6-digit numeric OTP generated for forgotten password recovery. |
 | **Max Failed OTP Attempts** | **5 Attempts** | `session.go` (`maxOTPAttempts = 5`) | If a user inputs an incorrect OTP 5 times, that OTP row is permanently burned/marked used. |
 | **Password Reset Token** | **10 Minutes** | `session.go` (`issuePasswordResetToken`, `10m`) | Issued only after successful OTP verification. Signed with HMAC-SHA256 (`PASSWORD_RESET_SECRET`). |
-| **Admin Review Link Token** | **48 Hours** | `session_registration_review.go` (`registrationReviewTokenTTL = 48h`) | Token in emails sent to administrators with Accept/Deny one-click action links. |
+| **Admin Review Link Token** | **48 Hours** | `session_registration_review.go` (`registrationReviewTokenTTL = 48h`) | Token in emails sent to administrators with Accept/Deny one-click action links (when `ENABLE_ADMIN_REGISTRATION_EMAIL=true`). |
+| **Demo Schedule Rate Quota** | **Per-IP Rate Quota** | `session.go` (`consumeDemoQuota`) | Prevents automated demo request spam from the same network IP. |
 | **WebSocket Nonce Ticket** | **30 Seconds** | `ws_ticket.go` (`wsTicketTTL = 30s`) | Single-use ticket exchanged for long-lived session tokens to keep URLs clean in browser history. |
 
 ---
@@ -34,6 +38,9 @@ The following matrix documents every error condition across Authentication, Regi
 | **`400 Bad Request`** | `"New password cannot match your current active password"` | Attempting to reset password to the existing current password. | Warning notice: *"New password must differ from current password"*. | Choose a different password. |
 | **`400 Bad Request`** | `"Invalid or malformed verification code"` | Submitting non-numeric or length $\neq 6$ OTP code. | OTP input boxes shake; error text displays below inputs. | Enter the complete 6-digit numeric code from the email. |
 | **`400 Bad Request`** | `"Passwords do not match"` | Password and Confirm Password fields do not match in registration or reset form. | Form validation error under Confirm Password. | Retype password to ensure exact match. |
+| **`400 Bad Request`** | `"Please select a valid team"` | Submitting registration payload with a non-existent or invalid `team_id`. | Form field error highlight on team selection dropdown. | Select an active team from the dropdown or leave blank. |
+| **`400 Bad Request`** | `"Please provide your full name and a valid work email address."` | Schedule Demo submitted with blank name or invalid email format. | Validation error banner displayed in demo booking modal. | Enter a complete full name and a valid corporate work email address. |
+| **`400 Bad Request`** | `"Notes must be 2000 characters or fewer."` | Architecture notes in Schedule Demo exceeded the 2000-character upper bound. | Inline error message below Notes textarea. | Shorten notes to 2000 characters or fewer. |
 | **`401 Unauthorized`** | `"Invalid username or password"` | Incorrect password entered, or account does not exist. Dummy hashing executed to prevent timing-based user enumeration. | Error banner on login card. Increments failed attempt counter for this identifier. | Re-enter correct password or click "Forgot Password". |
 | **`401 Unauthorized`** | `"Invalid or expired session token"` | Request made with an expired, tampered, or missing session cookie. | Automatically redirects browser to `/login` with clean query params. | Sign in again to establish a fresh session. |
 | **`401 Unauthorized`** | `"Invalid or expired verification code"` | The entered 6-digit OTP does not match or has expired past its 15-minute TTL. | Red inline alert: *"Incorrect code. Please try again."* Increments OTP failure counter. | Enter correct code from recent email or click "Resend Code". |
@@ -48,7 +55,9 @@ The following matrix documents every error condition across Authentication, Regi
 | **`429 Too Many Requests`** | `"Too many failed login attempts from this network. Try again later"` | **30 failed login attempts within 15 minutes** originating from the same client IP. | Rate limit warning modal. All requests from that IP blocked for 15 minutes. | Wait 15 minutes for network lockout window to expire. |
 | **`429 Too Many Requests`** | `"Too many attempts. Verification code has been invalidated"` | **5 consecutive incorrect OTP attempts** submitted. | OTP input disabled; notice: *"Code expired due to too many failed attempts."* Row burned. | Click "Resend Code" to generate a fresh OTP. |
 | **`429 Too Many Requests`** | `"Please wait {seconds} seconds before requesting another verification code"` | User clicked "Resend Code" before the 2-minute cooldown timer elapsed. | Button disabled with countdown timer: *"Resend in {seconds}s"*. | Wait for countdown timer to reach zero before resending. |
+| **`429 Too Many Requests`** | `"Too many demo requests from this network. Please try again later."` | Repeated demo bookings submitted from the same client IP address within the rate window. | Rate limit warning alert inside demo modal. | Wait for the IP rate limit window to expire before booking another demo. |
 | **`500 Internal Server Error`** | `"Failed to send email: SMTP server unreachable"` | SMTP credentials misconfigured or network timeout reaching mail host. | Error toast: *"Failed to send email. Please contact administrator."* | Administrator must verify SMTP configuration in Settings. |
+| **`502 Bad Gateway`** | `"Could not send the invitation email. Please try again."` | SMTP server connection failed or timed out during demo confirmation email dispatch. | Error alert banner in demo modal: *"Could not send the invitation email. Please try again."* | Verify SMTP configuration or retry in a few moments. |
 
 ---
 
@@ -71,10 +80,13 @@ Every password submitted during **Sign Up**, **Temporary Password Change**, **Pa
 
 ### 3.1 Step-by-Step Flow
 1. The applicant opens the Sign Up page at `/signup`.
-2. The user enters **Username**, **Email Address**, **Password**, and **Confirm Password**.
-3. **Validation:** The frontend validates password requirements; the backend enforces unique case-insensitive usernames (`usernameCaseConflict`) and ensures the username/email does not match reserved administrator identities.
-4. **Role Assignment:** Public registration strictly forces the default role: `"user"`. No public user can self-assign elevated permissions.
-5. **State Transition:**
+2. **Team Discovery:** The frontend queries `GET /api/session/teams` to fetch all active teams created by administrators.
+3. The applicant fills in **Username**, **Email Address**, **Password**, **Confirm Password**, and optionally selects an existing **Team** from the dropdown.
+4. **Team Selection Security Boundary:** Applicants can only select from pre-existing teams. Applicants **cannot create new teams** during registration (teams can only be created and managed by administrators under **Governance → Teams**). If a client submits a forged or nonexistent `team_id`, the backend immediately rejects the request with HTTP `400 Bad Request: "Please select a valid team"`.
+5. **Validation:** The frontend validates password requirements; the backend enforces unique case-insensitive usernames (`usernameCaseConflict`) and ensures the username/email does not match reserved administrator identities.
+6. **Role Assignment:** Public registration strictly forces the default role: `"user"`. No public user can self-assign elevated permissions.
+7. **Team Preference Persistence:** If a valid team was selected, it is saved into `user.requested_team_id` on the user record awaiting administrator review.
+8. **State Transition:**
    * **If SMTP is enabled:** The account is saved with status `email_unverified`. A 6-digit OTP is generated and emailed to the user.
    * **If SMTP is disabled:** The account is saved with status `pending` directly, and the applicant is told to wait for admin approval.
 
@@ -99,7 +111,8 @@ If you did not sign up, ignore this email.
   2. The code has not expired (within 15 minutes).
   3. Failed attempts are under 5 (otherwise it burns the OTP).
 * Upon success, the user's status transitions from `email_unverified` to `pending`.
-* The system notifies all active administrators via email that a new sign-up is awaiting approval.
+* **Admin Review Queue:** The pending user appears immediately in **Governance → Users** under the **Pending** tab for administrator review.
+* **Admin Email Notification (Disabled by Default):** To prevent inbox flooding, admin Accept/Deny email notifications are suppressed by default. Setting `ENABLE_ADMIN_REGISTRATION_EMAIL=true` in `.env` enables 48-hour one-click action emails to administrators.
 
 ---
 
@@ -306,10 +319,13 @@ If you did not request this, please ignore this email.
 
 ## 8. Flow 6: Admin Management Actions (Accept, Deny, Block, Unblock, Delete)
 
-Administrators manage accounts either via one-click signed links in registration notification emails or directly through the **Governance $\rightarrow$ Users** table.
+Administrators manage accounts either directly through the **Governance $\rightarrow$ Users** table or optionally via one-click signed links in registration notification emails.
 
 ### 8.1 Admin Registration Notification Email (Accept / Deny Links)
-When a new user signs up and verifies their email, all administrators receive an email containing HMAC-SHA256 signed tokens valid for **48 hours**:
+> [!NOTE]
+> **Admin Notification Setting:** By default, admin Accept/Deny email notifications are suppressed to prevent inbox clutter. Administrators manage and review pending registrations directly in **Governance → Users** (`/workspace/governance/users`). To enable email dispatch with 48-hour one-click review links, set `ENABLE_ADMIN_REGISTRATION_EMAIL=true` in `.env`.
+
+When enabled (`ENABLE_ADMIN_REGISTRATION_EMAIL=true`), whenever a new user signs up and verifies their email, all administrators receive an email containing HMAC-SHA256 signed tokens valid for **48 hours**:
 * **Sender Display Name:** `Raksha Security System`
 * **Recipient:** Admin Email Address
 * **Subject:** `Gateway registration pending: {applicant_username}`
@@ -337,6 +353,13 @@ These links expire in 48 hours.
 ### 8.2 Admin Action: Accept (Approve) User
 * **Allowed Target Statuses:** `pending`, `rejected`, or `disabled`.
 * **Action:** Sets `user.Status = "approved"`.
+* **Automatic Team Assignment (`assignRequestedTeam`):**
+  * When an administrator approves the user (either from the **Governance → Users** interface or via the 48-hour email token), the backend checks `user.requested_team_id`.
+  * **Team Existence Validation:** The backend verifies that the team still exists via `GetTeam(ctx, teamID)`.
+  * **Deleted Team Resilience:** If the requested team was deleted or deactivated while the registration was pending, the backend gracefully clears `user.requested_team_id` to `nil`, saves the record, and approves the user without throwing an error or interrupting approval.
+  * **Team Membership Enrollment:** If the team exists, the backend executes `ws.AddTeamMember(ctx, teamID, user.ID)` which adds the user directly into `governance_team_members`.
+  * **Automatic Asset Access:** The approved user immediately gains access to the team's shared Prompt Repository folder, team prompts, and associated team models/budgets.
+  * **Cleanup:** `user.requested_team_id` is cleared to `nil` and the user record is updated with `UpdatedAt = time.Now()`.
 * **Applicant Email Notification:**
   * **Sender Display Name:** `Raksha Security System`
   * **Subject:** `Gateway account approved`
@@ -419,8 +442,20 @@ If you have any questions, please contact your administrator.
 * **Self-Action Guard:** An administrator **cannot delete their own account**.
 * **Action:**
   1. `purgeUserRelations` removes budget, virtual-key links, model configs, rate limit, and team memberships, then `OnUserDeleted` moves that user's own prompt to **Removed Users**. Chat history stays.
-  2. The user row is deleted. The same username and email can be registered again as a new account.
-  3. Active sessions for that username are deleted.
+  2. A rejection/removal notification email (`Gateway registration not approved`) is automatically dispatched to the user's email address notifying them that their account has been removed.
+  3. The user row is deleted from the database. The same username and email can be registered again in the future as a fresh account.
+  4. All active sessions across all devices for that username are terminated immediately.
+* **Applicant Email Notification:**
+  * **Sender Display Name:** `Raksha Security System`
+  * **Subject:** `Gateway registration not approved`
+  * **Message Body:**
+```text
+Hello {username},
+
+Your Gateway registration was reviewed and was not approved.
+
+You will not be able to sign in with this account. Contact your administrator if you believe this is a mistake.
+```
 
 ---
 
@@ -434,7 +469,75 @@ If you have any questions, please contact your administrator.
 
 ---
 
-## 10. Advanced Security Mechanisms & Automated Alerts
+## 10. Flow 8: Public Demo Scheduling (`POST /api/session/schedule-demo`)
+
+The landing page (`/`) features an enterprise demonstration booking modal allowing prospective clients to request a tailored 20-minute architecture demonstration.
+
+### 10.1 Request Lifecycle & Validation
+1. The visitor submits the booking modal with:
+   * **`full_name`**: Applicant's full name (sanitized via `demoPlainLine`).
+   * **`email`**: Corporate work email address (validated via `isValidEmail`).
+   * **`company`**: Organization name (defaults to `"Enterprise Client"` if omitted).
+   * **`team_size`**: Engineering organization size (e.g., `"50-250 engineers"`).
+   * **`interest`**: Primary interest area (`"both"`, `"browser_guard"`, or `"gateway"`).
+   * **`notes`**: Custom architecture or compliance notes (max 2000 characters).
+2. **Abuse & Rate-Limiting Guard:** `consumeDemoQuota(h.configStore, ctx)` enforces a network-level per-IP rate quota. Excessive requests return HTTP `429 Too Many Requests: "Too many demo requests from this network. Please try again later."`
+3. **CRLF & SMTP Header Injection Defense:** `demoPlainLine` strips all ASCII control characters ($< 32$ or $127$) and collapses multiple spaces, eliminating header injection vulnerabilities in email subjects or recipients.
+4. **Notes Sanitization:** `demoNotes` normalizes newlines, strips unprintable control codes, and truncates text exceeding 2000 runes.
+
+### 10.2 Synchronous Applicant Confirmation Email
+The backend synchronously dispatches an email to the applicant's work email with a strict **20-second context timeout**. If SMTP fails or times out, the endpoint aborts with HTTP `502 Bad Gateway: "Could not send the invitation email. Please try again."`
+
+* **Sender Display Name:** `Raksha Security System`
+* **Recipient:** Applicant Work Email
+* **Subject:** `Confirmed: Enterprise Architecture Demo — {Brand_Name}`
+* **Agenda Covered in Confirmation Email:**
+```text
+Hello {FullName},
+
+Thank you for scheduling an Enterprise Architecture Demonstration.
+
+We have received your request and reserved your 20-minute tailored demonstration session:
+
+  • Full Name: {FullName}
+  • Work Email: {Email}
+  • Organization: {Company}
+  • Team Size: {TeamSize}
+  • Primary Focus: {Interest}
+  • Architecture Notes: {Notes}
+
+Session Agenda (20 Minutes):
+1. Real-time In-Flight Data Leak Prevention (DLP) Prompt & Attachment Interception
+2. Zero-latency Browser Guard Desktop Agent (Windows & macOS)
+3. Universal AI Gateway: Vectorized Semantic Caching & 75% API Cost Reduction
+4. Air-gapped / Private VPC On-Premise Deployment Architecture
+5. Q&A and Deployment Roadmap with Senior Engineers
+
+If you would like to invite additional team members or have any specific compliance requirements to cover, simply reply directly to this email.
+
+Warm regards,
+Enterprise Architecture & Solutions Team
+```
+
+### 10.3 Asynchronous Admin Lead Notification
+If an administrative recipient (`SMTP_USERNAME`) is configured and differs from the applicant, the server dispatches a lead notification email **asynchronously in a background goroutine (`go func()`)** with a dedicated 20-second timeout. This architecture guarantees that internal email processing never delays the client's HTTP response.
+
+* **Subject:** `New Enterprise Demo Booking: {FullName} ({Company})`
+* **Content:** Lead name, email, company, team size, focus area, architecture notes, RFC1123 timestamp, and client IP address.
+
+### 10.4 Success Response
+Upon successful client email transmission, the API returns:
+```json
+{
+  "status": "success",
+  "message": "Raksha sent you an invitation."
+}
+```
+The frontend modal transitions cleanly to the confirmed state without raw JSON parsing failures.
+
+---
+
+## 11. Advanced Security Mechanisms & Automated Alerts
 
 ### 10.1 Automated Sign-In Security Alerts (`trySendLoginNoticeEmail`)
 When SMTP is enabled, the system monitors login signatures (IP address, User-Agent, and last sign-in timestamp). If an anomaly is detected, an automated security alert is instantly dispatched to the user's email:
@@ -504,7 +607,7 @@ Please keep your credentials confidential. If you authorized this sign-in, no ac
 
 ---
 
-## 11. End-to-End Architectural State Machine Diagram
+## 12. End-to-End Architectural State Machine Diagram
 
 ```mermaid
 stateDiagram-v2
@@ -525,7 +628,7 @@ stateDiagram-v2
     Unverified --> Unverified: Max 5 attempts / Resend Code
     Unverified --> Rejected: Admin Denies from Queue
 
-    Pending --> Approved: Admin Accepts (Email link / Governance UI)
+    Pending --> Approved: Admin Accepts (assignRequestedTeam enrolls user into team)
     Pending --> Rejected: Admin Denies
 
     state Approved {
@@ -545,7 +648,7 @@ stateDiagram-v2
 
 ---
 
-## 12. High-Performance Caching & Concurrency Scalability (10,000+ Users)
+## 13. High-Performance Caching & Concurrency Scalability (10,000+ Users)
 
 To guarantee instant sub-millisecond response times even under heavy traffic (10,000+ concurrent requests) and eliminate bottlenecks caused by remote database network latency, the authentication system uses a dual-layer caching engine:
 

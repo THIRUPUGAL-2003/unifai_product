@@ -50,25 +50,46 @@
     }
   }
 
+  function withBase(run) {
+    if (typeof resolveGuardBase === "function") {
+      resolveGuardBase(function (found) {
+        if (found) base = found;
+        run();
+      });
+      return;
+    }
+    run();
+  }
+
   function syncRules() {
-    if (!base) return;
-    fetch(base + "/extension/rules", { method: "GET", cache: "no-store" })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var rules = (data && Array.isArray(data.rules)) ? data.rules : [];
-        var exts = (data && Array.isArray(data.restricted_extensions)) ? data.restricted_extensions : [];
-        if (chrome.storage && chrome.storage.local) {
-          chrome.storage.local.set({ cached_rules: rules, cached_exts: exts });
-        }
-        window.postMessage({
-          source: "gateway-guard",
-          nonce: guardNonce,
-          type: "sync_rules",
-          rules: rules,
-          restricted_extensions: exts
-        }, "*");
-      })
-      .catch(function () { });
+    withBase(function () {
+      if (!base) return;
+      fetch(base + "/extension/rules", { method: "GET", cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("rules");
+          return r.json();
+        })
+        .then(function (data) {
+          if (!data || !Array.isArray(data.rules)) return;
+          var rules = data.rules;
+          var stored = { cached_rules: rules };
+          var msg = {
+            source: "gateway-guard",
+            nonce: guardNonce,
+            type: "sync_rules",
+            rules: rules
+          };
+          if (Array.isArray(data.restricted_extensions)) {
+            stored.cached_exts = data.restricted_extensions;
+            msg.restricted_extensions = data.restricted_extensions;
+          }
+          if (chrome.storage && chrome.storage.local) {
+            chrome.storage.local.set(stored);
+          }
+          window.postMessage(msg, "*");
+        })
+        .catch(function () { });
+    });
   }
 
   function armIfMonitored() {
@@ -93,11 +114,16 @@
     }
 
     // 2. Fetch live configuration from local agent
+    withBase(function () {
     if (!base) return;
     fetch(base + "/extension/sites", { method: "GET", cache: "no-store" })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) throw new Error("sites");
+        return r.json();
+      })
       .then(function (data) {
-        var domains = (data && Array.isArray(data.hosts)) ? data.hosts : [];
+        if (!data || !Array.isArray(data.hosts)) return;
+        var domains = data.hosts;
         if (chrome.storage && chrome.storage.local) {
           chrome.storage.local.set({ cached_sites: domains });
         }
@@ -110,6 +136,7 @@
         syncRules();
       })
       .catch(function () { });
+    });
   }
 
   // Listen for storage changes across background worker and tabs
@@ -118,13 +145,16 @@
       if (areaName !== "local") return;
       if (changes.cached_rules) {
         var newRules = Array.isArray(changes.cached_rules.newValue) ? changes.cached_rules.newValue : [];
-        window.postMessage({
+        var rulesMsg = {
           source: "gateway-guard",
           nonce: guardNonce,
           type: "sync_rules",
-          rules: newRules,
-          restricted_extensions: (changes.cached_exts && changes.cached_exts.newValue) || []
-        }, "*");
+          rules: newRules
+        };
+        if (changes.cached_exts) {
+          rulesMsg.restricted_extensions = changes.cached_exts.newValue || [];
+        }
+        window.postMessage(rulesMsg, "*");
       }
       if (changes.cached_sites) {
         var newSites = Array.isArray(changes.cached_sites.newValue) ? changes.cached_sites.newValue : [];
@@ -181,6 +211,7 @@
       });
     }
 
+    withBase(function () {
     fetch(base + "/extension/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -207,6 +238,7 @@
       .catch(function () {
         window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
       });
+    });
   });
 
   injectHook(armIfMonitored);

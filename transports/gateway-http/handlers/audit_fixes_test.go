@@ -86,3 +86,54 @@ func TestClientConfigFieldPresent(t *testing.T) {
 		t.Fatal("invalid body must not count as present")
 	}
 }
+
+func TestAuditMiddlewareTargetAndAction(t *testing.T) {
+	// Test Actions
+	if act := auditActionForMethod("POST", "/api/roles"); act != "create" {
+		t.Errorf("Expected 'create', got %s", act)
+	}
+	if act := auditActionForMethod("PUT", "/api/roles/1/permissions"); act != "update" {
+		t.Errorf("Expected 'update', got %s", act)
+	}
+	if act := auditActionForMethod("DELETE", "/api/roles/1"); act != "delete" {
+		t.Errorf("Expected 'delete', got %s", act)
+	}
+	if act := auditActionForMethod("POST", "/api/access-profiles/1/activate"); act != "update" {
+		t.Errorf("Expected 'update' for activate, got %s", act)
+	}
+	if act := auditActionForMethod("POST", "/api/access-profiles/1/deactivate"); act != "update" {
+		t.Errorf("Expected 'update' for deactivate, got %s", act)
+	}
+	if act := auditActionForMethod("POST", "/api/access-profiles/1/clone"); act != "create" {
+		t.Errorf("Expected 'create' for clone, got %s", act)
+	}
+
+	// Test Targets
+	if trg := auditTargetForRequest("/api/roles", "POST", map[string]any{"name": "Developer"}); trg != "Role: Developer" {
+		t.Errorf("Expected 'Role: Developer', got %s", trg)
+	}
+	if trg := auditTargetForRequest("/api/roles/5/permissions", "PUT", nil); trg != "Role: #5 (Permissions)" {
+		t.Errorf("Expected 'Role: #5 (Permissions)', got %s", trg)
+	}
+	if trg := auditTargetForRequest("/api/access-profiles", "POST", map[string]any{"name": "Tier-1"}); trg != "Access Profile: Tier-1" {
+		t.Errorf("Expected 'Access Profile: Tier-1', got %s", trg)
+	}
+	if trg := auditTargetForRequest("/api/access-profiles/8/activate", "POST", nil); trg != "Access Profile: #8 (activate)" {
+		t.Errorf("Expected 'Access Profile: #8 (activate)', got %s", trg)
+	}
+	if trg := auditTargetForRequest("/api/users/usr-42/role", "PUT", nil); trg != "User: usr-42 (Role)" {
+		t.Errorf("Expected 'User: usr-42 (Role)', got %s", trg)
+	}
+	if trg := auditTargetForRequest("/api/rbac/scope-grants", "PUT", map[string]any{"scope_type": "all_teams"}); trg != "RBAC Scope: all_teams" {
+		t.Errorf("Expected 'RBAC Scope: all_teams', got %s", trg)
+	}
+	if trg := auditTargetForRequest("/api/feature-flags/routing.circuit_breaker", "PUT", nil); trg != "Feature Flag: routing.circuit_breaker" {
+		t.Errorf("Expected 'Feature Flag: routing.circuit_breaker', got %s", trg)
+	}
+	if trg := auditTargetForRequest("/api/config", "PUT", nil); trg != "Configuration" {
+		t.Errorf("Expected 'Configuration', got %s", trg)
+	}
+	if trg := auditTargetForRequest("/api/vector-store-config", "PUT", nil); trg != "Vector Store Config" {
+		t.Errorf("Expected 'Vector Store Config', got %s", trg)
+	}
+}

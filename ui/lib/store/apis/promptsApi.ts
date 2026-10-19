@@ -67,7 +67,7 @@ export const promptsApi = baseApi.injectEndpoints({
 				method: "PUT",
 				body: data,
 			}),
-			invalidatesTags: (result, error, { id }) => ["Folders", { type: "Folders", id }],
+			invalidatesTags: (result, error, { id }) => ["Folders", { type: "Folders", id }, "Teams", "BusinessUnits"],
 		}),
 
 		// Delete folder

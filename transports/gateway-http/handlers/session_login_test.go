@@ -540,8 +540,31 @@ func TestLogin_InvalidPassword(t *testing.T) {
 	store := setupTestStore(t)
 	handler := NewSessionHandler(store, nil)
 
-	ctx := makeFastHTTPCtx("POST", "/api/session/login", map[string]string{
+	// Super admin is exempt from lockout tracking
+	adminCtx := makeFastHTTPCtx("POST", "/api/session/login", map[string]string{
 		"username": "admin",
+		"password": "WrongPassword999!",
+	}, "192.168.1.102")
+	handler.login(adminCtx)
+	if adminCtx.Response.StatusCode() != fasthttp.StatusUnauthorized {
+		t.Fatalf("Expected 401 Unauthorized for admin, got %d", adminCtx.Response.StatusCode())
+	}
+	adminLockout, _ := store.GetLoginLockout(context.Background(), loginUsernameKey("admin"))
+	if adminLockout != nil {
+		t.Errorf("Expected nil lockout for super admin, got %+v", adminLockout)
+	}
+
+	// Create standard database user
+	userPassHash, _ := encrypt.Hash("CorrectPass123!")
+	store.AddUser(&tables.TableUser{
+		Username: "testuser",
+		Password: userPassHash,
+		Role:     "user",
+		Status:   tables.UserStatusApproved,
+	})
+
+	ctx := makeFastHTTPCtx("POST", "/api/session/login", map[string]string{
+		"username": "testuser",
 		"password": "WrongPassword999!",
 	}, "192.168.1.102")
 
@@ -556,8 +579,8 @@ func TestLogin_InvalidPassword(t *testing.T) {
 		t.Errorf("Did not expect session token cookie on failed login")
 	}
 
-	// Verify failure count recorded in store
-	lockout, _ := store.GetLoginLockout(context.Background(), loginUsernameKey("admin"))
+	// Verify failure count recorded in store for standard user
+	lockout, _ := store.GetLoginLockout(context.Background(), loginUsernameKey("testuser"))
 	if lockout == nil || lockout.FailedCount != 1 {
 		t.Errorf("Expected lockout failed count 1, got %+v", lockout)
 	}
@@ -720,15 +743,23 @@ func TestLogin_AuthDisabled(t *testing.T) {
 	}
 }
 
-// 8. Account Lockout After 3 Failed Attempts
+// 8. Account Lockout After 3 Failed Attempts (applies to DB users and DB admins, but built-in Super Admin is exempt)
 func TestLogin_AccountLockout(t *testing.T) {
 	store := setupTestStore(t)
 	handler := NewSessionHandler(store, nil)
+	hashed, _ := encrypt.Hash("BobPass123!")
+	_ = store.CreateUser(nil, &tables.TableUser{
+		ID: "user-bob-id", Username: "bob_admin", Email: "bob@example.com", Password: hashed,
+		Role: "admin", Status: tables.UserStatusApproved, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	})
+	t.Cleanup(func() {
+		clearAccountLockouts(store, nil, "bob_admin", "bob@example.com")
+	})
 
 	// loginMaxFailedAttempts = 3
 	for i := 1; i <= 3; i++ {
 		ctx := makeFastHTTPCtx("POST", "/api/session/login", map[string]string{
-			"username": "admin",
+			"username": "bob_admin",
 			"password": fmt.Sprintf("WrongPass%d!", i),
 		}, "192.168.1.107")
 		handler.login(ctx)
@@ -747,8 +778,8 @@ func TestLogin_AccountLockout(t *testing.T) {
 
 	// 4th attempt: Even with correct password, account must remain locked!
 	ctx4 := makeFastHTTPCtx("POST", "/api/session/login", map[string]string{
-		"username": "admin",
-		"password": "AdminPass123!", // correct password
+		"username": "bob_admin",
+		"password": "BobPass123!", // correct password
 	}, "192.168.1.107")
 	handler.login(ctx4)
 

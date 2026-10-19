@@ -1283,6 +1283,7 @@ func (m *AuthMiddleware) APIMiddleware() schemas.GatewayHTTPMiddleware {
 		"/api/session/reset-password",
 		"/api/session/forgot-username",
 		"/api/session/schedule-demo",
+		"/api/session/teams",
 		"/api/oauth/callback",
 		"/health",
 		"/login",

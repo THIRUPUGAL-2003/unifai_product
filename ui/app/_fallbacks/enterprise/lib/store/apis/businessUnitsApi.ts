@@ -8,6 +8,7 @@ export interface BusinessUnitTeam {
 
 export interface BusinessUnitWrite {
 	name: string;
+	customer_id?: string;
 	budget?: { max_limit: number; reset_duration: string };
 	rate_limit?: {
 		token_max_limit?: number;
@@ -28,10 +29,10 @@ export const businessUnitsApi = baseApi.injectEndpoints({
 			invalidatesTags: ["BusinessUnits"],
 		}),
 		updateBusinessUnit: builder.mutation<{ business_unit: BusinessUnit }, BusinessUnitWrite & { id: string }>({
-			query: ({ id, name, budget, rate_limit }) => ({
+			query: ({ id, name, customer_id, budget, rate_limit }) => ({
 				url: `/governance/business-units/${id}`,
 				method: "PUT",
-				body: { name, budget, rate_limit },
+				body: { name, customer_id, budget, rate_limit },
 			}),
 			invalidatesTags: ["BusinessUnits"],
 		}),

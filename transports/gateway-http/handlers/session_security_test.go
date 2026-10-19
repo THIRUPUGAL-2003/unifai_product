@@ -81,21 +81,27 @@ func TestResetPassword_LiftsLoginLockout(t *testing.T) {
 	}
 }
 
-// "admin", the admin username and the admin email are one account and must share a
-// single failure counter.
-func TestLogin_AdminAliasesShareLockout(t *testing.T) {
+// Built-in Super Admin (from env / Security settings) is exempt from account lockout
+// to prevent denial-of-service against the platform owner.
+func TestLogin_SuperAdminExemptFromAccountLockout(t *testing.T) {
 	store := setupTestStore(t)
 	cfg, _ := store.GetAuthConfig(nil)
 	cfg.AdminEmail = schemas.NewSecretVar("owner@example.com")
 	_ = store.UpdateAuthConfig(nil, cfg)
 	handler := NewSessionHandler(store, nil)
+	t.Cleanup(func() {
+		clearAccountLockouts(store, nil, "admin", "owner@example.com")
+	})
 
 	aliases := []string{"admin", "owner@example.com", "ADMIN"}
-	for i := 0; i < loginMaxFailedAttempts; i++ {
-		loginStatus(handler, aliases[i%len(aliases)], "WrongPassword1!", fmt.Sprintf("10.30.0.%d", i+1))
+	for i := 0; i < 5; i++ {
+		code := loginStatus(handler, aliases[i%len(aliases)], "WrongPassword1!", fmt.Sprintf("10.30.0.%d", i+1))
+		if code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 Unauthorized for super admin wrong password attempt %d, got %d", i+1, code)
+		}
 	}
-	if code := loginStatus(handler, "owner@example.com", "AdminPass123!", "10.30.0.50"); code != http.StatusTooManyRequests {
-		t.Fatalf("expected admin to be locked after %d failures across aliases, got %d", loginMaxFailedAttempts, code)
+	if code := loginStatus(handler, "owner@example.com", "AdminPass123!", "10.30.0.50"); code != http.StatusOK {
+		t.Fatalf("expected super admin to log in with 200 OK after multiple wrong password attempts, got %d", code)
 	}
 }
 

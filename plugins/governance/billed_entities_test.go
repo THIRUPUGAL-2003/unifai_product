@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gateway/gateway/core/schemas"
 	configstoreTables "github.com/gateway/gateway/framework/configstore/tables"
 )
 
@@ -116,8 +117,11 @@ func TestCustomerKeyBillsCustomer(t *testing.T) {
 	if team != "" {
 		t.Fatalf("customer key billed team %q, want none", team)
 	}
-	if len(customers) != 1 || customers[0] != "cust-bank" {
-		t.Fatalf("billed customers = %v, want [cust-bank]", customers)
+	if len(customers) != 0 {
+		t.Fatalf("billed customers = %v, want none when no user is in the customer tree", customers)
+	}
+	if gs.customerAssignedVKAllowed(context.Background(), vk) {
+		t.Fatal("customer key allowed with no user in the customer tree")
 	}
 }
 
@@ -313,6 +317,7 @@ func TestExhaustedBilledEntity(t *testing.T) {
 		ID: "cust-bank", Name: "Bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
 	})
 	customerKey := &configstoreTables.TableVirtualKey{ID: "vk-cust", Customers: []configstoreTables.TableCustomer{{ID: "cust-bank"}}}
+	gs.addVKScopedUsage("vk-cust", "b-team", 10)
 
 	if scope, name := gs.ExhaustedBilledEntity(context.Background(), customerKey, []string{"team-dev"}); scope != "team" || name != "Developers" {
 		t.Fatalf("dev member on customer key = %q/%q, want team/Developers", scope, name)
@@ -322,6 +327,7 @@ func TestExhaustedBilledEntity(t *testing.T) {
 	}
 
 	gs.budgets.Store("b-cust", &configstoreTables.TableBudget{ID: "b-cust", MaxLimit: 100, CurrentUsage: 100, ResetDuration: "1M", LastReset: now})
+	gs.addVKScopedUsage("vk-cust", "b-cust", 100)
 	if scope, name := gs.ExhaustedBilledEntity(context.Background(), customerKey, []string{"team-qa"}); scope != "customer" || name != "Bank" {
 		t.Fatalf("QA member with spent customer budget = %q/%q, want customer/Bank", scope, name)
 	}
@@ -476,8 +482,8 @@ func TestSharedTeamMultiCustomerScoping(t *testing.T) {
 	checkBudget("b-vk-a", 10)
 	checkBudget("b-user", 10)
 	checkBudget("b-team-shared", 10)
-	checkBudget("b-cust-a", 10)
-	checkBudget("b-cust-b", 0) // Customer B completely unaffected!
+	checkBudget("b-cust-a", 0) // Team is not inside customer A, so the customer is not billed.
+	checkBudget("b-cust-b", 0)
 
 	// 2. User performs action for Customer B
 	tracker.UpdateUsage(context.Background(), &UsageUpdate{
@@ -489,7 +495,189 @@ func TestSharedTeamMultiCustomerScoping(t *testing.T) {
 	checkBudget("b-vk-b", 25)
 	checkBudget("b-user", 35)        // 10 + 25
 	checkBudget("b-team-shared", 35) // 10 + 25
-	checkBudget("b-cust-a", 10)      // Unchanged!
-	checkBudget("b-cust-b", 25)      // Customer B metered accurately!
+	checkBudget("b-cust-a", 0)
+	checkBudget("b-cust-b", 0)
+}
+
+func TestCustomerKeyOutsiderIsNotBilled(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-out", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-other"}})
+	gs.teams.Store("team-other", &configstoreTables.TableTeam{
+		ID: "team-other", CustomerID: strPtr("cust-other"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	vk := &configstoreTables.TableVirtualKey{
+		ID: "vk-cust", Customers: []configstoreTables.TableCustomer{{ID: "cust-bank"}},
+		Budgets: []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-cust", vk)
+	ctx := context.WithValue(context.Background(), governanceUserTeamIDsContextKey, []string{"team-other"})
+	if gs.customerAssignedVKAllowed(ctx, vk) {
+		t.Fatal("outsider allowed on a customer virtual key")
+	}
+	team, customers := gs.BilledEntities(ctx, vk)
+	if team != "" || len(customers) != 0 {
+		t.Fatalf("outsider billed team %q customers %v", team, customers)
+	}
+}
+
+func TestCustomerKeyDirectTeamDoesNotChargeBusinessUnit(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk", "bu_bu-1"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-1", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-direct"}})
+	gs.teams.Store("team-direct", &configstoreTables.TableTeam{
+		ID: "team-direct", CustomerID: strPtr("cust-bank"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	vk := &configstoreTables.TableVirtualKey{
+		ID: "vk-cust", Customers: []configstoreTables.TableCustomer{{ID: "cust-bank"}},
+		Budgets: []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-cust", vk)
+
+	tracker := &UsageTracker{store: gs, logger: NewMockLogger(), billed: make(map[string]time.Time)}
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-cust", UserID: "user-1", Success: true, Cost: 5,
+		UserTeamIDs: []string{"team-direct"},
+	})
+	want := map[string]float64{"b-user": 5, "b-team": 5, "b-cust": 5, "b-vk": 5, "bu_bu-1": 0}
+	for id, expected := range want {
+		raw, _ := gs.budgets.Load(id)
+		if got := raw.(*configstoreTables.TableBudget).CurrentUsage; got != expected {
+			t.Errorf("budget %s usage = %v, want %v", id, got, expected)
+		}
+	}
+}
+
+func TestCustomerKeyBusinessUnitTeamIsBilledWhenTeamHasNoCustomer(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team", "b-direct", "b-cust", "b-vk", "bu_bu-1"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-1", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-direct", "team-bu"}})
+	gs.teams.Store("team-direct", &configstoreTables.TableTeam{
+		ID: "team-direct", CustomerID: strPtr("cust-bank"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-direct"}},
+	})
+	gs.teams.Store("team-bu", &configstoreTables.TableTeam{
+		ID: "team-bu",
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	index := map[string][]buStamp{
+		"team-bu": {{ID: "bu-1", CustomerID: strPtr("cust-bank")}},
+	}
+	gs.businessUnitsByTeam.Store(&index)
+	vk := &configstoreTables.TableVirtualKey{
+		ID: "vk-cust", Customers: []configstoreTables.TableCustomer{{ID: "cust-bank"}},
+		Budgets: []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-cust", vk)
+	ctx := context.WithValue(context.Background(), governanceUserTeamIDsContextKey, []string{"team-direct", "team-bu"})
+	if !gs.customerAssignedVKAllowed(ctx, vk) {
+		t.Fatal("user in the customer business unit was blocked")
+	}
+	team, customers := gs.BilledEntities(ctx, vk)
+	if team != "team-bu" {
+		t.Fatalf("billed team = %q, want team-bu", team)
+	}
+	if len(customers) != 1 || customers[0] != "cust-bank" {
+		t.Fatalf("billed customers = %v, want [cust-bank]", customers)
+	}
+
+	tracker := &UsageTracker{store: gs, logger: NewMockLogger(), billed: make(map[string]time.Time)}
+	tracker.UpdateUsage(context.Background(), &UsageUpdate{
+		VirtualKey: "sk-cust", UserID: "user-1", Success: true, Cost: 5,
+		UserTeamIDs: []string{"team-direct", "team-bu"},
+	})
+	want := map[string]float64{"b-user": 5, "b-team": 5, "b-direct": 0, "b-cust": 5, "b-vk": 5, "bu_bu-1": 5}
+	for id, expected := range want {
+		raw, _ := gs.budgets.Load(id)
+		if got := raw.(*configstoreTables.TableBudget).CurrentUsage; got != expected {
+			t.Errorf("budget %s usage = %v, want %v", id, got, expected)
+		}
+	}
+}
+
+func TestTeamKeyRejectsUserOutsideTheTeam(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	vk := &configstoreTables.TableVirtualKey{ID: "vk-team", TeamID: strPtr("team-dev")}
+	ctx := context.WithValue(context.Background(), governanceUserTeamIDsContextKey, []string{"team-other"})
+	if gs.customerAssignedVKAllowed(ctx, vk) {
+		t.Fatal("user outside the team was allowed to use the team virtual key")
+	}
+	inside := context.WithValue(context.Background(), governanceUserTeamIDsContextKey, []string{"team-dev"})
+	if !gs.customerAssignedVKAllowed(inside, vk) {
+		t.Fatal("team member was blocked from the team virtual key")
+	}
+}
+
+func TestUserKeyRejectsEveryOtherUser(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	vk := &configstoreTables.TableVirtualKey{ID: "vk-user", UserIDs: []string{"user-1"}}
+	other := context.WithValue(context.Background(), schemas.GatewayContextKeyUserID, "user-2")
+	if gs.customerAssignedVKAllowed(other, vk) {
+		t.Fatal("another user was allowed to use a user-assigned virtual key")
+	}
+	owner := context.WithValue(context.Background(), schemas.GatewayContextKeyUserID, "user-1")
+	if !gs.customerAssignedVKAllowed(owner, vk) {
+		t.Fatal("the assigned user was blocked")
+	}
+}
+
+func TestOutsideTeamOnCustomerKeyDoesNotChargeCustomer(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	for _, id := range []string{"b-user", "b-team", "b-cust", "b-vk"} {
+		gs.budgets.Store(id, &configstoreTables.TableBudget{ID: id, MaxLimit: 1000, ResetDuration: "1M", LastReset: time.Now()})
+	}
+	gs.users.Store("user-out", &UserGovernance{BudgetID: strPtr("b-user"), TeamIDs: []string{"team-out"}})
+	gs.teams.Store("team-out", &configstoreTables.TableTeam{
+		ID: "team-out", CustomerID: strPtr("cust-other"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	gs.customers.Store("cust-bank", &configstoreTables.TableCustomer{
+		ID: "cust-bank", Budgets: []configstoreTables.TableBudget{{ID: "b-cust"}},
+	})
+	vk := &configstoreTables.TableVirtualKey{
+		ID: "vk-both", CustomerID: strPtr("cust-bank"),
+		Teams:   []configstoreTables.TableTeam{{ID: "team-out"}},
+		Budgets: []configstoreTables.TableBudget{{ID: "b-vk"}},
+	}
+	gs.virtualKeys.Store("sk-both", vk)
+	ctx := context.WithValue(context.Background(), governanceUserTeamIDsContextKey, []string{"team-out"})
+	if !gs.customerAssignedVKAllowed(ctx, vk) {
+		t.Fatal("team assigned on the key was blocked")
+	}
+	_, customers := gs.BilledEntities(ctx, vk)
+	if len(customers) != 0 {
+		t.Fatalf("outside team billed customers %v", customers)
+	}
+}
+
+func TestTeamBudgetTotalBlocksEveryKey(t *testing.T) {
+	gs := &LocalGovernanceStore{}
+	now := time.Now()
+	gs.budgets.Store("b-team", &configstoreTables.TableBudget{ID: "b-team", MaxLimit: 10, CurrentUsage: 10, ResetDuration: "1M", LastReset: now})
+	gs.teams.Store("team-dev", &configstoreTables.TableTeam{
+		ID: "team-dev", Name: "Developers", CustomerID: strPtr("cust-bank"),
+		Budgets: []configstoreTables.TableBudget{{ID: "b-team"}},
+	})
+	vk := &configstoreTables.TableVirtualKey{ID: "vk-this", Customers: []configstoreTables.TableCustomer{{ID: "cust-bank"}}}
+	if scope, name := gs.ExhaustedBilledEntity(context.Background(), vk, []string{"team-dev"}); scope != "team" || name != "Developers" {
+		t.Fatalf("team total of 10 on a 10 limit = %q/%q, want team/Developers", scope, name)
+	}
 }
 

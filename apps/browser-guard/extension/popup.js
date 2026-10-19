@@ -1,5 +1,4 @@
 (function () {
-  var base = "http://127.0.0.1:18195";
   var rulesEl = document.getElementById("rules-count");
   var sitesEl = document.getElementById("sites-count");
   var gatewayEl = document.getElementById("gateway-status");
@@ -21,44 +20,66 @@
     }
   }
 
-  function fetchLive() {
-    fetch(base + "/extension/rules", { method: "GET", cache: "no-store" })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var rules = (data && data.rules) || [];
-        rulesEl.textContent = rules.length;
-        gatewayEl.textContent = "Connected (127.0.0.1:18195)";
-        if (chrome && chrome.storage && chrome.storage.local) {
-          chrome.storage.local.set({ cached_rules: rules });
-        }
-      })
-      .catch(function () {
-        gatewayEl.textContent = "Offline (Local Cache Active)";
-      });
+  function fetchLive(fromClick) {
+    resolveGuardBase(function (base) {
+      var pending = 2;
+      var failed = false;
+      function finishOne(err) {
+        if (err) failed = true;
+        pending -= 1;
+        if (!fromClick || pending > 0) return;
+        syncText.textContent = failed ? "EXE not reachable" : "Rules Updated!";
+        setTimeout(function () {
+          syncText.textContent = "Sync Live Rules";
+          syncBtn.disabled = false;
+        }, 1500);
+      }
 
-    fetch(base + "/extension/sites", { method: "GET", cache: "no-store" })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var hosts = (data && data.hosts) || [];
-        sitesEl.textContent = hosts.length > 0 ? (hosts.length + "+") : "171+";
-        if (chrome && chrome.storage && chrome.storage.local) {
-          chrome.storage.local.set({ cached_sites: hosts });
-        }
-      })
-      .catch(function () {});
+      fetch(base + "/extension/rules", { method: "GET", cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("rules");
+          return r.json();
+        })
+        .then(function (data) {
+          if (!data || !Array.isArray(data.rules)) throw new Error("rules");
+          rulesEl.textContent = data.rules.length;
+          var host = base.replace(/^https?:\/\//, "");
+          gatewayEl.textContent = "Connected (" + host + ")";
+          if (chrome && chrome.storage && chrome.storage.local) {
+            var stored = { cached_rules: data.rules };
+            if (Array.isArray(data.restricted_extensions)) {
+              stored.cached_exts = data.restricted_extensions;
+            }
+            chrome.storage.local.set(stored);
+          }
+          finishOne(false);
+        })
+        .catch(function () {
+          gatewayEl.textContent = "Offline (Local Cache Active)";
+          finishOne(true);
+        });
+
+      fetch(base + "/extension/sites", { method: "GET", cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("sites");
+          return r.json();
+        })
+        .then(function (data) {
+          if (!data || !Array.isArray(data.hosts)) throw new Error("sites");
+          sitesEl.textContent = data.hosts.length > 0 ? (data.hosts.length + "+") : "0";
+          if (chrome && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.set({ cached_sites: data.hosts });
+          }
+          finishOne(false);
+        })
+        .catch(function () { finishOne(true); });
+    });
   }
 
   syncBtn.addEventListener("click", function () {
     syncText.textContent = "Syncing...";
     syncBtn.disabled = true;
-    fetchLive();
-    setTimeout(function () {
-      syncText.textContent = "Rules Updated!";
-      setTimeout(function () {
-        syncText.textContent = "Sync Live Rules";
-        syncBtn.disabled = false;
-      }, 1500);
-    }, 600);
+    fetchLive(true);
   });
 
   loadCached();

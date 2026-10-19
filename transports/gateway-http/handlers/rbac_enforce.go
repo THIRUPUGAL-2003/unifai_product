@@ -63,6 +63,7 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				path == "/api/session/forgot-username" ||
 				path == "/api/session/is-auth-enabled" ||
 				path == "/api/session/schedule-demo" ||
+				path == "/api/session/teams" ||
 				path == "/api/session/logout" {
 				next(ctx)
 				return

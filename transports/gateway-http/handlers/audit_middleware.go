@@ -39,7 +39,14 @@ func shouldSkipWorkspaceAudit(method, path string) bool {
 	}
 }
 
-func auditActionForMethod(method string) string {
+func auditActionForMethod(method, path string) string {
+	p := strings.ToLower(path)
+	if strings.HasSuffix(p, "/activate") || strings.HasSuffix(p, "/deactivate") {
+		return "update"
+	}
+	if strings.HasSuffix(p, "/clone") {
+		return "create"
+	}
 	switch method {
 	case fasthttp.MethodPost:
 		return "create"
@@ -55,6 +62,18 @@ func auditActionForMethod(method string) string {
 func auditInitiator(store configstore.ConfigStore, ctx *fasthttp.RequestCtx) string {
 	if strings.HasPrefix(string(ctx.Path()), "/scim/") {
 		return "scim:idp"
+	}
+	// Prefer context user value if set upstream by auth middleware
+	if val := ctx.UserValue(schemas.GatewayContextKeyUserName); val != nil {
+		if u, ok := val.(string); ok && u != "" {
+			return u
+		}
+	}
+	if isLocal, ok := ctx.UserValue(schemas.IsLocalAdminContextKey).(bool); ok && isLocal {
+		return "admin"
+	}
+	if vkID, ok := ctx.UserValue(schemas.GatewayContextKeyGovernanceVirtualKeyID).(string); ok && vkID != "" {
+		return "vk:" + vkID
 	}
 	if store == nil {
 		return "system"
@@ -77,6 +96,137 @@ func auditInitiator(store configstore.ConfigStore, ctx *fasthttp.RequestCtx) str
 		return session.Username
 	}
 	return "admin"
+}
+
+// auditTargetForRequest produces a human-friendly entity target (e.g. "Role: admin",
+// "Access Profile: Tier 1", "User: alice (Role)", etc.) instead of a raw URL path.
+func auditTargetForRequest(path, method string, payload map[string]any) string {
+	p := strings.Trim(path, "/")
+	parts := strings.Split(p, "/")
+	if len(parts) >= 2 && parts[0] == "api" {
+		resource := strings.ToLower(parts[1])
+		switch resource {
+		case "roles":
+			if len(parts) >= 4 && parts[3] == "permissions" {
+				return "Role: #" + parts[2] + " (Permissions)"
+			}
+			if len(parts) >= 3 {
+				return "Role: #" + parts[2]
+			}
+			if name, ok := payload["name"].(string); ok && strings.TrimSpace(name) != "" {
+				return "Role: " + strings.TrimSpace(name)
+			}
+			return "Role"
+		case "access-profiles":
+			if len(parts) >= 4 {
+				return "Access Profile: #" + parts[2] + " (" + parts[3] + ")"
+			}
+			if len(parts) >= 3 {
+				return "Access Profile: #" + parts[2]
+			}
+			if name, ok := payload["name"].(string); ok && strings.TrimSpace(name) != "" {
+				return "Access Profile: " + strings.TrimSpace(name)
+			}
+			return "Access Profile"
+		case "users":
+			if len(parts) >= 4 && parts[3] == "role" {
+				return "User: " + parts[2] + " (Role)"
+			}
+			if len(parts) >= 4 && parts[3] == "access-profiles" {
+				return "User: " + parts[2] + " (Access Profiles)"
+			}
+			if len(parts) >= 3 {
+				return "User: " + parts[2]
+			}
+			if u, ok := payload["username"].(string); ok && strings.TrimSpace(u) != "" {
+				return "User: " + strings.TrimSpace(u)
+			}
+			return "User"
+		case "rbac":
+			if len(parts) >= 3 && parts[2] == "scope-grants" {
+				if st, ok := payload["scope_type"].(string); ok && strings.TrimSpace(st) != "" {
+					return "RBAC Scope: " + strings.TrimSpace(st)
+				}
+				return "RBAC Scope Grants"
+			}
+			return "RBAC"
+		case "virtual-keys":
+			if len(parts) >= 3 {
+				return "Virtual Key: " + parts[2]
+			}
+			if name, ok := payload["name"].(string); ok && strings.TrimSpace(name) != "" {
+				return "Virtual Key: " + strings.TrimSpace(name)
+			}
+			return "Virtual Key"
+		case "teams":
+			if len(parts) >= 3 {
+				return "Team: " + parts[2]
+			}
+			if name, ok := payload["name"].(string); ok && strings.TrimSpace(name) != "" {
+				return "Team: " + strings.TrimSpace(name)
+			}
+			return "Team"
+		case "customers":
+			if len(parts) >= 3 {
+				return "Customer: " + parts[2]
+			}
+			if name, ok := payload["name"].(string); ok && strings.TrimSpace(name) != "" {
+				return "Customer: " + strings.TrimSpace(name)
+			}
+			return "Customer"
+		case "business-units":
+			if len(parts) >= 3 {
+				return "Business Unit: " + parts[2]
+			}
+			if name, ok := payload["name"].(string); ok && strings.TrimSpace(name) != "" {
+				return "Business Unit: " + strings.TrimSpace(name)
+			}
+			return "Business Unit"
+		case "guardrails":
+			if len(parts) >= 3 {
+				return "Guardrail: " + parts[2]
+			}
+			return "Guardrails"
+		case "plugins":
+			if len(parts) >= 3 {
+				return "Plugin: " + parts[2]
+			}
+			return "Plugins"
+		case "mcp":
+			return "MCP Gateway"
+		case "adaptive-routing":
+			return "Adaptive Routing"
+		case "config":
+			if len(parts) >= 3 {
+				return "Config: " + parts[2]
+			}
+			return "Configuration"
+		case "feature-flags":
+			if len(parts) >= 3 {
+				return "Feature Flag: " + parts[2]
+			}
+			if id, ok := payload["id"].(string); ok && strings.TrimSpace(id) != "" {
+				return "Feature Flag: " + strings.TrimSpace(id)
+			}
+			return "Feature Flags"
+		case "vector-store-config":
+			return "Vector Store Config"
+		case "proxy-config":
+			return "Proxy Config"
+		case "pricing":
+			return "Pricing Config"
+		case "smtp":
+			return "SMTP Config"
+		case "session":
+			if len(parts) >= 3 {
+				return "Session: " + parts[2]
+			}
+			return "Session"
+		}
+	} else if strings.HasPrefix(path, "/scim/") {
+		return "SCIM Directory"
+	}
+	return path
 }
 
 // WorkspaceAuditMiddleware records every mutating /api/* dashboard action
@@ -111,8 +261,8 @@ func WorkspaceAuditMiddleware(store configstore.ConfigStore) schemas.GatewayHTTP
 
 			// Sanitize request body if JSON to record non-sensitive audit details (SOC-2 compliance)
 			var detail string
+			var payload map[string]any
 			if body := ctx.PostBody(); len(body) > 0 {
-				var payload map[string]any
 				if err := json.Unmarshal(body, &payload); err == nil {
 					delete(payload, "password")
 					delete(payload, "value")
@@ -129,11 +279,13 @@ func WorkspaceAuditMiddleware(store configstore.ConfigStore) schemas.GatewayHTTP
 				}
 			}
 
+			target := auditTargetForRequest(path, method, payload)
+
 			_ = ws.CreateAuditLog(ctx, &tables.TableAuditLog{
-				Action:     auditActionForMethod(method),
+				Action:     auditActionForMethod(method, path),
 				Outcome:    outcome,
 				Initiator:  auditInitiator(store, ctx),
-				Target:     path,
+				Target:     target,
 				Method:     method,
 				Path:       path,
 				IP:         ctx.RemoteIP().String(),

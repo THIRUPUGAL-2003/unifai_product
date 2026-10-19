@@ -18,6 +18,7 @@ import {
 	useGetPromptVersionQuery,
 	useGetSessionQuery,
 	useGetSessionsQuery,
+	useUpdateFolderMutation,
 	useUpdatePromptMutation,
 	useCreateSessionMutation,
 	useUpdateSessionMutation,
@@ -134,6 +135,7 @@ interface PromptContextValue {
 	// Handlers
 	handleSelectPrompt: (id: string) => void;
 	handleMovePrompt: (promptId: string, folderId: string | null) => Promise<void>;
+	handleMoveTeamFolder: (folderId: string, parentId: string) => Promise<void>;
 	handleDeleteFolder: () => Promise<void>;
 	handleDeletePrompt: () => Promise<void>;
 	handleSendMessage: (pendingMessage?: Message, overrideMessages?: Message[]) => Promise<void>;
@@ -182,6 +184,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const [deleteFolder, { isLoading: isDeletingFolder }] = useDeleteFolderMutation();
 	const [deletePrompt, { isLoading: isDeletingPrompt }] = useDeletePromptMutation();
 	const [updatePrompt] = useUpdatePromptMutation();
+	const [updateFolder] = useUpdateFolderMutation();
 	const [createSession] = useCreateSessionMutation();
 	const [updateSession] = useUpdateSessionMutation();
 
@@ -743,6 +746,19 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			}
 		},
 		[updatePrompt],
+	);
+
+	const handleMoveTeamFolder = useCallback(
+		async (folderId: string, parentId: string) => {
+			try {
+				await updateFolder({ id: folderId, data: { parent_id: parentId } }).unwrap();
+				dispatch(baseApi.util.invalidateTags(["Teams", "BusinessUnits"]));
+				toast.success("Team moved");
+			} catch (err) {
+				toast.error(getErrorMessage(err) || "Failed to move team");
+			}
+		},
+		[updateFolder, dispatch],
 	);
 
 	const handleDeleteFolder = useCallback(async () => {
@@ -1333,6 +1349,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		hasSessionChanges,
 		handleSelectPrompt,
 		handleMovePrompt,
+		handleMoveTeamFolder,
 		handleDeleteFolder,
 		handleDeletePrompt,
 		handleSendMessage,

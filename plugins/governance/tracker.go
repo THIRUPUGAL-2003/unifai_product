@@ -150,6 +150,13 @@ func (t *UsageTracker) UpdateUsage(ctx context.Context, update *UsageUpdate) {
 		}
 	}
 
+	// Usage of a user, team, business unit, or customer is counted per virtual key.
+	if update.VirtualKey != "" {
+		if vk, exists := t.store.GetVirtualKey(ctx, update.VirtualKey); exists && vk != nil && vk.ID != "" {
+			ctx = context.WithValue(ctx, vkUsageContextKey{}, vk.ID)
+		}
+	}
+
 	// 3. Update user-level governance (enterprise-only, before VK-level)
 	if update.UserID != "" {
 		// Update user rate limit usage

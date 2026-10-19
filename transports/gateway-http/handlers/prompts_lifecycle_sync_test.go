@@ -206,3 +206,81 @@ func TestTeamMembership_GrantsAndRevokesTeamAudience(t *testing.T) {
 		t.Fatalf("removed member should lose the team's prompts")
 	}
 }
+
+func TestApplyTeamPlacement_UpdatesCustomerAndBusinessUnit(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	customer := &tables.TableCustomer{ID: syncTestID("cust"), Name: syncTestID("Bank")}
+	if err := store.CreateCustomer(ctx, customer); err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	if err := lifecycle.OnCustomerCreated(ctx, customer); err != nil {
+		t.Fatalf("customer folder: %v", err)
+	}
+	bu := &tables.TableBusinessUnit{ID: syncTestID("bu"), Name: syncTestID("Cards"), CustomerID: &customer.ID, ParsedTeamIDs: []string{}}
+	if err := store.DB().Create(bu).Error; err != nil {
+		t.Fatalf("create business unit: %v", err)
+	}
+	if err := lifecycle.OnBusinessUnitCreated(ctx, bu); err != nil {
+		t.Fatalf("business unit folder: %v", err)
+	}
+	team, _ := syncTestTeamWithFolder(t, store, lifecycle, nil)
+	custFolder, err := findEntityFolder(store.DB(), customer.ID, "", "customer")
+	if err != nil {
+		t.Fatalf("customer folder missing: %v", err)
+	}
+	buFolder, err := findEntityFolder(store.DB(), bu.ID, "", "business_unit")
+	if err != nil {
+		t.Fatalf("business unit folder missing: %v", err)
+	}
+
+	if err := lifecycle.applyTeamPlacement(ctx, team.ID, custFolder.ID); err != nil {
+		t.Fatalf("place under customer: %v", err)
+	}
+	var got tables.TableTeam
+	if err := store.DB().Where("id = ?", team.ID).First(&got).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.CustomerID == nil || *got.CustomerID != customer.ID || got.BusinessUnitID != nil {
+		t.Fatalf("customer placement = customer %v bu %v", got.CustomerID, got.BusinessUnitID)
+	}
+
+	if err := lifecycle.applyTeamPlacement(ctx, team.ID, buFolder.ID); err != nil {
+		t.Fatalf("place under business unit: %v", err)
+	}
+	if err := store.DB().Where("id = ?", team.ID).First(&got).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.CustomerID == nil || *got.CustomerID != customer.ID || got.BusinessUnitID == nil || *got.BusinessUnitID != bu.ID {
+		t.Fatalf("business unit placement = customer %v bu %v", got.CustomerID, got.BusinessUnitID)
+	}
+	var stored tables.TableBusinessUnit
+	if err := store.DB().Where("id = ?", bu.ID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(stored.ParsedTeamIDs, ","), team.ID) {
+		t.Fatalf("business unit teams = %v", stored.ParsedTeamIDs)
+	}
+
+	teamsRoot, err := lifecycle.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil)
+	if err != nil || teamsRoot == nil {
+		t.Fatalf("teams root: %v", err)
+	}
+	if err := lifecycle.applyTeamPlacement(ctx, team.ID, teamsRoot.ID); err != nil {
+		t.Fatalf("place under Teams: %v", err)
+	}
+	if err := store.DB().Where("id = ?", team.ID).First(&got).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.CustomerID != nil || got.BusinessUnitID != nil {
+		t.Fatalf("standalone placement = customer %v bu %v", got.CustomerID, got.BusinessUnitID)
+	}
+	if err := store.DB().Where("id = ?", bu.ID).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(stored.ParsedTeamIDs, ","), team.ID) {
+		t.Fatalf("team still listed on business unit: %v", stored.ParsedTeamIDs)
+	}
+}

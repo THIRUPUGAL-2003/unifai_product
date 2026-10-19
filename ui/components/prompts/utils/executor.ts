@@ -1,4 +1,5 @@
 import { Message, type CompletionUsage, type MessageContent, type ToolCall, type VariableMap, replaceVariablesInMessages } from "@/lib/message";
+import { emitStudio, extractFileRequest, lastFile, runDocumentStudio } from "./fileStudio";
 import { getErrorMessage } from "@/lib/store";
 import type { ModelParams } from "@/lib/types/prompts";
 import { transcribeAudioFile, voiceTranscriptAttachment } from "./transcribeAudio";
@@ -680,6 +681,57 @@ export async function executePrompt(
 				`• **Replicate:** \`replicate/lucataco/animate-diff\`\n\n` +
 				`👉 **Fix:** Add an API Key for any of the above video providers under **Workspace > Providers**!`
 			);
+			callbacks.onFinally();
+			return;
+		}
+
+		const fileRequest = extractFileRequest(userText);
+		if (fileRequest && !config._retryWithoutImages) {
+			const context = resolvedMessages
+				.slice(-6)
+				.map((m) => `${m.role}: ${(m.content || "").slice(0, 4000)}`)
+				.join("\n\n")
+				.slice(-12000);
+			try {
+				callbacks.onStreamChunk("Writing the file in the code panel…");
+				const filename = await runDocumentStudio({
+					kind: fileRequest.kind,
+					instruction: fileRequest.instruction,
+					context,
+					revise: fileRequest.revise,
+					previous: fileRequest.revise ? lastFile() : null,
+					askModel: async (system, user) => {
+						const res = await fetch(`${getBaseUrl()}/v1/chat/completions`, {
+							method: "POST",
+							headers,
+							credentials: "include",
+							signal,
+							body: JSON.stringify({
+								model: `${config.provider}/${config.model}`,
+								messages: [
+									{ role: "system", content: system },
+									{ role: "user", content: user },
+								],
+								stream: false,
+							}),
+						});
+						if (!res.ok) {
+							let errText = `HTTP ${res.status}`;
+							try {
+								errText = parseErrorPayload(await res.json(), errText);
+							} catch {}
+							throw new Error(errText);
+						}
+						const data = await res.json();
+						return String(data.choices?.[0]?.message?.content || "");
+					},
+				});
+				callbacks.onComplete(`The file is ready and the download has started.\n\n**${filename}**\n\nThe model wrote the code in the side panel.`);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				emitStudio({ phase: "error", log: message });
+				callbacks.onComplete(`The file could not be built.\n\n${message}`);
+			}
 			callbacks.onFinally();
 			return;
 		}

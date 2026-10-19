@@ -186,6 +186,7 @@ export interface BusinessUnitRateLimit {
 export interface BusinessUnit {
 	id: string;
 	name: string;
+	customer_id?: string | null;
 	team_count?: number;
 	team_ids?: string[];
 	budget?: BusinessUnitBudget | null;

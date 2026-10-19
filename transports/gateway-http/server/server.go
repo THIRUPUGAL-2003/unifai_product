@@ -1635,6 +1635,9 @@ func (s *GatewayHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	pluginsHandler := handlers.NewPluginsHandler(callbacks, s.Config.ConfigStore)
 	sessionHandler := handlers.NewSessionHandler(s.Config.ConfigStore, s.WSTicketStore, s)
 	promptsHandler := handlers.NewPromptsHandler(s.Config.ConfigStore, promptsReloader)
+	if promptsHandler != nil {
+		promptsHandler.SetTeamMoveSync(s)
+	}
 	featureFlagsHandler := handlers.NewFeatureFlagsHandler(s.Config.FeatureFlags, s.Config.ConfigStore)
 	browserAIHandler := handlers.NewBrowserAIHandler(s.Config.ConfigStore, s.Config, s.Client)
 	workspaceHandler := handlers.NewWorkspaceHandler(s.Config, callbacks)

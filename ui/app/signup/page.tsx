@@ -10,6 +10,7 @@ import {
 	ArrowLeft,
 	ArrowRight,
 	CheckCircle,
+	ChevronDown,
 	Clock,
 	Cpu,
 	Eye,
@@ -22,6 +23,7 @@ import {
 	ShieldAlert,
 	Sparkles,
 	User,
+	Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -45,6 +47,9 @@ export default function SignupPage() {
 	const [resendCooldown, setResendCooldown] = useState(0);
 	const [isResending, setIsResending] = useState(false);
 	const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+	const [teamsOpen, setTeamsOpen] = useState(false);
+	const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
+	const [teamID, setTeamID] = useState("");
 
 	const clearFieldError = (field: string) => {
 		setFieldErrors((prev) => {
@@ -55,6 +60,20 @@ export default function SignupPage() {
 		});
 	};
 	const navigate = useNavigate();
+
+	useEffect(() => {
+		let cancelled = false;
+		fetch(`${getApiBaseUrl()}/session/teams`)
+			.then((res) => (res.ok ? res.json() : null))
+			.then((data) => {
+				if (cancelled || !Array.isArray(data?.teams)) return;
+				setTeams(data.teams.filter((team: { id?: string; name?: string }) => team?.id && team?.name));
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
 	useEffect(() => {
 		if (resendCooldown <= 0) return;
@@ -175,11 +194,15 @@ export default function SignupPage() {
 					email: email.trim(),
 					password,
 					role: "user",
+					team_id: teamID,
 				}),
 			});
 			const data = await res.json().catch(() => ({}));
 			if (!res.ok) {
-				const message = apiError(data, "Registration failed");
+				const message = apiError(data, "Registration failed").replace(
+					" Duplicate email addresses are not permitted.",
+					"",
+				);
 				if (res.status === 409 && /waiting for email verification/i.test(message)) {
 					setCodeInfo(message);
 					setNeedsCode(true);
@@ -586,12 +609,59 @@ export default function SignupPage() {
 											</div>
 										</div>
 
+										<div className="space-y-1.5">
+											<button
+												type="button"
+												onClick={() => setTeamsOpen((open) => !open)}
+												className="relative flex h-10 w-full items-center rounded-xl border border-[#e3ebf8] bg-[#f7f9ff] pl-10 pr-10 text-left text-sm cursor-pointer"
+											>
+												<Users className="absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-slate-500" />
+												{teamID ? (
+													<span className="text-[#0b1b3a]">{teams.find((team) => team.id === teamID)?.name}</span>
+												) : (
+													<>
+														<span className="text-[#0b1b3a]">Teams</span>
+														<span className="ml-2 text-slate-400">Optional</span>
+													</>
+												)}
+												<ChevronDown className={`absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-slate-500 transition-transform ${teamsOpen ? "rotate-180" : ""}`} />
+											</button>
+											{teamsOpen && (
+												<div id="signup-team" className="overflow-hidden rounded-xl border border-[#e3ebf8] bg-white">
+													{teams.length === 0 ? (
+														<p className="flex h-10 items-center px-3.5 text-sm text-slate-400">No teams yet</p>
+													) : (
+														teams.map((team) => (
+															<button
+																key={team.id}
+																type="button"
+																onClick={() => {
+																	setTeamID(team.id);
+																	setTeamsOpen(false);
+																}}
+																className={`flex h-10 w-full items-center px-3.5 text-left text-sm cursor-pointer ${
+																	teamID === team.id
+																		? "bg-[#eef3ff] font-medium text-[#2f6bff]"
+																		: "text-[#0b1b3a] hover:bg-[#f7f9ff]"
+																}`}
+															>
+																{team.name}
+															</button>
+														))
+													)}
+												</div>
+											)}
+											{teamsOpen && (
+												<p className="text-[11px] text-slate-400">You join this team only after an admin approves your account.</p>
+											)}
+										</div>
+
 										<Button
 											type="submit"
 											disabled={isLoading}
 											className="mt-2 h-11 w-full rounded-xl bg-[#2f6bff] hover:bg-[#2457d6] font-bold text-white shadow-[0_0_24px_rgba(69,243,255,0.25)] hover:shadow-[0_0_32px_rgba(69,243,255,0.4)] hover:brightness-105 transition-all cursor-pointer disabled:opacity-40"
 										>
-											{isLoading ? "Submitting Request..." : "Request Account Access"}
+											{isLoading ? "Creating account..." : "Create Account"}
 										</Button>
 									</form>
 

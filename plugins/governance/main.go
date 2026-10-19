@@ -1048,6 +1048,9 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.GatewayContext
 	if evaluationRequest.VirtualKey != "" {
 		if vk, ok := p.store.GetVirtualKey(ctx, evaluationRequest.VirtualKey); ok && vk != nil {
 			hierarchyVK = vk
+			if ctx != nil && vk.ID != "" {
+				ctx.SetValue(vkUsageContextKey{}, vk.ID)
+			}
 		}
 	}
 
@@ -1085,6 +1088,13 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.GatewayContext
 	var billedCustomers []string
 	if hasLocalStore && hierarchyVK != nil {
 		billedTeam, billedCustomers = local.BilledEntities(ctx, hierarchyVK)
+		if result.Decision == DecisionAllow && !local.customerAssignedVKAllowed(ctx, hierarchyVK) {
+			result = &EvaluationResult{
+				Decision:   DecisionVirtualKeyBlocked,
+				Reason:     "This virtual key is only for the customer, business unit, team, or user it is assigned to.",
+				VirtualKey: hierarchyVK,
+			}
+		}
 	}
 	if !skipBudgetsAndRateLimits && result.Decision == DecisionAllow && hierarchyVK != nil && hasLocalStore {
 		for _, customerID := range billedCustomers {

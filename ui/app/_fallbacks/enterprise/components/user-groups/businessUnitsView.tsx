@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/alertDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ComboboxSelect } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import NumberAndSelect from "@/components/ui/numberAndSelect";
@@ -19,6 +20,7 @@ import { budgetDurationOptions, resetDurationLabels, resetDurationOptions } from
 import { formatCurrency } from "@/lib/utils/governance";
 import { cn } from "@/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { getErrorMessage, useGetCustomersQuery, useGetTeamsQuery } from "@/lib/store";
 import {
 	useAssignBusinessUnitTeamMutation,
@@ -35,6 +37,7 @@ import { Building2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
+import { Checkbox } from "@/components/ui/checkbox";
 
 function budgetPayload(limit: number | undefined, reset: string) {
 	if (limit === undefined || !Number.isFinite(limit) || limit <= 0) {
@@ -61,6 +64,65 @@ function ratePayload(tokens: number | undefined, tokenReset: string, requests: n
 	return rate;
 }
 
+function CustomerSelect({
+	value,
+	onChange,
+	customers,
+}: {
+	value: string;
+	onChange: (value: string) => void;
+	customers: { id: string; name: string }[];
+}) {
+	return (
+		<div className="space-y-1">
+			<Label>Customer</Label>
+			<select
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+				className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+			>
+				<option value="">No customer</option>
+				{customers.map((customer) => (
+					<option key={customer.id} value={customer.id}>
+						{customer.name}
+					</option>
+				))}
+			</select>
+		</div>
+	);
+}
+
+function TeamPicker({
+	teams,
+	selected,
+	onChange,
+	labelFor,
+}: {
+	teams: { id: string; name: string }[];
+	selected: string[];
+	onChange: (ids: string[]) => void;
+	labelFor: (id: string, name?: string) => string;
+}) {
+	return (
+		<div className="space-y-1">
+			<Label>Teams</Label>
+			<ComboboxSelect
+				multiple
+				noPortal
+				options={teams.map((team) => ({ value: team.id, label: labelFor(team.id, team.name) }))}
+				value={selected}
+				onValueChange={onChange}
+				placeholder="Select teams"
+				searchPlaceholder="Search teams"
+				selectAllValue="__all_teams__"
+				selectAllLabel="All teams"
+				selectAllTriggerLabel="All teams"
+				emptyMessage="No teams yet."
+			/>
+		</div>
+	);
+}
+
 function moneyLabel(used?: number, max?: number) {
 	if (!max || max <= 0) return "—";
 	return `${formatCurrency(used ?? 0)} / ${formatCurrency(max)}`;
@@ -76,32 +138,54 @@ function LimitMeter({
 	max,
 	reset,
 	money,
+	unitLabel,
 }: {
 	used?: number;
 	max?: number;
 	reset?: string;
 	money?: boolean;
+	unitLabel?: string;
 }) {
 	if (!max || max <= 0) return <span className="text-muted-foreground text-sm">-</span>;
 	const pct = Math.min((used / max) * 100, 100);
 	const exhausted = used >= max;
-	const limitLabel = money ? formatCurrency(max) : max.toLocaleString();
-	const usedLabel = money ? formatCurrency(used) : used.toLocaleString();
+	const limitLabel = money
+		? formatCurrency(max)
+		: unitLabel
+			? `${max.toLocaleString()} ${unitLabel}`
+			: max.toLocaleString();
+	const resetLabel = resetDurationLabels[reset || ""] || reset || "1M";
+
 	return (
-		<div className="min-w-[140px] space-y-1">
-			<div className="flex items-center justify-between gap-3">
-				<span className="text-sm font-medium">{limitLabel}</span>
-				<span className="text-muted-foreground text-xs">{resetDurationLabels[reset || ""] || reset}</span>
-			</div>
-			<Progress
-				value={pct}
-				className={cn(
-					"bg-muted/70 h-1.5",
-					exhausted ? "[&>div]:bg-red-500/70" : pct > 80 ? "[&>div]:bg-amber-500/70" : "[&>div]:bg-emerald-500/70",
-				)}
-			/>
-			<p className="text-muted-foreground text-xs">{usedLabel} used</p>
-		</div>
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<div className="min-w-[140px] space-y-1 cursor-default">
+					<div className="flex items-center justify-between gap-4">
+						<span className="text-sm font-medium">{limitLabel}</span>
+						<span className="text-muted-foreground text-xs">{resetLabel}</span>
+					</div>
+					<Progress
+						value={pct}
+						className={cn(
+							"bg-muted/70 dark:bg-muted/30 h-1.5",
+							exhausted
+								? "[&>div]:bg-red-500/70"
+								: pct > 80
+									? "[&>div]:bg-amber-500/70"
+									: "[&>div]:bg-emerald-500/70",
+						)}
+					/>
+				</div>
+			</TooltipTrigger>
+			<TooltipContent>
+				<p className="font-medium">
+					{money
+						? `${formatCurrency(used)} / ${formatCurrency(max)}`
+						: `${(used ?? 0).toLocaleString()} / ${max.toLocaleString()} ${unitLabel === "req" ? "requests" : unitLabel || ""}`}
+				</p>
+				<p className="text-primary-foreground/80 text-xs">Resets {resetLabel}</p>
+			</TooltipContent>
+		</Tooltip>
 	);
 }
 
@@ -116,6 +200,7 @@ export function BusinessUnitsView() {
 	const [requestLimit, setRequestLimit] = useState<number | undefined>(undefined);
 	const [requestReset, setRequestReset] = useState("1h");
 	const [createTeamIds, setCreateTeamIds] = useState<string[]>([]);
+	const [createCustomerId, setCreateCustomerId] = useState("");
 	const [open, setOpen] = useState(false);
 	const [unitToDelete, setUnitToDelete] = useState<BusinessUnit | null>(null);
 	const [unitToEdit, setUnitToEdit] = useState<BusinessUnit | null>(null);
@@ -127,6 +212,7 @@ export function BusinessUnitsView() {
 	const [editRequestLimit, setEditRequestLimit] = useState<number | undefined>(undefined);
 	const [editRequestReset, setEditRequestReset] = useState("1h");
 	const [editTeamIds, setEditTeamIds] = useState<string[]>([]);
+	const [editCustomerId, setEditCustomerId] = useState("");
 	const [offset, setOffset] = useState(0);
 	const [limit, setLimit] = useState(10);
 	const hasCreateAccess = useRbac(RbacResource.Teams, RbacOperation.Create);
@@ -164,6 +250,68 @@ export function BusinessUnitsView() {
 
 	const pagedUnits = useMemo(() => filteredUnits.slice(offset, offset + limit), [filteredUnits, offset, limit]);
 
+	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+	const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+	const visibleIds = useMemo(() => pagedUnits.map((u) => u.id), [pagedUnits]);
+	const selectedVisibleIds = useMemo(() => visibleIds.filter((id) => selectedIds.has(id)), [selectedIds, visibleIds]);
+	const selectedCount = selectedIds.size;
+	const allVisibleSelected = visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
+	const someVisibleSelected = selectedVisibleIds.length > 0 && selectedVisibleIds.length < visibleIds.length;
+
+	const toggleSelectAllVisible = (checked: boolean) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			for (const id of visibleIds) {
+				if (checked) {
+					next.add(id);
+				} else {
+					next.delete(id);
+				}
+			}
+			return next;
+		});
+	};
+
+	const toggleSelectUnit = (unitId: string, checked: boolean) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			if (checked) {
+				next.add(unitId);
+			} else {
+				next.delete(unitId);
+			}
+			return next;
+		});
+	};
+
+	const handleBulkDelete = async () => {
+		if (selectedCount === 0) return;
+		setIsBulkDeleting(true);
+		let successCount = 0;
+		let failCount = 0;
+		const ids = Array.from(selectedIds);
+		for (const id of ids) {
+			try {
+				await deleteUnit(id).unwrap();
+				if (selected?.id === id) setSelected(null);
+				successCount++;
+			} catch {
+				failCount++;
+			}
+		}
+		setIsBulkDeleting(false);
+		setShowBulkDeleteDialog(false);
+		setSelectedIds(new Set());
+		if (successCount > 0) {
+			toast.success(`Successfully deleted ${successCount} business unit${successCount > 1 ? "s" : ""}`);
+		}
+		if (failCount > 0) {
+			toast.error(`Failed to delete ${failCount} business unit${failCount > 1 ? "s" : ""}`);
+		}
+	};
+
 	const teamById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
 	const customerNameById = useMemo(() => new Map(customers.map((c) => [c.id, c.name])), [customers]);
 
@@ -171,6 +319,7 @@ export function BusinessUnitsView() {
 		try {
 			const created = await createUnit({
 				name: name.trim(),
+				customer_id: createCustomerId,
 				budget: budgetPayload(budgetLimit, budgetReset),
 				rate_limit: ratePayload(tokenLimit, tokenReset, requestLimit, requestReset),
 			}).unwrap();
@@ -187,6 +336,7 @@ export function BusinessUnitsView() {
 			setRequestLimit(undefined);
 			setRequestReset("1h");
 			setCreateTeamIds([]);
+			setCreateCustomerId("");
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		}
@@ -202,12 +352,18 @@ export function BusinessUnitsView() {
 		setEditRequestLimit(unit.rate_limit?.request_max_limit || undefined);
 		setEditRequestReset(unit.rate_limit?.request_reset_duration || "1h");
 		setEditTeamIds(unit.team_ids || []);
+		setEditCustomerId(unit.customer_id || "");
 	};
 
 	const remove = async (id: string) => {
 		try {
 			await deleteUnit(id).unwrap();
 			if (selected?.id === id) setSelected(null);
+			setSelectedIds((prev) => {
+				const next = new Set(prev);
+				next.delete(id);
+				return next;
+			});
 			toast.success("Business unit deleted");
 		} catch (err) {
 			toast.error(getErrorMessage(err));
@@ -220,6 +376,7 @@ export function BusinessUnitsView() {
 			const saved = await updateUnit({
 				id: unitToEdit.id,
 				name: editName.trim(),
+				customer_id: editCustomerId,
 				budget: budgetPayload(editBudgetLimit, editBudgetReset),
 				rate_limit: ratePayload(editTokenLimit, editTokenReset, editRequestLimit, editRequestReset),
 			}).unwrap();
@@ -233,7 +390,12 @@ export function BusinessUnitsView() {
 				if (!next.has(team)) await removeTeam({ id: unitToEdit.id, team_id: team }).unwrap();
 			}
 			if (selected?.id === unitToEdit.id) {
-				setSelected({ ...saved.business_unit, team_ids: editTeamIds, team_count: editTeamIds.length });
+				setSelected({
+					...saved.business_unit,
+					customer_id: editCustomerId || null,
+					team_ids: editTeamIds,
+					team_count: editTeamIds.length,
+				});
 			}
 			setUnitToEdit(null);
 			setEditName("");
@@ -243,13 +405,10 @@ export function BusinessUnitsView() {
 			setEditTokenReset("1h");
 			setEditRequestLimit(undefined);
 			setEditRequestReset("1h");
+			setEditCustomerId("");
 		} catch (err) {
 			toast.error(getErrorMessage(err));
 		}
-	};
-
-	const toggleTeam = (ids: string[], team: string, setIds: (next: string[]) => void) => {
-		setIds(ids.includes(team) ? ids.filter((id) => id !== team) : [...ids, team]);
 	};
 
 	const teamLabel = (teamIdValue: string, fallbackName?: string) => {
@@ -261,7 +420,30 @@ export function BusinessUnitsView() {
 	};
 
 	return (
-		<div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+		<TooltipProvider>
+			<div className="grid h-full grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+			<AlertDialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Delete Selected Business Units</AlertDialogTitle>
+						<AlertDialogDescription>
+							Are you sure you want to delete {selectedCount} selected business unit{selectedCount > 1 ? "s" : ""}? This action cannot be undone.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={handleBulkDelete}
+							disabled={isBulkDeleting || selectedCount === 0}
+							className="bg-red-600 hover:bg-red-700"
+							data-testid="bu-bulk-delete-confirm-btn"
+						>
+							{isBulkDeleting ? "Deleting..." : "Delete Selected"}
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+
 			<div className="flex flex-col gap-4">
 				<div className="flex items-center justify-between">
 					<div>
@@ -273,23 +455,37 @@ export function BusinessUnitsView() {
 							Group teams and set a spend limit for this unit. Requests from a team in the unit count against this budget.
 						</p>
 					</div>
-					<Button
-						onClick={() => {
-							setName("");
-							setBudgetLimit(undefined);
-							setBudgetReset("1M");
-							setTokenLimit(undefined);
-							setTokenReset("1h");
-							setRequestLimit(undefined);
-							setRequestReset("1h");
-							setCreateTeamIds([]);
-							setOpen(true);
-						}}
-						disabled={!hasCreateAccess}
-					>
-						<Plus className="h-4 w-4" />
-						New unit
-					</Button>
+					<div className="flex items-center gap-2">
+						{selectedCount > 0 && (
+							<Button
+								variant="destructive"
+								data-testid="bu-bulk-delete-btn"
+								onClick={() => setShowBulkDeleteDialog(true)}
+								disabled={!hasDeleteAccess || isBulkDeleting}
+							>
+								<Trash2 className="h-4 w-4 mr-1" />
+								Delete Selected ({selectedCount})
+							</Button>
+						)}
+						<Button
+							onClick={() => {
+								setName("");
+								setBudgetLimit(undefined);
+								setBudgetReset("1M");
+								setTokenLimit(undefined);
+								setTokenReset("1h");
+								setRequestLimit(undefined);
+								setRequestReset("1h");
+								setCreateTeamIds([]);
+								setCreateCustomerId("");
+								setOpen(true);
+							}}
+							disabled={!hasCreateAccess}
+						>
+							<Plus className="h-4 w-4" />
+							New unit
+						</Button>
+					</div>
 				</div>
 				{listQueryFailed ? (
 					<QueryErrorBanner
@@ -323,7 +519,16 @@ export function BusinessUnitsView() {
 				<Table>
 					<TableHeader>
 						<TableRow>
+							<TableHead className="w-[48px]">
+								<Checkbox
+									checked={allVisibleSelected || (someVisibleSelected ? "indeterminate" : false)}
+									onCheckedChange={(checked) => toggleSelectAllVisible(checked === true)}
+									aria-label="Select all business units on this page"
+									data-testid="bu-select-all-checkbox"
+								/>
+							</TableHead>
 							<TableHead>Name</TableHead>
+							<TableHead>Customer</TableHead>
 							<TableHead>Budget</TableHead>
 							<TableHead>Tokens</TableHead>
 							<TableHead>Requests</TableHead>
@@ -334,7 +539,7 @@ export function BusinessUnitsView() {
 					<TableBody>
 						{filteredUnits.length === 0 ? (
 							<TableRow>
-								<TableCell colSpan={6} className="text-center py-10 text-muted-foreground text-sm">
+								<TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">
 									{search ? `No business units match "${search}"` : "No business units found."}
 								</TableCell>
 							</TableRow>
@@ -345,7 +550,23 @@ export function BusinessUnitsView() {
 									className={`cursor-pointer transition-colors hover:bg-muted/30 ${selected?.id === unit.id ? "bg-muted/50 font-medium" : ""}`}
 									onClick={() => setSelected(unit)}
 								>
+									<TableCell className="w-[48px]" onClick={(e) => e.stopPropagation()}>
+										<Checkbox
+											checked={selectedIds.has(unit.id)}
+											onCheckedChange={(checked) => toggleSelectUnit(unit.id, checked === true)}
+											aria-label={`Select ${unit.name}`}
+											data-testid={`bu-select-checkbox-${unit.id}`}
+											onClick={(e) => e.stopPropagation()}
+										/>
+									</TableCell>
 									<TableCell className="font-medium">{unit.name}</TableCell>
+									<TableCell>
+										{unit.customer_id ? (
+											<span className="text-sm">{customerNameById.get(unit.customer_id) || "-"}</span>
+										) : (
+											<span className="text-muted-foreground text-sm">-</span>
+										)}
+									</TableCell>
 									<TableCell>
 										<LimitMeter used={unit.budget?.current_usage} max={unit.budget?.max_limit} reset={unit.budget?.reset_duration} money />
 									</TableCell>
@@ -354,6 +575,7 @@ export function BusinessUnitsView() {
 											used={unit.rate_limit?.token_current_usage}
 											max={unit.rate_limit?.token_max_limit}
 											reset={unit.rate_limit?.token_reset_duration}
+											unitLabel="tokens"
 										/>
 									</TableCell>
 									<TableCell>
@@ -361,16 +583,21 @@ export function BusinessUnitsView() {
 											used={unit.rate_limit?.request_current_usage}
 											max={unit.rate_limit?.request_max_limit}
 											reset={unit.rate_limit?.request_reset_duration}
+											unitLabel="req"
 										/>
 									</TableCell>
 									<TableCell>
-										{(unit.team_ids || []).length === 0 ? (
-											<span className="text-muted-foreground text-sm">-</span>
-										) : (unit.team_ids || []).length === 1 ? (
-											<span className="text-sm">{teamLabel(unit.team_ids![0])}</span>
-										) : (
-											<span className="text-sm">{(unit.team_ids || []).length}</span>
-										)}
+										{(() => {
+											const ids = unit.team_ids || [];
+											const count = Math.max(ids.length, unit.team_count || 0);
+											if (count === 0) return <span className="text-muted-foreground text-sm">-</span>;
+											if (count === 1) {
+												const onlyId = ids[0];
+												const onlyName = onlyId ? teamById.get(onlyId)?.name : undefined;
+												return <span className="text-sm">{onlyName || "1"}</span>;
+											}
+											return <span className="text-sm">{count}</span>;
+										})()}
 									</TableCell>
 									<TableCell className="text-right">
 										<div className="flex items-center justify-end gap-1">
@@ -468,7 +695,7 @@ export function BusinessUnitsView() {
 			</div>
 
 			<Dialog open={open} onOpenChange={setOpen}>
-				<DialogContent className="max-h-[90vh] overflow-y-auto">
+				<DialogContent className="max-h-[90vh] overflow-visible">
 					<DialogHeader>
 						<DialogTitle>Create business unit</DialogTitle>
 					</DialogHeader>
@@ -477,6 +704,7 @@ export function BusinessUnitsView() {
 							<Label>Name</Label>
 							<Input value={name} onChange={(e) => setName(e.target.value)} />
 						</div>
+						<CustomerSelect value={createCustomerId} onChange={setCreateCustomerId} customers={customers} />
 						<NumberAndSelect
 							id="bu-budget"
 							label="Maximum Spend (USD)"
@@ -507,25 +735,7 @@ export function BusinessUnitsView() {
 							options={resetDurationOptions}
 							placeholder="No limit"
 						/>
-						<div className="space-y-1">
-							<Label>Teams</Label>
-							<div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
-								{teams.length === 0 ? (
-									<p className="text-muted-foreground text-xs">No teams yet.</p>
-								) : (
-									teams.map((team) => (
-										<label key={team.id} className="flex items-center gap-2 text-sm">
-											<input
-												type="checkbox"
-												checked={createTeamIds.includes(team.id)}
-												onChange={() => toggleTeam(createTeamIds, team.id, setCreateTeamIds)}
-											/>
-											<span>{teamLabel(team.id, team.name)}</span>
-										</label>
-									))
-								)}
-							</div>
-						</div>
+						<TeamPicker teams={teams} selected={createTeamIds} onChange={setCreateTeamIds} labelFor={teamLabel} />
 						<p className="text-muted-foreground text-xs">Leave a limit blank for no limit. Checked teams share this unit budget.</p>
 					</div>
 					<DialogFooter>
@@ -540,7 +750,7 @@ export function BusinessUnitsView() {
 			</Dialog>
 
 			<Dialog open={!!unitToEdit} onOpenChange={(isOpen) => !isOpen && setUnitToEdit(null)}>
-				<DialogContent className="max-h-[90vh] overflow-y-auto">
+				<DialogContent className="max-h-[90vh] overflow-visible">
 					<DialogHeader>
 						<DialogTitle>Edit business unit</DialogTitle>
 					</DialogHeader>
@@ -559,6 +769,7 @@ export function BusinessUnitsView() {
 								}}
 							/>
 						</div>
+						<CustomerSelect value={editCustomerId} onChange={setEditCustomerId} customers={customers} />
 						<NumberAndSelect
 							id="bu-edit-budget"
 							label="Maximum Spend (USD)"
@@ -589,25 +800,7 @@ export function BusinessUnitsView() {
 							options={resetDurationOptions}
 							placeholder="No limit"
 						/>
-						<div className="space-y-1">
-							<Label>Teams</Label>
-							<div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
-								{teams.length === 0 ? (
-									<p className="text-muted-foreground text-xs">No teams yet.</p>
-								) : (
-									teams.map((team) => (
-										<label key={team.id} className="flex items-center gap-2 text-sm">
-											<input
-												type="checkbox"
-												checked={editTeamIds.includes(team.id)}
-												onChange={() => toggleTeam(editTeamIds, team.id, setEditTeamIds)}
-											/>
-											<span>{teamLabel(team.id, team.name)}</span>
-										</label>
-									))
-								)}
-							</div>
-						</div>
+						<TeamPicker teams={teams} selected={editTeamIds} onChange={setEditTeamIds} labelFor={teamLabel} />
 						<p className="text-muted-foreground text-xs">Clear a limit to remove it. Checked teams stay on this unit.</p>
 					</div>
 					<DialogFooter>
@@ -642,6 +835,7 @@ export function BusinessUnitsView() {
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
-		</div>
+			</div>
+		</TooltipProvider>
 	);
 }

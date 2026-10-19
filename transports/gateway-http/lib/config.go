@@ -975,9 +975,9 @@ func LoadConfig(ctx context.Context, configDirPath string) (*Config, error) {
 }
 
 // applyEnvDBTypeOverride lets operators switch engines with DB_TYPE in .env
-// without editing configs/config.json (postgres ↔ mysql/mariadb).
+// without editing configs/config.json (postgres ↔ mysql/mariadb ↔ sqlite).
 // Connection fields still come from env.DB_HOST / DB_USER / … as today.
-func applyEnvDBTypeOverride(configData *ConfigData) {
+func applyEnvDBTypeOverride(configData *ConfigData, configDBPath, logsDBPath string) {
 	if configData == nil {
 		return
 	}
@@ -1002,11 +1002,25 @@ func applyEnvDBTypeOverride(configData *ConfigData) {
 			logger.Info("DB_TYPE=%s → config_store.type override %q → %q", raw, configData.ConfigStoreConfig.Type, storeType)
 			configData.ConfigStoreConfig.Type = storeType
 		}
+		if storeType == configstore.ConfigStoreTypeSQLite {
+			if _, ok := configData.ConfigStoreConfig.Config.(*configstore.SQLiteConfig); !ok {
+				configData.ConfigStoreConfig.Config = &configstore.SQLiteConfig{
+					Path: configDBPath,
+				}
+			}
+		}
 	}
 	if configData.LogsStoreConfig != nil && configData.LogsStoreConfig.Enabled {
 		if configData.LogsStoreConfig.Type != logType {
 			logger.Info("DB_TYPE=%s → logs_store.type override %q → %q", raw, configData.LogsStoreConfig.Type, logType)
 			configData.LogsStoreConfig.Type = logType
+		}
+		if logType == logstore.LogStoreTypeSQLite {
+			if _, ok := configData.LogsStoreConfig.Config.(*logstore.SQLiteConfig); !ok {
+				configData.LogsStoreConfig.Config = &logstore.SQLiteConfig{
+					Path: logsDBPath,
+				}
+			}
 		}
 	}
 }
@@ -1014,7 +1028,7 @@ func applyEnvDBTypeOverride(configData *ConfigData) {
 // initStores initializes config, logs, and vector stores.
 // When config data sections are absent (nil), creates default SQLite stores for persistence.
 func initStores(ctx context.Context, config *Config, configData *ConfigData, configDBPath, logsDBPath string) error {
-	applyEnvDBTypeOverride(configData)
+	applyEnvDBTypeOverride(configData, configDBPath, logsDBPath)
 
 	var err error
 	// Initialize config store

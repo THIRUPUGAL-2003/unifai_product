@@ -1,5 +1,6 @@
 import { ScrollArea } from "@/components/ui/scrollArea";
 import { MessagesView } from "../components/messagesView/rootMessageView";
+import { FileStudioPanel } from "./fileStudioPanel";
 import { NewMessageInputView } from "../components/newMessageInputView";
 import { UploadCloud } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -71,6 +72,7 @@ export function PlaygroundPanel() {
 					</div>
 				</div>
 			)}
+			<FileStudioPanel />
 			<ScrollArea className="flex-1 scroll-mb-12 overflow-y-auto" viewportClassName="no-table">
 				<MessagesView />
 			</ScrollArea>

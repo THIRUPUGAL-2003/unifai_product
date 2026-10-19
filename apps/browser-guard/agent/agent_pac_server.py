@@ -28,9 +28,13 @@ def html_escape(s: str) -> str:
 
 class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
     def _cors(self) -> None:
+        # Chrome treats an https AI site calling 127.0.0.1 as a private-network
+        # request. Without this opt-in the extension's /extension/check never
+        # reaches the EXE, and the prompt is allowed through.
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def _json(self, code: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")

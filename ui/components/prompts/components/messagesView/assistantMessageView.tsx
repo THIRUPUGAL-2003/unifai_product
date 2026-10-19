@@ -1,7 +1,13 @@
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Message, SerializedMessage } from "@/lib/message";
-import { InfoIcon, PencilIcon, XIcon, FileDown, FileText, FileSpreadsheet, Code2, FolderArchive, Sparkles } from "lucide-react";
+import { InfoIcon, PencilIcon, XIcon, FileDown, FileText, FileSpreadsheet, Code2, FolderArchive, Sparkles, ChevronDown } from "lucide-react";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdownMenu";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import MessageRoleSwitcher from "./messageRoleSwitcher";
 import { isJson } from "@/lib/utils/validation";
@@ -14,6 +20,7 @@ import {
 	exportCodeFile,
 	exportAllCodeFilesZip,
 } from "../../utils/generateFiles";
+import { lastFile } from "../../utils/fileStudio";
 
 const LazyMarkdown = lazy(() => import("@/components/ui/markdown").then((m) => ({ default: m.Markdown })));
 const Markdown = (props: ComponentProps<typeof LazyMarkdown>) => (
@@ -209,92 +216,63 @@ export function AssistantMessageView({
 
 				{!isEmpty && !isStreaming && !editMode && generatable && (generatable.canPdf || generatable.canExcel || generatable.canCode) && (
 					<div className="mt-2.5 pt-2 border-t border-border/40 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground select-none">
-						<span className="text-[11px] font-medium text-muted-foreground/80 flex items-center gap-1 mr-1">
-							<FileDown className="size-3.5 text-primary" /> Generate & Export:
-						</span>
-
-						{generatable.canPdf && (
-							<button
-								type="button"
-								onClick={() => exportToPdf(content)}
-								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
-								title="Compile and download formatted PDF document"
-							>
-								<FileText className="size-3 text-rose-500" />
-								PDF
-							</button>
-						)}
-
-						{generatable.canDocx && (
-							<button
-								type="button"
-								onClick={() => exportToWordDocx(content)}
-								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
-								title="Compile and download Microsoft Word document (.docx)"
-							>
-								<FileText className="size-3 text-blue-500" />
-								Word (.docx)
-							</button>
-						)}
-
-						{generatable.canExcel && (
-							<button
-								type="button"
-								onClick={() => exportToExcel(content)}
-								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
-								title="Compile and download genuine Microsoft Excel spreadsheet (.xlsx)"
-							>
-								<FileSpreadsheet className="size-3 text-emerald-500" />
-								Excel (.xlsx)
-							</button>
-						)}
-
-						{generatable.canCode && generatable.codeBlocks.length === 1 && (
-							<button
-								type="button"
-								onClick={() => exportCodeFile(generatable.codeBlocks[0])}
-								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
-								title={`Download ${generatable.codeBlocks[0].filename}`}
-							>
-								<Code2 className="size-3 text-amber-500" />
-								{generatable.codeBlocks[0].filename}
-							</button>
-						)}
-
-						{generatable.canCode && generatable.codeBlocks.length > 1 && (
-							<>
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
 								<button
 									type="button"
-									onClick={() => exportAllCodeFilesZip(generatable.codeBlocks)}
-									className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
-									title="Bundle all code files into a Project ZIP"
+									className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-muted/70 hover:bg-muted hover:text-foreground text-[11px] font-medium border border-border/50 transition-colors cursor-pointer"
 								>
-									<FolderArchive className="size-3 text-amber-500" />
-									Project ZIP ({generatable.codeBlocks.length} files)
+									<FileDown className="size-3.5 text-primary" />
+									Download
+									<ChevronDown className="size-3 opacity-70" />
 								</button>
-								{generatable.codeBlocks.map((b, idx) => (
-									<button
-										key={idx}
-										type="button"
-										onClick={() => exportCodeFile(b)}
-										className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm bg-muted/40 hover:bg-muted text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-										title={`Download ${b.filename}`}
-									>
-										<Code2 className="size-2.5 text-amber-500/80" />
-										{b.filename}
-									</button>
-								))}
-							</>
-						)}
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="start" side="bottom" className="min-w-[180px]">
+								{generatable.canPdf && (
+									<DropdownMenuItem onSelect={() => exportToPdf(content)} className="gap-2 text-xs cursor-pointer">
+										<FileText className="size-3.5 text-rose-500" />
+										PDF
+									</DropdownMenuItem>
+								)}
+								{generatable.canDocx && (
+									<DropdownMenuItem onSelect={() => exportToWordDocx(content)} className="gap-2 text-xs cursor-pointer">
+										<FileText className="size-3.5 text-blue-500" />
+										Word (.docx)
+									</DropdownMenuItem>
+								)}
+								{generatable.canExcel && (
+									<DropdownMenuItem onSelect={() => exportToExcel(content)} className="gap-2 text-xs cursor-pointer">
+										<FileSpreadsheet className="size-3.5 text-emerald-500" />
+										Excel (.xlsx)
+									</DropdownMenuItem>
+								)}
+								{generatable.canCode && generatable.codeBlocks.length > 1 && (
+									<DropdownMenuItem onSelect={() => exportAllCodeFilesZip(generatable.codeBlocks)} className="gap-2 text-xs cursor-pointer">
+										<FolderArchive className="size-3.5 text-amber-500" />
+										Project ZIP ({generatable.codeBlocks.length} files)
+									</DropdownMenuItem>
+								)}
+								{generatable.canCode &&
+									generatable.codeBlocks.map((b, idx) => (
+										<DropdownMenuItem key={idx} onSelect={() => exportCodeFile(b)} className="gap-2 text-xs cursor-pointer">
+											<Code2 className="size-3.5 text-amber-500" />
+											{b.filename}
+										</DropdownMenuItem>
+									))}
+							</DropdownMenuContent>
+						</DropdownMenu>
 
 						<button
 							type="button"
 							onClick={() => {
-								const target = generatable.canExcel
-									? "Excel table"
+								const prevFile = lastFile();
+								const target = prevFile
+									? `${prevFile.kind} file`
 									: generatable.canCode
-									? "code"
-									: "document";
+										? "code"
+										: generatable.tablesCount
+											? "Excel table"
+											: "document";
 								window.dispatchEvent(
 									new CustomEvent("prompt-repo:set-input", {
 										detail: `Please alter and update the generated ${target} with the following changes: `,

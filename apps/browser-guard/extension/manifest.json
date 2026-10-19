@@ -58,6 +58,7 @@
       ],
       "js": [
         "endpoint.js",
+        "guard_base.js",
         "content.js"
       ],
       "run_at": "document_start",

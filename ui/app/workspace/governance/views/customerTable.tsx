@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdownMenu";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -23,11 +24,13 @@ import { Customer, Team, VirtualKey } from "@/lib/types/governance";
 import { cn } from "@/lib/utils";
 import { describeCustomerVirtualKey, formatCurrency, virtualKeysForCustomer } from "@/lib/utils/governance";
 import { CustomerDetailSheet } from "@enterprise/components/user-groups/sheets/customerDetailSheet";
+import { useGetBusinessUnitsQuery } from "@enterprise/lib/store/apis/businessUnitsApi";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Link } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Edit, MoreHorizontal, Plus, ScrollText, Search, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
 import { CustomersEmptyState } from "./customersEmptyState";
 import CustomerSheet from "./customerSheet";
 
@@ -37,6 +40,32 @@ const formatResetDuration = (duration: string) => {
 };
 
 const ACTIONS_COLUMN_CLASS = `sticky right-0 z-10 w-[56px] min-w-[56px] text-right ${PIN_SHADOW_RIGHT}`;
+
+function CustomerBusinessUnits({ units }: { units: { id: string; name: string }[] }) {
+	const [open, setOpen] = useState(false);
+	if (units.length === 0) return <span className="text-muted-foreground text-sm">-</span>;
+	if (units.length === 1) return <span className="text-sm">{units[0].name}</span>;
+	return (
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger asChild>
+				<button
+					type="button"
+					className="text-sm font-medium underline-offset-2 hover:underline"
+					onClick={(e) => e.stopPropagation()}
+				>
+					{units.length}
+				</button>
+			</PopoverTrigger>
+			<PopoverContent className="w-56 p-2" align="start" onClick={(e) => e.stopPropagation()}>
+				<ul className="space-y-1 text-sm">
+					{units.map((unit) => (
+						<li key={unit.id}>{unit.name}</li>
+					))}
+				</ul>
+			</PopoverContent>
+		</Popover>
+	);
+}
 
 interface CustomerActionsMenuProps {
 	customer: Customer;
@@ -148,15 +177,112 @@ export default function CustomersTable({
 	const [confirmDeleteCustomer, setConfirmDeleteCustomer] = useState<Customer | null>(null);
 	const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
 
+	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+	const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+	const visibleIds = useMemo(() => customers.map((c) => c.id), [customers]);
+	const selectedVisibleIds = useMemo(() => visibleIds.filter((id) => selectedIds.has(id)), [selectedIds, visibleIds]);
+	const selectedCount = selectedIds.size;
+	const allVisibleSelected = visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
+	const someVisibleSelected = selectedVisibleIds.length > 0 && selectedVisibleIds.length < visibleIds.length;
+
+	const toggleSelectAllVisible = (checked: boolean) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			for (const id of visibleIds) {
+				if (checked) {
+					next.add(id);
+				} else {
+					next.delete(id);
+				}
+			}
+			return next;
+		});
+	};
+
+	const toggleSelectCustomer = (customerId: string, checked: boolean) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			if (checked) {
+				next.add(customerId);
+			} else {
+				next.delete(customerId);
+			}
+			return next;
+		});
+	};
+
 	const hasCreateAccess = useRbac(RbacResource.Customers, RbacOperation.Create);
 	const hasUpdateAccess = useRbac(RbacResource.Customers, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.Customers, RbacOperation.Delete);
 
 	const [deleteCustomer, { isLoading: isDeleting }] = useDeleteCustomerMutation();
+	const { data: businessUnitData } = useGetBusinessUnitsQuery();
+	const businessUnitsByCustomer = useMemo(() => {
+		const grouped = new Map<string, { id: string; name: string }[]>();
+		for (const unit of businessUnitData?.business_units || []) {
+			if (!unit.customer_id) continue;
+			const list = grouped.get(unit.customer_id) || [];
+			list.push({ id: unit.id, name: unit.name });
+			grouped.set(unit.customer_id, list);
+		}
+		return grouped;
+	}, [businessUnitData]);
+	const teamsByCustomer = useMemo(() => {
+		const teamById = new Map(teams.map((team) => [team.id, team]));
+		const grouped = new Map<string, Team[]>();
+		const add = (customerId: string, team: Team) => {
+			const list = grouped.get(customerId) || [];
+			if (!list.some((item) => item.id === team.id)) list.push(team);
+			grouped.set(customerId, list);
+		};
+		for (const team of teams) {
+			if (team.customer_id) add(team.customer_id, team);
+		}
+		for (const unit of businessUnitData?.business_units || []) {
+			if (!unit.customer_id) continue;
+			for (const teamId of unit.team_ids || []) {
+				const team = teamById.get(teamId);
+				if (team) add(unit.customer_id, team);
+			}
+		}
+		return grouped;
+	}, [teams, businessUnitData]);
+
+	const handleBulkDelete = async () => {
+		if (selectedCount === 0) return;
+		setIsBulkDeleting(true);
+		let successCount = 0;
+		let failCount = 0;
+		const ids = Array.from(selectedIds);
+		for (const id of ids) {
+			try {
+				await deleteCustomer(id).unwrap();
+				successCount++;
+			} catch {
+				failCount++;
+			}
+		}
+		setIsBulkDeleting(false);
+		setShowBulkDeleteDialog(false);
+		setSelectedIds(new Set());
+		if (successCount > 0) {
+			toast.success(`Successfully deleted ${successCount} customer${successCount > 1 ? "s" : ""}`);
+		}
+		if (failCount > 0) {
+			toast.error(`Failed to delete ${failCount} customer${failCount > 1 ? "s" : ""}`);
+		}
+	};
 
 	const handleDelete = async (customerId: string) => {
 		try {
 			await deleteCustomer(customerId).unwrap();
+			setSelectedIds((prev) => {
+				const next = new Set(prev);
+				next.delete(customerId);
+				return next;
+			});
 			toast.success("Customer deleted successfully");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -180,9 +306,7 @@ export default function CustomersTable({
 		setEditingCustomer(null);
 	};
 
-	const getTeamsForCustomer = (customerId: string) => {
-		return teams.filter((team) => team.customer_id === customerId);
-	};
+	const getTeamsForCustomer = (customerId: string) => teamsByCustomer.get(customerId) || [];
 
 	const getVirtualKeysForCustomer = (customerId: string) =>
 		virtualKeysForCustomer(virtualKeys, customerId, getTeamsForCustomer(customerId));
@@ -230,6 +354,28 @@ export default function CustomersTable({
 					customer={viewingCustomer}
 				/>
 
+				<AlertDialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Delete Selected Customers</AlertDialogTitle>
+							<AlertDialogDescription>
+								Are you sure you want to delete {selectedCount} selected customer{selectedCount > 1 ? "s" : ""}? This will also unassign any teams and virtual keys from these customers. This action cannot be undone.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+							<AlertDialogAction
+								onClick={handleBulkDelete}
+								disabled={isBulkDeleting || selectedCount === 0}
+								className="bg-red-600 hover:bg-red-700"
+								data-testid="customers-bulk-delete-confirm-btn"
+							>
+								{isBulkDeleting ? "Deleting..." : "Delete Selected"}
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
+
 				<div className="flex grow flex-col">
 					<div className="mb-4 flex items-center justify-between">
 						<div>
@@ -238,10 +384,23 @@ export default function CustomersTable({
 								Manage customer accounts with teams, budgets, virtual keys, and related business units (via shared teams).
 							</p>
 						</div>
-						<Button data-testid="customer-button-create" onClick={handleAddCustomer} disabled={!hasCreateAccess}>
-							<Plus className="h-4 w-4" />
-							Add Customer
-						</Button>
+						<div className="flex items-center gap-2">
+							{selectedCount > 0 && (
+								<Button
+									variant="destructive"
+									data-testid="customers-bulk-delete-btn"
+									onClick={() => setShowBulkDeleteDialog(true)}
+									disabled={!hasDeleteAccess || isBulkDeleting}
+								>
+									<Trash2 className="h-4 w-4 mr-1" />
+									Delete Selected ({selectedCount})
+								</Button>
+							)}
+							<Button data-testid="customer-button-create" onClick={handleAddCustomer} disabled={!hasCreateAccess}>
+								<Plus className="h-4 w-4" />
+								Add Customer
+							</Button>
+						</div>
 					</div>
 
 					<div className="mb-4 flex items-center gap-3">
@@ -262,7 +421,16 @@ export default function CustomersTable({
 						<Table className="min-w-[1100px]">
 							<TableHeader>
 								<TableRow>
+									<TableHead className="w-[48px]">
+										<Checkbox
+											checked={allVisibleSelected || (someVisibleSelected ? "indeterminate" : false)}
+											onCheckedChange={(checked) => toggleSelectAllVisible(checked === true)}
+											aria-label="Select all customers on this page"
+											data-testid="customers-select-all-checkbox"
+										/>
+									</TableHead>
 									<TableHead>Name</TableHead>
+									<TableHead>Business Units</TableHead>
 									<TableHead>Teams</TableHead>
 									<TableHead>Budget</TableHead>
 									<TableHead>Rate Limit</TableHead>
@@ -273,7 +441,7 @@ export default function CustomersTable({
 							<TableBody>
 								{customers.length === 0 ? (
 									<TableRow>
-										<TableCell colSpan={6} className="h-24 text-center">
+										<TableCell colSpan={8} className="h-24 text-center">
 											<span className="text-muted-foreground text-sm">No matching customers found.</span>
 										</TableCell>
 									</TableRow>
@@ -326,6 +494,15 @@ export default function CustomersTable({
 													}
 												}}
 											>
+												<TableCell className="w-[48px]" onClick={(e) => e.stopPropagation()}>
+													<Checkbox
+														checked={selectedIds.has(customer.id)}
+														onCheckedChange={(checked) => toggleSelectCustomer(customer.id, checked === true)}
+														aria-label={`Select ${customer.name}`}
+														data-testid={`customer-select-checkbox-${customer.id}`}
+														onClick={(e) => e.stopPropagation()}
+													/>
+												</TableCell>
 												<TableCell className="max-w-[200px] py-4">
 													<div className="flex flex-col gap-2">
 														<span className="truncate font-medium">{customer.name}</span>
@@ -339,6 +516,9 @@ export default function CustomersTable({
 															</Badge>
 														) : null}
 													</div>
+												</TableCell>
+												<TableCell onClick={(e) => e.stopPropagation()}>
+													<CustomerBusinessUnits units={businessUnitsByCustomer.get(customer.id) || []} />
 												</TableCell>
 												<TableCell>
 													{customerTeams?.length > 0 ? (

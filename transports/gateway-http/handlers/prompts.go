@@ -26,11 +26,25 @@ type PromptCacheReloader interface {
 	Reload(ctx context.Context) error
 }
 
+// teamMoveSync refreshes in-memory governance after a team folder is dragged to a new parent.
+type teamMoveSync interface {
+	ReloadTeam(ctx context.Context, id string) (*tables.TableTeam, error)
+	ReloadBusinessUnitTeamIndex(ctx context.Context)
+}
+
 // PromptsHandler handles prompt repository endpoints
 type PromptsHandler struct {
 	store     configstore.ConfigStore
 	reloader  PromptCacheReloader // optional; nil when the prompts plugin is not loaded
 	lifecycle *PromptLifecycleManager
+	moveSync  teamMoveSync
+}
+
+// SetTeamMoveSync wires governance memory refresh after a team folder changes parent.
+func (h *PromptsHandler) SetTeamMoveSync(sync teamMoveSync) {
+	if h != nil {
+		h.moveSync = sync
+	}
 }
 
 // NewPromptsHandler creates a new PromptsHandler.
@@ -268,6 +282,118 @@ func (h *PromptsHandler) createFolder(ctx *fasthttp.RequestCtx) {
 		Name:        req.Name,
 		ParentID:    req.ParentID,
 		Description: req.Description,
+		Type:        "custom",
+	}
+
+	// Bidirectional Sync: If creating under Teams/Customers/Business Units, auto-create in Governance!
+	if req.ParentID != nil && *req.ParentID != "" {
+		parent, pErr := h.store.GetFolderByID(ctx, *req.ParentID)
+		if pErr == nil && parent != nil {
+			isTeamsRoot := parent.Type == "system_teams_root" || (parent.Name == "Teams" && (parent.ParentID == nil || *parent.ParentID == ""))
+			isCustomersRoot := parent.Type == "system_customers_root" || (parent.Name == "Customers" && (parent.ParentID == nil || *parent.ParentID == ""))
+			isBURoot := parent.Type == "system_business_units_root" || (parent.Name == "Business Units" && (parent.ParentID == nil || *parent.ParentID == ""))
+
+			if isTeamsRoot {
+				// Standalone team created under Teams/
+				teamID := uuid.NewString()
+				team := &tables.TableTeam{
+					ID:        teamID,
+					Name:      req.Name,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}
+				if err := h.store.CreateTeam(ctx, team); err == nil {
+					budget := &tables.TableBudget{
+						ID:            uuid.NewString(),
+						MaxLimit:      500,
+						ResetDuration: "1h",
+						TeamID:        &teamID,
+						LastReset:     time.Now(),
+						CreatedAt:     time.Now(),
+						UpdatedAt:     time.Now(),
+					}
+					_ = h.store.CreateBudget(ctx, budget)
+					folder.Type = "team"
+					folder.EntityID = &teamID
+				}
+			} else if parent.Type == "customer" && parent.EntityID != nil {
+				// Team created under a Customer
+				teamID := uuid.NewString()
+				team := &tables.TableTeam{
+					ID:         teamID,
+					Name:       req.Name,
+					CustomerID: parent.EntityID,
+					CreatedAt:  time.Now(),
+					UpdatedAt:  time.Now(),
+				}
+				if err := h.store.CreateTeam(ctx, team); err == nil {
+					budget := &tables.TableBudget{
+						ID:            uuid.NewString(),
+						MaxLimit:      500,
+						ResetDuration: "1h",
+						TeamID:        &teamID,
+						LastReset:     time.Now(),
+						CreatedAt:     time.Now(),
+						UpdatedAt:     time.Now(),
+					}
+					_ = h.store.CreateBudget(ctx, budget)
+					folder.Type = "team"
+					folder.EntityID = &teamID
+				}
+			} else if parent.Type == "business_unit" && parent.EntityID != nil {
+				// Team created under a Business Unit
+				teamID := uuid.NewString()
+				team := &tables.TableTeam{
+					ID:             teamID,
+					Name:           req.Name,
+					BusinessUnitID: parent.EntityID,
+					CreatedAt:      time.Now(),
+					UpdatedAt:      time.Now(),
+				}
+				if err := h.store.CreateTeam(ctx, team); err == nil {
+					budget := &tables.TableBudget{
+						ID:            uuid.NewString(),
+						MaxLimit:      500,
+						ResetDuration: "1h",
+						TeamID:        &teamID,
+						LastReset:     time.Now(),
+						CreatedAt:     time.Now(),
+						UpdatedAt:     time.Now(),
+					}
+					_ = h.store.CreateBudget(ctx, budget)
+					folder.Type = "team"
+					folder.EntityID = &teamID
+				}
+			} else if isCustomersRoot {
+				// Customer created under Customers/
+				custID := uuid.NewString()
+				customer := &tables.TableCustomer{
+					ID:        custID,
+					Name:      req.Name,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}
+				if err := h.store.CreateCustomer(ctx, customer); err == nil {
+					folder.Type = "customer"
+					folder.EntityID = &custID
+				}
+			} else if isBURoot {
+				// Business Unit created under Business Units/
+				buID := uuid.NewString()
+				bu := &tables.TableBusinessUnit{
+					ID:        buID,
+					Name:      req.Name,
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}
+				if h.store.DB() != nil {
+					if err := h.store.DB().WithContext(ctx).Create(bu).Error; err == nil {
+						folder.Type = "business_unit"
+						folder.EntityID = &buID
+					}
+				}
+			}
+		}
 	}
 
 	if err := h.store.CreateFolder(ctx, folder); err != nil {
@@ -313,6 +439,24 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 
 	if req.Name != "" {
 		folder.Name = req.Name
+		if folder.EntityID != nil && *folder.EntityID != "" {
+			switch folder.Type {
+			case "team":
+				if team, err := h.store.GetTeam(ctx, *folder.EntityID); err == nil && team != nil {
+					team.Name = req.Name
+					_ = h.store.UpdateTeam(ctx, team)
+				}
+			case "customer":
+				if customer, err := h.store.GetCustomer(ctx, *folder.EntityID); err == nil && customer != nil {
+					customer.Name = req.Name
+					_ = h.store.UpdateCustomer(ctx, customer)
+				}
+			case "business_unit":
+				if h.store.DB() != nil {
+					_ = h.store.DB().WithContext(ctx).Model(&tables.TableBusinessUnit{}).Where("id = ?", *folder.EntityID).Update("name", req.Name).Error
+				}
+			}
+		}
 	}
 	parentChanged := false
 	var oldAudience []string
@@ -329,6 +473,22 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 			if strings.HasPrefix(folder.Type, "system_") {
 				SendError(ctx, fasthttp.StatusBadRequest, "system folders cannot be moved")
 				return
+			}
+			if folder.Type == "team" {
+				if h.lifecycle == nil || newParent == "" {
+					SendError(ctx, fasthttp.StatusBadRequest, "a team folder can only move under a customer, a business unit, or Teams")
+					return
+				}
+				if _, _, err := h.lifecycle.resolveTeamPlacement(ctx, newParent); err != nil {
+					SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+					return
+				}
+				if folder.EntityID != nil && *folder.EntityID != "" {
+					if err := h.lifecycle.teamMoveFitsCustomerBudget(ctx, *folder.EntityID, newParent); err != nil {
+						SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+						return
+					}
+				}
 			}
 			if newParent != "" {
 				if newParent == folder.ID || h.folderIsDescendant(ctx, newParent, folder.ID) {
@@ -362,6 +522,17 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 	}
 	if parentChanged && h.lifecycle != nil {
 		h.lifecycle.OnFolderMoved(ctx, folder.ID, oldAudience)
+		if folder.Type == "team" && folder.EntityID != nil && *folder.EntityID != "" && folder.ParentID != nil {
+			if err := h.lifecycle.applyTeamPlacement(ctx, *folder.EntityID, *folder.ParentID); err != nil {
+				logger.Error("failed to sync team after folder move: %v", err)
+				SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+				return
+			}
+			if h.moveSync != nil {
+				_, _ = h.moveSync.ReloadTeam(ctx, *folder.EntityID)
+				h.moveSync.ReloadBusinessUnitTeamIndex(ctx)
+			}
+		}
 	}
 
 	SendJSON(ctx, map[string]any{
@@ -452,19 +623,21 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	// Team/customer folders mirror Governance entities; archiving one while the team or
-	// customer still exists would detach its members' prompts from the live team.
+	// Team/customer folders mirror Governance entities; when deleted in Prompt Repo,
+	// delete the corresponding Governance entity as well so both stay completely in sync.
 	if folder.EntityID != nil && *folder.EntityID != "" {
 		switch folder.Type {
 		case "team":
 			if team, tErr := h.store.GetTeam(ctx, *folder.EntityID); tErr == nil && team != nil {
-				SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("This folder belongs to team %q. Delete the team under Governance → Teams instead.", team.Name))
-				return
+				_ = h.store.DeleteTeam(ctx, team.ID)
 			}
 		case "customer":
 			if customer, cErr := h.store.GetCustomer(ctx, *folder.EntityID); cErr == nil && customer != nil {
-				SendError(ctx, fasthttp.StatusBadRequest, fmt.Sprintf("This folder belongs to customer %q. Delete the customer under Governance → Customers instead.", customer.Name))
-				return
+				_ = h.store.DeleteCustomer(ctx, customer.ID)
+			}
+		case "business_unit":
+			if h.store.DB() != nil {
+				_ = h.store.DB().WithContext(ctx).Where("id = ?", *folder.EntityID).Delete(&tables.TableBusinessUnit{}).Error
 			}
 		}
 	}

@@ -77,6 +77,10 @@ func registrationIPKey(ip string) string {
 	return "reg:ip:" + strings.TrimSpace(ip)
 }
 
+func demoEmailKey(email string) string {
+	return "demo:email:" + strings.ToLower(strings.TrimSpace(email))
+}
+
 func wsNonceLockoutKey(nonce string) string {
 	return "wsnonce:" + strings.TrimSpace(nonce)
 }
@@ -258,6 +262,36 @@ func consumeRegistrationQuota(store configstore.ConfigStore, ctx *fasthttp.Reque
 	row, _ := store.GetLoginLockout(ctx, key)
 	if row != nil && row.LockedUntil != nil && now.Before(*row.LockedUntil) {
 		if row.FailedCount >= maxRegistrationsPerHour {
+			return true
+		}
+	} else {
+		row = &tables.TableLoginLockout{UsernameKey: key}
+	}
+	if row.LockedUntil == nil || !now.Before(*row.LockedUntil) {
+		until := now.Add(time.Hour)
+		row.LockedUntil = &until
+		row.FailedCount = 0
+	}
+	row.FailedCount++
+	row.LastFailedAt = &now
+	_ = store.UpsertLoginLockout(ctx, row)
+	return false
+}
+
+// consumeDemoQuota blocks excessive public demo bookings for one email address (DB-backed).
+func consumeDemoQuota(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, email string) bool {
+	if store == nil {
+		return false
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return false
+	}
+	now := time.Now()
+	key := demoEmailKey(email)
+	row, _ := store.GetLoginLockout(ctx, key)
+	if row != nil && row.LockedUntil != nil && now.Before(*row.LockedUntil) {
+		if row.FailedCount >= maxDemoRequestsPerHour {
 			return true
 		}
 	} else {

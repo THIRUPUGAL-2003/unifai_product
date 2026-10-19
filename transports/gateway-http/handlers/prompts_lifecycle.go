@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -297,6 +298,11 @@ func (m *PromptLifecycleManager) OnUserCreated(ctx context.Context, user *tables
 		m.ensureUserAllowedPrompt(ctx, user, existing.ID)
 		return nil
 	}
+	// A user created again with the same email or username gets the prompt that was
+	// moved to Removed, instead of a second prompt. A different name stays a new prompt.
+	if claimed := m.claimArchivedPromptByName(ctx, user, promptName); claimed != nil {
+		return nil
+	}
 	if !autoCreatePrompt {
 		return nil
 	}
@@ -492,6 +498,9 @@ func (m *PromptLifecycleManager) OnCustomerCreated(ctx context.Context, customer
 		logger.Error("PromptLifecycle: failed to ensure 'Customers' root folder: %v", err)
 		return err
 	}
+	if m.restoreArchivedFolder(ctx, customer.Name, "archived_customer", "customer", customersRoot.ID, customer.ID) != nil {
+		return nil
+	}
 
 	db := m.store.DB().WithContext(ctx)
 
@@ -649,6 +658,14 @@ func (m *PromptLifecycleManager) OnBusinessUnitCreated(ctx context.Context, bu *
 
 	if parentFolderID == nil {
 		return errors.New("parent folder for business unit not available")
+	}
+	if m.restoreArchivedFolder(ctx, bu.Name, "archived_business_unit", "business_unit", *parentFolderID, bu.ID) != nil {
+		for _, tid := range bu.ParsedTeamIDs {
+			if tid != "" {
+				_ = m.OnTeamAssignedToBusinessUnit(ctx, tid, bu.ID)
+			}
+		}
+		return nil
 	}
 
 	var existing tables.TableFolder
@@ -916,6 +933,9 @@ func (m *PromptLifecycleManager) OnTeamCreated(ctx context.Context, team *tables
 
 	if parentFolderID == nil {
 		return errors.New("parent folder not available")
+	}
+	if m.restoreArchivedFolder(ctx, team.Name, "archived_team", "team", *parentFolderID, team.ID) != nil {
+		return nil
 	}
 
 	// Check if team folder exists
@@ -1700,6 +1720,182 @@ func (m *PromptLifecycleManager) revokePromptFromFolderAudience(ctx context.Cont
 
 // OnFolderMoved re-syncs access for the prompts inside a folder whose parent changed:
 // oldTeams is the folder's audience before the move (folderAudienceTeams).
+// resolveTeamPlacement reads where a team folder is allowed to sit.
+// A customer parent links the team to that customer. A business-unit parent links the team to
+// that unit and to the unit's customer. The Teams root leaves the team standalone.
+func (m *PromptLifecycleManager) resolveTeamPlacement(ctx context.Context, parentFolderID string) (customerID, businessUnitID *string, err error) {
+	if m == nil || m.store == nil || m.store.DB() == nil || parentFolderID == "" {
+		return nil, nil, errors.New("a team folder can only move under a customer, a business unit, or Teams")
+	}
+	db := m.store.DB().WithContext(ctx)
+	var parent tables.TableFolder
+	if err := db.Where("id = ?", parentFolderID).First(&parent).Error; err != nil {
+		return nil, nil, errors.New("parent folder not found")
+	}
+	if strings.HasPrefix(parent.Type, "archived_") || strings.HasPrefix(parent.Type, "system_removed_") || strings.HasPrefix(parent.Name, "Removed") {
+		return nil, nil, errors.New("a team folder cannot move into Removed")
+	}
+	switch {
+	case parent.Type == "business_unit" && parent.EntityID != nil && *parent.EntityID != "":
+		var bu tables.TableBusinessUnit
+		if err := db.Where("id = ?", *parent.EntityID).First(&bu).Error; err != nil || bu.ID == "" {
+			return nil, nil, errors.New("business unit not found")
+		}
+		return bu.CustomerID, &bu.ID, nil
+	case parent.Type == "customer" && parent.EntityID != nil && *parent.EntityID != "":
+		return parent.EntityID, nil, nil
+	case parent.Type == "system_teams_root" || (parent.Name == "Teams" && (parent.ParentID == nil || *parent.ParentID == "")):
+		return nil, nil, nil
+	default:
+		return nil, nil, errors.New("a team folder can only move under a customer, a business unit, or Teams")
+	}
+}
+
+// teamMoveFitsCustomerBudget rejects a drag that would allot more than the destination customer's budget.
+func (m *PromptLifecycleManager) teamMoveFitsCustomerBudget(ctx context.Context, teamID, parentFolderID string) error {
+	customerID, _, err := m.resolveTeamPlacement(ctx, parentFolderID)
+	if err != nil {
+		return err
+	}
+	if customerID == nil || *customerID == "" || m == nil || m.store == nil || m.store.DB() == nil {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+	if !db.Migrator().HasTable(&tables.TableBudget{}) {
+		return nil
+	}
+	var customerBudgets []tables.TableBudget
+	if err := db.Where("customer_id = ?", *customerID).Find(&customerBudgets).Error; err != nil {
+		return err
+	}
+	customerLimits := map[string]float64{}
+	for _, b := range customerBudgets {
+		customerLimits[b.ResetDuration] += b.MaxLimit
+	}
+	if len(customerLimits) == 0 {
+		return nil
+	}
+	var siblings []tables.TableTeam
+	if err := db.Select("id").Where("customer_id = ? AND id <> ?", *customerID, teamID).Find(&siblings).Error; err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(siblings)+1)
+	for _, s := range siblings {
+		ids = append(ids, s.ID)
+	}
+	allotted := map[string]float64{}
+	if len(ids) > 0 {
+		var other []tables.TableBudget
+		if err := db.Where("team_id IN ?", ids).Find(&other).Error; err != nil {
+			return err
+		}
+		for _, b := range other {
+			allotted[b.ResetDuration] += b.MaxLimit
+		}
+	}
+	var mine []tables.TableBudget
+	if err := db.Where("team_id = ?", teamID).Find(&mine).Error; err != nil {
+		return err
+	}
+	teamLimits := map[string]float64{}
+	for _, b := range mine {
+		teamLimits[b.ResetDuration] += b.MaxLimit
+		allotted[b.ResetDuration] += b.MaxLimit
+	}
+	for period, customerLimit := range customerLimits {
+		total := allotted[period]
+		if total <= customerLimit+1e-9 {
+			continue
+		}
+		available := customerLimit - (total - teamLimits[period])
+		if available < 0 {
+			available = 0
+		}
+		return fmt.Errorf(
+			"team budgets under this customer would total $%.2f per %s, above the customer budget of $%.2f (available for this team: $%.2f)",
+			total, period, customerLimit, available)
+	}
+	return nil
+}
+
+// applyTeamPlacement writes the team's customer and business unit to match its new folder parent.
+func (m *PromptLifecycleManager) applyTeamPlacement(ctx context.Context, teamID, parentFolderID string) error {
+	customerID, businessUnitID, err := m.resolveTeamPlacement(ctx, parentFolderID)
+	if err != nil {
+		return err
+	}
+	if m == nil || m.store == nil || m.store.DB() == nil || teamID == "" {
+		return errors.New("team folder is not linked to a team")
+	}
+	db := m.store.DB().WithContext(ctx)
+	var team tables.TableTeam
+	if err := db.Where("id = ?", teamID).First(&team).Error; err != nil {
+		return errors.New("team not found")
+	}
+	oldCustomerID := ""
+	if team.CustomerID != nil {
+		oldCustomerID = *team.CustomerID
+	}
+	customerVal := any(gorm.Expr("NULL"))
+	if customerID != nil && *customerID != "" {
+		customerVal = *customerID
+	}
+	businessUnitVal := any(gorm.Expr("NULL"))
+	if businessUnitID != nil && *businessUnitID != "" {
+		businessUnitVal = *businessUnitID
+	}
+	if err := db.Model(&tables.TableTeam{}).Where("id = ?", teamID).Updates(map[string]any{
+		"customer_id":      customerVal,
+		"business_unit_id": businessUnitVal,
+		"updated_at":       time.Now(),
+	}).Error; err != nil {
+		return err
+	}
+
+	var units []tables.TableBusinessUnit
+	if err := db.Find(&units).Error; err != nil {
+		return err
+	}
+	target := ""
+	if businessUnitID != nil {
+		target = *businessUnitID
+	}
+	for i := range units {
+		kept := make([]string, 0, len(units[i].ParsedTeamIDs))
+		seen := false
+		for _, id := range units[i].ParsedTeamIDs {
+			if id == teamID {
+				seen = true
+				continue
+			}
+			kept = append(kept, id)
+		}
+		if units[i].ID == target {
+			kept = append(kept, teamID)
+		}
+		if !seen && units[i].ID != target {
+			continue
+		}
+		if seen && units[i].ID == target && len(kept) == len(units[i].ParsedTeamIDs) {
+			continue
+		}
+		units[i].ParsedTeamIDs = kept
+		units[i].UpdatedAt = time.Now()
+		if err := db.Save(&units[i]).Error; err != nil {
+			return err
+		}
+	}
+
+	newCustomerID := ""
+	if customerID != nil {
+		newCustomerID = *customerID
+	}
+	if oldCustomerID != newCustomerID {
+		m.resyncTeamCustomerChange(ctx, teamID, oldCustomerID)
+	}
+	return nil
+}
+
 func (m *PromptLifecycleManager) OnFolderMoved(ctx context.Context, folderID string, oldTeams []string) {
 	if m == nil || m.store == nil || m.store.DB() == nil || folderID == "" {
 		return
@@ -1794,6 +1990,97 @@ func (m *PromptLifecycleManager) promptInOtherActiveTeam(ctx context.Context, pr
 	}
 	var member tables.TableTeamMember
 	return m.store.DB().WithContext(ctx).Where("team_id = ? AND user_id = ?", teamID, userID).First(&member).Error == nil
+}
+
+const archivedFolderSuffix = " (Archived)"
+
+func folderBaseName(name string) string {
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(name), archivedFolderSuffix))
+}
+
+func sameEntityName(stored, wanted string) bool {
+	return strings.EqualFold(folderBaseName(stored), strings.TrimSpace(wanted))
+}
+
+// restoreArchivedFolder brings a Removed folder of the same name back under parentID and
+// links it to the newly created entity. A different name leaves the archived folder where it is.
+func (m *PromptLifecycleManager) restoreArchivedFolder(ctx context.Context, name, archivedType, activeType, parentID, entityID string) *tables.TableFolder {
+	if m == nil || m.store == nil || m.store.DB() == nil || strings.TrimSpace(name) == "" || parentID == "" || entityID == "" {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+	var archived []tables.TableFolder
+	if err := db.Where("type = ?", archivedType).Order("updated_at desc, created_at desc").Find(&archived).Error; err != nil {
+		return nil
+	}
+	var match *tables.TableFolder
+	for i := range archived {
+		if sameEntityName(archived[i].Name, name) {
+			match = &archived[i]
+			break
+		}
+	}
+	if match == nil {
+		return nil
+	}
+	if err := db.Model(&tables.TableFolder{}).Where("id = ?", match.ID).Updates(map[string]any{
+		"name":       strings.TrimSpace(name),
+		"parent_id":  parentID,
+		"type":       activeType,
+		"entity_id":  entityID,
+		"updated_at": time.Now(),
+	}).Error; err != nil {
+		logger.Error("PromptLifecycle: failed to restore %s folder %q: %v", activeType, name, err)
+		return nil
+	}
+	match.Name = strings.TrimSpace(name)
+	match.ParentID = &parentID
+	match.Type = activeType
+	match.EntityID = &entityID
+	return match
+}
+
+// claimArchivedPromptByName gives a newly created user the Removed prompt that still has
+// their email or username, when that prompt no longer belongs to a living user.
+func (m *PromptLifecycleManager) claimArchivedPromptByName(ctx context.Context, user *tables.TableUser, promptName string) *tables.TablePrompt {
+	if user == nil || strings.TrimSpace(promptName) == "" {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+	var prompts []tables.TablePrompt
+	if err := db.Where("LOWER(name) = ?", strings.ToLower(strings.TrimSpace(promptName))).Order("updated_at desc, created_at desc").Find(&prompts).Error; err != nil {
+		return nil
+	}
+	for i := range prompts {
+		prompt := &prompts[i]
+		if prompt.FolderID == nil || !m.folderIsArchived(ctx, *prompt.FolderID) {
+			continue
+		}
+		if prompt.OwnerUserID != nil && *prompt.OwnerUserID != "" && *prompt.OwnerUserID != user.ID {
+			if owner, err := m.store.GetUserByID(ctx, *prompt.OwnerUserID); err == nil && owner != nil {
+				continue
+			}
+		}
+		home := m.userHomeFolderID(ctx, user)
+		if home == "" {
+			return nil
+		}
+		if err := db.Model(&tables.TablePrompt{}).Where("id = ?", prompt.ID).Updates(map[string]any{
+			"folder_id":     home,
+			"owner_user_id": user.ID,
+			"name":          strings.TrimSpace(promptName),
+			"updated_at":    time.Now(),
+		}).Error; err != nil {
+			logger.Error("PromptLifecycle: failed to restore prompt %q: %v", promptName, err)
+			return nil
+		}
+		m.ensureUserAllowedPrompt(ctx, user, prompt.ID)
+		prompt.FolderID = &home
+		ownerID := user.ID
+		prompt.OwnerUserID = &ownerID
+		return prompt
+	}
+	return nil
 }
 
 // findEntityFolder returns the folder linked to an entity, preferring the entity_id link and

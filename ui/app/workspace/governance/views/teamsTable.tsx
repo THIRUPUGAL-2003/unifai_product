@@ -25,8 +25,9 @@ import { describeTeamVirtualKey, formatCurrency, virtualKeysForTeam } from "@/li
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { Link } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Edit, MoreHorizontal, Plus, ScrollText, Search, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Checkbox } from "@/components/ui/checkbox";
 import TeamSheet from "./teamSheet";
 import { TeamsEmptyState } from "./teamsEmptyState";
 
@@ -178,9 +179,75 @@ export default function TeamsTable({
 
 	const [deleteTeam, { isLoading: isDeleting }] = useDeleteTeamMutation();
 
+	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+	const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+	const visibleIds = useMemo(() => teams.map((t) => t.id), [teams]);
+	const selectedVisibleIds = useMemo(() => visibleIds.filter((id) => selectedIds.has(id)), [selectedIds, visibleIds]);
+	const selectedCount = selectedIds.size;
+	const allVisibleSelected = visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
+	const someVisibleSelected = selectedVisibleIds.length > 0 && selectedVisibleIds.length < visibleIds.length;
+
+	const toggleSelectAllVisible = (checked: boolean) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			for (const id of visibleIds) {
+				if (checked) {
+					next.add(id);
+				} else {
+					next.delete(id);
+				}
+			}
+			return next;
+		});
+	};
+
+	const toggleSelectTeam = (teamId: string, checked: boolean) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			if (checked) {
+				next.add(teamId);
+			} else {
+				next.delete(teamId);
+			}
+			return next;
+		});
+	};
+
+	const handleBulkDelete = async () => {
+		if (selectedCount === 0) return;
+		setIsBulkDeleting(true);
+		let successCount = 0;
+		let failCount = 0;
+		const ids = Array.from(selectedIds);
+		for (const id of ids) {
+			try {
+				await deleteTeam(id).unwrap();
+				successCount++;
+			} catch {
+				failCount++;
+			}
+		}
+		setIsBulkDeleting(false);
+		setShowBulkDeleteDialog(false);
+		setSelectedIds(new Set());
+		if (successCount > 0) {
+			toast.success(`Successfully deleted ${successCount} team${successCount > 1 ? "s" : ""}`);
+		}
+		if (failCount > 0) {
+			toast.error(`Failed to delete ${failCount} team${failCount > 1 ? "s" : ""}`);
+		}
+	};
+
 	const handleDelete = async (teamId: string) => {
 		try {
 			await deleteTeam(teamId).unwrap();
+			setSelectedIds((prev) => {
+				const next = new Set(prev);
+				next.delete(teamId);
+				return next;
+			});
 			toast.success("Team deleted successfully");
 		} catch (error) {
 			toast.error(getErrorMessage(error));
@@ -226,16 +293,51 @@ export default function TeamsTable({
 			<TooltipProvider>
 				{showTeamSheet && <TeamSheet team={editingTeam} customers={customers} onSave={handleTeamSaved} onCancel={onDialogClose} />}
 
+				<AlertDialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+					<AlertDialogContent>
+						<AlertDialogHeader>
+							<AlertDialogTitle>Delete Selected Teams</AlertDialogTitle>
+							<AlertDialogDescription>
+								Are you sure you want to delete {selectedCount} selected team{selectedCount > 1 ? "s" : ""}? This will also unassign any virtual keys from these teams. This action cannot be undone.
+							</AlertDialogDescription>
+						</AlertDialogHeader>
+						<AlertDialogFooter>
+							<AlertDialogCancel disabled={isBulkDeleting}>Cancel</AlertDialogCancel>
+							<AlertDialogAction
+								onClick={handleBulkDelete}
+								disabled={isBulkDeleting || selectedCount === 0}
+								className="bg-red-600 hover:bg-red-700"
+								data-testid="teams-bulk-delete-confirm-btn"
+							>
+								{isBulkDeleting ? "Deleting..." : "Delete Selected"}
+							</AlertDialogAction>
+						</AlertDialogFooter>
+					</AlertDialogContent>
+				</AlertDialog>
+
 				<div className="flex grow flex-col overflow-y-auto">
 					<div className="mb-4 flex items-center justify-between">
 						<div>
 							<h2 className="text-lg font-semibold">Teams</h2>
 							<p className="text-muted-foreground text-sm">Organize users into teams with shared budgets and access controls.</p>
 						</div>
-						<Button data-testid="create-team-btn" onClick={handleAddTeam} disabled={!hasCreateAccess}>
-							<Plus className="h-4 w-4" />
-							Add Team
-						</Button>
+						<div className="flex items-center gap-2">
+							{selectedCount > 0 && (
+								<Button
+									variant="destructive"
+									data-testid="teams-bulk-delete-btn"
+									onClick={() => setShowBulkDeleteDialog(true)}
+									disabled={!hasDeleteAccess || isBulkDeleting}
+								>
+									<Trash2 className="h-4 w-4 mr-1" />
+									Delete Selected ({selectedCount})
+								</Button>
+							)}
+							<Button data-testid="create-team-btn" onClick={handleAddTeam} disabled={!hasCreateAccess}>
+								<Plus className="h-4 w-4" />
+								Add Team
+							</Button>
+						</div>
 					</div>
 
 					<div className="mb-4 flex items-center gap-3">
@@ -256,6 +358,14 @@ export default function TeamsTable({
 						<Table className="min-w-[1100px]" containerClassName="h-full">
 							<TableHeader className="bg-background sticky top-0">
 								<TableRow>
+									<TableHead className="w-[48px]">
+										<Checkbox
+											checked={allVisibleSelected || (someVisibleSelected ? "indeterminate" : false)}
+											onCheckedChange={(checked) => toggleSelectAllVisible(checked === true)}
+											aria-label="Select all teams on this page"
+											data-testid="teams-select-all-checkbox"
+										/>
+									</TableHead>
 									<TableHead>Name</TableHead>
 									<TableHead>Customer</TableHead>
 									<TableHead>Budget</TableHead>
@@ -267,7 +377,7 @@ export default function TeamsTable({
 							<TableBody>
 								{teams.length === 0 ? (
 									<TableRow>
-										<TableCell colSpan={6} className="h-24 text-center">
+										<TableCell colSpan={7} className="h-24 text-center">
 											<span className="text-muted-foreground text-sm">No matching teams found.</span>
 										</TableCell>
 									</TableRow>
@@ -310,6 +420,14 @@ export default function TeamsTable({
 													isExhausted && "bg-red-500/10 border-l-4 border-l-red-500 hover:bg-red-500/15 dark:bg-red-950/20",
 												)}
 											>
+												<TableCell className="w-[48px]">
+													<Checkbox
+														checked={selectedIds.has(team.id)}
+														onCheckedChange={(checked) => toggleSelectTeam(team.id, checked === true)}
+														aria-label={`Select ${team.name}`}
+														data-testid={`team-select-checkbox-${team.id}`}
+													/>
+												</TableCell>
 												<TableCell className="max-w-[200px] py-4">
 													<div className="flex flex-col gap-2">
 														<span className="truncate font-medium">{team.name}</span>

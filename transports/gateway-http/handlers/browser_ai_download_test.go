@@ -54,7 +54,7 @@ func TestBuildNowWindowsPackageUsesFreshConfig(t *testing.T) {
 		rc.Close()
 		files[f.Name] = string(b)
 	}
-	for _, name := range []string{"Gateway_Guard_Setup.exe", "Gateway_Guard.exe", "VERSION.txt", guardConfigFileName} {
+	for _, name := range []string{"YP_Raksha_Setup.exe", "YP_Raksha.exe", "VERSION.txt", guardConfigFileName} {
 		if _, ok := files[name]; !ok {
 			t.Fatalf("missing %s in %v", name, files)
 		}

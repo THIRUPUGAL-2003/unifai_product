@@ -118,7 +118,12 @@ func publicAPIOrigin(ctx *fasthttp.RequestCtx) string {
 }
 
 // notifyAdminsPendingRegistration emails admins/sub-admins Accept/Deny links and a Governance deep link.
+// Disabled by default: Admin does not receive Accept/Deny emails for new registrations.
+// Admins review and manage pending accounts directly in Governance -> Users.
 func (h *SessionHandler) notifyAdminsPendingRegistration(ctx *fasthttp.RequestCtx, user *tables.TableUser) {
+	if strings.ToLower(strings.TrimSpace(os.Getenv("ENABLE_ADMIN_REGISTRATION_EMAIL"))) != "true" {
+		return
+	}
 	if h == nil || h.configStore == nil || user == nil || user.Status != tables.UserStatusPending {
 		return
 	}
@@ -230,6 +235,7 @@ func (h *SessionHandler) reviewRegistrationByToken(ctx *fasthttp.RequestCtx) {
 			h.writeReviewHTML(ctx, fasthttp.StatusInternalServerError, "Failed", "Could not approve this registration. Try again from Governance → Users.")
 			return
 		}
+		h.assignRequestedTeam(ctx, user)
 		if h.promptLifecycle != nil {
 			_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
 		}

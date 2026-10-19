@@ -1,4 +1,6 @@
 import { toast } from "sonner";
+import { COMPANY_LOGO, PRODUCT_NAME } from "@/lib/constants/config";
+import { loadLogoAsset, type LogoAsset } from "@/lib/utils/tableExport";
 
 export interface CodeBlockInfo {
 	language: string;
@@ -212,13 +214,184 @@ export function detectGeneratableFiles(content: string) {
 	const hasText = content.trim().length > 10;
 
 	return {
-		canExcel: tables.length > 0 || content.includes("|") || content.includes("```csv") || content.includes("```json"),
+		canExcel: hasText,
 		canPdf: hasText,
 		canDocx: hasText,
 		canCode: codeBlocks.length > 0,
 		codeBlocks,
 		tablesCount: tables.length,
 	};
+}
+
+const LOGO_SRC = COMPANY_LOGO || "/yes-panchi-logo.png";
+
+function logoDrawSize(logo: LogoAsset, maxW: number, maxH: number): { w: number; h: number } {
+	const aspect = (logo.width || 1) / (logo.height || 1);
+	let w = maxW;
+	let h = w / aspect;
+	if (h > maxH) {
+		h = maxH;
+		w = h * aspect;
+	}
+	return { w, h };
+}
+
+function plain(text: string): string {
+	return text
+		.replace(/\*\*(.*?)\*\*/g, "$1")
+		.replace(/__(.*?)__/g, "$1")
+		.replace(/(^|\s)\*(.*?)\*(?=\s|$)/g, "$1$2")
+		.replace(/`([^`]+)`/g, "$1");
+}
+
+function parseCsv(text: string): string[][] | null {
+	const lines = text
+		.split("\n")
+		.map((line) => line.trim())
+		.filter(Boolean);
+	if (lines.length < 2 || !lines.every((line) => line.includes(","))) return null;
+	return lines.map((line) => line.split(",").map((cell) => plain(cell.trim())));
+}
+
+/** Walk markdown into blocks so exports keep every line instead of clipping a paragraph. */
+function markdownBlocks(content: string): Array<{ kind: string; text: string; rows?: string[][] }> {
+	const lines = content.replace(/\r\n/g, "\n").split("\n");
+	const blocks: Array<{ kind: string; text: string; rows?: string[][] }> = [];
+	let i = 0;
+	while (i < lines.length) {
+		const line = lines[i];
+		const trimmed = line.trim();
+		if (!trimmed) {
+			i++;
+			continue;
+		}
+		if (trimmed.startsWith("```")) {
+			const code: string[] = [];
+			i++;
+			while (i < lines.length && !lines[i].trim().startsWith("```")) {
+				code.push(lines[i]);
+				i++;
+			}
+			if (i < lines.length) i++;
+			blocks.push({ kind: "code", text: code.join("\n") });
+			continue;
+		}
+		if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+			const tableLines: string[] = [];
+			while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+				tableLines.push(lines[i].trim());
+				i++;
+			}
+			const rows = tableLines
+				.filter((l) => !/^\|[\s-:|]+\|$/.test(l))
+				.map((l) => l.slice(1, -1).split("|").map((c) => plain(c.trim())));
+			blocks.push({ kind: "table", text: "", rows });
+			continue;
+		}
+		if (/^#{1,3}\s+/.test(trimmed)) {
+			const level = trimmed.match(/^#+/)?.[0].length || 1;
+			blocks.push({ kind: `h${level}`, text: plain(trimmed.replace(/^#+\s*/, "")) });
+			i++;
+			continue;
+		}
+		if (/^[-*]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
+			const ordered = /^\d+\.\s+/.test(trimmed);
+			const items: string[] = [];
+			while (i < lines.length) {
+				const t = lines[i].trim();
+				if (ordered ? /^\d+\.\s+/.test(t) : /^[-*]\s+/.test(t)) {
+					items.push(t.replace(/^[-*]\s+/, "").replace(/^\d+\.\s+/, ""));
+					i++;
+				} else break;
+			}
+			blocks.push({ kind: ordered ? "ol" : "ul", text: items.map(plain).join("\n") });
+			continue;
+		}
+		const para: string[] = [trimmed];
+		i++;
+		while (i < lines.length) {
+			const t = lines[i].trim();
+			if (!t || t.startsWith("```") || t.startsWith("|") || /^#{1,3}\s+/.test(t) || /^[-*]\s+/.test(t) || /^\d+\.\s+/.test(t)) break;
+			para.push(t);
+			i++;
+		}
+		blocks.push({ kind: "p", text: para.map(plain).join("\n") });
+	}
+	return blocks;
+}
+
+async function embedExcelLogo(xlsxData: ArrayBuffer, logo: LogoAsset): Promise<ArrayBuffer> {
+	const JSZipMod = await import("jszip");
+	const JSZip = JSZipMod.default ?? JSZipMod;
+	const zip = await JSZip.loadAsync(xlsxData);
+	const png = logo.dataUrl.split(",")[1] || "";
+	if (!png) return xlsxData;
+	zip.file("xl/media/logo.png", png, { base64: true });
+	const { w, h } = logoDrawSize(logo, 180, 48);
+	const cx = Math.round(w * 9525);
+	const cy = Math.round(h * 9525);
+	zip.file(
+		"xl/drawings/drawing1.xml",
+		`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <xdr:oneCellAnchor>
+    <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    <xdr:ext cx="${cx}" cy="${cy}"/>
+    <xdr:pic>
+      <xdr:nvPicPr><xdr:cNvPr id="2" name="Logo"/><xdr:cNvPicPr/></xdr:nvPicPr>
+      <xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
+      <xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>
+    </xdr:pic>
+    <xdr:clientData/>
+  </xdr:oneCellAnchor>
+</xdr:wsDr>`,
+	);
+	zip.file(
+		"xl/drawings/_rels/drawing1.xml.rels",
+		`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/logo.png"/>
+</Relationships>`,
+	);
+	const typesPath = "[Content_Types].xml";
+	let types = await zip.file(typesPath)?.async("string");
+	if (types) {
+		if (!types.includes('Extension="png"')) {
+			types = types.replace("</Types>", `<Default Extension="png" ContentType="image/png"/></Types>`);
+		}
+		if (!types.includes("/xl/drawings/drawing1.xml")) {
+			types = types.replace(
+				"</Types>",
+				`<Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>`,
+			);
+		}
+		zip.file(typesPath, types);
+	}
+	const sheetPath = "xl/worksheets/sheet1.xml";
+	let sheet = await zip.file(sheetPath)?.async("string");
+	if (sheet && !sheet.includes("<drawing ")) {
+		if (!sheet.includes("xmlns:r=")) {
+			sheet = sheet.replace("<worksheet ", `<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" `);
+		}
+		sheet = sheet.replace("</worksheet>", `<drawing r:id="rIdLogo"/></worksheet>`);
+		zip.file(sheetPath, sheet);
+	}
+	const relPath = "xl/worksheets/_rels/sheet1.xml.rels";
+	let rels = await zip.file(relPath)?.async("string");
+	const drawingRel = `<Relationship Id="rIdLogo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>`;
+	if (rels) {
+		if (!rels.includes("drawing1.xml")) {
+			rels = rels.replace("</Relationships>", `${drawingRel}</Relationships>`);
+			zip.file(relPath, rels);
+		}
+	} else {
+		zip.file(
+			relPath,
+			`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${drawingRel}</Relationships>`,
+		);
+	}
+	return await zip.generateAsync({ type: "arraybuffer" });
 }
 
 /** Export assistant content / data to a genuine Excel (.xlsx) file */
@@ -230,52 +403,74 @@ export async function exportToExcel(content: string, customTitle?: string): Prom
 		const XLSX = XLSXmod.default ?? XLSXmod;
 
 		const wb = XLSX.utils.book_new();
-		const tables = parseMarkdownTables(content);
-
-		if (tables.length > 0) {
-			tables.forEach((table, idx) => {
-				const sheetData = [table.headers, ...table.rows];
-				const ws = XLSX.utils.aoa_to_sheet(sheetData);
-				const sheetName = sanitizeFileName(table.title || `Sheet${idx + 1}`, `Sheet${idx + 1}`).slice(0, 31);
-				XLSX.utils.book_append_sheet(wb, ws, sheetName);
-			});
-		} else {
-			// If JSON is present
-			let jsonParsed = false;
-			const jsonMatch = content.match(/```json\s*\n([\s\S]*?)```/);
-			if (jsonMatch) {
+		const docTitle = customTitle || extractDocumentTitle(content);
+		const logo = await loadLogoAsset(LOGO_SRC);
+		const csvRows = parseCsv(content);
+		if (csvRows) {
+			const ws = XLSX.utils.aoa_to_sheet(csvRows);
+			ws["!cols"] = csvRows[0].map(() => ({ wch: 28 }));
+			XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+			const filename = `${sanitizeFileName(docTitle, "spreadsheet")}.xlsx`;
+			let out = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+			if (logo) {
 				try {
-					const parsed = JSON.parse(jsonMatch[1]);
-					if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "object") {
-						const ws = XLSX.utils.json_to_sheet(parsed);
-						XLSX.utils.book_append_sheet(wb, ws, "Data");
-						jsonParsed = true;
-					}
-				} catch {}
-			}
-
-			if (!jsonParsed) {
-				// Convert plain lines / key-value lines into a structured sheet
-				const rows: string[][] = [];
-				const lines = content.split("\n");
-				for (const line of lines) {
-					const t = line.trim();
-					if (!t) continue;
-					if (t.includes(":") && !t.startsWith("http")) {
-						const parts = t.split(":");
-						rows.push([parts[0].replace(/^[-*#\s]+/, "").trim(), parts.slice(1).join(":").trim()]);
-					} else {
-						rows.push([t.replace(/^[-*#\s]+/, "").trim()]);
-					}
+					out = await embedExcelLogo(out, logo);
+				} catch (logoErr) {
+					console.error("Excel logo embed failed:", logoErr);
 				}
-				const ws = XLSX.utils.aoa_to_sheet(rows.length > 0 ? rows : [["Content", content]]);
-				XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+			}
+			triggerBlobDownload(
+				new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+				filename,
+			);
+			toast.success(`Generated and downloaded "${filename}"!`, { id: "excel-export" });
+			return true;
+		}
+		const contentRows: string[][] = [
+			[""],
+			[""],
+			[""],
+			[PRODUCT_NAME],
+			[docTitle],
+			[`Exported ${new Date().toLocaleString()}`],
+			[""],
+		];
+		for (const block of markdownBlocks(content)) {
+			if (block.kind === "table" && block.rows) {
+				for (const row of block.rows) contentRows.push(row);
+				contentRows.push([""]);
+				continue;
+			}
+			for (const line of block.text.split("\n")) {
+				contentRows.push([line]);
+			}
+			contentRows.push([""]);
+		}
+		const ws = XLSX.utils.aoa_to_sheet(contentRows);
+		ws["!cols"] = [{ wch: 120 }];
+		XLSX.utils.book_append_sheet(wb, ws, "Content");
+
+		const tables = parseMarkdownTables(content);
+		tables.forEach((table, idx) => {
+			const sheetData = [table.headers, ...table.rows];
+			const tableSheet = XLSX.utils.aoa_to_sheet(sheetData);
+			const sheetName = sanitizeFileName(table.title || `Table${idx + 1}`, `Table${idx + 1}`).slice(0, 31);
+			XLSX.utils.book_append_sheet(wb, tableSheet, sheetName || `Table${idx + 1}`);
+		});
+
+		const filename = `${sanitizeFileName(docTitle, "spreadsheet")}.xlsx`;
+		let out = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+		if (logo) {
+			try {
+				out = await embedExcelLogo(out, logo);
+			} catch (logoErr) {
+				console.error("Excel logo embed failed:", logoErr);
 			}
 		}
-
-		const docTitle = customTitle || extractDocumentTitle(content);
-		const filename = `${sanitizeFileName(docTitle, "spreadsheet")}.xlsx`;
-		XLSX.writeFile(wb, filename);
+		triggerBlobDownload(
+			new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+			filename,
+		);
 
 		toast.success(`Generated and downloaded "${filename}"!`, { id: "excel-export" });
 		return true;
@@ -294,48 +489,28 @@ export async function exportToWordDocx(content: string, customTitle?: string): P
 	try {
 		toast.loading("Generating Word document (.docx)...", { id: "word-export" });
 		const docTitle = customTitle || extractDocumentTitle(content);
+		const logo = await loadLogoAsset(LOGO_SRC);
+		let logoHtml = "";
+		if (logo) {
+			const size = logoDrawSize(logo, 180, 48);
+			logoHtml = `<p style="margin:0 0 12pt 0;"><img src="${logo.dataUrl}" alt="Logo" width="${Math.round(size.w)}" height="${Math.round(size.h)}" /></p>`;
+		}
 
-		// Format Markdown into clean HTML for Microsoft Word
-		const paragraphs = content.split("\n\n");
 		let bodyHtml = "";
-
-		for (const p of paragraphs) {
-			const trimmed = p.trim();
-			if (!trimmed) continue;
-
-			if (trimmed.startsWith("# ")) {
-				bodyHtml += `<h1 style="color:#1e293b; font-family:'Segoe UI', Calibri, sans-serif; font-size:24pt; border-bottom:2px solid #3b82f6; padding-bottom:6px; margin-top:20px;">${escapeHtml(trimmed.slice(2))}</h1>`;
-			} else if (trimmed.startsWith("## ")) {
-				bodyHtml += `<h2 style="color:#334155; font-family:'Segoe UI', Calibri, sans-serif; font-size:18pt; border-bottom:1px solid #e2e8f0; padding-bottom:4px; margin-top:16px;">${escapeHtml(trimmed.slice(3))}</h2>`;
-			} else if (trimmed.startsWith("### ")) {
-				bodyHtml += `<h3 style="color:#475569; font-family:'Segoe UI', Calibri, sans-serif; font-size:14pt; margin-top:12px;">${escapeHtml(trimmed.slice(4))}</h3>`;
-			} else if (trimmed.startsWith("```")) {
-				const codeLines = trimmed.split("\n");
-				const codeText = codeLines.slice(1, codeLines[codeLines.length - 1].startsWith("```") ? -1 : undefined).join("\n");
-				bodyHtml += `<pre style="background-color:#f8fafc; border:1px solid #cbd5e1; border-radius:4px; padding:12px; font-family:Consolas, 'Courier New', monospace; font-size:9.5pt; color:#0f172a; white-space:pre-wrap; mso-line-height-rule:exactly;">${escapeHtml(codeText)}</pre>`;
-			} else if (trimmed.startsWith("|") && trimmed.includes("\n|")) {
-				// Table
-				const tLines = trimmed.split("\n");
-				const headerCells = tLines[0].slice(1, -1).split("|").map((c) => c.trim());
-				let rowsHtml = "";
-				for (let r = 2; r < tLines.length; r++) {
-					if (!tLines[r].trim().startsWith("|")) continue;
-					const cells = tLines[r].trim().slice(1, -1).split("|").map((c) => c.trim());
-					rowsHtml += `<tr>${cells.map((c) => `<td style="border:1px solid #cbd5e1; padding:8px 10px; font-size:10pt;">${escapeHtml(c)}</td>`).join("")}</tr>`;
-				}
-				bodyHtml += `<table style="border-collapse:collapse; width:100%; margin:16px 0; font-family:'Segoe UI', Calibri, sans-serif;">
-					<thead>
-						<tr style="background-color:#f1f5f9; color:#0f172a; font-weight:bold;">
-							${headerCells.map((h) => `<th style="border:1px solid #94a3b8; padding:8px 10px; font-size:10pt; text-align:left;">${escapeHtml(h)}</th>`).join("")}
-						</tr>
-					</thead>
-					<tbody>${rowsHtml}</tbody>
-				</table>`;
-			} else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-				const items = trimmed.split("\n").filter((l) => l.trim().startsWith("- ") || l.trim().startsWith("* "));
-				bodyHtml += `<ul style="font-family:'Segoe UI', Calibri, sans-serif; font-size:11pt; color:#1e293b; line-height:1.6;">${items.map((it) => `<li>${escapeHtml(it.replace(/^[-*]\s*/, ""))}</li>`).join("")}</ul>`;
+		for (const block of markdownBlocks(content)) {
+			if (block.kind === "h1" || block.kind === "h2" || block.kind === "h3") {
+				const tag = block.kind;
+				bodyHtml += `<${tag} style="font-family:'Segoe UI', Calibri, sans-serif; color:#1e293b;">${escapeHtml(block.text)}</${tag}>`;
+			} else if (block.kind === "code") {
+				bodyHtml += `<pre style="background-color:#f8fafc; border:1px solid #cbd5e1; padding:12px; font-family:Consolas, 'Courier New', monospace; font-size:9.5pt; color:#0f172a; white-space:pre-wrap;">${escapeHtml(block.text)}</pre>`;
+			} else if (block.kind === "table" && block.rows) {
+				const [header, ...rest] = block.rows;
+				bodyHtml += `<table style="border-collapse:collapse; width:100%; margin:12px 0;"><thead><tr>${(header || []).map((h) => `<th style="border:1px solid #94a3b8; padding:8px;">${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rest.map((cells) => `<tr>${cells.map((c) => `<td style="border:1px solid #cbd5e1; padding:8px;">${escapeHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+			} else if (block.kind === "ul" || block.kind === "ol") {
+				const tag = block.kind;
+				bodyHtml += `<${tag} style="font-family:'Segoe UI', Calibri, sans-serif; font-size:11pt; line-height:1.6;">${block.text.split("\n").map((it) => `<li>${escapeHtml(it)}</li>`).join("")}</${tag}>`;
 			} else {
-				bodyHtml += `<p style="font-family:'Segoe UI', Calibri, sans-serif; font-size:11pt; color:#1e293b; line-height:1.6; margin-bottom:10px;">${escapeHtml(trimmed)}</p>`;
+				bodyHtml += `<p style="font-family:'Segoe UI', Calibri, sans-serif; font-size:11pt; color:#1e293b; line-height:1.6; margin-bottom:10px;">${block.text.split("\n").map((line) => escapeHtml(line)).join("<br/>")}</p>`;
 			}
 		}
 
@@ -368,9 +543,10 @@ export async function exportToWordDocx(content: string, customTitle?: string): P
 	</style>
 </head>
 <body>
+	${logoHtml}
 	<div style="margin-bottom:20px;">
 		<h1 style="font-size:26pt; font-weight:bold; color:#0f172a; margin-bottom:4px; font-family:'Segoe UI', sans-serif;">${escapeHtml(docTitle)}</h1>
-		<p style="font-size:9pt; color:#64748b; font-style:italic;">Generated via Unifai Platform • ${new Date().toLocaleDateString(undefined, { dateStyle: "long" })}</p>
+		<p style="font-size:9pt; color:#64748b; font-style:italic;">${escapeHtml(PRODUCT_NAME)} • ${new Date().toLocaleDateString(undefined, { dateStyle: "long" })}</p>
 	</div>
 	<hr style="border:none; border-top:1px solid #cbd5e1; margin-bottom:24px;" />
 	${bodyHtml}
@@ -412,136 +588,111 @@ export async function exportToPdf(content: string, customTitle?: string): Promis
 		const pageWidth = doc.internal.pageSize.getWidth();
 		const pageHeight = doc.internal.pageSize.getHeight();
 		const margin = 40;
+		const footerGap = 36;
 		const maxLineWidth = pageWidth - margin * 2;
-		let y = margin + 10;
+		let y = margin;
 
-		const checkPageBreak = (neededHeight: number) => {
-			if (y + neededHeight > pageHeight - margin) {
+		const ensure = (needed: number) => {
+			if (y + needed > pageHeight - footerGap) {
 				doc.addPage();
-				y = margin + 10;
+				y = margin;
+			}
+		};
+
+		const writeWrapped = (text: string, lineH: number, indent = 0) => {
+			const lines = doc.splitTextToSize(text || " ", Math.max(40, maxLineWidth - indent));
+			for (const line of lines) {
+				ensure(lineH);
+				doc.text(String(line), margin + indent, y);
+				y += lineH;
 			}
 		};
 
 		const docTitle = customTitle || extractDocumentTitle(content);
+		const logo = await loadLogoAsset(LOGO_SRC);
+		if (logo) {
+			const size = logoDrawSize(logo, 160, 42);
+			ensure(size.h + 8);
+			doc.addImage(logo.dataUrl, "PNG", margin, y, size.w, size.h);
+			y += size.h + 12;
+		}
 
-		// Header accent bar
-		doc.setFillColor(59, 130, 246); // Blue accent
-		doc.rect(margin, y, maxLineWidth, 4, "F");
-		y += 18;
-
-		// Title
 		doc.setFont("helvetica", "bold");
-		doc.setFontSize(20);
-		doc.setTextColor(15, 23, 42); // slate-900
-		const titleLines = doc.splitTextToSize(docTitle, maxLineWidth);
-		doc.text(titleLines, margin, y);
-		y += titleLines.length * 24 + 4;
+		doc.setFontSize(18);
+		doc.setTextColor(15, 23, 42);
+		writeWrapped(docTitle, 22);
+		y += 4;
 
-		// Subtitle timestamp
 		doc.setFont("helvetica", "normal");
 		doc.setFontSize(9);
-		doc.setTextColor(100, 116, 139); // slate-500
-		doc.text(`Generated by Unifai • ${new Date().toLocaleString()}`, margin, y);
-		y += 18;
-
-		// Divider
-		doc.setDrawColor(226, 232, 240); // slate-200
+		doc.setTextColor(100, 116, 139);
+		writeWrapped(`${PRODUCT_NAME} • ${new Date().toLocaleString()}`, 12);
+		y += 8;
+		ensure(8);
+		doc.setDrawColor(226, 232, 240);
 		doc.setLineWidth(1);
 		doc.line(margin, y, pageWidth - margin, y);
-		y += 18;
+		y += 16;
 
-		// Process content blocks
-		const blocks = content.split("\n\n");
-		for (const block of blocks) {
-			const trimmed = block.trim();
-			if (!trimmed) continue;
-
-			if (trimmed.startsWith("# ")) {
-				checkPageBreak(35);
+		for (const block of markdownBlocks(content)) {
+			if (block.kind === "h1" || block.kind === "h2" || block.kind === "h3") {
+				const size = block.kind === "h1" ? 16 : block.kind === "h2" ? 13 : 11;
 				doc.setFont("helvetica", "bold");
-				doc.setFontSize(16);
+				doc.setFontSize(size);
 				doc.setTextColor(30, 41, 59);
-				const hLines = doc.splitTextToSize(trimmed.slice(2), maxLineWidth);
-				doc.text(hLines, margin, y);
-				y += hLines.length * 20 + 8;
-			} else if (trimmed.startsWith("## ")) {
-				checkPageBreak(30);
-				doc.setFont("helvetica", "bold");
-				doc.setFontSize(13);
-				doc.setTextColor(51, 65, 85);
-				const hLines = doc.splitTextToSize(trimmed.slice(3), maxLineWidth);
-				doc.text(hLines, margin, y);
-				y += hLines.length * 16 + 6;
-			} else if (trimmed.startsWith("### ")) {
-				checkPageBreak(25);
-				doc.setFont("helvetica", "bold");
-				doc.setFontSize(11);
-				doc.setTextColor(71, 85, 105);
-				const hLines = doc.splitTextToSize(trimmed.slice(4), maxLineWidth);
-				doc.text(hLines, margin, y);
-				y += hLines.length * 14 + 6;
-			} else if (trimmed.startsWith("```")) {
-				// Code Block
-				const codeLines = trimmed.split("\n");
-				const rawCode = codeLines.slice(1, codeLines[codeLines.length - 1].startsWith("```") ? -1 : undefined).join("\n");
+				writeWrapped(block.text, size + 4);
+				y += 4;
+			} else if (block.kind === "code") {
 				doc.setFont("courier", "normal");
 				doc.setFontSize(8.5);
-				const splitCode = doc.splitTextToSize(rawCode, maxLineWidth - 16);
-				const boxHeight = splitCode.length * 11 + 14;
-
-				checkPageBreak(Math.min(boxHeight, 150));
-				doc.setFillColor(248, 250, 252);
-				doc.setDrawColor(203, 213, 225);
-				doc.roundedRect(margin, y, maxLineWidth, boxHeight, 3, 3, "FD");
 				doc.setTextColor(15, 23, 42);
-				doc.text(splitCode, margin + 8, y + 14);
-				y += boxHeight + 12;
-			} else if (trimmed.startsWith("|") && trimmed.includes("\n|")) {
-				// Table block
-				const tLines = trimmed.split("\n").filter((l) => l.trim().startsWith("|"));
-				if (tLines.length >= 2) {
-					const headers = tLines[0].slice(1, -1).split("|").map((c) => c.trim());
-					const colWidth = maxLineWidth / Math.max(1, headers.length);
-					checkPageBreak(25);
-
-					// Table Header
-					doc.setFillColor(241, 245, 249);
-					doc.setDrawColor(148, 163, 184);
-					doc.rect(margin, y, maxLineWidth, 18, "FD");
-					doc.setFont("helvetica", "bold");
-					doc.setFontSize(9);
-					doc.setTextColor(15, 23, 42);
-					headers.forEach((h, idx) => {
-						doc.text(doc.splitTextToSize(h, colWidth - 6), margin + idx * colWidth + 4, y + 12);
-					});
-					y += 18;
-
-					// Table Rows
-					doc.setFont("helvetica", "normal");
-					doc.setFontSize(8.5);
-					for (let r = 2; r < tLines.length; r++) {
-						checkPageBreak(16);
-						const cells = tLines[r].trim().slice(1, -1).split("|").map((c) => c.trim());
-						doc.setDrawColor(226, 232, 240);
-						doc.rect(margin, y, maxLineWidth, 16);
-						cells.forEach((c, idx) => {
-							if (idx < headers.length) {
-								doc.text(doc.splitTextToSize(c, colWidth - 6), margin + idx * colWidth + 4, y + 11);
-							}
-						});
-						y += 16;
+				for (const rawLine of block.text.split("\n")) {
+					const wrapped = doc.splitTextToSize(rawLine || " ", maxLineWidth - 16);
+					for (const line of wrapped) {
+						ensure(12);
+						doc.setFillColor(248, 250, 252);
+						doc.rect(margin, y - 9, maxLineWidth, 12, "F");
+						doc.text(String(line), margin + 8, y);
+						y += 12;
 					}
-					y += 12;
 				}
-			} else {
-				// Paragraph
+				y += 8;
+			} else if (block.kind === "table" && block.rows && block.rows.length) {
+				const colCount = Math.max(...block.rows.map((r) => r.length), 1);
+				const colWidth = maxLineWidth / colCount;
+				block.rows.forEach((cells, rowIdx) => {
+					doc.setFont("helvetica", rowIdx === 0 ? "bold" : "normal");
+					doc.setFontSize(8.5);
+					const wrappedCells = cells.map((c) => doc.splitTextToSize(c || " ", colWidth - 8));
+					const rowH = Math.max(16, ...wrappedCells.map((w) => w.length * 11)) + 6;
+					ensure(rowH);
+					doc.setDrawColor(226, 232, 240);
+					if (rowIdx === 0) doc.setFillColor(241, 245, 249);
+					doc.rect(margin, y, maxLineWidth, rowH, rowIdx === 0 ? "FD" : "S");
+					doc.setTextColor(15, 23, 42);
+					wrappedCells.forEach((w, idx) => {
+						doc.text(w, margin + idx * colWidth + 4, y + 12);
+					});
+					y += rowH;
+				});
+				y += 10;
+			} else if (block.kind === "ul" || block.kind === "ol") {
 				doc.setFont("helvetica", "normal");
 				doc.setFontSize(10);
 				doc.setTextColor(30, 41, 59);
-				const pLines = doc.splitTextToSize(trimmed, maxLineWidth);
-				checkPageBreak(pLines.length * 13 + 6);
-				doc.text(pLines, margin, y);
-				y += pLines.length * 13 + 8;
+				block.text.split("\n").forEach((item, idx) => {
+					const prefix = block.kind === "ol" ? `${idx + 1}. ` : "• ";
+					writeWrapped(prefix + item, 14, 8);
+				});
+				y += 6;
+			} else {
+				doc.setFont("helvetica", "normal");
+				doc.setFontSize(10);
+				doc.setTextColor(30, 41, 59);
+				for (const line of block.text.split("\n")) {
+					writeWrapped(line, 14);
+				}
+				y += 8;
 			}
 		}
 

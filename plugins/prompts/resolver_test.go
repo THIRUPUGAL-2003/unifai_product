@@ -2,6 +2,7 @@ package prompts
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,6 +109,11 @@ func (f *fakeSkillAndPromptStore) GetSkillLean(_ context.Context, id string) (*c
 }
 
 func (f *fakeSkillAndPromptStore) GetSkillByName(_ context.Context, name string) (*configstoreTables.TableSkill, error) {
+	for _, s := range f.skills {
+		if strings.EqualFold(s.Name, name) {
+			return s, nil
+		}
+	}
 	return f.skills[name], nil
 }
 
@@ -118,6 +124,7 @@ func TestSkillInjection(t *testing.T) {
 	store := &fakeSkillAndPromptStore{
 		prompts: []configstoreTables.TablePrompt{
 			{ID: "p1", Name: "Prompt One"},
+			{ID: "p-allowed", Name: "Prompt With Allowed Skills"},
 		},
 		versions: []configstoreTables.TablePromptVersion{
 			{
@@ -130,6 +137,13 @@ func TestSkillInjection(t *testing.T) {
 					{
 						Message: []byte(`{"role":"system","content":"Template system prompt"}`),
 					},
+				},
+			},
+			{
+				PromptID:      "p-allowed",
+				VersionNumber: 1,
+				ModelParams: configstoreTables.ModelParams{
+					"prompt_allowed_skills": []any{"skill-1", "skill-2"},
 				},
 			},
 		},
@@ -220,6 +234,72 @@ func TestSkillInjection(t *testing.T) {
 		}
 		if *resReq.ChatRequest.Input[0].Content.ContentStr != skill2Body {
 			t.Errorf("expected skill-2 override at top, got %q", *resReq.ChatRequest.Input[0].Content.ContentStr)
+		}
+	})
+
+	// Case 4: Prompt with prompt_allowed_skills list
+	t.Run("prompt_with_prompt_allowed_skills_list", func(t *testing.T) {
+		req := mkChatReq()
+		ctx := newResolverCtx(map[schemas.GatewayContextKey]any{
+			PromptIDKey:      "p-allowed",
+			PromptVersionKey: "1",
+		})
+		resReq, _, err := p.PreLLMHook(ctx, req)
+		if err != nil {
+			t.Fatalf("PreLLMHook: %v", err)
+		}
+		// Expect 3 messages: [Skill 1 System, Skill 2 System, User Message]
+		if len(resReq.ChatRequest.Input) != 3 {
+			t.Fatalf("expected 3 messages, got %d", len(resReq.ChatRequest.Input))
+		}
+		if *resReq.ChatRequest.Input[0].Content.ContentStr != skill1Body {
+			t.Errorf("expected skill 1 at index 0, got %q", *resReq.ChatRequest.Input[0].Content.ContentStr)
+		}
+		if *resReq.ChatRequest.Input[1].Content.ContentStr != skill2Body {
+			t.Errorf("expected skill 2 at index 1, got %q", *resReq.ChatRequest.Input[1].Content.ContentStr)
+		}
+	})
+
+	// Case 5: External client (Cursor, Codex, or OpenAI SDK) passes skill_id in extra_params
+	t.Run("external_client_extra_params", func(t *testing.T) {
+		req := mkChatReq()
+		req.ChatRequest.Params = &schemas.ChatParameters{
+			ExtraParams: map[string]interface{}{
+				"skill_id": "skill-2",
+			},
+		}
+		ctx := newResolverCtx(nil)
+		resReq, _, err := p.PreLLMHook(ctx, req)
+		if err != nil {
+			t.Fatalf("PreLLMHook: %v", err)
+		}
+		if len(resReq.ChatRequest.Input) != 2 {
+			t.Fatalf("expected 2 messages, got %d", len(resReq.ChatRequest.Input))
+		}
+		if *resReq.ChatRequest.Input[0].Content.ContentStr != skill2Body {
+			t.Errorf("expected skill-2 at index 0, got %q", *resReq.ChatRequest.Input[0].Content.ContentStr)
+		}
+		// Ensure skill_id was removed from ExtraParams so provider does not reject it
+		if _, exists := req.ChatRequest.Params.ExtraParams["skill_id"]; exists {
+			t.Errorf("skill_id must be stripped from extra_params before reaching model provider")
+		}
+	})
+
+	// Case 6: Skill lookup by kebab-case name
+	t.Run("skill_lookup_by_name", func(t *testing.T) {
+		req := mkChatReq()
+		ctx := newResolverCtx(map[schemas.GatewayContextKey]any{
+			SkillIDKey: "Python Expert",
+		})
+		resReq, _, err := p.PreLLMHook(ctx, req)
+		if err != nil {
+			t.Fatalf("PreLLMHook: %v", err)
+		}
+		if len(resReq.ChatRequest.Input) != 2 {
+			t.Fatalf("expected 2 messages, got %d", len(resReq.ChatRequest.Input))
+		}
+		if *resReq.ChatRequest.Input[0].Content.ContentStr != skill2Body {
+			t.Errorf("expected skill-2 by name, got %q", *resReq.ChatRequest.Input[0].Content.ContentStr)
 		}
 	})
 }

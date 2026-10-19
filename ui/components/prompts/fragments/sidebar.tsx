@@ -56,6 +56,14 @@ function folderAncestry(startId: string | null | undefined, folderMap: Map<strin
 	return chain;
 }
 
+function isTeamDropTarget(folder: Folder): boolean {
+	if (folder.type?.startsWith("archived_") || folder.type?.startsWith("system_removed_") || folder.name.startsWith("Removed")) {
+		return false;
+	}
+	if (folder.type === "customer" || folder.type === "business_unit") return true;
+	return folder.type === "system_teams_root" || folder.name === "Teams";
+}
+
 /**
  * Renders the prompt-manager sidebar including search, folder hierarchy, root prompts, and drag-and-drop reorganization.
  *
@@ -87,6 +95,7 @@ export function PromptSidebar() {
 		setPromptAccessDialog,
 		promptFilters,
 		handleMovePrompt: onMovePrompt,
+		handleMoveTeamFolder: onMoveTeamFolder,
 		canCreate,
 		canUpdate,
 		canDelete,
@@ -548,6 +557,18 @@ export function PromptSidebar() {
 				if (!sourceId || !targetId) return;
 
 				const promptId = sourceId.startsWith("prompt-") ? sourceId.slice(7) : null;
+				const teamFolderId = sourceId.startsWith("teamfolder-") ? sourceId.slice("teamfolder-".length) : null;
+				if (teamFolderId) {
+					if (!onMoveTeamFolder || !targetId.startsWith("folder-")) return;
+					const targetFolderId = targetId.slice("folder-".length);
+					const moving = folderMap.get(teamFolderId);
+					const target = folderMap.get(targetFolderId);
+					if (!moving || !target || moving.type !== "team" || !isTeamDropTarget(target)) return;
+					if (target.id === moving.id || folderAncestry(target.id, folderMap).includes(moving.id)) return;
+					if ((moving.parent_id ?? "") === target.id) return;
+					onMoveTeamFolder(moving.id, target.id);
+					return;
+				}
 				if (!promptId) return;
 
 				const prompt = promptMap.get(promptId);
@@ -824,6 +845,11 @@ function DroppableFolder({
 	isUserRole,
 }: DroppableFolderProps) {
 	const { ref } = useDroppable({ id: `folder-${folder.id}` });
+	const canDragTeam = canUpdate && folder.type === "team";
+	const { ref: dragRef, isDragging } = useDraggable({
+		id: `teamfolder-${folder.id}`,
+		disabled: !canDragTeam,
+	});
 	const isExpanded = expandedFolders.has(folder.id) || !!searchQuery;
 	const isDragOver = dragOverTarget === `folder-${folder.id}`;
 
@@ -850,8 +876,11 @@ function DroppableFolder({
 	return (
 		<div ref={ref} className="mb-0.5 last:mb-0">
 			<div
+				ref={dragRef}
 				className={cn(
 					"hover:bg-muted/50 group relative flex h-[30px] cursor-pointer select-none items-center gap-1 rounded-sm px-2 transition-colors",
+					canDragTeam && "cursor-grab",
+					isDragging && "opacity-50",
 					isDragOver && "bg-primary/10 ring-primary/30 ring-1",
 					isArchiveFolder && "opacity-80 text-muted-foreground",
 				)}

@@ -27,6 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DataTablePagination } from "@/components/table/dataTablePagination";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import {
 	WORKSPACE_ACCESS_SECTIONS,
@@ -263,7 +264,6 @@ export default function UsersView() {
 	const [allowedSections, setAllowedSections] = useState<Set<WorkspaceGrantKey>>(new Set());
 	const [expandedSections, setExpandedSections] = useState<Set<WorkspaceSectionKey>>(new Set());
 	const [workspaceSearch, setWorkspaceSearch] = useState("");
-	const [autoCreatePrompt, setAutoCreatePrompt] = useState(false);
 
 	const {
 		data: editUserTeams,
@@ -647,7 +647,7 @@ export default function UsersView() {
 		rate_limit: canAssignTeamAndKey(role) ? rateLimit : 0,
 		allowed_prompt_repos: canAssignTeamAndKey(role) ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
 		allowed_sections: role === "admin" ? "" : (sectionGrantsApply(role) ? allowedSectionsToString(allowedSections) : ""),
-		auto_create_prompt: isUserRole(role) ? autoCreatePrompt : false,
+		auto_create_prompt: isUserRole(role),
 	});
 
 	const handleCreateUser = async (e: React.FormEvent) => {
@@ -867,7 +867,6 @@ export default function UsersView() {
 		setAllowedPromptRepos("");
 		setAllowedSections(new Set());
 		setExpandedSections(new Set());
-		setAutoCreatePrompt(false);
 		setSelectedUser(null);
 		setWorkspaceSearch("");
 	};
@@ -999,6 +998,76 @@ export default function UsersView() {
 		[activeUsers, activeUsersOffset, activeUsersLimit],
 	);
 
+	const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+	const [isBulkDeleteUsersOpen, setIsBulkDeleteUsersOpen] = useState(false);
+	const [isBulkDeletingUsers, setIsBulkDeletingUsers] = useState(false);
+
+	const visibleUserIds = useMemo(() => pagedActiveUsers.map((u) => u.id), [pagedActiveUsers]);
+	const selectedVisibleUserIds = useMemo(
+		() => visibleUserIds.filter((id) => selectedUserIds.has(id)),
+		[selectedUserIds, visibleUserIds],
+	);
+	const selectedUserCount = selectedUserIds.size;
+	const allVisibleUsersSelected =
+		visibleUserIds.length > 0 && selectedVisibleUserIds.length === visibleUserIds.length;
+	const someVisibleUsersSelected =
+		selectedVisibleUserIds.length > 0 && selectedVisibleUserIds.length < visibleUserIds.length;
+
+	const toggleSelectAllVisibleUsers = (checked: boolean) => {
+		setSelectedUserIds((prev) => {
+			const next = new Set(prev);
+			for (const id of visibleUserIds) {
+				if (currentUserId && id === currentUserId) continue;
+				if (checked) {
+					next.add(id);
+				} else {
+					next.delete(id);
+				}
+			}
+			return next;
+		});
+	};
+
+	const toggleSelectUser = (userId: string, checked: boolean) => {
+		if (currentUserId && userId === currentUserId) return;
+		setSelectedUserIds((prev) => {
+			const next = new Set(prev);
+			if (checked) {
+				next.add(userId);
+			} else {
+				next.delete(userId);
+			}
+			return next;
+		});
+	};
+
+	const handleBulkDeleteUsers = async () => {
+		if (selectedUserCount === 0) return;
+		setIsBulkDeletingUsers(true);
+		let successCount = 0;
+		let failCount = 0;
+		const ids = Array.from(selectedUserIds);
+		for (const id of ids) {
+			if (currentUserId && id === currentUserId) continue;
+			try {
+				await deleteUser(id).unwrap();
+				successCount++;
+			} catch {
+				failCount++;
+			}
+		}
+		setIsBulkDeletingUsers(false);
+		setIsBulkDeleteUsersOpen(false);
+		setSelectedUserIds(new Set());
+		refetchUsers();
+		if (successCount > 0) {
+			toast.success(`Successfully deleted ${successCount} user${successCount > 1 ? "s" : ""}`);
+		}
+		if (failCount > 0) {
+			toast.error(`Failed to delete ${failCount} user${failCount > 1 ? "s" : ""}`);
+		}
+	};
+
 	return (
 		<div className="text-foreground bg-background border-border/40 flex w-full flex-col gap-6 rounded-lg border p-6 shadow-xl backdrop-blur-sm">
 			{/* Header Section */}
@@ -1028,21 +1097,34 @@ export default function UsersView() {
 						</span>
 					)}
 				</div>
-				<Button
-					disabled={!hasCreateAccess || (!!userQuota?.limited && userQuota.remaining <= 0)}
-					onClick={() => {
-						resetForm();
-						setIsCreateOpen(true);
-					}}
-					title={
-						userQuota?.limited && userQuota.remaining <= 0
-							? `License limit reached (${userQuota.used}/${userQuota.max} users). Contact YesPanchi to upgrade seats.`
-							: undefined
-					}
-					className="flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2 font-medium text-white shadow-lg shadow-teal-500/20 transition-all duration-200 hover:bg-teal-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-				>
-					<Plus className="h-4 w-4" /> Add New User
-				</Button>
+				<div className="flex items-center gap-2">
+					{selectedUserCount > 0 && (
+						<Button
+							variant="destructive"
+							data-testid="users-bulk-delete-btn"
+							onClick={() => setIsBulkDeleteUsersOpen(true)}
+							disabled={!hasDeleteAccess || isBulkDeletingUsers}
+							className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 font-medium text-white shadow-lg shadow-rose-600/20 hover:bg-rose-700 cursor-pointer"
+						>
+							<Trash2 className="h-4 w-4" /> Delete Selected ({selectedUserCount})
+						</Button>
+					)}
+					<Button
+						disabled={!hasCreateAccess || (!!userQuota?.limited && userQuota.remaining <= 0)}
+						onClick={() => {
+							resetForm();
+							setIsCreateOpen(true);
+						}}
+						title={
+							userQuota?.limited && userQuota.remaining <= 0
+								? `License limit reached (${userQuota.used}/${userQuota.max} users). Contact YesPanchi to upgrade seats.`
+								: undefined
+						}
+						className="flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2 font-medium text-white shadow-lg shadow-teal-500/20 transition-all duration-200 hover:bg-teal-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						<Plus className="h-4 w-4" /> Add New User
+					</Button>
+				</div>
 			</div>
 
 			{helperQueryFailed ? (
@@ -1546,6 +1628,14 @@ export default function UsersView() {
 								<Table>
 									<TableHeader className="bg-muted/30">
 										<TableRow>
+											<TableHead className="w-[48px]">
+												<Checkbox
+													checked={allVisibleUsersSelected || (someVisibleUsersSelected ? "indeterminate" : false)}
+													onCheckedChange={(checked) => toggleSelectAllVisibleUsers(checked === true)}
+													aria-label="Select all users on this page"
+													data-testid="users-select-all-checkbox"
+												/>
+											</TableHead>
 											<TableHead className="text-foreground/90 font-semibold">Username</TableHead>
 											<TableHead className="text-foreground/90 font-semibold">Email</TableHead>
 											<TableHead className="text-foreground/90 font-semibold">Role</TableHead>
@@ -1581,6 +1671,15 @@ export default function UsersView() {
 														: "hover:bg-muted/20",
 												)}
 											>
+												<TableCell className="w-[48px]">
+													<Checkbox
+														checked={selectedUserIds.has(user.id)}
+														onCheckedChange={(checked) => toggleSelectUser(user.id, checked === true)}
+														disabled={isSelf}
+														aria-label={`Select ${user.username}`}
+														data-testid={`user-select-checkbox-${user.id}`}
+													/>
+												</TableCell>
 												<TableCell className="flex items-center gap-2 font-medium">
 													<div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-500/10 text-xs font-bold text-teal-400 uppercase">
 														{user.username.slice(0, 2)}
@@ -1780,9 +1879,6 @@ export default function UsersView() {
 								className="bg-muted/20 border-border/50 focus:border-teal-500/50"
 							/>
 						</div>
-						<p className="text-muted-foreground text-xs">
-							A temporary password is generated and emailed. The first login must set a new password (8+ characters, uppercase, lowercase, number, and symbol).
-						</p>
 						<div className="space-y-2">
 							<label className="text-muted-foreground text-sm font-medium">Role</label>
 							<p className="text-muted-foreground text-xs">
@@ -1858,23 +1954,6 @@ export default function UsersView() {
 											placeholder="RPM Limit"
 											className="bg-muted/20 border-border/50 focus:border-teal-500/50"
 										/>
-									</div>
-								</div>
-								<div className="border-border/50 bg-muted/10 flex items-center gap-2 rounded-lg border p-3">
-									<input
-										id="auto-create-prompt"
-										type="checkbox"
-										checked={autoCreatePrompt}
-										onChange={(e) => setAutoCreatePrompt(e.target.checked)}
-										className="border-border rounded text-teal-500 focus:ring-teal-500/50"
-									/>
-									<div className="flex flex-col">
-										<label htmlFor="auto-create-prompt" className="text-foreground cursor-pointer text-sm font-medium">
-											Auto-create Prompt Repository workspace (Optional)
-										</label>
-										<span className="text-muted-foreground text-xs">
-											Optionally generates a personal prompt repository for this user with pre-configured model parameters.
-										</span>
 									</div>
 								</div>
 							</>
@@ -2101,6 +2180,47 @@ export default function UsersView() {
 								</>
 							) : (
 								"Delete Account"
+							)}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Bulk Delete Users Confirm Dialog */}
+			<Dialog open={isBulkDeleteUsersOpen} onOpenChange={setIsBulkDeleteUsersOpen}>
+				<DialogContent className="bg-background border-border/80 text-foreground sm:max-w-[400px]">
+					<DialogHeader>
+						<DialogTitle className="flex items-center gap-2 text-red-400">
+							<Trash2 className="h-5 w-5" /> Delete Selected Users
+						</DialogTitle>
+					</DialogHeader>
+					<div className="py-4">
+						<p className="text-muted-foreground text-sm">
+							Are you sure you want to permanently delete {selectedUserCount} selected user account{selectedUserCount > 1 ? "s" : ""}? They will lose access immediately. This action cannot be undone.
+						</p>
+					</div>
+					<DialogFooter>
+						<Button
+							variant="outline"
+							disabled={isBulkDeletingUsers}
+							onClick={() => setIsBulkDeleteUsersOpen(false)}
+							className="border-border/80 text-foreground hover:bg-muted"
+						>
+							Cancel
+						</Button>
+						<Button
+							onClick={handleBulkDeleteUsers}
+							disabled={isBulkDeletingUsers || selectedUserCount === 0 || !hasDeleteAccess}
+							className="bg-red-500 font-medium text-white hover:bg-red-600 disabled:opacity-50"
+							data-testid="users-bulk-delete-confirm-btn"
+						>
+							{isBulkDeletingUsers ? (
+								<>
+									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+									Deleting...
+								</>
+							) : (
+								"Delete Selected"
 							)}
 						</Button>
 					</DialogFooter>

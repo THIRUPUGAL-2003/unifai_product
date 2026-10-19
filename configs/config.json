@@ -61,55 +61,7 @@
       }
     }
   },
-  "guardrails_config": {
-    "guardrail_rules": [
-      {
-        "id": 2,
-        "name": "new ruele",
-        "enabled": true,
-        "cel_expression": "true",
-        "apply_to": "input",
-        "provider_config_ids": [
-          1
-        ],
-        "virtual_key_ids": [
-          "059738dc-e1ff-4914-ab19-e311d1973d1a"
-        ]
-      },
-      {
-        "id": 3,
-        "name": "new",
-        "description": "nn",
-        "enabled": true,
-        "cel_expression": "true",
-        "apply_to": "output",
-        "provider_config_ids": [
-          1
-        ],
-        "virtual_key_ids": [
-          "059738dc-e1ff-4914-ab19-e311d1973d1a",
-          "7e8f5ca5-1dcd-491b-841d-99a4992adb0a"
-        ]
-      }
-    ],
-    "guardrail_providers": [
-      {
-        "id": 1,
-        "provider_name": "regex",
-        "policy_name": "phone number",
-        "enabled": true,
-        "config": {
-          "patterns": [
-            {
-              "description": "^(?:\\+91|91|0)?[6-9]\\d{9}$",
-              "flags": "i",
-              "pattern": "^(?:\\+91|91|0)?[6-9]\\d{9}$"
-            }
-          ]
-        }
-      }
-    ]
-  },
+  "guardrails_config": {},
   "logs_store": {
     "enabled": true,
     "type": "postgres",

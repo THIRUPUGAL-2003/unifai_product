@@ -3,13 +3,13 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { resetDurationLabels } from "@/lib/constants/governance";
-import { getErrorMessage, useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store";
-import { Customer } from "@/lib/types/governance";
+import { getErrorMessage, useGetTeamMembersQuery, useGetTeamsQuery, useGetVirtualKeysQuery } from "@/lib/store";
+import { Customer, Team } from "@/lib/types/governance";
+import { BusinessUnit } from "@enterprise/lib/types/workspace";
 import { cn } from "@/lib/utils";
 import { virtualKeysForCustomer } from "@/lib/utils/governance";
 import { formatCompactNumber } from "@/lib/utils/numbers";
 import { useGetBusinessUnitsQuery } from "@enterprise/lib/store/apis/businessUnitsApi";
-import { Link } from "@tanstack/react-router";
 
 interface Props {
 	customer: Customer | null;
@@ -93,6 +93,48 @@ function EmptyLine({ children }: { children: React.ReactNode }) {
 	return <p className="text-muted-foreground py-1 text-center text-sm">{children}</p>;
 }
 
+function TeamWithUsers({ team }: { team: Pick<Team, "id" | "name"> }) {
+	const { data, isError } = useGetTeamMembersQuery(team.id);
+	const members = data?.members || [];
+	return (
+		<li className="space-y-1 rounded-md border px-3 py-2">
+			<span className="text-sm font-medium">{team.name}</span>
+			{isError ? (
+				<p className="text-muted-foreground ml-3 text-xs">Could not load users.</p>
+			) : members.length === 0 ? (
+				<p className="text-muted-foreground ml-3 text-xs">No users</p>
+			) : (
+				<ul className="ml-3 space-y-0.5">
+					{members.map((member) => (
+						<li key={member.user_id || member.id} className="text-muted-foreground text-xs">
+							{member.username || member.email || member.user_id}
+						</li>
+					))}
+				</ul>
+			)}
+		</li>
+	);
+}
+
+function BusinessUnitBranch({ unit, teams }: { unit: BusinessUnit; teams: Team[] }) {
+	const ids = new Set(unit.team_ids || []);
+	const unitTeams = teams.filter((team) => ids.has(team.id));
+	return (
+		<li className="space-y-2 rounded-md border px-3 py-2">
+			<span className="text-sm font-medium">{unit.name}</span>
+			{unitTeams.length === 0 ? (
+				<p className="text-muted-foreground ml-3 text-xs">No teams in this unit</p>
+			) : (
+				<ul className="ml-3 space-y-2">
+					{unitTeams.map((team) => (
+						<TeamWithUsers key={team.id} team={team} />
+					))}
+				</ul>
+			)}
+		</li>
+	);
+}
+
 export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 	const budgets = customer?.budgets ?? [];
 	const rateLimit = customer?.rate_limit;
@@ -104,11 +146,12 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 	const helperQueryFailed = teamsFailed || vkFailed || buFailed;
 	const helperQueryError = teamsError || vkError || buError;
 
-	const customerTeams = (teamsData?.teams || []).filter((t) => t.customer_id === customer?.id);
-	const teamIds = new Set(customerTeams.map((t) => t.id));
+	const allTeams = teamsData?.teams || [];
+	const customerTeams = allTeams.filter((t) => t.customer_id === customer?.id);
 	const customerVKs = customer ? virtualKeysForCustomer(vksData?.virtual_keys || [], customer.id, customerTeams) : [];
-	// Related BUs: any unit that includes at least one of this customer's teams (derived — BU is not a Customer child).
-	const relatedBUs = (buData?.business_units || []).filter((bu) => (bu.team_ids || []).some((id) => teamIds.has(id)));
+	const customerBUs = (buData?.business_units || []).filter((bu) => bu.customer_id === customer?.id);
+	const buTeamIds = new Set(customerBUs.flatMap((bu) => bu.team_ids || []));
+	const directTeams = customerTeams.filter((team) => !buTeamIds.has(team.id));
 
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>
@@ -116,7 +159,7 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 				<SheetHeader className="flex flex-col items-start px-0 py-4" headerClassName="mb-0 px-8 sticky -top-4 bg-card z-10">
 					<SheetTitle className="text-lg">{customer?.name || "Customer Details"}</SheetTitle>
 					<SheetDescription>
-						Budgets, teams, virtual keys, and related business units (via shared teams).
+						Customer, business units, teams, and users.
 					</SheetDescription>
 				</SheetHeader>
 
@@ -176,44 +219,27 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 							)}
 						</DetailCard>
 
-						<DetailCard title="Teams">
-							{customerTeams.length > 0 ? (
-								<ul className="space-y-3 text-sm">
-									{customerTeams.map((team) => {
-										const teamBudgets = [...(team.budgets || [])].sort((a, b) => (b.max_limit || 0) - (a.max_limit || 0));
-										const primary = teamBudgets[0];
-										const spent = primary?.current_usage ?? 0;
-										const max = primary?.max_limit ?? 0;
-										return (
-											<li key={team.id} className="space-y-1.5 rounded-md border px-3 py-2">
-												<div className="flex items-center justify-between gap-2">
-													<span className="font-medium">{team.name}</span>
-													<Link
-														to="/workspace/governance/teams"
-														className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
-														onClick={() => onOpenChange(false)}
-													>
-														Open Teams
-													</Link>
-												</div>
-												{primary ? (
-													<div className="text-muted-foreground flex items-center justify-between font-mono text-xs">
-														<span>
-															Spent{" "}
-															<span className="text-foreground font-semibold">{formatCurrency(spent)}</span>
-															{max > 0 ? ` / ${formatCurrency(max)}` : " (Unlimited)"}
-														</span>
-														{max > 0 ? <span>{Math.min(100, (spent / max) * 100).toFixed(0)}%</span> : null}
-													</div>
-												) : (
-													<p className="text-muted-foreground text-xs">No team budget configured</p>
-												)}
-											</li>
-										);
-									})}
+						<DetailCard title="Business Units">
+							{customerBUs.length > 0 ? (
+								<ul className="space-y-2">
+									{customerBUs.map((unit) => (
+										<BusinessUnitBranch key={unit.id} unit={unit} teams={allTeams} />
+									))}
 								</ul>
 							) : (
-								<EmptyLine>No teams linked to this customer</EmptyLine>
+								<EmptyLine>No business units linked to this customer</EmptyLine>
+							)}
+						</DetailCard>
+
+						<DetailCard title="Teams">
+							{directTeams.length > 0 ? (
+								<ul className="space-y-2">
+									{directTeams.map((team) => (
+										<TeamWithUsers key={team.id} team={team} />
+									))}
+								</ul>
+							) : (
+								<EmptyLine>No teams linked directly to this customer</EmptyLine>
 							)}
 						</DetailCard>
 
@@ -240,30 +266,6 @@ export function CustomerDetailSheet({ customer, open, onOpenChange }: Props) {
 							)}
 						</DetailCard>
 
-						<DetailCard title="Related Business Units">
-							<p className="text-muted-foreground mb-2 text-xs">
-								Shown when a business unit includes this customer&apos;s teams. BUs are not nested under customers — they group
-								teams for reporting.
-							</p>
-							{relatedBUs.length > 0 ? (
-								<ul className="space-y-1.5 text-sm">
-									{relatedBUs.map((bu) => (
-										<li key={bu.id} className="flex items-center justify-between gap-2">
-											<span>{bu.name}</span>
-											<Link
-												to="/workspace/governance/business-units"
-												className="text-muted-foreground hover:text-foreground text-xs underline-offset-2 hover:underline"
-												onClick={() => onOpenChange(false)}
-											>
-												Open BUs
-											</Link>
-										</li>
-									))}
-								</ul>
-							) : (
-								<EmptyLine>No business units share this customer&apos;s teams yet</EmptyLine>
-							)}
-						</DetailCard>
 					</div>
 				)}
 			</SheetContent>

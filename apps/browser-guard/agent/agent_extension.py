@@ -69,7 +69,7 @@ def get_extension_version() -> str:
 
     src = extension_source_dir()
     h = hashlib.sha256()
-    for name in sorted(("manifest.json", "content.js", "page_hook.js", "endpoint.js", "background.js", "popup.js")):
+    for name in sorted(("manifest.json", "content.js", "page_hook.js", "endpoint.js", "background.js", "popup.js", "guard_base.js")):
         p = os.path.join(src, name)
         if os.path.isfile(p):
             try:

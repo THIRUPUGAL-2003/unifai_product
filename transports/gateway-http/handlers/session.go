@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -66,6 +67,10 @@ const (
 	maxForgotPasswordPerHourTarget = 5
 	maxForgotPasswordPerHourIP     = 10
 	maxRegistrationsPerHour        = 10
+	maxDemoRequestsPerHour         = 10
+	maxDemoNameLen                 = 120
+	maxDemoCompanyLen              = 160
+	maxDemoNotesLen                = 2000
 )
 
 type passwordResetTokenClaims struct {
@@ -195,6 +200,7 @@ func (h *SessionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.POST("/api/session/reset-password", lib.ChainMiddlewares(h.resetPassword, middlewares...))
 	r.POST("/api/session/forgot-username", lib.ChainMiddlewares(h.forgotUsername, middlewares...))
 	r.POST("/api/session/schedule-demo", lib.ChainMiddlewares(h.scheduleDemo, middlewares...))
+	r.GET("/api/session/teams", lib.ChainMiddlewares(h.listSignupTeams, middlewares...))
 	r.GET("/api/session/users", lib.ChainMiddlewares(h.getUsers, middlewares...))
 	r.GET("/api/session/users/quota", lib.ChainMiddlewares(h.getProductUserQuota, middlewares...))
 	r.POST("/api/session/users", lib.ChainMiddlewares(h.createUser, middlewares...))
@@ -315,12 +321,20 @@ func dashboardAuthType(isEnabled bool) string {
 
 // recordAuthAudit logs authentication lifecycle events (login/logout) to the workspace audit trail.
 func (h *SessionHandler) recordAuthAudit(ctx *fasthttp.RequestCtx, action, outcome, username, path string, start time.Time) {
-	if ws, ok := configstore.AsWorkspaceStore(h.configStore); ok && ws != nil && username != "" {
+	if ws, ok := configstore.AsWorkspaceStore(h.configStore); ok && ws != nil {
+		initiator := strings.TrimSpace(username)
+		if initiator == "" {
+			initiator = "unknown"
+		}
+		target := "User: " + initiator
+		if initiator == "unknown" {
+			target = "Authentication"
+		}
 		_ = ws.CreateAuditLog(ctx, &tables.TableAuditLog{
 			Action:     action,
 			Outcome:    outcome,
-			Initiator:  username,
-			Target:     path,
+			Initiator:  initiator,
+			Target:     target,
 			Method:     "POST",
 			Path:       path,
 			IP:         ctx.RemoteIP().String(),
@@ -412,14 +426,19 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 		lockoutKey = adminName
 	}
 
-	if locked, retryAfter, err := checkLoginLockout(h.configStore, ctx, lockoutKey); err != nil {
-		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to check login lockout")
-		return
-	} else if locked {
-		mins := lockoutRetryMinutes(ctx, retryAfter)
-		ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
-		SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Try again in about %d minutes", mins))
-		return
+	// Built-in Super Admin (from env / Security settings) is exempt from account lockout
+	// to prevent denial-of-service against the platform owner. All other accounts (including
+	// other admin users created in DB) remain strictly subject to the 3-attempt lockout.
+	if !isBuiltinAdmin {
+		if locked, retryAfter, err := checkLoginLockout(h.configStore, ctx, lockoutKey); err != nil {
+			SendError(ctx, fasthttp.StatusInternalServerError, "Failed to check login lockout")
+			return
+		} else if locked {
+			mins := lockoutRetryMinutes(ctx, retryAfter)
+			ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
+			SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Try again in about %d minutes", mins))
+			return
+		}
 	}
 
 	// Verify credentials
@@ -445,14 +464,7 @@ func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many login attempts from this network. Try again in about %d minutes", mins))
 				return
 			}
-			if locked, retryAfter := recordLoginFailure(h.configStore, ctx, lockoutKey); locked {
-				mins := lockoutRetryMinutes(ctx, retryAfter)
-				until := time.Now().Add(retryAfter)
-				lockAccountIdentifiers(h.configStore, ctx, until, lockoutKey, adminEmail, payload.Username)
-				ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
-				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("Too many failed login attempts. Account locked for about %d minutes", mins))
-				return
-			}
+			// Built-in Super Admin is exempt from account lockout; only per-IP brute-force limits apply.
 			SendError(ctx, fasthttp.StatusUnauthorized, "Invalid username or password")
 			return
 		}
@@ -804,16 +816,15 @@ func (h *SessionHandler) assertEmailAvailable(ctx *fasthttp.RequestCtx, email, e
 	if exceptUserID != "" && other.ID == exceptUserID {
 		return true
 	}
-	// Only abandoned unverified sign-ups past OTP TTL may be reclaimed.
-	// Rejected, disabled, and pending accounts are preserved in governance and strictly prevent duplicate emails.
-	if other.Status == tables.UserStatusEmailUnverified && time.Since(other.UpdatedAt) > passwordResetOTPTTL {
-		if strings.TrimSpace(other.ExternalID) == "" {
-			if err := h.configStore.DeleteUser(ctx, other.ID); err == nil {
-				return true
-			}
+	// Rejected users (that own no teams/keys) or abandoned unverified sign-ups past OTP TTL may be reclaimed.
+	// Disabled and pending accounts are preserved in governance and strictly prevent duplicate emails.
+	if (other.Status == tables.UserStatusRejected && h.registrationMayReuse(ctx, other)) ||
+		(other.Status == tables.UserStatusEmailUnverified && time.Since(other.UpdatedAt) > passwordResetOTPTTL && strings.TrimSpace(other.ExternalID) == "") {
+		if err := h.configStore.DeleteUser(ctx, other.ID); err == nil {
+			return true
 		}
 	}
-	SendError(ctx, fasthttp.StatusConflict, "This email is already registered with an existing account. Duplicate email addresses are not permitted.")
+	SendError(ctx, fasthttp.StatusConflict, "This email is already registered with an existing account.")
 	return false
 }
 
@@ -1127,7 +1138,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	}
 
 	now := time.Now()
-	autoCreatePrompt := false
+	autoCreatePrompt := true
 	if payload.AutoCreatePrompt != nil {
 		autoCreatePrompt = *payload.AutoCreatePrompt
 	}
@@ -1341,21 +1352,6 @@ func (h *SessionHandler) forgotPassword(ctx *fasthttp.RequestCtx) {
 				ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
 				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
 				return
-			}
-		}
-	} else {
-		adminName, adminEmail := h.getAdminCredentials(ctx)
-		if adminEmail != "" && (isMatchingAdminIdentity(payload.Username, adminName, adminEmail) || isMatchingAdminIdentity(payload.Email, adminName, adminEmail)) {
-			for _, key := range []string{adminName, adminEmail} {
-				if strings.TrimSpace(key) == "" {
-					continue
-				}
-				if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, key); locked {
-					mins := lockoutRetryMinutes(ctx, retryAfter)
-					ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
-					SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
-					return
-				}
 			}
 		}
 	}
@@ -1595,16 +1591,6 @@ func (h *SessionHandler) forgotUsername(ctx *fasthttp.RequestCtx) {
 			SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
 			return
 		}
-	} else {
-		adminName, adminEmail := h.getAdminCredentials(ctx)
-		if adminEmail != "" && (strings.EqualFold(payload.Email, adminEmail) || isMatchingAdminIdentity(payload.Email, adminName, adminEmail)) {
-			if locked, retryAfter, _ := checkLoginLockout(h.configStore, ctx, adminName); locked {
-				mins := lockoutRetryMinutes(ctx, retryAfter)
-				ctx.Response.Header.Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())))
-				SendError(ctx, fasthttp.StatusTooManyRequests, fmt.Sprintf("This account is temporarily locked due to too many failed login attempts. Try again in about %d minutes.", mins))
-				return
-			}
-		}
 	}
 
 	generic := map[string]any{"message": "If an account matches, your username was sent to your email."}
@@ -1644,6 +1630,65 @@ func (h *SessionHandler) forgotUsername(ctx *fasthttp.RequestCtx) {
 	SendJSON(ctx, generic)
 }
 
+// listSignupTeams returns team names for the public Create Account form.
+func (h *SessionHandler) listSignupTeams(ctx *fasthttp.RequestCtx) {
+	if h.configStore == nil {
+		SendJSON(ctx, map[string]any{"teams": []any{}})
+		return
+	}
+	rows, err := h.configStore.GetTeams(ctx, "")
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "Could not load teams")
+		return
+	}
+	teams := make([]map[string]string, 0, len(rows))
+	for _, team := range rows {
+		name := strings.TrimSpace(team.Name)
+		if team.ID == "" || name == "" {
+			continue
+		}
+		teams = append(teams, map[string]string{"id": team.ID, "name": name})
+	}
+	SendJSON(ctx, map[string]any{"teams": teams})
+}
+
+func (h *SessionHandler) signupTeamID(ctx *fasthttp.RequestCtx, raw string) (*string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, true
+	}
+	team, err := h.configStore.GetTeam(ctx, raw)
+	if err != nil || team == nil || strings.TrimSpace(team.ID) == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "Please select a valid team")
+		return nil, false
+	}
+	id := team.ID
+	return &id, true
+}
+
+func (h *SessionHandler) assignRequestedTeam(ctx context.Context, user *tables.TableUser) {
+	if user == nil || user.RequestedTeamID == nil || strings.TrimSpace(*user.RequestedTeamID) == "" {
+		return
+	}
+	teamID := strings.TrimSpace(*user.RequestedTeamID)
+	ws, ok := configstore.AsWorkspaceStore(h.configStore)
+	if !ok {
+		return
+	}
+	if _, err := h.configStore.GetTeam(ctx, teamID); err != nil {
+		user.RequestedTeamID = nil
+		_ = h.configStore.UpdateUser(ctx, user)
+		return
+	}
+	if err := ws.AddTeamMember(ctx, teamID, user.ID); err != nil {
+		logger.Warn("could not add approved user %s to team %s: %v", user.Username, teamID, err)
+		return
+	}
+	user.RequestedTeamID = nil
+	user.UpdatedAt = time.Now()
+	_ = h.configStore.UpdateUser(ctx, user)
+}
+
 // scheduleDemo handles POST /api/session/schedule-demo - Public demo booking from landing page.
 func (h *SessionHandler) scheduleDemo(ctx *fasthttp.RequestCtx) {
 	if h.configStore == nil {
@@ -1674,15 +1719,23 @@ func (h *SessionHandler) scheduleDemo(ctx *fasthttp.RequestCtx) {
 	if req.TeamSize == "" {
 		req.TeamSize = req.TeamSize2
 	}
-	req.FullName = strings.TrimSpace(req.FullName)
+	req.FullName = demoPlainLine(req.FullName, maxDemoNameLen)
 	req.Email = strings.TrimSpace(req.Email)
-	req.Company = strings.TrimSpace(req.Company)
-	req.TeamSize = strings.TrimSpace(req.TeamSize)
-	req.Interest = strings.TrimSpace(req.Interest)
-	req.Notes = strings.TrimSpace(req.Notes)
+	req.Company = demoPlainLine(req.Company, maxDemoCompanyLen)
+	req.TeamSize = demoPlainLine(req.TeamSize, 40)
+	req.Interest = demoPlainLine(req.Interest, 80)
+	if len([]rune(strings.TrimSpace(req.Notes))) > maxDemoNotesLen {
+		SendError(ctx, fasthttp.StatusBadRequest, "Notes must be 2000 characters or fewer.")
+		return
+	}
+	req.Notes = demoNotes(req.Notes, maxDemoNotesLen)
 
-	if req.FullName == "" || req.Email == "" || !strings.Contains(req.Email, "@") {
+	if req.FullName == "" || !isValidEmail(req.Email) {
 		SendError(ctx, fasthttp.StatusBadRequest, "Please provide your full name and a valid work email address.")
+		return
+	}
+	if consumeDemoQuota(h.configStore, ctx, req.Email) {
+		SendError(ctx, fasthttp.StatusTooManyRequests, "Too many demo requests for this email. Please try again later.")
 		return
 	}
 	if req.Company == "" {
@@ -1739,7 +1792,6 @@ func (h *SessionHandler) scheduleDemo(ctx *fasthttp.RequestCtx) {
 			"3. Universal AI Gateway: Vectorized Semantic Caching & 75%% API Cost Reduction\n"+
 			"4. Air-gapped / Private VPC On-Premise Deployment Architecture\n"+
 			"5. Q&A and Deployment Roadmap with Senior Engineers\n\n"+
-			"A calendar invite with video conference credentials has been dispatched to this email address.\n"+
 			"If you would like to invite additional team members or have any specific compliance requirements to cover, simply reply directly to this email.\n\n"+
 			"Warm regards,\n"+
 			"%s\n",
@@ -1748,12 +1800,6 @@ func (h *SessionHandler) scheduleDemo(ctx *fasthttp.RequestCtx) {
 		req.Notes, signoffLine,
 	)
 
-	// Send confirmation email to client
-	if err := sendAuthEmail(h.configStore, ctx, req.Email, clientSubject, clientBody); err != nil {
-		logger.Warn("demo confirmation email failed for email=%s: %v", req.Email, err)
-	}
-
-	// Also notify admin/team
 	smtpRow, _ := h.configStore.GetSMTPConfig(ctx)
 	adminRecipient := ""
 	if smtpRow != nil && smtpRow.Username != "" {
@@ -1761,9 +1807,11 @@ func (h *SessionHandler) scheduleDemo(ctx *fasthttp.RequestCtx) {
 	} else {
 		adminRecipient = os.Getenv("SMTP_USERNAME")
 	}
+	adminSubject := ""
+	adminBody := ""
 	if adminRecipient != "" && !strings.EqualFold(adminRecipient, req.Email) {
-		adminSubject := fmt.Sprintf("🎯 New Enterprise Demo Booking: %s (%s)", req.FullName, req.Company)
-		adminBody := fmt.Sprintf(
+		adminSubject = fmt.Sprintf("New Enterprise Demo Booking: %s (%s)", req.FullName, req.Company)
+		adminBody = fmt.Sprintf(
 			"New Enterprise Demo Booking Received from Landing Page!\n\n"+
 				"• Lead Name: %s\n"+
 				"• Work Email: %s\n"+
@@ -1776,13 +1824,72 @@ func (h *SessionHandler) scheduleDemo(ctx *fasthttp.RequestCtx) {
 			req.FullName, req.Email, req.Company, req.TeamSize, req.Interest, req.Notes,
 			time.Now().Format(time.RFC1123), clientIPAddress(ctx),
 		)
-		_ = sendAuthEmail(h.configStore, ctx, adminRecipient, adminSubject, adminBody)
+	} else {
+		adminRecipient = ""
+	}
+
+	store := h.configStore
+	to := req.Email
+	mailCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := sendSMTPEmail(mailCtx, store, to, clientSubject, clientBody); err != nil {
+		logger.Warn("demo confirmation email failed for email=%s: %v", to, err)
+		SendError(ctx, fasthttp.StatusBadGateway, "Could not send the invitation email. Please try again.")
+		return
+	}
+	if adminRecipient != "" {
+		go func() {
+			adminCtx, adminCancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer adminCancel()
+			if err := sendSMTPEmail(adminCtx, store, adminRecipient, adminSubject, adminBody); err != nil {
+				logger.Warn("demo admin email failed for email=%s: %v", adminRecipient, err)
+			}
+		}()
 	}
 
 	SendJSON(ctx, map[string]any{
 		"status":  "success",
-		"message": "Demo request received and confirmation email sent.",
+		"message": "Raksha sent you an invitation.",
 	})
+}
+
+func demoPlainLine(value string, max int) string {
+	value = strings.Map(func(r rune) rune {
+		if r < 32 || r == 127 {
+			return ' '
+		}
+		return r
+	}, value)
+	value = strings.Join(strings.Fields(value), " ")
+	if max > 0 {
+		runes := []rune(value)
+		if len(runes) > max {
+			value = strings.TrimSpace(string(runes[:max]))
+		}
+	}
+	return value
+}
+
+func demoNotes(value string, max int) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	value = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r < 32 || r == 127 {
+			return -1
+		}
+		return r
+	}, value)
+	value = strings.TrimSpace(value)
+	if max > 0 {
+		runes := []rune(value)
+		if len(runes) > max {
+			value = strings.TrimSpace(string(runes[:max]))
+		}
+	}
+	return value
 }
 
 
@@ -2278,6 +2385,11 @@ func (h *SessionHandler) deleteUser(ctx *fasthttp.RequestCtx) {
 	// Clean related governance rows before deleting the user so DB stays consistent.
 	purgeUserRelations(ctx, h.configStore, h.promptLifecycle, existing)
 
+	// Send rejection/account termination email notification to the user before removing the account
+	if existing.Email != "" {
+		_, _ = trySendRegistrationDecisionEmail(h.configStore, ctx, existing.Username, existing.Email, "rejected")
+	}
+
 	if err := h.configStore.DeleteUser(ctx, id); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to delete user: "+err.Error())
 		return
@@ -2307,6 +2419,7 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 		Role     string `json:"role"`
+		TeamID   string `json:"team_id"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &payload); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid request payload")
@@ -2355,6 +2468,10 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 	// Public registration always assigns the default "user" role.
 	// Elevated/Admin privileges must be explicitly granted by an existing administrator.
 	payload.Role = "user"
+	requestedTeamID, ok := h.signupTeamID(ctx, payload.TeamID)
+	if !ok {
+		return
+	}
 
 	hashedPassword, err := encrypt.Hash(payload.Password)
 	if err != nil {
@@ -2394,6 +2511,7 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 						existing.Email = payload.Email
 					}
 					existing.Status = initialStatus
+					existing.RequestedTeamID = requestedTeamID
 					existing.UpdatedAt = now
 					if err := h.configStore.UpdateUser(ctx, existing); err != nil {
 						SendError(ctx, fasthttp.StatusInternalServerError, "Failed to submit registration")
@@ -2422,6 +2540,7 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 		existing.Password = hashedPassword
 		existing.Role = "user"
 		existing.Status = initialStatus
+		existing.RequestedTeamID = requestedTeamID
 		existing.ReviewedAt = nil
 		existing.UpdatedAt = now
 		// Drop any leftover grants from a prior denied/abandoned row so Accept cannot revive them.
@@ -2446,9 +2565,10 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 		Username:  payload.Username,
 		Email:     payload.Email,
 		Password:  hashedPassword,
-		Role:      payload.Role,
-		Status:    initialStatus,
-		CreatedAt: now,
+		Role:            payload.Role,
+		Status:          initialStatus,
+		RequestedTeamID: requestedTeamID,
+		CreatedAt:       now,
 		UpdatedAt: now,
 	}
 	if err := h.configStore.CreateUser(ctx, user); err != nil {
@@ -2576,6 +2696,7 @@ func (h *SessionHandler) approveUser(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Failed to approve user: "+err.Error())
 		return
 	}
+	h.assignRequestedTeam(ctx, user)
 	if h.promptLifecycle != nil {
 		_ = h.promptLifecycle.OnUserCreated(ctx, user, true)
 	}

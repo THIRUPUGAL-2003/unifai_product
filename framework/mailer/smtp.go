@@ -49,20 +49,21 @@ func Send(cfg Config, msg Message) error {
 	if from == "" {
 		return fmt.Errorf("SMTP from email is required")
 	}
-	to := strings.TrimSpace(msg.To)
+	to := mailHeaderLine(msg.To)
 	if to == "" {
 		return fmt.Errorf("recipient email is required")
 	}
+	subject := mailHeaderLine(msg.Subject)
 
-	fromHeader := from
-	if name := strings.TrimSpace(cfg.FromName); name != "" {
+	fromHeader := mailHeaderLine(from)
+	if name := mailHeaderLine(cfg.FromName); name != "" {
 		fromHeader = fmt.Sprintf("%s <%s>", name, from)
 	}
 
 	payload := strings.Join([]string{
 		"From: " + fromHeader,
 		"To: " + to,
-		"Subject: " + msg.Subject,
+		"Subject: " + subject,
 		"MIME-Version: 1.0",
 		"Content-Type: text/plain; charset=UTF-8",
 		"",
@@ -131,4 +132,11 @@ func Send(cfg Config, msg Message) error {
 	}
 
 	return smtp.SendMail(addr, auth, from, []string{to}, []byte(payload))
+}
+
+// mailHeaderLine keeps a value on one header line so a caller cannot inject extra headers.
+func mailHeaderLine(value string) string {
+	value = strings.ReplaceAll(value, "\r", "")
+	value = strings.ReplaceAll(value, "\n", "")
+	return strings.TrimSpace(value)
 }

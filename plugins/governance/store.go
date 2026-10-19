@@ -42,6 +42,10 @@ type LocalGovernanceStore struct {
 	routingRules        sync.Map                             // string -> []*TableRoutingRule (key: "scope:scopeID" -> rules, scopeID="" for global)
 	users               sync.Map                             // string -> *UserGovernance (User ID -> budget/rate limit pointers)
 	businessUnitsByTeam atomic.Pointer[map[string][]buStamp] // teamID -> BUs containing that team; replaced wholesale, never mutated
+	// vkScopedUsage is usage of one budget on one virtual key (vkID + budgetID).
+	// User, team, business unit, and customer limits are checked against this,
+	// so a second key does not spend the first key's slice of those budgets.
+	vkScopedUsage sync.Map // string -> *scopedUsage
 
 	// Last DB usages for budgets and rate limits
 	LastDBUsagesBudgetsMu            sync.RWMutex       // Last DB usages for budgets
@@ -71,6 +75,46 @@ type LocalGovernanceStore struct {
 }
 
 // buStamp is a lightweight business-unit identity used when stamping request context.
+// vkUsageContextKey marks which virtual key a budget bump or check belongs to.
+type vkUsageContextKey struct{}
+
+type scopedUsage struct {
+	mu sync.Mutex
+	v  float64
+}
+
+func vkScopedKey(vkID, budgetID string) string {
+	return vkID + "\x00" + budgetID
+}
+
+func (gs *LocalGovernanceStore) addVKScopedUsage(vkID, budgetID string, cost float64) {
+	if gs == nil || vkID == "" || budgetID == "" || cost == 0 {
+		return
+	}
+	key := vkScopedKey(vkID, budgetID)
+	raw, _ := gs.vkScopedUsage.LoadOrStore(key, &scopedUsage{})
+	counter, ok := raw.(*scopedUsage)
+	if !ok || counter == nil {
+		return
+	}
+	counter.mu.Lock()
+	counter.v += cost
+	counter.mu.Unlock()
+}
+
+func (gs *LocalGovernanceStore) clearVKScopedUsage(budgetID string) {
+	if gs == nil || budgetID == "" {
+		return
+	}
+	suffix := "\x00" + budgetID
+	gs.vkScopedUsage.Range(func(key, _ any) bool {
+		if s, ok := key.(string); ok && strings.HasSuffix(s, suffix) {
+			gs.vkScopedUsage.Delete(key)
+		}
+		return true
+	})
+}
+
 type buStamp struct {
 	ID         string
 	Name       string
@@ -442,6 +486,11 @@ func (gs *LocalGovernanceStore) BumpBudgetUsage(ctx context.Context, budgetID st
 		clone := *old
 		clone.CurrentUsage += cost
 		if gs.budgets.CompareAndSwap(budgetID, raw, &clone) {
+			if ctx != nil {
+				if vkID, _ := ctx.Value(vkUsageContextKey{}).(string); vkID != "" {
+					gs.addVKScopedUsage(vkID, budgetID, cost)
+				}
+			}
 			return nil
 		}
 	}
@@ -535,6 +584,7 @@ func (gs *LocalGovernanceStore) ResetBudgetAt(ctx context.Context, budgetID stri
 		clone.CurrentUsage = 0
 		clone.LastReset = newLastReset
 		if gs.budgets.CompareAndSwap(budgetID, raw, &clone) {
+			gs.clearVKScopedUsage(budgetID)
 			return &clone, true
 		}
 	}
@@ -1121,12 +1171,14 @@ func (gs *LocalGovernanceStore) CheckBudget(ctx context.Context, entityWiseBudge
 			if !exists {
 				baseline = 0
 			}
+			usage := budget.CurrentUsage
 			gs.logger.Debug("LocalStore CheckBudget: Checking %s budget %s: local=%.4f, remote=%.4f, total=%.4f, limit=%.4f",
-				entity, budget.ID, budget.CurrentUsage, baseline, budget.CurrentUsage+baseline, budget.MaxLimit)
-			// Check if current usage (local + remote baseline) exceeds budget limit
-			if budget.CurrentUsage+baseline >= budget.MaxLimit {
+				entity, budget.ID, usage, baseline, usage+baseline, budget.MaxLimit)
+			// Every level uses its own total. A user's two keys add together on the user.
+			// Each virtual key still has its own budget, so the keys stay separate.
+			if usage+baseline >= budget.MaxLimit {
 				gs.logger.Debug("LocalStore CheckBudget: Budget %s EXCEEDED", budget.ID)
-				return DecisionBudgetExceeded, &BudgetExceededError{Entity: entity, Usage: budget.CurrentUsage + baseline, Limit: budget.MaxLimit}
+				return DecisionBudgetExceeded, &BudgetExceededError{Entity: entity, Usage: usage + baseline, Limit: budget.MaxLimit}
 			}
 		}
 	}
@@ -3134,12 +3186,128 @@ func (gs *LocalGovernanceStore) billedTeam(ctx context.Context, vk *configstoreT
 	if tid := gs.teamInLinkedBusinessUnit(member, unitIDs); tid != "" {
 		return tid
 	}
+	// Path 1: customer → business unit → team → user. A team inside a business unit of
+	// this customer is billed before a team linked only by customer_id.
+	if tid := gs.teamInCustomerBusinessUnit(member, customers); tid != "" {
+		return tid
+	}
+	// Path 2: customer → team → user.
 	for _, tid := range member {
 		if cid := gs.teamCustomerID(nil, tid); cid != "" && slices.Contains(customers, cid) {
 			return tid
 		}
 	}
 	return ""
+}
+
+// teamInCustomerBusinessUnit returns the first team that sits in a business unit of one of customerIDs.
+func (gs *LocalGovernanceStore) teamInCustomerBusinessUnit(teamIDs, customerIDs []string) string {
+	if len(teamIDs) == 0 || len(customerIDs) == 0 {
+		return ""
+	}
+	index := gs.businessUnitsByTeam.Load()
+	if index == nil {
+		return ""
+	}
+	for _, tid := range teamIDs {
+		for _, bu := range (*index)[tid] {
+			if bu.CustomerID != nil && *bu.CustomerID != "" && slices.Contains(customerIDs, *bu.CustomerID) {
+				return tid
+			}
+		}
+	}
+	return ""
+}
+
+// customerAssignedVKAllowed reports whether the caller may use this virtual key.
+// A key assigned to a customer, business unit, team, or user can be used only by those people.
+// A key with none of those assignments stays open.
+func (gs *LocalGovernanceStore) customerAssignedVKAllowed(ctx context.Context, vk *configstoreTables.TableVirtualKey) bool {
+	if vk == nil {
+		return true
+	}
+	customers := vkCustomerIDs(vk)
+	teams := vkTeamIDs(vk)
+	units := vkBusinessUnitIDs(vk)
+	users := vkUserIDs(vk)
+	if len(customers) == 0 && len(teams) == 0 && len(units) == 0 && len(users) == 0 {
+		return true
+	}
+	if userID := extractUserIDFromContext(ctx); userID != "" && slices.Contains(users, userID) {
+		return true
+	}
+	member := gs.memberTeamIDs(ctx)
+	if len(member) == 0 {
+		return false
+	}
+	for _, tid := range member {
+		if slices.Contains(teams, tid) {
+			return true
+		}
+	}
+	if gs.teamInLinkedBusinessUnit(member, units) != "" {
+		return true
+	}
+	if gs.teamInCustomerBusinessUnit(member, customers) != "" {
+		return true
+	}
+	for _, tid := range member {
+		if cid := gs.teamCustomerID(nil, tid); cid != "" && slices.Contains(customers, cid) {
+			return true
+		}
+	}
+	return false
+}
+
+func vkUserIDs(vk *configstoreTables.TableVirtualKey) []string {
+	if vk == nil {
+		return nil
+	}
+	ids := make([]string, 0, len(vk.UserIDs)+len(vk.Users))
+	for _, id := range vk.UserIDs {
+		if id != "" && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	for _, user := range vk.Users {
+		if user.UserID != "" && !slices.Contains(ids, user.UserID) {
+			ids = append(ids, user.UserID)
+		}
+	}
+	return ids
+}
+
+func (gs *LocalGovernanceStore) memberTeamIDs(ctx context.Context) []string {
+	if ctx == nil {
+		return nil
+	}
+	member, _ := ctx.Value(governanceUserTeamIDsContextKey).([]string)
+	if len(member) > 0 {
+		return append([]string(nil), member...)
+	}
+	userID := extractUserIDFromContext(ctx)
+	if userID == "" {
+		return nil
+	}
+	if ug, ok := gs.GetUserGovernance(ctx, userID); ok && ug != nil {
+		for _, tid := range ug.TeamIDs {
+			if tid != "" && !slices.Contains(member, tid) {
+				member = append(member, tid)
+			}
+		}
+	}
+	if len(member) == 0 && gs.configStore != nil {
+		if ws, ok := configstore.AsWorkspaceStore(gs.configStore); ok && ws != nil {
+			if links, err := ws.ListTeamsForUser(ctx, userID); err == nil {
+				for _, l := range links {
+					if l.TeamID != "" && !slices.Contains(member, l.TeamID) {
+						member = append(member, l.TeamID)
+					}
+				}
+			}
+		}
+	}
+	return member
 }
 
 // teamInLinkedBusinessUnit returns the first of teamIDs that belongs to one of unitIDs.
@@ -3175,12 +3343,15 @@ func (gs *LocalGovernanceStore) billedCustomerIDs(ctx context.Context, vk *confi
 	if len(direct) == 0 {
 		return nil
 	}
-	if teamID != "" {
-		if cid := gs.teamCustomerID(vk, teamID); cid != "" && slices.Contains(direct, cid) {
-			return []string{cid}
-		}
+	// No team in this customer's tree: the key is not for this caller, so the customer is not billed.
+	if teamID == "" {
+		return nil
 	}
-	return direct[:1]
+	if cid := gs.teamCustomerID(vk, teamID); cid != "" && slices.Contains(direct, cid) {
+		return []string{cid}
+	}
+	// The team is assigned on the key but is not inside this customer, so the customer is not billed.
+	return nil
 }
 
 func (gs *LocalGovernanceStore) teamCustomerID(vk *configstoreTables.TableVirtualKey, teamID string) string {

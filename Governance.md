@@ -2,7 +2,8 @@
 
 Welcome to the definitive reference manual for the Gateway Enterprise Governance and Multi-Tenant Organization system. This document outlines the hierarchy shapes, database schemas, prompt repository auto-structuring, drag-and-drop synchronization, spend budgets, token rate limits, and comprehensive error handling across the platform.
 
-For user authentication, login lockout, password recovery, session cookies, and registration approval flows, refer to [`Login.md`](file:///d:/unifai_project/Login.md).
+For user authentication, login lockout, password recovery, session cookies, and registration approval flows, refer to [`Login.md`](file:///d:/unifai_project/Login.md).  
+For the prompt engineering playground, immutable version control, session management, and prompt history retention policies, refer to [`Prompt_Repository.md`](file:///d:/unifai_project/Prompt_Repository.md).
 
 ---
 

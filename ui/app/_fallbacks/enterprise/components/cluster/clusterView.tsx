@@ -13,6 +13,43 @@ import { AlertTriangle, Network, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+function splitPeers(text: string) {
+	return text
+		.split(/\n|,/)
+		.map((peer) => peer.trim())
+		.filter(Boolean);
+}
+
+/** Same rules as the gateway: host:port, or http(s)://host[:port] with no path. */
+function invalidClusterPeer(peer: string): string | null {
+	const example = "10.0.0.12:6000";
+	const raw = peer.trim();
+	if (!raw) return null;
+	const hasHttp = /^https?:\/\//i.test(raw);
+	if (!hasHttp && raw.includes("://")) {
+		return `Invalid peer "${raw}" — only http:// or https:// URLs are supported (e.g. ${example})`;
+	}
+	let parsed: URL;
+	try {
+		parsed = new URL(hasHttp ? raw : `http://${raw}`);
+	} catch {
+		return `Invalid peer "${raw}" — use host:port or http(s)://host:port (e.g. ${example})`;
+	}
+	if (!parsed.hostname) {
+		return `Invalid peer "${raw}" — use host:port or http(s)://host:port (e.g. ${example})`;
+	}
+	if (parsed.pathname && parsed.pathname !== "/") {
+		return `Invalid peer "${raw}" — give only the gateway address, without a path`;
+	}
+	if (parsed.username || parsed.password) {
+		return `Invalid peer "${raw}" — do not include a username or password`;
+	}
+	if (!parsed.port && !hasHttp) {
+		return `Invalid peer "${raw}" — port is required (e.g. ${example})`;
+	}
+	return null;
+}
+
 export default function ClusterPage() {
 	const { data, isLoading: loading, isError, error, refetch } = useGetClusterConfigQuery();
 	const [updateCluster, { isLoading: saving }] = useUpdateClusterConfigMutation();
@@ -27,16 +64,13 @@ export default function ClusterPage() {
 
 	const canEdit = useRbac(RbacResource.Cluster, RbacOperation.Update);
 
-	const validatePeers = (peers: string[]) => {
+	const validatePeers = (peers: string[], enabled = config.enabled) => {
 		const errors: string[] = [];
-		const hostPort = /^[a-zA-Z0-9._-]+:\d+$/;
-		const gatewayUrl = /^https?:\/\/[a-zA-Z0-9._-]+(:\d+)?\/?$/;
 		peers.forEach((peer) => {
-			if (!hostPort.test(peer) && !gatewayUrl.test(peer)) {
-				errors.push(`Invalid peer "${peer}" — use host:port or http(s)://host:port (e.g. 10.0.0.12:PORT)`);
-			}
+			const message = invalidClusterPeer(peer);
+			if (message) errors.push(message);
 		});
-		if (config.enabled && peers.length === 0) {
+		if (enabled && peers.length === 0) {
 			errors.push("Add at least one peer when cluster mode is enabled.");
 		}
 		setPeerErrors(errors);
@@ -50,10 +84,7 @@ export default function ClusterPage() {
 	}, [data]);
 
 	const save = async () => {
-		const peers = peerText
-			.split(/\n|,/)
-			.map((peer) => peer.trim())
-			.filter(Boolean);
+		const peers = splitPeers(peerText);
 		if (!validatePeers(peers)) {
 			toast.error("Fix peer validation errors before saving");
 			return;
@@ -69,18 +100,16 @@ export default function ClusterPage() {
 	};
 
 	const handleToggleCluster = async (enabled: boolean) => {
-		const peers = peerText
-			.split(/\n|,/)
-			.map((peer) => peer.trim())
-			.filter(Boolean);
+		const peers = splitPeers(peerText);
 		if (!enabled) {
-			// Immediately save disabled state to database
-			const nextConfig = { ...config, enabled: false, peers };
+			const peersToSave = peers.filter((peer) => !invalidClusterPeer(peer));
+			const nextConfig = { ...config, enabled: false, peers: peersToSave };
 			setConfig(nextConfig);
 			setPeerErrors([]);
 			try {
 				const next = await updateCluster(nextConfig).unwrap();
 				setConfig({ ...config, ...next });
+				setPeerText((next.peers || peersToSave).join("\n"));
 				toast.success("Cluster mode disabled and saved");
 			} catch (err) {
 				setConfig(config);
@@ -88,14 +117,13 @@ export default function ClusterPage() {
 			}
 			return;
 		}
-		// When enabling
 		if (peers.length === 0) {
 			setConfig({ ...config, enabled: true });
 			setPeerErrors(["Add at least one peer when cluster mode is enabled."]);
 			toast.info("Cluster mode turned on. Add at least one peer gateway address and click Save.");
 			return;
 		}
-		if (!validatePeers(peers)) {
+		if (!validatePeers(peers, true)) {
 			setConfig({ ...config, enabled: true });
 			toast.error("Please fix peer addresses before saving.");
 			return;
@@ -210,18 +238,14 @@ export default function ClusterPage() {
 					<div className="space-y-1">
 						<Label>Peer gateway addresses (one per line)</Label>
 						<p className="text-muted-foreground text-xs">
-							The other nodes&apos; HTTP address — the same host:port the dashboard/API uses — e.g. <code>https://node-2.internal</code> or <code>10.0.0.12:PORT</code>. Not the gossip port.
+							The other nodes&apos; HTTP address — the same host:port the dashboard/API uses — e.g. <code>https://node-2.internal</code> or <code>10.0.0.12:6000</code>. Not the gossip port.
 						</p>
 						<textarea
 							value={peerText}
 							disabled={!canEdit}
 							onChange={(e) => {
 								setPeerText(e.target.value);
-								const peers = e.target.value
-									.split(/\n|,/)
-									.map((peer) => peer.trim())
-									.filter(Boolean);
-								validatePeers(peers);
+								validatePeers(splitPeers(e.target.value));
 							}}
 							className="border-input bg-background min-h-28 w-full rounded-md border p-3 font-mono text-sm"
 							placeholder={"https://node-2.internal\nhttps://node-3.internal"}

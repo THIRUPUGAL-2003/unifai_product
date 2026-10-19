@@ -105,13 +105,26 @@ export default function LandingPage() {
 					notes: demoForm.notes.trim(),
 				}),
 			});
-			const data = await res.json();
-			if (!res.ok) {
-				throw new Error(data?.error?.message || data?.message || "Failed to schedule demonstration. Please try again.");
+			const raw = await res.text();
+			let data: { error?: { message?: string }; message?: string } = {};
+			if (raw) {
+				try {
+					data = JSON.parse(raw);
+				} catch {
+					throw new Error("The server sent an unexpected reply. Please try again.");
+				}
+			}
+			if (!res.ok || !raw) {
+				throw new Error(data?.error?.message || data?.message || "Could not reach the server. Please try again.");
 			}
 			setDemoSubmitted(true);
 		} catch (err: any) {
-			setDemoError(err?.message || "Unable to send demo schedule. Please check your network and try again.");
+			const message = String(err?.message || "");
+			setDemoError(
+				message.includes("Failed to execute 'json'") || message.includes("Unexpected end of JSON")
+					? "Could not reach the server. Please try again."
+					: message || "Unable to send demo schedule. Please check your network and try again.",
+			);
 		} finally {
 			setIsSubmittingDemo(false);
 		}
@@ -953,10 +966,7 @@ console.log(response.choices[0].message.content);`
 							<div className="h-12 w-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mx-auto">
 								<CheckCircle2 className="h-6 w-6" />
 							</div>
-							<h3 className="text-base font-bold text-[#0b1b3a]">Demo Request Received</h3>
-							<p className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed">
-								Thank you, <strong className="text-[#0b1b3a]">{demoForm.fullName}</strong>. A technical architect has sent a calendar invitation to <strong className="text-[#0b1b3a]">{demoForm.email}</strong>.
-							</p>
+							<h3 className="text-base font-bold text-[#0b1b3a]">Raksha sent you an invitation.</h3>
 							<div className="pt-2">
 								<Button
 									onClick={resetDemoModal}
@@ -1052,6 +1062,7 @@ console.log(response.choices[0].message.content);`
 								<label className="text-xs font-semibold text-slate-700">Architecture Requirements (Optional)</label>
 								<textarea
 									rows={2}
+									maxLength={2000}
 									placeholder="Tell us about your current AI models, team size, or security needs..."
 									value={demoForm.notes}
 									onChange={(e) => setDemoForm({ ...demoForm, notes: e.target.value })}

@@ -39,7 +39,7 @@ export type LogoAsset = {
 	height: number;
 };
 
-async function loadLogoAsset(logoSrc = LOGO_SRC): Promise<LogoAsset | null> {
+export async function loadLogoAsset(logoSrc = LOGO_SRC): Promise<LogoAsset | null> {
 	try {
 		const res = await fetch(logoSrc);
 		if (!res.ok) return null;
