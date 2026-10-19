@@ -209,6 +209,22 @@ func (m *PromptLifecycleManager) EnsureAllSystemRoots(ctx context.Context) error
 			logger.Warn("PromptLifecycle: failed to ensure system root folder %s: %v", r.name, err)
 		}
 	}
+
+	// Self-heal: Ensure all customer folders sit directly under Customers root
+	var custRoot tables.TableFolder
+	if err := m.store.DB().WithContext(ctx).Where("type = 'system_customers_root' OR (name = 'Customers' AND (parent_id IS NULL OR parent_id = ''))").First(&custRoot).Error; err == nil && custRoot.ID != "" {
+		_ = m.store.DB().WithContext(ctx).Model(&tables.TableFolder{}).
+			Where("type = 'customer' AND (parent_id IS NULL OR parent_id <> ?)", custRoot.ID).
+			Update("parent_id", custRoot.ID).Error
+	}
+	// Self-heal: Ensure all user folders sit directly under Users root
+	var usersRoot tables.TableFolder
+	if err := m.store.DB().WithContext(ctx).Where("type = 'system_users_root' OR (name = 'Users' AND (parent_id IS NULL OR parent_id = ''))").First(&usersRoot).Error; err == nil && usersRoot.ID != "" {
+		_ = m.store.DB().WithContext(ctx).Model(&tables.TableFolder{}).
+			Where("type = 'user' AND (parent_id IS NULL OR parent_id <> ?)", usersRoot.ID).
+			Update("parent_id", usersRoot.ID).Error
+	}
+
 	return nil
 }
 
@@ -1723,11 +1739,69 @@ func (m *PromptLifecycleManager) revokePromptFromFolderAudience(ctx context.Cont
 // resolveTeamPlacement reads where a team folder is allowed to sit.
 // A customer parent links the team to that customer. A business-unit parent links the team to
 // that unit and to the unit's customer. The Teams root leaves the team standalone.
-func (m *PromptLifecycleManager) resolveTeamPlacement(ctx context.Context, parentFolderID string) (customerID, businessUnitID *string, err error) {
-	if m == nil || m.store == nil || m.store.DB() == nil || parentFolderID == "" {
-		return nil, nil, errors.New("a team folder can only move under a customer, a business unit, or Teams")
+// resolveCustomerPlacement verifies where a customer folder is allowed to sit.
+// A customer folder can ONLY sit directly under the "Customers" system root folder.
+func (m *PromptLifecycleManager) resolveCustomerPlacement(ctx context.Context, parentFolderID string) (resolvedParentID string, err error) {
+	if m == nil || m.store == nil || m.store.DB() == nil {
+		return "", errors.New("database not available")
 	}
 	db := m.store.DB().WithContext(ctx)
+	custRoot, cErr := m.EnsureSystemFolder(ctx, "Customers", "system_customers_root", nil)
+	if cErr != nil || custRoot == nil {
+		return "", errors.New("could not resolve Customers root folder")
+	}
+	if parentFolderID == "" || parentFolderID == custRoot.ID {
+		return custRoot.ID, nil
+	}
+	var parent tables.TableFolder
+	if err := db.Where("id = ?", parentFolderID).First(&parent).Error; err != nil {
+		return "", errors.New("parent folder not found")
+	}
+	if parent.Type == "system_customers_root" || (parent.Name == "Customers" && (parent.ParentID == nil || *parent.ParentID == "")) {
+		return parent.ID, nil
+	}
+	return "", errors.New("a customer folder can only sit under the Customers root folder")
+}
+
+// resolveUserPlacement verifies where a user folder is allowed to sit.
+// A user folder can ONLY sit directly under the "Users" system root folder.
+func (m *PromptLifecycleManager) resolveUserPlacement(ctx context.Context, parentFolderID string) (resolvedParentID string, err error) {
+	if m == nil || m.store == nil || m.store.DB() == nil {
+		return "", errors.New("database not available")
+	}
+	db := m.store.DB().WithContext(ctx)
+	usersRoot, uErr := m.EnsureSystemFolder(ctx, "Users", "system_users_root", nil)
+	if uErr != nil || usersRoot == nil {
+		return "", errors.New("could not resolve Users root folder")
+	}
+	if parentFolderID == "" || parentFolderID == usersRoot.ID {
+		return usersRoot.ID, nil
+	}
+	var parent tables.TableFolder
+	if err := db.Where("id = ?", parentFolderID).First(&parent).Error; err != nil {
+		return "", errors.New("parent folder not found")
+	}
+	if parent.Type == "system_users_root" || (parent.Name == "Users" && (parent.ParentID == nil || *parent.ParentID == "")) {
+		return parent.ID, nil
+	}
+	return "", errors.New("a user folder can only sit under the Users root folder")
+}
+
+// resolveTeamPlacement reads where a team folder is allowed to sit.
+// A customer parent links the team to that customer. A business-unit parent links the team to
+// that unit and to the unit's customer. The Teams root leaves the team standalone.
+func (m *PromptLifecycleManager) resolveTeamPlacement(ctx context.Context, parentFolderID string) (customerID, businessUnitID *string, err error) {
+	if m == nil || m.store == nil || m.store.DB() == nil {
+		return nil, nil, errors.New("database not available")
+	}
+	db := m.store.DB().WithContext(ctx)
+	if parentFolderID == "" {
+		teamsRoot, tErr := m.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil)
+		if tErr != nil || teamsRoot == nil {
+			return nil, nil, errors.New("could not resolve Teams root folder")
+		}
+		return nil, nil, nil
+	}
 	var parent tables.TableFolder
 	if err := db.Where("id = ?", parentFolderID).First(&parent).Error; err != nil {
 		return nil, nil, errors.New("parent folder not found")
@@ -1747,7 +1821,7 @@ func (m *PromptLifecycleManager) resolveTeamPlacement(ctx context.Context, paren
 	case parent.Type == "system_teams_root" || (parent.Name == "Teams" && (parent.ParentID == nil || *parent.ParentID == "")):
 		return nil, nil, nil
 	default:
-		return nil, nil, errors.New("a team folder can only move under a customer, a business unit, or Teams")
+		return nil, nil, errors.New("a team folder can only move under a specific customer, a specific business unit, or Teams root")
 	}
 }
 
@@ -1893,6 +1967,198 @@ func (m *PromptLifecycleManager) applyTeamPlacement(ctx context.Context, teamID,
 	if oldCustomerID != newCustomerID {
 		m.resyncTeamCustomerChange(ctx, teamID, oldCustomerID)
 	}
+	return nil
+}
+
+// resolveBusinessUnitPlacement reads where a business unit folder is allowed to sit.
+// A customer parent links the BU to that customer. The Business Units root leaves the BU standalone.
+func (m *PromptLifecycleManager) resolveBusinessUnitPlacement(ctx context.Context, parentFolderID string) (customerID *string, resolvedParentID string, err error) {
+	if m == nil || m.store == nil || m.store.DB() == nil {
+		return nil, "", errors.New("database not available")
+	}
+	db := m.store.DB().WithContext(ctx)
+	if parentFolderID == "" {
+		buRoot, bErr := m.EnsureSystemFolder(ctx, "Business Units", "system_business_units_root", nil)
+		if bErr != nil || buRoot == nil {
+			return nil, "", errors.New("could not resolve Business Units root folder")
+		}
+		return nil, buRoot.ID, nil
+	}
+	var parent tables.TableFolder
+	if err := db.Where("id = ?", parentFolderID).First(&parent).Error; err != nil {
+		return nil, "", errors.New("parent folder not found")
+	}
+	if strings.HasPrefix(parent.Type, "archived_") || strings.HasPrefix(parent.Type, "system_removed_") || strings.HasPrefix(parent.Name, "Removed") {
+		return nil, "", errors.New("a business unit folder cannot move into Removed")
+	}
+	switch {
+	case parent.Type == "customer" && parent.EntityID != nil && *parent.EntityID != "":
+		return parent.EntityID, parent.ID, nil
+	case parent.Type == "system_business_units_root" || (parent.Name == "Business Units" && (parent.ParentID == nil || *parent.ParentID == "")):
+		return nil, parent.ID, nil
+	default:
+		return nil, "", errors.New("a business unit folder can only move under a customer or Business Units root")
+	}
+}
+
+// buMoveFitsCustomerBudget rejects a drag of a BU that would allot more than the destination customer's budget.
+func (m *PromptLifecycleManager) buMoveFitsCustomerBudget(ctx context.Context, buID, parentFolderID string) error {
+	customerID, _, err := m.resolveBusinessUnitPlacement(ctx, parentFolderID)
+	if err != nil {
+		return err
+	}
+	if customerID == nil || *customerID == "" || m == nil || m.store == nil || m.store.DB() == nil {
+		return nil
+	}
+	db := m.store.DB().WithContext(ctx)
+	if !db.Migrator().HasTable(&tables.TableBudget{}) {
+		return nil
+	}
+	var customerBudgets []tables.TableBudget
+	if err := db.Where("customer_id = ?", *customerID).Find(&customerBudgets).Error; err != nil {
+		return err
+	}
+	customerLimits := map[string]float64{}
+	for _, b := range customerBudgets {
+		customerLimits[b.ResetDuration] += b.MaxLimit
+	}
+	if len(customerLimits) == 0 {
+		return nil
+	}
+
+	var buTeams []tables.TableTeam
+	_ = db.Where("business_unit_id = ?", buID).Find(&buTeams).Error
+	buTeamIDs := make([]string, 0, len(buTeams))
+	for _, t := range buTeams {
+		buTeamIDs = append(buTeamIDs, t.ID)
+	}
+
+	var siblings []tables.TableTeam
+	query := db.Select("id").Where("customer_id = ?", *customerID)
+	if len(buTeamIDs) > 0 {
+		query = query.Where("id NOT IN ?", buTeamIDs)
+	}
+	if err := query.Find(&siblings).Error; err != nil {
+		return err
+	}
+	siblingIDs := make([]string, 0, len(siblings))
+	for _, s := range siblings {
+		siblingIDs = append(siblingIDs, s.ID)
+	}
+
+	allotted := map[string]float64{}
+	if len(siblingIDs) > 0 {
+		var other []tables.TableBudget
+		if err := db.Where("team_id IN ?", siblingIDs).Find(&other).Error; err != nil {
+			return err
+		}
+		for _, b := range other {
+			allotted[b.ResetDuration] += b.MaxLimit
+		}
+	}
+
+	buTeamLimits := map[string]float64{}
+	if len(buTeamIDs) > 0 {
+		var mine []tables.TableBudget
+		if err := db.Where("team_id IN ?", buTeamIDs).Find(&mine).Error; err != nil {
+			return err
+		}
+		for _, b := range mine {
+			buTeamLimits[b.ResetDuration] += b.MaxLimit
+			allotted[b.ResetDuration] += b.MaxLimit
+		}
+	}
+
+	for period, customerLimit := range customerLimits {
+		total := allotted[period]
+		if total <= customerLimit+1e-9 {
+			continue
+		}
+		available := customerLimit - (total - buTeamLimits[period])
+		if available < 0 {
+			available = 0
+		}
+		return fmt.Errorf(
+			"business unit teams under this customer would total $%.2f per %s, above customer budget of $%.2f (available: $%.2f)",
+			total, period, customerLimit, available)
+	}
+	return nil
+}
+
+// applyBusinessUnitPlacement updates the BU's customer_id and all its teams' customer_id to match its new folder parent.
+// It also resyncs prompts, virtual keys, and member grants for all teams and users inside the BU!
+func (m *PromptLifecycleManager) applyBusinessUnitPlacement(ctx context.Context, buID, parentFolderID string) error {
+	customerID, resolvedParentID, err := m.resolveBusinessUnitPlacement(ctx, parentFolderID)
+	if err != nil {
+		return err
+	}
+	if m == nil || m.store == nil || m.store.DB() == nil || buID == "" {
+		return errors.New("business unit folder is not linked to a business unit")
+	}
+	db := m.store.DB().WithContext(ctx)
+	var bu tables.TableBusinessUnit
+	if err := db.Where("id = ?", buID).First(&bu).Error; err != nil {
+		return errors.New("business unit not found")
+	}
+
+	oldCustomerID := derefID(bu.CustomerID)
+	newCustomerID := derefID(customerID)
+
+	customerVal := any(gorm.Expr("NULL"))
+	if customerID != nil && *customerID != "" {
+		customerVal = *customerID
+	}
+
+	// 1. Update the Business Unit in Governance DB
+	if err := db.Model(&tables.TableBusinessUnit{}).Where("id = ?", buID).Updates(map[string]any{
+		"customer_id": customerVal,
+		"updated_at":  time.Now(),
+	}).Error; err != nil {
+		return err
+	}
+
+	// 2. Find all teams in this Business Unit
+	var teams []tables.TableTeam
+	if err := db.Where("business_unit_id = ?", buID).Find(&teams).Error; err != nil {
+		teams = nil
+	}
+	if len(bu.ParsedTeamIDs) > 0 {
+		var extraTeams []tables.TableTeam
+		if err := db.Where("id IN ?", bu.ParsedTeamIDs).Find(&extraTeams).Error; err == nil {
+			teamSet := make(map[string]bool)
+			for _, t := range teams {
+				teamSet[t.ID] = true
+			}
+			for _, et := range extraTeams {
+				if !teamSet[et.ID] {
+					teams = append(teams, et)
+				}
+			}
+		}
+	}
+
+	// 3. Update customer_id for all teams in this Business Unit and resync their members
+	for _, team := range teams {
+		teamOldCust := derefID(team.CustomerID)
+		if teamOldCust == "" {
+			teamOldCust = oldCustomerID
+		}
+		_ = db.Model(&tables.TableTeam{}).Where("id = ?", team.ID).Updates(map[string]any{
+			"customer_id": customerVal,
+			"updated_at":  time.Now(),
+		}).Error
+
+		if teamOldCust != newCustomerID {
+			m.resyncTeamCustomerChange(ctx, team.ID, teamOldCust)
+		}
+	}
+
+	// 4. Ensure the BU folder's parent in Prompt Repo points to resolvedParentID
+	if resolvedParentID != "" && resolvedParentID != parentFolderID {
+		_ = db.Model(&tables.TableFolder{}).Where("entity_id = ? AND type = 'business_unit'", buID).
+			Update("parent_id", resolvedParentID).Error
+	}
+
 	return nil
 }
 

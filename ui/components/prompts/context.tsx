@@ -136,6 +136,7 @@ interface PromptContextValue {
 	handleSelectPrompt: (id: string) => void;
 	handleMovePrompt: (promptId: string, folderId: string | null) => Promise<void>;
 	handleMoveTeamFolder: (folderId: string, parentId: string) => Promise<void>;
+	handleMoveFolder: (folderId: string, parentId: string | null) => Promise<void>;
 	handleDeleteFolder: () => Promise<void>;
 	handleDeletePrompt: () => Promise<void>;
 	handleSendMessage: (pendingMessage?: Message, overrideMessages?: Message[]) => Promise<void>;
@@ -752,10 +753,23 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		async (folderId: string, parentId: string) => {
 			try {
 				await updateFolder({ id: folderId, data: { parent_id: parentId } }).unwrap();
-				dispatch(baseApi.util.invalidateTags(["Teams", "BusinessUnits"]));
+				dispatch(baseApi.util.invalidateTags(["Prompts", "Teams", "BusinessUnits", "Customers"]));
 				toast.success("Team moved");
 			} catch (err) {
 				toast.error(getErrorMessage(err) || "Failed to move team");
+			}
+		},
+		[updateFolder, dispatch],
+	);
+
+	const handleMoveFolder = useCallback(
+		async (folderId: string, parentId: string | null) => {
+			try {
+				await updateFolder({ id: folderId, data: { parent_id: parentId ?? "" } }).unwrap();
+				dispatch(baseApi.util.invalidateTags(["Prompts", "Teams", "BusinessUnits", "Customers"]));
+				toast.success("Folder moved");
+			} catch (err) {
+				toast.error(getErrorMessage(err) || "Failed to move folder");
 			}
 		},
 		[updateFolder, dispatch],
@@ -1350,6 +1364,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		handleSelectPrompt,
 		handleMovePrompt,
 		handleMoveTeamFolder,
+		handleMoveFolder,
 		handleDeleteFolder,
 		handleDeletePrompt,
 		handleSendMessage,

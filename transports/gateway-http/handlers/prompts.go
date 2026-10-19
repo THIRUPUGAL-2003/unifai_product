@@ -474,10 +474,50 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 				SendError(ctx, fasthttp.StatusBadRequest, "system folders cannot be moved")
 				return
 			}
-			if folder.Type == "team" {
-				if h.lifecycle == nil || newParent == "" {
-					SendError(ctx, fasthttp.StatusBadRequest, "a team folder can only move under a customer, a business unit, or Teams")
+			if folder.Type == "customer" {
+				if h.lifecycle == nil {
+					SendError(ctx, fasthttp.StatusBadRequest, "lifecycle manager not initialized")
 					return
+				}
+				resolvedParent, err := h.lifecycle.resolveCustomerPlacement(ctx, newParent)
+				if err != nil {
+					SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+					return
+				}
+				newParent = resolvedParent
+			}
+			if folder.Type == "business_unit" {
+				if h.lifecycle == nil {
+					SendError(ctx, fasthttp.StatusBadRequest, "lifecycle manager not initialized")
+					return
+				}
+				_, resolvedParent, err := h.lifecycle.resolveBusinessUnitPlacement(ctx, newParent)
+				if err != nil {
+					SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+					return
+				}
+				if resolvedParent != "" {
+					newParent = resolvedParent
+				}
+				if folder.EntityID != nil && *folder.EntityID != "" {
+					if err := h.lifecycle.buMoveFitsCustomerBudget(ctx, *folder.EntityID, newParent); err != nil {
+						SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+						return
+					}
+				}
+			}
+			if folder.Type == "team" {
+				if h.lifecycle == nil {
+					SendError(ctx, fasthttp.StatusBadRequest, "lifecycle manager not initialized")
+					return
+				}
+				if newParent == "" {
+					teamsRoot, tErr := h.lifecycle.EnsureSystemFolder(ctx, "Teams", "system_teams_root", nil)
+					if tErr != nil || teamsRoot == nil {
+						SendError(ctx, fasthttp.StatusBadRequest, "could not resolve Teams root folder")
+						return
+					}
+					newParent = teamsRoot.ID
 				}
 				if _, _, err := h.lifecycle.resolveTeamPlacement(ctx, newParent); err != nil {
 					SendError(ctx, fasthttp.StatusBadRequest, err.Error())
@@ -489,6 +529,18 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 						return
 					}
 				}
+			}
+			if folder.Type == "user" {
+				if h.lifecycle == nil {
+					SendError(ctx, fasthttp.StatusBadRequest, "lifecycle manager not initialized")
+					return
+				}
+				resolvedParent, err := h.lifecycle.resolveUserPlacement(ctx, newParent)
+				if err != nil {
+					SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+					return
+				}
+				newParent = resolvedParent
 			}
 			if newParent != "" {
 				if newParent == folder.ID || h.folderIsDescendant(ctx, newParent, folder.ID) {
@@ -530,6 +582,20 @@ func (h *PromptsHandler) updateFolder(ctx *fasthttp.RequestCtx) {
 			}
 			if h.moveSync != nil {
 				_, _ = h.moveSync.ReloadTeam(ctx, *folder.EntityID)
+				h.moveSync.ReloadBusinessUnitTeamIndex(ctx)
+			}
+		}
+		if folder.Type == "business_unit" && folder.EntityID != nil && *folder.EntityID != "" {
+			parentID := ""
+			if folder.ParentID != nil {
+				parentID = *folder.ParentID
+			}
+			if err := h.lifecycle.applyBusinessUnitPlacement(ctx, *folder.EntityID, parentID); err != nil {
+				logger.Error("failed to sync business unit after folder move: %v", err)
+				SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+				return
+			}
+			if h.moveSync != nil {
 				h.moveSync.ReloadBusinessUnitTeamIndex(ctx)
 			}
 		}
@@ -623,24 +689,6 @@ func (h *PromptsHandler) deleteFolder(ctx *fasthttp.RequestCtx) {
 		}
 	}
 
-	// Team/customer folders mirror Governance entities; when deleted in Prompt Repo,
-	// delete the corresponding Governance entity as well so both stay completely in sync.
-	if folder.EntityID != nil && *folder.EntityID != "" {
-		switch folder.Type {
-		case "team":
-			if team, tErr := h.store.GetTeam(ctx, *folder.EntityID); tErr == nil && team != nil {
-				_ = h.store.DeleteTeam(ctx, team.ID)
-			}
-		case "customer":
-			if customer, cErr := h.store.GetCustomer(ctx, *folder.EntityID); cErr == nil && customer != nil {
-				_ = h.store.DeleteCustomer(ctx, customer.ID)
-			}
-		case "business_unit":
-			if h.store.DB() != nil {
-				_ = h.store.DB().WithContext(ctx).Where("id = ?", *folder.EntityID).Delete(&tables.TableBusinessUnit{}).Error
-			}
-		}
-	}
 
 	// Unassign every prompt in this folder and its subfolders from all users immediately
 	if h.store != nil && h.store.DB() != nil {

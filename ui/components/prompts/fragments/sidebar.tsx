@@ -56,12 +56,49 @@ function folderAncestry(startId: string | null | undefined, folderMap: Map<strin
 	return chain;
 }
 
-function isTeamDropTarget(folder: Folder): boolean {
-	if (folder.type?.startsWith("archived_") || folder.type?.startsWith("system_removed_") || folder.name.startsWith("Removed")) {
-		return false;
-	}
-	if (folder.type === "customer" || folder.type === "business_unit") return true;
-	return folder.type === "system_teams_root" || folder.name === "Teams";
+function isSystemFolderItem(folder: Folder): boolean {
+	return Boolean(
+		folder.type?.startsWith("system_") ||
+		folder.name === "Users" ||
+		folder.name === "Customers" ||
+		folder.name === "Business Units" ||
+		folder.name === "Teams" ||
+		folder.name === "Removed Users" ||
+		folder.name === "Removed Customers" ||
+		folder.name === "Removed Business Units" ||
+		folder.name === "Removed Teams"
+	);
+}
+
+function isArchiveFolderItem(folder: Folder): boolean {
+	return Boolean(folder.type?.startsWith("archived_") || folder.type?.startsWith("system_removed_") || folder.name.startsWith("Removed"));
+}
+
+// A Customer can ONLY sit directly under the Customers root folder
+function isCustomerDropTarget(target: Folder): boolean {
+	if (isArchiveFolderItem(target)) return false;
+	return target.type === "system_customers_root" || (target.name === "Customers" && !target.parent_id);
+}
+
+// A Business Unit can ONLY sit under a specific Customer (not the Customers root!) or the Business Units root
+function isBusinessUnitDropTarget(target: Folder): boolean {
+	if (isArchiveFolderItem(target)) return false;
+	if (target.type === "customer" && target.entity_id) return true;
+	return target.type === "system_business_units_root" || (target.name === "Business Units" && !target.parent_id);
+}
+
+// A Team can ONLY sit under a specific Customer, a specific Business Unit, or the Teams root
+function isTeamDropTarget(target: Folder): boolean {
+	if (isArchiveFolderItem(target)) return false;
+	if (target.type === "customer" && target.entity_id) return true;
+	if (target.type === "business_unit" && target.entity_id) return true;
+	return target.type === "system_teams_root" || (target.name === "Teams" && !target.parent_id);
+}
+
+// A User folder can ONLY sit directly under the Users root folder
+function isUserFolderDropTarget(target: Folder): boolean {
+	if (isArchiveFolderItem(target)) return false;
+	return target.type === "system_users_root" || (target.name === "Users" && !target.parent_id);
 }
 
 /**
@@ -95,6 +132,7 @@ export function PromptSidebar() {
 		setPromptAccessDialog,
 		promptFilters,
 		handleMovePrompt: onMovePrompt,
+		handleMoveFolder: onMoveFolder,
 		handleMoveTeamFolder: onMoveTeamFolder,
 		canCreate,
 		canUpdate,
@@ -550,26 +588,108 @@ export function PromptSidebar() {
 			onDragEnd={(event) => {
 				setDragOverTarget(null);
 				if (!canUpdate) return;
-				if (event.canceled || !onMovePrompt) return;
+				if (event.canceled) return;
 
 				const sourceId = event.operation.source?.id as string | undefined;
 				const targetId = event.operation.target?.id as string | undefined;
 				if (!sourceId || !targetId) return;
 
-				const promptId = sourceId.startsWith("prompt-") ? sourceId.slice(7) : null;
-				const teamFolderId = sourceId.startsWith("teamfolder-") ? sourceId.slice("teamfolder-".length) : null;
-				if (teamFolderId) {
-					if (!onMoveTeamFolder || !targetId.startsWith("folder-")) return;
-					const targetFolderId = targetId.slice("folder-".length);
-					const moving = folderMap.get(teamFolderId);
-					const target = folderMap.get(targetFolderId);
-					if (!moving || !target || moving.type !== "team" || !isTeamDropTarget(target)) return;
-					if (target.id === moving.id || folderAncestry(target.id, folderMap).includes(moving.id)) return;
-					if ((moving.parent_id ?? "") === target.id) return;
-					onMoveTeamFolder(moving.id, target.id);
+				const folderId = sourceId.startsWith("folderitem-")
+					? sourceId.slice("folderitem-".length)
+					: sourceId.startsWith("teamfolder-")
+						? sourceId.slice("teamfolder-".length)
+						: null;
+
+				if (folderId) {
+					const moving = folderMap.get(folderId);
+					if (!moving || isSystemFolderItem(moving) || isArchiveFolderItem(moving)) return;
+
+					if (targetId.startsWith("folder-")) {
+						const targetFolderId = targetId.slice("folder-".length);
+						const target = folderMap.get(targetFolderId);
+						if (!target) return;
+						if (isArchiveFolderItem(target)) {
+							toast.error("Cannot move folders into Removed");
+							return;
+						}
+						if (target.id === moving.id) return;
+						if (folderAncestry(target.id, folderMap).includes(moving.id)) {
+							toast.error("Cannot move a folder into its own subfolder");
+							return;
+						}
+						if ((moving.parent_id ?? "") === target.id) return;
+						if (moving.type === "customer" && !isCustomerDropTarget(target)) {
+							toast.error("Customer folders can only sit under the Customers root folder");
+							return;
+						}
+						if (moving.type === "business_unit" && !isBusinessUnitDropTarget(target)) {
+							toast.error("Business Units can only be placed under a specific Customer or Business Units root");
+							return;
+						}
+						if (moving.type === "team" && !isTeamDropTarget(target)) {
+							toast.error("Teams can only be placed under a Customer, a Business Unit, or Teams root");
+							return;
+						}
+						if (moving.type === "user" && !isUserFolderDropTarget(target)) {
+							toast.error("User folders can only sit under the Users root folder");
+							return;
+						}
+						if (onMoveFolder) {
+							onMoveFolder(moving.id, target.id);
+						} else if (onMoveTeamFolder) {
+							onMoveTeamFolder(moving.id, target.id);
+						}
+						return;
+					}
+
+					if (targetId === "root-drop-zone") {
+						if (moving.type === "customer") {
+							const custRoot = folders.find((f) => f.type === "system_customers_root" || (f.name === "Customers" && !f.parent_id));
+							if (custRoot) {
+								if (moving.parent_id === custRoot.id) return;
+								onMoveFolder?.(moving.id, custRoot.id);
+								return;
+							}
+						}
+						if (moving.type === "business_unit") {
+							const buRoot = folders.find((f) => f.type === "system_business_units_root" || (f.name === "Business Units" && !f.parent_id));
+							if (buRoot) {
+								if (moving.parent_id === buRoot.id) return;
+								onMoveFolder?.(moving.id, buRoot.id);
+								return;
+							}
+						}
+						if (moving.type === "team") {
+							const teamsRoot = folders.find((f) => f.type === "system_teams_root" || (f.name === "Teams" && !f.parent_id));
+							if (teamsRoot) {
+								if (moving.parent_id === teamsRoot.id) return;
+								onMoveFolder?.(moving.id, teamsRoot.id);
+								return;
+							}
+							toast.error("Teams can only be placed under a Customer, a Business Unit, or Teams root");
+							return;
+						}
+						if (moving.type === "user") {
+							const usersRoot = folders.find((f) => f.type === "system_users_root" || (f.name === "Users" && !f.parent_id));
+							if (usersRoot) {
+								if (moving.parent_id === usersRoot.id) return;
+								onMoveFolder?.(moving.id, usersRoot.id);
+								return;
+							}
+							toast.error("User folders can only sit under the Users root folder");
+							return;
+						}
+						if (!moving.parent_id) return;
+						if (onMoveFolder) {
+							onMoveFolder(moving.id, null);
+						}
+						return;
+					}
 					return;
 				}
-				if (!promptId) return;
+
+				const promptId = sourceId.startsWith("prompt-") ? sourceId.slice(7) : null;
+				if (!promptId || !onMovePrompt) return;
 
 				const prompt = promptMap.get(promptId);
 				if (!prompt) return;
@@ -845,26 +965,16 @@ function DroppableFolder({
 	isUserRole,
 }: DroppableFolderProps) {
 	const { ref } = useDroppable({ id: `folder-${folder.id}` });
-	const canDragTeam = canUpdate && folder.type === "team";
+	const isSystemFolder = isSystemFolderItem(folder);
+	const isArchiveFolder = isArchiveFolderItem(folder);
+	const canDragFolder = canUpdate && !isSystemFolder && !isArchiveFolder;
 	const { ref: dragRef, isDragging } = useDraggable({
-		id: `teamfolder-${folder.id}`,
-		disabled: !canDragTeam,
+		id: `folderitem-${folder.id}`,
+		disabled: !canDragFolder,
 	});
 	const isExpanded = expandedFolders.has(folder.id) || !!searchQuery;
 	const isDragOver = dragOverTarget === `folder-${folder.id}`;
 
-	const isSystemFolder =
-		folder.type?.startsWith("system_") ||
-		folder.name === "Users" ||
-		folder.name === "Customers" ||
-		folder.name === "Business Units" ||
-		folder.name === "Teams" ||
-		folder.name === "Removed Users" ||
-		folder.name === "Removed Customers" ||
-		folder.name === "Removed Business Units" ||
-		folder.name === "Removed Teams";
-
-	const isArchiveFolder = folder.type?.startsWith("archived_") || folder.name.startsWith("Removed");
 	const isCustomersFolder = folder.type === "system_customers_root" || folder.name === "Customers";
 	const isBusinessUnitsFolder = folder.type === "system_business_units_root" || folder.name === "Business Units";
 	const isTeamsFolder = folder.type === "system_teams_root" || folder.name === "Teams";
@@ -879,7 +989,7 @@ function DroppableFolder({
 				ref={dragRef}
 				className={cn(
 					"hover:bg-muted/50 group relative flex h-[30px] cursor-pointer select-none items-center gap-1 rounded-sm px-2 transition-colors",
-					canDragTeam && "cursor-grab",
+					canDragFolder && "cursor-grab",
 					isDragging && "opacity-50",
 					isDragOver && "bg-primary/10 ring-primary/30 ring-1",
 					isArchiveFolder && "opacity-80 text-muted-foreground",

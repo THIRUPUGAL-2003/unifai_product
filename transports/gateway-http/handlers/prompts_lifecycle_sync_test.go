@@ -284,3 +284,85 @@ func TestApplyTeamPlacement_UpdatesCustomerAndBusinessUnit(t *testing.T) {
 		t.Fatalf("team still listed on business unit: %v", stored.ParsedTeamIDs)
 	}
 }
+
+func TestApplyBusinessUnitPlacement_UpdatesCustomerAndTeams(t *testing.T) {
+	store := setupLifecycleTestStore(t)
+	lifecycle := NewPromptLifecycleManager(store)
+	ctx := context.Background()
+
+	customer := &tables.TableCustomer{ID: syncTestID("cust"), Name: syncTestID("Acme")}
+	if err := store.CreateCustomer(ctx, customer); err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	if err := lifecycle.OnCustomerCreated(ctx, customer); err != nil {
+		t.Fatalf("customer folder: %v", err)
+	}
+	custFolder, err := findEntityFolder(store.DB(), customer.ID, "", "customer")
+	if err != nil || custFolder == nil {
+		t.Fatalf("customer folder not found: %v", err)
+	}
+	custID := customer.ID
+
+	buID := "bu_x"
+	bu := &tables.TableBusinessUnit{
+		ID:        buID,
+		Name:      "Finance Unit",
+	}
+	if err := store.DB().Create(bu).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	team := &tables.TableTeam{
+		ID:             "team_x",
+		Name:           "Finance Team",
+		BusinessUnitID: &buID,
+	}
+	if err := store.DB().Create(team).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	buRoot, err := lifecycle.EnsureSystemFolder(ctx, "Business Units", "system_business_units_root", nil)
+	if err != nil || buRoot == nil {
+		t.Fatalf("bu root: %v", err)
+	}
+
+	// Move BU under Customer X
+	if err := lifecycle.applyBusinessUnitPlacement(ctx, bu.ID, custFolder.ID); err != nil {
+		t.Fatalf("apply BU under Customer: %v", err)
+	}
+
+	var storedBU tables.TableBusinessUnit
+	if err := store.DB().Where("id = ?", bu.ID).First(&storedBU).Error; err != nil {
+		t.Fatal(err)
+	}
+	if storedBU.CustomerID == nil || *storedBU.CustomerID != custID {
+		t.Fatalf("expected BU customer_id %s, got %v", custID, storedBU.CustomerID)
+	}
+
+	var storedTeam tables.TableTeam
+	if err := store.DB().Where("id = ?", team.ID).First(&storedTeam).Error; err != nil {
+		t.Fatal(err)
+	}
+	if storedTeam.CustomerID == nil || *storedTeam.CustomerID != custID {
+		t.Fatalf("expected Team customer_id %s, got %v", custID, storedTeam.CustomerID)
+	}
+
+	// Move BU under Business Units root
+	if err := lifecycle.applyBusinessUnitPlacement(ctx, bu.ID, buRoot.ID); err != nil {
+		t.Fatalf("apply BU under root: %v", err)
+	}
+
+	if err := store.DB().Where("id = ?", bu.ID).First(&storedBU).Error; err != nil {
+		t.Fatal(err)
+	}
+	if storedBU.CustomerID != nil {
+		t.Fatalf("expected BU customer_id nil, got %v", *storedBU.CustomerID)
+	}
+
+	if err := store.DB().Where("id = ?", team.ID).First(&storedTeam).Error; err != nil {
+		t.Fatal(err)
+	}
+	if storedTeam.CustomerID != nil {
+		t.Fatalf("expected Team customer_id nil, got %v", *storedTeam.CustomerID)
+	}
+}
