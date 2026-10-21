@@ -491,11 +491,16 @@ def _looks_like_filename_only(text: str) -> bool:
 
 def _send_carries_attachment(raw_text: str) -> bool:
     """True when this chat Send references an uploaded/attached file."""
-    return bool(
-        chat_carries_attachment(raw_text)
-        or messages_parts_carries_file(raw_text)
-        or bool(extract_attachment_filename_from_send(raw_text))
-    )
+    try:
+        from uploads_detect import chat_carries_attachment, messages_parts_carries_file, extract_attachment_filename_from_send
+        return bool(
+            chat_carries_attachment(raw_text)
+            or messages_parts_carries_file(raw_text)
+            or bool(extract_attachment_filename_from_send(raw_text))
+        )
+    except Exception:
+        pass
+    return False
 
 
 def _is_transport_ping(text: str) -> bool:
@@ -1129,7 +1134,8 @@ def _should_intercept_extracted_prompt(
         return False
 
     # Never intercept internal background queries or telemetry as user prompts
-    t_low = text.lower()
+    t_clean = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', text).replace('\u00A0', ' ')
+    t_low = " ".join(t_clean.lower().split())
     if (
         "plsenvironmentquery" in t_low
         or "assign copilot license" in t_low
@@ -2006,7 +2012,9 @@ def _is_ignorable_json_leaf(s: str) -> bool:
 
 
 def _unwrap_json_prompt(text: str | None) -> str | None:
-    """'{"text": "hi"}' → 'hi' when the wrapper holds nothing else a DLP rule could match."""
+    """'{"text": "hi"}' → 'hi' when the wrapper holds a user prompt."""
+    if not text:
+        return None
     t = (text or "").strip()
     if not t.startswith(("{", "[")):
         return text

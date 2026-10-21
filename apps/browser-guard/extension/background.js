@@ -43,7 +43,7 @@ function syncBackgroundRules() {
           chrome.storage.local.set({ cached_sites: data.hosts });
         }
       })
-      .catch(function () {});
+      .catch(function () { });
   });
 }
 

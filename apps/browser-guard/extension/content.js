@@ -40,7 +40,7 @@
   function renderBlockedPage(hostname) {
     try {
       window.stop();
-    } catch (e) {}
+    } catch (e) { }
     window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
     var displayHost = (hostname || location.hostname || "").toLowerCase().replace(/^www\./, "");
     var blockHtml = '<!DOCTYPE html>' +
@@ -76,7 +76,7 @@
       } else {
         document.write(blockHtml);
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   var sitesMap = null;
@@ -84,35 +84,23 @@
   var blockedSitesMap = null;
   var lastBlockedSitesList = null;
 
-  function cleanHost(str) {
-    if (!str) return "";
-    var s = String(str).toLowerCase().trim();
-    var proto = s.indexOf("://");
-    if (proto >= 0) s = s.slice(proto + 3);
-    var slash = s.indexOf("/");
-    if (slash >= 0) s = s.slice(0, slash);
-    var q = s.indexOf("?");
-    if (q >= 0) s = s.slice(0, q);
-    var hash = s.indexOf("#");
-    if (hash >= 0) s = s.slice(0, hash);
-    if (s.indexOf("www.") === 0) s = s.slice(4);
-    if (s.indexOf(":") >= 0) s = s.split(":")[0];
-    return s.replace(/^\*+\./, "").replace(/^\.+|\.+$/g, "");
-  }
-
   function buildDomainMap(domains) {
     var map = Object.create(null);
     if (!Array.isArray(domains)) return map;
     for (var i = 0; i < domains.length; i++) {
-      var d = cleanHost(domains[i]);
+      var d = String(domains[i] || "").toLowerCase().trim();
+      if (d.indexOf("www.") === 0) d = d.slice(4);
+      if (d.indexOf(":") >= 0) d = d.split(":")[0];
       if (d) map[d] = true;
     }
     return map;
   }
 
   function matchDomainInMap(host, map, rawList) {
-    host = cleanHost(host);
     if (!host) return false;
+    host = host.toLowerCase().trim();
+    if (host.indexOf("www.") === 0) host = host.slice(4);
+    if (host.indexOf(":") >= 0) host = host.split(":")[0];
 
     if (map && map[host]) return true;
 
@@ -126,7 +114,9 @@
 
     if (Array.isArray(rawList)) {
       for (var j = 0; j < rawList.length; j++) {
-        var dom = cleanHost(rawList[j]);
+        var dom = String(rawList[j] || "").toLowerCase().trim();
+        if (dom.indexOf("www.") === 0) dom = dom.slice(4);
+        if (dom.indexOf(":") >= 0) dom = dom.split(":")[0];
         if (!dom) continue;
         if (host === dom || host.slice(-(dom.length + 1)) === "." + dom) return true;
       }
@@ -162,7 +152,7 @@
       if (/vivaldi/i.test(ua)) return "Vivaldi";
       if (/safari/i.test(ua) && !/chrome|chromium|crios/i.test(ua)) return "Safari";
       if (/chrome|chromium|crios/i.test(ua)) return "Chrome";
-    } catch (e) {}
+    } catch (e) { }
     return "Browser";
   }
 
@@ -375,32 +365,32 @@
     var reqHost = msg.host || location.hostname;
     function doCheck() {
       withBase(function () {
-      fetch(base + "/extension/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(checkPayload)
-      })
-      .then(function (r) { return r.json(); })
-      .then(function (decision) {
-        var dec = decision || { blocked: false };
-        // Save EXE evaluation decision into chrome.storage.local
-        if (chrome.storage && chrome.storage.local) {
-          chrome.storage.local.set({
-            last_decision: {
-              timestamp: Date.now(),
-              host: checkPayload.host,
-              blocked: Boolean(dec.blocked),
-              action: dec.action || (dec.blocked ? "Blocked" : "Allowed"),
-              rule: dec.rule || "",
-              message: dec.message || ""
+        fetch(base + "/extension/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(checkPayload)
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (decision) {
+            var dec = decision || { blocked: false };
+            // Save EXE evaluation decision into chrome.storage.local
+            if (chrome.storage && chrome.storage.local) {
+              chrome.storage.local.set({
+                last_decision: {
+                  timestamp: Date.now(),
+                  host: checkPayload.host,
+                  blocked: Boolean(dec.blocked),
+                  action: dec.action || (dec.blocked ? "Blocked" : "Allowed"),
+                  rule: dec.rule || "",
+                  message: dec.message || ""
+                }
+              });
             }
+            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: dec }, "*");
+          })
+          .catch(function () {
+            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
           });
-        }
-        window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: dec }, "*");
-      })
-        .catch(function () {
-          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
-        });
       });
     }
 
