@@ -1107,13 +1107,17 @@ def install_guard_extension(base_url: str) -> None:
     except Exception as e:
         ext_id = "mipfhcmlcjfhmgldkokdckhndkebkllj"
     update_url = f"{base_url}/extension/update.xml"
-    if IS_WIN:
-        _write_force_install(ext_id, update_url)
+    force_policy = os.environ.get("GUARD_FORCE_BROWSER_POLICY", "0").lower() in ("1", "true")
+    if force_policy:
+        if IS_WIN:
+            _write_force_install(ext_id, update_url)
+        else:
+            _write_mac_extension_policy(ext_id, update_url)
+        _write_firefox_policy(base_url)
     else:
-        _write_mac_extension_policy(ext_id, update_url)
-    _write_firefox_policy(base_url)
+        print(f"[Gateway Guard] Decoupled mode active. YP-Raksha endpoint listening on {base_url}. Extensions connect independently.")
     if crx or not IS_WIN:
-        print(f"[Gateway Guard] YP-Raksha ready ({ext_id}). Quit and reopen each browser once, including private windows.")
+        print(f"[Gateway Guard] YP-Raksha ready ({ext_id}).")
 
 
 def remove_guard_extension_policy() -> None:

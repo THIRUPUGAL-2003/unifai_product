@@ -95,10 +95,6 @@ var
 begin
   // Terminate any currently running Gateway Guard so files can be cleanly replaced without lock errors
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  // Terminate background browser instances so ghost processes do not block extension loading
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM chrome.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM msedge.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM brave.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(500);
   Result := True;
 end;

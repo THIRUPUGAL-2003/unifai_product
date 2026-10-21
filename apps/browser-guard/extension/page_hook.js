@@ -446,14 +446,14 @@
 
     (document.body || document.documentElement).appendChild(card);
 
-    // Auto-dismiss after 5 seconds
+    // Auto-dismiss after 2 seconds
     setTimeout(function () {
       if (card && card.parentNode) {
         card.style.transition = "opacity 0.3s ease";
         card.style.opacity = "0";
         setTimeout(function () { if (card.parentNode) card.remove(); }, 300);
       }
-    }, 5000);
+    }, 2000);
   }
 
   var lastWarnedTime = 0;

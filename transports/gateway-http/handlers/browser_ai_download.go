@@ -19,6 +19,11 @@ import (
 
 func browserAISetupCandidates() map[string][]string {
 	return map[string][]string{
+		"YP_Raksha_Decoupled_Suite.zip": {
+			filepath.Join("apps", "browser-guard", "release", "YP_Raksha_Decoupled_Suite.zip"),
+			filepath.Join("release", "YP_Raksha_Decoupled_Suite.zip"),
+			"/app/release/YP_Raksha_Decoupled_Suite.zip",
+		},
 		"Gateway_Guard_Setup.exe": {
 			filepath.Join("apps", "browser-guard", "release", "YP_Raksha_Setup.exe"),
 			filepath.Join("apps", "browser-guard", "release", "Gateway_Guard_Setup.exe"),
@@ -431,6 +436,10 @@ func guardPackageInfo() map[string]any {
 		info["macos_ready"] = true
 		info["macos_built_at"] = fileModTime(p)
 	}
+	if p, ok := findFirstExisting(browserAISetupCandidates()["YP_Raksha_Decoupled_Suite.zip"]); ok {
+		info["suite_ready"] = true
+		info["suite_built_at"] = fileModTime(p)
+	}
 	_, srcOK := guardProxySourceDir()
 	_, agentOK := guardAgentSourceDir()
 	info["proxy_source_available"] = srcOK && agentOK
@@ -486,6 +495,18 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 	macZipPath, macZipOK := findFirstExisting(browserAISetupCandidates()["Gateway_Guard_macOS.zip"])
 	winVer := readGuardReleaseVersion()
 	macVer := readGuardMacReleaseVersion()
+
+	suitePath, suiteOK := findFirstExisting(browserAISetupCandidates()["YP_Raksha_Decoupled_Suite.zip"])
+	if (platform == "all" || platform == "suite" || platform == "master" || platform == "") && suiteOK {
+		ctx.SetStatusCode(fasthttp.StatusOK)
+		ctx.SetContentType("application/zip")
+		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="UnifAI_Guard_Suite.zip"`)
+		if winVer != "" {
+			setGuardVersionHeaders(ctx, winVer)
+		}
+		ctx.SendFile(suitePath)
+		return
+	}
 
 	// 1. MAC DEDICATED DOWNLOAD
 	if platform == "mac" || platform == "macos" || platform == "darwin" {

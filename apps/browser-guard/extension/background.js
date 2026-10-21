@@ -5,8 +5,8 @@ importScripts("endpoint.js", "guard_base.js");
 
 function updateBadge(active) {
   if (chrome.action && chrome.action.setBadgeText) {
-    chrome.action.setBadgeText({ text: active ? "ON" : "OFF" });
-    chrome.action.setBadgeBackgroundColor({ color: active ? "#10b981" : "#ef4444" });
+    // Keep badge text clear so no "ON" or warning overlays on pinned icon
+    chrome.action.setBadgeText({ text: "" });
   }
 }
 
