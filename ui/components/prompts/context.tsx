@@ -74,6 +74,46 @@ function resolveExecVirtualKey(opts: {
 	return execVkId || "";
 }
 
+/** Resolve effective provider and model for execution, auto-inferring from active VK if empty or wildcard. */
+function resolveExecProviderAndModel(opts: {
+	provider: string;
+	model: string;
+	committedProvider?: string;
+	committedModel?: string;
+	execVkId: string;
+	virtualKeys: Array<{ id: string; value?: string; provider_configs?: Array<{ provider: string; allowed_models?: string[] }> }> | undefined;
+}): { execProvider: string; execModel: string } {
+	let execProvider = opts.provider || opts.committedProvider || "";
+	let execModel = opts.model || opts.committedModel || "";
+
+	if (opts.execVkId) {
+		const allVks = opts.virtualKeys ?? [];
+		const activeVk = allVks.find((k) => k.value === opts.execVkId || k.id === opts.execVkId);
+		if (activeVk?.provider_configs && activeVk.provider_configs.length > 0) {
+			const vkProv = activeVk.provider_configs[0].provider;
+			if (!execProvider && vkProv && vkProv !== "*") {
+				execProvider = vkProv;
+			}
+			if (!execModel || execModel === "*") {
+				const concreteModels = (activeVk.provider_configs[0].allowed_models || []).filter((m) => m && m !== "*");
+				if (concreteModels.length > 0) {
+					execModel = concreteModels[0];
+				}
+			}
+		}
+		if ((!execModel || execModel === "*") && execProvider) {
+			if (execProvider === "openrouter") {
+				execModel = "aion-labs/aion-2.0";
+			} else if (execProvider === "openai") {
+				execModel = "gpt-4o-mini";
+			} else if (execProvider === "anthropic") {
+				execModel = "claude-3-5-haiku-20241022";
+			}
+		}
+	}
+	return { execProvider, execModel };
+}
+
 interface PromptContextValue {
 	// Data
 	folders: Folder[];
@@ -957,14 +997,8 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			abortRef.current = abortController;
 			const isActive = () => activeRunRef.current === runToken;
 
-			let execProvider = provider;
-			let execModel = model;
 			let execApiKeyId = apiKeyId;
 			const committed = selectedPrompt?.latest_version;
-			if (!execProvider || !execModel) {
-				execProvider = committed?.provider || execProvider;
-				execModel = committed?.model || execModel;
-			}
 			const execVkId = resolveExecVirtualKey({
 				virtualKeyId,
 				allowedVirtualKeys,
@@ -972,6 +1006,14 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				isUserRole,
 				assignedMemberVkValue,
 				apiKeyId: execApiKeyId,
+			});
+			const { execProvider, execModel } = resolveExecProviderAndModel({
+				provider,
+				model,
+				committedProvider: committed?.provider,
+				committedModel: committed?.model,
+				execVkId,
+				virtualKeys: virtualKeysData?.virtual_keys,
 			});
 			if (!execProvider || !execModel) {
 				toast.error("Provider and Model Required", {
@@ -1108,14 +1150,8 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			setMessages(newMessages);
 
 			// Execute with the updated messages
-			let execProvider = provider;
-			let execModel = model;
 			let execApiKeyId = apiKeyId;
 			const committed = selectedPrompt?.latest_version;
-			if (!execProvider || !execModel) {
-				execProvider = committed?.provider || execProvider;
-				execModel = committed?.model || execModel;
-			}
 			const execVkId = resolveExecVirtualKey({
 				virtualKeyId,
 				allowedVirtualKeys,
@@ -1123,6 +1159,14 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				isUserRole,
 				assignedMemberVkValue,
 				apiKeyId: execApiKeyId,
+			});
+			const { execProvider, execModel } = resolveExecProviderAndModel({
+				provider,
+				model,
+				committedProvider: committed?.provider,
+				committedModel: committed?.model,
+				execVkId,
+				virtualKeys: virtualKeysData?.virtual_keys,
 			});
 			if (!execProvider || !execModel) {
 				toast.error("Provider and Model Required", {
@@ -1255,14 +1299,8 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			}
 			setMessages(newMessages);
 
-			let execProvider = provider;
-			let execModel = model;
 			let execApiKeyId = apiKeyId;
 			const committed = selectedPrompt?.latest_version;
-			if (!execProvider || !execModel) {
-				execProvider = committed?.provider || execProvider;
-				execModel = committed?.model || execModel;
-			}
 			const execVkId = resolveExecVirtualKey({
 				virtualKeyId,
 				allowedVirtualKeys,
@@ -1270,6 +1308,14 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				isUserRole,
 				assignedMemberVkValue,
 				apiKeyId: execApiKeyId,
+			});
+			const { execProvider, execModel } = resolveExecProviderAndModel({
+				provider,
+				model,
+				committedProvider: committed?.provider,
+				committedModel: committed?.model,
+				execVkId,
+				virtualKeys: virtualKeysData?.virtual_keys,
 			});
 			if (!execProvider || !execModel) {
 				toast.error("Provider and Model Required", {

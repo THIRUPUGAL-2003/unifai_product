@@ -12,6 +12,7 @@ import { filesToAttachments, isImageFile, attachmentNeedsAudio, attachmentNeedsV
 import { AttachmentBadge } from "./messagesView/attachmentViews";
 import MessageRoleSwitcher from "./messagesView/messageRoleSwitcher";
 import { PromptFileImportBar } from "./promptFileImportBar";
+import { cn } from "@/lib/utils";
 
 export function NewMessageInputView() {
 	const {
@@ -363,7 +364,7 @@ export function NewMessageInputView() {
 
 	return (
 		<div
-			className="group relative max-h-[500px] shrink-0 overflow-y-auto border-t px-4 py-2"
+			className="group relative shrink-0 border-t bg-card/60 px-4 py-1.5 backdrop-blur-xs"
 			onDragEnter={handleDragEnter}
 			onDragLeave={handleDragLeave}
 			onDragOver={handleDragOver}
@@ -377,7 +378,7 @@ export function NewMessageInputView() {
 					</div>
 				</div>
 			)}
-			<div className="mb-1 flex items-center gap-2">
+			<div className="mb-1.5 flex items-center justify-between gap-2">
 				<MessageRoleSwitcher
 					role={inputRole}
 					disabled={isStreaming}
@@ -468,11 +469,10 @@ export function NewMessageInputView() {
 				</div>
 			)}
 			<div
-				className={`relative rounded-md transition-all ${
-					isVoiceRecording
-						? "ring-1 ring-rose-500/40 bg-rose-500/[0.02] p-1.5"
-						: ""
-				}`}
+				className={cn(
+					"relative flex flex-col rounded-md border border-border/70 bg-background/95 p-1.5 shadow-2xs transition-all focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/20",
+					isVoiceRecording && "ring-1 ring-rose-500/40 bg-rose-500/[0.02]"
+				)}
 			>
 				<Textarea
 					placeholder={
@@ -488,40 +488,47 @@ export function NewMessageInputView() {
 					onKeyDown={handleKeyDown}
 					onPaste={handlePaste}
 					data-testid="new-message-textarea"
-					className="text-muted-foreground min-h-[60px] resize-none rounded-none border-0 bg-transparent p-0 pr-16 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 dark:bg-transparent"
+					className="text-foreground placeholder:text-muted-foreground/70 min-h-[38px] max-h-[160px] resize-none border-0 bg-transparent px-1.5 py-1 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
 					disabled={isStreaming}
 				/>
-				<div className="absolute right-0 bottom-0 flex items-center gap-1">
-					{isStreaming ? (
-						<Button
-							onClick={onStopStreaming}
-							variant={"ghost"}
-							data-testid="new-message-stop"
-							className="text-destructive hover:text-destructive hover:bg-destructive/10 flex items-center gap-1 rounded px-1.5 py-1 text-xs"
-						>
-							<Square className="!h-3 !w-3 fill-current" />
-							Stop
-						</Button>
-					) : (
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									onClick={handleRun}
-									disabled={!canRun}
-									variant={"ghost"}
-									data-testid="new-message-run"
-									className="text-muted-foreground hover:text-foreground flex items-center gap-1 rounded px-1.5 py-1 text-xs disabled:pointer-events-none disabled:opacity-50"
-								>
-									<Play className="h-3.5 w-3.5" />
-									Run
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent side="top">
-								{!canRun ? <span>Select a key and a model in Settings to run</span> : <span>Run prompt</span>}
-								<kbd className="bg-primary-foreground/20 ml-1.5 rounded px-1 py-0.5 font-mono text-[10px]">↵</kbd>
-							</TooltipContent>
-						</Tooltip>
-					)}
+				<div className="flex items-center justify-end pt-1">
+					<div className="flex items-center gap-1">
+						{isStreaming ? (
+							<Button
+								onClick={onStopStreaming}
+								size="sm"
+								variant="destructive"
+								data-testid="new-message-stop"
+								className="h-6 gap-1 px-2.5 text-xs font-medium shadow-xs"
+							>
+								<Square className="!h-2.5 !w-2.5 fill-current" />
+								Stop
+							</Button>
+						) : (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<Button
+										onClick={handleRun}
+										disabled={!canRun}
+										size="sm"
+										data-testid="new-message-run"
+										className={cn(
+											"h-6 gap-1 px-3 text-xs font-semibold shadow-xs transition-all",
+											canRun
+												? "bg-primary text-primary-foreground hover:bg-primary/90"
+												: "bg-muted text-muted-foreground opacity-50 cursor-not-allowed"
+										)}
+									>
+										<Play className="h-2.5 w-2.5 fill-current" />
+										Run
+									</Button>
+								</TooltipTrigger>
+								<TooltipContent side="top">
+									{!canRun ? <span>Select a key and a model in Settings to run</span> : <span>Run prompt (Enter)</span>}
+								</TooltipContent>
+							</Tooltip>
+						)}
+					</div>
 				</div>
 			</div>
 		</div>

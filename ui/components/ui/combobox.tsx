@@ -536,7 +536,23 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 								))
 							)}
 						</div>
-						<ChevronDownIcon className="ml-2 size-4 shrink-0 opacity-50" />
+						<div className="ml-2 flex shrink-0 items-center gap-1">
+							{!props.hideClear && selectedValues.length > 0 && (
+								<button
+									type="button"
+									aria-label="Clear all selections"
+									data-testid="combobox-select-clear-all"
+									className="rounded-sm opacity-50 hover:opacity-100 p-0.5"
+									onClick={(e) => {
+										e.stopPropagation();
+										props.onValueChange?.([]);
+									}}
+								>
+									<XIcon className="size-3.5" />
+								</button>
+							)}
+							<ChevronDownIcon className="size-4 opacity-50" />
+						</div>
 					</Button>
 				</PopoverTrigger>
 				<PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start" sideOffset={1} noPortal={noPortal}>

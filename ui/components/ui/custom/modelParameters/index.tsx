@@ -64,7 +64,7 @@ export default function ModelParameters({ model, config, onChange, disabled, hid
 	if (isError || parameters.length === 0) return null;
 
 	return (
-		<div className="flex flex-col gap-6">
+		<div className="flex flex-col gap-3.5">
 			{parameters.map((param) => (
 				<ParameterFieldView
 					key={param.id}

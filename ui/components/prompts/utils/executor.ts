@@ -748,12 +748,19 @@ export async function executePrompt(
 			...rawParams
 		} = config.modelParams || {};
 
+		let concreteModel = config.model;
+		if (!concreteModel || concreteModel === "*") {
+			if (config.provider === "openrouter") concreteModel = "aion-labs/aion-2.0";
+			else if (config.provider === "openai") concreteModel = "gpt-4o-mini";
+			else if (config.provider === "anthropic") concreteModel = "claude-3-5-haiku-20241022";
+		}
+
 		// If retrying without images due to upstream non-vision error (3051),
 		// force vision capability to false so toAPIMessages sends pure text
-		const effectiveModel = retryWithoutImages ? "text-fallback" : config.model;
+		const effectiveModel = retryWithoutImages ? "text-fallback" : concreteModel;
 
 		const payload: Record<string, any> = {
-			model: `${config.provider}/${config.model}`,
+			model: `${config.provider}/${concreteModel}`,
 			messages: Message.toAPIMessages(resolvedMessages, effectiveModel, config.provider),
 			...rawParams,
 			stream: rawParams.stream !== false,

@@ -51,7 +51,7 @@ export function PlaygroundPanel() {
 
 	return (
 		<div
-			className="custom-scrollbar relative flex h-full flex-col overscroll-none"
+			className="custom-scrollbar relative flex h-full min-h-0 flex-1 flex-col overflow-hidden overscroll-none"
 			onDragEnter={handleDragEnter}
 			onDragLeave={handleDragLeave}
 			onDragOver={handleDragOver}
@@ -73,7 +73,7 @@ export function PlaygroundPanel() {
 				</div>
 			)}
 			<FileStudioPanel />
-			<ScrollArea className="flex-1 scroll-mb-12 overflow-y-auto" viewportClassName="no-table">
+			<ScrollArea className="flex-1 min-h-0 scroll-mb-12 overflow-y-auto" viewportClassName="no-table">
 				<MessagesView />
 			</ScrollArea>
 			<NewMessageInputView />

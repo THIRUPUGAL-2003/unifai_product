@@ -8,7 +8,8 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { Input } from "@/components/ui/input";
-import { getErrorMessage, useGetVirtualKeysQuery } from "@/lib/store";
+import { getErrorMessage, useGetVirtualKeysQuery, useGetProviderGovernanceQuery, useGetVirtualKeyBillingBlocksQuery } from "@/lib/store";
+import { toast } from "sonner";
 import { useListSkillsQuery } from "@/lib/store/apis/skillsApi";
 import { useGetMCPClientsQuery } from "@/lib/store/apis/mcpApi";
 import { useGetUserVirtualKeysQuery } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
@@ -29,9 +30,10 @@ import { useIsAuthEnabledQuery } from "@/lib/store";
 import { isPromptMemberRole } from "../utils/memberRole";
 import type { VirtualKey } from "@/lib/types/governance";
 
-/** Providers listed on the given VKs (real provider_configs only — no invented catalogs). */
-function providersFromVirtualKeys(keys: VirtualKey[]): { providers: string[]; wildcardProviders: boolean } {
+/** Providers and models listed on the given VKs (real provider_configs only — no invented catalogs). */
+function providersFromVirtualKeys(keys: VirtualKey[]): { providers: string[]; wildcardProviders: boolean; concreteModels: string[] } {
 	const providers = new Set<string>();
+	const concreteModels: string[] = [];
 	let wildcardProviders = false;
 	for (const key of keys) {
 		for (const pc of key.provider_configs ?? []) {
@@ -42,9 +44,14 @@ function providersFromVirtualKeys(keys: VirtualKey[]): { providers: string[]; wi
 				continue;
 			}
 			providers.add(prov);
+			for (const m of pc.allowed_models ?? []) {
+				if (m && m !== "*") {
+					concreteModels.push(m);
+				}
+			}
 		}
 	}
-	return { providers: [...providers], wildcardProviders };
+	return { providers: [...providers], wildcardProviders, concreteModels };
 }
 
 export function SettingsPanel() {
@@ -87,17 +94,39 @@ export function SettingsPanel() {
 	const POLL_MS = 5000;
 	const [authPollMs, setAuthPollMs] = useState(POLL_MS);
 	const [vkPollMs, setVkPollMs] = useState(POLL_MS);
-	const { data: authStatus, error: authPollError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
+	const { data: authStatus, error: authPollError, refetch: refetchAuth } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
 	const isMemberOnly = isPromptMemberRole(authStatus?.role);
 
-	const { data: virtualKeysData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery(undefined, { pollingInterval: vkPollMs });
+	const { data: virtualKeysData, isError: vkFailed, error: vkError, refetch: refetchVk } = useGetVirtualKeysQuery(undefined, { pollingInterval: vkPollMs });
 	const focusUserId =
 		selectedPrompt?.owner_user_id ||
 		selectedPrompt?.user_ids?.split(",").map((id) => id.trim()).find(Boolean) ||
 		(isMemberOnly ? (authStatus?.user_id || "") : "") ||
 		"";
-	const { data: focusUserKeys } = useGetUserVirtualKeysQuery(focusUserId, { skip: !focusUserId });
-	const { data: sessionUsers } = useGetSessionUsersQuery(undefined, { skip: isMemberOnly });
+	const { data: focusUserKeys, refetch: refetchFocusUserKeys } = useGetUserVirtualKeysQuery(focusUserId, { skip: !focusUserId });
+	const { data: sessionUsers, refetch: refetchSessionUsers } = useGetSessionUsersQuery(undefined, { skip: isMemberOnly });
+	const { refetch: refetchProvGov } = useGetProviderGovernanceQuery(undefined, { skip: false });
+	const { refetch: refetchBilling } = useGetVirtualKeyBillingBlocksQuery(undefined, { skip: !isMemberOnly });
+
+	const [isRefreshingBudgets, setIsRefreshingBudgets] = useState(false);
+	const handleRefreshBudgets = useCallback(async () => {
+		setIsRefreshingBudgets(true);
+		try {
+			await Promise.allSettled([
+				refetchAuth?.(),
+				refetchVk?.(),
+				refetchFocusUserKeys?.(),
+				refetchSessionUsers?.(),
+				refetchProvGov?.(),
+				refetchBilling?.(),
+			]);
+			toast.success("Budgets updated live");
+		} catch (e) {
+			// ignore
+		} finally {
+			setTimeout(() => setIsRefreshingBudgets(false), 500);
+		}
+	}, [refetchAuth, refetchVk, refetchFocusUserKeys, refetchSessionUsers, refetchProvGov, refetchBilling]);
 	const targetUser = useMemo(() => {
 		if (isMemberOnly || !sessionUsers) return undefined;
 		if (focusUserId) {
@@ -150,16 +179,32 @@ export function SettingsPanel() {
 			const targetVk = (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === id || vk.id === id);
 			if (!targetVk) return;
 			setAllowedVirtualKeys([targetVk.value]);
-			// Drop stale provider/model that the new VK does not allow (deny-by-default).
-			const { providers: allowed, wildcardProviders } = providersFromVirtualKeys([targetVk]);
-			if (!wildcardProviders && (allowed.length === 0 || (provider && !allowed.includes(provider)))) {
+			// Automatically select the connected provider and model for this VK
+			const { providers: allowed, wildcardProviders, concreteModels } = providersFromVirtualKeys([targetVk]);
+			if (allowed.length > 0) {
+				if (!provider || !allowed.includes(provider)) {
+					onProviderChange(allowed[0]);
+				}
+			} else if (!wildcardProviders && provider) {
 				setProvider("");
 			}
-			onModelChange("");
-			setMcpIncludeTools([]);
+			if (concreteModels.length > 0) {
+				onModelChange(concreteModels[0]);
+			}
 		},
-		[setVirtualKeyId, virtualKeysData, setAllowedVirtualKeys, onModelChange, provider, setProvider, setMcpIncludeTools],
+		[setVirtualKeyId, virtualKeysData, setAllowedVirtualKeys, onModelChange, provider, onProviderChange, setProvider],
 	);
+
+	// Admin inspecting a user's prompt: auto-select user's assigned VK if none selected yet on this prompt
+	useEffect(() => {
+		if (isMemberOnly) return;
+		if (focusUserKeys?.virtual_keys && focusUserKeys.virtual_keys.length > 0) {
+			const assignedVk = focusUserKeys.virtual_keys[0];
+			if ((!virtualKeyId || virtualKeyId === "__auto__") && (!allowedVirtualKeys || allowedVirtualKeys.length === 0)) {
+				onVirtualKeyChange(assignedVk.id);
+			}
+		}
+	}, [isMemberOnly, focusUserKeys, virtualKeyId, allowedVirtualKeys, onVirtualKeyChange]);
 
 	const onApiKeyIdChange = useCallback(
 		(id: string) => {
@@ -270,14 +315,54 @@ export function SettingsPanel() {
 		[activeMCPClients],
 	);
 
+	// Virtual keys: Admin sees all active. Members ONLY see virtual keys committed by admin on this prompt!
+	// If admin did NOT commit any virtual key, return [] (no VK auto-assigned).
+	const providerVirtualKeys = useMemo(() => {
+		const allActive = (virtualKeysData?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
+		if (!isMemberOnly) {
+			return allActive;
+		}
+		const committedVkIds = new Set<string>();
+		if (allowedVirtualKeys && allowedVirtualKeys.length > 0) {
+			for (const id of allowedVirtualKeys) {
+				if (id) committedVkIds.add(id);
+			}
+		}
+		if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") {
+			committedVkIds.add(virtualKeyId);
+		}
+		if (committedVkIds.size === 0) {
+			return [];
+		}
+
+		const committedKeys = allActive.filter((vk) => committedVkIds.has(vk.id) || committedVkIds.has(vk.value));
+		if (committedKeys.length === 0) return [];
+
+		const assignedIds = new Set((focusUserKeys?.virtual_keys ?? []).map((k) => k.id));
+		if (assignedIds.size > 0) {
+			const intersected = committedKeys.filter((vk) => assignedIds.has(vk.id));
+			if (intersected.length > 0) return intersected;
+		}
+		return committedKeys;
+	}, [virtualKeysData, isMemberOnly, allowedVirtualKeys, virtualKeyId, focusUserKeys]);
+
 	// Provider options:
-	// For member: strictly the provider(s) committed by admin on this prompt!
+	// For member: strictly the provider(s) committed by admin on this prompt, OR from the assigned VK!
 	// For admin: full gateway catalog.
 	const providerOptions = useMemo(() => {
 		if (isMemberOnly) {
 			let allowed: string[] = [];
 			if (allowedProviders && allowedProviders.length > 0) {
 				allowed = allowedProviders;
+			} else if (providerVirtualKeys.length > 0) {
+				// Inherit allowed providers from the assigned Virtual Key(s)!
+				const { providers: vkProviders, wildcardProviders } = providersFromVirtualKeys(providerVirtualKeys);
+				if (wildcardProviders) {
+					return configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
+				}
+				if (vkProviders.length > 0) {
+					allowed = vkProviders;
+				}
 			} else if (provider) {
 				allowed = [provider];
 			}
@@ -293,7 +378,7 @@ export function SettingsPanel() {
 				.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
 		}
 		return configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
-	}, [configuredProviders, isMemberOnly, allowedProviders, provider]);
+	}, [configuredProviders, isMemberOnly, allowedProviders, providerVirtualKeys, provider]);
 
 	// For member: auto-select single/first provider if none selected
 	useEffect(() => {
@@ -303,6 +388,21 @@ export function SettingsPanel() {
 			}
 		}
 	}, [isMemberOnly, providerOptions, provider, onProviderChange]);
+
+	// Auto-select connected provider whenever a Virtual Key is active (User or Admin login)
+	useEffect(() => {
+		if (virtualKeyId === "__none__" || (allowedVirtualKeys && allowedVirtualKeys.length === 0 && (!virtualKeyId || virtualKeyId === "__auto__"))) {
+			return;
+		}
+		const activeVk = selectedVirtualKey || (selectedVirtualKeys.length === 1 ? selectedVirtualKeys[0] : undefined);
+		if (!activeVk) return;
+		const { providers: allowed } = providersFromVirtualKeys([activeVk]);
+		if (allowed.length > 0) {
+			if (!provider || !allowed.includes(provider)) {
+				onProviderChange(allowed[0]);
+			}
+		}
+	}, [selectedVirtualKey, selectedVirtualKeys, provider, onProviderChange, virtualKeyId, allowedVirtualKeys]);
 
 	// Admin: Start empty until the user selects. Members: never wipe committed settings!
 	useEffect(() => {
@@ -352,37 +452,6 @@ export function SettingsPanel() {
 		}
 		return keys;
 	}, [allKeys, provider, allowedProviders, allowedApiKeys, apiKeyId, isMemberOnly]);
-
-	// Virtual keys: Admin sees all active. Members ONLY see virtual keys committed by admin on this prompt!
-	// If admin did NOT commit any virtual key, return [] (no VK auto-assigned).
-	const providerVirtualKeys = useMemo(() => {
-		const allActive = (virtualKeysData?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
-		if (!isMemberOnly) {
-			return allActive;
-		}
-		const committedVkIds = new Set<string>();
-		if (allowedVirtualKeys && allowedVirtualKeys.length > 0) {
-			for (const id of allowedVirtualKeys) {
-				if (id) committedVkIds.add(id);
-			}
-		}
-		if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") {
-			committedVkIds.add(virtualKeyId);
-		}
-		if (committedVkIds.size === 0) {
-			return [];
-		}
-
-		const committedKeys = allActive.filter((vk) => committedVkIds.has(vk.id) || committedVkIds.has(vk.value));
-		if (committedKeys.length === 0) return [];
-
-		const assignedIds = new Set((focusUserKeys?.virtual_keys ?? []).map((k) => k.id));
-		if (assignedIds.size > 0) {
-			const intersected = committedKeys.filter((vk) => assignedIds.has(vk.id));
-			if (intersected.length > 0) return intersected;
-		}
-		return committedKeys;
-	}, [virtualKeysData, isMemberOnly, allowedVirtualKeys, virtualKeyId, focusUserKeys]);
 
 	// Member: auto-sync apiKeyId only if NO Virtual Key is assigned/committed
 	useEffect(() => {
@@ -466,11 +535,18 @@ export function SettingsPanel() {
 
 	const modelOptions = useMemo(() => {
 		if (!hasProviderSelected) return [];
-		let opts = (modelsData?.models ?? []).map((item) => {
-			const prov = item.provider ? String(item.provider).toLowerCase() : "";
-			const label = prov ? `${prov} --- ${item.name}` : item.name;
-			return { label, value: item.name };
-		});
+		let opts = (modelsData?.models ?? [])
+			.filter((item) => {
+				if (provider && item.provider && item.provider.toLowerCase() !== provider.toLowerCase()) {
+					return false;
+				}
+				return true;
+			})
+			.map((item) => {
+				const prov = item.provider ? String(item.provider).toLowerCase() : "";
+				const label = prov ? `${prov} --- ${item.name}` : item.name;
+				return { label, value: item.name };
+			});
 		if (model && opts.length > 0 && !opts.some((option) => option.value === model)) {
 			const prov = provider ? `${String(provider).toLowerCase()} --- ` : "";
 			opts.unshift({ label: `${prov}${model}`, value: model });
@@ -495,27 +571,19 @@ export function SettingsPanel() {
 		return opts;
 	}, [hasProviderSelected, modelsData, model, provider, isMemberOnly, allowedModels]);
 
-	// Member: auto-select single committed model
+	// Auto-select valid model when model is empty, wildcard "*", or invalid
 	useEffect(() => {
-		if (isMemberOnly && modelOptions.length > 0) {
-			if (!model || !modelOptions.some((o) => o.value === model)) {
-				onModelChange(modelOptions[0].value);
+		if (modelOptions.length > 0) {
+			if (!model || model === "*" || !modelOptions.some((o) => o.value === model)) {
+				const firstAllowed = (allowedModels ?? []).find((m) => m && m !== "*" && modelOptions.some((o) => o.value === m));
+				if (firstAllowed) {
+					onModelChange(firstAllowed);
+				} else {
+					onModelChange(modelOptions[0].value);
+				}
 			}
 		}
-	}, [isMemberOnly, modelOptions, model, onModelChange]);
-
-	// Never auto-pick a model for admin. If the saved/current model is no longer in the API list, clear it.
-	useEffect(() => {
-		if (isMemberOnly) return;
-		const allModelNames = modelOptions.map((o) => o.value);
-		if (!model) return;
-		if (allModelNames.length > 0 && !allModelNames.includes(model)) {
-			onModelChange("");
-		}
-		if (allowedModels && allowedModels.length > 0 && !allowedModels.includes(model) && !allModelNames.includes(model)) {
-			onModelChange("");
-		}
-	}, [modelOptions, model, allowedModels, onModelChange, isMemberOnly]);
+	}, [modelOptions, model, allowedModels, onModelChange]);
 
 	const mcpToolOptions = useMemo(() => {
 		const clientsToUse = isMemberOnly
@@ -551,6 +619,26 @@ export function SettingsPanel() {
 	const mcpToolValues = useMemo(() => mcpToolOptions.map((option) => option.value), [mcpToolOptions]);
 	const selectedMcpTools = (mcpIncludeTools ?? []).filter((value) => mcpToolValues.includes(value));
 
+	// Auto-select MCP tools assigned with the active VK
+	useEffect(() => {
+		const activeVk = selectedVirtualKey || (selectedVirtualKeys.length === 1 ? selectedVirtualKeys[0] : (providerVirtualKeys.length === 1 ? providerVirtualKeys[0] : undefined));
+		if (!activeVk) return;
+		const vkMcpNames = new Set((activeVk.mcp_configs ?? []).map((mc) => mc.mcp_client?.name).filter(Boolean));
+		if (vkMcpNames.size > 0 && mcpToolOptions.length > 0) {
+			if (!mcpIncludeTools || mcpIncludeTools.length === 0) {
+				const matchingTools = mcpToolOptions
+					.filter((opt) => {
+						const clientName = opt.value.split("-")[0];
+						return vkMcpNames.has(clientName);
+					})
+					.map((opt) => opt.value);
+				if (matchingTools.length > 0) {
+					setMcpIncludeTools(matchingTools);
+				}
+			}
+		}
+	}, [selectedVirtualKey, selectedVirtualKeys, providerVirtualKeys, mcpToolOptions, mcpIncludeTools, setMcpIncludeTools]);
+
 	const handleModelParamsChange = useCallback(
 		(params: Record<string, any>) => {
 			onModelParamsChange(params as ModelParams);
@@ -572,8 +660,9 @@ export function SettingsPanel() {
 				virtualKeyValue={virtualKeyId}
 				onVirtualKeyChange={(v) => {
 					onVirtualKeyChange(v ?? "__auto__");
-					if (isMemberOnly && v && v !== "__auto__" && v !== "__none__") {
+					if (v && v !== "__auto__" && v !== "__none__") {
 						onApiKeyIdChange("__auto__");
+						setAllowedApiKeys([]);
 					}
 				}}
 				virtualKeyValues={
@@ -589,19 +678,22 @@ export function SettingsPanel() {
 						: (next) => {
 								setAllowedVirtualKeys(next);
 								if (next.length === 0) {
-									setVirtualKeyId("__auto__");
+									setVirtualKeyId("__none__");
 									return;
 								}
-								if (!next.includes(virtualKeyId)) {
-									setVirtualKeyId(next.length === 1 ? next[0] : "__auto__");
-								}
-							}
+								// Auto-clear direct API key so user/admin isn't using both!
+								setAllowedApiKeys([]);
+								onApiKeyIdChange("__auto__");
+								const activeKeyId = next.includes(virtualKeyId) ? virtualKeyId : next[0];
+								onVirtualKeyChange(activeKeyId);
+						  }
 				}
 				apiKeyIdValue={apiKeyId}
 				onApiKeyIdChange={(v) => {
 					onApiKeyIdChange(v ?? "__auto__");
-					if (isMemberOnly && v && v !== "__auto__" && v !== "__none__") {
+					if (v && v !== "__auto__" && v !== "__none__") {
 						onVirtualKeyChange("__none__");
+						setAllowedVirtualKeys([]);
 					}
 				}}
 				apiKeyValues={allowedApiKeys ?? []}
@@ -610,10 +702,16 @@ export function SettingsPanel() {
 						? undefined
 						: (next) => {
 								setAllowedApiKeys(next);
-								if (next.length === 0 || !next.includes(apiKeyId)) {
-									setApiKeyId(next.length === 1 ? next[0] : "__auto__");
+								if (next.length === 0) {
+									onApiKeyIdChange("__auto__");
+									return;
 								}
-							}
+								// Auto-clear VK so admin isn't selecting both!
+								setAllowedVirtualKeys([]);
+								onVirtualKeyChange("__none__");
+								const activeKeyId = next.includes(apiKeyId) ? apiKeyId : next[0];
+								onApiKeyIdChange(activeKeyId);
+						  }
 				}
 				provider={provider}
 				model={model}
@@ -621,6 +719,8 @@ export function SettingsPanel() {
 				targetUserBudget={targetUserBudget}
 				targetUserUsage={targetUserUsage}
 				targetUserLabel={targetUserLabel}
+				onRefreshBudgets={handleRefreshBudgets}
+				isRefreshingBudgets={isRefreshingBudgets}
 				disabled={!canUpdate}
 			/>
 		) : null;
@@ -708,76 +808,47 @@ export function SettingsPanel() {
 						</AccordionTrigger>
 						<AccordionContent
 							containerClassName="data-[state=open]:flex data-[state=open]:min-h-0 data-[state=open]:flex-1 data-[state=open]:flex-col"
-							className="min-h-0 flex-1 overflow-y-auto pt-0 pb-2"
+							className="min-h-0 flex-1 overflow-y-auto pt-0 pb-8 pr-1.5 custom-scrollbar"
 						>
-							<div className="space-y-6">
-								<div className="flex flex-col gap-2" data-testid="settings-provider">
+							<div className="space-y-3.5">
+								<div className="flex flex-col gap-1.5" data-testid="settings-provider">
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Provider</Label>
-									{isMemberOnly ? (
-										<ComboboxSelect
-											options={providerOptions}
-											value={provider || null}
-											onValueChange={(v) => onProviderChange(v ?? "")}
-											placeholder="Select provider"
-											searchPlaceholder="Search..."
-											disabled={!canUpdate}
-											data-testid="settings-provider-select"
-										/>
-									) : (
-										<ComboboxSelect
-											multiple
-											compactTrigger
-											options={providerOptions}
-											value={allowedProviders ?? []}
-											onValueChange={(next) => {
-												setAllowedProviders(next);
-												if (!next.includes(provider)) onProviderChange(next[0] || "");
-												if (next.length === 0) {
-													onProviderChange("");
+									<ComboboxSelect
+										options={providerOptions}
+										value={provider || null}
+										onValueChange={(v) => {
+											onProviderChange(v ?? "");
+											if (!isMemberOnly) {
+												setAllowedProviders(v ? [v] : []);
+												if (!v) {
 													onModelChange("");
 													setAllowedModels([]);
 												}
-											}}
-											placeholder="Select providers"
-											searchPlaceholder="Search..."
-											selectAllValue="*"
-											selectAllLabel="Select all"
-											disabled={!canUpdate}
-										/>
-									)}
+											}
+										}}
+										placeholder="Select provider"
+										searchPlaceholder="Search..."
+										disabled={!canUpdate}
+										data-testid="settings-provider-select"
+									/>
 								</div>
 
-								<div className="flex flex-col gap-2" data-testid="settings-model">
+								<div className="flex flex-col gap-1.5" data-testid="settings-model">
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Model</Label>
-									{isMemberOnly ? (
-										<ComboboxSelect
-											options={modelOptions}
-											value={model || null}
-											onValueChange={(v) => onModelChange(v ?? "")}
-											placeholder={!hasProviderSelected ? "Select a provider first" : "Select model"}
-											searchPlaceholder="Search..."
-											disabled={!hasProviderSelected || !canUpdate}
-											data-testid="settings-model-select"
-										/>
-									) : (
-										<ComboboxSelect
-											multiple
-											compactTrigger
-											options={modelOptions}
-											value={allowedModels ?? []}
-											onValueChange={(next) => {
-												setAllowedModels(next);
-												if (!next.includes(model)) onModelChange(next[0] || "");
-											}}
-											placeholder={!hasProviderSelected ? "Select a provider first" : "Select models"}
-											searchPlaceholder="Search..."
-											disabled={!hasProviderSelected || !canUpdate}
-											selectAllValue="*"
-											selectAllLabel="Select all"
-											selectAllTriggerLabel="All models"
-											data-testid="settings-model-select"
-										/>
-									)}
+									<ComboboxSelect
+										options={modelOptions}
+										value={model || null}
+										onValueChange={(v) => {
+											onModelChange(v ?? "");
+											if (!isMemberOnly) {
+												setAllowedModels(v ? [v] : []);
+											}
+										}}
+										placeholder={!hasProviderSelected ? "Select a provider first" : "Select model"}
+										searchPlaceholder="Search..."
+										disabled={!hasProviderSelected || !canUpdate}
+										data-testid="settings-model-select"
+									/>
 								</div>
 
 								{keySelector}
@@ -786,8 +857,8 @@ export function SettingsPanel() {
 										No virtual key or API key is available for this prompt.
 									</p>
 								)}
-								{(!isMemberOnly || (mcpIncludeTools && mcpIncludeTools.length > 0) || selectedVirtualKey) && (
-									<div className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/20 p-2.5" data-testid="settings-mcp-status">
+								{(!isMemberOnly || (mcpIncludeTools && mcpIncludeTools.length > 0)) && (
+									<div className="flex flex-col gap-1.5 rounded-md border border-border/60 bg-muted/20 p-2" data-testid="settings-mcp-status">
 										<div className="flex items-center justify-between">
 											<div className="flex items-center gap-1.5">
 												<Wrench className="h-3.5 w-3.5 text-primary" />
@@ -822,7 +893,7 @@ export function SettingsPanel() {
 								)}
 
 								{(!isMemberOnly || (allowedSkills && allowedSkills.length > 0) || skillId) && (
-									<div className="flex flex-col gap-2" data-testid="settings-skill">
+									<div className="flex flex-col gap-1.5" data-testid="settings-skill">
 										<Label className="text-muted-foreground text-xs font-medium uppercase">Skill (optional)</Label>
 										<p className="text-muted-foreground text-xs">
 											Injects the skill markdown as a system message for this playground run.

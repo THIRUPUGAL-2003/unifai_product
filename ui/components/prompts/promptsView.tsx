@@ -51,7 +51,7 @@ export default function PromptsView() {
 	}
 
 	return (
-		<div className="no-padding-parent no-border-parent bg-background h-[calc(100dvh_-_16px)] w-full">
+		<div className="no-padding-parent no-border-parent bg-background flex h-full max-h-full min-h-0 w-full flex-col overflow-hidden">
 			<DeleteFolderDialog />
 			<DeletePromptDialog />
 			<PromptSheets />
@@ -60,21 +60,21 @@ export default function PromptsView() {
 			<ResizablePanelGroup
 				key={`outer-group-${isSidebarOpen ? "expanded" : "collapsed"}`}
 				direction="horizontal"
-				className="h-full"
+				className="h-full min-h-0 flex-1"
 			>
 				{isSidebarOpen && (
 					<>
-						<ResizablePanel defaultSize="24%" minSize="18%" maxSize="35%" className="bg-card mr-1 overflow-hidden rounded-r-md">
+						<ResizablePanel defaultSize="22%" minSize="18%" maxSize="32%" className="bg-card mr-1 overflow-hidden rounded-r-md">
 							<PromptSidebar />
 						</ResizablePanel>
 						<ResizableHandle className="mr-1 bg-transparent" />
 					</>
 				)}
 
-				<ResizablePanel defaultSize={isSidebarOpen ? "76%" : "100%"} minSize="40%" className="overflow-hidden">
-					<div className="bg-card h-full w-full min-w-0 overflow-hidden rounded-md">
+				<ResizablePanel defaultSize={isSidebarOpen ? "78%" : "100%"} minSize="40%" className="min-h-0 flex flex-col overflow-hidden">
+					<div className="bg-card flex h-full w-full min-w-0 min-h-0 flex-col overflow-hidden rounded-md">
 						{selectedPromptId ? (
-							<div className="flex h-full flex-col">
+							<div className="flex h-full min-h-0 flex-col">
 								<PromptsViewHeader />
 
 								{playgroundError ? (
@@ -92,15 +92,15 @@ export default function PromptsView() {
 									<ResizablePanelGroup
 										key={`inner-group-${isSettingsOpen ? "expanded" : "collapsed"}`}
 										direction="horizontal"
-										className="flex-1"
+										className="flex-1 min-h-0"
 									>
-										<ResizablePanel defaultSize={isSettingsOpen ? "70%" : "100%"} minSize="35%">
+										<ResizablePanel defaultSize={isSettingsOpen ? "68%" : "100%"} minSize="35%" className="min-h-0 flex flex-col overflow-hidden">
 											<PlaygroundPanel />
 										</ResizablePanel>
 										{isSettingsOpen && (
 											<>
 												<ResizableHandle />
-												<ResizablePanel defaultSize="30%" minSize="20%" maxSize="50%">
+												<ResizablePanel defaultSize="32%" minSize="22%" maxSize="50%" className="min-h-0 flex flex-col overflow-hidden">
 													<SettingsPanel />
 												</ResizablePanel>
 											</>
