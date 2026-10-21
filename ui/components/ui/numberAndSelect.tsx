@@ -16,6 +16,7 @@ const NumberAndSelect = ({
 	placeholder = "100",
 	dataTestId,
 	inputClassName,
+	disabled = false,
 }: {
 	id: string;
 	label: string;
@@ -28,6 +29,7 @@ const NumberAndSelect = ({
 	placeholder?: string;
 	dataTestId?: string;
 	inputClassName?: string;
+	disabled?: boolean;
 }) => {
 	// Internal string state to allow intermediate inputs like "0." or ""
 	const [displayValue, setDisplayValue] = useState(value !== undefined ? String(value) : "");
@@ -56,6 +58,7 @@ const NumberAndSelect = ({
 				placeholder={placeholder}
 				className={inputClassName}
 				value={displayValue}
+				disabled={disabled}
 				onChange={(e) => {
 					const cleaned = cleanNumericInput(e.target.value);
 					setDisplayValue(cleaned);
@@ -100,8 +103,8 @@ const NumberAndSelect = ({
 				<Label htmlFor={`${id}-select`} className={labelClassName}>
 					Reset Period
 				</Label>
-				<Select value={selectValue} onValueChange={(value) => onChangeSelect(value as string)}>
-					<SelectTrigger className="m-0 w-full">
+				<Select value={selectValue} onValueChange={(value) => onChangeSelect(value as string)} disabled={disabled}>
+					<SelectTrigger className="m-0 w-full" disabled={disabled}>
 						<SelectValue />
 					</SelectTrigger>
 					<SelectContent>

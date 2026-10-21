@@ -10,18 +10,20 @@ Every module in the UnifAI platform has a dedicated, production-grade architectu
 
 | Section | Documentation File | Description & Capabilities |
 | :--- | :--- | :--- |
-| **Authentication & Access** | [Login.md](file:///d:/unifai_project/Login.md) | Authentication flows, session cookies, MFA, lockout thresholds, temporary passwords, and login security. |
-| **Governance & Organizations** | [Governance.md](file:///d:/unifai_project/Governance.md) | Virtual Keys, Users, Teams, Business Units, Customers, SCIM provisioning, RBAC roles, and Audit Logs. |
-| **Prompt Repository** | [Prompt_Repository.md](file:///d:/unifai_project/Prompt_Repository.md) | Prompt templates, folder trees, versioning, playground sessions, model params, and bidirectional Governance sync. |
-| **Skills Repository** | [Skills_Repository.md](file:///d:/unifai_project/Skills_Repository.md) | Agent skills catalog, `SKILL.md` bundles, versioning, and top-priority LLM system message injection. |
-| **Observability & Analytics** | [Observability.md](file:///d:/unifai_project/Observability.md) | Real-time analytics dashboard, LLM request/response tracing, MCP logs, APM connectors, and retention settings. |
-| **Models & Routing** | [Models.md](file:///d:/unifai_project/Models.md) | Multi-provider catalog, rate limits, CEL routing rules, Circuit Breakers, complexity routing, and 6-tier pricing overrides. |
-| **MCP Gateway** | [MCP_Gateway.md](file:///d:/unifai_project/MCP_Gateway.md) | Model Context Protocol servers (SSE & Stdio), tool whitelists, wildcard execution (`*`), OAuth grants, and tool groups. |
-| **Guardrails & Clustering** | [Guardrails.md](file:///d:/unifai_project/Guardrails.md) | Real-time input/output DLP guardrails, PII masking, moderation providers, and cross-node cluster state replication. |
-| **Adaptive Routing** | [Adaptive_Routing.md](file:///d:/unifai_project/Adaptive_Routing.md) | Dynamic multi-provider load balancing, weighted key rotation, fallback pruning, and automatic failure rerouting. |
-| **Browser AI** | [Browser_AI.md](file:///d:/unifai_project/Browser_AI.md) | Client-side extension DLP for external web AI (ChatGPT, Claude, Gemini), target site rules, and prompt audit logs. |
-| **Plugin Subsystem** | [Plugins.md](file:///d:/unifai_project/Plugins.md) | Extensible hook lifecycle (`PreRequestHook`, `PreLLMHook`, `PostLLMHook`), native built-ins, and custom `.so` plugins. |
-| **Platform Settings** | [Settings.md](file:///d:/unifai_project/Settings.md) | Client CORS, upstream API compatibility shims, multi-tier caching (Redis/Semantic), forward proxy, and performance tuning. |
+| **Authentication & Access** | [Login.md](file:///d:/unifai_project/md/Login.md) | Authentication flows, session cookies, MFA, lockout thresholds, temporary passwords, and login security. |
+| **Governance & Organizations** | [Governance.md](file:///d:/unifai_project/md/Governance.md) | Virtual Keys, Users, Teams, Business Units, Customers, SCIM provisioning, RBAC roles, and Audit Logs. |
+| **Prompt Repository** | [Prompt_Repository.md](file:///d:/unifai_project/md/Prompt_Repository.md) | Prompt templates, folder trees, versioning, playground sessions, model params, and bidirectional Governance sync. |
+| **Skills Repository** | [Skills_Repository.md](file:///d:/unifai_project/md/Skills_Repository.md) | Agent skills catalog, `SKILL.md` bundles, versioning, and top-priority LLM system message injection. |
+| **Observability & Analytics** | [Observability.md](file:///d:/unifai_project/md/Observability.md) | Real-time analytics dashboard, LLM request/response tracing, MCP logs, APM connectors, and retention settings. |
+| **Models & Routing** | [Models.md](file:///d:/unifai_project/md/Models.md) | Multi-provider catalog, rate limits, CEL routing rules, Circuit Breakers, complexity routing, and 6-tier pricing overrides. |
+| **MCP Gateway** | [MCP_Gateway.md](file:///d:/unifai_project/md/MCP_Gateway.md) | Model Context Protocol servers (SSE & Stdio), tool whitelists, wildcard execution (`*`), OAuth grants, and tool groups. |
+| **Guardrails & Clustering** | [Guardrails.md](file:///d:/unifai_project/md/Guardrails.md) | Real-time input/output DLP guardrails, PII masking, moderation providers, and cross-node cluster state replication. |
+| **Adaptive Routing** | [Adaptive_Routing.md](file:///d:/unifai_project/md/Adaptive_Routing.md) | Dynamic multi-provider load balancing, weighted key rotation, fallback pruning, and automatic failure rerouting. |
+| **Browser AI** | [Browser_AI.md](file:///d:/unifai_project/md/Browser_AI.md) | Client-side extension DLP for external web AI (ChatGPT, Claude, Gemini), target site rules, and prompt audit logs. |
+| **Cluster & High Availability** | [Cluster_Config.md](file:///d:/unifai_project/md/Cluster_Config.md) | Multi-node HA cluster setup, peer mesh/broker topologies, heartbeat health, and distributed sync. |
+| **Governance Architecture & Keys** | [Governance_Architecture.md](file:///d:/unifai_project/md/Governance_Architecture.md) | Virtual Key universal assignment, multi-tier budget hierarchy, cross-customer isolation, and DB sync. |
+| **Plugin Subsystem** | [Plugins.md](file:///d:/unifai_project/md/Plugins.md) | Extensible hook lifecycle (`PreRequestHook`, `PreLLMHook`, `PostLLMHook`), native built-ins, and custom `.so` plugins. |
+| **Platform Settings** | [Settings.md](file:///d:/unifai_project/md/Settings.md) | Client CORS, upstream API compatibility shims, multi-tier caching (Redis/Semantic), forward proxy, and performance tuning. |
 
 ---
 

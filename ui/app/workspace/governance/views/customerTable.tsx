@@ -96,6 +96,7 @@ function CustomerActionsMenu({ customer, canUpdate, canDelete, onEdit, onDelete 
 			<DropdownMenuContent align="end">
 				<DropdownMenuItem
 					disabled={!canUpdate}
+					title={!canUpdate ? "View-only access: editing is disabled" : undefined}
 					data-testid={`customer-button-edit-${customer.id}`}
 					onSelect={(e) => {
 						e.stopPropagation();
@@ -126,6 +127,7 @@ function CustomerActionsMenu({ customer, canUpdate, canDelete, onEdit, onDelete 
 				<DropdownMenuItem
 					variant="destructive"
 					disabled={!canDelete}
+					title={!canDelete ? "Delete permission is required" : undefined}
 					data-testid={`customer-button-delete-${customer.id}`}
 					onSelect={(e) => {
 						e.preventDefault();
@@ -379,7 +381,14 @@ export default function CustomersTable({
 				<div className="flex grow flex-col">
 					<div className="mb-4 flex items-center justify-between">
 						<div>
-							<h2 className="text-lg font-semibold">Customers</h2>
+							<div className="flex items-center gap-2">
+								<h2 className="text-lg font-semibold">Customers</h2>
+								{!hasUpdateAccess && (
+									<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs">
+										View Only
+									</Badge>
+								)}
+							</div>
 							<p className="text-muted-foreground text-sm">
 								Manage customer accounts with teams, budgets, virtual keys, and related business units (via shared teams).
 							</p>

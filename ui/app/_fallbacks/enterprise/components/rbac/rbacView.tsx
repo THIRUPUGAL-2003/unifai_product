@@ -10,8 +10,10 @@ import {
 	useGetSessionUsersQuery,
 	useGetTeamsQuery,
 	useGetUserTeamsQuery,
+	useIsAuthEnabledQuery,
 	useUpdateSessionUserMutation,
 } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import type { SessionUser } from "@/lib/store";
 import { allowedSectionsToString } from "@/lib/constants/workspaceSections";
 import type { Customer, Team } from "@/lib/types/governance";
@@ -65,10 +67,11 @@ type SelectionTarget =
 // specific children are listed: a parent section is granted when all its children are
 // (see allowedSectionsToString), never because one child was selected.
 const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
-	Logs: ["observability/llm-logs"],
+	Logs: ["observability/llm-logs", "browser-ai"],
 	Observability: ["observability/connectors"],
 	Dashboard: ["observability/dashboard"],
 	MCPLogs: ["observability/mcp-logs"],
+	Metrics: ["observability/dashboard"],
 	VirtualKeys: ["governance/virtual-keys"],
 	Governance: ["governance"],
 	Users: ["governance/users"],
@@ -78,7 +81,7 @@ const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
 	RBAC: ["governance/roles-permissions"],
 	AccessProfiles: ["governance/access-profiles"],
 	AuditLogs: ["governance/audit-logs"],
-	ModelProvider: ["models/model-providers", "models/model-catalog", "models/budgets-limits"],
+	ModelProvider: ["models/model-providers", "models/model-catalog", "models/budgets-limits", "models/pricing-overrides", "models/model-settings"],
 	RoutingRules: ["models/routing-rules", "models/complexity-router"],
 	CircuitBreaker: ["models/circuit-breaker"],
 	MCPGateway: [
@@ -94,13 +97,76 @@ const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
 	GuardrailRules: ["guardrails/rules"],
 	GuardrailsProviders: ["guardrails/providers"],
 	Cluster: ["guardrails/cluster-config"],
-	Settings: ["settings", "observability/logs-settings", "models/pricing-overrides", "models/model-settings"],
+	Settings: ["settings", "observability/logs-settings"],
 	FeatureFlags: ["settings/feature-flags"],
 	APIKeys: ["settings/api-keys"],
-	AdaptiveRouter: ["adaptive-routing"],
+	AdaptiveRouter: ["adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings"],
 	PromptRepository: ["prompt-repository"],
 	PromptDeploymentStrategy: ["prompt-repository"],
 	SkillsRepository: ["skills-repository"],
+	Inference: ["prompt-repository"],
+};
+
+/** Sidebar-aligned groups so every RBAC resource is visible (not buried under Guardrails). */
+const RESOURCE_GROUPS: { title: string; resources: string[] }[] = [
+	{ title: "Observability", resources: ["Dashboard", "Logs", "MCPLogs", "Observability", "Metrics"] },
+	{ title: "Models", resources: ["ModelProvider", "RoutingRules", "CircuitBreaker"] },
+	{ title: "MCP Gateway", resources: ["MCPGateway", "MCPToolGroups"] },
+	{ title: "Plugins", resources: ["Plugins"] },
+	{
+		title: "Governance",
+		resources: [
+			"Governance",
+			"VirtualKeys",
+			"Users",
+			"Teams",
+			"Customers",
+			"UserProvisioning",
+			"RBAC",
+			"AccessProfiles",
+			"AuditLogs",
+		],
+	},
+	{ title: "Guardrails", resources: ["GuardrailsConfig", "GuardrailRules", "GuardrailsProviders", "Cluster"] },
+	{ title: "Adaptive Routing", resources: ["AdaptiveRouter"] },
+	{ title: "Prompt Repository", resources: ["PromptRepository", "PromptDeploymentStrategy", "Inference"] },
+	{ title: "Skills Repository", resources: ["SkillsRepository"] },
+	{ title: "Settings", resources: ["Settings", "APIKeys", "FeatureFlags"] },
+];
+
+const RESOURCE_LABELS: Record<string, string> = {
+	Logs: "LLM Logs",
+	MCPLogs: "MCP Logs",
+	Observability: "Connectors",
+	Dashboard: "Dashboard",
+	Metrics: "Metrics",
+	ModelProvider: "Model Providers / Catalog",
+	RoutingRules: "Routing Rules / Complexity Router",
+	CircuitBreaker: "Circuit Breaker",
+	MCPGateway: "MCP Catalog / Library / Settings",
+	MCPToolGroups: "Tool Groups",
+	Plugins: "Plugins",
+	Governance: "Governance (all)",
+	VirtualKeys: "Virtual Keys",
+	Users: "Users",
+	Teams: "Teams / Business Units",
+	Customers: "Customers",
+	UserProvisioning: "User Provisioning",
+	RBAC: "Roles & Permissions",
+	AccessProfiles: "Access Profiles",
+	AuditLogs: "Audit Logs",
+	GuardrailsConfig: "Guardrails Config",
+	GuardrailRules: "Guardrail Rules",
+	GuardrailsProviders: "Rule Providers",
+	Cluster: "Cluster Config",
+	AdaptiveRouter: "Adaptive Routing",
+	PromptRepository: "Prompt Repository",
+	PromptDeploymentStrategy: "Prompt Deployments",
+	Inference: "Inference",
+	SkillsRepository: "Skills Repository",
+	Settings: "Settings",
+	APIKeys: "API Keys",
+	FeatureFlags: "Feature Flags",
 };
 
 // A saved section grants a mapped entry directly or through its parent section.
@@ -190,6 +256,12 @@ export default function RBACView() {
 	const [newRoleDac, setNewRoleDac] = useState("all-data");
 
 	// Queries
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isSuperAdmin = authStatus?.role === "admin";
+	const canUpdateRbac = useRbac(RbacResource.RBAC, RbacOperation.Update) || isSuperAdmin;
+	const canCreateRole = useRbac(RbacResource.RBAC, RbacOperation.Create) || isSuperAdmin;
+	const canDeleteRole = useRbac(RbacResource.RBAC, RbacOperation.Delete) || isSuperAdmin;
+
 	const { data: roleData, isError: rolesFailed, error: rolesError } = useGetRolesQuery();
 	const { data: permData, isError: permsFailed, error: permsError } = useGetPermissionsQuery();
 	const { data: sessionUsersData, isError: usersFailed, error: usersError } = useGetSessionUsersQuery();
@@ -314,7 +386,7 @@ export default function RBACView() {
 			case "all_sub_admins":
 				return "all_sub_admins";
 			case "user":
-				return `user:${target.user.id}:${targetUser?.role ?? ""}:${targetUser?.allowed_sections ?? ""}`;
+				return `user:${target.user.id}:${targetUser?.role ?? ""}:${targetUser?.allowed_sections ?? ""}:${targetUser?.rbac_permission_ids ?? ""}`;
 			case "all_teams":
 				return `all_teams:${scopeGrants?.all_teams?.updated_at ?? ""}:${scopeGrants?.all_teams?.allowed_sections ?? ""}`;
 			case "team":
@@ -326,7 +398,7 @@ export default function RBACView() {
 			default:
 				return "";
 		}
-	}, [target, targetUser?.role, targetUser?.allowed_sections, scopeGrants]);
+	}, [target, targetUser?.role, targetUser?.allowed_sections, targetUser?.rbac_permission_ids, scopeGrants]);
 
 	const [lastSyncedKey, setLastSyncedKey] = useState<string>("");
 
@@ -352,15 +424,21 @@ export default function RBACView() {
 
 		if (target.type === "user" && targetUser) {
 			const uRole = (targetUser.role || "user").toLowerCase();
-			const userSections = (targetUser.allowed_sections || "")
+			const savedRaiseIds = (targetUser.rbac_permission_ids || "")
 				.split(",")
-				.map((s) => s.trim())
-				.filter(Boolean);
+				.map((s) => Number(s.trim()))
+				.filter((n) => Number.isFinite(n) && n > 0);
 
-			const allowed = new Set(userSections);
+			// If customized permissions were saved for this user (admin, sub_admin, or user), restore them!
+			if (savedRaiseIds.length > 0) {
+				setSelectedPerms(savedRaiseIds);
+				setLastSyncedKey(activeTargetKey);
+				return;
+			}
 
+			// Role defaults when no custom RBAC permissions have been saved:
+			// 1. Admin: full access across all platform permissions
 			if (uRole === "admin") {
-				// Admin has unrestricted full access to all permissions across the entire platform
 				if (permissions.length > 0) {
 					setSelectedPerms(permissions.map((p) => p.id));
 				}
@@ -368,8 +446,14 @@ export default function RBACView() {
 				return;
 			}
 
+			const userSections = (targetUser.allowed_sections || "")
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
+			const allowed = new Set(userSections);
+
+			// 2. Sub-Admin: full access (View, Edit, Delete) for their selected features only
 			if (isSubAdminRole(uRole)) {
-				// Sub-admin: Full access (View, Edit, Delete) for their selected features only!
 				if (userSections.length > 0) {
 					const subAdminPermIds: number[] = [];
 					for (const p of permissions) {
@@ -388,11 +472,14 @@ export default function RBACView() {
 				return;
 			}
 
-			// Regular User:
-			// Pre-tick VIEW ONLY (Read / View) for their selected features!
-			if (userSections.length > 0) {
-				const userPermIds: number[] = [];
-				for (const p of permissions) {
+			// 3. User: View-only for granted Workspace Access sections; Prompt Repo always full access
+			const userPermIds: number[] = [];
+			for (const p of permissions) {
+				if (p.resource === "PromptRepository") {
+					userPermIds.push(p.id);
+					continue;
+				}
+				if (userSections.length > 0) {
 					const sections = RESOURCE_TO_SECTION_MAP[p.resource] || [];
 					if (sections.some((s) => sectionGranted(allowed, s))) {
 						if (p.operation === "Read" || p.operation === "View") {
@@ -400,18 +487,8 @@ export default function RBACView() {
 						}
 					}
 				}
-				setSelectedPerms(userPermIds);
-			} else if (rolePermData?.permissions) {
-				const viewPerms = rolePermData.permissions.filter((p) => p.operation === "Read" || p.operation === "View");
-				setSelectedPerms(viewPerms.map((p) => p.id));
-			} else {
-				setSelectedPerms([]);
 			}
-
-			if (userSections.length === 0 && activeRoleId !== 0 && !rolePermData?.permissions) {
-				return;
-			}
-
+			setSelectedPerms(userPermIds);
 			setLastSyncedKey(activeTargetKey);
 			return;
 		}
@@ -433,27 +510,67 @@ export default function RBACView() {
 		setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
 	};
 
-	// Group permissions by Resource
+	// Group permissions by Resource, ordered like the workspace sidebar (all features visible).
 	const groupedPermissions = useMemo(() => {
 		const map = new Map<string, RBACPermission[]>();
 		for (const perm of permissions) {
 			if (resourceSearch.trim()) {
 				const q = resourceSearch.toLowerCase();
-				const matchResource = perm.resource.toLowerCase().includes(q);
+				const label = (RESOURCE_LABELS[perm.resource] || perm.resource).toLowerCase();
+				const matchResource = perm.resource.toLowerCase().includes(q) || label.includes(q);
 				const matchOp = perm.operation.toLowerCase().includes(q);
 				const matchTier =
 					(q === "view" && (perm.operation === "View" || perm.operation === "Read")) ||
 					(q === "edit" && (perm.operation === "Create" || perm.operation === "Update")) ||
 					(q === "delete" && perm.operation === "Delete") ||
-					(q.includes("full") || q.includes("access"));
+					q.includes("full") ||
+					q.includes("access");
 				if (!matchResource && !matchOp && !matchTier) continue;
 			}
 			const list = map.get(perm.resource) || [];
 			list.push(perm);
 			map.set(perm.resource, list);
 		}
-		return Array.from(map.entries());
+
+		const used = new Set<string>();
+		const ordered: [string, RBACPermission[]][] = [];
+		for (const group of RESOURCE_GROUPS) {
+			for (const name of group.resources) {
+				const perms = map.get(name);
+				if (!perms) continue;
+				ordered.push([name, perms]);
+				used.add(name);
+			}
+		}
+		for (const [name, perms] of map.entries()) {
+			if (used.has(name)) continue;
+			ordered.push([name, perms]);
+		}
+		return ordered;
 	}, [permissions, resourceSearch]);
+
+	const groupedBySection = useMemo(() => {
+		const byResource = new Map(groupedPermissions);
+		const sections: { title: string; items: [string, RBACPermission[]][] }[] = [];
+		const used = new Set<string>();
+		for (const group of RESOURCE_GROUPS) {
+			const items: [string, RBACPermission[]][] = [];
+			for (const name of group.resources) {
+				const perms = byResource.get(name);
+				if (!perms) continue;
+				items.push([name, perms]);
+				used.add(name);
+			}
+			if (items.length > 0) sections.push({ title: group.title, items });
+		}
+		const other: [string, RBACPermission[]][] = [];
+		for (const [name, perms] of groupedPermissions) {
+			if (used.has(name)) continue;
+			other.push([name, perms]);
+		}
+		if (other.length > 0) sections.push({ title: "Other", items: other });
+		return sections;
+	}, [groupedPermissions]);
 
 	// Filtered lists for left pane tree
 	const filteredRoles = useMemo(() => {
@@ -508,6 +625,10 @@ export default function RBACView() {
 
 	// Save Action for current Target
 	const handleSaveCurrentMatrix = async () => {
+		if (!canUpdateRbac) {
+			toast.error("You have view-only access to roles and permissions.");
+			return;
+		}
 		try {
 			if (target.type === "role") {
 				await updatePerms({ id: target.role.id, permission_ids: selectedPerms }).unwrap();
@@ -555,14 +676,21 @@ export default function RBACView() {
 			if (target.type === "user") {
 				const user = targetUser ?? target.user;
 				const uRole = (user.role || "").toLowerCase();
-				const sectionsStr = uRole === "admin" ? "" : computeAllowedSections(selectedPerms);
+				const sectionsStr = computeAllowedSections(selectedPerms);
+				const updates: {
+					username: string;
+					role: string;
+					allowed_sections: string;
+					rbac_permission_ids?: string;
+				} = {
+					username: user.username,
+					role: user.role,
+					allowed_sections: sectionsStr,
+					rbac_permission_ids: selectedPerms.join(","),
+				};
 				await updateSessionUser({
 					id: user.id,
-					updates: {
-						username: user.username,
-						role: user.role,
-						allowed_sections: sectionsStr,
-					},
+					updates,
 				}).unwrap();
 				setLastSyncedKey("");
 				toast.success(
@@ -593,19 +721,22 @@ export default function RBACView() {
 
 	// Quick Select Helpers
 	const handleSelectAllReadView = () => {
+		if (!canUpdateRbac) return;
 		const readViewIds = permissions
 			.filter((p) => p.operation === "Read" || p.operation === "View")
 			.map((p) => p.id);
-		setSelectedPerms((prev) => Array.from(new Set([...prev, ...readViewIds])));
-		toast.info("Granted all Read & View permissions");
+		setSelectedPerms(readViewIds);
+		toast.info("Set to View Only permissions");
 	};
 
 	const handleSelectAll = () => {
+		if (!canUpdateRbac) return;
 		setSelectedPerms(permissions.map((p) => p.id));
 		toast.info("Granted all permissions");
 	};
 
 	const handleClearAll = () => {
+		if (!canUpdateRbac) return;
 		setSelectedPerms([]);
 		toast.info("Cleared all permissions");
 	};
@@ -635,6 +766,10 @@ export default function RBACView() {
 
 	// Direct User Role Assignment
 	const handleAssignUserRole = async (userId: string, newRole: string) => {
+		if (!canUpdateRbac) {
+			toast.error("You have view-only access to roles and permissions.");
+			return;
+		}
 		try {
 			await assignUserRole({ id: userId, role_name: newRole }).unwrap();
 			setLastSyncedKey("");
@@ -1047,7 +1182,8 @@ export default function RBACView() {
 											<select
 												value={targetUser.role || "user"}
 												onChange={(e) => void handleAssignUserRole(targetUser.id, e.target.value)}
-												className="bg-background border-input h-7 rounded border px-2 text-xs font-semibold text-foreground"
+												disabled={!canUpdateRbac}
+												className="bg-background border-input h-7 rounded border px-2 text-xs font-semibold text-foreground disabled:opacity-70 disabled:cursor-not-allowed"
 											>
 												{roles.map((r) => (
 													<option key={r.id} value={r.name}>
@@ -1091,25 +1227,32 @@ export default function RBACView() {
 
 							{/* Action Buttons */}
 							<div className="flex flex-wrap items-center gap-2">
-								<Button variant="outline" size="sm" onClick={handleSelectAllReadView} className="h-8 text-xs font-medium">
+								<Button variant="outline" size="sm" onClick={handleSelectAllReadView} disabled={!canUpdateRbac} className="h-8 text-xs font-medium">
 									View Only
 								</Button>
-								<Button variant="outline" size="sm" onClick={handleSelectAll} className="h-8 text-xs font-medium">
+								<Button variant="outline" size="sm" onClick={handleSelectAll} disabled={!canUpdateRbac} className="h-8 text-xs font-medium">
 									Full Access (All)
 								</Button>
-								<Button variant="outline" size="sm" onClick={handleClearAll} className="h-8 text-xs font-medium">
+								<Button variant="outline" size="sm" onClick={handleClearAll} disabled={!canUpdateRbac} className="h-8 text-xs font-medium">
 									Clear
 								</Button>
 								<Button
 									size="sm"
 									onClick={() => void handleSaveCurrentMatrix()}
-									disabled={isUpdatingPerms || isSavingScope || isUpdatingUser}
-									className="h-8 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold px-4"
+									disabled={!canUpdateRbac || isUpdatingPerms || isSavingScope || isUpdatingUser}
+									className="h-8 bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-semibold px-4 disabled:opacity-50"
 								>
 									{isUpdatingPerms || isSavingScope || isUpdatingUser ? "Saving..." : "Save Permissions"}
 								</Button>
 							</div>
 						</div>
+
+						{!canUpdateRbac && (
+							<div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium mt-3" data-testid="rbac-view-only-banner">
+								<Eye className="h-4 w-4 shrink-0" />
+								<span>View-only access: roles and permissions cannot be modified.</span>
+							</div>
+						)}
 
 						{/* Resource Filter */}
 						<div className="relative mt-3">
@@ -1128,16 +1271,28 @@ export default function RBACView() {
 						<Info className="h-4 w-4 shrink-0 text-emerald-500" />
 						<span>
 							Permissions are configured into 4 clear levels: <strong>View</strong> (read-only), <strong>Edit</strong> (view + create/update),{" "}
-							<strong>Delete</strong> (remove records), or <strong>Full Access</strong> (complete control).
+							<strong>Delete</strong> (remove records), or <strong>Full Access</strong> (complete control). Showing{" "}
+							<strong>{groupedPermissions.length}</strong> workspace features (scroll for Observability, Models, Governance, Prompt Repo, and more).
 						</span>
 					</div>
 
-					{/* Resource Cards Grid */}
-					<div className="no-scrollbar flex-1 space-y-3 overflow-y-auto p-4">
-						{groupedPermissions.length === 0 ? (
+					{/* Resource Cards Grid — grouped like the sidebar so every feature is discoverable */}
+					<div className="no-scrollbar flex-1 space-y-5 overflow-y-auto p-4">
+						{groupedBySection.length === 0 ? (
 							<p className="text-muted-foreground py-8 text-center text-sm">No resources matching filter.</p>
 						) : (
-							groupedPermissions.map(([resource, perms]) => {
+							groupedBySection.map((section) => (
+								<div key={section.title} className="space-y-3">
+									<div className="sticky top-0 z-10 -mx-1 flex items-center justify-between rounded-md bg-background/95 px-1 py-1.5 backdrop-blur-sm">
+										<h3 className="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+											{section.title}
+										</h3>
+										<span className="text-muted-foreground text-[10px] tabular-nums">
+											{section.items.length} feature{section.items.length === 1 ? "" : "s"}
+										</span>
+									</div>
+									{section.items.map(([resource, perms]) => {
+										const resourceLabel = RESOURCE_LABELS[resource] || resource;
 								const viewPerms = perms.filter((p) => p.operation === "Read" || p.operation === "View");
 								const editPerms = perms.filter((p) => p.operation === "Create" || p.operation === "Update");
 								const deletePerms = perms.filter((p) => p.operation === "Delete");
@@ -1238,8 +1393,10 @@ export default function RBACView() {
 									>
 										{/* Resource Header */}
 										<div className="mb-2.5 flex items-center justify-between">
-											<div className="flex items-center gap-2">
-												<span className="font-semibold text-sm tracking-tight text-foreground">{resource}</span>
+											<div className="flex min-w-0 items-center gap-2">
+												<span className="truncate font-semibold text-sm tracking-tight text-foreground" title={resource}>
+													{resourceLabel}
+												</span>
 												{renderStatusBadge()}
 											</div>
 
@@ -1247,16 +1404,22 @@ export default function RBACView() {
 												{isFullAccessActive ? (
 													<button
 														type="button"
-														onClick={toggleFullAccess}
-														className="text-xs text-muted-foreground hover:text-destructive transition-colors font-medium cursor-pointer"
+														disabled={!canUpdateRbac}
+														onClick={canUpdateRbac ? toggleFullAccess : undefined}
+														className={`text-xs text-muted-foreground hover:text-destructive transition-colors font-medium ${
+															canUpdateRbac ? "cursor-pointer" : "opacity-40 cursor-not-allowed"
+														}`}
 													>
 														Clear Access
 													</button>
 												) : (
 													<button
 														type="button"
-														onClick={toggleFullAccess}
-														className="text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors font-semibold cursor-pointer"
+														disabled={!canUpdateRbac}
+														onClick={canUpdateRbac ? toggleFullAccess : undefined}
+														className={`text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors font-semibold ${
+															canUpdateRbac ? "cursor-pointer" : "opacity-40 cursor-not-allowed"
+														}`}
 													>
 														Grant Full Access
 													</button>
@@ -1269,8 +1432,11 @@ export default function RBACView() {
 											{/* 1. VIEW */}
 											<button
 												type="button"
-												onClick={toggleView}
-												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 cursor-pointer flex items-center justify-center px-3 ${
+												disabled={!canUpdateRbac}
+												onClick={canUpdateRbac ? toggleView : undefined}
+												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-3 ${
+													!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
+												} ${
 													isViewActive
 														? "border-sky-500/60 bg-sky-500/15 text-sky-800 dark:text-sky-200 font-semibold shadow-2xs ring-1 ring-sky-500/30"
 														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
@@ -1282,8 +1448,11 @@ export default function RBACView() {
 											{/* 2. EDIT */}
 											<button
 												type="button"
-												onClick={toggleEdit}
-												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 cursor-pointer flex items-center justify-center px-3 ${
+												disabled={!canUpdateRbac}
+												onClick={canUpdateRbac ? toggleEdit : undefined}
+												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-3 ${
+													!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
+												} ${
 													isEditActive
 														? "border-blue-500/60 bg-blue-500/15 text-blue-800 dark:text-blue-200 font-semibold shadow-2xs ring-1 ring-blue-500/30"
 														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
@@ -1295,8 +1464,11 @@ export default function RBACView() {
 											{/* 3. DELETE */}
 											<button
 												type="button"
-												onClick={toggleDelete}
-												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 cursor-pointer flex items-center justify-center px-3 ${
+												disabled={!canUpdateRbac}
+												onClick={canUpdateRbac ? toggleDelete : undefined}
+												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-3 ${
+													!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
+												} ${
 													isDeleteActive
 														? "border-rose-500/60 bg-rose-500/15 text-rose-800 dark:text-rose-200 font-semibold shadow-2xs ring-1 ring-rose-500/30"
 														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
@@ -1308,8 +1480,11 @@ export default function RBACView() {
 											{/* 4. FULL ACCESS */}
 											<button
 												type="button"
-												onClick={toggleFullAccess}
-												className={`h-8 rounded-lg border text-xs font-semibold transition-all duration-150 cursor-pointer flex items-center justify-center px-3 ${
+												disabled={!canUpdateRbac}
+												onClick={canUpdateRbac ? toggleFullAccess : undefined}
+												className={`h-8 rounded-lg border text-xs font-semibold transition-all duration-150 flex items-center justify-center px-3 ${
+													!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
+												} ${
 													isFullAccessActive
 														? "border-emerald-500/60 bg-emerald-500/20 text-emerald-900 dark:text-emerald-100 shadow-2xs ring-1 ring-emerald-500/30"
 														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
@@ -1320,7 +1495,9 @@ export default function RBACView() {
 										</div>
 									</div>
 								);
-							})
+									})}
+								</div>
+							))
 						)}
 					</div>
 				</div>

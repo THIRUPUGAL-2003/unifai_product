@@ -825,6 +825,7 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 
 	// Admins may pick any VK / Auto from the playground — do not force-bind.
 	if isWorkspaceAdminRole(session.Role) {
+		ctx.SetUserValue(schemas.IsLocalAdminContextKey, true)
 		return ""
 	}
 
@@ -901,6 +902,12 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 			ctx.Request.Header.Del("x-uf-vk")
 			ctx.Request.Header.Del("x-api-key")
 		}
+		return ""
+	}
+
+	// If the caller explicitly requested a direct provider API key (x-uf-api-key-id),
+	// allow them to run through the provider directly so provider/user budgets apply.
+	if apiKeyIDHeader := strings.TrimSpace(string(ctx.Request.Header.Peek("x-uf-api-key-id"))); apiKeyIDHeader != "" {
 		return ""
 	}
 
@@ -1050,7 +1057,8 @@ func checkSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, token
 	if !isWorkspaceAdminRole(session.Role) {
 		path := string(ctx.Path())
 		isAllowed := strings.HasPrefix(path, "/v1/") ||
-			strings.HasPrefix(path, "/api/prompt-repo/") ||
+			// Built-in users always reach Prompt Repository (with or without a trailing path).
+			path == "/api/prompt-repo" || strings.HasPrefix(path, "/api/prompt-repo/") ||
 			path == "/api/session/is-auth-enabled" ||
 			path == "/api/session/logout" ||
 			path == "/api/session/login" ||
@@ -1058,14 +1066,38 @@ func checkSession(ctx *fasthttp.RequestCtx, store configstore.ConfigStore, token
 			path == "/api/session/ws-ticket" ||
 			path == "/ws" ||
 			(path == "/api/config" && string(ctx.Method()) == "GET") ||
+			(strings.HasPrefix(path, "/api/keys") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/providers") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/governance/virtual-keys") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/governance/providers") && string(ctx.Method()) == "GET") ||
+			(strings.HasPrefix(path, "/api/governance/users") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/models") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/mcp/clients") && string(ctx.Method()) == "GET") ||
 			(strings.HasPrefix(path, "/api/skills") && string(ctx.Method()) == "GET") ||
 			(path == "/api/rbac/me/permissions" && string(ctx.Method()) == "GET")
-		if !isAllowed && !customRoleMayReach(store, session.Role, string(ctx.Method()), path) {
+		method := string(ctx.Method())
+		isRead := method == "GET" || method == "HEAD" || method == "OPTIONS"
+		// Built-in "user" (and other non-admin roles) may open Workspace Access sections the
+		// admin granted. Reads use the broad path map; writes use SectionRequirementFor so
+		// view-only grants cannot escalate into unmapped admin APIs.
+		if !isAllowed && dbUser != nil {
+			granted := effectiveAllowedSections(context.Background(), store, dbUser)
+			// Match RBAC sessionSectionsAllow: empty user grants still keep Prompt Repository.
+			if strings.TrimSpace(granted) == "" && strings.EqualFold(session.Role, "user") {
+				granted = "prompt-repository"
+			}
+			if isRead && isSectionGrantedForPath(granted, path) {
+				isAllowed = true
+			}
+			// Writes with a section mapping pass through so RBACMiddleware can enforce
+			// View-only vs raised Edit/Delete (per-user rbac_permission_ids).
+			if !isAllowed {
+				if secs := rbac.SectionRequirementFor(method, path); len(secs) > 0 && rbac.SectionsAllow(granted, secs) {
+					isAllowed = true
+				}
+			}
+		}
+		if !isAllowed && !customRoleMayReach(store, session.Role, method, path) {
 			return sessionForbidden
 		}
 	}

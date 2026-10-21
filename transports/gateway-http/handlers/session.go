@@ -923,6 +923,7 @@ func (h *SessionHandler) getUsers(ctx *fasthttp.RequestCtx) {
 			"rate_limit_id":        u.RateLimitID,
 			"allowed_prompt_repos": u.AllowedPromptRepos,
 			"allowed_sections":     u.AllowedSections,
+			"rbac_permission_ids":  u.RbacPermissionIDs,
 			"created_at":           u.CreatedAt,
 			"updated_at":           u.UpdatedAt,
 			"reviewed_at":          u.ReviewedAt,
@@ -1015,6 +1016,26 @@ func parseRawStringOrSlice(raw json.RawMessage) (string, bool) {
 		}
 		return strings.Join(clean, ","), true
 	}
+	// RBAC UI may send permission id arrays as numbers.
+	var anyArr []any
+	if err := json.Unmarshal(raw, &anyArr); err == nil {
+		var clean []string
+		for _, item := range anyArr {
+			switch v := item.(type) {
+			case string:
+				if t := strings.TrimSpace(v); t != "" {
+					clean = append(clean, t)
+				}
+			case float64:
+				clean = append(clean, strconv.FormatInt(int64(v), 10))
+			case json.Number:
+				if t := strings.TrimSpace(v.String()); t != "" {
+					clean = append(clean, t)
+				}
+			}
+		}
+		return strings.Join(clean, ","), true
+	}
 	return "", false
 }
 
@@ -1033,6 +1054,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		RateLimit          int             `json:"rate_limit"`
 		AllowedPromptRepos json.RawMessage `json:"allowed_prompt_repos"`
 		AllowedSections    json.RawMessage `json:"allowed_sections"`
+		RbacPermissionIDs  json.RawMessage `json:"rbac_permission_ids"`
 		AutoCreatePrompt   *bool           `json:"auto_create_prompt"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &raw); err != nil {
@@ -1041,6 +1063,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 	}
 	allowedSections, _ := parseRawStringOrSlice(raw.AllowedSections)
 	allowedRepos, _ := parseRawStringOrSlice(raw.AllowedPromptRepos)
+	rbacPermIDs, _ := parseRawStringOrSlice(raw.RbacPermissionIDs)
 	payload := struct {
 		Username           string
 		Email              string
@@ -1050,6 +1073,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		RateLimit          int
 		AllowedPromptRepos string
 		AllowedSections    string
+		RbacPermissionIDs  string
 		AutoCreatePrompt   *bool
 	}{
 		Username:           raw.Username,
@@ -1060,6 +1084,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		RateLimit:          raw.RateLimit,
 		AllowedPromptRepos: allowedRepos,
 		AllowedSections:    allowedSections,
+		RbacPermissionIDs:  formatRbacPermissionIDs(parseRbacPermissionIDs(rbacPermIDs)),
 		AutoCreatePrompt:   raw.AutoCreatePrompt,
 	}
 	payload.Username = strings.TrimSpace(payload.Username)
@@ -1122,6 +1147,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	payload.Role = role
+	payload.AllowedSections = ensureUserRoleAllowedSections(role, payload.AllowedSections)
 	if h.rejectIfProductUsersFull(ctx) {
 		return
 	}
@@ -1170,6 +1196,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		existing.RateLimit = payload.RateLimit
 		existing.AllowedPromptRepos = payload.AllowedPromptRepos
 		existing.AllowedSections = payload.AllowedSections
+		existing.RbacPermissionIDs = payload.RbacPermissionIDs
 		existing.MustChangePassword = true
 		existing.ReviewedAt = &now
 		existing.UpdatedAt = now
@@ -1202,6 +1229,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 			"rate_limit_id":        existing.RateLimitID,
 			"allowed_prompt_repos": existing.AllowedPromptRepos,
 			"allowed_sections":     existing.AllowedSections,
+			"rbac_permission_ids":  existing.RbacPermissionIDs,
 			"created_at":           existing.CreatedAt,
 			"email_sent":           emailSent,
 			"email_error":          emailErr,
@@ -1224,6 +1252,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		RateLimit:          payload.RateLimit,
 		AllowedPromptRepos: payload.AllowedPromptRepos,
 		AllowedSections:    payload.AllowedSections,
+		RbacPermissionIDs:  payload.RbacPermissionIDs,
 		MustChangePassword: true,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -1256,6 +1285,7 @@ func (h *SessionHandler) createUser(ctx *fasthttp.RequestCtx) {
 		"rate_limit_id":        user.RateLimitID,
 		"allowed_prompt_repos": user.AllowedPromptRepos,
 		"allowed_sections":     user.AllowedSections,
+		"rbac_permission_ids":  user.RbacPermissionIDs,
 		"created_at":           user.CreatedAt,
 		"email_sent":           emailSent,
 		"email_error":          emailErr,
@@ -1892,7 +1922,6 @@ func demoNotes(value string, max int) string {
 	return value
 }
 
-
 // resetPassword verifies a signed reset_token (from verify-otp) and sets a new password.
 // Raw OTP alone is rejected — OTP must be verified first so the code is burned.
 func (h *SessionHandler) resetPassword(ctx *fasthttp.RequestCtx) {
@@ -2120,6 +2149,7 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		RateLimit             *int            `json:"rate_limit"`
 		AllowedPromptRepos    json.RawMessage `json:"allowed_prompt_repos"`
 		AllowedSections       json.RawMessage `json:"allowed_sections"`
+		RbacPermissionIDs     json.RawMessage `json:"rbac_permission_ids"`
 		SendTemporaryPassword bool            `json:"send_temporary_password"`
 	}
 	if err := json.Unmarshal(ctx.PostBody(), &raw); err != nil {
@@ -2134,6 +2164,11 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	if val, ok := parseRawStringOrSlice(raw.AllowedPromptRepos); ok {
 		allowedPromptReposPtr = &val
 	}
+	var rbacPermissionIDsPtr *string
+	if val, ok := parseRawStringOrSlice(raw.RbacPermissionIDs); ok {
+		normalized := formatRbacPermissionIDs(parseRbacPermissionIDs(val))
+		rbacPermissionIDsPtr = &normalized
+	}
 	payload := struct {
 		Username              string
 		Password              string
@@ -2144,6 +2179,7 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		RateLimit             *int
 		AllowedPromptRepos    *string
 		AllowedSections       *string
+		RbacPermissionIDs     *string
 		SendTemporaryPassword bool
 	}{
 		Username:              raw.Username,
@@ -2155,6 +2191,7 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		RateLimit:             raw.RateLimit,
 		AllowedPromptRepos:    allowedPromptReposPtr,
 		AllowedSections:       allowedSectionsPtr,
+		RbacPermissionIDs:     rbacPermissionIDsPtr,
 		SendTemporaryPassword: raw.SendTemporaryPassword,
 	}
 	if msg := scopedAdminTargetGuard(ctx, h.configStore, existingUser.Username, existingUser.Role); msg != "" {
@@ -2292,6 +2329,14 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 	if payload.AllowedSections != nil {
 		existingUser.AllowedSections = *payload.AllowedSections
 	}
+	existingUser.AllowedSections = ensureUserRoleAllowedSections(existingUser.Role, existingUser.AllowedSections)
+	if payload.RbacPermissionIDs != nil {
+		existingUser.RbacPermissionIDs = *payload.RbacPermissionIDs
+	}
+	// Per-user RBAC raises apply only to built-in "user"; clear when promoted.
+	if existingUser.Role != "user" {
+		existingUser.RbacPermissionIDs = ""
+	}
 	if existingUser.Role == "admin" || existingUser.Role == "sub_admin" {
 		existingUser.Budget = 0
 		existingUser.RateLimit = 0
@@ -2319,6 +2364,12 @@ func (h *SessionHandler) updateUser(ctx *fasthttp.RequestCtx) {
 		if prevUsername != "" && prevUsername != existingUser.Username {
 			_ = h.configStore.UpdateSessionsRoleByUsername(ctx, prevUsername, existingUser.Role)
 		}
+	}
+	// Drop cached session rows so Workspace Access / role changes apply on the next request
+	// instead of waiting for the auth-cache TTL.
+	GetAuthCache().InvalidateUserSessions(existingUser.Username)
+	if prevUsername != "" && prevUsername != existingUser.Username {
+		GetAuthCache().InvalidateUserSessions(prevUsername)
 	}
 
 	if h.promptLifecycle != nil {
@@ -2561,15 +2612,15 @@ func (h *SessionHandler) register(ctx *fasthttp.RequestCtx) {
 	}
 
 	user := &tables.TableUser{
-		ID:        uuid.New().String(),
-		Username:  payload.Username,
-		Email:     payload.Email,
-		Password:  hashedPassword,
+		ID:              uuid.New().String(),
+		Username:        payload.Username,
+		Email:           payload.Email,
+		Password:        hashedPassword,
 		Role:            payload.Role,
 		Status:          initialStatus,
 		RequestedTeamID: requestedTeamID,
 		CreatedAt:       now,
-		UpdatedAt: now,
+		UpdatedAt:       now,
 	}
 	if err := h.configStore.CreateUser(ctx, user); err != nil {
 		logger.Error("failed to register user username=%s: %v", payload.Username, err)

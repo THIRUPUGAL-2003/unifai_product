@@ -19,6 +19,7 @@ interface MultiBudgetLinesProps {
 	options?: { label: string; value: string }[];
 	onReset?: () => void;
 	showReset?: boolean;
+	disabled?: boolean;
 }
 
 export default function MultiBudgetLines({
@@ -29,6 +30,7 @@ export default function MultiBudgetLines({
 	options = resetDurationOptions,
 	onReset,
 	showReset,
+	disabled = false,
 }: MultiBudgetLinesProps) {
 	// Track which reset durations are already used (for duplicate detection)
 	const usedDurations = useMemo(() => {
@@ -74,12 +76,12 @@ export default function MultiBudgetLines({
 				<Label className="text-sm font-medium">{label}</Label>
 				<div className="flex items-center gap-2">
 					{onReset && (showReset ?? true) && (
-						<Button data-testid={`${testId}-reset-btn`} type="button" variant="ghost" size="sm" onClick={onReset}>
+						<Button data-testid={`${testId}-reset-btn`} type="button" variant="ghost" size="sm" onClick={onReset} disabled={disabled}>
 							<RotateCcw className="mr-1 h-3 w-3" />
 							Reset
 						</Button>
 					)}
-					<Button data-testid={`${testId}-add-btn`} variant="outline" size="sm" type="button" onClick={addLine}>
+					<Button data-testid={`${testId}-add-btn`} variant="outline" size="sm" type="button" onClick={addLine} disabled={disabled}>
 						<Plus className="mr-1 h-3 w-3" />
 						Add Budget
 					</Button>
@@ -106,6 +108,7 @@ export default function MultiBudgetLines({
 									onChangeNumber={(value) => updateMaxLimit(index, value)}
 									onChangeSelect={(value) => updateResetDuration(index, value)}
 									options={options}
+									disabled={disabled}
 								/>
 							</div>
 							<Button
@@ -116,6 +119,7 @@ export default function MultiBudgetLines({
 								type="button"
 								className="text-destructive mb-0.5 h-8 w-8 shrink-0"
 								onClick={() => removeLine(index)}
+								disabled={disabled}
 							>
 								<Trash2 className="h-4 w-4" />
 							</Button>

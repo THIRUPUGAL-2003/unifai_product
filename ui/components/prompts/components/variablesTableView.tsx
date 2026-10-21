@@ -6,9 +6,11 @@ import { useCallback, useMemo } from "react";
 export function VariablesTableView({
 	variables,
 	onChange,
+	disabled,
 }: {
 	variables: VariableMap;
 	onChange: React.Dispatch<React.SetStateAction<VariableMap>>;
+	disabled?: boolean;
 }) {
 	const entries = useMemo(() => Object.entries(variables).sort(([a], [b]) => a.localeCompare(b)), [variables]);
 
@@ -45,7 +47,9 @@ export function VariablesTableView({
 										onChange={(e) => handleValueChange(name, e.target.value)}
 										placeholder={"value"}
 										minRows={1}
-										className="min-h-0 w-full resize-none border-none bg-transparent px-3 py-1 text-xs shadow-none outline-none focus-visible:ring-0"
+										disabled={disabled}
+										readOnly={disabled}
+										className="min-h-0 w-full resize-none border-none bg-transparent px-3 py-1 text-xs shadow-none outline-none focus-visible:ring-0 disabled:opacity-70 disabled:cursor-not-allowed"
 									/>
 								</td>
 							</tr>

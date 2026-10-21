@@ -29,6 +29,7 @@ import {
 	useGetTeamsQuery,
 } from "@/lib/store";
 import { CreateTeamRequest, Customer, Team, UpdateTeamRequest } from "@/lib/types/governance";
+import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils/governance";
 import { Validator } from "@/lib/utils/validation";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
@@ -402,10 +403,22 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 				onEscapeKeyDown={() => onCancel()}
 			>
 				<SheetHeader className="flex flex-col items-start px-0 py-4" headerClassName="mb-0 sticky -top-4 bg-card z-10 px-8">
-					<SheetTitle className="flex items-center gap-2">{isEditing ? "Edit Team" : "Create Team"}</SheetTitle>
+					<SheetTitle className="flex items-center gap-2">
+						{isEditing ? (hasPermission ? "Edit Team" : "View Team") : "Create Team"}
+						{!hasPermission && (
+							<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs">
+								View Only
+							</Badge>
+						)}
+					</SheetTitle>
 					<SheetDescription>
 						{isEditing ? "Update the team information and settings." : "Create a new team to organize users and manage shared resources."}
 					</SheetDescription>
+					{!hasPermission && (
+						<div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-500 mt-2">
+							View-only access: this team cannot be modified.
+						</div>
+					)}
 				</SheetHeader>
 
 				<form onSubmit={handleSubmit} className="flex h-full flex-col gap-6">
@@ -419,6 +432,7 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 									placeholder="e.g., Engineering Team"
 									value={formData.name}
 									maxLength={50}
+									disabled={!hasPermission}
 									onChange={(e) => updateField("name", e.target.value)}
 									data-testid="team-name-input"
 								/>
@@ -431,9 +445,10 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 									<Label htmlFor="customer">Customer (optional)</Label>
 									<Select
 										value={formData.customerId || "__none__"}
+										disabled={!hasPermission}
 										onValueChange={(value) => updateField("customerId", value === "__none__" ? "" : value)}
 									>
-										<SelectTrigger id="customer" className="w-full" data-testid="team-customer-select-trigger">
+										<SelectTrigger id="customer" className="w-full" disabled={!hasPermission} data-testid="team-customer-select-trigger">
 											<SelectValue placeholder="Select a customer" />
 										</SelectTrigger>
 										<SelectContent>
@@ -468,7 +483,8 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 								<button
 									type="button"
 									onClick={addBudgetRow}
-									className="text-primary text-xs font-medium hover:underline"
+									disabled={!hasPermission}
+									className={cn("text-primary text-xs font-medium hover:underline", !hasPermission && "pointer-events-none opacity-50")}
 									data-testid="team-add-budget-btn"
 								>
 									+ Add budget
@@ -486,6 +502,7 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 												label={`Budget #${idx + 1} — Maximum Spend (USD)`}
 												value={row.maxLimit}
 												selectValue={row.resetDuration}
+												disabled={!hasPermission}
 												onChangeNumber={(value) => updateBudgetRow(idx, { maxLimit: value })}
 												onChangeSelect={(value) => updateBudgetRow(idx, { resetDuration: value })}
 												options={resetDurationOptions}
@@ -495,7 +512,8 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 										<button
 											type="button"
 											onClick={() => removeBudgetRow(idx)}
-											className="text-muted-foreground hover:text-destructive mt-6 text-xs font-medium"
+											disabled={!hasPermission}
+											className={cn("text-muted-foreground hover:text-destructive mt-6 text-xs font-medium", !hasPermission && "pointer-events-none opacity-50")}
 											data-testid={`team-remove-budget-btn-${idx}`}
 										>
 											Remove
@@ -517,6 +535,7 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 							label="Maximum Tokens"
 							value={formData.tokenMaxLimit}
 							selectValue={formData.tokenResetDuration}
+							disabled={!hasPermission}
 							onChangeNumber={(value) => updateField("tokenMaxLimit", value)}
 							onChangeSelect={(value) => updateField("tokenResetDuration", value)}
 							options={resetDurationOptions}
@@ -528,6 +547,7 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 							label="Maximum Requests"
 							value={formData.requestMaxLimit}
 							selectValue={formData.requestResetDuration}
+							disabled={!hasPermission}
 							onChangeNumber={(value) => updateField("requestMaxLimit", value)}
 							onChangeSelect={(value) => updateField("requestResetDuration", value)}
 							options={resetDurationOptions}
@@ -560,6 +580,7 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 									<Switch
 										id="team-calendar-aligned-toggle"
 										checked={formData.calendarAligned}
+										disabled={!hasPermission}
 										onCheckedChange={handleCalendarAlignedChange}
 										data-testid="team-calendar-aligned-toggle"
 									/>
@@ -718,8 +739,8 @@ export default function TeamSheet({ team, customers, onSave, onCancel }: TeamShe
 								</ul>
 							) : null}
 							<div className="flex gap-2">
-								<Select value={memberToAdd || "__none__"} onValueChange={(v) => setMemberToAdd(v === "__none__" ? "" : v)}>
-									<SelectTrigger className="w-full">
+								<Select value={memberToAdd || "__none__"} onValueChange={(v) => setMemberToAdd(v === "__none__" ? "" : v)} disabled={!hasUpdateAccess}>
+									<SelectTrigger className="w-full" disabled={!hasUpdateAccess}>
 										<SelectValue placeholder="Select a user" />
 									</SelectTrigger>
 									<SelectContent>

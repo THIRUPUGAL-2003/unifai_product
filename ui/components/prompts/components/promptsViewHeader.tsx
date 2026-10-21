@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Input } from "@/components/ui/input";
 import { SplitButton } from "@/components/ui/splitButton";
 import { Message, MessageRole } from "@/lib/message";
-import { getErrorMessage, useIsAuthEnabledQuery, useGetVirtualKeysQuery } from "@/lib/store";
+import { getErrorMessage, useIsAuthEnabledQuery, useGetVirtualKeysQuery, useGetProviderGovernanceQuery } from "@/lib/store";
 import { useCreateSessionMutation, useGetSessionsQuery, useGetVersionsQuery, useRenameSessionMutation, useUpdateSessionMutation } from "@/lib/store/apis/promptsApi";
 import { ModelParams, PromptSession } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
@@ -57,12 +57,16 @@ export default function PromptsViewHeader() {
 	const POLL_MS = 5000;
 	const [authPollMs, setAuthPollMs] = useState(POLL_MS);
 	const [vkPollMs, setVkPollMs] = useState(POLL_MS);
+	const [provGovPollMs, setProvGovPollMs] = useState(POLL_MS);
 	const { data: authStatus, error: authError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
 	const isUserRole = isPromptMemberRole(authStatus?.role);
 
 	const { data: virtualKeysData, error: vkError } = useGetVirtualKeysQuery(undefined, {
-		skip: !isUserRole,
 		pollingInterval: vkPollMs,
+	});
+
+	const { data: providerGovData, error: provGovError } = useGetProviderGovernanceQuery(undefined, {
+		pollingInterval: provGovPollMs,
 	});
 
 	useEffect(() => {
@@ -71,9 +75,20 @@ export default function PromptsViewHeader() {
 	useEffect(() => {
 		setVkPollMs(vkError ? 0 : POLL_MS);
 	}, [vkError]);
+	useEffect(() => {
+		setProvGovPollMs(provGovError ? 0 : POLL_MS);
+	}, [provGovError]);
+
 	const selectedVK = useMemo(
-		() => (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === apiKeyId),
-		[virtualKeysData, apiKeyId],
+		() =>
+			(virtualKeysData?.virtual_keys ?? []).find(
+				(vk) =>
+					vk.value === virtualKeyId ||
+					vk.id === virtualKeyId ||
+					vk.value === apiKeyId ||
+					vk.id === apiKeyId,
+			),
+		[virtualKeysData?.virtual_keys, virtualKeyId, apiKeyId],
 	);
 	const vkScopeLabel = useMemo(() => {
 		if (!selectedVK) return null;
@@ -85,6 +100,34 @@ export default function PromptsViewHeader() {
 	}, [selectedVK]);
 
 	const vkBudget = useMemo(() => selectedVK?.budgets?.[0], [selectedVK]);
+
+	const providerBudget = useMemo(() => {
+		if (!provider) return undefined;
+		const targetProvider = provider.trim().toLowerCase();
+		const gov = (providerGovData?.providers ?? []).find(
+			(p) => p.provider?.trim().toLowerCase() === targetProvider,
+		);
+		if (!gov) return undefined;
+		if (gov.budgets && gov.budgets.length > 0) return gov.budgets[0];
+		return gov.budget;
+	}, [providerGovData, provider]);
+
+	const formatCost = (v?: number) => {
+		const n = v ?? 0;
+		if (n === 0) return "$0.00";
+		if (n < 0.001) return `$${n.toFixed(5)}`;
+		if (n < 0.01) return `$${n.toFixed(4)}`;
+		if (n >= 1_000_000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+		return `$${n.toFixed(2)}`;
+	};
+	const formatLimit = (v?: number) => {
+		const n = v ?? 0;
+		if (n <= 0) return "Unlimited";
+		if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(0)}B`;
+		if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(0)}M`;
+		if (n >= 1_000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+		return `$${n.toFixed(2)}`;
+	};
 
 	const committedLabel = useMemo(() => {
 		const version = selectedPrompt?.latest_version;
@@ -313,41 +356,13 @@ export default function PromptsViewHeader() {
 					{selectedPrompt?.name || "Playground"}
 					{!isUserRole && hasChanges && <span className="text-destructive ml-1">*</span>}
 				</h3>
-				{isUserRole ? (
-					<>
-						<Badge variant="secondary" className="max-w-[280px] truncate font-normal" title={committedLabel}>
-							{committedLabel}
-						</Badge>
-						{selectedVK && (
-							<Badge variant="outline" className="border-teal-500/40 text-teal-600 dark:text-teal-400 bg-teal-500/10 gap-1 text-xs">
-								VK: {selectedVK.name}{vkScopeLabel ? ` (${vkScopeLabel})` : ""}
-							</Badge>
-						)}
-						{authStatus?.budget !== undefined && authStatus.budget > 0 && (
-							<Badge variant="outline" className="font-mono text-xs border-primary/30 text-muted-foreground" title="Your Personal User Budget">
-								User: ${(authStatus.budget_current_usage ?? 0).toFixed(2)} / ${authStatus.budget.toFixed(2)}
-							</Badge>
-						)}
-						{authStatus?.rate_limit !== undefined && authStatus.rate_limit > 0 && (
-							<Badge variant="outline" className="font-mono text-xs border-primary/30 text-muted-foreground" title="Your request-per-minute limit">
-								{authStatus.rate_limit} RPM
-							</Badge>
-						)}
-						{vkBudget && vkBudget.max_limit > 0 && (
-							<Badge variant="outline" className="font-mono text-xs border-emerald-500/30 text-emerald-600 dark:text-emerald-400" title="Virtual Key Budget (Shared)">
-								Key: ${(vkBudget.current_usage ?? 0).toFixed(2)} / ${vkBudget.max_limit.toFixed(2)}
-							</Badge>
-						)}
 
-					</>
-				) : (
-					<>
-						{displayVersion && <Badge variant={"secondary"}>v{displayVersion.version_number}</Badge>}
-						{hasVersionChanges && versions.length > 0 && <Badge variant="outline">Unpublished Changes</Badge>}
-					</>
-				)}
-				{!isUserRole && !canUpdate && (
-					<Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10 gap-1 text-xs">
+
+				{/* Version Badge for Admin */}
+				{!isUserRole && displayVersion && <Badge variant={"secondary"}>v{displayVersion.version_number}</Badge>}
+				{!isUserRole && hasVersionChanges && versions.length > 0 && <Badge variant="outline">Unpublished Changes</Badge>}
+				{!canUpdate && (
+					<Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10 gap-1 text-xs" data-testid="prompt-view-only-badge">
 						<Eye className="h-3 w-3" />
 						View Only
 					</Badge>
@@ -365,7 +380,7 @@ export default function PromptsViewHeader() {
 					<>
 						<SplitButton
 							onClick={handleSaveSession}
-							disabled={isCreatingSession || isUpdatingSession || isStreaming}
+							disabled={isCreatingSession || isUpdatingSession || isStreaming || !canUpdate}
 							isLoading={isCreatingSession || isUpdatingSession}
 							dropdownContent={{
 								className: "w-72 p-0",
@@ -386,7 +401,7 @@ export default function PromptsViewHeader() {
 															setUrlState({ sessionId: session.id, versionId: null });
 															setSessionsOpen(false);
 														}}
-														onRename={(name) => handleRenameSession(session.id, name)}
+														onRename={canUpdate ? (name) => handleRenameSession(session.id, name) : undefined}
 													/>
 												))}
 											</CommandGroup>
@@ -409,7 +424,7 @@ export default function PromptsViewHeader() {
 						</SplitButton>
 						<SplitButton
 							onClick={handleCommitVersion}
-							disabled={isCreatingSession || isStreaming}
+							disabled={isCreatingSession || isStreaming || !canUpdate}
 							dropdownContent={{
 								className: "w-64 max-h-72 overflow-y-auto",
 								children: (
@@ -453,7 +468,7 @@ export default function PromptsViewHeader() {
 							<GitCommit className="h-4 w-4" />
 							Commit Version
 						</SplitButton>
-						{!isUserRole && selectedPrompt && (
+						{!isUserRole && canUpdate && selectedPrompt && (
 							<Button
 								variant="outline"
 								size="sm"
@@ -465,7 +480,7 @@ export default function PromptsViewHeader() {
 								Access
 							</Button>
 						)}
-						{selectedPrompt && (!isUserRole || canDelete) && (
+						{selectedPrompt && ((!isUserRole && canUpdate) || canDelete) && (
 							<DropdownMenu>
 								<DropdownMenuTrigger asChild>
 									<Button
@@ -479,7 +494,7 @@ export default function PromptsViewHeader() {
 									</Button>
 								</DropdownMenuTrigger>
 								<DropdownMenuContent align="end">
-									{!isUserRole && (
+									{!isUserRole && canUpdate && (
 										<DropdownMenuItem
 											className="cursor-pointer"
 											data-testid="header-prompt-access"
@@ -546,7 +561,7 @@ function SessionItem({
 	session: PromptSession;
 	isSelected: boolean;
 	onSelect: () => void;
-	onRename: (name: string) => void;
+	onRename?: (name: string) => void;
 }) {
 	const [isEditing, setIsEditing] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -557,7 +572,7 @@ function SessionItem({
 			setIsEditing(false);
 			return;
 		}
-		onRename(newName);
+		onRename?.(newName);
 		setIsEditing(false);
 	};
 
@@ -604,23 +619,25 @@ function SessionItem({
 				</span>
 			</div>
 			<div className="flex shrink-0 items-center gap-1">
-				<button
-					type="button"
-					aria-label="Rename session"
-					data-testid="session-rename"
-					onPointerDown={(e) => {
-						e.preventDefault();
-						e.stopPropagation();
-					}}
-					onClick={(e) => {
-						e.preventDefault();
-						e.stopPropagation();
-						setIsEditing(true);
-					}}
-					className="hover:bg-muted focus:bg-muted rounded-sm p-1 opacity-0 transition-opacity group-hover/item:opacity-100 focus:opacity-100"
-				>
-					<PencilIcon className="text-muted-foreground hover:text-foreground h-3.5 w-3.5 cursor-pointer" />
-				</button>
+				{onRename && (
+					<button
+						type="button"
+						aria-label="Rename session"
+						data-testid="session-rename"
+						onPointerDown={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+						}}
+						onClick={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							setIsEditing(true);
+						}}
+						className="hover:bg-muted focus:bg-muted rounded-sm p-1 opacity-0 transition-opacity group-hover/item:opacity-100 focus:opacity-100"
+					>
+						<PencilIcon className="text-muted-foreground hover:text-foreground h-3.5 w-3.5 cursor-pointer" />
+					</button>
+				)}
 				{isSelected && <Check className="text-primary h-4 w-4" />}
 			</div>
 		</CommandItem>

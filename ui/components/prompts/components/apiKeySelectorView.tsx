@@ -2,7 +2,7 @@ import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Label } from "@/components/ui/label";
 import { ComboboxSelect } from "@/components/ui/combobox";
 import { getErrorMessage } from "@/lib/store";
-import { useGetVirtualKeyBillingBlocksQuery } from "@/lib/store/apis/governanceApi";
+import { useGetProviderGovernanceQuery, useGetVirtualKeyBillingBlocksQuery } from "@/lib/store/apis/governanceApi";
 import { useIsAuthEnabledQuery } from "@/lib/store/apis/sessionApi";
 import type { DBKey, VirtualKey } from "@/lib/types/governance";
 import { AlertTriangle, KeyRound, Shield } from "lucide-react";
@@ -19,8 +19,13 @@ export function ApiKeySelectorView({
 	onApiKeyIdChange,
 	apiKeyValues,
 	onApiKeyValuesChange,
+	provider,
+	model,
 	providerLabel,
 	disabled,
+	targetUserBudget,
+	targetUserUsage,
+	targetUserLabel,
 	placeholder,
 	// Backwards compatibility if legacy single value passed
 	value,
@@ -36,8 +41,13 @@ export function ApiKeySelectorView({
 	onApiKeyIdChange?: (v: string | null) => void;
 	apiKeyValues?: string[];
 	onApiKeyValuesChange?: (values: string[]) => void;
+	provider?: string;
+	model?: string;
 	providerLabel?: string;
 	disabled?: boolean;
+	targetUserBudget?: number;
+	targetUserUsage?: number;
+	targetUserLabel?: string;
 	placeholder?: string;
 	value?: string;
 	onValueChange?: (v: string | null) => void;
@@ -45,6 +55,7 @@ export function ApiKeySelectorView({
 	const POLL_MS = 5000;
 	const [authPollMs, setAuthPollMs] = useState(POLL_MS);
 	const [billingPollMs, setBillingPollMs] = useState(POLL_MS);
+	const [provGovPollMs, setProvGovPollMs] = useState(POLL_MS);
 	const { data: authStatus, error: authError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
 
 	const isMember = Boolean(authStatus?.role && authStatus.role !== "admin" && authStatus.role !== "super_admin");
@@ -55,12 +66,19 @@ export function ApiKeySelectorView({
 		skip: !isMember,
 	});
 
+	const { data: providerGovData, error: providerGovError } = useGetProviderGovernanceQuery(undefined, {
+		pollingInterval: provGovPollMs,
+	});
+
 	useEffect(() => {
 		setAuthPollMs(authError ? 0 : POLL_MS);
 	}, [authError]);
 	useEffect(() => {
 		setBillingPollMs(billingError ? 0 : POLL_MS);
 	}, [billingError]);
+	useEffect(() => {
+		setProvGovPollMs(providerGovError ? 0 : POLL_MS);
+	}, [providerGovError]);
 	const blocks = billingBlocks?.blocks;
 
 	// Resolve effective Virtual Key selection
@@ -71,7 +89,7 @@ export function ApiKeySelectorView({
 		if (value && value.startsWith("sk-uf-")) {
 			return value;
 		}
-		return "__auto__";
+		return "";
 	}, [virtualKeyValue, value]);
 
 	// Resolve effective Provider API Key selection
@@ -82,10 +100,17 @@ export function ApiKeySelectorView({
 		if (value && !value.startsWith("sk-uf-") && value !== "__auto__") {
 			return value;
 		}
-		return "__auto__";
+		return "";
 	}, [apiKeyIdValue, value]);
 
+	const [userPreferredMode, setUserPreferredMode] = useState<"vk" | "api" | null>(null);
+
 	const handleVkChange = (v: string) => {
+		if (isMember && v && v !== "__auto__" && v !== "__none__") {
+			setUserPreferredMode("vk");
+			if (onApiKeyIdChange) onApiKeyIdChange("");
+			if (onApiKeyValuesChange) onApiKeyValuesChange([]);
+		}
 		if (onVirtualKeyChange) {
 			onVirtualKeyChange(v);
 		} else if (onValueChange) {
@@ -94,6 +119,11 @@ export function ApiKeySelectorView({
 	};
 
 	const handleApiKeyChange = (v: string) => {
+		if (isMember && v && v !== "__auto__" && v !== "__none__") {
+			setUserPreferredMode("api");
+			if (onVirtualKeyChange) onVirtualKeyChange("__none__");
+			if (onVirtualKeyValuesChange) onVirtualKeyValuesChange([]);
+		}
 		if (onApiKeyIdChange) {
 			onApiKeyIdChange(v);
 		} else if (onValueChange) {
@@ -124,62 +154,157 @@ export function ApiKeySelectorView({
 	}, [virtualKeys, blocks, isRegularUser]);
 
 	const effectiveVkValues = useMemo(() => {
-		const matched = (virtualKeyValues ?? []).filter((value) => vkOptions.some((option) => option.value === value));
-		if (matched.length > 0) return matched;
-		if (resolvedVkValue && resolvedVkValue !== "__auto__" && vkOptions.some((option) => option.value === resolvedVkValue)) {
-			return [resolvedVkValue];
+		const resolveToOptionValue = (raw: string) => {
+			if (vkOptions.some((option) => option.value === raw)) return raw;
+			const byId = virtualKeys.find((vk) => vk.id === raw);
+			if (byId && vkOptions.some((option) => option.value === byId.value)) return byId.value;
+			return "";
+		};
+		if (virtualKeyValues !== undefined) {
+			const matched = virtualKeyValues.map(resolveToOptionValue).filter(Boolean);
+			if (matched.length > 0) return matched;
 		}
-		if (vkOptions.length > 0 && vkOptions[0]?.value) {
-			return [vkOptions[0].value];
+		if (resolvedVkValue && resolvedVkValue !== "__auto__") {
+			const resolved = resolveToOptionValue(resolvedVkValue);
+			if (resolved) return [resolved];
 		}
+		// Never pretend the first key is selected — that caused "1 selected" / budget UI
+		// while execution still sent __auto__ and got 401.
 		return [];
-	}, [virtualKeyValues, vkOptions, resolvedVkValue]);
+	}, [virtualKeyValues, vkOptions, resolvedVkValue, virtualKeys]);
 
 	const selectedVK = useMemo(() => {
 		if (resolvedVkValue && resolvedVkValue !== "__auto__") {
-			const found = virtualKeys.find((vk) => vk.value === resolvedVkValue);
+			const found = virtualKeys.find((vk) => vk.value === resolvedVkValue || vk.id === resolvedVkValue);
 			if (found) return found;
 		}
 		if (effectiveVkValues.length > 0) {
-			const found = virtualKeys.find((vk) => vk.value === effectiveVkValues[0]);
+			const found = virtualKeys.find((vk) => vk.value === effectiveVkValues[0] || vk.id === effectiveVkValues[0]);
 			if (found) return found;
 		}
-		return virtualKeys[0];
+		return undefined;
 	}, [virtualKeys, resolvedVkValue, effectiveVkValues]);
 	const selectedBlock = selectedVK ? blocks?.[selectedVK.id] : undefined;
-	const fmt = (v?: number) => `$${(v ?? 0).toFixed(2)}`;
+	const fmt = (v?: number) => {
+		const n = v ?? 0;
+		if (n === 0) return "$0.00";
+		if (n < 0.001) return `$${n.toFixed(6)}`;
+		if (n < 0.01) return `$${n.toFixed(4)}`;
+		if (n >= 1_000_000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+		return `$${n.toFixed(2)}`;
+	};
+	const fmtLimit = (v?: number) => {
+		const n = v ?? 0;
+		if (n <= 0) return "Unlimited";
+		if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(0)}B`;
+		if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(0)}M`;
+		if (n >= 1_000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+		return `$${n.toFixed(2)}`;
+	};
+	const fmtReset = (d?: string) => {
+		if (!d) return "monthly";
+		if (d === "1m") return "1 min (resets every min)";
+		if (d === "1M") return "monthly";
+		if (d === "1d") return "daily";
+		if (d === "1h") return "hourly";
+		if (d === "1w") return "weekly";
+		return d;
+	};
 
-	const userBudget = authStatus?.budget;
-	const userUsage = authStatus?.budget_current_usage ?? 0;
-	// Members always see their personal budget. Users with a configured budget also see their meter.
-	const showUserBudget = isMember || (userBudget !== undefined && userBudget > 0);
+	const effectiveUserBudget = targetUserBudget !== undefined ? targetUserBudget : authStatus?.budget;
+	const effectiveUserUsage = targetUserUsage !== undefined ? targetUserUsage : (authStatus?.budget_current_usage ?? 0);
+	const effectiveUserLabel = targetUserLabel || "1. User Budget";
+	const showUserBudget = isMember || (effectiveUserBudget !== undefined && effectiveUserBudget > 0) || Boolean(targetUserLabel);
 	const isMultipleKeysSelected = effectiveVkValues.length > 1;
 	const showVKBudget = Boolean(selectedVK) && !isMultipleKeysSelected;
 
 	const selectVkValue = useMemo(() => {
-		if (resolvedVkValue && resolvedVkValue !== "__auto__") {
-			if (virtualKeys.some((vk) => vk.value === resolvedVkValue)) return resolvedVkValue;
+		if (resolvedVkValue && resolvedVkValue !== "__auto__" && resolvedVkValue !== "__none__") {
+			const found = virtualKeys.find((vk) => vk.value === resolvedVkValue || vk.id === resolvedVkValue);
+			if (found) return found.value;
 		}
-		if (virtualKeys.length > 0 && virtualKeys[0]?.value) {
-			return virtualKeys[0].value;
-		}
-		return "__auto__";
+		return "";
 	}, [resolvedVkValue, virtualKeys]);
 
 	const selectApiKeyValue = useMemo(() => {
-		if (resolvedApiKeyValue && resolvedApiKeyValue !== "__auto__") {
+		if (resolvedApiKeyValue && resolvedApiKeyValue !== "__auto__" && resolvedApiKeyValue !== "__none__") {
 			if (providerKeys.some((k) => k.key_id === resolvedApiKeyValue)) return resolvedApiKeyValue;
 		}
-		return "__auto__";
+		return "";
 	}, [resolvedApiKeyValue, providerKeys]);
+
+	// Target provider resolution
+	const targetProvider = useMemo(() => {
+		const raw = (provider || providerLabel || "").trim().toLowerCase();
+		if (raw) return raw;
+		const selectedKey = providerKeys.find((k) => k.key_id === (selectApiKeyValue || resolvedApiKeyValue));
+		return (selectedKey?.provider || "").trim().toLowerCase();
+	}, [provider, providerLabel, providerKeys, selectApiKeyValue, resolvedApiKeyValue]);
+
+	const activeProviderGov = useMemo(() => {
+		if (!targetProvider) return undefined;
+		return (providerGovData?.providers ?? []).find(
+			(p) => p.provider?.trim().toLowerCase() === targetProvider,
+		);
+	}, [providerGovData, targetProvider]);
+
+	const providerBudgets = useMemo(() => {
+		if (!activeProviderGov) return [];
+		if (activeProviderGov.budgets && activeProviderGov.budgets.length > 0) {
+			return activeProviderGov.budgets;
+		}
+		if (activeProviderGov.budget) {
+			return [activeProviderGov.budget];
+		}
+		return [];
+	}, [activeProviderGov]);
+
+	const showProviderBudget = Boolean(targetProvider);
 
 	const hasVirtualKeysToShow = !isMember || virtualKeys.length > 0;
 	const showProviderKeySection = !isMember || providerKeys.length > 0;
 
 	const apiKeyOptions = useMemo(
-		() => providerKeys.map((key) => ({ label: key.name, value: key.key_id })),
+		() =>
+			providerKeys.map((key) => {
+				const prov = key.provider ? `${key.provider} --- ` : "";
+				return { label: `${prov}${key.name}`, value: key.key_id };
+			}),
 		[providerKeys],
 	);
+
+	const activeMode = useMemo<"vk" | "api">(() => {
+		if (userPreferredMode) return userPreferredMode;
+		if (resolvedApiKeyValue && resolvedApiKeyValue !== "__auto__" && resolvedApiKeyValue !== "__none__") {
+			return "api";
+		}
+		if (resolvedVkValue && resolvedVkValue !== "__auto__" && resolvedVkValue !== "__none__") {
+			return "vk";
+		}
+		if (virtualKeys.length > 0) return "vk";
+		if (providerKeys.length > 0) return "api";
+		return "vk";
+	}, [userPreferredMode, resolvedApiKeyValue, resolvedVkValue, virtualKeys, providerKeys]);
+
+	const switchToVk = () => {
+		setUserPreferredMode("vk");
+		handleApiKeyChange("");
+		if (onApiKeyValuesChange) onApiKeyValuesChange([]);
+		if (!selectVkValue && virtualKeys.length > 0) {
+			handleVkChange(virtualKeys[0].value);
+			if (onVirtualKeyValuesChange) onVirtualKeyValuesChange([virtualKeys[0].value]);
+		}
+	};
+
+	const switchToApi = () => {
+		setUserPreferredMode("api");
+		handleVkChange("__none__");
+		if (onVirtualKeyValuesChange) onVirtualKeyValuesChange([]);
+		if (!selectApiKeyValue && providerKeys.length > 0) {
+			handleApiKeyChange(providerKeys[0].key_id);
+			if (onApiKeyValuesChange) onApiKeyValuesChange([providerKeys[0].key_id]);
+		}
+	};
 
 	return (
 		<div className="flex flex-col gap-4">
@@ -190,19 +315,66 @@ export function ApiKeySelectorView({
 				/>
 			) : null}
 
-			{/* 1. SEPARATE VIRTUAL KEY SECTION */}
+			{/* Mode Switcher: Shown strictly on User login side (isMember) when both keys are available */}
+			{isMember && hasVirtualKeysToShow && showProviderKeySection && (
+				<div className="flex items-center gap-1 p-1 bg-muted/60 border border-border/50 rounded-lg text-xs" data-testid="key-mode-switcher">
+					<button
+						type="button"
+						onClick={switchToVk}
+						disabled={disabled || virtualKeys.length === 0}
+						className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-medium transition-all ${
+							activeMode === "vk"
+								? "bg-background text-foreground shadow-sm border border-border/40 font-semibold"
+								: "text-muted-foreground hover:text-foreground opacity-75"
+						}`}
+					>
+						<Shield className={`h-3.5 w-3.5 ${activeMode === "vk" ? "text-teal-500" : "text-muted-foreground"}`} />
+						<span>Virtual Key</span>
+						<span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeMode === "vk" ? "bg-teal-500/15 text-teal-600 dark:text-teal-400" : "bg-muted text-muted-foreground"}`}>
+							{activeMode === "vk" ? "ON" : "OFF"}
+						</span>
+					</button>
+					<button
+						type="button"
+						onClick={switchToApi}
+						disabled={disabled || providerKeys.length === 0}
+						className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-md font-medium transition-all ${
+							activeMode === "api"
+								? "bg-background text-foreground shadow-sm border border-border/40 font-semibold"
+								: "text-muted-foreground hover:text-foreground opacity-75"
+						}`}
+					>
+						<KeyRound className={`h-3.5 w-3.5 ${activeMode === "api" ? "text-blue-500" : "text-muted-foreground"}`} />
+						<span>Direct API Key</span>
+						<span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${activeMode === "api" ? "bg-blue-500/15 text-blue-600 dark:text-blue-400" : "bg-muted text-muted-foreground"}`}>
+							{activeMode === "api" ? "ON" : "OFF"}
+						</span>
+					</button>
+				</div>
+			)}
+
+			{/* 1. VIRTUAL KEY SECTION */}
 			{hasVirtualKeysToShow && (
-				<div className="flex flex-col gap-1.5">
-					<div className="flex items-center gap-1.5">
-						<Shield className="h-3.5 w-3.5 text-teal-500" />
-						<Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Virtual Key</Label>
+				<div className={`flex flex-col gap-1.5 transition-opacity ${isMember && activeMode !== "vk" ? "opacity-60" : ""}`}>
+					<div className="flex items-center justify-between gap-1.5">
+						<div className="flex items-center gap-1.5">
+							<Shield className={`h-3.5 w-3.5 ${(!isMember || activeMode === "vk") ? "text-teal-500" : "text-muted-foreground"}`} />
+							<Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Virtual Key</Label>
+						</div>
+						{isMember && hasVirtualKeysToShow && showProviderKeySection && (
+							<span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${activeMode === "vk" ? "bg-teal-500/15 text-teal-600 dark:text-teal-400" : "bg-muted text-muted-foreground border border-border/40"}`}>
+								{activeMode === "vk" ? "ON" : "OFF"}
+							</span>
+						)}
 					</div>
 					<p className="text-muted-foreground text-[11px] leading-snug">
-						{isMember
-							? isRegularUser
-								? "Governance virtual key assigned to you (user or team). Routing, models, and budgets apply."
-								: "Governance virtual key assigned to you (user, team, or customer). Routing, models, and budgets apply."
-							: "Governance virtual keys. Routing, allowed models, budgets, and rate limits apply."}
+						{isMember && activeMode !== "vk"
+							? "Virtual Key is turned OFF because Direct API Key is selected."
+							: isMember
+								? isRegularUser
+									? "Governance virtual key assigned to you (user or team). Routing, models, and budgets apply."
+									: "Governance virtual key assigned to you (user, team, or customer). Routing, models, and budgets apply."
+								: "Governance virtual keys. Routing, allowed models, budgets, and rate limits apply."}
 					</p>
 					{onVirtualKeyValuesChange ? (
 						<ComboboxSelect
@@ -210,9 +382,12 @@ export function ApiKeySelectorView({
 							compactTrigger
 							options={vkOptions}
 							value={effectiveVkValues}
-							onValueChange={onVirtualKeyValuesChange}
-							disabled={disabled || vkOptions.length === 0}
-							placeholder={vkOptions.length === 0 ? "No active virtual keys" : "Select virtual keys"}
+							onValueChange={(next) => {
+								if (next.length > 0) setUserPreferredMode("vk");
+								onVirtualKeyValuesChange(next);
+							}}
+							disabled={disabled || (isMember && activeMode !== "vk") || vkOptions.length === 0}
+							placeholder={isMember && activeMode !== "vk" ? "OFF (Direct API Key is active)" : vkOptions.length === 0 ? "No active virtual keys" : "Select virtual keys"}
 							searchPlaceholder="Search..."
 							selectAllValue="*"
 							selectAllLabel="Select all"
@@ -221,68 +396,66 @@ export function ApiKeySelectorView({
 					) : (
 						<ComboboxSelect
 							options={vkOptions}
-							value={selectVkValue === "__auto__" ? null : selectVkValue}
-							onValueChange={(v) => handleVkChange(v && v !== "__none__" ? v : "__auto__")}
-							disabled={disabled || vkOptions.length === 0}
-							placeholder={placeholder ?? (vkOptions.length === 0 ? (isMember ? "No assigned keys" : "No active virtual keys") : "Select Virtual Key")}
+							value={(!isMember || activeMode === "vk") && selectVkValue !== "__auto__" && selectVkValue !== "__none__" && selectVkValue ? selectVkValue : null}
+							onValueChange={(v) => handleVkChange(v && v !== "__none__" ? v : "")}
+							disabled={disabled || (isMember && activeMode !== "vk") || vkOptions.length === 0}
+							placeholder={isMember && activeMode !== "vk" ? "OFF (Direct API Key is active)" : (placeholder ?? (vkOptions.length === 0 ? (isMember ? "No assigned keys" : "No active virtual keys") : "Select Virtual Key"))}
 							searchPlaceholder="Search..."
-							hideClear
 							data-testid={isMember ? "member-vk-select" : "admin-vk-select"}
 						/>
 					)}
 
-					{/* Every member always sees personal budget */}
+					{isMember && activeMode !== "vk" && showProviderKeySection && (
+						<button
+							type="button"
+							onClick={switchToVk}
+							className="text-[11px] text-teal-600 dark:text-teal-400 hover:underline text-left self-start mt-0.5"
+						>
+							↳ Click here to turn ON Virtual Key
+						</button>
+					)}
+
+					{/* 1. USER BUDGET CARD — Always visible in right sidebar */}
 					{showUserBudget && (
 						<div className="bg-muted/10 border-border/40 mt-1 space-y-1 rounded-md border p-2 text-xs" data-testid="member-user-budget">
 							<div className="flex items-center justify-between text-[11px]">
-								<span className="text-muted-foreground font-medium">Your User Budget:</span>
+								<span className="text-muted-foreground font-medium">{effectiveUserLabel}:</span>
 								<span className="font-mono">
-									{fmt(userUsage)} / {userBudget && userBudget > 0 ? fmt(userBudget) : "Unlimited"}
+									{fmt(effectiveUserUsage)} / {effectiveUserBudget && effectiveUserBudget > 0 ? fmt(effectiveUserBudget) : "Unlimited"}
 								</span>
 							</div>
-							{userBudget && userBudget > 0 ? (
+							{effectiveUserBudget && effectiveUserBudget > 0 ? (
 								<div className="space-y-0.5">
 									<div className="bg-muted/60 h-1.5 w-full overflow-hidden rounded-full">
 										<div
 											className={`h-full transition-all ${
-												userUsage >= userBudget ? "bg-rose-500" : userUsage / userBudget > 0.8 ? "bg-amber-500" : "bg-teal-500"
+												effectiveUserUsage >= effectiveUserBudget ? "bg-rose-500" : effectiveUserUsage / effectiveUserBudget > 0.8 ? "bg-amber-500" : "bg-teal-500"
 											}`}
 											style={{
-												width: `${Math.min(100, Math.max(0, (userUsage / userBudget) * 100))}%`,
+												width: `${Math.min(100, Math.max(0, (effectiveUserUsage / effectiveUserBudget) * 100))}%`,
 											}}
 										/>
 									</div>
 									<div className="text-muted-foreground flex justify-between text-[10px]">
-										<span>Monthly limit</span>
-										<span>{Math.round((userUsage / userBudget) * 100)}% used</span>
+										<span>Reset: monthly</span>
+										<span>{Math.round((effectiveUserUsage / effectiveUserBudget) * 100)}% used</span>
 									</div>
 								</div>
 							) : null}
-							{userBudget && userBudget > 0 && userUsage >= userBudget && (
-								<div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium text-rose-500">
-									<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-									<span>Personal budget limit reached</span>
-								</div>
-							)}
-							{userBudget && userBudget > 0 && userUsage < userBudget && userUsage / userBudget > 0.8 && (
-								<div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium text-amber-500">
-									<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-									<span>Warning: Personal budget exceeds 80%</span>
-								</div>
-							)}
 						</div>
 					)}
 
-					{/* Prompt Repository shows only this virtual key's own budget. */}
-					{showVKBudget && selectedVK && (() => {
+					{/* 2. VIRTUAL KEY BUDGET CARD */}
+					{selectedVK && (() => {
 						const vkBudgets = selectedVK.budgets || [];
+						const isKeyInactive = isMember && activeMode !== "vk";
 
 						return (
 							<div className="bg-muted/20 border-border/50 mt-1 space-y-2 rounded-md border p-2 text-xs" data-testid="member-vk-budget">
 								<div className="flex items-center justify-between">
 									<span className="text-muted-foreground flex items-center gap-1.5 font-medium">
-										<span className="inline-block h-1.5 w-1.5 rounded-full bg-teal-500" />
-										VK: {selectedVK.name}
+										<span className={`inline-block h-1.5 w-1.5 rounded-full ${isKeyInactive ? "bg-muted-foreground" : "bg-teal-500"}`} />
+										2. Key Budget ({selectedVK.name}){isKeyInactive ? " (OFF)" : ""}:
 									</span>
 								</div>
 
@@ -290,9 +463,9 @@ export function ApiKeySelectorView({
 									vkBudgets.map((b) => (
 										<div key={`vk-${b.id || b.reset_duration}`} className="space-y-0.5">
 											<div className="flex items-center justify-between text-[11px]">
-												<span className="text-muted-foreground font-medium">Key Budget:</span>
+												<span className="text-muted-foreground font-medium">Limit:</span>
 												<span className="font-mono">
-													{fmt(b.current_usage)} / {b.max_limit > 0 ? fmt(b.max_limit) : "Unlimited"}
+													{fmt(b.current_usage)} / {fmtLimit(b.max_limit)}
 												</span>
 											</div>
 											{b.max_limit > 0 && (
@@ -312,7 +485,7 @@ export function ApiKeySelectorView({
 														/>
 													</div>
 													<div className="text-muted-foreground flex justify-between text-[10px]">
-														<span>Reset: {b.reset_duration || "monthly"}</span>
+														<span>Reset: {fmtReset(b.reset_duration)}</span>
 														<span>{Math.round(((b.current_usage ?? 0) / b.max_limit) * 100)}% used</span>
 													</div>
 												</div>
@@ -321,44 +494,8 @@ export function ApiKeySelectorView({
 									))
 								) : (
 									<div className="flex items-center justify-between text-[11px]">
-										<span className="text-muted-foreground font-medium">Key Budget:</span>
+										<span className="text-muted-foreground font-medium">Limit:</span>
 										<span className="text-muted-foreground">Unlimited</span>
-									</div>
-								)}
-								{selectedVK.is_active === false && (
-									<div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium text-rose-500">
-										<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-										<span>Virtual Key is inactive — prompt executions will be rejected</span>
-									</div>
-								)}
-								{selectedVK.expires_at && new Date(selectedVK.expires_at).getTime() < Date.now() && (
-									<div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium text-rose-500">
-										<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-										<span>Virtual Key has expired — prompt executions will be rejected</span>
-									</div>
-								)}
-								{selectedVK.budgets?.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit) && (
-									<div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium text-rose-500">
-										<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-										<span>Virtual Key budget limit reached — calls will be blocked</span>
-									</div>
-								)}
-								{selectedBlock && (
-									<div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium text-rose-500" data-testid="vk-billing-block">
-										<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-										<span>
-											{selectedBlock.scope === "vk" ? "Virtual key" : selectedBlock.scope === "team" ? "Team" : "Customer"} budget for
-											&quot;{selectedBlock.name}&quot; is used up — this key is blocked
-											{selectedBlock.scope === "vk" ? " until an admin resets it" : ". Pick another key"}.
-										</span>
-									</div>
-								)}
-								{selectedVK.budgets?.some(
-									(b) => b.max_limit > 0 && (b.current_usage ?? 0) < b.max_limit && (b.current_usage ?? 0) / b.max_limit > 0.8,
-								) && (
-									<div className="flex items-center gap-1.5 pt-1 text-[11px] font-medium text-amber-500">
-										<AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-										<span>Warning: Virtual Key budget exceeds 80%</span>
 									</div>
 								)}
 							</div>
@@ -367,15 +504,24 @@ export function ApiKeySelectorView({
 				</div>
 			)}
 
-			{/* 2. SEPARATE PROVIDER API KEY SECTION */}
+			{/* 2. PROVIDER API KEY SECTION */}
 			{showProviderKeySection && (
-				<div className="flex flex-col gap-1.5 pt-1 border-t border-border/50">
-					<div className="flex items-center gap-1.5">
-						<KeyRound className="h-3.5 w-3.5 text-blue-500" />
-						<Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">API Key</Label>
+				<div className={`flex flex-col gap-1.5 ${hasVirtualKeysToShow ? "pt-1 border-t border-border/50" : ""} transition-opacity ${isMember && activeMode !== "api" ? "opacity-60" : ""}`}>
+					<div className="flex items-center justify-between gap-1.5">
+						<div className="flex items-center gap-1.5">
+							<KeyRound className={`h-3.5 w-3.5 ${(!isMember || activeMode === "api") ? "text-blue-500" : "text-muted-foreground"}`} />
+							<Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">API Key</Label>
+						</div>
+						{isMember && hasVirtualKeysToShow && showProviderKeySection && (
+							<span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${activeMode === "api" ? "bg-blue-500/15 text-blue-600 dark:text-blue-400" : "bg-muted text-muted-foreground border border-border/40"}`}>
+								{activeMode === "api" ? "ON" : "OFF"}
+							</span>
+						)}
 					</div>
 					<p className="text-muted-foreground text-[11px] leading-snug">
-						Direct provider API key configured for {providerLabel || "the selected provider"}.
+						{isMember && activeMode !== "api"
+							? "Direct API key is turned OFF because Virtual Key is selected."
+							: `Direct provider API key configured for ${providerLabel || "the selected provider"}.`}
 					</p>
 					{onApiKeyValuesChange ? (
 						<ComboboxSelect
@@ -383,9 +529,12 @@ export function ApiKeySelectorView({
 							compactTrigger
 							options={apiKeyOptions}
 							value={(apiKeyValues ?? []).filter((value) => apiKeyOptions.some((option) => option.value === value))}
-							onValueChange={onApiKeyValuesChange}
-							disabled={disabled || apiKeyOptions.length === 0}
-							placeholder={apiKeyOptions.length === 0 ? "No API keys" : "Select API keys"}
+							onValueChange={(next) => {
+								if (next.length > 0) setUserPreferredMode("api");
+								onApiKeyValuesChange(next);
+							}}
+							disabled={disabled || (isMember && activeMode !== "api") || apiKeyOptions.length === 0}
+							placeholder={isMember && activeMode !== "api" ? "OFF (Virtual Key is active)" : apiKeyOptions.length === 0 ? "No API keys" : "Select API keys"}
 							searchPlaceholder="Search..."
 							selectAllValue="*"
 							selectAllLabel="Select all"
@@ -394,17 +543,78 @@ export function ApiKeySelectorView({
 					) : (
 						<ComboboxSelect
 							options={apiKeyOptions}
-							value={selectApiKeyValue === "__auto__" ? null : selectApiKeyValue}
-							onValueChange={(v) => handleApiKeyChange(v || "__auto__")}
-							disabled={disabled}
-							placeholder="Select API Key"
+							value={(!isMember || activeMode === "api") && selectApiKeyValue !== "__auto__" && selectApiKeyValue !== "__none__" && selectApiKeyValue ? selectApiKeyValue : null}
+							onValueChange={(v) => handleApiKeyChange(v && v !== "__none__" ? v : "")}
+							disabled={disabled || (isMember && activeMode !== "api") || apiKeyOptions.length === 0}
+							placeholder={isMember && activeMode !== "api" ? "OFF (Virtual Key is active)" : apiKeyOptions.length === 0 ? "No API keys available" : "Select API Key"}
 							searchPlaceholder="Search..."
-							hideClear
-							data-testid="admin-provider-key-select"
+							data-testid={isMember ? "member-provider-key-select" : "admin-provider-key-select"}
 						/>
+					)}
+
+					{isMember && activeMode !== "api" && hasVirtualKeysToShow && (
+						<button
+							type="button"
+							onClick={switchToApi}
+							className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline text-left self-start mt-0.5"
+						>
+							↳ Click here to turn ON Direct API Key
+						</button>
 					)}
 				</div>
 			)}
+
+			{/* 3. PROVIDER BUDGET METER — ALWAYS VISIBLE (Tracking Provider Consumption) */}
+			{showProviderBudget && (
+				<div className="bg-muted/20 border-border/50 mt-1 space-y-2 rounded-md border p-2 text-xs" data-testid="provider-budget-card">
+					{providerBudgets.length > 0 ? (
+						providerBudgets.map((b) => (
+							<div key={`prov-${b.id || b.reset_duration}`} className="space-y-0.5">
+								<div className="flex items-center justify-between text-[11px]">
+									<span className="text-muted-foreground font-medium flex items-center gap-1.5">
+										<span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500" />
+										3. Provider Budget ({providerLabel || (targetProvider.charAt(0).toUpperCase() + targetProvider.slice(1))}):
+									</span>
+									<span className="font-mono">
+										{fmt(b.current_usage)} / {fmtLimit(b.max_limit)}
+									</span>
+								</div>
+								{b.max_limit > 0 && (
+									<div className="space-y-0.5">
+										<div className="bg-muted/60 h-1.5 w-full overflow-hidden rounded-full">
+											<div
+												className={`h-full transition-all ${
+													(b.current_usage ?? 0) >= b.max_limit
+														? "bg-rose-500"
+														: (b.current_usage ?? 0) / b.max_limit > 0.8
+															? "bg-amber-500"
+															: "bg-blue-500"
+												}`}
+												style={{
+													width: `${Math.min(100, Math.max(0, ((b.current_usage ?? 0) / b.max_limit) * 100))}%`,
+												}}
+											/>
+										</div>
+										<div className="text-muted-foreground flex justify-between text-[10px]">
+											<span>Reset: {fmtReset(b.reset_duration)}</span>
+											<span>{Math.round(((b.current_usage ?? 0) / b.max_limit) * 100)}% used</span>
+										</div>
+									</div>
+								)}
+							</div>
+						))
+					) : (
+						<div className="flex items-center justify-between text-[11px]">
+							<span className="text-muted-foreground font-medium flex items-center gap-1.5">
+								<span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500" />
+								3. Provider Budget ({providerLabel || (targetProvider.charAt(0).toUpperCase() + targetProvider.slice(1))}):
+							</span>
+							<span className="text-muted-foreground">Unlimited</span>
+						</div>
+					)}
+				</div>
+			)}
+
 		</div>
 	);
 }

@@ -1178,7 +1178,7 @@ function DraggablePromptItem({
 		id: `prompt-${prompt.id}`,
 		disabled: !canUpdate,
 	});
-	const showActions = canUpdate || canDelete || (!isUserRole && !!onManageAccess);
+	const showActions = canUpdate || canDelete;
 
 	return (
 		<div
@@ -1217,7 +1217,7 @@ function DraggablePromptItem({
 						</Button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="end">
-						{!isUserRole && onManageAccess && (
+						{!isUserRole && canUpdate && onManageAccess && (
 							<DropdownMenuItem
 								className="cursor-pointer"
 								data-testid={`prompt-action-access-${prompt.id}`}

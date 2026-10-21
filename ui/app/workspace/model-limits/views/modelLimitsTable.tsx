@@ -262,7 +262,14 @@ export default function ModelLimitsTable({
 			<div className="flex flex-col overflow-y-auto">
 				<div className="mb-4 flex items-center justify-between">
 					<div>
-						<h1 className="text-lg font-semibold">Budgets &amp; Limits</h1>
+						<div className="flex items-center gap-2">
+							<h1 className="text-lg font-semibold">Budgets &amp; Limits</h1>
+							{!hasUpdateAccess && (
+								<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs">
+									View Only
+								</Badge>
+							)}
+						</div>
 						<p className="text-muted-foreground text-sm">
 							Configure budgets and rate limits at the model level. For provider-wide limits, open a provider under Model Providers.
 						</p>

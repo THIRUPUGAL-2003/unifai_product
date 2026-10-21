@@ -12,6 +12,7 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
 import { AsyncMultiSelect } from "@/components/ui/asyncMultiselect";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DateTimePicker } from "@/components/ui/datePickerWithRange";
 import { ComboboxSelect } from "@/components/ui/combobox";
@@ -996,7 +997,14 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 				onEscapeKeyDown={() => handleClose()}
 			>
 				<SheetHeader className="flex flex-col items-start px-0 py-4" headerClassName="mb-0 sticky -top-4 bg-card z-10 px-8">
-					<SheetTitle className="flex items-center gap-2">{isEditing ? virtualKey?.name : "Create Virtual Key"}</SheetTitle>
+					<SheetTitle className="flex items-center gap-2">
+						{isEditing ? virtualKey?.name : "Create Virtual Key"}
+						{!canSubmit && (
+							<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs">
+								View Only
+							</Badge>
+						)}
+					</SheetTitle>
 					<SheetDescription>
 						{isEditing
 							? "Update the virtual key configuration and permissions."
@@ -1015,6 +1023,11 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 							</>
 						) : null}
 					</SheetDescription>
+					{!canSubmit && (
+						<div className="w-full rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-500 mt-2">
+							View-only access: this virtual key cannot be modified.
+						</div>
+					)}
 					<div className="relative mt-3 w-full">
 						<Search className="text-muted-foreground absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2" />
 						<Input
@@ -1071,7 +1084,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 										<FormItem>
 											<FormLabel>Name *</FormLabel>
 											<FormControl>
-												<Input placeholder="e.g., Production API Key" data-testid="vk-name-input" {...field} />
+												<Input placeholder="e.g., Production API Key" data-testid="vk-name-input" disabled={!canSubmit} {...field} />
 											</FormControl>
 											<FormMessage />
 										</FormItem>
@@ -1085,7 +1098,7 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 										<FormItem>
 											<FormLabel>Description</FormLabel>
 											<FormControl>
-												<Textarea placeholder="This key is used for..." data-testid="vk-description-input" {...field} rows={3} />
+												<Textarea placeholder="This key is used for..." data-testid="vk-description-input" disabled={!canSubmit} {...field} rows={3} />
 											</FormControl>
 											<FormMessage />
 										</FormItem>
@@ -1093,10 +1106,10 @@ export default function VirtualKeySheet({ virtualKey, teams, customers, defaultT
 								/>
 							</div>
 							<fieldset
-								disabled={isManagedByProfile}
-								aria-disabled={isManagedByProfile}
-								inert={isManagedByProfile ? true : undefined}
-								className={isManagedByProfile ? "pointer-events-none space-y-4 opacity-50" : "space-y-4"}
+								disabled={!canSubmit || isManagedByProfile}
+								aria-disabled={!canSubmit || isManagedByProfile}
+								inert={(!canSubmit || isManagedByProfile) ? true : undefined}
+								className={(!canSubmit || isManagedByProfile) ? "pointer-events-none space-y-4 opacity-70" : "space-y-4"}
 							>
 								<div className="space-y-4">
 									<FormField

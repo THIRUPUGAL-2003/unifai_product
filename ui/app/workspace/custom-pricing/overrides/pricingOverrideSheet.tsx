@@ -258,7 +258,10 @@ export interface FormState {
 	providerID: string;
 	providerKeyID: string;
 	matchType: PricingOverrideMatchType;
+	/** Wildcard text pattern, or the primary exact model when editing a single override. */
 	pattern: string;
+	/** Exact-match multi-select (Select all / individual models). */
+	patterns: string[];
 	requestTypes: RequestType[];
 	pricingValues: Partial<Record<PricingFieldKey, string>>;
 }
@@ -271,6 +274,7 @@ export const defaultFormState: FormState = {
 	providerKeyID: "",
 	matchType: "exact",
 	pattern: "",
+	patterns: [],
 	requestTypes: [],
 	pricingValues: {},
 };
@@ -288,11 +292,20 @@ export function patternError(matchType: PricingOverrideMatchType, pattern: strin
 		if (trimmed.includes("*")) return "Exact model cannot contain *";
 	} else if (matchType === "wildcard") {
 		const starCount = (trimmed.match(/\*/g) || []).length;
-		if (starCount === 0) return "Wildcard model must end with * (example: gpt-5*)";
+		if (starCount === 0) return "Wildcard model must end with * (example: gpt-5* or * for all)";
 		if (starCount > 1) return "Wildcard model can include only one *";
 		if (!trimmed.endsWith("*")) return "Wildcard supports prefix-only trailing *";
 	}
 	return undefined;
+}
+
+export function patternsError(matchType: PricingOverrideMatchType, patterns: string[], pattern: string): string | undefined {
+	if (matchType === "exact") {
+		if (!patterns.length) return "Select at least one model (or Select all)";
+		if (patterns.some((p) => p.includes("*"))) return "Exact models cannot contain *";
+		return undefined;
+	}
+	return patternError("wildcard", pattern);
 }
 
 export function buildPatchFromForm(form: FormState): { patch: PricingOverridePatch; errors: FieldErrors } {
@@ -344,6 +357,7 @@ function toFormState(override: PricingOverride): FormState {
 		providerKeyID: override.provider_key_id ?? "",
 		matchType: override.match_type,
 		pattern: override.pattern,
+		patterns: override.match_type === "exact" && override.pattern ? [override.pattern] : [],
 		requestTypes: override.request_types ?? [],
 		pricingValues: values,
 	};
@@ -496,6 +510,8 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 		{ skip: !open },
 	);
 
+	const patterns = watch("patterns");
+
 	const modelOptions = useMemo(() => {
 		const seen = new Set<string>();
 		const options: { label: string; value: string }[] = [];
@@ -505,13 +521,20 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 			seen.add(name);
 			options.push({ label: name, value: name });
 		}
-		const current = String(pattern || "").trim();
-		if (current && !seen.has(current) && matchType === "exact") {
-			options.unshift({ label: current, value: current });
+		for (const current of patterns ?? []) {
+			const name = String(current || "").trim();
+			if (name && !seen.has(name) && matchType === "exact") {
+				seen.add(name);
+				options.unshift({ label: name, value: name });
+			}
+		}
+		const single = String(pattern || "").trim();
+		if (single && !seen.has(single) && matchType === "exact") {
+			options.unshift({ label: single, value: single });
 		}
 		options.sort((a, b) => a.label.localeCompare(b.label));
 		return options;
-	}, [modelsData, pattern, matchType]);
+	}, [modelsData, pattern, patterns, matchType]);
 
 	const shouldLockScope = useMemo(() => !editingOverride && isCompleteScopeLock(scopeLock), [editingOverride, scopeLock]);
 
@@ -681,9 +704,13 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 			hasErrors = true;
 		}
 
-		const pError = patternError(data.matchType, data.pattern);
+		const pError = patternsError(data.matchType, data.patterns ?? [], data.pattern);
 		if (pError) {
-			setError("pattern", { message: pError });
+			if (data.matchType === "exact") {
+				setError("patterns", { message: pError });
+			} else {
+				setError("pattern", { message: pError });
+			}
 			hasErrors = true;
 		}
 
@@ -738,24 +765,65 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 				break;
 		}
 
-		const requestPayload: CreatePricingOverrideRequest = {
+		const selectedModels = (data.patterns ?? []).map((p) => p.trim()).filter(Boolean);
+		const allModelValues = modelOptions.map((o) => o.value);
+		const selectedAllExact =
+			data.matchType === "exact" &&
+			allModelValues.length > 0 &&
+			selectedModels.length > 0 &&
+			allModelValues.every((v) => selectedModels.includes(v));
+
+		const buildPayload = (matchType: PricingOverrideMatchType, modelPattern: string): CreatePricingOverrideRequest => ({
 			name: data.name.trim(),
 			scope_kind: resolvedScopeKind,
 			virtual_key_id: scopedVirtualKeyID,
 			provider_id: scopedProviderID,
 			provider_key_id: scopedProviderKeyID,
-			match_type: data.matchType,
-			pattern: data.pattern.trim(),
+			match_type: matchType,
+			pattern: modelPattern,
 			request_types: data.requestTypes,
 			patch,
-		};
+		});
 
 		try {
 			if (editingOverride) {
-				await updateOverride({ id: editingOverride.id, data: requestPayload }).unwrap();
-				toast.success("Pricing override updated");
+				const payload =
+					data.matchType === "exact"
+						? selectedAllExact
+							? buildPayload("wildcard", "*")
+							: buildPayload("exact", selectedModels[0] || data.pattern.trim())
+						: buildPayload("wildcard", data.pattern.trim());
+				await updateOverride({ id: editingOverride.id, data: payload }).unwrap();
+				// Extra exact models selected while editing → create additional overrides.
+				if (data.matchType === "exact" && !selectedAllExact && selectedModels.length > 1) {
+					const extras = selectedModels.slice(1);
+					for (const modelName of extras) {
+						await createOverride(buildPayload("exact", modelName)).unwrap();
+					}
+					toast.success(
+						extras.length > 0
+							? `Pricing override updated (+${extras.length} model${extras.length === 1 ? "" : "s"} added)`
+							: "Pricing override updated",
+					);
+				} else {
+					toast.success("Pricing override updated");
+				}
+			} else if (data.matchType === "exact") {
+				if (selectedAllExact) {
+					await createOverride(buildPayload("wildcard", "*")).unwrap();
+					toast.success("Pricing override created for all models");
+				} else {
+					for (const modelName of selectedModels) {
+						await createOverride(buildPayload("exact", modelName)).unwrap();
+					}
+					toast.success(
+						selectedModels.length > 1
+							? `Created ${selectedModels.length} pricing overrides`
+							: "Pricing override created",
+					);
+				}
 			} else {
-				await createOverride(requestPayload).unwrap();
+				await createOverride(buildPayload("wildcard", data.pattern.trim())).unwrap();
 				toast.success("Pricing override created");
 			}
 			handleCloseDrawer();
@@ -884,7 +952,9 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 																field.onChange(value === "__none__" ? "" : value);
 																setValue("providerKeyID", "");
 																setValue("pattern", "");
+																setValue("patterns", []);
 																clearErrors("pattern");
+																clearErrors("patterns");
 															}}
 														>
 															<FormControl>
@@ -980,6 +1050,12 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 													onValueChange={(value: PricingOverrideMatchType) => {
 														field.onChange(value);
 														clearErrors("pattern");
+														if (value === "wildcard") {
+															setValue("patterns", []);
+														} else if (value === "exact") {
+															const current = (getValues("pattern") || "").trim();
+															setValue("patterns", current && !current.includes("*") ? [current] : []);
+														}
 													}}
 												>
 													<FormControl>
@@ -995,41 +1071,67 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 											</FormItem>
 										)}
 									/>
-									<FormField
-										control={control}
-										name="pattern"
-										render={({ field }) => (
-											<FormItem>
-												<FormLabel>
-													Model <span className="text-red-500">*</span>
-												</FormLabel>
-												{matchType === "exact" ? (
+									{matchType === "exact" ? (
+										<FormField
+											control={control}
+											name="patterns"
+											render={({ field }) => (
+												<FormItem>
+													<FormLabel>
+														Model <span className="text-red-500">*</span>
+													</FormLabel>
 													<FormControl>
 														<ComboboxSelect
+															multiple
+															compactTrigger
 															data-testid="pricing-override-pattern-input"
 															options={modelOptions}
-															value={field.value || null}
-															onValueChange={(value) => {
-																field.onChange(value ?? "");
+															value={field.value ?? []}
+															onValueChange={(next) => {
+																field.onChange(next);
+																setValue("pattern", next[0] ?? "");
 																clearErrors("pattern");
 															}}
 															placeholder={
 																isModelsLoading
 																	? "Loading models..."
 																	: providerID
-																		? "Select model"
-																		: "Select model (all providers)"
+																		? "Select models"
+																		: "Select models (all providers)"
 															}
+															searchPlaceholder="Search models..."
+															selectAllValue="*"
+															selectAllLabel="Select all models"
+															selectAllTriggerLabel="All models"
 															disabled={isModelsLoading || !!modelsError}
 															noPortal
 															className="h-9"
 														/>
 													</FormControl>
-												) : (
+													{modelsError ? (
+														<p className="text-destructive mt-1 text-xs">Failed to load models: {getErrorMessage(modelsError)}</p>
+													) : (
+														<p className="text-muted-foreground mt-1 text-[11px]">
+															Select all for every model, or pick models one by one.
+														</p>
+													)}
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+									) : (
+										<FormField
+											control={control}
+											name="pattern"
+											render={({ field }) => (
+												<FormItem>
+													<FormLabel>
+														Model <span className="text-red-500">*</span>
+													</FormLabel>
 													<FormControl>
 														<Input
 															data-testid="pricing-override-pattern-input"
-															placeholder="e.g., gpt-4*"
+															placeholder="e.g., gpt-4* or * for all models"
 															{...field}
 															onChange={(e) => {
 																field.onChange(e);
@@ -1037,15 +1139,15 @@ export default function PricingOverrideSheet({ open, onOpenChange, editingOverri
 															}}
 														/>
 													</FormControl>
-												)}
-												{modelsError && matchType === "exact" ? (
-													<p className="text-destructive mt-1 text-xs">Failed to load models: {getErrorMessage(modelsError)}</p>
-												) : (
+													<p className="text-muted-foreground mt-1 text-[11px]">
+														Use <code className="text-[10px]">*</code> for all models, or a prefix like{" "}
+														<code className="text-[10px]">gpt-4*</code>.
+													</p>
 													<FormMessage />
-												)}
-											</FormItem>
-										)}
-									/>
+												</FormItem>
+											)}
+										/>
+									)}
 								</div>
 							</div>
 

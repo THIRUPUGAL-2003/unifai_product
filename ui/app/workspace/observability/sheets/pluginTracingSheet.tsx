@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { TriStateCheckbox } from "@/components/ui/tristateCheckbox";
-import { getErrorMessage, useGetLoadedPluginsQuery, useGetPluginQuery, useUpdatePluginMutation } from "@/lib/store";
+import { getErrorMessage, useGetLoadedPluginsQuery, useGetPluginQuery, useIsAuthEnabledQuery, useUpdatePluginMutation } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { PluginSpanFilter } from "@/lib/types/config";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -50,18 +51,22 @@ function buildFilter(toggles: Record<string, boolean>): PluginSpanFilter | null 
 	return { mode: "exclude", plugins: excluded };
 }
 
-function PluginRow({ name, checked, onChange }: { name: string; checked: boolean; onChange: (v: boolean) => void }) {
+function PluginRow({ name, checked, onChange, disabled }: { name: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
 	return (
 		<div className="flex items-center justify-between rounded-md border px-3 py-2.5">
 			<span className="font-mono text-sm">{name}</span>
 			<div className="flex items-center gap-2">
-				<Switch checked={checked} onCheckedChange={onChange} data-testid={`plugin-tracing-toggle-${name}`} />
+				<Switch checked={checked} disabled={disabled} onCheckedChange={onChange} data-testid={`plugin-tracing-toggle-${name}`} />
 			</div>
 		</div>
 	);
 }
 
 export default function PluginTracingSheet({ open, onClose, pluginName, destination }: PluginTracingSheetProps) {
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
+	const hasUpdateAccess = useRbac(RbacResource.Observability, RbacOperation.Update) || isAdmin;
+
 	// All currently loaded plugins (built-in, enterprise, custom, and auto-loaded) that can
 	// emit spans, named to match the connector's span filter. One flat list — the backend
 	// already returns the complete set, so there's no built-in/custom split to maintain.
@@ -145,6 +150,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 									<TriStateCheckbox
 										allIds={allPlugins}
 										selectedIds={allPlugins.filter((n) => toggles[n] ?? true)}
+										disabled={!hasUpdateAccess}
 										onChange={(next) => {
 											const nextSet = new Set(next);
 											setToggles((prev) => {
@@ -159,7 +165,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 								</div>
 								<div className="flex flex-col gap-1.5">
 									{allPlugins.map((name) => (
-										<PluginRow key={name} name={name} checked={toggles[name] ?? true} onChange={(v) => setToggle(name, v)} />
+										<PluginRow key={name} name={name} checked={toggles[name] ?? true} disabled={!hasUpdateAccess} onChange={(v) => setToggle(name, v)} />
 									))}
 								</div>
 							</div>
@@ -182,7 +188,7 @@ export default function PluginTracingSheet({ open, onClose, pluginName, destinat
 						</Button>
 						<Button
 							onClick={handleSave}
-							disabled={isLoading || queryFailed || !wasOpenRef.current}
+							disabled={isLoading || queryFailed || !wasOpenRef.current || !hasUpdateAccess}
 							isLoading={isLoading}
 							data-testid="plugin-tracing-save-button"
 							type="button"

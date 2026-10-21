@@ -1,18 +1,24 @@
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
 import { Link } from "@tanstack/react-router";
-import { getErrorMessage } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useGetLoadBalancerRoutesQuery, useUpdateLoadBalancerConfigMutation } from "@enterprise/lib/store/apis/loadBalancerApi";
 import { LoadBalancerConfig } from "@enterprise/lib/types/workspace";
-import { Activity, Gauge, Route, Settings2 } from "lucide-react";
+import { Activity, Gauge, Route, Settings2, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 export default function AdaptiveRoutingView() {
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
+	const hasUpdateAccess = useRbac(RbacResource.RoutingRules, RbacOperation.Update) || isAdmin;
+
 	const [pollMs, setPollMs] = useState(8000);
 	const { data, isLoading: loading, isError, error, refetch } = useGetLoadBalancerRoutesQuery(undefined, { pollingInterval: pollMs });
 	useEffect(() => {
@@ -72,6 +78,14 @@ export default function AdaptiveRoutingView() {
 				</Button>
 			</div>
 
+			{!hasUpdateAccess && (
+				<Alert variant="default" className="border-amber-500/50 bg-amber-50/10 text-amber-600 dark:text-amber-400">
+					<ShieldAlert className="h-4 w-4" />
+					<AlertTitle>View-Only Access</AlertTitle>
+					<AlertDescription>You have view-only permissions for adaptive routing. Modifying configuration is disabled.</AlertDescription>
+				</Alert>
+			)}
+
 			<div className="grid gap-4 md:grid-cols-3">
 				<Card>
 					<CardHeader className="pb-2">
@@ -80,7 +94,7 @@ export default function AdaptiveRoutingView() {
 					</CardHeader>
 					<CardContent className="flex items-center justify-between">
 						<span className="text-sm">{data.config.enabled ? "Enabled" : "Disabled"}</span>
-						<Switch checked={data.config.enabled} disabled={saving} onCheckedChange={(enabled) => void saveConfig({ enabled })} />
+						<Switch checked={data.config.enabled} disabled={saving || !hasUpdateAccess} onCheckedChange={(enabled) => void saveConfig({ enabled })} />
 					</CardContent>
 				</Card>
 				<Card>

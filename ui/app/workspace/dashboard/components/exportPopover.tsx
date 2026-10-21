@@ -26,6 +26,7 @@ interface ExportPopoverProps {
 	onLoadData: () => Promise<DashboardData>;
 	onPdfExport: () => Promise<HTMLElement[]>;
 	onPdfExportDone: () => void;
+	disabled?: boolean;
 }
 
 function flattenDashboardRows(data: DashboardData) {
@@ -56,7 +57,7 @@ function exportErrorMessage(err: unknown) {
 	return err instanceof Error && err.message ? `Export failed: ${err.message}` : "Export failed";
 }
 
-export function ExportPopover({ onLoadData, onPdfExport, onPdfExportDone }: ExportPopoverProps) {
+export function ExportPopover({ onLoadData, onPdfExport, onPdfExportDone, disabled = false }: ExportPopoverProps) {
 	const [exporting, setExporting] = useState(false);
 
 	const handleCsvExport = useCallback(async () => {
@@ -143,8 +144,8 @@ export function ExportPopover({ onLoadData, onPdfExport, onPdfExportDone }: Expo
 
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger asChild>
-				<Button variant="outline" size="default" disabled={exporting} data-testid="dashboard-export-trigger">
+			<DropdownMenuTrigger asChild disabled={disabled || exporting}>
+				<Button variant="outline" size="default" disabled={disabled || exporting} data-testid="dashboard-export-trigger">
 					{exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
 					{exporting ? "Exporting..." : "Export"}
 				</Button>

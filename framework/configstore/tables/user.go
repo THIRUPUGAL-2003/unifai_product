@@ -29,6 +29,9 @@ type TableUser struct {
 	RateLimitID        *string    `gorm:"type:varchar(255);index" json:"rate_limit_id,omitempty"`         // Live TableRateLimit for this user
 	AllowedPromptRepos string     `gorm:"type:text" json:"allowed_prompt_repos"`                          // Comma-separated allowed prompt IDs
 	AllowedSections    string     `gorm:"type:text" json:"allowed_sections"`                              // Comma-separated sidebar section keys for role=user
+	// RbacPermissionIDs: per-user RBAC overrides (comma-separated permission catalog IDs).
+	// Built-in "user" starts View-only from AllowedSections; admins can raise Edit/Delete here.
+	RbacPermissionIDs  string     `gorm:"type:text" json:"rbac_permission_ids"`
 	ReviewedAt         *time.Time `json:"reviewed_at,omitempty"`
 	RequestedTeamID    *string    `gorm:"type:varchar(255)" json:"requested_team_id,omitempty"`
 	MustChangePassword bool       `gorm:"default:false" json:"must_change_password"`

@@ -658,6 +658,7 @@ type ListModelDetailsResponse struct {
 
 type modelListQuery struct {
 	Provider   schemas.ModelProvider
+	Providers  []schemas.ModelProvider
 	Query      string
 	KeyIDs     []string
 	Limit      int
@@ -786,8 +787,23 @@ func (h *ProviderHandler) isModelDeprecated(model string, provider schemas.Model
 // any virtual key present in the request headers or `vks` query (VK IDs) to populate filters.
 func (h *ProviderHandler) parseModelListQuery(ctx *fasthttp.RequestCtx, defaultLimit int) (modelListQuery, bool) {
 	queryArgs := ctx.QueryArgs()
+	rawProvider := string(queryArgs.Peek("provider"))
+	var providersList []schemas.ModelProvider
+	if rawProvider != "" {
+		for _, p := range strings.Split(rawProvider, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				providersList = append(providersList, schemas.ModelProvider(p))
+			}
+		}
+	}
+	firstProvider := schemas.ModelProvider("")
+	if len(providersList) > 0 {
+		firstProvider = providersList[0]
+	}
 	query := modelListQuery{
-		Provider:   schemas.ModelProvider(string(queryArgs.Peek("provider"))),
+		Provider:   firstProvider,
+		Providers:  providersList,
 		Query:      string(queryArgs.Peek("query")),
 		Limit:      defaultLimit,
 		Unfiltered: string(queryArgs.Peek("unfiltered")) == "true",
@@ -872,7 +888,9 @@ func (h *ProviderHandler) parseModelListQuery(ctx *fasthttp.RequestCtx, defaultL
 // listManagementModels lists models across one or all providers and applies the top-level limit.
 func (h *ProviderHandler) listManagementModels(query modelListQuery) ([]listedModel, int, error) {
 	providers := []schemas.ModelProvider{}
-	if query.Provider != "" {
+	if len(query.Providers) > 0 {
+		providers = append(providers, query.Providers...)
+	} else if query.Provider != "" {
 		providers = append(providers, query.Provider)
 	} else {
 		var err error

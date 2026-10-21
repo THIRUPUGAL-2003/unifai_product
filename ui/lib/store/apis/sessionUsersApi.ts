@@ -13,6 +13,8 @@ export interface SessionUser {
 	budget_current_usage?: number;
 	allowed_prompt_repos?: string;
 	allowed_sections?: string;
+	/** Per-user RBAC raises (comma-separated permission catalog IDs). */
+	rbac_permission_ids?: string;
 	created_at: string;
 	reviewed_at?: string | null;
 	updated_at?: string;
@@ -41,6 +43,7 @@ export interface SessionUserPayload {
 	rate_limit?: number;
 	allowed_prompt_repos?: string;
 	allowed_sections?: string;
+	rbac_permission_ids?: string;
 	auto_create_prompt?: boolean;
 }
 

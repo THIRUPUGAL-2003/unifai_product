@@ -1,6 +1,8 @@
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import { ModelMultiselect } from "@/components/ui/modelMultiselect";
 import NumberAndSelect from "@/components/ui/numberAndSelect";
 import MultiBudgetLines from "@/components/ui/multibudgets";
@@ -269,15 +271,27 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 				data-testid="model-limit-sheet"
 			>
 				<SheetHeader className="flex flex-col items-start p-0 px-8 py-4" headerClassName="mb-0 sticky -top-4 bg-card z-10">
-					<SheetTitle>{isEditing ? "Edit Model Limit" : "Create Model Limit"}</SheetTitle>
+					<SheetTitle className="flex items-center gap-2">
+						{isEditing ? (canSubmit ? "Edit Model Limit" : "View Model Limit") : "Create Model Limit"}
+						{!canSubmit && (
+							<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs">
+								View Only
+							</Badge>
+						)}
+					</SheetTitle>
 					<SheetDescription>
 						{isEditing ? "Update budget and rate limit configuration." : "Set up budget and rate limits for a model."}
 					</SheetDescription>
+					{!canSubmit && (
+						<div className="w-full rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-500 mt-2">
+							View-only access: model limit configuration cannot be modified.
+						</div>
+					)}
 				</SheetHeader>
 
 				<Form {...form}>
 					<form onSubmit={form.handleSubmit(onSubmit)} className="flex h-full flex-col gap-6">
-						<div className="grow space-y-4 px-8">
+						<fieldset disabled={!canSubmit} className={cn("grow space-y-4 px-8 border-0 p-0 m-0", !canSubmit && "pointer-events-none")}>
 							{/* Provider */}
 							<FormField
 								control={form.control}
@@ -527,7 +541,7 @@ export default function ModelLimitSheet({ modelConfig, onSave, onCancel }: Model
 									</div>
 								</>
 							)}
-						</div>
+						</fieldset>
 
 						{/* Footer */}
 						<div className="bg-card sticky bottom-0 shrink-0 border-t px-8 py-4">

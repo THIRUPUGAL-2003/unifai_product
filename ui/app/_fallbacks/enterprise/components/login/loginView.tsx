@@ -17,7 +17,6 @@ import { resolvePostLoginPath } from "@/lib/utils/workspaceAccess";
 import {
 	ArrowLeft,
 	ArrowRight,
-	Check,
 	CheckCircle2,
 	Cpu,
 	Eye,
@@ -1050,27 +1049,6 @@ export default function LoginView() {
 											</div>
 										</div>
 
-										{/* Password requirements checklist - single compact row */}
-										<div className="flex items-center justify-between rounded-xl border border-[#e3ebf8] bg-[#f7f9ff] px-3 py-2 text-[11px]">
-											<span className={has8Chars ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
-												<Check className="h-3 w-3 shrink-0" /> 8+ chars
-											</span>
-											<span className={hasUpper ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
-												<Check className="h-3 w-3 shrink-0" /> A-Z
-											</span>
-											<span className={hasLower ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
-												<Check className="h-3 w-3 shrink-0" /> a-z
-											</span>
-											<span className={hasDigit ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
-												<Check className="h-3 w-3 shrink-0" /> 0-9
-											</span>
-											<span className={hasSpecial ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
-												<Check className="h-3 w-3 shrink-0" /> Symbol
-											</span>
-											<span className={passwordsMatch ? "text-emerald-700 font-medium flex items-center gap-1 whitespace-nowrap" : "text-slate-500 flex items-center gap-1 whitespace-nowrap"}>
-												<Check className="h-3 w-3 shrink-0" /> Match
-											</span>
-										</div>
 									</>
 								)}
 

@@ -1,9 +1,10 @@
 import { ExportFormatsDropdown, type ExportFormatsPayload } from "@/components/exportFormatsDropdown";
-import { getErrorMessage } from "@/lib/store";
+import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
 import { useLazyGetLogsQuery } from "@/lib/store/apis/logsApi";
 import { useLazyGetMCPLogsQuery } from "@/lib/store/apis/mcpLogsApi";
 import type { LogEntry, LogFilters, MCPToolLogEntry, MCPToolLogFilters, Pagination } from "@/lib/types/logs";
 import { getRangeForPeriod } from "@/lib/utils/timeRange";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useCallback } from "react";
 
 const EXPORT_PAGE_SIZE = 1000;
@@ -38,6 +39,9 @@ const fmtCost = (cost?: number) => (cost == null ? "" : cost.toFixed(6));
 const fmtLatency = (ms?: number) => (ms == null ? "" : `${Math.round(ms)}ms`);
 
 export function LlmLogsExportButton({ filters, className }: { filters: LogFilters; className?: string }) {
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isAdmin = authStatus?.role === "admin";
+	const hasDownloadAccess = useRbac(RbacResource.Logs, RbacOperation.Download) || isAdmin;
 	const [triggerGetLogs] = useLazyGetLogsQuery();
 
 	const getPayload = useCallback(async (): Promise<ExportFormatsPayload> => {
@@ -94,10 +98,13 @@ export function LlmLogsExportButton({ filters, className }: { filters: LogFilter
 		};
 	}, [filters, triggerGetLogs]);
 
-	return <ExportFormatsDropdown getPayload={getPayload} size="sm" className={className} testId="llm-logs-export-trigger" />;
+	return <ExportFormatsDropdown getPayload={getPayload} disabled={!hasDownloadAccess} size="sm" className={className} testId="llm-logs-export-trigger" />;
 }
 
 export function McpLogsExportButton({ filters, className }: { filters: MCPToolLogFilters; className?: string }) {
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isAdmin = authStatus?.role === "admin";
+	const hasDownloadAccess = useRbac(RbacResource.MCPLogs, RbacOperation.Download) || isAdmin;
 	const [triggerGetLogs] = useLazyGetMCPLogsQuery();
 
 	const getPayload = useCallback(async (): Promise<ExportFormatsPayload> => {
@@ -146,5 +153,5 @@ export function McpLogsExportButton({ filters, className }: { filters: MCPToolLo
 		};
 	}, [filters, triggerGetLogs]);
 
-	return <ExportFormatsDropdown getPayload={getPayload} size="sm" className={className} testId="mcp-logs-export-trigger" />;
+	return <ExportFormatsDropdown getPayload={getPayload} disabled={!hasDownloadAccess} size="sm" className={className} testId="mcp-logs-export-trigger" />;
 }

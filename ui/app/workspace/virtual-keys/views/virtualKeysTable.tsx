@@ -244,6 +244,7 @@ function VKActionsMenu({
 					<DropdownMenuItem
 						className="cursor-pointer"
 						disabled={!hasUpdateAccess}
+						title={!hasUpdateAccess ? "View-only access: editing is disabled" : undefined}
 						data-testid={`vk-edit-btn-${vk.name}`}
 						onSelect={(e) => {
 							e.preventDefault();
@@ -280,7 +281,7 @@ function VKActionsMenu({
 						className="cursor-pointer"
 						disabled={!hasDeleteAccess || isManagedByProfile}
 						data-testid={`vk-delete-btn-${vk.name}`}
-						title={isManagedByProfile ? "This virtual key is managed by an access profile and can't be deleted here." : undefined}
+						title={!hasDeleteAccess ? "Delete permission is required" : isManagedByProfile ? "This virtual key is managed by an access profile and can't be deleted here." : undefined}
 						onSelect={(e) => {
 							e.preventDefault();
 							setDeleteOpen(true);
@@ -430,6 +431,7 @@ export default function VirtualKeysTable({
 	const hasCreateAccess = useRbac(RbacResource.VirtualKeys, RbacOperation.Create);
 	const hasUpdateAccess = useRbac(RbacResource.VirtualKeys, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.VirtualKeys, RbacOperation.Delete);
+	const hasDownloadAccess = useRbac(RbacResource.VirtualKeys, RbacOperation.Download);
 
 	const [deleteVirtualKey, { isLoading: isDeleting }] = useDeleteVirtualKeyMutation();
 	const [updateVirtualKey] = useUpdateVirtualKeyMutation();
@@ -844,7 +846,15 @@ export default function VirtualKeysTable({
 			<div className="flex min-h-0 w-full grow flex-col overflow-hidden">
 				<div className="mb-4 flex shrink-0 items-center justify-between">
 					<div>
-						<h2 className="text-lg font-semibold">Virtual Keys</h2>
+						<div className="flex items-center gap-2">
+							<h2 className="text-lg font-semibold">Virtual Keys</h2>
+							{!hasUpdateAccess && (
+								<Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10 gap-1 text-xs" data-testid="vk-view-only-badge">
+									<Eye className="h-3 w-3" />
+									View Only
+								</Badge>
+							)}
+						</div>
 						<p className="text-muted-foreground text-sm">Manage virtual keys, their permissions, budgets, and rate limits.</p>
 					</div>
 					<div className="flex items-center gap-2">
@@ -859,7 +869,7 @@ export default function VirtualKeysTable({
 								Rotate selected ({selectedCount})
 							</Button>
 						)}
-						<Button variant="outline" onClick={openExportDialog} disabled={virtualKeys.length === 0} data-testid="vk-export-btn">
+						<Button variant="outline" onClick={openExportDialog} disabled={!hasDownloadAccess || virtualKeys.length === 0} data-testid="vk-export-btn">
 							<Download className="h-4 w-4" />
 							Export CSV
 						</Button>

@@ -4,8 +4,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ExportFormatsDropdown } from "@/components/exportFormatsDropdown";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getErrorMessage } from "@/lib/store";
+import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useGetAuditLogsQuery, useLazyExportAuditLogsQuery } from "@enterprise/lib/store/apis/auditLogsApi";
 import type { AuditLog } from "@enterprise/lib/types/workspace";
 import { Check, Copy, Eye, RefreshCw, ScrollText, Search, X } from "lucide-react";
@@ -103,6 +104,10 @@ export default function AuditLogsView() {
 	);
 
 	const [exportAuditLogs] = useLazyExportAuditLogsQuery();
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isSuperAdmin = authStatus?.role === "admin";
+	const hasDownloadAccess = useRbac(RbacResource.AuditLogs, RbacOperation.Download) || isSuperAdmin;
+
 	const logs = data?.logs || [];
 	const total = data?.total_count ?? 0;
 
@@ -200,7 +205,11 @@ export default function AuditLogsView() {
 						Refresh
 					</Button>
 
-					<ExportFormatsDropdown getPayload={getExportPayload} testId="audit-logs-export-trigger" />
+					<ExportFormatsDropdown
+						getPayload={getExportPayload}
+						disabled={!hasDownloadAccess || logs.length === 0}
+						testId="audit-logs-export-trigger"
+					/>
 				</div>
 			</div>
 

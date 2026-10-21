@@ -227,6 +227,9 @@ type GovernanceStore interface {
 	// Team level CheckUserBudget
 	CheckTeamBudget(ctx context.Context, teamID string, request *EvaluationRequest, baselines map[string]float64) (Decision, error)
 	CheckTeamRateLimit(ctx context.Context, teamID string, request *EvaluationRequest, tokensBaselines map[string]int64, requestsBaselines map[string]int64) (Decision, error)
+	// Business unit level governance checks
+	CheckBusinessUnitBudget(ctx context.Context, buID string, request *EvaluationRequest, baselines map[string]float64) (Decision, error)
+	CheckBusinessUnitRateLimit(ctx context.Context, buID string, request *EvaluationRequest, tokensBaselines map[string]int64, requestsBaselines map[string]int64) (Decision, error)
 	// Team-level live budget/rate-limit collectors (resolved from the hot maps);
 	// used by the enterprise user→team→business-unit hierarchy collector.
 	CollectTeamBudgets(ctx context.Context, teamID string) []*configstoreTables.TableBudget
@@ -1480,6 +1483,51 @@ func (gs *LocalGovernanceStore) CheckTeamRateLimit(ctx context.Context, teamID s
 	key := fmt.Sprintf("Team:%s", teamID)
 	entityWiseRateLimits := EntityWiseRateLimits{key: {teamRateLimit}}
 	return gs.CheckRateLimit(ctx, entityWiseRateLimits, tokensBaselines, requestsBaselines)
+}
+
+// CheckBusinessUnitBudget checks business-unit-level budget and returns evaluation result if violated
+func (gs *LocalGovernanceStore) CheckBusinessUnitBudget(ctx context.Context, buID string, request *EvaluationRequest, baselines map[string]float64) (Decision, error) {
+	if buID == "" {
+		return DecisionAllow, nil
+	}
+	if baselines == nil {
+		baselines = map[string]float64{}
+	}
+	buBudgetID := "bu_" + buID
+	bVal, exists := gs.budgets.Load(buBudgetID)
+	if !exists || bVal == nil {
+		return DecisionAllow, nil
+	}
+	b, ok := bVal.(*configstoreTables.TableBudget)
+	if !ok || b == nil {
+		return DecisionAllow, nil
+	}
+	key := fmt.Sprintf("BusinessUnit:%s", buID)
+	return gs.CheckBudget(ctx, EntityWiseBudgets{key: []*configstoreTables.TableBudget{b}}, baselines)
+}
+
+// CheckBusinessUnitRateLimit checks business-unit-level rate limit and returns evaluation result if violated
+func (gs *LocalGovernanceStore) CheckBusinessUnitRateLimit(ctx context.Context, buID string, request *EvaluationRequest, tokensBaselines map[string]int64, requestsBaselines map[string]int64) (Decision, error) {
+	if buID == "" {
+		return DecisionAllow, nil
+	}
+	if tokensBaselines == nil {
+		tokensBaselines = map[string]int64{}
+	}
+	if requestsBaselines == nil {
+		requestsBaselines = map[string]int64{}
+	}
+	buRLID := "bu_rl_" + buID
+	rlVal, exists := gs.rateLimits.Load(buRLID)
+	if !exists || rlVal == nil {
+		return DecisionAllow, nil
+	}
+	rl, ok := rlVal.(*configstoreTables.TableRateLimit)
+	if !ok || rl == nil {
+		return DecisionAllow, nil
+	}
+	key := fmt.Sprintf("BusinessUnit:%s", buID)
+	return gs.CheckRateLimit(ctx, EntityWiseRateLimits{key: []*configstoreTables.TableRateLimit{rl}}, tokensBaselines, requestsBaselines)
 }
 
 // CollectTeamBudgets returns the live budget objects configured for a team,
@@ -3226,6 +3274,14 @@ func (gs *LocalGovernanceStore) customerAssignedVKAllowed(ctx context.Context, v
 	if vk == nil {
 		return true
 	}
+	if ctx != nil {
+		if isLocal, ok := ctx.Value(schemas.IsLocalAdminContextKey).(bool); ok && isLocal {
+			return true
+		}
+		if isLocal, ok := ctx.Value(string(schemas.IsLocalAdminContextKey)).(bool); ok && isLocal {
+			return true
+		}
+	}
 	customers := vkCustomerIDs(vk)
 	teams := vkTeamIDs(vk)
 	units := vkBusinessUnitIDs(vk)
@@ -3349,6 +3405,10 @@ func (gs *LocalGovernanceStore) billedCustomerIDs(ctx context.Context, vk *confi
 	}
 	if cid := gs.teamCustomerID(vk, teamID); cid != "" && slices.Contains(direct, cid) {
 		return []string{cid}
+	}
+	// If the team is explicitly assigned on the key and has no foreign customer, the key's direct customer is billed.
+	if slices.Contains(vkTeamIDs(vk), teamID) && gs.teamCustomerID(vk, teamID) == "" {
+		return []string{direct[0]}
 	}
 	// The team is assigned on the key but is not inside this customer, so the customer is not billed.
 	return nil

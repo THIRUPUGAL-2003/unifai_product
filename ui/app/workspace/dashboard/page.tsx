@@ -5,7 +5,8 @@ import { ScrollArea } from "@/components/ui/scrollArea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTimezonePreference } from "@/lib/hooks/useTimezonePreference";
 import { parseAsSafeArrayOf } from "@/lib/queryParamsParser";
-import { baseApi, getErrorMessage, useAppDispatch, useGetMCPAvailableFilterDataQuery } from "@/lib/store";
+import { baseApi, getErrorMessage, useAppDispatch, useGetMCPAvailableFilterDataQuery, useIsAuthEnabledQuery } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import type { LogFilters, MCPToolLogFilters } from "@/lib/types/logs";
 import { dateUtils } from "@/lib/types/logs";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,10 @@ import type { DashboardData } from "./utils/exportUtils";
 const toChartType = (value: string): ChartType => (value === "line" ? "line" : "bar");
 
 export default function DashboardPage() {
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
+	const hasDownloadAccess = useRbac(RbacResource.Dashboard, RbacOperation.Download) || isAdmin;
+
 	// MCP filter data
 	const { data: mcpFilterData, isError: mcpFilterFailed, error: mcpFilterError } = useGetMCPAvailableFilterDataQuery();
 
@@ -559,6 +564,7 @@ export default function DashboardPage() {
 							onLoadData={handlePreloadData}
 							onPdfExport={handlePdfExport}
 							onPdfExportDone={handlePdfExportDone}
+							disabled={!hasDownloadAccess}
 						/>
 						{activeTab === "mcp" && mcpFilterFailed ? (
 							<QueryErrorBanner

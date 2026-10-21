@@ -181,6 +181,7 @@ function SkillActionsMenu({
 	skill,
 	hasEditAccess,
 	hasDeleteAccess,
+	hasDownloadAccess,
 	isDeleting,
 	onEdit,
 	onDelete,
@@ -188,6 +189,7 @@ function SkillActionsMenu({
 	skill: SkillListItem;
 	hasEditAccess: boolean;
 	hasDeleteAccess: boolean;
+	hasDownloadAccess: boolean;
 	isDeleting: boolean;
 	onEdit: (id: string) => void;
 	onDelete: (id: string) => Promise<void>;
@@ -236,7 +238,7 @@ function SkillActionsMenu({
 					<DropdownMenuItem
 						className="cursor-pointer"
 						data-testid={`skill-download-btn-${skill.name}`}
-						disabled={isDownloading}
+						disabled={isDownloading || !hasDownloadAccess}
 						onSelect={(e) => {
 							e.preventDefault();
 							handleDownload();
@@ -301,6 +303,7 @@ export function SkillsListView({
 	const hasCreateAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Create);
 	const hasEditAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Delete);
+	const hasDownloadAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Download);
 	const { data: gatewayConfig } = useGetCoreConfigQuery({});
 	const isGitAvailable = gatewayConfig?.is_git_available ?? false;
 	const [deleteSkill, { isLoading: isDeleting }] = useDeleteSkillMutation();
@@ -417,6 +420,11 @@ export function SkillsListView({
 					<div className="flex items-center gap-2">
 						<h2 className="text-lg font-semibold">Skills Repository</h2>
 						<Badge aria-label="Skills Repository is in beta">Beta</Badge>
+						{!hasEditAccess && (
+							<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs">
+								View Only
+							</Badge>
+						)}
 					</div>
 					<p className="text-muted-foreground text-sm">Manage Agent Skills for distribution to AI coding assistants</p>
 				</div>
@@ -465,7 +473,7 @@ export function SkillsListView({
 								setIsDownloadingAll(false);
 							}
 						}}
-						disabled={!skills?.length || isDownloadingAll}
+						disabled={!skills?.length || isDownloadingAll || !hasDownloadAccess}
 					>
 						{isDownloadingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
 						{isDownloadingAll ? "Downloading..." : "Download All Skills"}
@@ -629,6 +637,7 @@ export function SkillsListView({
 												skill={skill}
 												hasEditAccess={hasEditAccess}
 												hasDeleteAccess={hasDeleteAccess}
+												hasDownloadAccess={hasDownloadAccess}
 												isDeleting={isDeleting}
 												onEdit={(id) => onSelectSkill(id, true)}
 												onDelete={handleDeleteSkill}

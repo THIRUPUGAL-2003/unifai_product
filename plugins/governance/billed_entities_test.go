@@ -482,7 +482,7 @@ func TestSharedTeamMultiCustomerScoping(t *testing.T) {
 	checkBudget("b-vk-a", 10)
 	checkBudget("b-user", 10)
 	checkBudget("b-team-shared", 10)
-	checkBudget("b-cust-a", 0) // Team is not inside customer A, so the customer is not billed.
+	checkBudget("b-cust-a", 10) // VK assigned to Customer A bills Customer A.
 	checkBudget("b-cust-b", 0)
 
 	// 2. User performs action for Customer B
@@ -495,8 +495,8 @@ func TestSharedTeamMultiCustomerScoping(t *testing.T) {
 	checkBudget("b-vk-b", 25)
 	checkBudget("b-user", 35)        // 10 + 25
 	checkBudget("b-team-shared", 35) // 10 + 25
-	checkBudget("b-cust-a", 0)
-	checkBudget("b-cust-b", 0)
+	checkBudget("b-cust-a", 10)
+	checkBudget("b-cust-b", 25)
 }
 
 func TestCustomerKeyOutsiderIsNotBilled(t *testing.T) {
@@ -678,6 +678,44 @@ func TestTeamBudgetTotalBlocksEveryKey(t *testing.T) {
 	vk := &configstoreTables.TableVirtualKey{ID: "vk-this", Customers: []configstoreTables.TableCustomer{{ID: "cust-bank"}}}
 	if scope, name := gs.ExhaustedBilledEntity(context.Background(), vk, []string{"team-dev"}); scope != "team" || name != "Developers" {
 		t.Fatalf("team total of 10 on a 10 limit = %q/%q, want team/Developers", scope, name)
+	}
+}
+
+func TestBusinessUnitBudgetEnforcement(t *testing.T) {
+	gs := &LocalGovernanceStore{logger: NewMockLogger()}
+	now := time.Now()
+	// BU budget exhausted (usage 10 >= limit 10)
+	gs.budgets.Store("bu_bu-1", &configstoreTables.TableBudget{
+		ID:            "bu_bu-1",
+		MaxLimit:      10,
+		CurrentUsage:  10,
+		ResetDuration: "1M",
+		LastReset:     now,
+	})
+
+	resolver := &BudgetResolver{store: gs, logger: NewMockLogger()}
+	req := &EvaluationRequest{Model: "gpt-4"}
+
+	// Evaluate exhausted BU request -> should be blocked with DecisionBudgetExceeded
+	result := resolver.EvaluateBusinessUnitRequest(nil, "bu-1", req)
+	if result.Decision != DecisionBudgetExceeded {
+		t.Fatalf("expected DecisionBudgetExceeded, got %s", result.Decision)
+	}
+	if !strings.Contains(result.Reason, "Business unit budget is used up") {
+		t.Fatalf("expected reason to contain 'Business unit budget is used up', got: %s", result.Reason)
+	}
+
+	// Active BU request -> should be allowed
+	gs.budgets.Store("bu_bu-2", &configstoreTables.TableBudget{
+		ID:            "bu_bu-2",
+		MaxLimit:      100,
+		CurrentUsage:  10,
+		ResetDuration: "1M",
+		LastReset:     now,
+	})
+	resultAllowed := resolver.EvaluateBusinessUnitRequest(nil, "bu-2", req)
+	if resultAllowed.Decision != DecisionAllow {
+		t.Fatalf("expected DecisionAllow, got %s", resultAllowed.Decision)
 	}
 }
 

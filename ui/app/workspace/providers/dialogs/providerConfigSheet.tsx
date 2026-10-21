@@ -1,4 +1,5 @@
 import Provider from "@/components/provider";
+import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ModelProvider } from "@/lib/types/config";
@@ -71,6 +72,7 @@ const availableTabs = (hasCustomProviderConfig: boolean, hasGovernanceAccess: bo
 export default function ProviderConfigSheet({ show, onCancel, provider }: Props) {
 	const [selectedTab, setSelectedTab] = useState<string | undefined>(undefined);
 	const hasGovernanceAccess = useRbac(RbacResource.Governance, RbacOperation.View);
+	const hasUpdateProviderAccess = useRbac(RbacResource.ModelProvider, RbacOperation.Update);
 	const hasCustomProviderConfig = !!provider.custom_provider_config;
 	const isOpenAI = provider.name === "openai";
 	const isAnthropicFamily = ANTHROPIC_FAMILY_PROVIDERS.includes(provider.name.toLowerCase());
@@ -104,8 +106,18 @@ export default function ProviderConfigSheet({ show, onCancel, provider }: Props)
 								<Provider provider={provider.name} size={24} className="mt-0" />
 							</div>
 							Provider configuration
+							{!hasUpdateProviderAccess && (
+								<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs">
+									View Only
+								</Badge>
+							)}
 						</div>
 					</SheetTitle>
+					{!hasUpdateProviderAccess && (
+						<div className="w-full rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-500 mt-2">
+							View-only access: provider configuration cannot be modified.
+						</div>
+					)}
 				</SheetHeader>
 				<div className="px-8 py-4">
 					<div className="w-full rounded-sm border">

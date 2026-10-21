@@ -19,7 +19,9 @@ import {
 	Loader2,
 	UserX,
 	Ban,
+	Eye,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,8 +33,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import {
 	WORKSPACE_ACCESS_SECTIONS,
+	adminSectionsForForm,
 	adminSectionsFromStorage,
+	allWorkspaceParentGrants,
 	allowedSectionsToString,
+	isUnrestrictedAdminSelection,
 	itemGrantKey,
 	sectionSelectionState,
 	type WorkspaceGrantKey,
@@ -73,10 +78,12 @@ function IndeterminateCheckbox({
 	checked,
 	indeterminate,
 	onChange,
+	disabled,
 }: {
 	checked: boolean;
 	indeterminate: boolean;
 	onChange: (checked: boolean) => void;
+	disabled?: boolean;
 }) {
 	const ref = useRef<HTMLInputElement>(null);
 	useEffect(() => {
@@ -89,8 +96,9 @@ function IndeterminateCheckbox({
 			ref={ref}
 			type="checkbox"
 			checked={checked}
+			disabled={disabled}
 			onChange={(e) => onChange(e.target.checked)}
-			className="border-border rounded text-teal-500 focus:ring-teal-500/50"
+			className="border-border rounded text-teal-500 focus:ring-teal-500/50 disabled:cursor-not-allowed disabled:opacity-70"
 		/>
 	);
 }
@@ -261,7 +269,9 @@ export default function UsersView() {
 	const [budget, setBudget] = useState(0);
 	const [rateLimit, setRateLimit] = useState(0);
 	const [allowedPromptRepos, setAllowedPromptRepos] = useState("");
-	const [allowedSections, setAllowedSections] = useState<Set<WorkspaceGrantKey>>(new Set());
+	const [allowedSections, setAllowedSections] = useState<Set<WorkspaceGrantKey>>(
+		() => new Set<WorkspaceGrantKey>(["prompt-repository"]),
+	);
 	const [expandedSections, setExpandedSections] = useState<Set<WorkspaceSectionKey>>(new Set());
 	const [workspaceSearch, setWorkspaceSearch] = useState("");
 
@@ -324,11 +334,18 @@ export default function UsersView() {
 	};
 
 	const toggleSection = (section: WorkspaceSection, checked: boolean) => {
+		// Built-in users always keep Prompt Repository — cannot deselect.
+		if (isUserRole(role) && section.key === "prompt-repository" && !checked) {
+			return;
+		}
 		setAllowedSections((prev) => {
 			const next = new Set(prev);
 			clearSectionGrants(next, section);
 			if (checked) {
 				next.add(section.key);
+			}
+			if (isUserRole(role)) {
+				next.add("prompt-repository");
 			}
 			return next;
 		});
@@ -477,103 +494,116 @@ export default function UsersView() {
 	const isSubAdmin = role === "sub_admin";
 	const isAdmin = role === "admin";
 
-	const workspaceAccessPicker = isAdmin ? (
-		<div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-300">
-			<span className="font-semibold text-emerald-200">Admin Full Access:</span> Administrators automatically have unrestricted full access (View, Edit, Delete) across all workspace pages, features, and settings.
-		</div>
-	) : sectionGrantsApply(role) ? (
+	const workspaceAccessPicker = sectionGrantsApply(role) ? (
 		<div className="space-y-2">
 			<label className="text-muted-foreground text-sm font-medium">
-				Workspace Access {isSubAdmin ? "(Full Access for Selected Features)" : "(View Only for Selected Features)"}
+				Workspace Access{" "}
+				{isAdmin
+					? "(Full Access — deselect to limit)"
+					: isSubAdmin
+						? "(Full Access for Selected Features)"
+						: "(View Only for Selected Features + Prompt Repository always on)"}
 			</label>
 			<p className="text-muted-foreground text-xs">
-				{isSubAdmin
-					? "Select workspace sections for this Sub-Admin. In Roles & Permissions (RBAC), they will automatically have Full Access (View, Edit, Delete) to these selected features."
-					: "Select workspace sections for this User. In Roles & Permissions (RBAC), they will have View-only access to these selected features by default (can be modified in RBAC)."}
+				{isAdmin
+					? "By default every section is selected (unrestricted). Deselect sections to limit this admin. Selected sections get Full Access in Roles & Permissions (RBAC)."
+					: isSubAdmin
+						? "Select workspace sections for this Sub-Admin. Those sections get Full Access (View, Edit, Delete, Download) automatically in Roles & Permissions (RBAC)."
+						: "Prompt Repository is always enabled with full access. Any other section you select is View-only in RBAC by default; an admin can later raise Edit/Download for those same features in Roles & Permissions."}
 			</p>
-				<div className="relative">
-					<Search className="text-muted-foreground absolute left-2.5 top-2.5 size-3.5" />
-					<Input
-						type="text"
-						placeholder="Search workspace pages or sections..."
-						value={workspaceSearch}
-						onChange={(e) => setWorkspaceSearch(e.target.value)}
-						className="h-8 pl-8 pr-7 text-xs bg-muted/20 border-border/50"
-					/>
-					{workspaceSearch && (
-						<button
-							type="button"
-							onClick={() => setWorkspaceSearch("")}
-							className="text-muted-foreground hover:text-foreground absolute right-2.5 top-2.5 size-3.5 flex items-center justify-center cursor-pointer"
-						>
-							<X className="size-3.5" />
-						</button>
-					)}
-				</div>
-				<div className="border-border/50 bg-muted/10 max-h-64 space-y-1 overflow-y-auto rounded-lg border p-2">
-					{filteredWorkspaceSections.length === 0 ? (
-						<p className="text-muted-foreground py-4 text-center text-xs">No workspace sections match "{workspaceSearch}"</p>
-					) : (
-						filteredWorkspaceSections.map((section) => {
-							const hasChildren = !!section.items?.length;
-							const isSearching = !!workspaceSearch.trim();
-							const expanded = isSearching || expandedSections.has(section.key);
-							const sel = sectionSelectionState(section, allowedSections);
-							const q = workspaceSearch.trim().toLowerCase();
-							const visibleItems = (section.items ?? []).filter((item) => {
-								if (!isSearching) return true;
-								if (section.label.toLowerCase().includes(q) || section.key.toLowerCase().includes(q)) return true;
-								return item.label.toLowerCase().includes(q) || item.key.toLowerCase().includes(q);
-							});
-							return (
-								<div key={section.key} className="rounded-md">
-									<div className="hover:bg-muted/40 flex items-center gap-1 rounded-md px-1 py-1">
-										{hasChildren ? (
-											<button
-												type="button"
-												onClick={() => toggleExpanded(section.key)}
-												className="text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded"
-												aria-label={expanded ? `Collapse ${section.label}` : `Expand ${section.label}`}
-											>
-												{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-											</button>
-										) : (
-											<span className="size-6 shrink-0" />
-										)}
-										<label className="text-foreground flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm select-none">
-											<IndeterminateCheckbox
-												checked={sel === "all"}
-												indeterminate={sel === "some"}
-												onChange={(checked) => toggleSection(section, checked)}
-											/>
-											<span className="truncate font-medium">{section.label}</span>
-										</label>
-									</div>
-									{hasChildren && expanded ? (
-										<div className="border-border/40 ml-6 space-y-0.5 border-l py-1 pl-3">
-											{visibleItems.map((item) => (
-												<label
-													key={item.key}
-													className="text-foreground hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-sm select-none"
-												>
-													<input
-														type="checkbox"
-														checked={isItemChecked(section, item.key)}
-														onChange={(e) => toggleItem(section, item.key, e.target.checked)}
-														className="border-border rounded text-teal-500 focus:ring-teal-500/50"
-													/>
-													<span className="truncate">{item.label}</span>
-												</label>
-											))}
-										</div>
-									) : null}
-								</div>
-							);
-						})
-					)}
-				</div>
+			<div className="relative">
+				<Search className="text-muted-foreground absolute left-2.5 top-2.5 size-3.5" />
+				<Input
+					type="text"
+					placeholder="Search workspace pages or sections..."
+					value={workspaceSearch}
+					onChange={(e) => setWorkspaceSearch(e.target.value)}
+					className="h-8 pl-8 pr-7 text-xs bg-muted/20 border-border/50"
+				/>
+				{workspaceSearch && (
+					<button
+						type="button"
+						onClick={() => setWorkspaceSearch("")}
+						className="text-muted-foreground hover:text-foreground absolute right-2.5 top-2.5 size-3.5 flex items-center justify-center cursor-pointer"
+					>
+						<X className="size-3.5" />
+					</button>
+				)}
 			</div>
-		) : null;
+			<div className="border-border/50 bg-muted/10 max-h-64 space-y-1 overflow-y-auto rounded-lg border p-2">
+				{filteredWorkspaceSections.length === 0 ? (
+					<p className="text-muted-foreground py-4 text-center text-xs">No workspace sections match "{workspaceSearch}"</p>
+				) : (
+					filteredWorkspaceSections.map((section) => {
+						const hasChildren = !!section.items?.length;
+						const isSearching = !!workspaceSearch.trim();
+						const expanded = isSearching || expandedSections.has(section.key);
+						const sel = sectionSelectionState(section, allowedSections);
+						const q = workspaceSearch.trim().toLowerCase();
+						const visibleItems = (section.items ?? []).filter((item) => {
+							if (!isSearching) return true;
+							if (section.label.toLowerCase().includes(q) || section.key.toLowerCase().includes(q)) return true;
+							return item.label.toLowerCase().includes(q) || item.key.toLowerCase().includes(q);
+						});
+						return (
+							<div key={section.key} className="rounded-md">
+								<div className="hover:bg-muted/40 flex items-center gap-1 rounded-md px-1 py-1">
+									{hasChildren ? (
+										<button
+											type="button"
+											onClick={() => toggleExpanded(section.key)}
+											className="text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded"
+											aria-label={expanded ? `Collapse ${section.label}` : `Expand ${section.label}`}
+										>
+											{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+										</button>
+									) : (
+										<span className="size-6 shrink-0" />
+									)}
+									<label
+										className={`text-foreground flex min-w-0 flex-1 items-center gap-2 text-sm select-none ${
+											isUserRole(role) && section.key === "prompt-repository" ? "cursor-default opacity-90" : "cursor-pointer"
+										}`}
+									>
+										<IndeterminateCheckbox
+											checked={isUserRole(role) && section.key === "prompt-repository" ? true : sel === "all"}
+											indeterminate={isUserRole(role) && section.key === "prompt-repository" ? false : sel === "some"}
+											onChange={(checked) => toggleSection(section, checked)}
+											disabled={isUserRole(role) && section.key === "prompt-repository"}
+										/>
+										<span className="truncate font-medium">
+											{section.label}
+											{isUserRole(role) && section.key === "prompt-repository" ? (
+												<span className="text-muted-foreground ml-1 font-normal">(always on)</span>
+											) : null}
+										</span>
+									</label>
+								</div>
+								{hasChildren && expanded ? (
+									<div className="border-border/40 ml-6 space-y-0.5 border-l py-1 pl-3">
+										{visibleItems.map((item) => (
+											<label
+												key={item.key}
+												className="text-foreground hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-sm select-none"
+											>
+												<input
+													type="checkbox"
+													checked={isItemChecked(section, item.key)}
+													onChange={(e) => toggleItem(section, item.key, e.target.checked)}
+													className="border-border rounded text-teal-500 focus:ring-teal-500/50"
+												/>
+												<span className="truncate">{item.label}</span>
+											</label>
+										))}
+									</div>
+								) : null}
+							</div>
+						);
+					})
+				)}
+			</div>
+		</div>
+	) : null;
 
 	const promptReposPicker =
 		canAssignTeamAndKey(role) ? (
@@ -639,16 +669,32 @@ export default function UsersView() {
 		return ids.filter((id) => validIds.has(id)).join(",");
 	};
 
-	const userPayload = () => ({
-		username,
-		email: email.trim() || undefined,
-		role,
-		budget: canAssignTeamAndKey(role) ? budget : 0,
-		rate_limit: canAssignTeamAndKey(role) ? rateLimit : 0,
-		allowed_prompt_repos: canAssignTeamAndKey(role) ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
-		allowed_sections: role === "admin" ? "" : (sectionGrantsApply(role) ? allowedSectionsToString(allowedSections) : ""),
-		auto_create_prompt: isUserRole(role),
-	});
+	const userPayload = () => {
+		const effectiveSections = new Set(allowedSections);
+		if (isUserRole(role)) {
+			effectiveSections.add("prompt-repository");
+		}
+		let sectionsOut = "";
+		if (role === "admin") {
+			// All parents selected (or empty UI) → unrestricted. Partial deselect → store list.
+			sectionsOut =
+				effectiveSections.size === 0 || isUnrestrictedAdminSelection(effectiveSections)
+					? ""
+					: allowedSectionsToString(effectiveSections);
+		} else if (sectionGrantsApply(role)) {
+			sectionsOut = allowedSectionsToString(effectiveSections);
+		}
+		return {
+			username,
+			email: email.trim() || undefined,
+			role,
+			budget: canAssignTeamAndKey(role) ? budget : 0,
+			rate_limit: canAssignTeamAndKey(role) ? rateLimit : 0,
+			allowed_prompt_repos: canAssignTeamAndKey(role) ? sanitizeAllowedPromptRepos(allowedPromptRepos) : "",
+			allowed_sections: sectionsOut,
+			auto_create_prompt: isUserRole(role),
+		};
+	};
 
 	const handleCreateUser = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -865,7 +911,8 @@ export default function UsersView() {
 		setBudget(0);
 		setRateLimit(0);
 		setAllowedPromptRepos("");
-		setAllowedSections(new Set());
+		// Create defaults to role=user: Prompt Repository is always on.
+		setAllowedSections(new Set<WorkspaceGrantKey>(["prompt-repository"]));
 		setExpandedSections(new Set());
 		setSelectedUser(null);
 		setWorkspaceSearch("");
@@ -885,12 +932,9 @@ export default function UsersView() {
 		setBudget(user.budget);
 		setRateLimit(user.rate_limit);
 		setAllowedPromptRepos(sanitizeAllowedPromptRepos(user.allowed_prompt_repos || ""));
-		const grants = adminSectionsFromStorage(user.allowed_sections);
-		if (nextRole === "admin") {
-			setAllowedSections(new Set());
-		} else {
-			setAllowedSections(grants);
-		}
+		const grants =
+			nextRole === "admin" ? adminSectionsForForm(user.allowed_sections) : adminSectionsFromStorage(user.allowed_sections);
+		setAllowedSections(grants);
 		setExpandedSections(
 			new Set(
 				WORKSPACE_ACCESS_SECTIONS.filter(
@@ -1077,6 +1121,12 @@ export default function UsersView() {
 						<Users className="h-6 w-6 text-teal-400" />
 						User Governance
 					</h1>
+					{!hasUpdateAccess && (
+						<Badge variant="outline" className="border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10 gap-1 text-xs" data-testid="users-view-only-badge">
+							<Eye className="h-3 w-3" />
+							View Only
+						</Badge>
+					)}
 					{userQuota?.limited && (
 						<span
 							className={cn(
@@ -1187,8 +1237,7 @@ export default function UsersView() {
 											: "Unlimited users allowed by license"
 										: undefined
 								}
-								className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-									active
+								className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${active
 										? isPendingTab
 											? "bg-amber-500 text-white shadow-sm"
 											: isAllowedTab
@@ -1205,13 +1254,12 @@ export default function UsersView() {
 												: isAllowedTab
 													? "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
 													: "text-muted-foreground hover:bg-muted hover:text-foreground"
-								}`}
+									}`}
 							>
 								{opt.icon}
 								{opt.label}
 								<span
-									className={`rounded-full px-1.5 text-[10px] font-semibold ${
-										active
+									className={`rounded-full px-1.5 text-[10px] font-semibold ${active
 											? "bg-white/20 text-white"
 											: hasPendingAlert
 												? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
@@ -1220,7 +1268,7 @@ export default function UsersView() {
 													: isAllowedTab
 														? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
 														: "bg-muted text-muted-foreground"
-									}`}
+										}`}
 								>
 									{roleCounts[opt.value]}
 								</span>
@@ -1309,13 +1357,12 @@ export default function UsersView() {
 											</TableCell>
 											<TableCell>
 												<span
-													className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-														user.role === "admin"
+													className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${user.role === "admin"
 															? "border-teal-500/20 bg-teal-500/10 text-teal-400"
 															: user.role === "sub_admin"
 																? "border-purple-500/20 bg-purple-500/10 text-purple-400"
 																: "border-blue-500/20 bg-blue-500/10 text-blue-400"
-													}`}
+														}`}
 												>
 													{user.role === "admin" ? <Shield className="h-3 w-3" /> : user.role === "sub_admin" ? <ShieldCheck className="h-3 w-3" /> : <Users className="h-3 w-3" />}
 													{roleLabel(user.role)}
@@ -1412,84 +1459,83 @@ export default function UsersView() {
 										);
 
 										return (
-										<TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
-											<TableCell className="font-mono text-[11px] text-muted-foreground max-w-[140px] truncate" title={user.id}>
-												{user.id}
-											</TableCell>
-											<TableCell className="font-medium">
-												<div className="flex items-center gap-2">
-													<div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-500/10 text-xs font-bold text-rose-400 uppercase">
-														{user.username.slice(0, 2)}
+											<TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
+												<TableCell className="font-mono text-[11px] text-muted-foreground max-w-[140px] truncate" title={user.id}>
+													{user.id}
+												</TableCell>
+												<TableCell className="font-medium">
+													<div className="flex items-center gap-2">
+														<div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-500/10 text-xs font-bold text-rose-400 uppercase">
+															{user.username.slice(0, 2)}
+														</div>
+														{user.username}
 													</div>
-													{user.username}
-												</div>
-											</TableCell>
-											<TableCell className="text-sm text-muted-foreground">
-												{user.email || "—"}
-											</TableCell>
-											<TableCell>
-												<span
-													className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-														user.role === "admin"
-															? "border-teal-500/20 bg-teal-500/10 text-teal-400"
-															: user.role === "sub_admin"
-																? "border-purple-500/20 bg-purple-500/10 text-purple-400"
-																: "border-blue-500/20 bg-blue-500/10 text-blue-400"
-													}`}
-												>
-													{user.role === "admin" ? <Shield className="h-3 w-3" /> : user.role === "sub_admin" ? <ShieldCheck className="h-3 w-3" /> : <Users className="h-3 w-3" />}
-													{roleLabel(user.role)}
-												</span>
-											</TableCell>
-											<TableCell className="text-muted-foreground text-xs">
-												{user.reviewed_at ? new Date(user.reviewed_at).toLocaleString() : new Date(user.created_at).toLocaleString()}
-											</TableCell>
-											<TableCell className="text-right">
-												<div className="flex justify-end gap-2">
-													<Button
-														size="sm"
-														disabled={actionBusyId === user.id || !hasUpdateAccess}
-														onClick={() => handleApprove(user)}
-														className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
-														title="Re-accept user and send approval email with login link"
-														data-testid="rejected-user-accept"
+												</TableCell>
+												<TableCell className="text-sm text-muted-foreground">
+													{user.email || "—"}
+												</TableCell>
+												<TableCell>
+													<span
+														className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${user.role === "admin"
+																? "border-teal-500/20 bg-teal-500/10 text-teal-400"
+																: user.role === "sub_admin"
+																	? "border-purple-500/20 bg-purple-500/10 text-purple-400"
+																	: "border-blue-500/20 bg-blue-500/10 text-blue-400"
+															}`}
 													>
-														<Check className="h-3.5 w-3.5" />
-														Accept
-													</Button>
-													<Button
-														size="sm"
-														variant="outline"
-														disabled={actionBusyId === user.id || !hasUpdateAccess || isSelf}
-														onClick={() => handleBlock(user)}
-														className={cn(
-															"h-8 gap-1 border-amber-500/40 text-amber-400 hover:bg-amber-950/40",
-															isSelf ? "opacity-30 cursor-not-allowed" : "cursor-pointer"
-														)}
-														title={isSelf ? "You cannot block your own account" : "Block user account and send security email"}
-														data-testid="rejected-user-block"
-													>
-														<Ban className="h-3.5 w-3.5" />
-														Block
-													</Button>
-													<Button
-														size="sm"
-														variant="outline"
-														disabled={actionBusyId === user.id || !hasDeleteAccess || isSelf}
-														onClick={() => openDeleteModal(user)}
-														className={cn(
-															"h-8 gap-1 border-rose-500/40 text-rose-400 hover:bg-rose-950/40",
-															isSelf ? "opacity-30 cursor-not-allowed" : "cursor-pointer"
-														)}
-														title={isSelf ? "You cannot delete your own account" : "Permanently delete user record"}
-														data-testid="rejected-user-delete"
-													>
-														<Trash2 className="h-3.5 w-3.5" />
-														Delete
-													</Button>
-												</div>
-											</TableCell>
-										</TableRow>
+														{user.role === "admin" ? <Shield className="h-3 w-3" /> : user.role === "sub_admin" ? <ShieldCheck className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+														{roleLabel(user.role)}
+													</span>
+												</TableCell>
+												<TableCell className="text-muted-foreground text-xs">
+													{user.reviewed_at ? new Date(user.reviewed_at).toLocaleString() : new Date(user.created_at).toLocaleString()}
+												</TableCell>
+												<TableCell className="text-right">
+													<div className="flex justify-end gap-2">
+														<Button
+															size="sm"
+															disabled={actionBusyId === user.id || !hasUpdateAccess}
+															onClick={() => handleApprove(user)}
+															className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+															title="Re-accept user and send approval email with login link"
+															data-testid="rejected-user-accept"
+														>
+															<Check className="h-3.5 w-3.5" />
+															Accept
+														</Button>
+														<Button
+															size="sm"
+															variant="outline"
+															disabled={actionBusyId === user.id || !hasUpdateAccess || isSelf}
+															onClick={() => handleBlock(user)}
+															className={cn(
+																"h-8 gap-1 border-amber-500/40 text-amber-400 hover:bg-amber-950/40",
+																isSelf ? "opacity-30 cursor-not-allowed" : "cursor-pointer"
+															)}
+															title={isSelf ? "You cannot block your own account" : "Block user account and send security email"}
+															data-testid="rejected-user-block"
+														>
+															<Ban className="h-3.5 w-3.5" />
+															Block
+														</Button>
+														<Button
+															size="sm"
+															variant="outline"
+															disabled={actionBusyId === user.id || !hasDeleteAccess || isSelf}
+															onClick={() => openDeleteModal(user)}
+															className={cn(
+																"h-8 gap-1 border-rose-500/40 text-rose-400 hover:bg-rose-950/40",
+																isSelf ? "opacity-30 cursor-not-allowed" : "cursor-pointer"
+															)}
+															title={isSelf ? "You cannot delete your own account" : "Permanently delete user record"}
+															data-testid="rejected-user-delete"
+														>
+															<Trash2 className="h-3.5 w-3.5" />
+															Delete
+														</Button>
+													</div>
+												</TableCell>
+											</TableRow>
 										);
 									})}
 								</TableBody>
@@ -1557,13 +1603,12 @@ export default function UsersView() {
 											</TableCell>
 											<TableCell>
 												<span
-													className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-														user.role === "admin"
+													className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${user.role === "admin"
 															? "border-teal-500/20 bg-teal-500/10 text-teal-400"
 															: user.role === "sub_admin"
 																? "border-purple-500/20 bg-purple-500/10 text-purple-400"
 																: "border-blue-500/20 bg-blue-500/10 text-blue-400"
-													}`}
+														}`}
 												>
 													{user.role === "admin" ? <Shield className="h-3 w-3" /> : user.role === "sub_admin" ? <ShieldCheck className="h-3 w-3" /> : <Users className="h-3 w-3" />}
 													{roleLabel(user.role)}
@@ -1613,55 +1658,55 @@ export default function UsersView() {
 						<div className="border-border/40 bg-muted/10 flex flex-col items-center justify-center rounded-xl border border-dashed py-16 text-center">
 							<Users className="text-muted-foreground/60 mb-3 h-12 w-12" />
 							<p className="text-foreground/80 text-base font-medium">No Users Found</p>
-								<p className="text-muted-foreground mt-1 max-w-xs text-sm">
-									{searchQuery
-										? "No users match your search query."
-										: roleFilter === "admin"
-											? "No admins yet."
-											: roleFilter === "user"
-												? "No users with the User role yet."
-												: "Approve a registration or click Add New User."}
-								</p>
-							</div>
-						) : (
-							<div className="border-border/40 bg-muted/5 overflow-hidden rounded-xl border shadow-sm">
-								<Table>
-									<TableHeader className="bg-muted/30">
-										<TableRow>
-											<TableHead className="w-[48px]">
-												<Checkbox
-													checked={allVisibleUsersSelected || (someVisibleUsersSelected ? "indeterminate" : false)}
-													onCheckedChange={(checked) => toggleSelectAllVisibleUsers(checked === true)}
-													aria-label="Select all users on this page"
-													data-testid="users-select-all-checkbox"
-												/>
-											</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Username</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Email</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Role</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Team</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Virtual Keys</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Budget (USD)</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Rate Limit (RPM)</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Allowed Repositories</TableHead>
-											<TableHead className="text-foreground/90 font-semibold">Created At</TableHead>
-											<TableHead className="text-foreground/90 text-right font-semibold">Actions</TableHead>
-										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{pagedActiveUsers.map((user: SessionUser) => {
-											const isUserBudgetExhausted =
-												!isWorkspaceAdminRole(user.role) &&
-												user.budget > 0 &&
-												(user.budget_current_usage ?? 0) >= user.budget;
+							<p className="text-muted-foreground mt-1 max-w-xs text-sm">
+								{searchQuery
+									? "No users match your search query."
+									: roleFilter === "admin"
+										? "No admins yet."
+										: roleFilter === "user"
+											? "No users with the User role yet."
+											: "Approve a registration or click Add New User."}
+							</p>
+						</div>
+					) : (
+						<div className="border-border/40 bg-muted/5 overflow-hidden rounded-xl border shadow-sm">
+							<Table>
+								<TableHeader className="bg-muted/30">
+									<TableRow>
+										<TableHead className="w-[48px]">
+											<Checkbox
+												checked={allVisibleUsersSelected || (someVisibleUsersSelected ? "indeterminate" : false)}
+												onCheckedChange={(checked) => toggleSelectAllVisibleUsers(checked === true)}
+												aria-label="Select all users on this page"
+												data-testid="users-select-all-checkbox"
+											/>
+										</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Username</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Email</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Role</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Team</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Virtual Keys</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Budget (USD)</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Rate Limit (RPM)</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Allowed Repositories</TableHead>
+										<TableHead className="text-foreground/90 font-semibold">Created At</TableHead>
+										<TableHead className="text-foreground/90 text-right font-semibold">Actions</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{pagedActiveUsers.map((user: SessionUser) => {
+										const isUserBudgetExhausted =
+											!isWorkspaceAdminRole(user.role) &&
+											user.budget > 0 &&
+											(user.budget_current_usage ?? 0) >= user.budget;
 
-											const isSelf = Boolean(
-												(currentUserId && user.id === currentUserId) ||
-												(currentUsername && user.username?.trim().toLowerCase() === currentUsername) ||
-												(currentUserEmail && user.email?.trim().toLowerCase() === currentUserEmail)
-											);
+										const isSelf = Boolean(
+											(currentUserId && user.id === currentUserId) ||
+											(currentUsername && user.username?.trim().toLowerCase() === currentUsername) ||
+											(currentUserEmail && user.email?.trim().toLowerCase() === currentUserEmail)
+										);
 
-											return (
+										return (
 											<TableRow
 												key={user.id}
 												className={cn(
@@ -1699,13 +1744,12 @@ export default function UsersView() {
 												<TableCell className="text-sm text-muted-foreground">{user.email || "—"}</TableCell>
 												<TableCell>
 													<span
-														className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-															user.role === "admin"
+														className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${user.role === "admin"
 																? "border-teal-500/20 bg-teal-500/10 text-teal-400"
 																: user.role === "sub_admin"
 																	? "border-purple-500/20 bg-purple-500/10 text-purple-400"
 																	: "border-blue-500/20 bg-blue-500/10 text-blue-400"
-														}`}
+															}`}
 													>
 														<Shield className="h-3 w-3" />
 														{roleLabel(user.role)}
@@ -1794,7 +1838,11 @@ export default function UsersView() {
 															variant="ghost"
 															disabled={!hasUpdateAccess}
 															onClick={() => openEditModal(user)}
-															className="text-muted-foreground h-8 w-8 rounded-lg transition-colors hover:text-teal-400 cursor-pointer"
+															title={!hasUpdateAccess ? "View-only access: editing is disabled" : "Edit user"}
+															className={cn(
+																"text-muted-foreground h-8 w-8 rounded-lg transition-colors",
+																!hasUpdateAccess ? "opacity-30 cursor-not-allowed" : "hover:text-teal-400 cursor-pointer",
+															)}
 														>
 															<Edit2 className="h-4 w-4" />
 														</Button>
@@ -1803,10 +1851,16 @@ export default function UsersView() {
 															variant="ghost"
 															disabled={!hasDeleteAccess || isSelf || actionBusyId === user.id}
 															onClick={() => openDeleteModal(user)}
-															title={isSelf ? "You cannot delete your own account" : "Delete user account"}
+															title={
+																isSelf
+																	? "You cannot delete your own account"
+																	: !hasDeleteAccess
+																		? "Delete permission is required"
+																		: "Delete user account"
+															}
 															className={cn(
 																"text-muted-foreground h-8 w-8 rounded-lg transition-colors",
-																isSelf ? "opacity-30 cursor-not-allowed" : "hover:text-red-400 cursor-pointer",
+																isSelf || !hasDeleteAccess ? "opacity-30 cursor-not-allowed" : "hover:text-red-400 cursor-pointer",
 															)}
 														>
 															<Trash2 className="h-4 w-4" />
@@ -1816,24 +1870,24 @@ export default function UsersView() {
 											</TableRow>
 										);
 									})}
-									</TableBody>
-								</Table>
-								<DataTablePagination
-									offset={activeUsersOffset}
-									limit={activeUsersLimit}
-									totalCount={activeUsers.length}
-									onOffsetChange={setActiveUsersOffset}
-									onLimitChange={(newLimit) => {
-										setActiveUsersLimit(newLimit);
-										setActiveUsersOffset(0);
-									}}
-									itemLabel="users"
-									perPageLabel="Users per page"
-									dataTestId="users-pagination"
-								/>
-							</div>
-						)}
-					</div>
+								</TableBody>
+							</Table>
+							<DataTablePagination
+								offset={activeUsersOffset}
+								limit={activeUsersLimit}
+								totalCount={activeUsers.length}
+								onOffsetChange={setActiveUsersOffset}
+								onLimitChange={(newLimit) => {
+									setActiveUsersLimit(newLimit);
+									setActiveUsersOffset(0);
+								}}
+								itemLabel="users"
+								perPageLabel="Users per page"
+								dataTestId="users-pagination"
+							/>
+						</div>
+					)}
+				</div>
 			)}
 
 			{/* Create User Dialog */}
@@ -1896,6 +1950,10 @@ export default function UsersView() {
 										setAllowedPromptRepos("");
 										setTeamId("");
 										setVirtualKeyId("");
+										setAllowedSections(allWorkspaceParentGrants());
+									} else if (nextRole === "user") {
+										setAllowedSections(new Set<WorkspaceGrantKey>(["prompt-repository"]));
+									} else if (nextRole === "sub_admin") {
 										setAllowedSections(new Set());
 									}
 								}}
@@ -2052,7 +2110,13 @@ export default function UsersView() {
 										setAllowedPromptRepos("");
 										setTeamId("");
 										setVirtualKeyId("");
-										setAllowedSections(new Set());
+										setAllowedSections(allWorkspaceParentGrants());
+									} else if (nextRole === "user") {
+										setAllowedSections((prev) => {
+											const next = new Set(prev);
+											next.add("prompt-repository");
+											return next;
+										});
 									}
 								}}
 								className="bg-muted/20 border-border/50 text-foreground w-full rounded-lg border p-2.5 text-sm focus:border-teal-500/50 focus:outline-none"

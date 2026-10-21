@@ -8,44 +8,43 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getProviderLabel } from "@/lib/constants/logs";
 import { Input } from "@/components/ui/input";
-import { getErrorMessage, useGetVirtualKeyBillingBlocksQuery, useGetVirtualKeysQuery } from "@/lib/store";
+import { getErrorMessage, useGetVirtualKeysQuery } from "@/lib/store";
 import { useListSkillsQuery } from "@/lib/store/apis/skillsApi";
 import { useGetMCPClientsQuery } from "@/lib/store/apis/mcpApi";
-import { useGetBusinessUnitsQuery } from "@enterprise/lib/store/apis/businessUnitsApi";
 import { useGetUserVirtualKeysQuery } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
+import { useGetSessionUsersQuery } from "@/lib/store/apis/sessionUsersApi";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Clock, PanelRightClose, Trash2, Wrench } from "lucide-react";
-import { toast } from "sonner";
+import { Eye, PanelRightClose, Wrench } from "lucide-react";
 import { ModelProviderName } from "@/lib/types/config";
 import { ModelParams } from "@/lib/types/prompts";
 import { cn } from "@/lib/utils";
 import { PromptDeploymentsAccordionItem } from "@enterprise/components/prompt-deployments/promptDeploymentsAccordionItem";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiKeySelectorView } from "../components/apiKeySelectorView";
 import { VariablesTableView } from "../components/variablesTableView";
 import { usePromptContext } from "../context";
 import { useIsAuthEnabledQuery } from "@/lib/store";
+import { isPromptMemberRole } from "../utils/memberRole";
+import type { VirtualKey } from "@/lib/types/governance";
 
-function explicitAssignments(keys: { provider_configs?: { provider?: string; allowed_models?: string[] }[] }[]) {
+/** Providers listed on the given VKs (real provider_configs only — no invented catalogs). */
+function providersFromVirtualKeys(keys: VirtualKey[]): { providers: string[]; wildcardProviders: boolean } {
 	const providers = new Set<string>();
-	const models = new Set<string>();
+	let wildcardProviders = false;
 	for (const key of keys) {
-		for (const config of key.provider_configs ?? []) {
-			if (config.provider && config.provider !== "*") providers.add(config.provider);
-			for (const modelName of config.allowed_models ?? []) {
-				if (modelName && modelName !== "*") models.add(modelName);
+		for (const pc of key.provider_configs ?? []) {
+			const prov = (pc.provider || "").trim();
+			if (!prov) continue;
+			if (prov === "*") {
+				wildcardProviders = true;
+				continue;
 			}
+			providers.add(prov);
 		}
 	}
-	return { providers: [...providers], models: [...models] };
-}
-
-function isEntireCatalog(selected: string[] | null | undefined, catalog: string[]) {
-	if (!selected || catalog.length <= 1) return false;
-	return selected.length >= catalog.length && catalog.every((name) => selected.includes(name));
+	return { providers: [...providers], wildcardProviders };
 }
 
 export function SettingsPanel() {
@@ -75,8 +74,6 @@ export function SettingsPanel() {
 		allowedSkills,
 		setAllowedSkills,
 		selectedPrompt,
-		folders,
-		promptFilters,
 		variables,
 		setVariables,
 		customHeaders,
@@ -84,25 +81,39 @@ export function SettingsPanel() {
 		requiredHeaders,
 		selectedPromptId,
 		toggleSettings,
+		canUpdate,
 	} = usePromptContext();
 
 	const POLL_MS = 5000;
 	const [authPollMs, setAuthPollMs] = useState(POLL_MS);
 	const [vkPollMs, setVkPollMs] = useState(POLL_MS);
 	const { data: authStatus, error: authPollError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
-	const isMemberOnly = Boolean(authStatus?.role && authStatus.role !== "admin");
+	const isMemberOnly = isPromptMemberRole(authStatus?.role);
 
 	const { data: virtualKeysData, isError: vkFailed, error: vkError } = useGetVirtualKeysQuery(undefined, { pollingInterval: vkPollMs });
-	const { data: businessUnitsData } = useGetBusinessUnitsQuery();
 	const focusUserId =
 		selectedPrompt?.owner_user_id ||
 		selectedPrompt?.user_ids?.split(",").map((id) => id.trim()).find(Boolean) ||
+		(isMemberOnly ? (authStatus?.user_id || "") : "") ||
 		"";
-	const {
-		data: focusUserKeys,
-		isSuccess: focusUserKeysReady,
-		isError: focusUserKeysFailed,
-	} = useGetUserVirtualKeysQuery(focusUserId, { skip: !focusUserId });
+	const { data: focusUserKeys } = useGetUserVirtualKeysQuery(focusUserId, { skip: !focusUserId });
+	const { data: sessionUsers } = useGetSessionUsersQuery(undefined, { skip: isMemberOnly });
+	const targetUser = useMemo(() => {
+		if (isMemberOnly || !sessionUsers) return undefined;
+		if (focusUserId) {
+			const found = sessionUsers.find((u) => u.id === focusUserId || u.email === focusUserId || u.username === focusUserId);
+			if (found) return found;
+		}
+		if (selectedPrompt?.name) {
+			const foundByName = sessionUsers.find((u) => u.email === selectedPrompt.name || u.username === selectedPrompt.name);
+			if (foundByName) return foundByName;
+		}
+		return undefined;
+	}, [isMemberOnly, focusUserId, sessionUsers, selectedPrompt?.name]);
+
+	const targetUserBudget = isMemberOnly ? undefined : (targetUser?.budget !== undefined ? Number(targetUser.budget) : undefined);
+	const targetUserUsage = isMemberOnly ? undefined : (targetUser?.budget_current_usage !== undefined ? Number(targetUser.budget_current_usage) : undefined);
+	const targetUserLabel = isMemberOnly ? undefined : (targetUser ? `1. User Budget (${targetUser.username || targetUser.email || "User"})` : undefined);
 
 	useEffect(() => {
 		setAuthPollMs(authPollError ? 0 : POLL_MS);
@@ -111,56 +122,75 @@ export function SettingsPanel() {
 		setVkPollMs(vkFailed ? 0 : POLL_MS);
 	}, [vkFailed]);
 
+	const { data: providers, isLoading: isLoadingProviders, isError: providersFailed, error: providersError } = useGetProvidersQuery();
+	const { data: allKeys, isSuccess: hasLoadedAllKeys, isError: keysFailed, error: keysError } = useGetAllKeysQuery();
+	const { data: skillsData, isError: skillsFailed, error: skillsError } = useListSkillsQuery({ limit: 100, offset: 0 });
+	const { data: mcpClientsData, isError: mcpFailed, error: mcpError } = useGetMCPClientsQuery();
+	const settingsQueryFailed = providersFailed || keysFailed || skillsFailed || mcpFailed || vkFailed;
+
 	const onProviderChange = useCallback(
 		(p: string) => {
 			setProvider(p);
-			// Keep the picked virtual key when it also serves the new provider (or is a wildcard key).
-			const current = (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === virtualKeyId);
-			if (current?.provider_configs && current.provider_configs.length > 0 && !current.provider_configs.some((pc) => pc.provider === p || pc.provider === "*")) {
-				setVirtualKeyId("__auto__");
-			}
-			onModelChange("");
 			onModelParamsChange((prev) => ({
 				stream: true,
 				temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
 				max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
 			}));
 		},
-		[setProvider, setVirtualKeyId, onModelChange, onModelParamsChange, virtualKeysData, virtualKeyId],
+		[setProvider, onModelParamsChange],
 	);
 
 	const onVirtualKeyChange = useCallback(
 		(id: string) => {
 			setVirtualKeyId(id);
+			if (!id || id === "__auto__" || id === "__none__") {
+				setAllowedVirtualKeys([]);
+				return;
+			}
+			const targetVk = (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === id || vk.id === id);
+			if (!targetVk) return;
+			setAllowedVirtualKeys([targetVk.value]);
+			// Drop stale provider/model that the new VK does not allow (deny-by-default).
+			const { providers: allowed, wildcardProviders } = providersFromVirtualKeys([targetVk]);
+			if (!wildcardProviders && (allowed.length === 0 || (provider && !allowed.includes(provider)))) {
+				setProvider("");
+			}
 			onModelChange("");
-			setMcpIncludeTools(null);
+			setMcpIncludeTools([]);
 		},
-		[setVirtualKeyId, onModelChange, setMcpIncludeTools],
+		[setVirtualKeyId, virtualKeysData, setAllowedVirtualKeys, onModelChange, provider, setProvider, setMcpIncludeTools],
 	);
 
 	const onApiKeyIdChange = useCallback(
 		(id: string) => {
 			setApiKeyId(id);
-			onModelChange("");
 		},
-		[setApiKeyId, onModelChange],
+		[setApiKeyId],
 	);
-	// Dynamic providers
-	const { data: providers, isLoading: isLoadingProviders, isError: providersFailed, error: providersError } = useGetProvidersQuery();
-	// Keys for the API Key selector (from /api/keys endpoint, provider-filtered)
-	const { data: allKeys, isSuccess: hasLoadedAllKeys, isError: keysFailed, error: keysError } = useGetAllKeysQuery(undefined, {
-		skip: isMemberOnly,
-	});
-	const { data: skillsData, isError: skillsFailed, error: skillsError } = useListSkillsQuery({ limit: 100, offset: 0 });
-	const { data: mcpClientsData, isError: mcpFailed, error: mcpError } = useGetMCPClientsQuery();
-	const settingsQueryFailed = providersFailed || keysFailed || skillsFailed || mcpFailed || vkFailed;
 	const skillOptions = useMemo(() => {
-		const opts: { label: string; value: string }[] = (skillsData?.skills ?? []).map((s) => ({ label: s.name, value: s.id }));
+		const opts: { label: string; value: string }[] = (skillsData?.skills ?? []).map((s) => ({
+			label: `skill --- ${s.name}`,
+			value: s.id,
+		}));
 		if (skillId && !opts.some((o) => o.value === skillId)) {
-			opts.unshift({ label: `Skill (${skillId.slice(0, 8)}...)`, value: skillId });
+			opts.unshift({ label: `skill --- ${skillId.slice(0, 8)}...`, value: skillId });
+		}
+		if (isMemberOnly) {
+			const committedSkills = new Set<string>();
+			if (Array.isArray(allowedSkills) && allowedSkills.length > 0) {
+				for (const s of allowedSkills) {
+					if (s) committedSkills.add(s);
+				}
+			} else if (skillId) {
+				committedSkills.add(skillId);
+			}
+			if (committedSkills.size === 0) {
+				return [];
+			}
+			return opts.filter((o) => committedSkills.has(o.value));
 		}
 		return opts;
-	}, [skillsData, skillId]);
+	}, [skillsData, skillId, isMemberOnly, allowedSkills]);
 
 	const isInitialLoading = isLoadingProviders;
 
@@ -193,13 +223,23 @@ export function SettingsPanel() {
 		return vks.filter((vk) => activeIds.has(vk.value) || activeIds.has(vk.id));
 	}, [virtualKeysData, allowedVirtualKeys, virtualKeyId, isMemberOnly]);
 
-	// Primary single virtual key (if only 1 key is selected, or matching virtualKeyId)
+	// Only the user-selected VK — never fall back to the first catalog key.
 	const selectedVirtualKey = useMemo(() => {
 		if (selectedVirtualKeys.length === 1) return selectedVirtualKeys[0];
-		return (virtualKeysData?.virtual_keys ?? []).find((vk) => vk.value === virtualKeyId);
+		if (!virtualKeyId || virtualKeyId === "__auto__") return undefined;
+		const all = virtualKeysData?.virtual_keys ?? [];
+		return all.find((vk) => vk.value === virtualKeyId || vk.id === virtualKeyId);
 	}, [selectedVirtualKeys, virtualKeysData, virtualKeyId]);
 
 	const activeMCPClients = useMemo(() => {
+		const clients = (mcpClientsData?.clients ?? []).filter((client) => !client.config?.disabled);
+		if (isMemberOnly) {
+			if (mcpIncludeTools && mcpIncludeTools.length > 0) {
+				if (mcpIncludeTools.includes("*")) return clients;
+				const prefixes = new Set(mcpIncludeTools.map((t) => t.split("-")[0]));
+				return clients.filter((c) => c.config?.name && prefixes.has(c.config.name));
+			}
+		}
 		if (selectedVirtualKeys.length === 0 && !selectedVirtualKey) return [];
 		const vkIds = new Set(selectedVirtualKeys.map((vk) => vk.id));
 		if (selectedVirtualKey) vkIds.add(selectedVirtualKey.id);
@@ -216,249 +256,173 @@ export function SettingsPanel() {
 			}
 		}
 
-		return (mcpClientsData?.clients ?? []).filter((client) => {
-			if (!client.config?.client_id || client.config.disabled) return false;
+		return clients.filter((client) => {
+			if (!client.config?.client_id) return false;
 			if (client.config.allow_on_all_virtual_keys) return true;
 			if (client.vk_configs?.some((vc) => vkIds.has(vc.virtual_key_id))) return true;
 			if (client.config?.name && selectedVKMcpNames.has(client.config.name)) return true;
 			return false;
 		});
-	}, [mcpClientsData, selectedVirtualKeys, selectedVirtualKey]);
+	}, [mcpClientsData, selectedVirtualKeys, selectedVirtualKey, isMemberOnly, mcpIncludeTools]);
 
 	const totalMCPTools = useMemo(
 		() => activeMCPClients.reduce((acc, c) => acc + (c.tools?.length ?? 0), 0),
 		[activeMCPClients],
 	);
 
-	// All providers across all selected VKs
-	const selectedVKProviders = useMemo(() => {
-		const provs = new Set<string>();
-		for (const vk of selectedVirtualKeys) {
-			for (const pc of vk.provider_configs ?? []) {
-				if (pc.provider) provs.add(pc.provider);
-			}
-		}
-		if (provs.size === 0 && selectedVirtualKey) {
-			for (const pc of selectedVirtualKey.provider_configs ?? []) {
-				if (pc.provider) provs.add(pc.provider);
-			}
-		}
-		return [...provs];
-	}, [selectedVirtualKeys, selectedVirtualKey]);
-
-	useEffect(() => {
-		if (selectedVirtualKeys.length === 0) return;
-		const { providers: explicit } = explicitAssignments(selectedVirtualKeys);
-		const catalog = configuredProviders.map((providerItem) => providerItem.name);
-		const unset = !allowedProviders || allowedProviders.length === 0;
-		const selectingEveryone = isEntireCatalog(allowedProviders, catalog);
-		const providersMismatch = explicit.length > 0 && !allowedProviders?.every((p) => explicit.some((e) => e.toLowerCase() === p.toLowerCase()));
-		if (explicit.length > 0 && (unset || selectingEveryone || isMemberOnly || providersMismatch)) {
-			setAllowedProviders(explicit);
-		} else if (explicit.length === 0 && (unset || selectingEveryone)) {
-			const keep = provider && catalog.includes(provider as ModelProviderName) ? provider : catalog[0];
-			if (keep) setAllowedProviders([keep as ModelProviderName]);
-		}
-		const allowed = explicit.length > 0 ? explicit : catalog;
-		if (allowed.length > 0 && (!provider || !allowed.some((name) => name.toLowerCase() === provider.toLowerCase()))) {
-			const nextProv = explicit[0] || allowed[0] || "";
-			if (nextProv && nextProv !== provider) {
-				setProvider(nextProv);
-				onModelChange("");
-				onModelParamsChange((prev) => ({
-					stream: true,
-					temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
-					max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
-				}));
-			}
-		}
-	}, [selectedVirtualKeys, provider, allowedProviders, configuredProviders, setAllowedProviders, setProvider, onModelChange, onModelParamsChange, isMemberOnly]);
-
-	// Ensure current provider always has a label-resolved option (even before providers query loads)
+	// Provider options:
+	// For member: strictly the provider(s) committed by admin on this prompt!
+	// For admin: full gateway catalog.
 	const providerOptions = useMemo(() => {
 		if (isMemberOnly) {
-			if (selectedVKProviders.length > 0 && !selectedVKProviders.includes("*")) {
-				const opts = selectedVKProviders.map((p) => ({ label: getProviderLabel(p), value: p as ModelProviderName }));
-				if (provider && !opts.find((o) => o.value === provider)) {
-					opts.unshift({ label: getProviderLabel(provider), value: provider as ModelProviderName });
-				}
-				return opts;
+			let allowed: string[] = [];
+			if (allowedProviders && allowedProviders.length > 0) {
+				allowed = allowedProviders;
+			} else if (provider) {
+				allowed = [provider];
 			}
-			const opts = configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name }));
-			if (provider && !opts.find((o) => o.value === provider)) {
-				opts.unshift({ label: getProviderLabel(provider), value: provider as ModelProviderName });
+			if (allowed.length === 0) {
+				return [];
 			}
-			return opts;
+			if (allowed.includes("*")) {
+				return configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
+			}
+			const allowedSet = new Set(allowed.map((p) => p.toLowerCase()));
+			return configuredProviders
+				.filter((p) => allowedSet.has(p.name.toLowerCase()))
+				.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
 		}
-		// Assigned-key providers stay selected, and every other configured provider stays pickable.
-		const opts = configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name }));
-		if (provider && !opts.find((o) => o.value === provider)) {
-			opts.unshift({ label: getProviderLabel(provider), value: provider as ModelProviderName });
+		return configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
+	}, [configuredProviders, isMemberOnly, allowedProviders, provider]);
+
+	// For member: auto-select single/first provider if none selected
+	useEffect(() => {
+		if (isMemberOnly && providerOptions.length > 0) {
+			if (!provider || !providerOptions.some((p) => p.value === provider)) {
+				onProviderChange(providerOptions[0].value);
+			}
 		}
-		return opts;
-	}, [configuredProviders, provider, selectedVKProviders, isMemberOnly]);
+	}, [isMemberOnly, providerOptions, provider, onProviderChange]);
+
+	// Admin: Start empty until the user selects. Members: never wipe committed settings!
+	useEffect(() => {
+		if (isMemberOnly) return;
+		if (allowedProviders === null) setAllowedProviders([]);
+		if (allowedModels === null) setAllowedModels([]);
+		if (allowedVirtualKeys === null) setAllowedVirtualKeys([]);
+		if (allowedApiKeys === null) setAllowedApiKeys([]);
+		if (mcpIncludeTools === null) setMcpIncludeTools([]);
+	}, [
+		isMemberOnly,
+		allowedProviders,
+		allowedModels,
+		allowedVirtualKeys,
+		allowedApiKeys,
+		mcpIncludeTools,
+		setAllowedProviders,
+		setAllowedModels,
+		setAllowedVirtualKeys,
+		setAllowedApiKeys,
+		setMcpIncludeTools,
+	]);
 
 	const providerKeys = useMemo(() => {
-		// Members must use assigned Virtual Keys only — never raw provider keys.
-		if (isMemberOnly) return [];
-		return (allKeys ?? []).filter((k) => k.provider === provider);
-	}, [allKeys, provider, isMemberOnly]);
+		const activeProviders = (allowedProviders && allowedProviders.length > 0)
+			? allowedProviders.map((p) => p.toLowerCase())
+			: provider
+				? [provider.toLowerCase()]
+				: [];
 
-	// Virtual keys: show active virtual keys that serve the selected provider (or are wildcard keys).
-	// When no provider is selected, show all active keys.
+		let keys = allKeys ?? [];
+		if (activeProviders.length > 0 && !activeProviders.includes("*")) {
+			const provSet = new Set(activeProviders);
+			keys = keys.filter((k) => provSet.has(String(k.provider).toLowerCase()));
+		}
+		if (isMemberOnly) {
+			const committedKeys = (allowedApiKeys && allowedApiKeys.length > 0)
+				? allowedApiKeys
+				: (apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__")
+					? [apiKeyId]
+					: [];
+			if (committedKeys.length === 0) {
+				return [];
+			}
+			const allowedSet = new Set(committedKeys);
+			return keys.filter((k) => allowedSet.has(k.key_id));
+		}
+		return keys;
+	}, [allKeys, provider, allowedProviders, allowedApiKeys, apiKeyId, isMemberOnly]);
+
+	// Virtual keys: Admin sees all active. Members ONLY see virtual keys committed by admin on this prompt!
+	// If admin did NOT commit any virtual key, return [] (no VK auto-assigned).
 	const providerVirtualKeys = useMemo(() => {
-		let vks = (virtualKeysData?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
-		if (isMemberOnly && allowedVirtualKeys) {
-			vks = vks.filter((vk) => allowedVirtualKeys.includes(vk.value));
+		const allActive = (virtualKeysData?.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
+		if (!isMemberOnly) {
+			return allActive;
 		}
-		if (!provider) return vks;
-		const targetProvider = provider.toLowerCase();
-		return vks.filter((vk) => {
-			// Wildcard virtual keys (empty or no provider_configs) serve all providers
-			if (!vk.provider_configs || vk.provider_configs.length === 0) return true;
-			// Explicit provider matching (case-insensitive or wildcard)
-			return vk.provider_configs.some(
-				(pc) => pc.provider === "*" || pc.provider.toLowerCase() === targetProvider,
-			);
-		});
-	}, [virtualKeysData, provider, isMemberOnly, allowedVirtualKeys]);
+		const committedVkIds = new Set<string>();
+		if (allowedVirtualKeys && allowedVirtualKeys.length > 0) {
+			for (const id of allowedVirtualKeys) {
+				if (id) committedVkIds.add(id);
+			}
+		}
+		if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") {
+			committedVkIds.add(virtualKeyId);
+		}
+		if (committedVkIds.size === 0) {
+			return [];
+		}
 
-	const virtualKeyScopeRef = useRef("");
+		const committedKeys = allActive.filter((vk) => committedVkIds.has(vk.id) || committedVkIds.has(vk.value));
+		if (committedKeys.length === 0) return [];
+
+		const assignedIds = new Set((focusUserKeys?.virtual_keys ?? []).map((k) => k.id));
+		if (assignedIds.size > 0) {
+			const intersected = committedKeys.filter((vk) => assignedIds.has(vk.id));
+			if (intersected.length > 0) return intersected;
+		}
+		return committedKeys;
+	}, [virtualKeysData, isMemberOnly, allowedVirtualKeys, virtualKeyId, focusUserKeys]);
+
+	// Member: auto-sync apiKeyId only if NO Virtual Key is assigned/committed
 	useEffect(() => {
-		const scopeKey = `${selectedPrompt?.id || ""}|${focusUserId}|${folders?.length || 0}`;
-		if (!virtualKeysData) return;
-		if (focusUserId && !focusUserKeysReady && !focusUserKeysFailed) return;
-		if (virtualKeyScopeRef.current === scopeKey && allowedVirtualKeys !== null) return;
-		virtualKeyScopeRef.current = scopeKey;
-		const inheritedKeyIds = new Set((focusUserKeys?.virtual_keys ?? []).map((key) => key.id));
-		const vks = (virtualKeysData.virtual_keys ?? []).filter((vk) => vk.is_active !== false);
-
-		// Collect target user, team, business unit, customer IDs from selectedPrompt, promptFilters, and folder tree
-		const targetUserIds = new Set<string>();
-		const targetTeamIds = new Set<string>();
-		const targetBusinessUnitIds = new Set<string>();
-		const targetCustomerIds = new Set<string>();
-
-		if (selectedPrompt?.user_ids) {
-			selectedPrompt.user_ids.split(",").map((s) => s.trim()).filter(Boolean).forEach((id) => targetUserIds.add(id));
-		}
-		if (selectedPrompt?.owner_user_id) {
-			targetUserIds.add(selectedPrompt.owner_user_id);
-		}
-		if (selectedPrompt?.team_ids) {
-			selectedPrompt.team_ids.split(",").map((s) => s.trim()).filter(Boolean).forEach((id) => targetTeamIds.add(id));
-		}
-		if (selectedPrompt?.customer_ids) {
-			selectedPrompt.customer_ids.split(",").map((s) => s.trim()).filter(Boolean).forEach((id) => targetCustomerIds.add(id));
-		}
-
-		if (promptFilters?.user_ids) {
-			promptFilters.user_ids.forEach((id) => targetUserIds.add(id));
-		}
-		if (promptFilters?.team_ids) {
-			promptFilters.team_ids.forEach((id) => targetTeamIds.add(id));
-		}
-		if (promptFilters?.customer_ids) {
-			promptFilters.customer_ids.forEach((id) => targetCustomerIds.add(id));
-		}
-
-		if (selectedPrompt?.folder_id && folders) {
-			const fMap = new Map(folders.map((f) => [f.id, f]));
-			let cur = fMap.get(selectedPrompt.folder_id);
-			while (cur) {
-				if (cur.entity_id) {
-					const parent = cur.parent_id ? fMap.get(cur.parent_id) : undefined;
-					if (cur.type === "system_users_root" || parent?.name === "Users" || parent?.type === "system_users_root") {
-						targetUserIds.add(cur.entity_id);
-					} else if (cur.type === "system_teams_root" || parent?.name === "Teams" || parent?.type === "system_teams_root") {
-						targetTeamIds.add(cur.entity_id);
-					} else if (cur.type === "system_business_units_root" || parent?.name === "Business Units" || parent?.type === "system_business_units_root" || cur.type === "business_unit") {
-						targetBusinessUnitIds.add(cur.entity_id);
-					} else if (cur.type === "system_customers_root" || parent?.name === "Customers" || parent?.type === "system_customers_root") {
-						targetCustomerIds.add(cur.entity_id);
-					}
+		if (isMemberOnly) {
+			if (providerVirtualKeys.length > 0) {
+				// If VK is committed, keep apiKeyId empty/auto so direct API key stays OFF
+				if (apiKeyId && apiKeyId !== "__auto__") {
+					onApiKeyIdChange("__auto__");
 				}
-				cur = cur.parent_id ? fMap.get(cur.parent_id) : undefined;
+			} else {
+				if (providerKeys.length === 1 && apiKeyId !== providerKeys[0].key_id) {
+					onApiKeyIdChange(providerKeys[0].key_id);
+				} else if (providerKeys.length === 0 && apiKeyId && apiKeyId !== "__auto__") {
+					onApiKeyIdChange("__auto__");
+				}
 			}
 		}
+	}, [isMemberOnly, providerKeys, providerVirtualKeys, apiKeyId, onApiKeyIdChange]);
 
-		const hasSpecificTarget = targetUserIds.size > 0 || targetTeamIds.size > 0 || targetBusinessUnitIds.size > 0 || targetCustomerIds.size > 0;
-
-		const matched = hasSpecificTarget
-			? vks
-					.filter((vk) => {
-						const vkUsers = new Set([...(vk.user_ids || []), ...(vk.users || []).map((user) => user.user_id)]);
-						const vkTeams = new Set([...(vk.team_ids || []), vk.team_id, ...(vk.teams || []).map((team) => team.id)].filter(Boolean));
-						const vkCustomers = new Set(
-							[...(vk.customer_ids || []), vk.customer_id, vk.customer?.id, ...(vk.customers || []).map((customer) => customer.id)].filter(Boolean),
-						);
-						const vkUnits = new Set(
-							[...(vk.business_unit_ids || []), ...(vk.business_units || []).map((unit) => unit.id)].filter(Boolean),
-						);
-						const teamInAssignedUnit = [...targetTeamIds].some((teamId) =>
-							(businessUnitsData?.business_units || []).some(
-								(unit) => vkUnits.has(unit.id) && (unit.team_ids || []).includes(teamId),
-							),
-						);
-						return (
-							inheritedKeyIds.has(vk.id) ||
-							[...targetUserIds].some((id) => vkUsers.has(id)) ||
-							[...targetTeamIds].some((id) => vkTeams.has(id as string)) ||
-							[...targetBusinessUnitIds].some((id) => vkUnits.has(id as string)) ||
-							[...targetCustomerIds].some((id) => vkCustomers.has(id as string)) ||
-							teamInAssignedUnit
-						);
-					})
-					.map((vk) => vk.value)
-			: [];
-
-		if (matched.length > 0) {
-			// Only select the keys assigned to that user / team / customer.
-			setAllowedVirtualKeys(matched);
-			if (!virtualKeyId || virtualKeyId === "__auto__" || !matched.includes(virtualKeyId)) {
-				setVirtualKeyId(matched[0]);
+	// Member: if no virtual key committed, ensure virtualKeyId stays __auto__ (not auto-assigned).
+	// If 1 key committed, select it.
+	useEffect(() => {
+		if (isMemberOnly) {
+			if (providerVirtualKeys.length === 0) {
+				if (virtualKeyId && virtualKeyId !== "__auto__") {
+					onVirtualKeyChange("__auto__");
+				}
+			} else if (providerVirtualKeys.length === 1 && virtualKeyId !== providerVirtualKeys[0].value && virtualKeyId !== providerVirtualKeys[0].id) {
+				onVirtualKeyChange(providerVirtualKeys[0].value);
 			}
-		} else if (hasSpecificTarget || focusUserId) {
-			setAllowedVirtualKeys([]);
-			setVirtualKeyId("__auto__");
-			setAllowedProviders([]);
-			setAllowedModels([]);
-		} else {
-			setAllowedVirtualKeys([]);
-			setVirtualKeyId("__auto__");
 		}
-	}, [allowedVirtualKeys, virtualKeysData, businessUnitsData, focusUserId, focusUserKeys, focusUserKeysReady, focusUserKeysFailed, selectedPrompt, folders, promptFilters, virtualKeyId, setAllowedVirtualKeys, setVirtualKeyId, setAllowedProviders, setAllowedModels]);
-
-	useEffect(() => {
-		if (!allowedProviders?.length || allowedProviders.includes(provider)) return;
-		onProviderChange(allowedProviders[0]);
-	}, [allowedProviders, provider, onProviderChange]);
-
-	useEffect(() => {
-		if (!allowedModels?.length || allowedModels.includes(model)) return;
-		onModelChange(allowedModels[0]);
-	}, [allowedModels, model, onModelChange]);
-
-	// Keep the active key inside the keys already assigned to this user.
-	const { data: billingBlocks } = useGetVirtualKeyBillingBlocksQuery(undefined);
-	useEffect(() => {
-		if (!allowedVirtualKeys || allowedVirtualKeys.length === 0) return;
-		const assignable = providerVirtualKeys.filter(
-			(vk) => allowedVirtualKeys.includes(vk.value) && typeof vk.value === "string" && vk.value.startsWith("sk-uf-"),
-		);
-		const first = assignable.find((vk) => !billingBlocks?.blocks?.[vk.id]) ?? assignable[0];
-		if (!first?.value) return;
-		if (virtualKeyId === "__auto__" || !virtualKeyId || !assignable.some((vk) => vk.value === virtualKeyId)) {
-			setVirtualKeyId(first.value);
-		}
-	}, [providerVirtualKeys, virtualKeyId, setVirtualKeyId, billingBlocks, allowedVirtualKeys]);
+	}, [isMemberOnly, providerVirtualKeys, virtualKeyId, onVirtualKeyChange]);
 
 	// Separate keys/vks to pass to model fetch for filtering.
 	const filterKeys = useMemo(() => {
-		const isProviderKey = providerKeys.some((k) => k.key_id === apiKeyId);
-		if (isProviderKey) return [apiKeyId];
-		return undefined;
-	}, [apiKeyId, providerKeys]);
+		if (isMemberOnly) return undefined;
+		const selected = (allowedApiKeys && allowedApiKeys.length > 0 ? allowedApiKeys : apiKeyId && apiKeyId !== "__auto__" ? [apiKeyId] : [])
+			.filter((id) => providerKeys.some((k) => k.key_id === id));
+		return selected.length > 0 ? selected : undefined;
+	}, [apiKeyId, allowedApiKeys, providerKeys, isMemberOnly]);
 
 	const filterVks = useMemo(() => {
 		if (selectedVirtualKeys.length > 0) return selectedVirtualKeys.map((vk) => vk.id);
@@ -466,79 +430,126 @@ export function SettingsPanel() {
 		return undefined;
 	}, [selectedVirtualKeys, selectedVirtualKey]);
 
+	const hasKeyFilter = Boolean((filterKeys && filterKeys.length > 0) || (filterVks && filterVks.length > 0));
+
+	const effectiveProviderQuery = useMemo(() => {
+		if (isMemberOnly) return provider || undefined;
+		if (allowedProviders && allowedProviders.length > 0) {
+			if (allowedProviders.includes("*")) return undefined;
+			return allowedProviders.join(",");
+		}
+		return provider || undefined;
+	}, [isMemberOnly, allowedProviders, provider]);
+
+	const shouldSkipModels = useMemo(() => {
+		if (isMemberOnly) return !provider;
+		const hasProv = (allowedProviders && allowedProviders.length > 0) || Boolean(provider);
+		return !hasProv;
+	}, [isMemberOnly, allowedProviders, provider]);
+
+	// Models come only from /models via provider + real API key and/or VK — never hardcoded defaults.
 	const { data: modelsData } = useGetModelsQuery(
 		{
-			provider: provider || undefined,
+			provider: effectiveProviderQuery,
 			keys: filterKeys && filterKeys.length > 0 ? filterKeys : undefined,
-			vks: filterVks,
+			vks: filterVks && filterVks.length > 0 ? filterVks : undefined,
 			limit: 5000,
-			unfiltered: !filterVks && (!filterKeys || filterKeys.length === 0),
+			unfiltered: !hasKeyFilter,
 		},
-		{ skip: !provider },
+		{ skip: shouldSkipModels },
 	);
-	const { data: assignedVkModelsData } = useGetModelsQuery(
-		{
-			vks: filterVks,
-			limit: 5000,
-		},
-		{ skip: !filterVks || filterVks.length === 0 },
-	);
+
+	const hasProviderSelected = useMemo(() => {
+		if (isMemberOnly) return Boolean(provider);
+		return (allowedProviders && allowedProviders.length > 0) || Boolean(provider);
+	}, [isMemberOnly, allowedProviders, provider]);
+
 	const modelOptions = useMemo(() => {
-		const opts = (modelsData?.models ?? []).map((item) => ({ label: item.name, value: item.name }));
-		if (model && !opts.some((option) => option.value === model)) {
-			opts.unshift({ label: model, value: model });
+		if (!hasProviderSelected) return [];
+		let opts = (modelsData?.models ?? []).map((item) => {
+			const prov = item.provider ? String(item.provider).toLowerCase() : "";
+			const label = prov ? `${prov} --- ${item.name}` : item.name;
+			return { label, value: item.name };
+		});
+		if (model && opts.length > 0 && !opts.some((option) => option.value === model)) {
+			const prov = provider ? `${String(provider).toLowerCase()} --- ` : "";
+			opts.unshift({ label: `${prov}${model}`, value: model });
+		}
+		if (isMemberOnly) {
+			const committedModels = (allowedModels && allowedModels.length > 0)
+				? allowedModels
+				: model
+					? [model]
+					: [];
+			if (committedModels.length > 0 && !committedModels.includes("*")) {
+				const allowedSet = new Set(committedModels);
+				opts = opts.filter((o) => allowedSet.has(o.value));
+				for (const m of committedModels) {
+					if (!opts.some((o) => o.value === m)) {
+						const prov = provider ? `${String(provider).toLowerCase()} --- ` : "";
+						opts.push({ label: `${prov}${m}`, value: m });
+					}
+				}
+			}
 		}
 		return opts;
-	}, [modelsData, model]);
+	}, [hasProviderSelected, modelsData, model, provider, isMemberOnly, allowedModels]);
 
-	// Select only the models named on this user's keys. A wildcard must not check the whole catalog.
+	// Member: auto-select single committed model
 	useEffect(() => {
-		if (selectedVirtualKeys.length === 0) return;
-		const { models: explicit } = explicitAssignments(selectedVirtualKeys);
-		const catalog = (assignedVkModelsData?.models ?? modelsData?.models ?? []).map((item) => item.name);
-		const currentNames = (modelsData?.models ?? []).map((item) => item.name);
-		const unset = !allowedModels || allowedModels.length === 0;
-		const selectingEveryone = isEntireCatalog(allowedModels, catalog);
-		const modelsMismatch = explicit.length > 0 && !allowedModels?.every((m) => explicit.includes(m));
-		if (explicit.length > 0 && (unset || selectingEveryone || isMemberOnly || modelsMismatch)) {
-			setAllowedModels(explicit);
-		} else if (explicit.length === 0 && (unset || selectingEveryone)) {
-			const keep = model && currentNames.includes(model) ? model : currentNames[0];
-			if (keep) setAllowedModels([keep]);
+		if (isMemberOnly && modelOptions.length > 0) {
+			if (!model || !modelOptions.some((o) => o.value === model)) {
+				onModelChange(modelOptions[0].value);
+			}
 		}
-		const preferred = explicit.filter((name) => currentNames.includes(name));
-		const nextModel = preferred[0] || currentNames[0] || "";
-		if (nextModel && (!model || (explicit.length > 0 && !explicit.includes(model)) || !currentNames.includes(model))) {
-			onModelChange(nextModel);
+	}, [isMemberOnly, modelOptions, model, onModelChange]);
+
+	// Never auto-pick a model for admin. If the saved/current model is no longer in the API list, clear it.
+	useEffect(() => {
+		if (isMemberOnly) return;
+		const allModelNames = modelOptions.map((o) => o.value);
+		if (!model) return;
+		if (allModelNames.length > 0 && !allModelNames.includes(model)) {
+			onModelChange("");
 		}
-	}, [assignedVkModelsData, modelsData, selectedVirtualKeys, allowedModels, model, setAllowedModels, onModelChange, isMemberOnly]);
+		if (allowedModels && allowedModels.length > 0 && !allowedModels.includes(model) && !allModelNames.includes(model)) {
+			onModelChange("");
+		}
+	}, [modelOptions, model, allowedModels, onModelChange, isMemberOnly]);
 
 	const mcpToolOptions = useMemo(() => {
-		const opts: { label: string; value: string }[] = [];
-		for (const client of activeMCPClients) {
+		const clientsToUse = isMemberOnly
+			? activeMCPClients
+			: (mcpClientsData?.clients ?? []).filter((c) => !c.config?.disabled);
+
+		let opts: { label: string; value: string }[] = [];
+		for (const client of clientsToUse) {
 			const clientName = client.config?.name || "";
 			if (!clientName) continue;
 			const tools = client.tools ?? [];
 			if (tools.length === 0) {
-				opts.push({ label: `${clientName} (all tools)`, value: `${clientName}-*` });
+				opts.push({ label: `${clientName} --- all tools`, value: `${clientName}-*` });
 				continue;
 			}
 			for (const tool of tools) {
 				if (!tool.name) continue;
-				opts.push({ label: `${clientName} / ${tool.name}`, value: `${clientName}-${tool.name}` });
+				opts.push({ label: `${clientName} --- ${tool.name}`, value: `${clientName}-${tool.name}` });
 			}
 		}
-		return opts;
-	}, [activeMCPClients]);
-	const mcpToolValues = useMemo(() => mcpToolOptions.map((option) => option.value), [mcpToolOptions]);
-	const selectedMcpTools = mcpIncludeTools === null ? mcpToolValues : mcpIncludeTools.filter((value) => mcpToolValues.includes(value));
-
-	// Auto-select all MCP tools connected to active clients
-	useEffect(() => {
-		if (mcpToolValues.length > 0 && mcpIncludeTools === null) {
-			setMcpIncludeTools(mcpToolValues);
+		if (isMemberOnly) {
+			if (!mcpIncludeTools || mcpIncludeTools.length === 0) {
+				return [];
+			}
+			if (mcpIncludeTools.includes("*")) {
+				return opts;
+			}
+			const allowedSet = new Set(mcpIncludeTools);
+			opts = opts.filter((o) => allowedSet.has(o.value));
 		}
-	}, [mcpToolValues, mcpIncludeTools, setMcpIncludeTools]);
+		return opts;
+	}, [activeMCPClients, isMemberOnly, mcpClientsData, mcpIncludeTools]);
+	const mcpToolValues = useMemo(() => mcpToolOptions.map((option) => option.value), [mcpToolOptions]);
+	const selectedMcpTools = (mcpIncludeTools ?? []).filter((value) => mcpToolValues.includes(value));
 
 	const handleModelParamsChange = useCallback(
 		(params: Record<string, any>) => {
@@ -549,49 +560,68 @@ export function SettingsPanel() {
 
 	const hasModel = Boolean(model);
 
-	// Key selector shows when either provider keys or virtual keys are available, or always for admins.
-	const showKeySelector = !isMemberOnly || providerKeys.length > 0 || providerVirtualKeys.length > 0;
+	// Key selector shows when either provider keys or virtual keys are available, or always for admins/members.
+	const showKeySelector = true;
 	// Members always get the budget strip (user budget always; VK meters only when a key is assigned).
 	const showMemberBudgetStrip = isMemberOnly;
 	const keySelector =
 		showKeySelector || showMemberBudgetStrip ? (
 			<ApiKeySelectorView
-				providerKeys={
-					isMemberOnly && allowedApiKeys
-						? providerKeys.filter((key) => allowedApiKeys.includes(key.key_id))
-						: providerKeys
-				}
+				providerKeys={providerKeys}
 				virtualKeys={providerVirtualKeys}
 				virtualKeyValue={virtualKeyId}
-				onVirtualKeyChange={(v) => onVirtualKeyChange(v ?? "__auto__")}
+				onVirtualKeyChange={(v) => {
+					onVirtualKeyChange(v ?? "__auto__");
+					if (isMemberOnly && v && v !== "__auto__" && v !== "__none__") {
+						onApiKeyIdChange("__auto__");
+					}
+				}}
 				virtualKeyValues={
 					allowedVirtualKeys && allowedVirtualKeys.length > 0
 						? allowedVirtualKeys
-						: (virtualKeyId && virtualKeyId !== "__auto__" ? [virtualKeyId] : (providerVirtualKeys.length > 0 ? [providerVirtualKeys[0].value] : []))
+						: virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__"
+							? [virtualKeyId]
+							: []
 				}
 				onVirtualKeyValuesChange={
 					isMemberOnly
 						? undefined
 						: (next) => {
 								setAllowedVirtualKeys(next);
-								if (next.length > 0) setVirtualKeyId(next[0]);
-								else setVirtualKeyId("__auto__");
+								if (next.length === 0) {
+									setVirtualKeyId("__auto__");
+									return;
+								}
+								if (!next.includes(virtualKeyId)) {
+									setVirtualKeyId(next.length === 1 ? next[0] : "__auto__");
+								}
 							}
 				}
 				apiKeyIdValue={apiKeyId}
-				onApiKeyIdChange={(v) => onApiKeyIdChange(v ?? "__auto__")}
+				onApiKeyIdChange={(v) => {
+					onApiKeyIdChange(v ?? "__auto__");
+					if (isMemberOnly && v && v !== "__auto__" && v !== "__none__") {
+						onVirtualKeyChange("__none__");
+					}
+				}}
 				apiKeyValues={allowedApiKeys ?? []}
 				onApiKeyValuesChange={
 					isMemberOnly
 						? undefined
 						: (next) => {
 								setAllowedApiKeys(next);
-								if (next.length === 1) setApiKeyId(next[0]);
-								else if (!next.includes(apiKeyId)) setApiKeyId("__auto__");
+								if (next.length === 0 || !next.includes(apiKeyId)) {
+									setApiKeyId(next.length === 1 ? next[0] : "__auto__");
+								}
 							}
 				}
+				provider={provider}
+				model={model}
 				providerLabel={getProviderLabel(provider)}
-				disabled={false}
+				targetUserBudget={targetUserBudget}
+				targetUserUsage={targetUserUsage}
+				targetUserLabel={targetUserLabel}
+				disabled={!canUpdate}
 			/>
 		) : null;
 
@@ -647,6 +677,12 @@ export function SettingsPanel() {
 						<TooltipContent side="left">Collapse settings</TooltipContent>
 					</Tooltip>
 				</div>
+				{!canUpdate && (
+					<div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium mb-2 mt-1" data-testid="settings-view-only-banner">
+						<Eye className="h-4 w-4 shrink-0" />
+						<span>View-only access: configuration cannot be modified.</span>
+					</div>
+				)}
 				<Accordion
 					type="single"
 					collapsible
@@ -679,31 +715,34 @@ export function SettingsPanel() {
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Provider</Label>
 									{isMemberOnly ? (
 										<ComboboxSelect
-											options={
-												allowedProviders
-													? providerOptions.filter((option) => allowedProviders.includes(option.value))
-													: providerOptions
-											}
-											value={provider}
-											onValueChange={(v) => v && onProviderChange(v)}
+											options={providerOptions}
+											value={provider || null}
+											onValueChange={(v) => onProviderChange(v ?? "")}
 											placeholder="Select provider"
 											searchPlaceholder="Search..."
-											hideClear
+											disabled={!canUpdate}
+											data-testid="settings-provider-select"
 										/>
 									) : (
 										<ComboboxSelect
 											multiple
 											compactTrigger
 											options={providerOptions}
-											value={allowedProviders ?? (provider ? [provider] : [])}
+											value={allowedProviders ?? []}
 											onValueChange={(next) => {
 												setAllowedProviders(next);
 												if (!next.includes(provider)) onProviderChange(next[0] || "");
+												if (next.length === 0) {
+													onProviderChange("");
+													onModelChange("");
+													setAllowedModels([]);
+												}
 											}}
 											placeholder="Select providers"
 											searchPlaceholder="Search..."
 											selectAllValue="*"
 											selectAllLabel="Select all"
+											disabled={!canUpdate}
 										/>
 									)}
 								</div>
@@ -712,15 +751,12 @@ export function SettingsPanel() {
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Model</Label>
 									{isMemberOnly ? (
 										<ComboboxSelect
-											options={
-												allowedModels ? modelOptions.filter((option) => allowedModels.includes(option.value)) : modelOptions
-											}
+											options={modelOptions}
 											value={model || null}
 											onValueChange={(v) => onModelChange(v ?? "")}
-											placeholder={!provider ? "Select a provider first" : "Select model"}
+											placeholder={!hasProviderSelected ? "Select a provider first" : "Select model"}
 											searchPlaceholder="Search..."
-											disabled={!provider}
-											hideClear
+											disabled={!hasProviderSelected || !canUpdate}
 											data-testid="settings-model-select"
 										/>
 									) : (
@@ -728,28 +764,29 @@ export function SettingsPanel() {
 											multiple
 											compactTrigger
 											options={modelOptions}
-											value={allowedModels ?? (model ? [model] : [])}
+											value={allowedModels ?? []}
 											onValueChange={(next) => {
 												setAllowedModels(next);
 												if (!next.includes(model)) onModelChange(next[0] || "");
 											}}
-											placeholder={!provider ? "Select a provider first" : "Select models"}
+											placeholder={!hasProviderSelected ? "Select a provider first" : "Select models"}
 											searchPlaceholder="Search..."
-											disabled={!provider}
+											disabled={!hasProviderSelected || !canUpdate}
 											selectAllValue="*"
 											selectAllLabel="Select all"
+											selectAllTriggerLabel="All models"
 											data-testid="settings-model-select"
 										/>
 									)}
 								</div>
 
 								{keySelector}
-								{isMemberOnly && providerVirtualKeys.length === 0 && (
+								{isMemberOnly && providerVirtualKeys.length === 0 && providerKeys.length === 0 && (
 									<p className="text-amber-600 text-xs" data-testid="settings-no-member-key">
-										No virtual key is available to you yet. Ask your admin to assign one to you, your team or your customer.
+										No virtual key or API key is available for this prompt.
 									</p>
 								)}
-								{selectedVirtualKey && (
+								{(!isMemberOnly || (mcpIncludeTools && mcpIncludeTools.length > 0) || selectedVirtualKey) && (
 									<div className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/20 p-2.5" data-testid="settings-mcp-status">
 										<div className="flex items-center justify-between">
 											<div className="flex items-center gap-1.5">
@@ -762,10 +799,7 @@ export function SettingsPanel() {
 												{totalMCPTools} {totalMCPTools === 1 ? "tool" : "tools"}
 											</Badge>
 										</div>
-										{(isMemberOnly && mcpIncludeTools
-											? mcpToolOptions.filter((option) => mcpIncludeTools.includes(option.value))
-											: mcpToolOptions
-										).length === 0 ? (
+										{mcpToolOptions.length === 0 ? (
 											<p className="text-muted-foreground text-[11px] leading-relaxed">
 												No MCP servers attached to this key. Attach servers in MCP Catalog or enable &quot;Available to all virtual keys&quot;.
 											</p>
@@ -773,58 +807,52 @@ export function SettingsPanel() {
 											<ComboboxSelect
 												multiple
 												compactTrigger
-												options={
-													isMemberOnly && mcpIncludeTools
-														? mcpToolOptions.filter((option) => mcpIncludeTools.includes(option.value))
-														: mcpToolOptions
-												}
+												options={mcpToolOptions}
 												value={selectedMcpTools}
-												onValueChange={(next) => {
-													if (isMemberOnly) {
-														setMcpIncludeTools(next);
-														return;
-													}
-													setMcpIncludeTools(next.length === mcpToolValues.length ? null : next);
-												}}
+												onValueChange={(next) => setMcpIncludeTools(next)}
 												placeholder="Select MCP tools"
 												searchPlaceholder="Search..."
 												selectAllValue="*"
 												selectAllLabel="Select all"
+												disabled={!canUpdate}
 												data-testid="settings-mcp-tools"
 											/>
 										)}
 									</div>
 								)}
 
-								<div className="flex flex-col gap-2" data-testid="settings-skill">
-									<Label className="text-muted-foreground text-xs font-medium uppercase">Skill (optional)</Label>
-									<p className="text-muted-foreground text-xs">
-										Injects the skill markdown as a system message for this playground run.
-									</p>
-									<div className="flex flex-col gap-1.5">
-										<Label className="text-xs text-muted-foreground font-medium">Allowed skills</Label>
-										<ComboboxSelect
-											multiple
-											compactTrigger
-											options={skillOptions}
-											value={allowedSkills ?? (skillId ? [skillId] : [])}
-											onValueChange={(next) => {
-												setAllowedSkills(next);
-												setSkillId(next[0] || "");
-											}}
-											placeholder={skillOptions.length === 0 ? "No skills available" : "Select skills"}
-											searchPlaceholder="Search skills..."
-											selectAllValue="*"
-											selectAllLabel="Select all"
-											data-testid="settings-allowed-skills-select"
-										/>
+								{(!isMemberOnly || (allowedSkills && allowedSkills.length > 0) || skillId) && (
+									<div className="flex flex-col gap-2" data-testid="settings-skill">
+										<Label className="text-muted-foreground text-xs font-medium uppercase">Skill (optional)</Label>
+										<p className="text-muted-foreground text-xs">
+											Injects the skill markdown as a system message for this playground run.
+										</p>
+										<div className="flex flex-col gap-1.5">
+											<Label className="text-xs text-muted-foreground font-medium">Allowed skills</Label>
+											<ComboboxSelect
+												multiple
+												compactTrigger
+												options={skillOptions}
+												value={allowedSkills ?? (skillId ? [skillId] : [])}
+												onValueChange={(next) => {
+													setAllowedSkills(next);
+													setSkillId(next[0] || "");
+												}}
+												placeholder={skillOptions.length === 0 ? "No skills available" : "Select skills"}
+												searchPlaceholder="Search skills..."
+												selectAllValue="*"
+												selectAllLabel="Select all"
+												disabled={!canUpdate}
+												data-testid="settings-allowed-skills-select"
+											/>
+										</div>
 									</div>
-								</div>
+								)}
 
 								{Object.keys(variables).length > 0 && (
 									<>
 										<Separator />
-										<VariablesTableView variables={variables} onChange={setVariables} />
+										<VariablesTableView variables={variables} onChange={setVariables} disabled={!canUpdate} />
 									</>
 								)}
 
@@ -847,6 +875,7 @@ export function SettingsPanel() {
 															value={customHeaders[name] ?? ""}
 															onChange={(e) => setCustomHeaders((prev) => ({ ...prev, [name]: e.target.value }))}
 															placeholder="value"
+															disabled={!canUpdate}
 															className="h-8 flex-1"
 														/>
 													</div>
@@ -860,7 +889,7 @@ export function SettingsPanel() {
 									<>
 										<Separator />
 										<div className="flex flex-col gap-4">
-											<ModelParameters model={model} config={modelParams} onChange={handleModelParamsChange} hideFields={["promptTools"]} />
+											<ModelParameters model={model} config={modelParams} onChange={handleModelParamsChange} hideFields={["promptTools"]} disabled={!canUpdate} />
 										</div>
 									</>
 								)}

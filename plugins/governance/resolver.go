@@ -186,7 +186,37 @@ func (r *BudgetResolver) EvaluateTeamRequest(ctx *schemas.GatewayContext, teamID
 		Decision: DecisionAllow,
 		Reason:   "Team-level checks passed",
 	}
+}
 
+// EvaluateBusinessUnitRequest evaluates business-unit-level rate limits and budgets.
+func (r *BudgetResolver) EvaluateBusinessUnitRequest(ctx *schemas.GatewayContext, buID string, request *EvaluationRequest) *EvaluationResult {
+	// Skip if no buID
+	if buID == "" {
+		return &EvaluationResult{
+			Decision: DecisionAllow,
+			Reason:   "No business unit ID provided, skipping business-unit-level checks",
+		}
+	}
+	// Check business-unit-level rate limits
+	if decision, err := r.store.CheckBusinessUnitRateLimit(ctx, buID, request, nil, nil); err != nil || isRateLimitViolation(decision) {
+		return &EvaluationResult{
+			Decision: decision,
+			Reason:   fmt.Sprintf("Business-unit-level rate limit exceeded: %s", reasonFromErr(err, decision)),
+		}
+	}
+
+	// Check business-unit-level budget
+	if decision, err := r.store.CheckBusinessUnitBudget(ctx, buID, request, nil); err != nil || isBudgetViolation(decision) {
+		return &EvaluationResult{
+			Decision: decision,
+			Reason:   budgetExhaustedReason(err, decision),
+		}
+	}
+
+	return &EvaluationResult{
+		Decision: DecisionAllow,
+		Reason:   "Business-unit-level checks passed",
+	}
 }
 
 // EvaluateUserRequest evaluates user-level rate limits and budgets (enterprise-only)

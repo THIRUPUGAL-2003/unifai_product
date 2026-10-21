@@ -162,8 +162,12 @@ export const WORKSPACE_SECTIONS: readonly WorkspaceSection[] = [
 	},
 ] as const;
 
-/** Sections shown in the Workspace Access picker (hide legacy duplicate cluster-config row). */
-export const WORKSPACE_ACCESS_SECTIONS = WORKSPACE_SECTIONS.filter((s) => s.key !== "cluster-config");
+/** Sections shown in the Workspace Access picker (hide legacy duplicate cluster-config row).
+ * Prompt Repository is listed first so the always-on user grant is visible without scrolling. */
+export const WORKSPACE_ACCESS_SECTIONS = [
+	...WORKSPACE_SECTIONS.filter((s) => s.key === "prompt-repository"),
+	...WORKSPACE_SECTIONS.filter((s) => s.key !== "cluster-config" && s.key !== "prompt-repository"),
+];
 
 export const SECTION_KEY_BY_TITLE: Record<string, WorkspaceSectionKey> = Object.fromEntries(
 	WORKSPACE_SECTIONS.map((s) => [s.label, s.key]),
@@ -247,6 +251,25 @@ export function adminSectionsFromStorage(raw?: string | null): Set<WorkspaceGran
 				.filter(Boolean),
 		),
 	);
+}
+
+/** Every parent Workspace Access section key (admin default = all selected). */
+export function allWorkspaceParentGrants(): Set<WorkspaceGrantKey> {
+	return new Set(WORKSPACE_ACCESS_SECTIONS.map((s) => s.key));
+}
+
+/** True when every parent section is checked — store as unrestricted admin (empty string). */
+export function isUnrestrictedAdminSelection(sections: Set<WorkspaceGrantKey>): boolean {
+	return WORKSPACE_ACCESS_SECTIONS.every((s) => sections.has(s.key));
+}
+
+/** Admin edit form: empty DB value means full access → show all parents checked. */
+export function adminSectionsForForm(raw?: string | null): Set<WorkspaceGrantKey> {
+	const trimmed = (raw || "").trim();
+	if (!trimmed) {
+		return allWorkspaceParentGrants();
+	}
+	return adminSectionsFromStorage(trimmed);
 }
 
 /** Normalize UI selection: all children checked → store parent key only. */

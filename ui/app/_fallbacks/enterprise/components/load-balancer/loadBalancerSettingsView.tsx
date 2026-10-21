@@ -1,12 +1,14 @@
 import { QueryErrorBanner } from "@/components/queryErrorBanner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Link } from "@tanstack/react-router";
-import { getErrorMessage } from "@/lib/store";
+import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { useGetLoadBalancerConfigQuery, useUpdateLoadBalancerConfigMutation } from "@enterprise/lib/store/apis/loadBalancerApi";
 import { LoadBalancerConfig } from "@enterprise/lib/types/workspace";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -19,6 +21,10 @@ const defaults: LoadBalancerConfig = {
 };
 
 export default function LoadBalancerSettingsView() {
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
+	const hasUpdateAccess = useRbac(RbacResource.RoutingRules, RbacOperation.Update) || isAdmin;
+
 	const { data, isLoading: loading, isError, error, refetch } = useGetLoadBalancerConfigQuery();
 	const [updateConfig, { isLoading: saving }] = useUpdateLoadBalancerConfigMutation();
 	const [config, setConfig] = useState<LoadBalancerConfig>(defaults);
@@ -28,6 +34,10 @@ export default function LoadBalancerSettingsView() {
 	}, [data]);
 
 	const save = async () => {
+		if (!hasUpdateAccess) {
+			toast.error("You have view-only access.");
+			return;
+		}
 		try {
 			const next = await updateConfig(config).unwrap();
 			setConfig({ ...defaults, ...next });
@@ -38,6 +48,10 @@ export default function LoadBalancerSettingsView() {
 	};
 
 	const toggle = async (key: keyof LoadBalancerConfig) => {
+		if (!hasUpdateAccess) {
+			toast.error("You have view-only access.");
+			return;
+		}
 		const nextVal = !config[key];
 		const updated = { ...config, [key]: nextVal };
 		setConfig(updated);
@@ -93,6 +107,14 @@ export default function LoadBalancerSettingsView() {
 				</Button>
 			</div>
 
+			{!hasUpdateAccess && (
+				<Alert variant="default" className="border-amber-500/50 bg-amber-50/10 text-amber-600 dark:text-amber-400">
+					<ShieldAlert className="h-4 w-4" />
+					<AlertTitle>View-Only Access</AlertTitle>
+					<AlertDescription>You have view-only permissions for adaptive routing settings. Modifying configuration is disabled.</AlertDescription>
+				</Alert>
+			)}
+
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-base">Selection policy</CardTitle>
@@ -105,11 +127,11 @@ export default function LoadBalancerSettingsView() {
 								<p className="font-medium">{row.title}</p>
 								<p className="text-muted-foreground text-sm">{row.description}</p>
 							</div>
-							<Switch checked={config[row.key]} onCheckedChange={() => toggle(row.key)} />
+							<Switch checked={config[row.key]} disabled={saving || !hasUpdateAccess} onCheckedChange={() => toggle(row.key)} />
 						</div>
 					))}
 					<div className="flex justify-end">
-						<Button onClick={() => void save()} disabled={saving}>
+						<Button onClick={() => void save()} disabled={saving || !hasUpdateAccess}>
 							<Save className="h-4 w-4" />
 							{saving ? "Saving…" : "Save settings"}
 						</Button>

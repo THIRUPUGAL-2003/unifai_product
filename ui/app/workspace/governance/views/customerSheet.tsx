@@ -8,6 +8,7 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -273,12 +274,24 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 		<Sheet open={open} onOpenChange={onOpenChange}>
 			<SheetContent className="max-w-[900px] p-0 pt-4 sm:max-w-2xl" data-testid="customer-dialog-content">
 				<SheetHeader className="flex flex-col items-start px-0 py-4" headerClassName="mb-0 sticky -top-4 bg-card z-10 px-8">
-					<SheetTitle className="flex items-center gap-2">{isEditing ? "Edit Customer" : "Create Customer"}</SheetTitle>
+					<SheetTitle className="flex items-center gap-2">
+						{isEditing ? (hasPermission ? "Edit Customer" : "View Customer") : "Create Customer"}
+						{!hasPermission && (
+							<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs">
+								View Only
+							</Badge>
+						)}
+					</SheetTitle>
 					<SheetDescription>
 						{isEditing
 							? "Update the customer information and settings."
 							: "Create a new customer account to organize teams and manage resources."}
 					</SheetDescription>
+					{!hasPermission && (
+						<div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-500 mt-2">
+							View-only access: this customer cannot be modified.
+						</div>
+					)}
 				</SheetHeader>
 
 				<form onSubmit={handleSubmit} className="flex flex-1 flex-col">
@@ -293,6 +306,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 										placeholder="e.g., Acme Corporation"
 										value={formData.name}
 										maxLength={50}
+										disabled={!hasPermission}
 										onChange={(e) => updateField("name", e.target.value)}
 									/>
 									{nameError && <p className="text-destructive text-sm">{nameError}</p>}
@@ -304,6 +318,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 								data-testid="customer-budgets"
 								label="Budget Limits"
 								lines={formData.budgets}
+								disabled={!hasPermission}
 								onChange={(lines) => updateField("budgets", lines)}
 								options={resetDurationOptions}
 							/>
@@ -313,6 +328,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 								label="Maximum Tokens"
 								value={formData.tokenMaxLimit}
 								selectValue={formData.tokenResetDuration}
+								disabled={!hasPermission}
 								onChangeNumber={(value) => updateField("tokenMaxLimit", value)}
 								onChangeSelect={(value) => updateField("tokenResetDuration", value)}
 								options={resetDurationOptions}
@@ -323,6 +339,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 								label="Maximum Requests"
 								value={formData.requestMaxLimit}
 								selectValue={formData.requestResetDuration}
+								disabled={!hasPermission}
 								onChangeNumber={(value) => updateField("requestMaxLimit", value)}
 								onChangeSelect={(value) => updateField("requestResetDuration", value)}
 								options={resetDurationOptions}
@@ -342,6 +359,7 @@ export default function CustomerSheet({ open, onOpenChange, customer, onSuccess 
 									<Switch
 										id="customer-calendar-aligned-toggle"
 										checked={formData.calendarAligned}
+										disabled={!hasPermission}
 										onCheckedChange={handleCalendarAlignedChange}
 										data-testid="customer-calendar-aligned-toggle"
 									/>

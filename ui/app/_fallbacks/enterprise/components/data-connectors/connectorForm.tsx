@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { getErrorMessage } from "@/lib/store";
+import { getErrorMessage, useIsAuthEnabledQuery } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import {
 	useGetConnectorQuery,
 	useTestConnectorMutation,
@@ -23,6 +24,11 @@ interface ConnectorFormProps {
 }
 
 export function ConnectorForm({ name, title, description, fields, onDelete, isDeleting }: ConnectorFormProps) {
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
+	const hasUpdateAccess = useRbac(RbacResource.Observability, RbacOperation.Update) || isAdmin;
+	const hasDeleteAccess = useRbac(RbacResource.Observability, RbacOperation.Delete) || isAdmin;
+
 	const { data, isLoading, isError, error, refetch } = useGetConnectorQuery(name);
 	const [updateConnector, { isLoading: saving }] = useUpdateConnectorMutation();
 	const [testConnector, { isLoading: testing }] = useTestConnectorMutation();
@@ -119,7 +125,7 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 			) : null}
 			<div className="flex items-center justify-between rounded-lg border p-3">
 				<Label>Enable connector</Label>
-				<Switch checked={enabled} disabled={saving} onCheckedChange={(checked) => void handleToggle(checked)} />
+				<Switch checked={enabled} disabled={saving || !hasUpdateAccess} onCheckedChange={(checked) => void handleToggle(checked)} />
 			</div>
 			{lastProbe && (
 				<div
@@ -142,6 +148,7 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 						type={field.type || "text"}
 						placeholder={field.placeholder}
 						value={config[field.key] || ""}
+						disabled={!hasUpdateAccess}
 						autoComplete={field.type === "password" ? "new-password" : "off"}
 						data-1p-ignore="true"
 						data-lpignore="true"
@@ -151,20 +158,20 @@ export function ConnectorForm({ name, title, description, fields, onDelete, isDe
 			))}
 			<div className="flex justify-end gap-2">
 				{onDelete && (
-					<Button variant="outline" onClick={onDelete} disabled={isDeleting || saving || testing}>
+					<Button variant="outline" onClick={onDelete} disabled={isDeleting || saving || testing || !hasDeleteAccess}>
 						Remove
 					</Button>
 				)}
 				<Button
 					variant="outline"
 					onClick={() => void runTest()}
-					disabled={testing || saving || !data}
+					disabled={testing || saving || !data || !hasUpdateAccess}
 					data-testid={`${name}-test-connection`}
 				>
 					<Cable className="h-4 w-4" />
 					{testing ? "Testing…" : "Test connection"}
 				</Button>
-				<Button onClick={() => void save()} disabled={saving || testing}>
+				<Button onClick={() => void save()} disabled={saving || testing || !hasUpdateAccess}>
 					<Save className="h-4 w-4" />
 					{saving ? "Saving…" : "Save connector"}
 				</Button>

@@ -72,6 +72,7 @@ function TeamActionsMenu({
 					<DropdownMenuItem
 						className="cursor-pointer"
 						disabled={!hasUpdateAccess}
+						title={!hasUpdateAccess ? "View-only access: editing is disabled" : undefined}
 						data-testid={`team-edit-btn-${team.name}`}
 						onSelect={(e) => {
 							e.preventDefault();
@@ -92,6 +93,7 @@ function TeamActionsMenu({
 						variant="destructive"
 						className="cursor-pointer"
 						disabled={!hasDeleteAccess}
+						title={!hasDeleteAccess ? "Delete permission is required" : undefined}
 						data-testid={`team-delete-btn-${team.name}`}
 						onSelect={(e) => {
 							e.preventDefault();
@@ -318,7 +320,14 @@ export default function TeamsTable({
 				<div className="flex grow flex-col overflow-y-auto">
 					<div className="mb-4 flex items-center justify-between">
 						<div>
-							<h2 className="text-lg font-semibold">Teams</h2>
+							<div className="flex items-center gap-2">
+								<h2 className="text-lg font-semibold">Teams</h2>
+								{!hasUpdateAccess && (
+									<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs">
+										View Only
+									</Badge>
+								)}
+							</div>
 							<p className="text-muted-foreground text-sm">Organize users into teams with shared budgets and access controls.</p>
 						</div>
 						<div className="flex items-center gap-2">

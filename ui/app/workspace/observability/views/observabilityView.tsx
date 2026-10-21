@@ -7,14 +7,16 @@ import {
 	useCreatePluginMutation,
 	useDeletePluginMutation,
 	useGetPluginsQuery,
+	useIsAuthEnabledQuery,
 } from "@/lib/store";
+import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
 import { cn } from "@/lib/utils";
 import {
 	useDeleteConnectorMutation,
 	useGetConnectorsQuery,
 	useUpdateConnectorMutation,
 } from "@enterprise/lib/store/apis/connectorsApi";
-import { Cable, Trash2 } from "lucide-react";
+import { Cable, Eye, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useQueryState } from "nuqs";
 import { useEffect, useMemo, useState } from "react";
@@ -137,6 +139,12 @@ export default function ObservabilityView() {
 	const [deleteConnector, { isLoading: isDeletingConnector }] = useDeleteConnectorMutation();
 	const [selectedPluginId, setSelectedPluginId] = useQueryState("plugin");
 	const { resolvedTheme } = useTheme();
+	const { data: authStatus } = useIsAuthEnabledQuery();
+	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
+	const hasCreateAccess = useRbac(RbacResource.Observability, RbacOperation.Create) || isAdmin;
+	const hasUpdateAccess = useRbac(RbacResource.Observability, RbacOperation.Update) || isAdmin;
+	const hasDeleteAccess = useRbac(RbacResource.Observability, RbacOperation.Delete) || isAdmin;
+
 	const [addingId, setAddingId] = useState<string | null>(null);
 	const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
 
@@ -270,7 +278,7 @@ export default function ObservabilityView() {
 
 	const addDropdown = (
 		<AddConnectorDropdown
-			disabled={!!addingId}
+			disabled={!!addingId || !hasCreateAccess}
 			existingInSidebar={existingInSidebar}
 			knownConnectors={supportedPlatforms.map(({ id, name, icon }) => ({ id, name, icon }))}
 			onSelectConnector={handleAddConnector}
@@ -339,7 +347,7 @@ export default function ObservabilityView() {
 									variant="outline"
 									size="sm"
 									className="mt-2 w-full justify-start gap-2 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-									disabled={isDeleting}
+									disabled={isDeleting || !hasDeleteAccess}
 									onClick={() => setRemoveDialogOpen(true)}
 									data-testid="observability-remove-connector-btn"
 								>
@@ -352,6 +360,12 @@ export default function ObservabilityView() {
 				</div>
 			</div>
 			<div className="w-full pt-4">
+				{!hasUpdateAccess && (
+					<div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium mb-3" data-testid="observability-view-only-banner">
+						<Eye className="h-4 w-4 shrink-0" />
+						<span>View-only access: connectors cannot be added, modified, or removed.</span>
+					</div>
+				)}
 				{selectedPluginId === "prometheus" && <PrometheusView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}
 				{selectedPluginId === "otel" && <OtelView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}
 				{selectedPluginId === "kafka" && <KafkaView onDelete={() => setRemoveDialogOpen(true)} isDeleting={isDeleting} />}

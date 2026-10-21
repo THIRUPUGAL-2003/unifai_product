@@ -8,6 +8,7 @@ import { getErrorMessage, useGetCoreConfigQuery, useTriggerLogCleanupMutation, u
 import { CoreConfig, DefaultCoreConfig } from "@/lib/types/config";
 import { parseArrayFromText } from "@/lib/utils/array";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { Eye } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -94,6 +95,13 @@ export default function LoggingView() {
 				<h2 className="text-lg font-semibold tracking-tight">Logs Settings</h2>
 				<p className="text-muted-foreground text-sm">Configure logging settings for requests and responses.</p>
 			</div>
+
+			{!hasSettingsUpdateAccess && (
+				<div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium" data-testid="logging-view-only-banner">
+					<Eye className="h-4 w-4 shrink-0" />
+					<span>View-only access: configuration cannot be modified.</span>
+				</div>
+			)}
 
 			<div className="space-y-4">
 				{/* Enable Logs */}

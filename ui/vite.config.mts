@@ -121,6 +121,7 @@ export default defineConfig(({ mode }) => {
 		"process.env.UI_PORT": JSON.stringify(String(uiPort)),
 	},
 	server: {
+		host: "0.0.0.0",
 		port: uiPort,
 		proxy: {
 			"/api": {

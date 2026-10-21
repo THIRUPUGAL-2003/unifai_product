@@ -90,8 +90,12 @@ export function getScopedWorkspaceSections(
 		return null;
 	}
 	if (auth.role === "admin") {
-		// Admins always have unrestricted full access to all workspace pages.
-		return null;
+		// Empty allowed_sections = unrestricted. A customized list limits the sidebar.
+		const parsed = parseAdminAllowedSections(auth.allowed_sections);
+		if (parsed.size === 0) {
+			return null;
+		}
+		return parsed;
 	}
 	if (auth.role === "user") {
 		const parsed = parseAdminAllowedSections(auth.allowed_sections);
@@ -112,13 +116,8 @@ export function hasNoWorkspaceSections(auth: Pick<SessionAuth, "role" | "allowed
 
 export function getDefaultWorkspacePath(auth: SessionAuth | null | undefined): string {
 	const limited = getScopedWorkspaceSections(auth);
-	if (auth?.role === "user") {
-		if (!limited || isPathAllowedForUser(USER_ROLE_HOME_PATH, limited)) {
-			return USER_ROLE_HOME_PATH;
-		}
-		if (hasAnyWorkspaceSection(limited)) {
-			return getDefaultPathForSections(limited);
-		}
+	const role = (auth?.role || "").trim().toLowerCase();
+	if (role === "user") {
 		return USER_ROLE_HOME_PATH;
 	}
 	if (limited && hasAnyWorkspaceSection(limited)) {
@@ -133,6 +132,13 @@ export function resolvePostLoginPath(
 ): string {
 	const safeGoto = normalizeLoginGoto(goto);
 	const defaultPath = auth?.role ? getDefaultWorkspacePath(auth as SessionAuth) : DEFAULT_POST_LOGIN_PATH;
+	const role = (auth?.role || "").trim().toLowerCase();
+
+	if (role === "user") {
+		if (!safeGoto || safeGoto === "/workspace" || safeGoto === "/workspace/" || safeGoto === "/workspace/dashboard") {
+			return USER_ROLE_HOME_PATH;
+		}
+	}
 
 	if (!safeGoto || safeGoto === "/workspace" || safeGoto === "/workspace/") {
 		return defaultPath;
@@ -157,7 +163,16 @@ export function getWorkspaceAccessRedirect(
 	let target: string | null = null;
 
 	const limited = getScopedWorkspaceSections(auth);
-	if (limited) {
+	const role = (auth?.role || "").trim().toLowerCase();
+
+	if (role === "user") {
+		if (pathname === "/workspace" || pathname === "/workspace/") {
+			return USER_ROLE_HOME_PATH;
+		}
+		if (limited && !isPathAllowedForUser(pathname, limited)) {
+			return USER_ROLE_HOME_PATH;
+		}
+	} else if (limited) {
 		if (!isPathAllowedForUser(pathname, limited)) {
 			target = getDefaultWorkspacePath(auth);
 		} else if (pathname === "/workspace" || pathname === "/workspace/") {

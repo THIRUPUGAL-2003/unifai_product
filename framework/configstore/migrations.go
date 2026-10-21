@@ -466,6 +466,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"ensure_governance_users_email_unique_index"}, run: migrationEnsureGovernanceUsersEmailUniqueIndex},
 	{IDs: []string{"add_requested_team_id_to_governance_users"}, run: migrationAddRequestedTeamIDToGovernanceUsers},
 	{IDs: []string{"add_business_unit_id_to_governance_teams"}, run: migrationAddBusinessUnitIDToGovernanceTeams},
+	{IDs: []string{"add_rbac_permission_ids_to_governance_users"}, run: migrationAddRbacPermissionIDsToGovernanceUsers},
 }
 
 // migrationWidenPromptMessageJSONMySQL turns prompt message_json columns into LONGTEXT on MySQL,
@@ -11621,6 +11622,32 @@ func migrationAddBusinessUnitIDToGovernanceTeams(ctx context.Context, db *gorm.D
 	}})
 	if err := m.Migrate(); err != nil {
 		logger.Warn("[configstore] %s warning: %v", migrationName, err)
+	}
+	return nil
+}
+
+// migrationAddRbacPermissionIDsToGovernanceUsers stores per-user RBAC raises (Edit/Delete)
+// beyond the View-only defaults from Workspace Access sections.
+func migrationAddRbacPermissionIDsToGovernanceUsers(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	migrationName := "add_rbac_permission_ids_to_governance_users"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	m := migrator.New(db, migrator.DefaultOptions, []*migrator.Migration{{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			if err := addColumnIfNotExists(tx, logger, &tables.TableUser{}, "rbac_permission_ids"); err != nil {
+				return fmt.Errorf("add rbac_permission_ids to governance_users: %w", err)
+			}
+			return nil
+		},
+		Rollback: func(tx *gorm.DB) error {
+			tx = tx.WithContext(ctx)
+			return dropColumnIfExists(tx, logger, &tables.TableUser{}, "rbac_permission_ids")
+		},
+	}})
+	if err := m.Migrate(); err != nil {
+		return fmt.Errorf("error running %s migration: %w", migrationName, err)
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alertDialog";
 import FullPageLoader from "@/components/fullPageLoader";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdownMenu";
 import { SplitButton } from "@/components/ui/splitButton";
@@ -45,6 +46,7 @@ export function SkillDetailView({
 }) {
 	const hasEditAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Update);
 	const hasDeleteAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Delete);
+	const hasDownloadAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.Download);
 
 	const { data: skillData, isLoading, isError, error: skillError, refetch } = useGetSkillQuery(skillId);
 	const [updateSkill, { isLoading: isUpdating }] = useUpdateSkillMutation();
@@ -56,6 +58,12 @@ export function SkillDetailView({
 
 	const form = useSkillForm();
 	const skill = skillData?.skill;
+
+	useEffect(() => {
+		if (isEditing && !hasEditAccess) {
+			setIsEditing(false);
+		}
+	}, [isEditing, hasEditAccess, setIsEditing]);
 
 	const highestVersion = skill?.highest_version || skill?.latest_version || "0.0.0";
 
@@ -219,6 +227,13 @@ export function SkillDetailView({
 							skill.skill_md_body
 						}
 						onBack={onBack}
+						decorators={
+							!hasEditAccess ? (
+								<Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10 text-xs mr-2">
+									View Only
+								</Badge>
+							) : undefined
+						}
 						actions={
 							<>
 								<SplitButton
@@ -263,12 +278,14 @@ export function SkillDetailView({
 										</Button>
 									</DropdownMenuTrigger>
 									<DropdownMenuContent align="end">
-										<DropdownMenuItem className="cursor-pointer" asChild>
-											<a href={`${getApiBaseUrl()}/skills/serve/${encodeURIComponent(skill.name)}/download.zip`} download>
-												<Download className="h-4 w-4" />
-												Download ZIP
-											</a>
-										</DropdownMenuItem>
+										{hasDownloadAccess && (
+											<DropdownMenuItem className="cursor-pointer" asChild>
+												<a href={`${getApiBaseUrl()}/skills/serve/${encodeURIComponent(skill.name)}/download.zip`} download>
+													<Download className="h-4 w-4" />
+													Download ZIP
+												</a>
+											</DropdownMenuItem>
+										)}
 										{hasDeleteAccess && (
 											<DropdownMenuItem
 												variant="destructive"

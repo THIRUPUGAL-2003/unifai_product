@@ -27,11 +27,52 @@ import { useGetModelParametersQuery } from "@/lib/store/apis/providersApi";
 import { useGetSkillQuery } from "@/lib/store/apis/skillsApi";
 import { Folder, ModelParams, Prompt, PromptFilters, PromptSession, PromptVersion } from "@/lib/types/prompts";
 import { RbacOperation, RbacResource, useRbac } from "@enterprise/lib";
+import { useGetUserVirtualKeysQuery } from "@enterprise/lib/store/apis/virtualKeyUsersApi";
 import { parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { executePrompt, executeToolCall, MCPAuthRequiredError } from "./utils/executor";
 import { isPromptMemberRole } from "./utils/memberRole";
+
+/** Resolve a playground VK selection (id / value / allowed list / member fallback) to an sk-uf- secret. */
+function resolveExecVirtualKey(opts: {
+	virtualKeyId: string;
+	allowedVirtualKeys: string[] | null;
+	virtualKeys: Array<{ id: string; value?: string }> | undefined;
+	isUserRole: boolean;
+	assignedMemberVkValue: string;
+	apiKeyId?: string;
+}): string {
+	// If the user explicitly deselected the VK (empty or __none__), do not force any VK!
+	if (opts.virtualKeyId === "" || opts.virtualKeyId === "__none__") {
+		return "";
+	}
+	const allVKs = opts.virtualKeys ?? [];
+	const findVkVal = (target: string) => {
+		const match = allVKs.find((vk) => vk.value === target || vk.id === target);
+		return match?.value && String(match.value).startsWith("sk-uf-") ? match.value : "";
+	};
+	let execVkId = opts.virtualKeyId;
+	if (execVkId && execVkId !== "__auto__") {
+		const resolved = findVkVal(execVkId);
+		if (resolved) execVkId = resolved;
+	}
+	if (!String(execVkId).startsWith("sk-uf-")) {
+		for (const val of opts.allowedVirtualKeys ?? []) {
+			const resolved = findVkVal(val) || (String(val).startsWith("sk-uf-") ? val : "");
+			if (resolved) {
+				execVkId = resolved;
+				break;
+			}
+		}
+	}
+	// Fall back to assignedMemberVkValue only if virtualKeyId is "__auto__" AND no direct provider API key is chosen
+	const hasDirectApiKey = Boolean(opts.apiKeyId && opts.apiKeyId !== "__auto__" && opts.apiKeyId !== "" && !String(opts.apiKeyId).startsWith("sk-uf-"));
+	if (!String(execVkId).startsWith("sk-uf-") && opts.isUserRole && opts.assignedMemberVkValue && !hasDirectApiKey && opts.virtualKeyId === "__auto__") {
+		execVkId = opts.assignedMemberVkValue;
+	}
+	return execVkId || "";
+}
 
 interface PromptContextValue {
 	// Data
@@ -172,10 +213,22 @@ export function usePromptContext() {
 }
 
 export function PromptProvider({ children }: { children: ReactNode }) {
-	// RBAC permissions
-	const canCreate = useRbac(RbacResource.PromptRepository, RbacOperation.Create);
-	const canUpdate = useRbac(RbacResource.PromptRepository, RbacOperation.Update);
-	const canDelete = useRbac(RbacResource.PromptRepository, RbacOperation.Delete);
+	const PROMPTS_POLL_MS = 5000;
+	const [authPollMs, setAuthPollMs] = useState(PROMPTS_POLL_MS);
+	const [vkPollMs, setVkPollMs] = useState(PROMPTS_POLL_MS);
+	const [billingPollMs, setBillingPollMs] = useState(PROMPTS_POLL_MS);
+
+	const { data: authStatus, error: authPollError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
+	const isUserRole = isPromptMemberRole(authStatus?.role);
+	const isBuiltInUser = (authStatus?.role || "").trim().toLowerCase() === "user";
+
+	// RBAC permissions — built-in "user" always has full Prompt Repository (never View Only).
+	const rbacCanCreate = useRbac(RbacResource.PromptRepository, RbacOperation.Create);
+	const rbacCanUpdate = useRbac(RbacResource.PromptRepository, RbacOperation.Update);
+	const rbacCanDelete = useRbac(RbacResource.PromptRepository, RbacOperation.Delete);
+	const canCreate = isBuiltInUser || rbacCanCreate;
+	const canUpdate = isBuiltInUser || rbacCanUpdate;
+	const canDelete = isBuiltInUser || rbacCanDelete;
 
 	// API queries
 	const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useGetFoldersQuery();
@@ -190,13 +243,9 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const [updateSession] = useUpdateSessionMutation();
 
 	const dispatch = useAppDispatch();
-	const PROMPTS_POLL_MS = 5000;
-	const [authPollMs, setAuthPollMs] = useState(PROMPTS_POLL_MS);
-	const [vkPollMs, setVkPollMs] = useState(PROMPTS_POLL_MS);
-	const [billingPollMs, setBillingPollMs] = useState(PROMPTS_POLL_MS);
-
-	const { data: authStatus, error: authPollError } = useIsAuthEnabledQuery(undefined, { pollingInterval: authPollMs });
-	const isUserRole = isPromptMemberRole(authStatus?.role);
+	const { data: memberUserKeys } = useGetUserVirtualKeysQuery(authStatus?.user_id || "", {
+		skip: !isUserRole || !authStatus?.user_id,
+	});
 
 	// Prefer an assigned Virtual Key when present; otherwise Auto (provider keys).
 	const { data: virtualKeysData, error: vkPollError } = useGetVirtualKeysQuery(undefined, {
@@ -215,33 +264,6 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		setBillingPollMs(billingPollError ? 0 : PROMPTS_POLL_MS);
 	}, [billingPollError]);
-	const assignedMemberVkValue = useMemo(() => {
-		const vks = virtualKeysData?.virtual_keys ?? [];
-		const now = Date.now();
-		const validKeys = vks.filter((vk) => {
-			if (vk.is_active === false) return false;
-			if (vk.expires_at && new Date(vk.expires_at).getTime() < now) return false;
-			return typeof vk.value === "string" && vk.value.startsWith("sk-uf-");
-		});
-
-		// Priority resolution: Direct User VK > Team VK > Business Unit VK > Customer VK
-		const getVkPriority = (vk: (typeof validKeys)[0]) => {
-			if ((vk.user_ids && vk.user_ids.length > 0) || (vk.users && vk.users.length > 0)) return 1;
-			if (vk.team_id || (vk.team_ids && vk.team_ids.length > 0) || (vk.teams && vk.teams.length > 0)) return 2;
-			if ((vk.business_unit_ids && vk.business_unit_ids.length > 0) || (vk.business_units && vk.business_units.length > 0)) return 3;
-			if (vk.customer_id || (vk.customer_ids && vk.customer_ids.length > 0) || (vk.customers && vk.customers.length > 0)) return 4;
-			return 5;
-		};
-
-		const sortedKeys = [...validKeys].sort((a, b) => getVkPriority(a) - getVkPriority(b));
-
-		const withBudget = sortedKeys.find((vk) => {
-			if (billingBlocks?.blocks?.[vk.id]) return false;
-			if (!vk.budgets || vk.budgets.length === 0) return true;
-			return !vk.budgets.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit);
-		});
-		return withBudget?.value ?? sortedKeys[0]?.value ?? "";
-	}, [virtualKeysData, billingBlocks]);
 
 	// UI state — persisted in URL query params
 	const [{ promptId: selectedPromptId, sessionId: selectedSessionId, versionId: selectedVersionId }, setUrlState] = useQueryStates(
@@ -338,13 +360,59 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 	const [variables, setVariables] = useState<VariableMap>({});
 	const [customHeaders, setCustomHeaders] = useState<Record<string, string>>({});
 
-	useEffect(() => {
-		if (!assignedMemberVkValue) return;
-		if (virtualKeyId === "__auto__" || !String(virtualKeyId).startsWith("sk-uf-")) {
-			setVirtualKeyId(assignedMemberVkValue);
-			setAllowedVirtualKeys((prev) => (prev && prev.length > 0 ? prev : [assignedMemberVkValue]));
+	const assignedMemberVkValue = useMemo(() => {
+		if (!isUserRole) return "";
+		// Only consider virtual keys that were committed on this prompt by admin
+		const committedVkIds = new Set<string>();
+		if (Array.isArray(allowedVirtualKeys)) {
+			for (const id of allowedVirtualKeys) {
+				if (id) committedVkIds.add(id);
+			}
 		}
-	}, [assignedMemberVkValue, virtualKeyId, setAllowedVirtualKeys]);
+		if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") {
+			committedVkIds.add(virtualKeyId);
+		}
+
+		// If no virtual keys were selected/committed by admin on this prompt, do NOT auto-assign any VK!
+		if (committedVkIds.size === 0) {
+			return "";
+		}
+
+		const vks = virtualKeysData?.virtual_keys ?? [];
+		const now = Date.now();
+		const validKeys = vks.filter((vk) => {
+			if (vk.is_active === false) return false;
+			if (vk.expires_at && new Date(vk.expires_at).getTime() < now) return false;
+			if (typeof vk.value !== "string" || !vk.value.startsWith("sk-uf-")) return false;
+			return committedVkIds.has(vk.id) || committedVkIds.has(vk.value);
+		});
+
+		if (validKeys.length === 0) return "";
+
+		const currentUserId = authStatus?.user_id;
+		const userAssignedKeyIds = new Set((memberUserKeys?.virtual_keys ?? []).map((k) => k.id));
+
+		// Priority resolution: Direct User VK > Assigned to User's key list > Team/Customer VK > Other
+		const getVkPriority = (vk: (typeof validKeys)[0]) => {
+			if (userAssignedKeyIds.has(vk.id)) return 1;
+			if (currentUserId && ((vk.user_ids && vk.user_ids.includes(currentUserId)) || (vk.users && vk.users.some((u) => u.user_id === currentUserId)))) return 1;
+			if (vk.team_id || (vk.team_ids && vk.team_ids.length > 0) || (vk.teams && vk.teams.length > 0)) return 2;
+			if ((vk.business_unit_ids && vk.business_unit_ids.length > 0) || (vk.business_units && vk.business_units.length > 0)) return 3;
+			if (vk.customer_id || (vk.customer_ids && vk.customer_ids.length > 0) || (vk.customers && vk.customers.length > 0)) return 4;
+			return 5;
+		};
+
+		const sortedKeys = [...validKeys].sort((a, b) => getVkPriority(a) - getVkPriority(b));
+
+		const withBudget = sortedKeys.find((vk) => {
+			if (billingBlocks?.blocks?.[vk.id]) return false;
+			if (!vk.budgets || vk.budgets.length === 0) return true;
+			return !vk.budgets.some((b) => b.max_limit > 0 && (b.current_usage ?? 0) >= b.max_limit);
+		});
+		return withBudget?.value ?? sortedKeys[0]?.value ?? "";
+	}, [virtualKeysData, billingBlocks, isUserRole, authStatus, memberUserKeys, allowedVirtualKeys, virtualKeyId]);
+
+	// Do not auto-select VKs. Only restore what the user saved (loadFromParams on session/prompt).
 
 	const { data: skillData } = useGetSkillQuery(skillId, { skip: !skillId });
 	const skillSystemPrompt = skillData?.skill?.skill_md_body?.trim() || "";
@@ -515,7 +583,13 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			const raw = (selectedSession.messages ?? []).map((m) => m.message);
 			const loaded = Message.fromLegacyAll(raw);
 			loadMessages(loaded.length > 0 ? loaded : [Message.system("")]);
-			loadFromParams(selectedSession.model_params, selectedSession.provider, selectedSession.model);
+			if (isUserRole && selectedPrompt?.latest_version) {
+				// Regular user: always enforce the committed version's configuration (model, provider, keys, tools)
+				const committedVer = selectedPrompt.latest_version;
+				loadFromParams(committedVer.model_params, committedVer.provider, committedVer.model);
+			} else {
+				loadFromParams(selectedSession.model_params, selectedSession.provider, selectedSession.model);
+			}
 			// Restore variables (key:value) from session
 			if (selectedSession.variables && Object.keys(selectedSession.variables).length > 0) {
 				setVariables(selectedSession.variables);
@@ -628,7 +702,10 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			if ((skillId || undefined) !== (refSkillId || undefined)) return true;
 			const sameList = (current: string[] | null, saved: unknown) => {
 				const refList = Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string") : null;
-				return JSON.stringify(current) === JSON.stringify(refList);
+				// null and [] both mean "no restriction / none selected" — treat as equal so
+				// sessions without saved prompt_allowed_* don't look forever dirty.
+				const norm = (list: string[] | null) => (list && list.length > 0 ? list : null);
+				return JSON.stringify(norm(current)) === JSON.stringify(norm(refList));
 			};
 			if (!sameList(allowedProviders, refParams?.prompt_allowed_providers)) return true;
 			if (!sameList(allowedModels, refParams?.prompt_allowed_models)) return true;
@@ -807,6 +884,19 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 	// Persist playground chat to DB for every login (admin + user), keyed by user_id on the server.
 	const buildPersistParams = useCallback((): ModelParams => {
+		const committed = selectedPrompt?.latest_version?.model_params || ({} as ModelParams);
+		if (isUserRole) {
+			const params = { ...committed, ...modelParams };
+			if (committed.prompt_allowed_providers) params.prompt_allowed_providers = committed.prompt_allowed_providers;
+			if (committed.prompt_allowed_models) params.prompt_allowed_models = committed.prompt_allowed_models;
+			if (committed.prompt_allowed_virtual_keys) params.prompt_allowed_virtual_keys = committed.prompt_allowed_virtual_keys;
+			if (committed.prompt_allowed_api_keys) params.prompt_allowed_api_keys = committed.prompt_allowed_api_keys;
+			if (committed.prompt_allowed_skills) params.prompt_allowed_skills = committed.prompt_allowed_skills;
+			if (committed.prompt_allowed_mcp_tools) params.prompt_allowed_mcp_tools = committed.prompt_allowed_mcp_tools;
+			if (committed.virtual_key_id) params.virtual_key_id = committed.virtual_key_id;
+			if (committed.api_key_id) params.api_key_id = committed.api_key_id;
+			return params;
+		}
 		const params = { ...modelParams };
 		if (virtualKeyId && virtualKeyId !== "__auto__") {
 			params.virtual_key_id = virtualKeyId;
@@ -824,7 +914,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 		if (allowedSkills) params.prompt_allowed_skills = allowedSkills;
 		if (mcpIncludeTools) params.prompt_allowed_mcp_tools = mcpIncludeTools;
 		return params;
-	}, [modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools]);
+	}, [isUserRole, selectedPrompt, modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools]);
 
 	const persistPlaygroundSession = useCallback(
 		async (finalMessages: Message[]) => {
@@ -869,24 +959,33 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 			let execProvider = provider;
 			let execModel = model;
-			let execVkId = virtualKeyId;
 			let execApiKeyId = apiKeyId;
 			const committed = selectedPrompt?.latest_version;
 			if (!execProvider || !execModel) {
 				execProvider = committed?.provider || execProvider;
 				execModel = committed?.model || execModel;
 			}
-			if (isUserRole) {
-				if (!String(execVkId).startsWith("sk-uf-") && assignedMemberVkValue) {
-					execVkId = assignedMemberVkValue;
-				}
-				if (!execVkId) {
-					execVkId = "__auto__";
-				}
-			}
+			const execVkId = resolveExecVirtualKey({
+				virtualKeyId,
+				allowedVirtualKeys,
+				virtualKeys: virtualKeysData?.virtual_keys,
+				isUserRole,
+				assignedMemberVkValue,
+				apiKeyId: execApiKeyId,
+			});
 			if (!execProvider || !execModel) {
 				toast.error("Provider and Model Required", {
 					description: "Please select a provider and model in the Settings panel before running.",
+				});
+				setIsStreaming(false);
+				activeRunRef.current = null;
+				return;
+			}
+			const hasVk = String(execVkId).startsWith("sk-uf-");
+			const hasApiKey = Boolean(execApiKeyId && execApiKeyId !== "__auto__" && !String(execApiKeyId).startsWith("sk-uf-"));
+			if (!hasVk && !hasApiKey) {
+				toast.error("Virtual Key or API Key Required", {
+					description: "Select a Virtual Key (or a provider API key) in Settings before running. The dropdown must show a real selection — not just a budget preview.",
 				});
 				setIsStreaming(false);
 				activeRunRef.current = null;
@@ -969,7 +1068,10 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			provider,
 			model,
 			modelParams,
+			virtualKeyId,
 			apiKeyId,
+			allowedVirtualKeys,
+			virtualKeysData,
 			variables,
 			customHeaders,
 			skillSystemPrompt,
@@ -1008,21 +1110,20 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			// Execute with the updated messages
 			let execProvider = provider;
 			let execModel = model;
-			let execVkId = virtualKeyId;
 			let execApiKeyId = apiKeyId;
 			const committed = selectedPrompt?.latest_version;
 			if (!execProvider || !execModel) {
 				execProvider = committed?.provider || execProvider;
 				execModel = committed?.model || execModel;
 			}
-			if (isUserRole) {
-				if (!String(execVkId).startsWith("sk-uf-") && assignedMemberVkValue) {
-					execVkId = assignedMemberVkValue;
-				}
-				if (!execVkId) {
-					execVkId = "__auto__";
-				}
-			}
+			const execVkId = resolveExecVirtualKey({
+				virtualKeyId,
+				allowedVirtualKeys,
+				virtualKeys: virtualKeysData?.virtual_keys,
+				isUserRole,
+				assignedMemberVkValue,
+				apiKeyId: execApiKeyId,
+			});
 			if (!execProvider || !execModel) {
 				toast.error("Provider and Model Required", {
 					description: "Please select a provider and model in Settings before executing tool calls.",
@@ -1030,6 +1131,18 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				setIsStreaming(false);
 				activeRunRef.current = null;
 				return;
+			}
+			{
+				const hasVk = String(execVkId).startsWith("sk-uf-");
+				const hasApiKey = Boolean(execApiKeyId && execApiKeyId !== "__auto__" && !String(execApiKeyId).startsWith("sk-uf-"));
+				if (!hasVk && !hasApiKey) {
+					toast.error("Virtual Key or API Key Required", {
+						description: "Select a Virtual Key (or a provider API key) in Settings before running.",
+					});
+					setIsStreaming(false);
+					activeRunRef.current = null;
+					return;
+				}
 			}
 			setIsStreaming(true);
 			await executePrompt(
@@ -1095,7 +1208,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				abortController.signal,
 			);
 		},
-		[messages, provider, model, modelParams, virtualKeyId, apiKeyId, variables, customHeaders, skillSystemPrompt, skillId, mcpIncludeTools, selectedPromptId, selectedPrompt, isUserRole, assignedMemberVkValue, persistPlaygroundSession],
+		[messages, provider, model, modelParams, virtualKeyId, apiKeyId, allowedVirtualKeys, virtualKeysData, variables, customHeaders, skillSystemPrompt, skillId, mcpIncludeTools, selectedPromptId, selectedPrompt, isUserRole, assignedMemberVkValue, persistPlaygroundSession, dispatch],
 	);
 
 	const handleExecuteToolCall = useCallback(
@@ -1144,21 +1257,20 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 			let execProvider = provider;
 			let execModel = model;
-			let execVkId = virtualKeyId;
 			let execApiKeyId = apiKeyId;
 			const committed = selectedPrompt?.latest_version;
 			if (!execProvider || !execModel) {
 				execProvider = committed?.provider || execProvider;
 				execModel = committed?.model || execModel;
 			}
-			if (isUserRole) {
-				if (!String(execVkId).startsWith("sk-uf-") && assignedMemberVkValue) {
-					execVkId = assignedMemberVkValue;
-				}
-				if (!execVkId) {
-					execVkId = "__auto__";
-				}
-			}
+			const execVkId = resolveExecVirtualKey({
+				virtualKeyId,
+				allowedVirtualKeys,
+				virtualKeys: virtualKeysData?.virtual_keys,
+				isUserRole,
+				assignedMemberVkValue,
+				apiKeyId: execApiKeyId,
+			});
 			if (!execProvider || !execModel) {
 				toast.error("Provider and Model Required", {
 					description: "Please select a provider and model in Settings before executing tool calls.",
@@ -1166,6 +1278,18 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				setIsStreaming(false);
 				activeRunRef.current = null;
 				return;
+			}
+			{
+				const hasVk = String(execVkId).startsWith("sk-uf-");
+				const hasApiKey = Boolean(execApiKeyId && execApiKeyId !== "__auto__" && !String(execApiKeyId).startsWith("sk-uf-"));
+				if (!hasVk && !hasApiKey) {
+					toast.error("Virtual Key or API Key Required", {
+						description: "Select a Virtual Key (or a provider API key) in Settings before running.",
+					});
+					setIsStreaming(false);
+					activeRunRef.current = null;
+					return;
+				}
 			}
 
 			setIsStreaming(true);
@@ -1231,7 +1355,27 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 				abortController.signal,
 			);
 		},
-		[messages, provider, model, modelParams, apiKeyId, variables, customHeaders, handleSubmitToolResult, skillSystemPrompt, skillId, mcpIncludeTools, selectedPromptId, persistPlaygroundSession],
+		[
+			messages,
+			provider,
+			model,
+			modelParams,
+			virtualKeyId,
+			apiKeyId,
+			allowedVirtualKeys,
+			virtualKeysData,
+			variables,
+			customHeaders,
+			handleSubmitToolResult,
+			skillSystemPrompt,
+			skillId,
+			mcpIncludeTools,
+			selectedPromptId,
+			selectedPrompt,
+			isUserRole,
+			assignedMemberVkValue,
+			persistPlaygroundSession,
+		],
 	);
 
 	const handleExecuteAllToolCalls = useCallback(

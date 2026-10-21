@@ -1116,6 +1116,15 @@ func (p *GovernancePlugin) EvaluateGovernanceRequest(ctx *schemas.GatewayContext
 		}
 	}
 
+	// Step 2.5: Business-unit-level budget and rate limit.
+	if !skipBudgetsAndRateLimits && result.Decision == DecisionAllow && hierarchyVK != nil && hasLocalStore {
+		for _, buID := range local.billedBusinessUnitIDs(hierarchyVK, billedTeam) {
+			if result = p.resolver.EvaluateBusinessUnitRequest(ctx, buID, evaluationRequest); result.Decision != DecisionAllow {
+				break
+			}
+		}
+	}
+
 	// Step 3: Team-level budget. Fall back to vk.Team.ID when the FK pointer is nil
 	// but the relation is populated.
 	if !skipBudgetsAndRateLimits && result.Decision == DecisionAllow && hierarchyVK != nil {

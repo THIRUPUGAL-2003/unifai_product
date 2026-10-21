@@ -729,13 +729,15 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 								value={option.value}
 								className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
 								onSelect={() => {
-									props.onValueChange?.(option.value);
+									const isSelected = props.value === option.value;
+									props.onValueChange?.(isSelected ? null : option.value);
 									setOpen(false);
 								}}
 								onClick={(e) => {
 									e.preventDefault();
 									e.stopPropagation();
-									props.onValueChange?.(option.value);
+									const isSelected = props.value === option.value;
+									props.onValueChange?.(isSelected ? null : option.value);
 									setOpen(false);
 								}}
 							>

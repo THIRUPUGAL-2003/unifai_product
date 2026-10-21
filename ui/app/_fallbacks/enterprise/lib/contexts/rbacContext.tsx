@@ -88,18 +88,30 @@ export function RbacProvider({ children }: { children: React.ReactNode }) {
 	// Never default to "admin" while loading — that fail-opens every gated control.
 	const role = data?.role ?? "";
 
-	const isAllowed = useCallback(
-		(resource: RbacResource, operation: RbacOperation) => {
-			if (isLoading || isError || !data) {
+		const isAllowed = useCallback(
+			(resource: RbacResource, operation: RbacOperation) => {
+				if (isLoading || isError || !data) {
+					return false;
+				}
+				// Built-in user: Prompt Repository is always full access (chat / edit / deploy own prompts).
+				// Other workspace sections stay View-only unless raised in Roles & Permissions.
+				if (
+					role === "user" &&
+					(resource === RbacResource.PromptRepository || resource === RbacResource.PromptDeploymentStrategy)
+				) {
+					return true;
+				}
+				// If permissions matrix is available from the backend, enforce it
+				if (permissions && Object.keys(permissions).length > 0) {
+					return hasPermission(permissions, resource, operation);
+				}
+				if (role === "admin") {
+					return true;
+				}
 				return false;
-			}
-			if (role === "admin") {
-				return true;
-			}
-			return hasPermission(permissions, resource, operation);
-		},
-		[permissions, role, isLoading, isError, data],
-	);
+			},
+			[permissions, role, isLoading, isError, data],
+		);
 
 	const value = useMemo(
 		() => ({

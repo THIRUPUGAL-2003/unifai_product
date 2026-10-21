@@ -129,21 +129,21 @@ ruleWs["!cols"] = [
 const ruleWb = XLSX.utils.book_new();
 XLSX.utils.book_append_sheet(ruleWb, ruleWs, "Guard Rules");
 
-// Write files to project root
+// Write files to docs directory
 const targetDestinations = [
-	path.join(projectRoot, "target_websites_sample.xlsx"),
+	path.join(projectRoot, "docs", "target_websites_sample.xlsx"),
 ];
 
 const targetCsvDestinations = [
-	path.join(projectRoot, "target_websites_sample.csv"),
+	path.join(projectRoot, "docs", "target_websites_sample.csv"),
 ];
 
 const ruleDestinations = [
-	path.join(projectRoot, "guard_rules_sample.xlsx"),
+	path.join(projectRoot, "docs", "guard_rules_sample.xlsx"),
 ];
 
 const ruleCsvDestinations = [
-	path.join(projectRoot, "guard_rules_sample.csv"),
+	path.join(projectRoot, "docs", "guard_rules_sample.csv"),
 ];
 
 for (const dest of targetDestinations) {
