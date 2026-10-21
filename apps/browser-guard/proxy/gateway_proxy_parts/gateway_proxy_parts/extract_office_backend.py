@@ -1493,15 +1493,21 @@ def match_guard_rules_on_text(text: str) -> tuple[bool, str, str]:
     """
     if not text or len(text.strip()) < 1:
         return False, "", ""
+    try:
+        from config_caches_rules import get_guard_rules as _get_rules, rule_matches_prompt as _rule_matches
+    except Exception:
+        _get_rules = globals().get("get_guard_rules", lambda: [])
+        _rule_matches = globals().get("rule_matches_prompt", lambda r, p: False)
+
     # Fast path: scan a bounded window (rules rarely need 100k+ of PDF noise)
     scan = text if len(text) <= 80_000 else text[:80_000]
     rules = sorted(
-        get_guard_rules(),
+        _get_rules(),
         key=lambda r: 0 if (r.get("action") or "BLOCK").upper() in ("BLOCK",) else 1,
     )
     for r in rules:
         try:
-            if not rule_matches_prompt(r, scan):
+            if not _rule_matches(r, scan):
                 continue
             return True, r.get("name", "Guard Rule"), (r.get("action") or "BLOCK").upper()
         except Exception:

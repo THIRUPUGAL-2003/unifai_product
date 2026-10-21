@@ -84,23 +84,35 @@
   var blockedSitesMap = null;
   var lastBlockedSitesList = null;
 
+  function cleanHost(str) {
+    if (!str) return "";
+    var s = String(str).toLowerCase().trim();
+    var proto = s.indexOf("://");
+    if (proto >= 0) s = s.slice(proto + 3);
+    var slash = s.indexOf("/");
+    if (slash >= 0) s = s.slice(0, slash);
+    var q = s.indexOf("?");
+    if (q >= 0) s = s.slice(0, q);
+    var hash = s.indexOf("#");
+    if (hash >= 0) s = s.slice(0, hash);
+    if (s.indexOf("www.") === 0) s = s.slice(4);
+    if (s.indexOf(":") >= 0) s = s.split(":")[0];
+    return s.replace(/^\*+\./, "").replace(/^\.+|\.+$/g, "");
+  }
+
   function buildDomainMap(domains) {
     var map = Object.create(null);
     if (!Array.isArray(domains)) return map;
     for (var i = 0; i < domains.length; i++) {
-      var d = String(domains[i] || "").toLowerCase().trim();
-      if (d.indexOf("www.") === 0) d = d.slice(4);
-      if (d.indexOf(":") >= 0) d = d.split(":")[0];
+      var d = cleanHost(domains[i]);
       if (d) map[d] = true;
     }
     return map;
   }
 
   function matchDomainInMap(host, map, rawList) {
+    host = cleanHost(host);
     if (!host) return false;
-    host = host.toLowerCase().trim();
-    if (host.indexOf("www.") === 0) host = host.slice(4);
-    if (host.indexOf(":") >= 0) host = host.split(":")[0];
 
     if (map && map[host]) return true;
 
@@ -114,9 +126,7 @@
 
     if (Array.isArray(rawList)) {
       for (var j = 0; j < rawList.length; j++) {
-        var dom = String(rawList[j] || "").toLowerCase().trim();
-        if (dom.indexOf("www.") === 0) dom = dom.slice(4);
-        if (dom.indexOf(":") >= 0) dom = dom.split(":")[0];
+        var dom = cleanHost(rawList[j]);
         if (!dom) continue;
         if (host === dom || host.slice(-(dom.length + 1)) === "." + dom) return true;
       }

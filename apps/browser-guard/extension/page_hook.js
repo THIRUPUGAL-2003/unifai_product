@@ -975,6 +975,8 @@
                 init.headers["X-Guard-Handled"] = "1";
                 init.headers["X-Gateway-Guard-Handled"] = "1";
               }
+            } else if (init) {
+              init.headers = { "X-Guard-Handled": "1", "X-Gateway-Guard-Handled": "1" };
             }
           }
         } catch (e) { }
@@ -1248,8 +1250,18 @@
   XMLHttpRequest.prototype.send = function (body) {
     if (Date.now() - _lastHandledPromptTime < 4000) {
       try {
-        this.setRequestHeader("X-Guard-Handled", "1");
-        this.setRequestHeader("X-Gateway-Guard-Handled", "1");
+        var xhrUrl = String(this._ggUrl || "").toLowerCase();
+        if (
+          !xhrUrl.includes("blob.core.windows.net") &&
+          !xhrUrl.includes("amazonaws.com") &&
+          !xhrUrl.includes("storage.googleapis.com") &&
+          !xhrUrl.includes("/backend-api/files") &&
+          !xhrUrl.includes("/files") &&
+          !xhrUrl.includes("/upload")
+        ) {
+          this.setRequestHeader("X-Guard-Handled", "1");
+          this.setRequestHeader("X-Gateway-Guard-Handled", "1");
+        }
       } catch (e) { }
     }
     if (!armed || !body) return origXHRSend.apply(this, arguments);

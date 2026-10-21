@@ -967,15 +967,23 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
             # 1. Exact or substring prompt match on this workstation within 15 seconds:
             # recent_extension_evals.json is machine-local. If the local browser extension
             # just evaluated this prompt, it is guaranteed to be the same user action.
-            if p_clean and item_p and (p_clean == item_p or p_clean in item_p or item_p in p_clean):
-                return True
+            if p_clean and item_p:
+                p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', p_clean).strip()
+                item_p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', item_p).strip()
+                if (
+                    p_clean == item_p
+                    or p_clean in item_p
+                    or item_p in p_clean
+                    or (p_core and item_p_core and (p_core == item_p_core or p_core in item_p_core or item_p_core in p_core))
+                ):
+                    return True
 
             # 2. File upload match
             if fn_clean and (fn_clean in item_files or any(fn_clean in x for x in item_files)):
                 return True
 
-            # 3. Host match within 5 seconds
-            if clean_d and item_host and (
+            # 3. Host match within 5 seconds (only when prompt is empty or just generic handshake)
+            if not p_clean and not fn_clean and clean_d and item_host and (
                 clean_d == item_host
                 or clean_d.endswith("." + item_host)
                 or item_host.endswith("." + clean_d)

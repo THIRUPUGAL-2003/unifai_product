@@ -33,17 +33,88 @@ func cleanPromptForDedupe(prompt string) string {
 	return strings.ToLower(p)
 }
 
-func getDedupeKey(agentID, clientIP, platform, prompt string) string {
-	ident := strings.TrimSpace(agentID)
-	if ident == "" {
-		ident = strings.TrimSpace(clientIP)
-	}
+func getDedupeKeys(agentID, clientIP, platform, prompt string) []string {
 	cp := cleanPromptForDedupe(prompt)
 	if cp == "" {
-		return ""
+		return nil
 	}
 	h := sha256.Sum256([]byte(cp))
-	return fmt.Sprintf("%s:%s:%x", ident, strings.ToLower(strings.TrimSpace(platform)), h[:16])
+	hashStr := fmt.Sprintf("%x", h[:16])
+	plat := strings.ToLower(strings.TrimSpace(platform))
+
+	var keys []string
+	aid := strings.TrimSpace(agentID)
+	cip := strings.TrimSpace(clientIP)
+	if aid != "" {
+		keys = append(keys, fmt.Sprintf("aid:%s:%s:%s", aid, plat, hashStr))
+	}
+	if cip != "" {
+		keys = append(keys, fmt.Sprintf("ip:%s:%s:%s", cip, plat, hashStr))
+	}
+	keys = append(keys, fmt.Sprintf("p:%s:%s", plat, hashStr))
+	return keys
+}
+
+func getFileDedupeKeys(agentID, clientIP, platform, fileName, prompt string) []string {
+	fn := strings.ToLower(strings.TrimSpace(fileName))
+	cp := cleanPromptForDedupe(prompt)
+	combined := fn + ":" + cp
+	if combined == ":" {
+		return nil
+	}
+	h := sha256.Sum256([]byte(combined))
+	hashStr := fmt.Sprintf("%x", h[:16])
+	plat := strings.ToLower(strings.TrimSpace(platform))
+
+	var keys []string
+	aid := strings.TrimSpace(agentID)
+	cip := strings.TrimSpace(clientIP)
+	if aid != "" {
+		keys = append(keys, fmt.Sprintf("faid:%s:%s:%s", aid, plat, hashStr))
+	}
+	if cip != "" {
+		keys = append(keys, fmt.Sprintf("fip:%s:%s:%s", cip, plat, hashStr))
+	}
+	keys = append(keys, fmt.Sprintf("fp:%s:%s", plat, hashStr))
+	return keys
+}
+
+func checkPromptDedupe(keys []string, maxAge time.Duration) ([]byte, bool) {
+	if len(keys) == 0 {
+		return nil, false
+	}
+	promptDedupeLock.RLock()
+	defer promptDedupeLock.RUnlock()
+	now := time.Now()
+	for _, k := range keys {
+		if cached, exists := promptDedupeMap[k]; exists && now.Sub(cached.timestamp) < maxAge {
+			return cached.responseBytes, true
+		}
+	}
+	return nil, false
+}
+
+func savePromptDedupe(keys []string, responseBytes []byte) {
+	if len(keys) == 0 || len(responseBytes) == 0 {
+		return
+	}
+	promptDedupeLock.Lock()
+	defer promptDedupeLock.Unlock()
+	now := time.Now()
+	if len(promptDedupeMap) > 500 {
+		for k, v := range promptDedupeMap {
+			if now.Sub(v.timestamp) > 15*time.Second {
+				delete(promptDedupeMap, k)
+			}
+		}
+	}
+	entry := promptDedupeCacheEntry{
+		responseBytes: responseBytes,
+		timestamp:     now,
+	}
+	for _, k := range keys {
+		promptDedupeMap[k] = entry
+	}
 }
 
 func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
@@ -205,23 +276,18 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 		uploadScan = true
 	}
 
-	// 5-second In-Memory Deduplication:
+	// Multi-key In-Memory Deduplication:
 	// If the browser extension already evaluated this prompt at the Send button,
 	// and the desktop EXE proxy intercepts the outgoing wire packet shortly after,
 	// reuse the previous verdict without writing a duplicate log to logstore!
-	dedupeKey := ""
+	var dedupeKeys []string
 	if !uploadScan && !evalOnly {
-		dedupeKey = getDedupeKey(payload.AgentID, payload.ClientIP, payload.Platform, payload.Prompt)
-		if dedupeKey != "" {
-			promptDedupeLock.RLock()
-			cached, exists := promptDedupeMap[dedupeKey]
-			promptDedupeLock.RUnlock()
-			if exists && time.Since(cached.timestamp) < 5*time.Second {
-				ctx.SetStatusCode(fasthttp.StatusOK)
-				ctx.SetContentType("application/json; charset=utf-8")
-				ctx.SetBody(cached.responseBytes)
-				return
-			}
+		dedupeKeys = getDedupeKeys(payload.AgentID, payload.ClientIP, payload.Platform, payload.Prompt)
+		if cachedBytes, hit := checkPromptDedupe(dedupeKeys, 8*time.Second); hit {
+			ctx.SetStatusCode(fasthttp.StatusOK)
+			ctx.SetContentType("application/json; charset=utf-8")
+			ctx.SetBody(cachedBytes)
+			return
 		}
 	}
 
@@ -497,21 +563,8 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 
 	respBytes, err := sonic.Marshal(respMap)
 	if err == nil {
-		if dedupeKey != "" {
-			promptDedupeLock.Lock()
-			now := time.Now()
-			if len(promptDedupeMap) > 500 {
-				for k, v := range promptDedupeMap {
-					if now.Sub(v.timestamp) > 10*time.Second {
-						delete(promptDedupeMap, k)
-					}
-				}
-			}
-			promptDedupeMap[dedupeKey] = promptDedupeCacheEntry{
-				responseBytes: respBytes,
-				timestamp:     now,
-			}
-			promptDedupeLock.Unlock()
+		if len(dedupeKeys) > 0 {
+			savePromptDedupe(dedupeKeys, respBytes)
 		}
 		ctx.SetStatusCode(fasthttp.StatusOK)
 		ctx.SetContentType("application/json; charset=utf-8")
@@ -1026,6 +1079,14 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	fileDedupeKeys := getFileDedupeKeys(agentID, clientIP, platform, fileName, prompt)
+	if cachedBytes, hit := checkPromptDedupe(fileDedupeKeys, 8*time.Second); hit {
+		ctx.SetStatusCode(fasthttp.StatusOK)
+		ctx.SetContentType("application/json; charset=utf-8")
+		ctx.SetBody(cachedBytes)
+		return
+	}
+
 	logEntry, ruleWarning, err := h.manager.InterceptPrompt(ctx, platform, prompt, clientIP, metadata)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
@@ -1073,14 +1134,24 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 	// Opportunistic cleanup of expired temp files
 	go purgeExpiredBrowserAIAttachments(h.manager)
 
-	SendJSON(ctx, map[string]any{
+	respMap := map[string]any{
 		"status":          "success",
 		"allowed":         logEntry.Action == "Allowed" || logEntry.Action == "Warned" || logEntry.Action == "Redacted",
 		"action":          logEntry.Action,
 		"rule_triggered":  logEntry.RuleTriggered,
 		"warning_message": ruleWarning,
 		"log":             logEntry,
-	})
+	}
+	if respBytes, err := sonic.Marshal(respMap); err == nil {
+		if len(fileDedupeKeys) > 0 {
+			savePromptDedupe(fileDedupeKeys, respBytes)
+		}
+		ctx.SetStatusCode(fasthttp.StatusOK)
+		ctx.SetContentType("application/json; charset=utf-8")
+		ctx.SetBody(respBytes)
+		return
+	}
+	SendJSON(ctx, respMap)
 }
 
 func (h *BrowserAIHandler) getAttachment(ctx *fasthttp.RequestCtx) {

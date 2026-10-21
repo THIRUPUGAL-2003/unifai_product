@@ -147,10 +147,25 @@ def common_extension_dir() -> str:
 
 def host_monitored(host: str, domains: list[str]) -> bool:
     host = (host or "").lower().strip(".")
+    if "://" in host:
+        host = host.split("://", 1)[1]
+    host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    if ":" in host:
+        host = host.split(":", 1)[0]
     if host.startswith("www."):
         host = host[4:]
+    if not host:
+        return False
     for domain in domains:
         d = (domain or "").lower().strip(".")
+        if "://" in d:
+            d = d.split("://", 1)[1]
+        d = d.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        if ":" in d:
+            d = d.split(":", 1)[0]
+        d = d.lstrip("*.").strip(".")
+        if d.startswith("www."):
+            d = d[4:]
         if not d:
             continue
         if host == d or host.endswith("." + d):
@@ -686,7 +701,11 @@ def check_prompt(
         platform = main_part.title() if main_part else (clean_host or "Browser AI")
 
     agent_hostname = os.environ.get("GATEWAY_AGENT_HOSTNAME") or os.environ.get("COMPUTERNAME") or ""
-    agent_id = os.environ.get("GATEWAY_AGENT_ID") or ""
+    try:
+        from agent_identity import get_or_create_agent_id
+        agent_id = os.environ.get("GATEWAY_AGENT_ID") or get_or_create_agent_id()
+    except Exception:
+        agent_id = os.environ.get("GATEWAY_AGENT_ID") or ""
 
     meta = {
         "domain": host or "",
