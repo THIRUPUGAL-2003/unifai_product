@@ -800,6 +800,9 @@ func (m *AuthMiddleware) enrichInferenceFromDashboardSession(ctx *fasthttp.Reque
 		return ""
 	}
 	ctx.SetUserValue(schemas.GatewayContextKeySessionToken, token)
+	if isWorkspaceAdminRole(session.Role) {
+		ctx.SetUserValue(schemas.IsLocalAdminContextKey, true)
+	}
 
 	dbUser, err := m.store.GetUserByUsername(context.Background(), session.Username)
 	if err != nil || dbUser == nil {
