@@ -463,22 +463,40 @@ def _record_extension_eval(host: str, prompt: str, files: list | None = None, pl
         if clean_h.startswith("www."):
             clean_h = clean_h[4:]
 
-        entry = {
-            "host": clean_h,
-            "platform": (platform or "").strip(),
-            "preview": (prompt or "").strip()[:150],
-            "files": fnames,
-            "time": now,
-        }
+        # Strip invisible zero-width formatting characters
+        p_norm = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ')
+        p_clean = " ".join(p_norm.strip().split())
+
+        COPILOT_FAMILY = {"copilot.microsoft.com", "copilot.cloud.microsoft", "substrate.office.com", "sydneyp.bing.com"}
+        hosts_to_record = [clean_h]
+        if clean_h in COPILOT_FAMILY:
+            for fam in COPILOT_FAMILY:
+                if fam not in hosts_to_record:
+                    hosts_to_record.append(fam)
+
         with _RECENT_EXTENSION_EVALS_LOCK:
             global _RECENT_EXTENSION_EVALS
             # Prune entries older than 30 seconds
             _RECENT_EXTENSION_EVALS = [e for e in _RECENT_EXTENSION_EVALS if now - float(e.get("time") or 0) < 30]
-            _RECENT_EXTENSION_EVALS.append(entry)
+            for h in hosts_to_record:
+                entry = {
+                    "host": h,
+                    "platform": (platform or "").strip(),
+                    "preview": p_clean[:150],
+                    "files": fnames,
+                    "time": now,
+                }
+                _RECENT_EXTENSION_EVALS.append(entry)
             tmp_path = cache_path + f".tmp.{os.getpid()}"
             with open(tmp_path, "w", encoding="utf-8") as fp:
                 json.dump(_RECENT_EXTENSION_EVALS, fp)
-            os.replace(tmp_path, cache_path)
+            try:
+                os.replace(tmp_path, cache_path)
+            except Exception:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -588,7 +606,7 @@ def check_prompt(
                 "message": f"Access to {clean_h} is blocked by company security policy."
             }
 
-    text = (prompt or "").strip()
+    text = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ').strip()
     files_list = files if isinstance(files, list) else []
     images_list = upload_images if isinstance(upload_images, list) else []
 

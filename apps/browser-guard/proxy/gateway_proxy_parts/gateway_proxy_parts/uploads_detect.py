@@ -398,8 +398,13 @@ def _is_real_user_upload_name(name: str) -> bool:
     low = n.lower()
     has_ext = bool(re.search(r"\.[A-Za-z0-9]{1,8}$", n))
     # Extensionless "Name 1.2" labels are UI chrome (model pickers, tabs), not uploads.
-    if not has_ext and re.search(r"\d+\.\d+", n):
-        return False
+    if not has_ext:
+        if re.search(r"\d+\.\d+", n):
+            return False
+        if any(term in low for term in ("microsoft 365", "copilot", "assign copilot", "office 365", "admin center", "plsenvironmentquery", "query pls")):
+            return False
+        if " -- " in n:
+            return False
     # Reject AI model names only when the string is not an actual filename.
     if not has_ext and any(m in low for m in ("opus", "sonnet", "haiku", "fable", "dall-e", "gpt-", "gemini-", "claude-", "llama-", "mistral-")):
         return False

@@ -949,7 +949,12 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
         clean_d = (domain or "").lower().strip(".")
         if clean_d.startswith("www."):
             clean_d = clean_d[4:]
-        p_clean = " ".join((prompt or "").strip().split()).lower()[:100]
+        # Map Copilot family domains
+        COPILOT_FAMILY = {"copilot.microsoft.com", "copilot.cloud.microsoft", "substrate.office.com", "sydneyp.bing.com"}
+
+        # Strip invisible zero-width formatting characters
+        p_norm = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ')
+        p_clean = " ".join(p_norm.strip().split()).lower()[:100]
         fn_clean = (file_name or "").lower().strip()
 
         for item in evals:
@@ -961,7 +966,9 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
             item_host = (item.get("host") or "").lower().strip(".")
             if item_host.startswith("www."):
                 item_host = item_host[4:]
-            item_p = " ".join((item.get("preview") or "").strip().split()).lower()[:100]
+
+            item_p_raw = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', item.get("preview") or '').replace('\u00A0', ' ')
+            item_p = " ".join(item_p_raw.strip().split()).lower()[:100]
             item_files = [str(x).lower().strip() for x in (item.get("files") or [])]
 
             # 1. Exact or substring prompt match on this workstation within 15 seconds:
@@ -983,11 +990,13 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
                 return True
 
             # 3. Host match within 5 seconds (only when prompt is empty or just generic handshake)
-            if not p_clean and not fn_clean and clean_d and item_host and (
+            hosts_match = (
                 clean_d == item_host
                 or clean_d.endswith("." + item_host)
                 or item_host.endswith("." + clean_d)
-            ) and (now - item_time < 5.0):
+                or (clean_d in COPILOT_FAMILY and item_host in COPILOT_FAMILY)
+            )
+            if not p_clean and not fn_clean and clean_d and item_host and hosts_match and (now - item_time < 5.0):
                 return True
     except Exception:
         pass

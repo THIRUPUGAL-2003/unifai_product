@@ -541,7 +541,11 @@ def looks_like_user_prompt(text: str) -> bool:
     # Tamil, Arabic, Chinese, Hindi, Japanese, Korean, Russian, Greek, Hebrew,
     # Thai, Devanagari, Bengali, Telugu, Kannada, Malayalam, Gujarati, Punjabi,
     # and ALL other non-ASCII Unicode scripts. Never filter by language.
-    if any(ord(c) > 127 for c in t[:80]):
+    # Exclude directional/zero-width formatting chars from triggering this bypass.
+    if any(
+        ord(c) > 127 and not (0x200B <= ord(c) <= 0x200F or 0x202A <= ord(c) <= 0x202E or 0x2060 <= ord(c) <= 0x206F or ord(c) in (0xFEFF, 0x00A0))
+        for c in t[:80]
+    ):
         # Only reject actual mojibake (replacement chars ≥8% of content)
         if "\ufffd" in t and t.count("\ufffd") / max(len(t), 1) >= 0.08:
             return False
@@ -1124,9 +1128,23 @@ def _should_intercept_extracted_prompt(
     if any(auth_sub in path_l for auth_sub in ("/login", "/logout", "/auth", "/challenge", "/cdn-cgi", "/turnstile", "/sso", "/saml", "/oauth")):
         return False
 
+    # Never intercept internal background queries or telemetry as user prompts
+    t_low = text.lower()
+    if (
+        "plsenvironmentquery" in t_low
+        or "assign copilot license" in t_low
+        or t_low.startswith('{"arguments":')
+        or t_low.startswith('{"timestamps":')
+    ):
+        return False
+
     # ── Non-ASCII / Unicode scripts (Tamil, Arabic, Chinese, Hindi, etc.) ────
     # Non-Latin prompts are always real user text.
-    if any(ord(c) > 127 for c in text[:80]):
+    # Exclude directional/zero-width formatting chars from triggering this bypass.
+    if any(
+        ord(c) > 127 and not (0x200B <= ord(c) <= 0x200F or 0x202A <= ord(c) <= 0x202E or 0x2060 <= ord(c) <= 0x206F or ord(c) in (0xFEFF, 0x00A0))
+        for c in text[:80]
+    ):
         if text.startswith("[FILE UPLOAD"):
             return False
         if _is_typing_or_draft_path(path, raw_text):

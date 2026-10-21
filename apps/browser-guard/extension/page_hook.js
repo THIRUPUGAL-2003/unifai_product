@@ -39,6 +39,14 @@
   var _lastHandledPromptText = "";
   var lastDecisionCache = { text: "", time: 0, decision: null };
 
+  function stripInvisible(str) {
+    if (!str) return "";
+    return String(str)
+      .replace(/[\u200b-\u200f\ufeff\u202a-\u202e\u2060-\u206f\u00a0]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   // Rules come only from the gateway for the armed target site.
   var dynamicRules = [];
 
@@ -278,6 +286,15 @@
       }
     } catch (e2) {}
     return results;
+  }
+
+  // Normalize invisible characters, zero-width spaces, and bidi control markers
+  function stripInvisible(str) {
+    if (!str || typeof str !== "string") return "";
+    return str
+      .replace(/[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]/g, "")
+      .replace(/\u00A0/g, " ")
+      .trim();
   }
 
   // Universal Composer Extraction across ChatGPT, Claude, Gemini, Copilot, DeepSeek, Mistral, Lovable
@@ -731,7 +748,7 @@
     if (!armed || passKey) return;
     if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
     var actualTarget = (e.composedPath && e.composedPath()[0]) || e.target;
-    var text = (composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement())).trim();
+    var text = stripInvisible(composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement()));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
@@ -826,7 +843,7 @@
       (form && form.contains(getDeepActiveElement()));
 
     if (!sendLike) return;
-    var text = (composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement)).trim();
+    var text = stripInvisible(composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
@@ -892,7 +909,7 @@
     if (!armed || passClick) return;
     var form = e.target;
     if (!form) return;
-    var text = (composerFrom(form) || composerFrom(document.activeElement)).trim();
+    var text = stripInvisible(composerFrom(form) || composerFrom(document.activeElement));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
@@ -1001,7 +1018,7 @@
           if (parsed) {
             // 1. Direct prompt fields across OpenAI, Claude, Gemini, Copilot, DeepSeek, Mistral
             if (typeof parsed.prompt === "string") promptText = parsed.prompt;
-            else if (typeof parsed.query === "string") promptText = parsed.query;
+            else if (typeof parsed.query === "string" && !parsed.query.toLowerCase().startsWith("plsenvironmentquery") && !parsed.query.toLowerCase().startsWith("query pls")) promptText = parsed.query;
             else if (typeof parsed.text === "string") promptText = parsed.text;
             else if (typeof parsed.input === "string") promptText = parsed.input;
             else if (typeof parsed.userMessage === "string") promptText = parsed.userMessage;
@@ -1175,8 +1192,11 @@
         return origFetch.apply(this, arguments);
       }
 
+      if (promptText) {
+        promptText = stripInvisible(promptText);
+      }
       var ptClean = (promptText || "").trim().toLowerCase();
-      var isNoisePrompt = !promptText || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me";
+      var isNoisePrompt = !promptText || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me" || ptClean.indexOf("plsenvironmentquery") >= 0 || ptClean.indexOf("assign copilot license") >= 0;
       if (isNoisePrompt) {
         return origFetch.apply(this, arguments);
       }
@@ -1288,7 +1308,7 @@
     window.WebSocket.prototype.send = function (data) {
       if (armed && typeof data === "string" && data.length > 3) {
         var cleanStr = data.replace(/\x1e/g, "").trim();
-        var promptText = cleanStr;
+        var promptText = "";
         try {
           var parsed = JSON.parse(cleanStr);
           if (parsed && Array.isArray(parsed.arguments) && parsed.arguments[0]) {
@@ -1301,37 +1321,34 @@
           }
         } catch (e) {}
 
-        var wsDecision = evaluateClientRules(promptText, []) || evaluateClientRules(cleanStr, []);
-        if (wsDecision && wsDecision.blocked) {
-          showBubble(wsDecision.message, wsDecision.rule, "block");
-          window.postMessage({
-            source: "gateway-guard-page",
-            nonce: guardNonce,
-            id: "ws_block_" + Date.now().toString(36),
-            prompt: promptText.slice(0, 500),
-            host: location.hostname,
-            url: location.href,
-            is_blocked: true,
-            rule: wsDecision.rule || ""
-          }, "*");
-          return;
+        promptText = stripInvisible(promptText);
+        // Only evaluate if real user text was extracted (NEVER evaluate raw JSON packets/timestamps)
+        if (promptText && promptText.length > 0 && !promptText.startsWith("{") && !promptText.startsWith("[")) {
+          var wsDecision = evaluateClientRules(promptText, []);
+          if (wsDecision && wsDecision.blocked) {
+            showBubble(wsDecision.message, wsDecision.rule, "block");
+            window.postMessage({
+              source: "gateway-guard-page",
+              nonce: guardNonce,
+              id: "ws_block_" + Date.now().toString(36),
+              prompt: promptText.slice(0, 500),
+              host: location.hostname,
+              url: location.href,
+              is_blocked: true,
+              rule: wsDecision.rule || ""
+            }, "*");
+            return;
+          }
         }
       }
       return origWSSend.apply(this, arguments);
     };
   }
 
-  // Hook navigator.sendBeacon (Telemetry & AI Background Ping Protection)
+  // Hook navigator.sendBeacon (Safe Passthrough: background analytics/telemetry must NEVER trigger prompt block alerts)
   if (typeof navigator.sendBeacon === "function") {
     var origSendBeacon = navigator.sendBeacon.bind(navigator);
     navigator.sendBeacon = function (url, data) {
-      if (armed && typeof data === "string" && data.length > 5) {
-        var beaconDecision = evaluateClientRules(data, []);
-        if (beaconDecision && beaconDecision.blocked) {
-          showBubble(beaconDecision.message, beaconDecision.rule, "block");
-          return false;
-        }
-      }
       return origSendBeacon(url, data);
     };
   }

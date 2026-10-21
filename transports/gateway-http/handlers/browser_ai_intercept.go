@@ -26,7 +26,19 @@ var (
 )
 
 func cleanPromptForDedupe(prompt string) string {
-	p := strings.TrimSpace(prompt)
+	var b strings.Builder
+	for _, r := range prompt {
+		if (r >= 0x200B && r <= 0x200F) || (r >= 0x202A && r <= 0x202E) || (r >= 0x2060 && r <= 0x206F) || r == 0xFEFF {
+			continue
+		}
+		if r == 0x00A0 {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	p := strings.TrimSpace(b.String())
+	p = strings.Join(strings.Fields(p), " ")
 	if len(p) > 250 {
 		p = p[:250]
 	}
@@ -41,17 +53,29 @@ func getDedupeKeys(agentID, clientIP, platform, prompt string) []string {
 	h := sha256.Sum256([]byte(cp))
 	hashStr := fmt.Sprintf("%x", h[:16])
 	plat := strings.ToLower(strings.TrimSpace(platform))
+	if strings.Contains(plat, "copilot") {
+		plat = "copilot"
+	} else if strings.Contains(plat, "chatgpt") || strings.Contains(plat, "openai") {
+		plat = "chatgpt"
+	} else if strings.Contains(plat, "claude") || strings.Contains(plat, "anthropic") {
+		plat = "claude"
+	} else if strings.Contains(plat, "gemini") || strings.Contains(plat, "google") {
+		plat = "gemini"
+	}
 
 	var keys []string
 	aid := strings.TrimSpace(agentID)
 	cip := strings.TrimSpace(clientIP)
 	if aid != "" {
 		keys = append(keys, fmt.Sprintf("aid:%s:%s:%s", aid, plat, hashStr))
+		keys = append(keys, fmt.Sprintf("aid:%s:%s", aid, hashStr))
 	}
 	if cip != "" {
 		keys = append(keys, fmt.Sprintf("ip:%s:%s:%s", cip, plat, hashStr))
+		keys = append(keys, fmt.Sprintf("ip:%s:%s", cip, hashStr))
 	}
 	keys = append(keys, fmt.Sprintf("p:%s:%s", plat, hashStr))
+	keys = append(keys, fmt.Sprintf("ghash:%s", hashStr))
 	return keys
 }
 
@@ -283,7 +307,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	var dedupeKeys []string
 	if !uploadScan && !evalOnly {
 		dedupeKeys = getDedupeKeys(payload.AgentID, payload.ClientIP, payload.Platform, payload.Prompt)
-		if cachedBytes, hit := checkPromptDedupe(dedupeKeys, 8*time.Second); hit {
+		if cachedBytes, hit := checkPromptDedupe(dedupeKeys, 15*time.Second); hit {
 			ctx.SetStatusCode(fasthttp.StatusOK)
 			ctx.SetContentType("application/json; charset=utf-8")
 			ctx.SetBody(cachedBytes)
