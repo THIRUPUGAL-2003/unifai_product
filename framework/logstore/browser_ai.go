@@ -2240,14 +2240,23 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	if db.Dialector != nil {
 		dbDialect = strings.ToLower(db.Dialector.Name())
 	}
-	dedupCutoffUTC := time.Now().UTC().Add(-30 * time.Second)
-	dedupCutoffLocal := time.Now().Add(-30 * time.Second)
+	dedupDuration := 30 * time.Second
+	isSiteBlockPrompt := strings.HasPrefix(trimmedPrompt, "[SITE BLOCKED")
+	if isSiteBlockPrompt {
+		dedupDuration = 15 * time.Minute
+	}
+	dedupCutoffUTC := time.Now().UTC().Add(-dedupDuration)
+	dedupCutoffLocal := time.Now().Add(-dedupDuration)
 
 	dedupQuery := db.WithContext(ctx).
 		Where("(LOWER(platform) = LOWER(?) OR platform = ?)", cleanPlatform, cleanPlatform)
 
 	if dbDialect == "postgres" || dbDialect == "postgresql" {
-		dedupQuery = dedupQuery.Where("(created_at >= (NOW() - INTERVAL '30 seconds') OR created_at >= ? OR created_at >= ?)", dedupCutoffUTC, dedupCutoffLocal)
+		if isSiteBlockPrompt {
+			dedupQuery = dedupQuery.Where("(created_at >= (NOW() - INTERVAL '15 minutes') OR created_at >= ? OR created_at >= ?)", dedupCutoffUTC, dedupCutoffLocal)
+		} else {
+			dedupQuery = dedupQuery.Where("(created_at >= (NOW() - INTERVAL '30 seconds') OR created_at >= ? OR created_at >= ?)", dedupCutoffUTC, dedupCutoffLocal)
+		}
 	} else {
 		dedupQuery = dedupQuery.Where("(created_at >= ? OR created_at >= ?)", dedupCutoffUTC, dedupCutoffLocal)
 	}
@@ -2255,7 +2264,12 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	trimmedLower := strings.ToLower(SanitizeDBString(trimmedPrompt))
 	previewLower := strings.ToLower(cleanPreview)
 
-	if cleanAttachmentName != "" {
+	if isSiteBlockPrompt {
+		// Collapse any repeated site block events for this platform & client into one single entry
+		dedupQuery = dedupQuery.Where(
+			"(user_prompt_full LIKE '[SITE BLOCKED]%' OR user_prompt_preview LIKE '[SITE BLOCKED]%')",
+		)
+	} else if cleanAttachmentName != "" {
 		dedupQuery = dedupQuery.Where(
 			"(LOWER(TRIM(user_prompt_full)) = ? OR LOWER(TRIM(user_prompt_preview)) = ? OR LOWER(attachment_name) = ? OR attachment_name LIKE ?)",
 			trimmedLower, previewLower, strings.ToLower(cleanAttachmentName), "%"+strings.ToLower(cleanAttachmentName)+"%",

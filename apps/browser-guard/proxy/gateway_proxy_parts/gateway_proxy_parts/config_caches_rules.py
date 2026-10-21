@@ -445,8 +445,8 @@ _UNIVERSAL_PROMPT_KEYS = (
 # 1.2s: collapses near-simultaneous browser double-submits (~50–200ms apart)
 # while allowing genuine same-text re-sends at ~1.5s+ to predict fresh.
 DEDUPE_TTL = 1.2
-# Longer window for upload/download blocks (ChatGPT fires many file API calls)
-BLOCK_DEDUPE_TTL = 30
+# Longer window for upload/download/site blocks (prevents looping background retries)
+BLOCK_DEDUPE_TTL = 900
 # Typing bursts: observe each keystroke, commit once.
 # Same rule for ALL admin Target Websites — not per-domain hardcode.
 # Keep holds SHORT — long sleeps on the mitm request thread caused intermittent
@@ -742,6 +742,25 @@ def get_target_host_role(domain: str) -> str:
     return best_role
 
 
+def canonical_target_domain(domain: str) -> str:
+    """Resolve subdomains (e.g. ab.chatgpt.com, ws.chatgpt.com) to primary root target domain (chatgpt.com)."""
+    d = _normalize_domain(domain)
+    if not d:
+        return ""
+    with _cache_lock:
+        all_targets = list(_cached_domains.keys()) + list(_cached_blocked.keys())
+    # Sort candidate parents by shortest length first (e.g. chatgpt.com before ab.chatgpt.com)
+    for parent in sorted(set(all_targets), key=len):
+        pn = _normalize_domain(parent)
+        if pn and d != pn and d.endswith("." + pn):
+            return pn
+    # Fallback: if domain has >2 labels, return the main domain part
+    parts = d.split(".")
+    if len(parts) > 2 and parts[-2] not in ("co", "com", "org", "gov", "edu", "net", "ac"):
+        return ".".join(parts[-2:])
+    return d
+
+
 def detect_site_block(host: str) -> tuple[bool, str, str]:
     """Return (blocked, domain, platform) when admin enabled Block entire website."""
     get_target_domains()  # ensure bg refresh + memory maps
@@ -750,12 +769,14 @@ def detect_site_block(host: str) -> tuple[bool, str, str]:
         return False, "", ""
     with _cache_lock:
         blocked_map = dict(_cached_blocked)
-    for domain, platform in blocked_map.items():
+    # Check shortest domain length first so root domain matches before subdomains
+    for domain, platform in sorted(blocked_map.items(), key=lambda x: len(x[0])):
         d = _normalize_domain(domain)
         if not d:
             continue
         if host_lower == d or host_lower.endswith("." + d):
-            return True, domain, platform
+            canon = canonical_target_domain(domain) or domain
+            return True, canon, platform
     return False, "", ""
 
 

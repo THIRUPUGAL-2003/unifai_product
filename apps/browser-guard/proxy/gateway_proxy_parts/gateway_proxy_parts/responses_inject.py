@@ -589,6 +589,34 @@ def inject_websocket_reply(flow: http.HTTPFlow, host: str, reply_text: str) -> N
     _run_on_event_loop(_send)
 
 
+def _show_desktop_notification(title: str, message: str) -> None:
+    """Display non-blocking native OS notification for desktop apps (ChatGPT.exe, Claude.exe)."""
+    import sys, subprocess, threading
+    def _run():
+        try:
+            safe_title = (title or "UnifAI Security").replace('"', '').replace("'", "")
+            safe_msg = (message or "Policy violation detected.").replace('"', '').replace("'", "")[:120]
+            if sys.platform == "win32":
+                ps_code = (
+                    "[reflection.assembly]::loadwithpartialname('System.Windows.Forms') | Out-Null; "
+                    "$n = New-Object System.Windows.Forms.NotifyIcon; "
+                    "$n.Icon = [System.Drawing.SystemIcons]::Shield; "
+                    "$n.Visible = $True; "
+                    f"$n.ShowBalloonTip(2000, '{safe_title}', '{safe_msg}', [System.Windows.Forms.ToolTipIcon]::Warning); "
+                    "Start-Sleep -Seconds 2; $n.Dispose()"
+                )
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_code],
+                    timeout=5, check=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            elif sys.platform == "darwin":
+                osa = f'display notification "{safe_msg}" with title "{safe_title}" subtitle "DLP Guardrail"'
+                subprocess.run(["osascript", "-e", osa], timeout=3, check=False)
+        except Exception:
+            pass
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, reply_text: str = "") -> None:
     """
     Inject a clean in-chat security reply (HTTP 200) so the website shows a
@@ -607,6 +635,7 @@ def make_blocked_response(flow: http.HTTPFlow, rule_triggered: str, host: str, r
         msg = "This request was blocked by Gateway Guard."
     if "evaluation failed" in msg.lower():
         msg = "This request was blocked by Gateway Guard."
+    _show_desktop_notification(f"UnifAI Security ({rule_triggered or 'DLP Block'})", msg)
     msg_json = json.dumps(msg)
     msg_escaped = (
         msg.replace("\\", "\\\\")

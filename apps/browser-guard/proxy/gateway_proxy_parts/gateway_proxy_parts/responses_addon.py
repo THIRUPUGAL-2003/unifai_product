@@ -691,19 +691,34 @@ class BrowserAIInterceptor:
         blocked, b_domain, b_platform = detect_site_block(host)
         if blocked:
             client_ip = get_client_ip(flow)
-            if not is_duplicate_event(b_domain, "site-block", ttl=BLOCK_DEDUPE_TTL):
-                print(f"[Gateway Proxy] SITE BLOCKED | {client_ip} -> {host} ({b_domain})")
+            # Resolve to root target domain (e.g. ab.chatgpt.com -> chatgpt.com)
+            canonical_dom = canonical_target_domain(b_domain) if "canonical_target_domain" in globals() else b_domain
+            canonical_dom = canonical_dom or b_domain
+
+            # Distinguish top-level user page navigations from background sub-resource traffic.
+            # Background XHR/fetch, beacons, scripts, images, and telemetry endpoints (like ab.chatgpt.com)
+            # must NOT create audit log entries every few seconds.
+            sec_dest = (flow.request.headers.get("sec-fetch-dest") or "").lower()
+            accept_hdr = (flow.request.headers.get("accept") or "").lower()
+            is_doc_nav = sec_dest in ("document", "nested-document", "frame", "iframe") or (
+                not sec_dest and "text/html" in accept_hdr and method in ("GET", "HEAD")
+            )
+
+            # 15-minute (900s) deduplication key per client IP & canonical domain
+            dedupe_key = f"{client_ip}|site-block|{canonical_dom}"
+            if is_doc_nav and not is_duplicate_event(canonical_dom, dedupe_key, ttl=BLOCK_DEDUPE_TTL):
+                print(f"[Gateway Proxy] SITE BLOCKED | {client_ip} -> {host} ({canonical_dom})")
                 import json as _json
                 import threading as _thr
                 _wire = _agent_wire_fields() if "_agent_wire_fields" in globals() else {}
                 _meta = _agent_metadata_fields() if "_agent_metadata_fields" in globals() else {}
                 _site_block_payload = _json.dumps({
                     "platform": b_platform,
-                    "prompt": f"[SITE BLOCKED] Access denied to {b_domain}",
+                    "prompt": f"[SITE BLOCKED] Access denied to {canonical_dom}",
                     "client_ip": client_ip,
                     **_wire,
                     "metadata": {
-                        "domain": b_domain,
+                        "domain": canonical_dom,
                         "url": flow.request.url,
                         "method": flow.request.method,
                         "is_blocked": True,
@@ -725,7 +740,7 @@ class BrowserAIInterceptor:
                         pass
 
                 _thr.Thread(target=_post_site_block, daemon=True).start()
-            make_site_blocked_response(flow, b_domain, b_platform)
+            make_site_blocked_response(flow, canonical_dom, b_platform)
             return
 
         # Extension Pre-Send Coordination:
