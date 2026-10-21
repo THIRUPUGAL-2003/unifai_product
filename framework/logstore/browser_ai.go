@@ -1516,7 +1516,7 @@ func searchEnginePACRule(proxyAddr string) string {
         host === "bing.com" || host === "www.bing.com" ||
         host === "duckduckgo.com" || host === "html.duckduckgo.com" ||
         dnsDomainIs(host, "search.yahoo.com") || host === "search.brave.com") {
-        return "PROXY ` + proxyAddr + `";
+        return "PROXY ` + proxyAddr + `; DIRECT";
     }
 
 `

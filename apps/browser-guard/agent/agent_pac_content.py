@@ -63,7 +63,7 @@ SEARCH_ENGINE_PAC_RULE = [
     '        host === "bing.com" || host === "www.bing.com" ||',
     '        host === "duckduckgo.com" || host === "html.duckduckgo.com" ||',
     '        dnsDomainIs(host, "search.yahoo.com") || host === "search.brave.com") {',
-    '        return "PROXY {proxy}";',
+    '        return "PROXY {proxy}; DIRECT";',
     "    }",
     "",
 ]
@@ -155,28 +155,27 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
 def ensure_pac_strict_proxy(pac: str) -> str:
     """Monitored hosts use PROXY only while Guard is healthy.
 
-    ``PROXY …; DIRECT`` caused silent bypass (sites work, Prompt Logs stay 0).
-    When the local listener is down, health_loop rewrites PAC to all-DIRECT instead.
+    Search engines retain ; DIRECT fallback so web searches never hard fail with ERR_PROXY_CONNECTION_FAILED.
     """
     if not pac or "FindProxyForURL" not in pac:
         return pac
 
-    # Normalize any "PROXY host:port; DIRECT" → "PROXY host:port"
-    pac = re.sub(
-        r'return\s*"\s*PROXY\s+([^";]+?)\s*;\s*DIRECT\s*"',
-        lambda m: f'return "PROXY {m.group(1).strip()}"',
-        pac,
-        flags=re.IGNORECASE,
-    )
+    proxy_target = (agent_config.PAC_ADVERTISE_ADDR or PROXY_ADDR or "127.0.0.1:18103").strip()
 
-    # Ensure search engine routing (Google, Bing, DDG, Yahoo) is present for Search Logs
-    # even when an older server PAC build omitted searchEnginePACRule.
-    if "google.*" not in pac:
-        proxy_target = (agent_config.PAC_ADVERTISE_ADDR or PROXY_ADDR or "127.0.0.1:18103").strip()
-        rule = "\n".join(line.replace("{proxy}", proxy_target) for line in SEARCH_ENGINE_PAC_RULE)
+    # Ensure search engine routing (Google, Bing, DDG, Yahoo) is present and always has ; DIRECT fallback
+    search_rule = "\n".join(line.replace("{proxy}", proxy_target) for line in SEARCH_ENGINE_PAC_RULE)
+    if "google.*" in pac or "bing.com" in pac:
+        pac = re.sub(
+            r'if\s*\(\s*shExpMatch\(host,\s*"google\.\*"\)[\s\S]*?return\s*"PROXY\s+[^"]+";\s*\}',
+            search_rule.strip(),
+            pac,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    else:
         pac = re.sub(
             r'(function\s+FindProxyForURL\s*\([^)]*\)\s*\{(?:\s*host\s*=\s*host\.toLowerCase\(\)\s*;)?\s*)',
-            r'\1\n' + rule + '\n',
+            r'\1\n' + search_rule + '\n',
             pac,
             count=1,
             flags=re.IGNORECASE,

@@ -132,10 +132,10 @@ def run_health_check(proxy_port: int | None = None) -> dict:
     checks: dict[str, bool] = {}
     details: list[str] = []
 
-    targets = _http_get_text(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent", "application/json", timeout=45)
+    targets = _http_get_text(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent", "application/json", timeout=4)
     checks["backend_targets"] = bool(targets and "targets" in targets)
     if not checks["backend_targets"]:
-        targets = _http_get_text(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets", "application/json", timeout=45)
+        targets = _http_get_text(f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets", "application/json", timeout=4)
         checks["backend_targets"] = bool(targets and "targets" in targets)
     if not checks["backend_targets"]:
         details.append("backend targets unreachable")
@@ -244,16 +244,15 @@ def health_loop(stop_event: threading.Event, proxy_port: int) -> None:
             # Require several misses before all-DIRECT — one blip must not sticky-bypass forever.
             if not proxy_up:
                 fail_streak += 1
-                # Faster fail-open: 2 misses (~90s) — PROXY-only PAC causes hard
-                # ERR_PROXY_CONNECTION_FAILED while MitM is restarting.
-                if fail_streak >= 2:
+                # Instant fail-open to DIRECT so browsers never show ERR_PROXY_CONNECTION_FAILED while proxy is starting or recovering.
+                if fail_streak >= 1:
                     write_local_pac(
                         "// Gateway Guard — local proxy down; fail open until proxy returns.\n"
                         'function FindProxyForURL(url, host) { return "DIRECT"; }\n'
                     )
                     apply_pac_with_bust(silent=True, force_new=True)
                     proxy_was_down = True
-                    print("[Gateway Guard] Proxy port down x2 — PAC fail-open DIRECT (browsers stay online).")
+                    print("[Gateway Guard] Proxy port down — PAC fail-open DIRECT immediately (browsers stay online).")
             else:
                 if fail_streak > 0 or proxy_was_down:
                     pac = fetch_proxy_pac()

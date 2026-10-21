@@ -217,10 +217,10 @@ def run_proxy_server(addon_script: str, port: int | None = None) -> None:
     # Block until child exits (crash / sleep-wake / stop).
     def _proxy_is_open() -> bool:
         """Check if the proxy port is reachable on any relevant address."""
-        if port_open("127.0.0.1", port):
+        if port_open("127.0.0.1", port, timeout=1.2):
             return True
         # Server-mode binds 0.0.0.0 — also check listen_host (may differ from 127.0.0.1).
-        if listen_host not in ("127.0.0.1", "") and port_open(listen_host, port):
+        if listen_host not in ("127.0.0.1", "") and port_open(listen_host, port, timeout=1.2):
             return True
         return False
 
@@ -230,10 +230,15 @@ def run_proxy_server(addon_script: str, port: int | None = None) -> None:
             if rc is not None:
                 print(f"[Gateway Guard WARNING] MitM worker exited (code={rc})")
                 break
-            # If listen socket vanished but process still alive → hung event loop.
+            # If listen socket vanished but process still alive → verify with multiple retries before killing
             if not _proxy_is_open():
-                time.sleep(1.0)
-                if not _proxy_is_open() and proc.poll() is None:
+                is_dead = True
+                for _ in range(3):
+                    time.sleep(1.5)
+                    if _proxy_is_open():
+                        is_dead = False
+                        break
+                if is_dead and proc.poll() is None:
                     print(
                         "[Gateway Guard ERROR] Proxy port lost while worker alive "
                         "(likely Event loop hung) — killing worker for restart"
