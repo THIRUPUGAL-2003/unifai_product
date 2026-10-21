@@ -37,47 +37,108 @@
     return host === serverHost || host.endsWith("." + serverHost);
   }
 
+  function renderBlockedPage(hostname) {
+    try {
+      window.stop();
+    } catch (e) {}
+    window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+    var displayHost = (hostname || location.hostname || "").toLowerCase().replace(/^www\./, "");
+    var blockHtml = '<!DOCTYPE html>' +
+      '<html lang="en">' +
+      '<head>' +
+      '  <meta charset="utf-8"/>' +
+      '  <meta name="viewport" content="width=device-width, initial-scale=1"/>' +
+      '  <title>Blocked by Gateway Guard</title>' +
+      '  <style>' +
+      '    * { box-sizing: border-box; margin: 0; padding: 0; }' +
+      '    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b1220; color: #e2e8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }' +
+      '    .card { max-width: 540px; width: 100%; padding: 36px 32px; border: 1px solid #334155; border-radius: 14px; background: #111827; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }' +
+      '    .icon { width: 56px; height: 56px; margin: 0 auto 16px; background: rgba(239, 68, 68, 0.15); border: 2px solid #ef4444; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #ef4444; font-size: 26px; font-weight: bold; }' +
+      '    h1 { margin: 0 0 12px; font-size: 22px; color: #f87171; font-weight: 700; }' +
+      '    p { margin: 0 0 10px; line-height: 1.6; color: #cbd5e1; font-size: 14px; }' +
+      '    code { background: #1e293b; color: #93c5fd; padding: 3px 8px; border-radius: 5px; font-size: 13px; font-weight: 600; word-break: break-all; }' +
+      '    .footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid #1e293b; font-size: 12px; color: #64748b; }' +
+      '  </style>' +
+      '</head>' +
+      '<body>' +
+      '  <div class="card">' +
+      '    <div class="icon">✕</div>' +
+      '    <h1>Website Blocked by Gateway Guard</h1>' +
+      '    <p>Access to <code>' + displayHost + '</code> is blocked by your organization\'s security policy.</p>' +
+      '    <div class="footer">UnifAI YP-Raksha Enterprise Security</div>' +
+      '  </div>' +
+      '</body>' +
+      '</html>';
+
+    try {
+      if (document.documentElement) {
+        document.documentElement.innerHTML = blockHtml;
+      } else {
+        document.write(blockHtml);
+      }
+    } catch (e) {}
+  }
+
   var sitesMap = null;
-  function rebuildSitesMap(domains) {
-    sitesMap = Object.create(null);
-    if (!Array.isArray(domains)) return;
+  var lastSitesList = null;
+  var blockedSitesMap = null;
+  var lastBlockedSitesList = null;
+
+  function buildDomainMap(domains) {
+    var map = Object.create(null);
+    if (!Array.isArray(domains)) return map;
     for (var i = 0; i < domains.length; i++) {
       var d = String(domains[i] || "").toLowerCase().trim();
       if (d.indexOf("www.") === 0) d = d.slice(4);
       if (d.indexOf(":") >= 0) d = d.split(":")[0];
-      if (d) sitesMap[d] = true;
+      if (d) map[d] = true;
     }
+    return map;
   }
 
-  // O(1) hash map matcher that scales to 10,000+ target websites with zero latency
-  function hostMatches(host, domains) {
+  function matchDomainInMap(host, map, rawList) {
     if (!host) return false;
     host = host.toLowerCase().trim();
     if (host.indexOf("www.") === 0) host = host.slice(4);
     if (host.indexOf(":") >= 0) host = host.split(":")[0];
 
-    if (!sitesMap && Array.isArray(domains)) {
-      rebuildSitesMap(domains);
-    }
-    if (sitesMap && sitesMap[host]) return true;
+    if (map && map[host]) return true;
 
     // Fast O(1) parent subdomain traversal (e.g. sub.copilot.cloud.microsoft -> cloud.microsoft)
     var dot = host.indexOf(".");
     while (dot !== -1) {
       var parent = host.substring(dot + 1);
-      if (sitesMap && sitesMap[parent]) return true;
+      if (map && map[parent]) return true;
       dot = host.indexOf(".", dot + 1);
     }
 
-    // Direct fallback if map was empty
-    if (Array.isArray(domains) && (!sitesMap || Object.keys(sitesMap).length === 0)) {
-      for (var j = 0; j < domains.length; j++) {
-        var dom = String(domains[j] || "").toLowerCase();
+    if (Array.isArray(rawList)) {
+      for (var j = 0; j < rawList.length; j++) {
+        var dom = String(rawList[j] || "").toLowerCase().trim();
+        if (dom.indexOf("www.") === 0) dom = dom.slice(4);
+        if (dom.indexOf(":") >= 0) dom = dom.split(":")[0];
         if (!dom) continue;
         if (host === dom || host.slice(-(dom.length + 1)) === "." + dom) return true;
       }
     }
     return false;
+  }
+
+  // O(1) hash map matcher that scales to 10,000+ target websites with zero latency
+  function hostMatches(host, domains) {
+    if (!sitesMap || (Array.isArray(domains) && domains !== lastSitesList)) {
+      lastSitesList = domains;
+      sitesMap = buildDomainMap(domains);
+    }
+    return matchDomainInMap(host, sitesMap, domains);
+  }
+
+  function hostBlockedMatches(host, blockedDomains) {
+    if (!blockedSitesMap || (Array.isArray(blockedDomains) && blockedDomains !== lastBlockedSitesList)) {
+      lastBlockedSitesList = blockedDomains;
+      blockedSitesMap = buildDomainMap(blockedDomains);
+    }
+    return matchDomainInMap(host, blockedSitesMap, blockedDomains);
   }
 
   // Accurate client-side browser detector across Chrome, Edge, Safari, Firefox, Brave, Opera, Vivaldi
@@ -155,10 +216,15 @@
   function armIfMonitored() {
     // 1. Check local cache first for zero-latency startup
     if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["cached_rules", "cached_sites", "cached_exts", "server_host"], function (res) {
+      chrome.storage.local.get(["cached_rules", "cached_sites", "cached_blocked_sites", "cached_exts", "server_host"], function (res) {
         if (res && res.server_host) serverHost = res.server_host;
         if (isServerHost(location.hostname)) {
           window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+          return;
+        }
+        var blockedSites = (res && Array.isArray(res.cached_blocked_sites)) ? res.cached_blocked_sites : [];
+        if (hostBlockedMatches(location.hostname, blockedSites)) {
+          renderBlockedPage(location.hostname);
           return;
         }
         var sites = (res && Array.isArray(res.cached_sites)) ? res.cached_sites : [];
@@ -188,12 +254,21 @@
         })
         .then(function (data) {
           if (!data || !Array.isArray(data.hosts)) return;
-          var domains = data.hosts;
+          var domains = data.hosts || [];
+          var blockedDomains = Array.isArray(data.blocked_hosts) ? data.blocked_hosts : [];
           if (data.server_host) {
             serverHost = data.server_host;
           }
           if (chrome.storage && chrome.storage.local) {
-            chrome.storage.local.set({ cached_sites: domains, server_host: serverHost });
+            chrome.storage.local.set({
+              cached_sites: domains,
+              cached_blocked_sites: blockedDomains,
+              server_host: serverHost
+            });
+          }
+          if (hostBlockedMatches(location.hostname, blockedDomains)) {
+            renderBlockedPage(location.hostname);
+            return;
           }
           if (isServerHost(location.hostname) || !hostMatches(location.hostname, domains)) {
             // Server portal or domain not in target websites: disarm immediately
@@ -211,6 +286,13 @@
   if (chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener(function (changes, areaName) {
       if (areaName !== "local") return;
+      if (changes.cached_blocked_sites) {
+        var newBlocked = Array.isArray(changes.cached_blocked_sites.newValue) ? changes.cached_blocked_sites.newValue : [];
+        if (hostBlockedMatches(location.hostname, newBlocked)) {
+          renderBlockedPage(location.hostname);
+          return;
+        }
+      }
       if (changes.cached_rules) {
         var newRules = Array.isArray(changes.cached_rules.newValue) ? changes.cached_rules.newValue : [];
         var rulesMsg = {
@@ -280,12 +362,14 @@
       });
     }
 
-    withBase(function () {
-    fetch(base + "/extension/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(checkPayload)
-    })
+    var reqHost = msg.host || location.hostname;
+    function doCheck() {
+      withBase(function () {
+      fetch(base + "/extension/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(checkPayload)
+      })
       .then(function (r) { return r.json(); })
       .then(function (decision) {
         var dec = decision || { blocked: false };
@@ -304,10 +388,36 @@
         }
         window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: dec }, "*");
       })
-      .catch(function () {
-        window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
+        .catch(function () {
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
+        });
       });
-    });
+    }
+
+    if (chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(["cached_blocked_sites"], function (res) {
+        var blockedList = (res && Array.isArray(res.cached_blocked_sites)) ? res.cached_blocked_sites : [];
+        if (hostBlockedMatches(reqHost, blockedList)) {
+          renderBlockedPage(reqHost);
+          window.postMessage({
+            source: "gateway-guard",
+            nonce: guardNonce,
+            type: "decision",
+            id: msg.id,
+            decision: {
+              blocked: true,
+              action: "Blocked",
+              rule: "Site Blocked",
+              message: "Access to this website is blocked by company security policy."
+            }
+          }, "*");
+          return;
+        }
+        doCheck();
+      });
+    } else {
+      doCheck();
+    }
   });
 
   injectHook(armIfMonitored);

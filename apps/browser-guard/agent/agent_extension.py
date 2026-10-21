@@ -116,6 +116,7 @@ def get_extension_version() -> str:
 EXTENSION_VERSION = get_extension_version()
 _sites_lock = threading.Lock()
 _sites_cache: tuple[float, list[str]] = (0.0, [])
+_blocked_sites_cache: tuple[float, list[str]] = (0.0, [])
 _domain_platform_map: dict[str, str] = {}
 
 
@@ -192,7 +193,7 @@ def monitored_hosts() -> list[str]:
     """Domains the gateway monitors. Strictly synchronized live with PostgreSQL Target Websites."""
     import time
 
-    global _sites_cache, _domain_platform_map
+    global _sites_cache, _blocked_sites_cache, _domain_platform_map
     from agent_http import _http_get_text
 
     now = time.time()
@@ -201,6 +202,7 @@ def monitored_hosts() -> list[str]:
         if cached and now - cached_at < 15:
             return list(cached)
     hosts: list[str] = []
+    b_hosts: list[str] = []
     platform_map: dict[str, str] = {}
     fetch_ok = False
     body = ""
@@ -226,17 +228,21 @@ def monitored_hosts() -> list[str]:
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            if row.get("monitored") is False and str(row.get("status") or "").upper() not in ("MONITORED", "BLOCKED"):
+            is_mon = bool(row.get("monitored")) or str(row.get("status") or "").upper() in ("MONITORED", "BLOCKED")
+            is_blk = bool(row.get("block_site")) or str(row.get("status") or "").upper() == "BLOCKED"
+            if not is_mon and not is_blk:
                 continue
             domain = str(row.get("domain") or "").strip().lower()
             if "://" in domain:
                 domain = domain.split("://", 1)[1]
-            domain = domain.split("/", 1)[0].split(":", 1)[0].strip(".")
+            domain = domain.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0].split(":", 1)[0].strip(".")
             if domain.startswith("www."):
                 domain = domain[4:]
             if domain:
                 if domain not in hosts:
                     hosts.append(domain)
+                if is_blk and domain not in b_hosts:
+                    b_hosts.append(domain)
                 plat = str(row.get("platform_name") or "").strip()
                 if plat:
                     platform_map[domain] = plat
@@ -246,10 +252,11 @@ def monitored_hosts() -> list[str]:
         # Backend reachable: strictly honor the database target websites list and persist to disk cache
         with _sites_lock:
             _sites_cache = (now, hosts)
+            _blocked_sites_cache = (now, b_hosts)
             _domain_platform_map = platform_map
         try:
             with open(disk_cache_file, "w", encoding="utf-8") as f:
-                json.dump({"hosts": hosts, "platform_map": platform_map}, f)
+                json.dump({"hosts": hosts, "blocked_hosts": b_hosts, "platform_map": platform_map}, f)
         except Exception:
             pass
         return list(hosts)
@@ -263,13 +270,23 @@ def monitored_hosts() -> list[str]:
                 with open(disk_cache_file, "r", encoding="utf-8") as f:
                     saved = json.load(f)
                     hosts = saved.get("hosts", [])
+                    b_hosts = saved.get("blocked_hosts", [])
                     _domain_platform_map = saved.get("platform_map", {})
                     _sites_cache = (now, hosts)
+                    _blocked_sites_cache = (now, b_hosts)
                     return list(hosts)
             except Exception:
                 pass
         _sites_cache = (now, [])
+        _blocked_sites_cache = (now, [])
     return []
+
+
+def blocked_hosts() -> list[str]:
+    """Return all target domains marked with block_site = True."""
+    monitored_hosts()
+    with _sites_lock:
+        return list(_blocked_sites_cache[1] if len(_blocked_sites_cache) > 1 and _blocked_sites_cache[1] else [])
 
 
 _rules_lock = threading.Lock()
@@ -539,6 +556,23 @@ def check_prompt(
     rule: str = "",
 ) -> dict:
     """Evaluate prompt, files, and images against Gateway DLP policies."""
+    # Immediate site block check
+    clean_h = (host or "").strip().lower()
+    if clean_h.startswith("www."):
+        clean_h = clean_h[4:]
+    if ":" in clean_h:
+        clean_h = clean_h.split(":", 1)[0]
+    b_hosts = blocked_hosts()
+    for bh in b_hosts:
+        bh_clean = bh.lower().strip()
+        if bh_clean and (clean_h == bh_clean or clean_h.endswith("." + bh_clean)):
+            return {
+                "blocked": True,
+                "action": "Blocked",
+                "rule": "Site Blocked",
+                "message": f"Access to {clean_h} is blocked by company security policy."
+            }
+
     text = (prompt or "").strip()
     files_list = files if isinstance(files, list) else []
     images_list = upload_images if isinstance(upload_images, list) else []
@@ -619,6 +653,17 @@ def check_prompt(
     # STRICT BYPASS: Never monitor, check, or log internal websites / local portal
     if is_internal_host(clean_host) or is_internal_host(host):
         return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
+
+    # STRICT BLOCK: If domain is marked as "Block entire website", block immediately!
+    b_hosts = blocked_hosts()
+    if host_monitored(clean_host, b_hosts) or host_monitored(host, b_hosts):
+        return {
+            "blocked": True,
+            "action": "Blocked",
+            "message": f"Access to {clean_host} is blocked by company security policy.",
+            "rule": "Block Entire Website",
+            "redacted_prompt": "",
+        }
 
     platform = ""
     with _sites_lock:

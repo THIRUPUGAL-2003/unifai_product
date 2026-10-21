@@ -618,8 +618,8 @@ def _apply_targets_from_data(data: dict) -> None:
     new_roles = {}
     for t in targets:
         domain = _normalize_domain(t.get("domain", ""))
-        monitored = bool(t.get("monitored"))
-        block_site = bool(t.get("block_site"))
+        monitored = bool(t.get("monitored")) or str(t.get("status") or "").upper() in ("MONITORED", "BLOCKED")
+        block_site = bool(t.get("block_site")) or str(t.get("status") or "").upper() == "BLOCKED"
         platform = t.get("platform_name") or domain or "AI Platform"
         role = (t.get("host_role") or "").strip().lower()
         if role not in ("ui", "chat", "file"):
@@ -769,14 +769,26 @@ def detect_site_block(host: str) -> tuple[bool, str, str]:
         return False, "", ""
     with _cache_lock:
         blocked_map = dict(_cached_blocked)
-    # Check shortest domain length first so root domain matches before subdomains
+        families = dict(_cached_families)
+
+    # 1. Direct or subdomain match against any blocked domain:
     for domain, platform in sorted(blocked_map.items(), key=lambda x: len(x[0])):
         d = _normalize_domain(domain)
         if not d:
             continue
-        if host_lower == d or host_lower.endswith("." + d):
+        if host_lower == d or host_lower.endswith("." + d) or d.endswith("." + host_lower):
             canon = canonical_target_domain(domain) or domain
             return True, canon, platform
+
+    # 2. Match related platform family (e.g. cloud.microsoft <-> copilot.cloud.microsoft)
+    for domain, platform in blocked_map.items():
+        fam = families.get(domain) or set()
+        for f in fam:
+            fd = _normalize_domain(f)
+            if fd and (host_lower == fd or host_lower.endswith("." + fd) or fd.endswith("." + host_lower)):
+                canon = canonical_target_domain(domain) or domain
+                return True, canon, platform
+
     return False, "", ""
 
 

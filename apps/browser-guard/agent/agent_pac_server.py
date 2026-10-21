@@ -126,7 +126,7 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
             self.wfile.write(body)
             return
         if path == "/extension/sites":
-            from agent_extension import monitored_hosts
+            from agent_extension import monitored_hosts, blocked_hosts
             from agent_config import GATEWAY_BACKEND_URL
             server_host = ""
             if GATEWAY_BACKEND_URL:
@@ -134,7 +134,11 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
                 if sh.startswith("www."):
                     sh = sh[4:]
                 server_host = sh
-            self._json(200, {"hosts": monitored_hosts(), "server_host": server_host})
+            self._json(200, {
+                "hosts": monitored_hosts(),
+                "blocked_hosts": blocked_hosts(),
+                "server_host": server_host,
+            })
             return
         if path == "/extension/rules":
             from agent_extension import dynamic_rules

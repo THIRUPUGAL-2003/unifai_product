@@ -98,8 +98,8 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
     for t in targets:
         if not isinstance(t, dict):
             continue
-        monitored = bool(t.get("monitored"))
-        block_site = bool(t.get("block_site"))
+        monitored = bool(t.get("monitored")) or str(t.get("status") or "").upper() in ("MONITORED", "BLOCKED")
+        block_site = bool(t.get("block_site")) or str(t.get("status") or "").upper() == "BLOCKED"
         if not monitored and not block_site:
             continue
         d = _normalize_domain(str(t.get("domain") or ""))
