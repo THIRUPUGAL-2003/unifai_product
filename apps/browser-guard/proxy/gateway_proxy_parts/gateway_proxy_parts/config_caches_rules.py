@@ -949,15 +949,25 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
             item_host = (item.get("host") or "").lower().strip(".")
             if item_host.startswith("www."):
                 item_host = item_host[4:]
-            if clean_d and item_host and not (clean_d == item_host or clean_d.endswith("." + item_host) or item_host.endswith("." + clean_d)):
-                continue
             item_p = " ".join((item.get("preview") or "").strip().split()).lower()[:100]
             item_files = [str(x).lower().strip() for x in (item.get("files") or [])]
+
+            # 1. Exact or substring prompt match on this workstation within 15 seconds:
+            # recent_extension_evals.json is machine-local. If the local browser extension
+            # just evaluated this prompt, it is guaranteed to be the same user action.
             if p_clean and item_p and (p_clean == item_p or p_clean in item_p or item_p in p_clean):
                 return True
+
+            # 2. File upload match
             if fn_clean and (fn_clean in item_files or any(fn_clean in x for x in item_files)):
                 return True
-            if clean_d and item_host and (now - item_time < 5.0):
+
+            # 3. Host match within 5 seconds
+            if clean_d and item_host and (
+                clean_d == item_host
+                or clean_d.endswith("." + item_host)
+                or item_host.endswith("." + clean_d)
+            ) and (now - item_time < 5.0):
                 return True
     except Exception:
         pass

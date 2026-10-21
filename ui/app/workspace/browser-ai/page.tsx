@@ -2682,7 +2682,7 @@ export default function BrowserAiPage() {
 				{ key: "desktop_name", header: "Desktop Name" },
 				{ key: "platform", header: "Platform" },
 				{ key: "prompt", header: "User Prompt" },
-				{ key: "tokens", header: "Tokens (In / Out / Total)" },
+				{ key: "tokens", header: "Input Tokens" },
 				{ key: "cost", header: "Cost ($)" },
 				{ key: "action", header: "Action" },
 				{ key: "details", header: "Security & Policy Details" },
@@ -2693,7 +2693,7 @@ export default function BrowserAiPage() {
 				desktop_name: log.agent_hostname || log.agent_id || "",
 				platform: log.platform || "",
 				prompt: promptPreviewForExport(log),
-				tokens: `${log.prompt_tokens ?? log.est_tokens ?? 0} in / ${log.completion_tokens ?? 0} out (${log.total_tokens ?? ((log.prompt_tokens ?? log.est_tokens ?? 0) + (log.completion_tokens ?? 0))} total)${log.audio_duration_sec ? ` [Audio: ${log.audio_duration_sec.toFixed(1)}s]` : ""}`,
+				tokens: `${log.prompt_tokens ?? log.est_tokens ?? 0} in${log.audio_duration_sec ? ` [Audio: ${log.audio_duration_sec.toFixed(1)}s]` : ""}`,
 				cost: log.cost != null ? `$${log.cost.toFixed(4)}` : "$0.00",
 				action: log.action || "",
 				details: promptDetailsForExport(log),
@@ -3091,10 +3091,10 @@ export default function BrowserAiPage() {
 												<TableCell className="py-0 text-right text-xs font-mono">
 													<div className="flex flex-col items-end leading-tight">
 														<span className="font-semibold text-foreground">
-															{(log.total_tokens ?? ((log.prompt_tokens ?? log.est_tokens ?? 0) + (log.completion_tokens ?? 0))) || 0}
+															{log.prompt_tokens ?? log.est_tokens ?? log.total_tokens ?? 0}
 														</span>
 														<span className="text-[10px] text-muted-foreground whitespace-nowrap">
-															{log.prompt_tokens ?? log.est_tokens ?? 0} in / {log.completion_tokens ?? 0} out
+															{log.prompt_tokens ?? log.est_tokens ?? 0} in
 														</span>
 														{log.audio_duration_sec && log.audio_duration_sec > 0 ? (
 															<span className="text-[10px] text-amber-500 font-medium">
@@ -3280,10 +3280,10 @@ export default function BrowserAiPage() {
 												<TableCell className="py-0 text-right text-xs font-mono">
 													<div className="flex flex-col items-end leading-tight">
 														<span className="font-semibold text-foreground">
-															{(log.total_tokens ?? ((log.prompt_tokens ?? log.est_tokens ?? 0) + (log.completion_tokens ?? 0))) || 0}
+															{log.prompt_tokens ?? log.est_tokens ?? log.total_tokens ?? 0}
 														</span>
 														<span className="text-[10px] text-muted-foreground whitespace-nowrap">
-															{log.prompt_tokens ?? log.est_tokens ?? 0} in / {log.completion_tokens ?? 0} out
+															{log.prompt_tokens ?? log.est_tokens ?? 0} in
 														</span>
 														{log.audio_duration_sec && log.audio_duration_sec > 0 ? (
 															<span className="text-[10px] text-amber-500 font-medium">
@@ -6546,7 +6546,7 @@ export default function BrowserAiPage() {
 												: "$0.00"}
 										</span>
 									</div>
-									<div className="grid grid-cols-3 gap-2 pt-1 border-t border-border/50 text-center">
+									<div className="grid grid-cols-2 gap-2 pt-1 border-t border-border/50 text-center">
 										<div className="p-2 rounded bg-muted/40">
 											<div className="text-[10px] text-muted-foreground uppercase font-medium">Input (Prompt)</div>
 											<div className="text-sm font-semibold font-mono text-foreground mt-0.5">
@@ -6554,15 +6554,9 @@ export default function BrowserAiPage() {
 											</div>
 										</div>
 										<div className="p-2 rounded bg-muted/40">
-											<div className="text-[10px] text-muted-foreground uppercase font-medium">Output (Answer)</div>
-											<div className="text-sm font-semibold font-mono text-foreground mt-0.5">
-												{selectedLog.completion_tokens ?? 0}
-											</div>
-										</div>
-										<div className="p-2 rounded bg-muted/40">
-											<div className="text-[10px] text-muted-foreground uppercase font-medium">Total Tokens</div>
+											<div className="text-[10px] text-muted-foreground uppercase font-medium">Total Input Tokens</div>
 											<div className="text-sm font-semibold font-mono text-primary mt-0.5">
-												{selectedLog.total_tokens ?? ((selectedLog.prompt_tokens ?? selectedLog.est_tokens ?? 0) + (selectedLog.completion_tokens ?? 0))}
+												{selectedLog.prompt_tokens ?? selectedLog.est_tokens ?? selectedLog.total_tokens ?? 0}
 											</div>
 										</div>
 									</div>

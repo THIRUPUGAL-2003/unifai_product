@@ -413,7 +413,7 @@ _RECENT_EXTENSION_EVALS_LOCK = threading.Lock()
 _RECENT_EXTENSION_EVALS: list[dict] = []
 
 
-def _record_extension_eval(host: str, prompt: str, files: list | None = None) -> None:
+def _record_extension_eval(host: str, prompt: str, files: list | None = None, platform: str = "") -> None:
     """Record that the browser extension handled this prompt/upload for proxy deduplication."""
     try:
         from guard_platform import data_dir
@@ -433,6 +433,7 @@ def _record_extension_eval(host: str, prompt: str, files: list | None = None) ->
 
         entry = {
             "host": clean_h,
+            "platform": (platform or "").strip(),
             "preview": (prompt or "").strip()[:150],
             "files": fnames,
             "time": now,
@@ -662,7 +663,7 @@ def check_prompt(
         meta["is_blocked"] = True
         meta["blocked_reason"] = rule or "Client Security Rule"
 
-    _record_extension_eval(clean_host or host, user_caption or text, file_names)
+    _record_extension_eval(clean_host or host, user_caption or text, file_names, platform=platform)
 
     # Multi-file support: If files are attached, post each file individually to /api/browser-ai/intercept-file
     if files_list:

@@ -1478,6 +1478,9 @@ class BrowserAIInterceptor:
             if ws_has_prompt:
                 pn = (ws_prompt or "").strip()
                 if pn and len(pn) <= 320 and not _looks_like_document_body_dump(pn):
+                    if is_already_handled_by_extension(domain, ws_prompt):
+                        print(f"[Gateway Proxy] WebSocket prompt already handled by extension for {domain}. Skipping duplicate proxy log.")
+                        return
                     if not is_duplicate_event(domain, pn, ttl=DEDUPE_TTL, mark=False):
                         mark_duplicate_event(domain, ws_prompt)
                         allowed, rule_triggered, action, redacted_prompt, reply_text = evaluate_prompt_coalesced(
@@ -1530,6 +1533,9 @@ class BrowserAIInterceptor:
                 ws_prompt = stable
 
             print(f"[Gateway Proxy] WebSocket prompt | {client_ip} -> {platform} ({domain}) | {ws_prompt[:80]!r}")
+            if is_already_handled_by_extension(domain, ws_prompt):
+                print(f"[Gateway Proxy] WebSocket prompt already handled by extension for {domain}. Skipping duplicate proxy log.")
+                return
             mark_duplicate_event(domain, ws_prompt)
             allowed, rule_triggered, action, redacted_prompt, reply_text = evaluate_prompt_coalesced(
                 platform=platform,
