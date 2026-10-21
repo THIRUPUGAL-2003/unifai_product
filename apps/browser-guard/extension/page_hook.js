@@ -952,20 +952,33 @@
       // If a prompt was evaluated at the Send button within the last 4 seconds, mark any outgoing fetch
       if (Date.now() - _lastHandledPromptTime < 4000) {
         try {
-          init = init ? Object.assign({}, init) : {};
-          if (!init.headers) init.headers = {};
-          if (typeof Headers !== "undefined" && init.headers instanceof Headers) {
-            init.headers.set("X-Guard-Handled", "1");
-            init.headers.set("X-Gateway-Guard-Handled", "1");
-          } else if (Array.isArray(init.headers)) {
-            init.headers.push(["X-Guard-Handled", "1"]);
-            init.headers.push(["X-Gateway-Guard-Handled", "1"]);
-          } else if (typeof init.headers === "object") {
-            init.headers["X-Guard-Handled"] = "1";
-            init.headers["X-Gateway-Guard-Handled"] = "1";
+          var reqUrlEarly = (typeof input === "string" ? input : (input && input.url) || "").toLowerCase();
+          // Never tag external cloud storage or binary upload URLs (avoids breaking Azure Blob/S3 pre-signed signatures & CORS)
+          if (
+            !reqUrlEarly.includes("blob.core.windows.net") &&
+            !reqUrlEarly.includes("amazonaws.com") &&
+            !reqUrlEarly.includes("storage.googleapis.com") &&
+            !reqUrlEarly.includes("/backend-api/files") &&
+            !reqUrlEarly.includes("/files") &&
+            !reqUrlEarly.includes("/upload")
+          ) {
+            if (typeof Request !== "undefined" && input instanceof Request) {
+              try {
+                input.headers.set("X-Guard-Handled", "1");
+                input.headers.set("X-Gateway-Guard-Handled", "1");
+              } catch (e1) {}
+            } else if (init && init.headers) {
+              if (typeof Headers !== "undefined" && init.headers instanceof Headers) {
+                init.headers.set("X-Guard-Handled", "1");
+                init.headers.set("X-Gateway-Guard-Handled", "1");
+              } else if (typeof init.headers === "object") {
+                init.headers["X-Guard-Handled"] = "1";
+                init.headers["X-Gateway-Guard-Handled"] = "1";
+              }
+            }
           }
         } catch (e) { }
-        return origFetch.apply(this, [input, init]);
+        return origFetch.apply(this, arguments);
       }
 
       var method = (init && init.method) || (input && input.method) || "GET";
@@ -1142,14 +1155,27 @@
         } catch (err) { }
       }
 
-      // Only inspect if this specific request body actually carries a typed prompt or attached files
-      if (!promptText && netFiles.length === 0) {
+      // Check if URL looks like a pure file upload endpoint (ChatGPT /files, Claude upload, Azure Blob, S3, etc.)
+      var lowUrl = (url || "").toLowerCase();
+      var isPureUploadEndpoint =
+        lowUrl.includes("/backend-api/files") ||
+        lowUrl.includes("/files") ||
+        lowUrl.includes("/upload") ||
+        lowUrl.includes("blob.core.windows.net") ||
+        lowUrl.includes("amazonaws.com") ||
+        lowUrl.includes("storage.googleapis.com") ||
+        lowUrl.includes("/media/upload") ||
+        lowUrl.includes("/convert_document");
+
+      // Pure file uploads without a typed prompt MUST pass through immediately with zero delay and unmodified headers!
+      // (The file was already staged via inspectAndStageFile, and full DLP scanning runs when the user clicks Send)
+      if (!promptText || isPureUploadEndpoint) {
         return origFetch.apply(this, arguments);
       }
 
       var ptClean = (promptText || "").trim().toLowerCase();
       var isNoisePrompt = !promptText || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me";
-      if (isNoisePrompt && netFiles.length === 0) {
+      if (isNoisePrompt) {
         return origFetch.apply(this, arguments);
       }
 
@@ -1168,20 +1194,39 @@
               nextInit.body = rewritten;
             }
           }
-          // Tag header so downstream Proxy skips duplicate logging
+          // Tag header so downstream Proxy skips duplicate logging (only on chat endpoints)
           try {
-            if (!nextInit.headers) nextInit.headers = {};
-            if (typeof Headers !== "undefined" && nextInit.headers instanceof Headers) {
-              nextInit.headers.set("X-Guard-Handled", "1");
-              nextInit.headers.set("X-Gateway-Guard-Handled", "1");
-            } else if (Array.isArray(nextInit.headers)) {
-              nextInit.headers.push(["X-Guard-Handled", "1"]);
-              nextInit.headers.push(["X-Gateway-Guard-Handled", "1"]);
-            } else if (typeof nextInit.headers === "object") {
-              nextInit.headers["X-Guard-Handled"] = "1";
-              nextInit.headers["X-Gateway-Guard-Handled"] = "1";
+            var chatReqUrl = (url || "").toLowerCase();
+            if (
+              !chatReqUrl.includes("blob.core.windows.net") &&
+              !chatReqUrl.includes("amazonaws.com") &&
+              !chatReqUrl.includes("storage.googleapis.com")
+            ) {
+              if (typeof Request !== "undefined" && input instanceof Request) {
+                try {
+                  input.headers.set("X-Guard-Handled", "1");
+                  input.headers.set("X-Gateway-Guard-Handled", "1");
+                } catch (hdrErr) {
+                  var safeH = new Headers(input.headers);
+                  safeH.set("X-Guard-Handled", "1");
+                  safeH.set("X-Gateway-Guard-Handled", "1");
+                  nextInit.headers = safeH;
+                  nextArgs = [input, nextInit];
+                }
+              } else if (nextInit.headers) {
+                if (typeof Headers !== "undefined" && nextInit.headers instanceof Headers) {
+                  nextInit.headers.set("X-Guard-Handled", "1");
+                  nextInit.headers.set("X-Gateway-Guard-Handled", "1");
+                } else if (Array.isArray(nextInit.headers)) {
+                  nextInit.headers.push(["X-Guard-Handled", "1"]);
+                  nextInit.headers.push(["X-Gateway-Guard-Handled", "1"]);
+                } else if (typeof nextInit.headers === "object") {
+                  nextInit.headers["X-Guard-Handled"] = "1";
+                  nextInit.headers["X-Gateway-Guard-Handled"] = "1";
+                }
+                nextArgs = [input, nextInit];
+              }
             }
-            nextArgs = [input, nextInit];
           } catch (he) { }
 
           result = origFetch.apply(window, nextArgs);

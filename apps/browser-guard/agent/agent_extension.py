@@ -748,17 +748,22 @@ def check_prompt(
                 f_meta["is_blocked"] = True
                 f_meta["blocked_reason"] = rule or "Client Security Rule"
 
-            _post_intercept_file(
-                platform=platform,
-                prompt=row_prompt,
-                file_name=fname,
-                content_type=ctype,
-                file_payload=raw_b,
-                metadata=f_meta,
-                client_ip="127.0.0.1",
-                agent_id=agent_id,
-                agent_hostname=agent_hostname,
-            )
+            # Post file attachment asynchronously in background thread so check_prompt returns in 5ms without blocking
+            threading.Thread(
+                target=_post_intercept_file,
+                kwargs=dict(
+                    platform=platform,
+                    prompt=row_prompt,
+                    file_name=fname,
+                    content_type=ctype,
+                    file_payload=raw_b,
+                    metadata=f_meta,
+                    client_ip="127.0.0.1",
+                    agent_id=agent_id,
+                    agent_hostname=agent_hostname,
+                ),
+                daemon=True,
+            ).start()
 
         if is_blocked:
             return {
@@ -780,10 +785,12 @@ def check_prompt(
         "metadata": meta,
     }
     if is_blocked:
-        try:
-            _http_json("POST", f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept", payload, timeout=3)
-        except Exception:
-            pass
+        threading.Thread(
+            target=_http_json,
+            args=("POST", f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept", payload),
+            kwargs=dict(timeout=5),
+            daemon=True,
+        ).start()
         return {
             "blocked": True,
             "action": "Blocked",
