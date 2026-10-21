@@ -5785,201 +5785,129 @@ export default function BrowserAiPage() {
 									</p>
 								</div>
 							</div>
-							<div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
-								<div className="min-w-0">
-									<div className="flex items-center gap-2 text-xs font-medium text-foreground">
-										<span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" />
-										Guard code (hot-update)
-									</div>
-									<p className="mt-1 truncate text-[11px] text-muted-foreground">
-										{setupInfo?.proxy_bundle
-											? `Published ${new Date(setupInfo.proxy_bundle.published_at).toLocaleString()} for Guard v${setupInfo.proxy_bundle.guard_versions.join(" / v")} · applied by installed Guards within about a minute`
-											: setupInfo?.proxy_source_available === false
-												? "Guard source not found on the server — mount apps/browser-guard/proxy and /agent at /app/guard-proxy and /app/guard-agent"
-												: "Not published yet — press Rebuild & Publish to push the current Guard code to installed Guards"}
-									</p>
-								</div>
-								{setupInfo?.proxy_bundle ? (
-									<Badge variant="outline" className="shrink-0 border-emerald-500/40 font-mono text-emerald-400" title={setupInfo.proxy_bundle.sha256}>
-										{setupInfo.proxy_bundle.sha256.slice(0, 8)}
-									</Badge>
-								) : (
-									<Badge variant="outline" className="shrink-0 border-amber-500/40 text-amber-400">
-										Not published
-									</Badge>
-								)}
-							</div>
-							{setupInfo && !setupInfo.can_rebuild ? (
-								<p className="text-[11px] text-muted-foreground">
-									Rebuild publishes the server&apos;s current Guard code (agent + proxy) to installed Guards (v{PROXY_BUNDLE_MIN_GUARD}+),
-									no reinstall needed. Only new Python packages or installer changes need a new version built on the build machine.
-								</p>
-							) : null}
-							{setupPackageError ? <p className="text-sm text-destructive">{setupPackageError}</p> : null}
-							<div className="flex items-center justify-between pt-1">
-								<Button
-									onClick={handleRebuildPackages}
-									disabled={rebuildingPackages}
-									variant="outline"
-									size="sm"
-									className="h-8 gap-1.5 text-xs border-emerald-500/40 hover:border-emerald-500 hover:bg-emerald-500/10 text-emerald-400 transition-colors"
-								>
-									<RefreshCw className={`h-3.5 w-3.5 ${rebuildingPackages ? "animate-spin" : ""}`} />
-									{rebuildingPackages ? "Rebuilding Guard fleet..." : "Rebuild & Publish Guard Fleet"}
-								</Button>
-							</div>
-							<details className="rounded-md border border-border bg-card px-3 py-2.5">
-								<summary className="cursor-pointer select-none text-xs font-medium text-foreground">
-									Rebuild history ({rebuildHistory.length}
-									{rebuildHistory.length >= 20 ? "+" : ""}) — saved in the database
-								</summary>
-								{rebuildHistory.length === 0 ? (
-									<p className="mt-2 text-[11px] text-muted-foreground">No Rebuild &amp; Publish yet.</p>
-								) : (
-									<div className="mt-2 max-h-72 overflow-y-auto no-scrollbar">
-										<table className="w-full text-left text-[11px]">
-											<thead className="sticky top-0 bg-card text-muted-foreground">
-												<tr>
-													<th className="py-1 pr-2 font-medium">When</th>
-													<th className="py-1 pr-2 font-medium">Result</th>
-													<th className="py-1 pr-2 font-medium">Guard code</th>
-													<th className="py-1 pr-2 font-medium">Installers</th>
-													<th className="py-1 pr-2 font-medium">By</th>
-												</tr>
-											</thead>
-											<tbody className="divide-y divide-border/60">
-												{rebuildHistory.map((row) => (
-													<tr key={row.id} title={row.message}>
-														<td className="py-1.5 pr-2 whitespace-nowrap">{new Date(row.created_at).toLocaleString()}</td>
-														<td className="py-1.5 pr-2">
-															<Badge
-																variant="outline"
-																className={
-																	row.status === "success"
-																		? "border-emerald-500/40 text-emerald-400"
-																		: "border-red-500/40 text-red-400"
-																}
-															>
-																{row.status === "success" ? "Success" : "Failed"}
-															</Badge>
-														</td>
-														<td className="py-1.5 pr-2 font-mono">
-															{row.bundle_sha ? row.bundle_sha.slice(0, 8) : "—"}
-															{row.guard_versions ? (
-																<span className="ml-1 font-sans text-muted-foreground">for v{row.guard_versions.split(",").join(" / v")}</span>
-															) : null}
-														</td>
-														<td className="py-1.5 pr-2 whitespace-nowrap">
-															{row.mode === "rebuilt" ? "Rebuilt" : "Served"}
-															{row.version ? ` · Win v${row.version}` : ""}
-															{row.mac_version ? ` · Mac v${row.mac_version}` : ""}
-														</td>
-														<td className="py-1.5 pr-2 truncate max-w-[120px]">{row.requested_by || "—"}</td>
-													</tr>
-												))}
-											</tbody>
-										</table>
-									</div>
-								)}
-							</details>
 						</CardContent>
 					</Card>
 
 					<Card className="bg-card border-border">
 						<CardHeader>
-							<CardTitle className="text-lg">Install Steps</CardTitle>
-							<CardDescription>Download the package for your OS and install Guard on Windows or Mac laptops.</CardDescription>
+							<CardTitle className="text-lg">Deployment &amp; Install Guide</CardTitle>
+							<CardDescription>Simple 3-step setup: Run the background Desktop Agent, load your browser extension, and start protected browsing.</CardDescription>
 						</CardHeader>
 						<CardContent className="space-y-6">
-							<div className="space-y-4">
+							<div className="space-y-3">
 								<div className="flex items-center gap-2 font-semibold text-foreground">
-									<span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs">1</span>
-									<span>Download the package for your OS</span>
+									<span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-bold">1</span>
+									<span>Download Deployment Suite</span>
 								</div>
 								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
-									Click <strong>Download for Windows</strong> or <strong>Download for Mac</strong> above based on your device.
+									Click <strong>Download Complete Guard Suite (.ZIP)</strong> above and extract the downloaded <code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono text-xs">UnifAI_Guard_Suite.zip</code> archive.
 								</p>
 							</div>
 
 							<div className="space-y-4">
 								<div className="flex items-center gap-2 font-semibold text-foreground">
-									<span className="flex h-6 min-w-6 px-1.5 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs">Win</span>
-									<span>Windows</span>
+									<span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-bold">2</span>
+									<span>Start Desktop Agent (Windows / macOS)</span>
 								</div>
-								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
-									Run{" "}
-									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										YP_Raksha_Setup.exe
-									</code>
-									. Keep autostart enabled so Guard starts at Windows login. To turn OFF / uninstall: Windows Settings → Apps →
-									{PRODUCT_NAME} Guard → Uninstall (company uninstall key).
-								</p>
+								
+								<div className="pl-8 space-y-3">
+									<div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+										<div className="flex items-center gap-2 font-medium text-sm text-foreground">
+											<span className="flex h-5 px-1.5 items-center justify-center rounded bg-sky-500/20 text-sky-400 font-bold text-xs">Win</span>
+											<span>Windows Standalone Executable</span>
+										</div>
+										<p className="text-xs text-foreground/80 leading-relaxed">
+											Go to <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">1_Windows/</code> and double-click{" "}
+											<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono font-semibold">
+												YP_Raksha.exe
+											</code>
+											. It runs directly in the background (zero installer wizard, zero conflicts). Automatically configures autostart at Windows login and handshakes with the security server.
+										</p>
+										<p className="text-xs text-muted-foreground">
+											<strong>To uninstall:</strong> Windows Settings → Apps → Installed Apps → YP Raksha → Uninstall (or run <code className="font-mono text-[11px]">YP_Raksha.exe --uninstall &lt;key&gt;</code>). Requires company uninstall key.
+										</p>
+									</div>
+
+									<div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+										<div className="flex items-center gap-2 font-medium text-sm text-foreground">
+											<span className="flex h-5 px-1.5 items-center justify-center rounded bg-primary/20 text-primary font-bold text-xs">Mac</span>
+											<span>macOS Desktop Daemon</span>
+										</div>
+										<p className="text-xs text-foreground/80 leading-relaxed">
+											Go to <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">2_macOS/</code>, extract{" "}
+											<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono font-semibold">
+												YP_Raksha_macOS.zip
+											</code>
+											, and double-click{" "}
+											<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono">
+												Install_YP_Raksha.command
+											</code>{" "}
+											(Right-click → Open if Gatekeeper blocks).
+										</p>
+										<p className="text-xs text-muted-foreground">
+											<strong>To uninstall:</strong> Double-click <code className="font-mono text-[11px]">Uninstall_YP_Raksha.command</code> and enter the company uninstall key.
+										</p>
+									</div>
+								</div>
 							</div>
 
-							<div className="space-y-4">
+							<div className="space-y-3">
 								<div className="flex items-center gap-2 font-semibold text-foreground">
-									<span className="flex h-6 min-w-6 px-1.5 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs">Mac</span>
-									<span>Mac</span>
+									<span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-bold">3</span>
+									<span>Add Browser Extension</span>
 								</div>
-								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
-									Unzip{" "}
-									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										YP_Raksha_macOS.zip
-									</code>
-									, then double-click{" "}
-									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Install_YP_Raksha.command
-									</code>{" "}
-									(Right-click → Open if Gatekeeper blocks). See{" "}
-									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">INSTALL_MACOS.txt</code>. To
-									turn OFF / uninstall: double-click{" "}
-									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">
-										Uninstall_YP_Raksha.command
-									</code>{" "}
-									and enter the same company uninstall key (
-									<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground">UNINSTALL_MACOS.txt</code>
-									).
-								</p>
+								<div className="pl-8 space-y-2 text-xs text-foreground/80 leading-relaxed">
+									<p>Open the <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">3_Browser_Extensions/</code> folder:</p>
+									<ul className="list-disc pl-5 space-y-1 text-muted-foreground">
+										<li>
+											<strong className="text-foreground">Chrome / Brave / Edge / Opera:</strong> Extract <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">Unpacked_Extension_Chrome_Edge_Brave.zip</code>. In browser extensions (<code className="font-mono text-[11px]">chrome://extensions</code> or <code className="font-mono text-[11px]">brave://extensions</code>), toggle <strong>Developer mode ON</strong> and click <strong>Load unpacked</strong>.
+										</li>
+										<li>
+											<strong className="text-foreground">Firefox:</strong> Open <code className="font-mono text-[11px]">about:debugging#/runtime/this-firefox</code>, click <strong>Load Temporary Add-on</strong>, and select <code className="font-mono text-[11px]">Firefox_Extension.xpi</code>.
+										</li>
+										<li>
+											<strong className="text-foreground">Safari:</strong> Open Safari → Settings → Extensions → Enable <strong>YP-Raksha Enterprise AI Guard</strong>.
+										</li>
+									</ul>
+									<p className="text-xs text-emerald-400 font-medium pt-1">
+										✓ The extension automatically connects to YP_Raksha.exe on 127.0.0.1:18195 and shows &quot;Protected &amp; Active&quot;.
+									</p>
+								</div>
 							</div>
 
-							<div className="space-y-4">
+							<div className="space-y-3">
 								<div className="flex items-center gap-2 font-semibold text-foreground">
-									<span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs">3</span>
-									<span>Open monitored AI websites and verify logs</span>
+									<span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-bold">4</span>
+									<span>Open Monitored AI Websites &amp; Verify Real-time DLP</span>
 								</div>
 								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
-									Fully quit browsers, reopen, visit a monitored AI site, send a test prompt. Confirm in Prompt Logs and Agents.
+									Open any monitored AI site (ChatGPT, Claude, Gemini, etc.) and send a prompt. DLP rules (Allowed, Blocked, Warned, Redacted) are enforced instantly, and all activity is recorded live in <strong>Prompt Logs</strong>.
 								</p>
 							</div>
 
 							<div className="rounded-md border border-border bg-muted/40 p-4 text-sm space-y-2">
 								<p className="font-semibold text-foreground">Package contents</p>
-								<ul className="list-disc pl-5 text-foreground/80 space-y-1.5">
+								<ul className="list-disc pl-5 text-foreground/80 space-y-1.5 text-xs">
 									<li>
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											YP_Raksha_Windows.zip
+										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">
+											1_Windows/YP_Raksha.exe
 										</code>{" "}
-										— Windows{" "}
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											YP_Raksha_Setup.exe
-										</code>{" "}
-										installer &amp; docs
+										— Standalone Windows agent &amp; proxy (zero setup wizard, direct background run)
 									</li>
 									<li>
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">
-											YP_Raksha_macOS.zip
+										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">
+											2_macOS/YP_Raksha_macOS.zip
 										</code>{" "}
-										— macOS{" "}
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">YP_Raksha.app</code> +
-										Install &amp; Uninstall scripts
+										— macOS <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha.app</code> + Install &amp; Uninstall scripts
 									</li>
 									<li>
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">INSTALL_WINDOWS.txt</code> /{" "}
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">INSTALL_MACOS.txt</code> /{" "}
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">UNINSTALL_MACOS.txt</code>
+										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">
+											3_Browser_Extensions/
+										</code>{" "}
+										— Extensions for Chrome, Brave, Edge, Opera, Firefox, and Safari
 									</li>
 									<li>
-										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground">VERSION.txt</code>
+										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">README_INSTRUCTIONS.txt</code> — Complete employee deployment &amp; setup guide
 									</li>
 								</ul>
 							</div>

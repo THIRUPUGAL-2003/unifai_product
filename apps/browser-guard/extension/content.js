@@ -19,6 +19,7 @@
     if (/^192\.168\.\d+\.\d+$/.test(host)) return true;
     if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true;
     if (/^127\.\d+\.\d+\.\d+$/.test(host)) return true;
+    if (host.indexOf("yespanchi.com") >= 0 || host.indexOf("unifai") >= 0) return true;
     return false;
   }
 

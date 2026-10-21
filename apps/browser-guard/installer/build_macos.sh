@@ -198,8 +198,6 @@ fi
 mkdir -p "$STAGE/Gateway_Guard.app/Contents/Resources"
 cp config/gateway_guard_config.json "$STAGE/Gateway_Guard.app/Contents/Resources/gateway_guard_config.json"
 printf '%s\n' "$VERSION" > "$STAGE/Gateway_Guard.app/Contents/Resources/VERSION.txt"
-mkdir -p "$STAGE/Gateway_Guard.app/Contents/Resources/extension"
-cp -R extension/. "$STAGE/Gateway_Guard.app/Contents/Resources/extension/"
 
 echo ""
 echo "5) ZIP for Download Setup package"

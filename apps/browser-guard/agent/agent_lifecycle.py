@@ -420,8 +420,54 @@ def run_uninstall(key: str, schedule_cleanup: bool = True) -> int:
             pass
         return 2
     if status == 0:
-        print("[Gateway Guard ERROR] Backend unreachable — uninstall key not verified. PAC left on.")
-        return 1
+        # Backend unreachable / network failure: attempt offline verification using cached daily/company keys
+        import hashlib
+        key_hash = hashlib.sha256(clean_key.encode("utf-8")).hexdigest()
+        cache_file = os.path.join(data_dir(), "cached_uninstall_keys.json")
+        cached = {}
+        if os.path.isfile(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
+            except Exception:
+                pass
+
+        valid_hashes = []
+        if cached.get("agent_key_hash"):
+            valid_hashes.append(str(cached["agent_key_hash"]).lower().strip())
+        if cached.get("company_key_hash"):
+            valid_hashes.append(str(cached["company_key_hash"]).lower().strip())
+
+        if valid_hashes and key_hash.lower() in valid_hashes:
+            print("[Gateway Guard] Offline uninstall authorized by valid cached daily/company key.")
+            try:
+                tamper_flag = os.path.join(data_dir(), "tamper.flag")
+                if os.path.isfile(tamper_flag):
+                    os.remove(tamper_flag)
+            except Exception:
+                pass
+            unlock_install_dir_for_uninstall()
+            clear_guard_runtime(clear_startup=True)
+            try:
+                from agent_identity import agent_id_path
+                p = agent_id_path()
+                if os.path.isfile(p):
+                    os.remove(p)
+            except Exception:
+                pass
+            if schedule_cleanup:
+                schedule_install_removal()
+            return 0
+        else:
+            print("[Gateway Guard ERROR] Backend unreachable and offline key verification failed.")
+            lock_install_dir_against_deletion()
+            try:
+                tamper_flag = os.path.join(data_dir(), "tamper.flag")
+                with open(tamper_flag, "w", encoding="utf-8") as tf:
+                    tf.write("Unauthorized offline uninstall attempted with invalid key")
+            except Exception:
+                pass
+            return 2
     print(f"[Gateway Guard ERROR] Uninstall rejected status={status} body={data}")
     return 1
 

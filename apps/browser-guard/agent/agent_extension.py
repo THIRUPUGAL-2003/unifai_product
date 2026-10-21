@@ -1055,69 +1055,11 @@ def build_xpi(unpacked_dir: str) -> str:
 
 
 def install_guard_extension(base_url: str) -> None:
-    """Pack YP-Raksha and force-install it into every Chromium browser and Firefox."""
+    """Decoupled mode: Extension is independently installed from 3_Browser_Extensions."""
     if not base_url:
         return
-    crx = _crx_path()
-    source_mtime = 0.0
-    for name in ("manifest.json", "content.js", "page_hook.js", "endpoint.js", "background.js", "popup.js"):
-        path = os.path.join(extension_source_dir(), name)
-        if os.path.isfile(path):
-            try:
-                source_mtime = max(source_mtime, os.path.getmtime(path))
-            except Exception:
-                pass
-    cur_ver = get_extension_version()
-    unpacked_man = os.path.join(_unpacked_dir(), "manifest.json")
-    ver_mismatch = False
-    if os.path.isfile(unpacked_man):
-        try:
-            with open(unpacked_man, "r", encoding="utf-8") as f:
-                ver_mismatch = (json.load(f).get("version") != cur_ver)
-        except Exception:
-            ver_mismatch = True
-    else:
-        ver_mismatch = True
+    print(f"[Gateway Guard] Decoupled mode active. YP-Raksha endpoint listening on {base_url}. Extensions connect independently.")
 
-    if not os.path.isfile(crx) or os.path.getmtime(crx) < source_mtime or ver_mismatch:
-        crx = pack_extension(base_url)
-    unpacked = _unpacked_dir()
-    if os.path.isdir(unpacked):
-        try:
-            build_xpi(unpacked)
-        except Exception as e:
-            print(f"[Gateway Guard WARNING] YP-Raksha Firefox package failed: {e}")
-        # Sync to enterprise common directory (e.g. C:\ProgramData - zero user-specific paths)
-        common_unpacked = common_extension_dir()
-        try:
-            os.makedirs(common_unpacked, exist_ok=True)
-            import shutil
-            for item in os.listdir(unpacked):
-                s = os.path.join(unpacked, item)
-                d = os.path.join(common_unpacked, item)
-                if os.path.isfile(s):
-                    shutil.copy2(s, d)
-        except Exception:
-            pass
-    pem = _pem_path()
-    if not os.path.isfile(pem):
-        return
-    try:
-        ext_id = get_extension_id()
-    except Exception as e:
-        ext_id = "mipfhcmlcjfhmgldkokdckhndkebkllj"
-    update_url = f"{base_url}/extension/update.xml"
-    force_policy = os.environ.get("GUARD_FORCE_BROWSER_POLICY", "0").lower() in ("1", "true")
-    if force_policy:
-        if IS_WIN:
-            _write_force_install(ext_id, update_url)
-        else:
-            _write_mac_extension_policy(ext_id, update_url)
-        _write_firefox_policy(base_url)
-    else:
-        print(f"[Gateway Guard] Decoupled mode active. YP-Raksha endpoint listening on {base_url}. Extensions connect independently.")
-    if crx or not IS_WIN:
-        print(f"[Gateway Guard] YP-Raksha ready ({ext_id}).")
 
 
 def remove_guard_extension_policy() -> None:

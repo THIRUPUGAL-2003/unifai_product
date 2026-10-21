@@ -22,7 +22,9 @@
     /^10\.\d+\.\d+\.\d+$/.test(curHost) ||
     /^192\.168\.\d+\.\d+$/.test(curHost) ||
     /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(curHost) ||
-    /^127\.\d+\.\d+\.\d+$/.test(curHost)
+    /^127\.\d+\.\d+\.\d+$/.test(curHost) ||
+    curHost.indexOf("yespanchi.com") >= 0 ||
+    curHost.indexOf("unifai") >= 0
   ) {
     return;
   }
@@ -37,6 +39,7 @@
   var stagedImages = [];
   var _lastHandledPromptTime = 0;
   var _lastHandledPromptText = "";
+  var lastDecisionCache = { text: "", time: 0, decision: null };
 
   // Rules come only from the gateway for the armed target site.
   var dynamicRules = [];

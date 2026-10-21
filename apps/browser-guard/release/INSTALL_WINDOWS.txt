@@ -1,27 +1,17 @@
-YP Raksha — Windows Install (turn ON)
-=====================================
+YP Raksha — Windows Desktop Agent
+=================================
 
 Company server: https://unifai.yespanchi.com
-(If IT gave you a different URL, use the config packaged in this ZIP.)
 
-1. Extract YP_Raksha_Windows.zip completely (do not run Setup from inside the ZIP).
-2. Run YP_Raksha_Setup.exe.
-3. Keep "Start automatically at Windows login" checked.
-4. Finish — YP Raksha runs in the background (system tray / no black terminal).
-5. Open monitored AI sites as usual (ChatGPT, etc.).
-6. Certificate warnings → contact IT (CA trust). Status file:
-   %LOCALAPPDATA%\Gateway\Guard\ca_install_status.txt
+1. Extract this package completely.
+2. Double-click YP_Raksha.exe to run.
+3. YP Raksha starts immediately in the background and connects to the security server.
+   (It automatically configures autostart at Windows login).
+4. Install your browser extension from the 3_Browser_Extensions folder:
+   - Chrome / Brave / Edge: Extract 'Unpacked_Extension_Chrome_Edge_Brave.zip' and click 'Load unpacked' in Developer mode.
+5. All AI prompts and file uploads are protected in real time!
 
-Optional update later
----------------------
-Run Update_YP_Raksha.ps1 from this package (or IT push via Browser AI Rebuild).
-
-Logs
-----
-%LOCALAPPDATA%\Gateway\Guard\gateway_guard.log
-
-Uninstall (turn OFF)
---------------------
-Windows Settings → Apps → YP Raksha → Uninstall
-(or Start Menu → YP Raksha → Uninstall, or run Uninstall_YP_Raksha.bat).
-Enter the company uninstall key (from Setup) or today's rotating daily Guard key (from Guard Agents menu).
+Uninstall:
+----------
+Run Uninstall_YP_Raksha.bat (or Windows Settings -> Apps -> YP Raksha -> Uninstall).
+Enter your company uninstall key to confirm.

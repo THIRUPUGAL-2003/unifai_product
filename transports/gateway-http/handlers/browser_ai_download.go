@@ -540,10 +540,10 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		// Always ship BOTH when present: Setup (Inno install) + portable EXE.
 		// INSTALL_WINDOWS.txt tells employees to prefer newer EXE if Setup is older.
 		var winAssets []zipAsset
-		if setupOK {
-			winAssets = append(winAssets, zipAsset{name: "YP_Raksha_Setup.exe", path: setupPath})
-		} else if exeOK {
+		if exeOK {
 			winAssets = append(winAssets, zipAsset{name: "YP_Raksha.exe", path: exePath})
+		} else if setupOK {
+			winAssets = append(winAssets, zipAsset{name: "YP_Raksha_Setup.exe", path: setupPath})
 		}
 		cfg, cfgOK := guardConfigForDownload(ctx)
 		if !cfgOK {

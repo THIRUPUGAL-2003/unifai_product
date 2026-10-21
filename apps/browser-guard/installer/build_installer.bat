@@ -74,10 +74,7 @@ if exist installer\EMPLOYEE_README.txt copy /Y installer\EMPLOYEE_README.txt ins
 if exist release\Uninstall_YP_Raksha.bat copy /Y release\Uninstall_YP_Raksha.bat installer\staging\Uninstall_YP_Raksha.bat >nul
 if exist release\INSTALL_WINDOWS.txt copy /Y release\INSTALL_WINDOWS.txt installer\staging\INSTALL_WINDOWS.txt >nul
 if exist release\VERSION.txt copy /Y release\VERSION.txt installer\staging\VERSION.txt >nul
-if exist extension (
-  if not exist installer\staging\extension mkdir installer\staging\extension
-  xcopy /E /Y /I extension installer\staging\extension >nul
-)
+if exist installer\staging\extension rmdir /S /Q installer\staging\extension >nul 2>&1
 
 echo.
 echo ============================================================

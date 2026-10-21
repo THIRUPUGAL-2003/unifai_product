@@ -31,6 +31,31 @@ def _response_body_worth_learning(flow: http.HTTPFlow) -> bool:
     return not (length.isdigit() and int(length) > _RESPONSE_LEARN_MAX)
 
 
+def _safe_decode_body(raw_bytes: bytes, content_type: str = "") -> str:
+    """Fast safe body text decode: for large/binary bodies, only decode prefix to avoid multisecond stalls."""
+    if not raw_bytes:
+        return ""
+    length = len(raw_bytes)
+    if length <= 64 * 1024:
+        try:
+            return raw_bytes.decode("utf-8", errors="ignore")
+        except Exception:
+            return ""
+    ct = (content_type or "").lower()
+    # Explicit text / JSON body: decode up to 4MB max
+    if "json" in ct or ct.startswith("text/") or raw_bytes.lstrip()[:1] in (b"{", b"["):
+        try:
+            return raw_bytes[:4 * 1024 * 1024].decode("utf-8", errors="ignore")
+        except Exception:
+            return ""
+    # Binary / multipart / octet-stream / audio / video / document uploads:
+    # Only decode first 64KB for multipart boundaries, filenames, and headers!
+    try:
+        return raw_bytes[:64 * 1024].decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
 def _tee_response_body(flow: http.HTTPFlow):
     """mitmproxy stream callback: forward each chunk unchanged, keep a capped copy."""
     buf = bytearray()
@@ -42,12 +67,13 @@ def _tee_response_body(flow: http.HTTPFlow):
             if not over:
                 if len(buf) + len(chunk) > _RESPONSE_LEARN_MAX:
                     over = True
+                    flow.metadata.pop(_RESPONSE_LEARN_META, None)
                     buf.clear()
                 else:
                     buf.extend(chunk)
+                    flow.metadata[_RESPONSE_LEARN_META] = bytes(buf)
         elif not over and buf:
             flow.metadata[_RESPONSE_LEARN_META] = bytes(buf)
-            buf.clear()
         return chunk
 
     return _tee
@@ -766,10 +792,7 @@ class BrowserAIInterceptor:
             path_n = flow.request.path
             raw_bytes_n = flow.request.content or b""
             content_type_n = flow.request.headers.get("content-type", "")
-            try:
-                raw_text_n = raw_bytes_n.decode("utf-8", errors="ignore")
-            except Exception:
-                raw_text_n = ""
+            raw_text_n = _safe_decode_body(raw_bytes_n, content_type_n)
             is_upload_n, upload_reason_n = detect_file_upload(flow, raw_text_n)
             if is_upload_n:
                 fname_n = extract_filename_from_upload(flow, raw_text_n)
@@ -839,10 +862,7 @@ class BrowserAIInterceptor:
             if method in ("POST", "PUT", "PATCH"):
                 raw_bytes_nt = flow.request.content or b""
                 content_type_nt = flow.request.headers.get("content-type", "")
-                try:
-                    raw_text_nt = raw_bytes_nt.decode("utf-8", errors="ignore")
-                except Exception:
-                    raw_text_nt = ""
+                raw_text_nt = _safe_decode_body(raw_bytes_nt, content_type_nt)
                 # Even tiny Google resumable START (no file bytes yet) carries the real name.
                 try:
                     # Resolve the bind domain only when a real filename is on the wire —
@@ -961,10 +981,7 @@ class BrowserAIInterceptor:
         raw_bytes = flow.request.content or b""
         content_type = flow.request.headers.get("content-type", "")
 
-        try:
-            raw_text = raw_bytes.decode("utf-8", errors="ignore")
-        except Exception:
-            raw_text = ""
+        raw_text = _safe_decode_body(raw_bytes, content_type)
 
         # Learn file_id → name for later nameless CDN uploads.
         try:

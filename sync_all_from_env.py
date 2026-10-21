@@ -361,19 +361,19 @@ def rebuild_and_restart_go_backend(repo_root: Path, env_vars: dict[str, str]) ->
 
 
 def optional_rebuild_guard_exe(repo_root: Path) -> bool:
-    build_bat = repo_root / "apps" / "browser-guard" / "installer" / "build_installer.bat"
+    build_bat = repo_root / "apps" / "browser-guard" / "build_windows_exe.bat"
     if not build_bat.is_file():
-        print("[!] build_installer.bat not found.")
+        print("[!] build_windows_exe.bat not found.")
         return False
-    print("\n[*] Running PyInstaller & Inno Setup build for Windows Gateway_Guard.exe...")
+    print("\n[*] Running PyInstaller build for standalone Windows YP_Raksha.exe...")
     try:
         res = subprocess.run(
             ["cmd", "/c", str(build_bat)],
-            cwd=str(repo_root / "apps" / "browser-guard" / "installer"),
+            cwd=str(repo_root / "apps" / "browser-guard"),
         )
         return res.returncode == 0
     except Exception as e:
-        print(f"[x] Error during build_installer: {e}")
+        print(f"[x] Error during build_windows_exe: {e}")
         return False
 
 

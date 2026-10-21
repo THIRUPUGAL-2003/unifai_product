@@ -1,87 +1,80 @@
 (function () {
-  var rulesEl = document.getElementById("rules-count");
-  var sitesEl = document.getElementById("sites-count");
-  var gatewayEl = document.getElementById("gateway-status");
-  var syncBtn = document.getElementById("btn-sync");
-  var syncText = document.getElementById("sync-text");
+  var badge = document.getElementById("status-badge");
+  var badgeText = document.getElementById("badge-text");
+  var heroCard = document.getElementById("hero-card");
+  var heroTitle = document.getElementById("hero-title");
+  var heroDesc = document.getElementById("hero-desc");
 
-  function loadCached() {
-    if (chrome && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["cached_rules", "cached_sites"], function (res) {
-        if (res) {
-          if (Array.isArray(res.cached_rules) && res.cached_rules.length) {
-            rulesEl.textContent = res.cached_rules.length;
-          }
-          if (Array.isArray(res.cached_sites) && res.cached_sites.length) {
-            sitesEl.textContent = res.cached_sites.length + "+";
-          }
+  function setConnected() {
+    if (badge) badge.className = "status-badge";
+    if (badgeText) badgeText.textContent = "ACTIVE";
+    if (heroCard) heroCard.className = "hero-card";
+    if (heroTitle) heroTitle.textContent = "Protected & Active";
+    if (heroDesc) heroDesc.textContent = "Connected to YP-Raksha Desktop Agent";
+  }
+
+  function setTampered() {
+    if (badge) badge.className = "status-badge tampered";
+    if (badgeText) badgeText.textContent = "TAMPER ALERT";
+    if (heroCard) heroCard.className = "hero-card tampered";
+    if (heroTitle) heroTitle.textContent = "Tamper Detected";
+    if (heroDesc) heroDesc.textContent = "Unauthorized modification attempted";
+  }
+
+  function setOffline() {
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(["cached_rules", "cached_tampered"], function (res) {
+        if (res && res.cached_tampered) {
+          setTampered();
+        } else if (res && Array.isArray(res.cached_rules) && res.cached_rules.length > 0) {
+          if (badge) badge.className = "status-badge";
+          if (badgeText) badgeText.textContent = "ACTIVE";
+          if (heroCard) heroCard.className = "hero-card";
+          if (heroTitle) heroTitle.textContent = "Protected";
+          if (heroDesc) heroDesc.textContent = "Security Guard Active (Local Engine)";
+        } else {
+          if (badge) badge.className = "status-badge standby";
+          if (badgeText) badgeText.textContent = "STANDBY";
+          if (heroCard) heroCard.className = "hero-card standby";
+          if (heroTitle) heroTitle.textContent = "Connecting to Agent";
+          if (heroDesc) heroDesc.textContent = "Start YP_Raksha.exe to connect";
         }
       });
+    } else {
+      if (badge) badge.className = "status-badge standby";
+      if (badgeText) badgeText.textContent = "STANDBY";
+      if (heroCard) heroCard.className = "hero-card standby";
+      if (heroTitle) heroTitle.textContent = "Connecting to Agent";
+      if (heroDesc) heroDesc.textContent = "Start YP_Raksha.exe to connect";
     }
   }
 
-  function fetchLive(fromClick) {
+  if (typeof resolveGuardBase === "function") {
     resolveGuardBase(function (base) {
-      var pending = 2;
-      var failed = false;
-      function finishOne(err) {
-        if (err) failed = true;
-        pending -= 1;
-        if (!fromClick || pending > 0) return;
-        syncText.textContent = failed ? "EXE not reachable" : "Rules Updated!";
-        setTimeout(function () {
-          syncText.textContent = "Sync Live Rules";
-          syncBtn.disabled = false;
-        }, 1500);
-      }
-
       fetch(base + "/extension/rules", { method: "GET", cache: "no-store" })
         .then(function (r) {
-          if (!r.ok) throw new Error("rules");
+          if (!r.ok) throw new Error("status");
           return r.json();
         })
         .then(function (data) {
-          if (!data || !Array.isArray(data.rules)) throw new Error("rules");
-          rulesEl.textContent = data.rules.length;
-          var host = base.replace(/^https?:\/\//, "");
-          gatewayEl.textContent = "Connected (" + host + ")";
-          if (chrome && chrome.storage && chrome.storage.local) {
-            var stored = { cached_rules: data.rules };
-            if (Array.isArray(data.restricted_extensions)) {
-              stored.cached_exts = data.restricted_extensions;
+          if (data && Array.isArray(data.rules)) {
+            if (data.tampered) {
+              setTampered();
+            } else {
+              setConnected();
             }
-            chrome.storage.local.set(stored);
+            if (chrome && chrome.storage && chrome.storage.local) {
+              chrome.storage.local.set({ cached_rules: data.rules, cached_tampered: !!data.tampered });
+            }
+          } else {
+            setOffline();
           }
-          finishOne(false);
         })
         .catch(function () {
-          gatewayEl.textContent = "Offline (Local Cache Active)";
-          finishOne(true);
+          setOffline();
         });
-
-      fetch(base + "/extension/sites", { method: "GET", cache: "no-store" })
-        .then(function (r) {
-          if (!r.ok) throw new Error("sites");
-          return r.json();
-        })
-        .then(function (data) {
-          if (!data || !Array.isArray(data.hosts)) throw new Error("sites");
-          sitesEl.textContent = data.hosts.length > 0 ? (data.hosts.length + "+") : "0";
-          if (chrome && chrome.storage && chrome.storage.local) {
-            chrome.storage.local.set({ cached_sites: data.hosts });
-          }
-          finishOne(false);
-        })
-        .catch(function () { finishOne(true); });
     });
+  } else {
+    setOffline();
   }
-
-  syncBtn.addEventListener("click", function () {
-    syncText.textContent = "Syncing...";
-    syncBtn.disabled = true;
-    fetchLive(true);
-  });
-
-  loadCached();
-  fetchLive();
 })();

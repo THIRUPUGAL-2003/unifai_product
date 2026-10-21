@@ -131,8 +131,13 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
             return
         if path == "/extension/rules":
             from agent_extension import dynamic_rules
+            from agent_platform import data_dir
+            tamper_flag = os.path.join(data_dir(), "tamper.flag")
+            is_tampered = os.path.isfile(tamper_flag)
             self._json(200, {
                 "rules": dynamic_rules(),
+                "status": "tampered" if is_tampered else "active",
+                "tampered": is_tampered,
             })
             return
         if path == "/extension/update.xml":

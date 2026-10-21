@@ -54,6 +54,7 @@ def send_heartbeat(agent_id: str, status: str = "active") -> dict | None:
         print(f"[Gateway Guard] Heartbeat OK ({info.get('hostname')} / {info.get('ip_address')} / {info.get('mac_address')} / {status})")
         apply_fleet_config_from_heartbeat(data if isinstance(data, dict) else None)
         apply_release_hints_from_heartbeat(data if isinstance(data, dict) else None)
+        cache_uninstall_key_hashes(data if isinstance(data, dict) else None)
         return data if isinstance(data, dict) else {}
     print(f"[Gateway Guard WARNING] Heartbeat failed status={code} body={data}")
     return None
@@ -84,6 +85,33 @@ def apply_fleet_config_from_heartbeat(data: dict | None) -> None:
         path = os.path.join(data_dir(), "fleet_config_from_db.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(fleet, f, indent=2)
+    except Exception:
+        pass
+
+
+def cache_uninstall_key_hashes(data: dict | None) -> None:
+    """Cache today's rotating daily uninstall key hash and company key hash for offline emergency uninstall."""
+    if not isinstance(data, dict):
+        return
+    agent_info = data.get("agent")
+    settings_info = data.get("settings")
+    if not isinstance(agent_info, dict) and not isinstance(settings_info, dict):
+        return
+    agent_key_hash = agent_info.get("uninstall_key_hash") if isinstance(agent_info, dict) else ""
+    company_key_hash = settings_info.get("uninstall_key_hash") if isinstance(settings_info, dict) else ""
+    if not agent_key_hash and not company_key_hash:
+        return
+    cache_file = os.path.join(data_dir(), "cached_uninstall_keys.json")
+    try:
+        keys_data = {
+            "agent_key_hash": agent_key_hash,
+            "company_key_hash": company_key_hash,
+            "agent_id": agent_info.get("id") if isinstance(agent_info, dict) else "",
+            "rotated_at": agent_info.get("uninstall_key_rotated_at") if isinstance(agent_info, dict) else "",
+            "synced_at": time.time(),
+        }
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump(keys_data, f, indent=2)
     except Exception:
         pass
 

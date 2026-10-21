@@ -1186,13 +1186,20 @@ def rename_recent_nameless_caches(domain: str, name: str, file_id: str = "") -> 
                 if uid not in seen:
                     seen.add(uid)
                     candidates.append(latest)
-        # Prefer file_id match; else oldest nameless real-byte cache.
+        # Prefer file_id match; else match by name; else oldest nameless real-byte cache; else latest without id.
         targets: list[dict] = []
         if fid:
             for e in candidates:
                 efid = (e.get("file_id") or "").strip()
                 if efid and (efid == fid or efid == fid[5:] or ("file-" + efid) == fid):
                     targets.append(e)
+        if not targets and got:
+            for e in candidates:
+                efid = (e.get("file_id") or "").strip()
+                efname = (e.get("file_name") or "").strip().lower()
+                if not efid and efname and (efname == got.lower() or efname == got.rsplit(".", 1)[0].lower()):
+                    targets.append(e)
+                    break
         if not targets:
             nameless = [
                 e for e in candidates
@@ -1203,6 +1210,11 @@ def rename_recent_nameless_caches(domain: str, name: str, file_id: str = "") -> 
             nameless.sort(key=lambda e: float(e.get("ts") or 0))
             if nameless:
                 targets = [nameless[0]]
+        if not targets and candidates and fid:
+            no_fid = [e for e in candidates if not (e.get("file_id") or "").strip()]
+            no_fid.sort(key=lambda e: float(e.get("ts") or 0), reverse=True)
+            if no_fid:
+                targets = [no_fid[0]]
         already = {
             (e.get("file_name") or "").strip().lower()
             for e in candidates
@@ -1223,11 +1235,16 @@ def rename_recent_nameless_caches(domain: str, name: str, file_id: str = "") -> 
                     continue
             if not _name_fits_upload_bytes(got, raw_b, ct):
                 continue
-            if _upload_name_quality(cur, raw_b, ct) >= _upload_name_quality(got, raw_b, ct):
-                continue
-            entry["file_name"] = _ensure_name_has_extension(got, raw_b, ct)
-            if fid and not (entry.get("file_id") or "").strip():
+            if _upload_name_quality(cur, raw_b, ct) < _upload_name_quality(got, raw_b, ct):
+                entry["file_name"] = _ensure_name_has_extension(got, raw_b, ct)
+            if fid:
                 entry["file_id"] = fid
+                for alias in aliases:
+                    _UPLOAD_FILE_CACHE[f"{alias}|id|{fid}"] = entry
+                    if fid.startswith("file-"):
+                        _UPLOAD_FILE_CACHE[f"{alias}|id|{fid[5:]}"] = entry
+                    else:
+                        _UPLOAD_FILE_CACHE[f"{alias}|id|file-{fid}"] = entry
             if raw:
                 remember_upload_name_by_bytes(bytes(raw), entry["file_name"])
             if fid:
@@ -2142,8 +2159,8 @@ def extract_pdf_bytes(raw: bytes) -> bytes | None:
         stripped = raw.lstrip()
         if not (stripped.startswith(b"--") or b"application/pdf" in raw[:2048].lower()):
             return None
-        idx = raw.find(b"%PDF-")
-        if idx < 0 or idx > 64 * 1024:
+        idx = raw.find(b"%PDF-", 0, 64 * 1024)
+        if idx < 0:
             return None
         data = raw[idx:]
     eof = data.rfind(b"%%EOF")
@@ -2301,11 +2318,11 @@ def iter_multipart_named_files(raw: bytes) -> list[tuple[str, bytes]]:
         hm = re.search(r'filename\*?=(?:UTF-8\'\')?["\']?([^"\';\r\n]+)["\']?', hdr, re.I)
         name = _sanitize_upload_filename(hm.group(1)) if hm else ""
         body = rest[hdr_end + sep_len :]
-        end = len(body)
-        for i in range(max(0, len(body) - 2)):
-            if body[i] == 10 and body[i + 1] == 45 and body[i + 2] == 45:
-                end = i - 1 if i > 0 and body[i - 1] == 13 else i
-                break
+        boundary_idx = body.find(b"\n--")
+        if boundary_idx >= 0:
+            end = boundary_idx - 1 if boundary_idx > 0 and body[boundary_idx - 1] == 13 else boundary_idx
+        else:
+            end = len(body)
         part = body[:end]
         if name and part and _is_real_user_upload_name(name):
             out.append((name, part))
@@ -2414,11 +2431,11 @@ def extract_upload_file_payload(raw: bytes, content_type: str = "", file_name: s
                 si = rest.find(sep)
             if si >= 0:
                 body = rest[si + len(sep) :]
-                end = len(body)
-                for i in range(len(body) - 2):
-                    if body[i] == 10 and body[i + 1] == 45 and body[i + 2] == 45:  # \n--
-                        end = i - 1 if i > 0 and body[i - 1] == 13 else i
-                        break
+                boundary_idx = body.find(b"\n--")
+                if boundary_idx >= 0:
+                    end = boundary_idx - 1 if boundary_idx > 0 and body[boundary_idx - 1] == 13 else boundary_idx
+                else:
+                    end = len(body)
                 part = body[:end]
                 if part:
                     pdf2 = extract_pdf_bytes(part)
@@ -2908,10 +2925,12 @@ def cache_upload_file(
                 if file_id and e_fid and file_id == e_fid:
                     existing_idx = idx
                     break
-                # Match by identical non-empty bytes
-                if stored and e_raw and stored == e_raw:
-                    existing_idx = idx
-                    break
+                # Match by identical non-empty bytes (fast length and boundary check)
+                if stored and e_raw and len(stored) == len(e_raw):
+                    if stored[:32] == e_raw[:32] and stored[-32:] == e_raw[-32:]:
+                        if stored == e_raw:
+                            existing_idx = idx
+                            break
                 # Match by real filename within recent burst (90s)
                 if (
                     fname_key
@@ -3284,7 +3303,65 @@ def extract_all_inline_attachment_bytes(raw_text: str) -> list[tuple[bytes, str,
     seen: set[str] = set()
     fname_base = extract_attachment_filename_from_send(raw_text) or ""
 
-    # 1. Claude in-browser extracted_content inside attachments array:
+    # Structured JSON inspection for Claude Web and Anthropic API attachments / content blocks
+    try:
+        s_data = json.loads(raw_text)
+    except Exception:
+        s_data = None
+
+    if isinstance(s_data, dict):
+        # 1. attachments array (Claude Web in-browser extracted files)
+        for att in (s_data.get("attachments") or []):
+            if isinstance(att, dict):
+                txt = att.get("extracted_content") or att.get("extractedContent") or att.get("content") or att.get("text")
+                if isinstance(txt, str) and txt.strip():
+                    fname = att.get("file_name") or att.get("fileName") or att.get("name") or att.get("title") or fname_base or "attachment.txt"
+                    ctype = att.get("file_type") or att.get("fileType") or att.get("media_type") or "text/plain"
+                    doc_bytes = txt.encode("utf-8")
+                    sig = f"{fname.lower()}|{len(doc_bytes)}"
+                    if sig not in seen:
+                        seen.add(sig)
+                        out.append((doc_bytes, ctype, fname))
+
+        # 2. files array of dicts (Claude Web)
+        for f in (s_data.get("files") or []):
+            if isinstance(f, dict):
+                txt = f.get("extracted_content") or f.get("extractedContent") or f.get("content") or f.get("text")
+                if isinstance(txt, str) and txt.strip():
+                    fname = f.get("file_name") or f.get("fileName") or f.get("name") or f.get("title") or fname_base or "attachment.txt"
+                    ctype = f.get("file_type") or f.get("fileType") or f.get("media_type") or "text/plain"
+                    doc_bytes = txt.encode("utf-8")
+                    sig = f"{fname.lower()}|{len(doc_bytes)}"
+                    if sig not in seen:
+                        seen.add(sig)
+                        out.append((doc_bytes, ctype, fname))
+
+        # 3. content blocks (type: document, image, file)
+        blocks = s_data.get("content") or []
+        if isinstance(blocks, list):
+            for blk in blocks:
+                if isinstance(blk, dict) and blk.get("type") in ("document", "file", "image"):
+                    src = blk.get("source") or {}
+                    stype = src.get("type") if isinstance(src, dict) else ""
+                    fname = blk.get("title") or blk.get("name") or blk.get("file_name") or fname_base or "document"
+                    if stype == "text" and src.get("data"):
+                        doc_bytes = str(src["data"]).encode("utf-8")
+                        sig = f"{fname.lower()}|{len(doc_bytes)}"
+                        if sig not in seen:
+                            seen.add(sig)
+                            out.append((doc_bytes, src.get("media_type") or "text/plain", fname))
+                    elif stype == "base64" and src.get("data"):
+                        try:
+                            blob = str(src["data"]).replace("\n", "").replace("\r", "").replace(" ", "")
+                            doc_bytes = base64.b64decode(blob, validate=False)
+                            sig = _bytes_name_fingerprint(doc_bytes)
+                            if sig not in seen and len(doc_bytes) >= 16:
+                                seen.add(sig)
+                                out.append((doc_bytes, src.get("media_type") or "application/octet-stream", fname))
+                        except Exception:
+                            pass
+
+    # 1. Claude in-browser extracted_content inside attachments array (regex fallback):
     # attachments: [{"file_name": "x.csv", "extracted_content": "...", "file_type": "text/csv"}]
     for m in re.finditer(
         r'\{[^{}]*?"(?:extracted_content|extractedContent)"\s*:\s*"((?:[^"\\]|\\.)+)"[^{}]*?\}',
@@ -3742,13 +3819,40 @@ def take_all_cached_uploads_for_send(
 
     with _UPLOAD_FILE_CACHE_LOCK:
         _purge_upload_file_cache()
-        for fid in _extract_file_ids_from_chat(active_text):
+        send_fids = _extract_file_ids_from_chat(active_text)
+        for fid in send_fids:
+            alt_fid = fid[5:] if fid.startswith("file-") else f"file-{fid}"
             for alias in aliases:
-                for key in (f"{alias}|id|{fid}", f"{alias}|id|file-{fid}"):
+                matched_entry = None
+                for key in (f"{alias}|id|{fid}", f"{alias}|id|{alt_fid}"):
                     if key in _UPLOAD_FILE_CACHE:
-                        entry = _UPLOAD_FILE_CACHE.pop(key)
-                        add_entry(entry)
-                        _remove_cache_keys_for_entry(entry, aliases)
+                        matched_entry = _UPLOAD_FILE_CACHE.pop(key)
+                        break
+                if not matched_entry:
+                    qkey = _upload_queue_key(alias)
+                    for qe in _UPLOAD_FILE_QUEUES.get(qkey, []):
+                        q_fid = (qe.get("file_id") or "").strip()
+                        if q_fid and (q_fid == fid or q_fid == alt_fid):
+                            matched_entry = qe
+                            break
+                if matched_entry:
+                    add_entry(matched_entry)
+                    _remove_cache_keys_for_entry(matched_entry, aliases)
+
+        # If send carried file IDs but no entry matched by fid yet:
+        # Fall back to the most recent upload in the queue (within 120s) for that domain family
+        if send_fids and not found:
+            now = time.time()
+            for alias in aliases:
+                qkey = _upload_queue_key(alias)
+                q_entries = list(_UPLOAD_FILE_QUEUES.get(qkey, []))
+                q_entries.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
+                for qe in q_entries:
+                    age = now - float(qe.get("ts") or 0)
+                    if age <= 120.0:
+                        add_entry(qe)
+                        _remove_cache_keys_for_entry(qe, aliases)
+                        break
         for m in re.finditer(
             r'["\'](?:file_name|fileName|filename|name|title)["\']\s*:\s*["\']([^"\']+)["\']',
             active_text or "",
