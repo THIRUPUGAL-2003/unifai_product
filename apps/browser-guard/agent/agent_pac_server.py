@@ -127,15 +127,30 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
             return
         if path == "/extension/sites":
             from agent_extension import monitored_hosts
-            self._json(200, {"hosts": monitored_hosts()})
+            from agent_config import GATEWAY_BACKEND_URL
+            server_host = ""
+            if GATEWAY_BACKEND_URL:
+                sh = GATEWAY_BACKEND_URL.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].strip().lower()
+                if sh.startswith("www."):
+                    sh = sh[4:]
+                server_host = sh
+            self._json(200, {"hosts": monitored_hosts(), "server_host": server_host})
             return
         if path == "/extension/rules":
             from agent_extension import dynamic_rules
-            from agent_platform import data_dir
+            from agent_config import GATEWAY_BACKEND_URL
+            from guard_platform import data_dir
+            server_host = ""
+            if GATEWAY_BACKEND_URL:
+                sh = GATEWAY_BACKEND_URL.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].strip().lower()
+                if sh.startswith("www."):
+                    sh = sh[4:]
+                server_host = sh
             tamper_flag = os.path.join(data_dir(), "tamper.flag")
             is_tampered = os.path.isfile(tamper_flag)
             self._json(200, {
                 "rules": dynamic_rules(),
+                "server_host": server_host,
                 "status": "tampered" if is_tampered else "active",
                 "tampered": is_tampered,
             })

@@ -22,9 +22,7 @@
     /^10\.\d+\.\d+\.\d+$/.test(curHost) ||
     /^192\.168\.\d+\.\d+$/.test(curHost) ||
     /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(curHost) ||
-    /^127\.\d+\.\d+\.\d+$/.test(curHost) ||
-    curHost.indexOf("yespanchi.com") >= 0 ||
-    curHost.indexOf("unifai") >= 0
+    /^127\.\d+\.\d+\.\d+$/.test(curHost)
   ) {
     return;
   }
@@ -247,37 +245,99 @@
     });
   }
 
-  // Universal Composer Extraction across ChatGPT, Claude, Gemini, Copilot, DeepSeek, Perplexity
+  // Deep helper: pierce shadow roots to find currently focused element
+  function getDeepActiveElement(root) {
+    try {
+      var active = (root || document).activeElement;
+      while (active && active.shadowRoot && active.shadowRoot.activeElement) {
+        active = active.shadowRoot.activeElement;
+      }
+      return active;
+    } catch (e) {
+      return (root || document).activeElement;
+    }
+  }
+
+  // Deep helper: search selectors across light DOM and all open shadow roots
+  function querySelectorAllDeep(selector, root) {
+    root = root || document;
+    var results = [];
+    try {
+      var direct = root.querySelectorAll(selector);
+      for (var i = 0; i < direct.length; i++) results.push(direct[i]);
+    } catch (e) {}
+
+    try {
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+      while (walker.nextNode()) {
+        var n = walker.currentNode;
+        if (n && n.shadowRoot) {
+          var sub = querySelectorAllDeep(selector, n.shadowRoot);
+          for (var j = 0; j < sub.length; j++) results.push(sub[j]);
+        }
+      }
+    } catch (e2) {}
+    return results;
+  }
+
+  // Universal Composer Extraction across ChatGPT, Claude, Gemini, Copilot, DeepSeek, Mistral, Lovable
   function composerFrom(el) {
     if (!el) return "";
     var node = el;
-    for (var i = 0; node && i < 6; i++, node = node.parentElement) {
+
+    // Check if element itself has value property (web component, textarea, input)
+    if (typeof node.value === "string" && node.value) return node.value;
+
+    // Check inside element's shadowRoot if present
+    if (node.shadowRoot) {
+      try {
+        var shadowInput = node.shadowRoot.querySelector("textarea, [contenteditable='true'], input[type='text'], [role='textbox']");
+        if (shadowInput) {
+          var sVal = (shadowInput.tagName === "TEXTAREA" || shadowInput.tagName === "INPUT") ? (shadowInput.value || "") : (shadowInput.innerText || shadowInput.textContent || "");
+          if (sVal && sVal.trim()) return sVal.trim();
+        }
+      } catch (se) {}
+    }
+
+    for (var i = 0; node && i < 6; i++, node = (node.parentElement || (node.getRootNode && node.getRootNode().host))) {
       if (node.tagName === "TEXTAREA" || node.tagName === "INPUT") return node.value || "";
       if (node.isContentEditable) {
         var root = (node.closest && node.closest("[contenteditable='true'], [role='textbox']")) || node;
         return root.innerText || root.textContent || "";
       }
+      if (typeof node.value === "string" && node.value) return node.value;
     }
+
     // Check surrounding form / fieldset / composer container of the clicked button
     var container = (el && el.closest && el.closest("fieldset, form, [class*='composer' i], [class*='input' i], div[data-testid*='composer' i], div.relative")) || null;
     if (container) {
-      var innerEd = container.querySelector("div.ProseMirror, [contenteditable='true'], textarea, input[type='text']");
+      var innerEd = container.querySelector("div.ProseMirror, [contenteditable='true'], textarea, input[type='text'], [role='textbox']");
       if (innerEd) {
         if (innerEd.tagName === "TEXTAREA" || innerEd.tagName === "INPUT") return innerEd.value || "";
         var ct = (innerEd.innerText || innerEd.textContent || "").trim();
         if (ct) return ct;
       }
     }
-    var active = document.activeElement;
-    if (active && active !== el) {
-      if (active.tagName === "TEXTAREA" || active.tagName === "INPUT") return active.value || "";
-      if (active.isContentEditable) {
-        var aroot = (active.closest && active.closest("[contenteditable='true'], [role='textbox']")) || active;
+
+    var deepActive = getDeepActiveElement();
+    if (deepActive && deepActive !== el) {
+      if (deepActive.tagName === "TEXTAREA" || deepActive.tagName === "INPUT") return deepActive.value || "";
+      if (deepActive.isContentEditable) {
+        var aroot = (deepActive.closest && deepActive.closest("[contenteditable='true'], [role='textbox']")) || deepActive;
         return aroot.innerText || aroot.textContent || "";
       }
+      if (typeof deepActive.value === "string" && deepActive.value) return deepActive.value;
     }
-    // Specific platform selectors across document (filtering out conversation turn history)
-    var candidates = document.querySelectorAll(
+
+    // Specific platform selectors across document and deep shadow roots
+    var candidates = querySelectorAllDeep(
+      "textarea[placeholder*='Message' i], " +
+      "textarea[placeholder*='Copilot' i], " +
+      "[placeholder*='Message Copilot' i], " +
+      "[aria-label*='Message Copilot' i], " +
+      "[placeholder*='Message' i], " +
+      "[aria-label*='Message' i], " +
+      "textarea#userInput, " +
       "fieldset div.ProseMirror, " +
       "fieldset [contenteditable='true'], " +
       "form div.ProseMirror, " +
@@ -285,7 +345,6 @@
       "div.ProseMirror, " +
       "rich-textarea div[contenteditable], " +
       "textarea#searchbox, " +
-      "textarea[placeholder*='message' i], " +
       "textarea[placeholder*='Ask' i], " +
       "textarea[placeholder*='prompt' i], " +
       "textarea[placeholder*='describe' i], " +
@@ -449,14 +508,14 @@
 
     (document.body || document.documentElement).appendChild(card);
 
-    // Auto-dismiss after 2 seconds
+    // Auto-dismiss after 1.5 seconds (requested by user)
     setTimeout(function () {
       if (card && card.parentNode) {
-        card.style.transition = "opacity 0.3s ease";
+        card.style.transition = "opacity 0.2s ease";
         card.style.opacity = "0";
-        setTimeout(function () { if (card.parentNode) card.remove(); }, 300);
+        setTimeout(function () { if (card.parentNode) card.remove(); }, 200);
       }
-    }, 2000);
+    }, 1500);
   }
 
   var lastWarnedTime = 0;
@@ -671,7 +730,8 @@
   document.addEventListener("keydown", function (e) {
     if (!armed || passKey) return;
     if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
-    var text = composerFrom(e.target).trim();
+    var actualTarget = (e.composedPath && e.composedPath()[0]) || e.target;
+    var text = (composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement())).trim();
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
@@ -741,7 +801,8 @@
   // Send Button Click
   document.addEventListener("click", function (e) {
     if (!armed || passClick) return;
-    var btn = e.target && e.target.closest ? e.target.closest("button,[role='button']") : null;
+    var actualEl = (e.composedPath && e.composedPath()[0]) || e.target;
+    var btn = (actualEl && actualEl.closest ? actualEl.closest("button,[role='button']") : null) || (e.target && e.target.closest ? e.target.closest("button,[role='button']") : null);
     if (!btn) return;
 
     var label = ((btn.getAttribute("aria-label") || "") + " " + (btn.getAttribute("data-testid") || "") + " " + (btn.title || "")).toLowerCase();
@@ -762,10 +823,10 @@
       btnText === "ask" ||
       btnText === "run" ||
       btn.getAttribute("data-testid") === "send-button" ||
-      (form && form.contains(document.activeElement));
+      (form && form.contains(getDeepActiveElement()));
 
     if (!sendLike) return;
-    var text = (composerFrom(btn) || composerFrom(document.activeElement)).trim();
+    var text = (composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement)).trim();
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
@@ -923,10 +984,18 @@
         try {
           var parsed = JSON.parse(body);
           if (parsed) {
-            // 1. Direct prompt fields
+            // 1. Direct prompt fields across OpenAI, Claude, Gemini, Copilot, DeepSeek, Mistral
             if (typeof parsed.prompt === "string") promptText = parsed.prompt;
             else if (typeof parsed.query === "string") promptText = parsed.query;
             else if (typeof parsed.text === "string") promptText = parsed.text;
+            else if (typeof parsed.input === "string") promptText = parsed.input;
+            else if (typeof parsed.userMessage === "string") promptText = parsed.userMessage;
+            else if (parsed.message && typeof parsed.message.text === "string") promptText = parsed.message.text;
+            else if (Array.isArray(parsed.arguments) && parsed.arguments[0]) {
+              var a0 = parsed.arguments[0];
+              if (a0.message && typeof a0.message.text === "string") promptText = a0.message.text;
+              else if (typeof a0.text === "string") promptText = a0.text;
+            }
 
             // 2. Claude Connect-RPC / PerformAction format
             var act = parsed.action || parsed;
@@ -1156,14 +1225,38 @@
     return origXHRSend.apply(this, arguments);
   };
 
-  // Hook WebSocket (Streaming & Real-time AI Chatbots)
+  // Hook WebSocket (Streaming & Real-time AI Chatbots: Copilot SignalR, ChatGPT SSE, etc.)
   if (typeof window.WebSocket !== "undefined" && window.WebSocket.prototype) {
     var origWSSend = window.WebSocket.prototype.send;
     window.WebSocket.prototype.send = function (data) {
-      if (armed && typeof data === "string" && data.length > 5) {
-        var wsDecision = evaluateClientRules(data, []);
+      if (armed && typeof data === "string" && data.length > 3) {
+        var cleanStr = data.replace(/\x1e/g, "").trim();
+        var promptText = cleanStr;
+        try {
+          var parsed = JSON.parse(cleanStr);
+          if (parsed && Array.isArray(parsed.arguments) && parsed.arguments[0]) {
+            var arg0 = parsed.arguments[0];
+            if (arg0.message && typeof arg0.message.text === "string") {
+              promptText = arg0.message.text;
+            } else if (typeof arg0.text === "string") {
+              promptText = arg0.text;
+            }
+          }
+        } catch (e) {}
+
+        var wsDecision = evaluateClientRules(promptText, []) || evaluateClientRules(cleanStr, []);
         if (wsDecision && wsDecision.blocked) {
           showBubble(wsDecision.message, wsDecision.rule, "block");
+          window.postMessage({
+            source: "gateway-guard-page",
+            nonce: guardNonce,
+            id: "ws_block_" + Date.now().toString(36),
+            prompt: promptText.slice(0, 500),
+            host: location.hostname,
+            url: location.href,
+            is_blocked: true,
+            rule: wsDecision.rule || ""
+          }, "*");
           return;
         }
       }

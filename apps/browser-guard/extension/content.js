@@ -19,7 +19,6 @@
     if (/^192\.168\.\d+\.\d+$/.test(host)) return true;
     if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true;
     if (/^127\.\d+\.\d+\.\d+$/.test(host)) return true;
-    if (host.indexOf("yespanchi.com") >= 0 || host.indexOf("unifai") >= 0) return true;
     return false;
   }
 
@@ -28,15 +27,72 @@
     return;
   }
 
-  function hostMatches(host, domains) {
-    host = (host || "").toLowerCase();
+  var serverHost = "";
+
+  function isServerHost(host) {
+    if (!host || !serverHost) return false;
+    host = (host || "").toLowerCase().trim();
     if (host.indexOf("www.") === 0) host = host.slice(4);
+    if (host.indexOf(":") >= 0) host = host.split(":")[0];
+    return host === serverHost || host.endsWith("." + serverHost);
+  }
+
+  var sitesMap = null;
+  function rebuildSitesMap(domains) {
+    sitesMap = Object.create(null);
+    if (!Array.isArray(domains)) return;
     for (var i = 0; i < domains.length; i++) {
-      var d = String(domains[i] || "").toLowerCase();
-      if (!d) continue;
-      if (host === d || host.slice(-(d.length + 1)) === "." + d) return true;
+      var d = String(domains[i] || "").toLowerCase().trim();
+      if (d.indexOf("www.") === 0) d = d.slice(4);
+      if (d.indexOf(":") >= 0) d = d.split(":")[0];
+      if (d) sitesMap[d] = true;
+    }
+  }
+
+  // O(1) hash map matcher that scales to 10,000+ target websites with zero latency
+  function hostMatches(host, domains) {
+    if (!host) return false;
+    host = host.toLowerCase().trim();
+    if (host.indexOf("www.") === 0) host = host.slice(4);
+    if (host.indexOf(":") >= 0) host = host.split(":")[0];
+
+    if (!sitesMap && Array.isArray(domains)) {
+      rebuildSitesMap(domains);
+    }
+    if (sitesMap && sitesMap[host]) return true;
+
+    // Fast O(1) parent subdomain traversal (e.g. sub.copilot.cloud.microsoft -> cloud.microsoft)
+    var dot = host.indexOf(".");
+    while (dot !== -1) {
+      var parent = host.substring(dot + 1);
+      if (sitesMap && sitesMap[parent]) return true;
+      dot = host.indexOf(".", dot + 1);
+    }
+
+    // Direct fallback if map was empty
+    if (Array.isArray(domains) && (!sitesMap || Object.keys(sitesMap).length === 0)) {
+      for (var j = 0; j < domains.length; j++) {
+        var dom = String(domains[j] || "").toLowerCase();
+        if (!dom) continue;
+        if (host === dom || host.slice(-(dom.length + 1)) === "." + dom) return true;
+      }
     }
     return false;
+  }
+
+  // Accurate client-side browser detector across Chrome, Edge, Safari, Firefox, Brave, Opera, Vivaldi
+  function detectCurrentBrowser() {
+    try {
+      if (navigator.brave && typeof navigator.brave.isBrave === "function") return "Brave";
+      var ua = navigator.userAgent || "";
+      if (/edg\//i.test(ua)) return "Edge";
+      if (/opr\/|opera/i.test(ua)) return "Opera";
+      if (/firefox\/|fxios\//i.test(ua)) return "Firefox";
+      if (/vivaldi/i.test(ua)) return "Vivaldi";
+      if (/safari/i.test(ua) && !/chrome|chromium|crios/i.test(ua)) return "Safari";
+      if (/chrome|chromium|crios/i.test(ua)) return "Chrome";
+    } catch (e) {}
+    return "Browser";
   }
 
   function injectHook(done) {
@@ -73,7 +129,10 @@
         .then(function (data) {
           if (!data || !Array.isArray(data.rules)) return;
           var rules = data.rules;
-          var stored = { cached_rules: rules };
+          if (data.server_host) {
+            serverHost = data.server_host;
+          }
+          var stored = { cached_rules: rules, server_host: serverHost };
           var msg = {
             source: "gateway-guard",
             nonce: guardNonce,
@@ -96,7 +155,12 @@
   function armIfMonitored() {
     // 1. Check local cache first for zero-latency startup
     if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["cached_rules", "cached_sites", "cached_exts"], function (res) {
+      chrome.storage.local.get(["cached_rules", "cached_sites", "cached_exts", "server_host"], function (res) {
+        if (res && res.server_host) serverHost = res.server_host;
+        if (isServerHost(location.hostname)) {
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+          return;
+        }
         var sites = (res && Array.isArray(res.cached_sites)) ? res.cached_sites : [];
         if (hostMatches(location.hostname, sites)) {
           window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
@@ -116,27 +180,30 @@
 
     // 2. Fetch live configuration from local agent
     withBase(function () {
-    if (!base) return;
-    fetch(base + "/extension/sites", { method: "GET", cache: "no-store" })
-      .then(function (r) {
-        if (!r.ok) throw new Error("sites");
-        return r.json();
-      })
-      .then(function (data) {
-        if (!data || !Array.isArray(data.hosts)) return;
-        var domains = data.hosts;
-        if (chrome.storage && chrome.storage.local) {
-          chrome.storage.local.set({ cached_sites: domains });
-        }
-        if (!hostMatches(location.hostname, domains)) {
-          // Domain removed from target websites: disarm immediately
-          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
-          return;
-        }
-        window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
-        syncRules();
-      })
-      .catch(function () { });
+      if (!base) return;
+      fetch(base + "/extension/sites", { method: "GET", cache: "no-store" })
+        .then(function (r) {
+          if (!r.ok) throw new Error("sites");
+          return r.json();
+        })
+        .then(function (data) {
+          if (!data || !Array.isArray(data.hosts)) return;
+          var domains = data.hosts;
+          if (data.server_host) {
+            serverHost = data.server_host;
+          }
+          if (chrome.storage && chrome.storage.local) {
+            chrome.storage.local.set({ cached_sites: domains, server_host: serverHost });
+          }
+          if (isServerHost(location.hostname) || !hostMatches(location.hostname, domains)) {
+            // Server portal or domain not in target websites: disarm immediately
+            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+            return;
+          }
+          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
+          syncRules();
+        })
+        .catch(function () { });
     });
   }
 
@@ -196,7 +263,8 @@
       files: msg.files || [],
       upload_images: msg.upload_images || [],
       is_blocked: Boolean(msg.is_blocked),
-      rule: msg.rule || ""
+      rule: msg.rule || "",
+      browser: detectCurrentBrowser()
     };
 
     // Record prompt check in chrome.storage.local (middle-box persistence)
