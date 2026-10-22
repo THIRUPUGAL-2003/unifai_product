@@ -467,7 +467,11 @@ def _record_extension_eval(host: str, prompt: str, files: list | None = None, pl
         p_norm = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ')
         p_clean = " ".join(p_norm.strip().split())
 
-        COPILOT_FAMILY = {"copilot.microsoft.com", "copilot.cloud.microsoft", "substrate.office.com", "sydneyp.bing.com"}
+        COPILOT_FAMILY = {
+            "copilot.com", "www.copilot.com", "copilot.microsoft.com",
+            "copilot.cloud.microsoft", "substrate.office.com", "sydneyp.bing.com",
+            "edgeservices.bing.com", "bing.com",
+        }
         hosts_to_record = [clean_h]
         if clean_h in COPILOT_FAMILY:
             for fam in COPILOT_FAMILY:

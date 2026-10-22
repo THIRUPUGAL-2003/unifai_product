@@ -318,9 +318,15 @@
     });
   }
 
-  // Periodic rule refresh every 15 seconds and on tab focus
-  setInterval(syncRules, 15000);
-  window.addEventListener("focus", syncRules);
+  // Periodic site and rule refresh every 15 seconds and on tab focus
+  setInterval(function () {
+    armIfMonitored();
+    syncRules();
+  }, 15000);
+  window.addEventListener("focus", function () {
+    armIfMonitored();
+    syncRules();
+  });
 
   window.addEventListener("message", function (ev) {
     if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard-page") return;

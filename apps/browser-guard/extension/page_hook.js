@@ -833,14 +833,19 @@
       label.indexOf("create") >= 0 ||
       label.indexOf("run") >= 0 ||
       label.indexOf("draw") >= 0 ||
+      label.indexOf("message") >= 0 ||
+      label.indexOf("chat") >= 0 ||
       btnText === "generate" ||
       btnText === "create" ||
       btnText === "send" ||
       btnText === "submit" ||
       btnText === "ask" ||
       btnText === "run" ||
+      btn.getAttribute("type") === "submit" ||
+      btn.type === "submit" ||
       btn.getAttribute("data-testid") === "send-button" ||
-      (form && form.contains(getDeepActiveElement()));
+      (form && form.contains(getDeepActiveElement())) ||
+      Boolean(btn.closest("fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]"));
 
     if (!sendLike) return;
     var text = stripInvisible(composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement));
@@ -1311,12 +1316,30 @@
         var promptText = "";
         try {
           var parsed = JSON.parse(cleanStr);
-          if (parsed && Array.isArray(parsed.arguments) && parsed.arguments[0]) {
-            var arg0 = parsed.arguments[0];
-            if (arg0.message && typeof arg0.message.text === "string") {
-              promptText = arg0.message.text;
-            } else if (typeof arg0.text === "string") {
-              promptText = arg0.text;
+          if (parsed) {
+            if (Array.isArray(parsed.arguments) && parsed.arguments[0]) {
+              var arg0 = parsed.arguments[0];
+              if (arg0.message && typeof arg0.message.text === "string") {
+                promptText = arg0.message.text;
+              } else if (arg0.message && typeof arg0.message.content === "string") {
+                promptText = arg0.message.content;
+              } else if (typeof arg0.text === "string") {
+                promptText = arg0.text;
+              } else if (typeof arg0.input === "string") {
+                promptText = arg0.input;
+              } else if (typeof arg0.prompt === "string") {
+                promptText = arg0.prompt;
+              } else if (typeof arg0.query === "string") {
+                promptText = arg0.query;
+              }
+            }
+            if (!promptText) {
+              if (typeof parsed.prompt === "string") promptText = parsed.prompt;
+              else if (typeof parsed.text === "string") promptText = parsed.text;
+              else if (typeof parsed.input === "string") promptText = parsed.input;
+              else if (typeof parsed.query === "string") promptText = parsed.query;
+              else if (parsed.message && typeof parsed.message.text === "string") promptText = parsed.message.text;
+              else if (parsed.message && typeof parsed.message.content === "string") promptText = parsed.message.content;
             }
           }
         } catch (e) {}

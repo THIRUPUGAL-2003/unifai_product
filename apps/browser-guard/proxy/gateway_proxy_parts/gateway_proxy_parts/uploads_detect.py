@@ -2556,8 +2556,8 @@ def upload_domain_aliases(domain: str) -> list[str]:
         fam_set.update(["deepseek.com", "chat.deepseek.com", "api.deepseek.com"])
     elif any(x in d for x in ("copilot", "sydney", "edgeservices", "substrate.office.com")):
         fam_set.update([
-            "copilot.microsoft.com", "copilot.cloud.microsoft", "edgeservices.bing.com",
-            "bing.com", "sydney.bing.com", "sydneyp.bing.com", "substrate.office.com",
+            "copilot.com", "www.copilot.com", "copilot.microsoft.com", "copilot.cloud.microsoft",
+            "edgeservices.bing.com", "bing.com", "sydney.bing.com", "sydneyp.bing.com", "substrate.office.com",
         ])
     elif "mistral" in d:
         fam_set.update(["mistral.ai", "chat.mistral.ai", "console.mistral.ai", "api.mistral.ai"])

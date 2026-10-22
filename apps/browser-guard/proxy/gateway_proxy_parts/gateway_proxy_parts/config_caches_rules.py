@@ -950,7 +950,11 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
         if clean_d.startswith("www."):
             clean_d = clean_d[4:]
         # Map Copilot family domains
-        COPILOT_FAMILY = {"copilot.microsoft.com", "copilot.cloud.microsoft", "substrate.office.com", "sydneyp.bing.com"}
+        COPILOT_FAMILY = {
+            "copilot.com", "www.copilot.com", "copilot.microsoft.com",
+            "copilot.cloud.microsoft", "substrate.office.com", "sydneyp.bing.com",
+            "edgeservices.bing.com", "bing.com",
+        }
 
         # Strip invisible zero-width formatting characters
         p_norm = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ')
