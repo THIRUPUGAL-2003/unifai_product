@@ -215,7 +215,7 @@ UPLOAD_ENDPOINTS = [
 ]
 
 _GENERIC_UPLOAD_PATH_MARKERS = (
-    "/upload", "/uploads", "/files", "/file/", "/attachment", "/attachments",
+    "/upload", "/uploads", "/files", "/file/", "/file-", "/attachment", "/attachments",
     "/media/upload", "/convert_document", "/filepush",
     "/process_upload", "/file-upload", "/fileupload", "/resumable",
     "/api/files", "/api/file", "/document", "/documents",
@@ -1291,8 +1291,6 @@ def _file_scan_guard_metadata(
             "scan_guard_action": "Allowed",
             "scan_guard_eval_error": (scan_eval_error or "").strip()[:300],
         }
-    if not scan_evaluated and not rule_hit:
-        return {}
     meta: dict = {"scan_guard_decided": True}
     act = (rule_action or "").upper()
     if rule_hit and act == "BLOCK":

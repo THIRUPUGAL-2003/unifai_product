@@ -45,7 +45,7 @@ except Exception:
     BATCHEXECUTE_LOCALE_JUNK = {"en", "ta-in", "hi-in", "es", "fr", "de"}
     NOISE_EXTENSIONS = re.compile(r"\.(png|jpg|jpeg|gif|webp|svg|css|js|woff|woff2|ttf|ico|map)$", re.IGNORECASE)
     _GENERIC_UPLOAD_PATH_MARKERS = (
-        "/upload", "/uploads", "/files", "/file/", "/attachment", "/attachments",
+        "/upload", "/uploads", "/files", "/file/", "/file-", "/attachment", "/attachments",
         "/media/upload", "/convert_document", "/filepush", "/process_upload",
     )
 
@@ -1449,7 +1449,7 @@ def _path_looks_like_upload(path: str) -> bool:
     return any(
         x in p
         for x in (
-            "/files", "/file/", "/upload", "/attachments", "/attachment",
+            "/files", "/file/", "/file-", "/upload", "/attachments", "/attachment",
             "/media/upload", "/convert_document", "/documents", "/document",
             "/storage", "/import", "/blob", "/blobs", "file.upload", "uploadfile",
             "/file.", "/upload-file", "/upload_file", "upload-file", "upload_file",

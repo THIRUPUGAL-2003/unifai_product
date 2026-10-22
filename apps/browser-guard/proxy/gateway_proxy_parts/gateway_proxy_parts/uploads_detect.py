@@ -903,14 +903,12 @@ def extract_all_attachment_filenames_from_send(raw_text: str) -> list[str]:
     raw_text = _isolate_active_send_message(raw_text)
     if not raw_text:
         return []
-    names = _extract_names_from_one_text(raw_text)
-    if names:
-        return names
-    # Nothing on the plain wire (ChatGPT-style keys): try nested / form-encoded wires.
+    names = list(_extract_names_from_one_text(raw_text))
+    # Combine nested / form-encoded wires
     try:
-        nested = _prefer_real_filenames(_nested_json_send_names(raw_text))
-        if nested:
-            return nested
+        for n in _nested_json_send_names(raw_text):
+            if n and _is_real_user_upload_name(n) and n.lower() not in [x.lower() for x in names]:
+                names.append(n)
     except Exception:
         pass
     # Protobuf / Connect-RPC payloads (Claude Web PerformAction, etc.)
@@ -921,30 +919,24 @@ def extract_all_attachment_filenames_from_send(raw_text: str) -> list[str]:
             if not pb_strs and isinstance(raw_text, str):
                 pb_strs = extract_protobuf_strings(raw_text.encode("utf-8", errors="surrogateescape"))
             if pb_strs:
-                pb_names = []
                 for s in pb_strs:
                     s_clean = (s or "").strip()
                     if _POSITIONAL_NAME_RE.match(s_clean) and _is_real_user_upload_name(s_clean):
-                        if s_clean.lower() not in [n.lower() for n in pb_names]:
-                            pb_names.append(s_clean)
-                if pb_names:
-                    return _prefer_real_filenames(pb_names)
+                        if s_clean.lower() not in [n.lower() for n in names]:
+                            names.append(s_clean)
     except Exception:
         pass
     # Regex fallback for positional filenames in raw string (e.g. from decoded RPC / binary bodies)
     try:
         raw_str = raw_text if isinstance(raw_text, str) else raw_text.decode("utf-8", errors="ignore")
         if any(ext in raw_str.lower() for ext in (".pdf", ".docx", ".xlsx", ".pptx", ".csv", ".txt", ".png", ".jpg")):
-            direct_matches = []
             for m in re.finditer(r'[\w\.-]+\.(?:pdf|docx?|xlsx?|xlsm|pptx?|csv|tsv|txt|md|rtf|json|zip|png|jpe?g|gif|webp|mp3|wav|m4a|py)', raw_str, re.I):
                 cand = m.group(0).strip()
-                if _is_real_user_upload_name(cand) and cand.lower() not in [x.lower() for x in direct_matches]:
-                    direct_matches.append(cand)
-            if direct_matches:
-                return _prefer_real_filenames(direct_matches)
+                if _is_real_user_upload_name(cand) and cand.lower() not in [x.lower() for x in names]:
+                    names.append(cand)
     except Exception:
         pass
-    return []
+    return _prefer_real_filenames(names)
 
 
 # file_id → real filename (ChatGPT often nameless at upload).
@@ -2542,22 +2534,35 @@ def upload_domain_aliases(domain: str) -> list[str]:
             fam_set.update(sfam)
 
     # Built-in platform family siblings (ChatGPT, Claude, Gemini, Perplexity, DeepSeek, Copilot, Mistral, Lovable)
-    if any(x in d for x in ("chatgpt", "openai")):
-        fam_set.update(["chatgpt.com", "openai.com", "api.openai.com", "cdn.oaistatic.com", "files.oaiusercontent.com"])
-    elif any(x in d for x in ("claude", "anthropic")):
-        fam_set.update(["claude.ai", "anthropic.com", "api.anthropic.com"])
-    elif any(x in d for x in ("gemini", "bard")):
-        fam_set.update(["gemini.google.com", "google.com", "generativelanguage.googleapis.com"])
+    if any(x in d for x in ("chatgpt", "openai", "oaiusercontent", "oaistatic")):
+        fam_set.update([
+            "chatgpt.com", "ab.chatgpt.com", "chat.openai.com", "openai.com",
+            "api.openai.com", "cdn.oaistatic.com", "oaistatic.com",
+            "files.oaiusercontent.com", "oaiusercontent.com",
+        ])
+    elif any(x in d for x in ("claude", "anthropic", "claudeusercontent")):
+        fam_set.update([
+            "claude.ai", "anthropic.com", "api.anthropic.com", "console.anthropic.com",
+            "claudeusercontent.com", "files.claudeusercontent.com",
+        ])
+    elif any(x in d for x in ("gemini", "bard", "googleusercontent")):
+        fam_set.update([
+            "gemini.google.com", "bard.google.com", "google.com",
+            "generativelanguage.googleapis.com", "googleusercontent.com",
+        ])
     elif "perplexity" in d:
         fam_set.update(["perplexity.ai", "www.perplexity.ai", "api.perplexity.ai"])
     elif "deepseek" in d:
         fam_set.update(["deepseek.com", "chat.deepseek.com", "api.deepseek.com"])
-    elif any(x in d for x in ("copilot", "sydney", "edgeservices")):
-        fam_set.update(["copilot.microsoft.com", "edgeservices.bing.com", "bing.com", "sydney.bing.com"])
+    elif any(x in d for x in ("copilot", "sydney", "edgeservices", "substrate.office.com")):
+        fam_set.update([
+            "copilot.microsoft.com", "copilot.cloud.microsoft", "edgeservices.bing.com",
+            "bing.com", "sydney.bing.com", "sydneyp.bing.com", "substrate.office.com",
+        ])
     elif "mistral" in d:
         fam_set.update(["mistral.ai", "chat.mistral.ai", "console.mistral.ai", "api.mistral.ai"])
     elif "lovable" in d:
-        fam_set.update(["lovable.dev", "lovable.app", "api.lovable.dev"])
+        fam_set.update(["lovable.dev", "lovable.app", "api.lovable.dev", "gptengineer.app"])
 
     fam_set.add(d)
     return sorted(fam_set)
@@ -3029,6 +3034,9 @@ def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
         r'file-service://file-([a-zA-Z0-9_-]+)',
         r'asset_pointer"\s*:\s*"[^"]*(file-[a-zA-Z0-9_-]+)',
         r'"id"\s*:\s*"(file-[a-zA-Z0-9_-]+)"',
+        r'/(?:files|file|attachments|attachment|blobs|upload)/(file-[a-zA-Z0-9_-]{4,128})',
+        r'/(?:files|file|attachments|attachment|blobs|upload)/([a-zA-Z0-9_-]{8,128})',
+        r'[?&](?:file_id|fileId|upload_id|id)=(file-[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]{8,128})',
     ):
         for m in re.finditer(pat, raw_text):
             ids.append(m.group(1))
@@ -3049,6 +3057,36 @@ def _extract_file_ids_from_chat(raw_text: str) -> list[str]:
     return out
 
 
+def _extract_upload_flow_file_ids(flow, raw_text: str = "") -> list[str]:
+    """Extract file IDs from request body, URL path, query params, and headers."""
+    ids = list(_extract_file_ids_from_chat(raw_text or ""))
+    req = getattr(flow, "request", None)
+    if req:
+        req_path = getattr(req, "path", "") or ""
+        req_url = getattr(req, "url", "") or ""
+        for target in (req_path, req_url):
+            if not target:
+                continue
+            for fid in _extract_file_ids_from_chat(target):
+                if fid not in ids:
+                    ids.append(fid)
+            for m in re.finditer(r'/(?:file|files|attachments|blobs|upload)/(file-[a-zA-Z0-9_-]{4,128})', target, re.I):
+                if m.group(1) not in ids:
+                    ids.append(m.group(1))
+            for m in re.finditer(r'/(?:file|files|attachments|blobs|upload)/([a-zA-Z0-9_-]{8,128})', target, re.I):
+                if m.group(1) not in ids:
+                    ids.append(m.group(1))
+            for m in re.finditer(r'[?&](?:file_id|fileId|upload_id|id)=(file-[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]{8,128})', target, re.I):
+                if m.group(1) not in ids:
+                    ids.append(m.group(1))
+        req_headers = getattr(req, "headers", {}) or {}
+        for hdr in ("x-file-id", "x-attachment-id", "x-upload-id", "x-ms-file-id"):
+            val = (req_headers.get(hdr) or "").strip()
+            if val and val not in ids:
+                ids.append(val)
+    return ids
+
+
 def _expected_send_attachment_count(raw_text: str) -> int:
     """How many distinct files this Send references (ChatGPT/Gemini/Claude/Perplexity/DeepSeek/Copilot/Mistral/Lovable)."""
     body = _isolate_active_send_message(raw_text or "")
@@ -3058,11 +3096,7 @@ def _expected_send_attachment_count(raw_text: str) -> int:
         n for n in extract_all_attachment_filenames_from_send(body)
         if _is_real_user_upload_name(n)
     ]
-    if names:
-        return len(names)
     ids = _extract_file_ids_from_chat(body)
-    if ids:
-        return len(ids)
     # Non-empty attachments / files / documents object or string arrays
     n_objs = 0
     for m in re.finditer(
@@ -3077,7 +3111,7 @@ def _expected_send_attachment_count(raw_text: str) -> int:
         n_strings = len(re.findall(r'["\'][a-zA-Z0-9_\-\.]{1,}["\']', chunk)) if not n_braces else 0
         n_objs = max(n_objs, n_braces, n_strings)
     n_content_blocks = len(re.findall(r'"type"\s*:\s*"(?:document|image|file|audio|input_image|input_file)"', body, re.I))
-    return max(n_objs, n_content_blocks, 0)
+    return max(len(names), len(ids), n_objs, n_content_blocks, 0)
 
 
 def chat_carries_attachment(raw_text: str) -> bool:
@@ -3844,20 +3878,24 @@ def take_all_cached_uploads_for_send(
                     add_entry(matched_entry)
                     _remove_cache_keys_for_entry(matched_entry, aliases)
 
-        # If send carried file IDs but no entry matched by fid yet:
-        # Fall back to the most recent upload in the queue (within 120s) for that domain family
-        if send_fids and not found:
+        # Fall back to the most recent upload(s) in the queue (within 120s) for that domain family
+        # when we need more entries than matched by ID directly
+        target_fids = len(send_fids) if send_fids else 0
+        if target_fids > len(found):
             now = time.time()
             for alias in aliases:
+                if len(found) >= target_fids:
+                    break
                 qkey = _upload_queue_key(alias)
                 q_entries = list(_UPLOAD_FILE_QUEUES.get(qkey, []))
                 q_entries.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
                 for qe in q_entries:
+                    if len(found) >= target_fids:
+                        break
                     age = now - float(qe.get("ts") or 0)
                     if age <= 120.0:
                         add_entry(qe)
                         _remove_cache_keys_for_entry(qe, aliases)
-                        break
         for m in re.finditer(
             r'["\'](?:file_name|fileName|filename|name|title)["\']\s*:\s*["\']([^"\']+)["\']',
             active_text or "",
@@ -3926,7 +3964,11 @@ def take_all_cached_uploads_for_send(
                         add_entry(latest)
                         _remove_cache_keys_for_entry(latest, aliases)
         if expected_n > 0 and len(found) > expected_n:
-            found = found[:expected_n]
+            real_byte_found = [e for e in found if len(e.get("raw_bytes") or b"") >= 32]
+            if len(real_byte_found) <= expected_n:
+                found = found[:expected_n]
+            else:
+                found = real_byte_found
     return _dedupe_cached_uploads_by_bytes(found)
 
 

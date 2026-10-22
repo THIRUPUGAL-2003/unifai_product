@@ -369,9 +369,13 @@ def enforce_file_send_policy(
             cached_list = _dedupe_cached_uploads_by_bytes(cached_list)
         except Exception:
             pass
+    real_byte_files = [e for e in cached_list if len(e.get("raw_bytes") or b"") >= 32]
     if expected_n > 0 and len(cached_list) > expected_n:
-        cached_list.sort(key=lambda x: (float(x.get("ts") or 0), len(x.get("raw_bytes") or b"")), reverse=True)
-        cached_list = cached_list[:expected_n]
+        if len(real_byte_files) <= expected_n:
+            cached_list.sort(key=lambda x: (len(x.get("raw_bytes") or b"") >= 32, float(x.get("ts") or 0)), reverse=True)
+            cached_list = cached_list[:expected_n]
+        else:
+            cached_list = real_byte_files
 
     if not has_attach and not cached_list:
         return False, "", "", 0, False
@@ -798,9 +802,16 @@ def enforce_file_send_policy(
                 "ts": time.time(),
                 "cache_uid": f"send-name|{time.time():.6f}|{n}",
             })
+        for e in remaining:
+            matched.append(e)
         cached_list = matched
+    real_byte_files = [e for e in cached_list if len(e.get("raw_bytes") or b"") >= 32]
     if expected_n > 0 and len(cached_list) > expected_n:
-        cached_list = cached_list[:expected_n]
+        if len(real_byte_files) <= expected_n:
+            cached_list.sort(key=lambda x: (len(x.get("raw_bytes") or b"") >= 32, float(x.get("ts") or 0)), reverse=True)
+            cached_list = cached_list[:expected_n]
+        else:
+            cached_list = real_byte_files
     else:
         # Pending names → nameless upload caches.
         still_fake = [e for e in cached_list if not _is_real_user_upload_name((e.get("file_name") or "").strip())]

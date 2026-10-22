@@ -823,7 +823,9 @@ class BrowserAIInterceptor:
                         ingest_upload_filenames_from_body(raw_text_n, bind)
                     except Exception:
                         pass
-                    file_ids = _extract_file_ids_from_chat(raw_text_n)
+                    file_ids = _extract_upload_flow_file_ids(flow, raw_text_n)
+                    if file_ids and fname_n and _is_real_user_upload_name(fname_n):
+                        remember_upload_filename(file_ids[0], fname_n)
                     cache_upload_file(
                         bind,
                         file_name=fname_n or "",
@@ -921,7 +923,9 @@ class BrowserAIInterceptor:
                         elif raw_bytes_nt.lstrip()[:1] not in (b"{", b"[") and len(raw_bytes_nt) >= 256:
                             payload_ok_nt = True
                     if bind and (confident_nt or payload_ok_nt):
-                        file_ids = _extract_file_ids_from_chat(raw_text_nt)
+                        file_ids = _extract_upload_flow_file_ids(flow, raw_text_nt)
+                        if file_ids and fname_nt and _is_real_user_upload_name(fname_nt):
+                            remember_upload_filename(file_ids[0], fname_nt)
                         cache_upload_file(
                             bind,
                             file_name=fname_nt or "",
@@ -1062,7 +1066,9 @@ class BrowserAIInterceptor:
                 make_blocked_response(flow, "Block Upload", host, reply_text=warn)
                 return
 
-            file_ids = _extract_file_ids_from_chat(raw_text)
+            file_ids = _extract_upload_flow_file_ids(flow, raw_text)
+            if file_ids and fname and _is_real_user_upload_name(fname):
+                remember_upload_filename(file_ids[0], fname)
             cache_domains = [domain]
             # File CDN Target (e.g. files.claudeusercontent.com) must also land in the
             # chat Target queue so Send can extract + rule-check quickly.
@@ -1081,13 +1087,16 @@ class BrowserAIInterceptor:
             for cache_dom in cache_domains:
                 if len(multi_parts) >= 2:
                     for i, (pname, pbytes) in enumerate(multi_parts):
+                        fid_part = file_ids[i] if i < len(file_ids) else ""
+                        if fid_part and pname and _is_real_user_upload_name(pname):
+                            remember_upload_filename(fid_part, pname)
                         cache_upload_file(
                             cache_dom,
                             file_name=pname,
                             raw_bytes=pbytes,
                             content_type=content_type,
                             upload_reason=upload_reason or "upload_endpoint",
-                            file_id=file_ids[i] if i < len(file_ids) else "",
+                            file_id=fid_part,
                         )
                     cached_label = ", ".join(p[0] for p in multi_parts)
                 else:
