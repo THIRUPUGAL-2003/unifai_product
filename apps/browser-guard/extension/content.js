@@ -344,30 +344,74 @@
         page_url: msg.page_url || location.href,
         policy_version: msg.policy_version || 1
       };
+      function sendAuthResult(result) {
+        window.postMessage({
+          source: "gateway-guard",
+          nonce: guardNonce,
+          type: "session_authorization_result",
+          id: msg.id,
+          result: result || { decision: "allow" }
+        }, "*");
+      }
+
+      function fallbackGatewayDirect() {
+        var endpoints = [
+          "http://127.0.0.1:6000/api/browser-ai/session/authorize",
+          "http://localhost:6000/api/browser-ai/session/authorize",
+          "http://127.0.0.1:6000/authorize_ai_session"
+        ];
+        if (serverHost) {
+          endpoints.unshift("https://" + serverHost + "/api/browser-ai/session/authorize");
+        }
+        var idx = 0;
+        function tryNext() {
+          if (idx >= endpoints.length) {
+            sendAuthResult({ decision: "allow", reason_code: "GATEWAY_UNREACHABLE" });
+            return;
+          }
+          var ep = endpoints[idx++];
+          fetch(ep, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(authPayload)
+          })
+            .then(function (r) {
+              if (!r.ok) throw new Error("status " + r.status);
+              return r.json();
+            })
+            .then(function (res) {
+              if (res && res.decision) {
+                sendAuthResult(res);
+              } else {
+                tryNext();
+              }
+            })
+            .catch(function () {
+              tryNext();
+            });
+        }
+        tryNext();
+      }
+
       withBase(function () {
         fetch(base + "/extension/authorize_session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(authPayload)
         })
-          .then(function (r) { return r.json(); })
+          .then(function (r) {
+            if (!r.ok) throw new Error("agent endpoint " + r.status);
+            return r.json();
+          })
           .then(function (result) {
-            window.postMessage({
-              source: "gateway-guard",
-              nonce: guardNonce,
-              type: "session_authorization_result",
-              id: msg.id,
-              result: result || { decision: "allow" }
-            }, "*");
+            if (result && result.decision) {
+              sendAuthResult(result);
+            } else {
+              fallbackGatewayDirect();
+            }
           })
           .catch(function () {
-            window.postMessage({
-              source: "gateway-guard",
-              nonce: guardNonce,
-              type: "session_authorization_result",
-              id: msg.id,
-              result: { decision: "allow", reason_code: "LOCAL_AGENT_UNAVAILABLE" }
-            }, "*");
+            fallbackGatewayDirect();
           });
       });
       return;

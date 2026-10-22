@@ -281,17 +281,23 @@
   // Scan DOM for visible user email (e.g. profile avatars, user menus)
   function scanDOMForSession() {
     try {
-      var elements = querySelectorAllDeep("[aria-label*='@'], [title*='@'], [alt*='@']");
+      var elements = querySelectorAllDeep("[aria-label*='@'], [title*='@'], [alt*='@'], [data-testid*='profile'], [data-testid*='user'], button, div[role='button']");
       var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
       for (var i = 0; i < elements.length; i++) {
         var el = elements[i];
         if (!el) continue;
-        var txt = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "") + " " + (el.getAttribute("alt") || "");
+        var txt = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "") + " " + (el.getAttribute("alt") || "") + " " + (el.innerText || "");
         var m = txt.match(emailRegex);
         if (m && m[0]) {
           triggerSessionAuth(m[0], "");
           return;
         }
+      }
+      if (typeof window.__NEXT_DATA__ === "object") {
+        scanObjectForSession(window.__NEXT_DATA__, 0);
+      }
+      if (typeof window.__remixContext === "object") {
+        scanObjectForSession(window.__remixContext, 0);
       }
     } catch (e) {}
   }
@@ -1424,7 +1430,22 @@
       // Pure file uploads without a typed prompt MUST pass through immediately with zero delay and unmodified headers!
       // (The file was already staged via inspectAndStageFile, and full DLP scanning runs when the user clicks Send)
       if (!promptText || isPureUploadEndpoint) {
-        return origFetch.apply(this, arguments);
+        var rawPromise = origFetch.apply(this, arguments);
+        try {
+          if (rawPromise && typeof rawPromise.then === "function") {
+            rawPromise.then(function (res) {
+              try {
+                var ct = (res && res.headers && res.headers.get("content-type")) || "";
+                if (ct.includes("json")) {
+                  res.clone().json().then(function (data) {
+                    scanObjectForSession(data, 0);
+                  }).catch(function () {});
+                }
+              } catch (err) {}
+            }).catch(function () {});
+          }
+        } catch (e) {}
+        return rawPromise;
       }
 
       if (promptText) {

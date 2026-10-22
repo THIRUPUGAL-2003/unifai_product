@@ -1015,14 +1015,14 @@ export default function UsersView() {
 	};
 
 	const roleFilterOptions: { value: TabFilter; label: string; icon: React.ReactNode }[] = [
-		{ value: "allowed", label: "Allowed Users", icon: <Key className="h-3.5 w-3.5 text-emerald-400" /> },
+		{ value: "allowed", label: "Allowed Users", icon: <Key className="h-3.5 w-3.5" /> },
 		{ value: "all", label: "Active Users", icon: <Users className="h-3.5 w-3.5" /> },
 		{ value: "user", label: "User", icon: <User className="h-3.5 w-3.5" /> },
 		{ value: "admin", label: "Admin", icon: <Shield className="h-3.5 w-3.5" /> },
 		{ value: "sub_admin", label: "Sub Admin", icon: <ShieldCheck className="h-3.5 w-3.5" /> },
 		{ value: "pending", label: "Pending Approvals", icon: <Clock className="h-3.5 w-3.5" /> },
-		{ value: "rejected", label: "Rejected Users", icon: <UserX className="h-3.5 w-3.5 text-rose-400" /> },
-		{ value: "blocked", label: "Blocked Accounts", icon: <Ban className="h-3.5 w-3.5 text-amber-400" /> },
+		{ value: "rejected", label: "Rejected Users", icon: <UserX className="h-3.5 w-3.5" /> },
+		{ value: "blocked", label: "Blocked Accounts", icon: <Ban className="h-3.5 w-3.5" /> },
 	];
 
 	// Filtered sets matching search
@@ -1217,12 +1217,7 @@ export default function UsersView() {
 				>
 					{roleFilterOptions.map((opt) => {
 						const active = roleFilter === opt.value;
-						const isPendingTab = opt.value === "pending";
 						const isAllowedTab = opt.value === "allowed";
-						const isRejectedTab = opt.value === "rejected";
-						const isBlockedTab = opt.value === "blocked";
-						const hasPendingAlert = isPendingTab && (Number(roleCounts.pending) || 0) > 0;
-						const hasRejectedAlert = isRejectedTab && (Number(roleCounts.rejected) || 0) > 0;
 						return (
 							<button
 								key={opt.value}
@@ -1237,38 +1232,20 @@ export default function UsersView() {
 											: "Unlimited users allowed by license"
 										: undefined
 								}
-								className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${active
-										? isPendingTab
-											? "bg-amber-500 text-white shadow-sm"
-											: isAllowedTab
-												? "bg-emerald-600 text-white shadow-sm"
-												: isRejectedTab
-													? "bg-rose-600 text-white shadow-sm"
-													: isBlockedTab
-														? "bg-amber-600 text-white shadow-sm"
-														: "bg-teal-500 text-white shadow-sm"
-										: hasPendingAlert
-											? "text-amber-400 hover:bg-amber-500/10 hover:text-amber-300 font-semibold"
-											: hasRejectedAlert
-												? "text-rose-400 hover:bg-rose-500/10 hover:text-rose-300 font-semibold"
-												: isAllowedTab
-													? "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-													: "text-muted-foreground hover:bg-muted hover:text-foreground"
-									}`}
+								className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+									active
+										? "bg-teal-500 text-white shadow-sm"
+										: "text-muted-foreground hover:bg-muted hover:text-foreground"
+								}`}
 							>
 								{opt.icon}
 								{opt.label}
 								<span
-									className={`rounded-full px-1.5 text-[10px] font-semibold ${active
+									className={`rounded-full px-1.5 text-[10px] font-semibold ${
+										active
 											? "bg-white/20 text-white"
-											: hasPendingAlert
-												? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-												: hasRejectedAlert
-													? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
-													: isAllowedTab
-														? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-														: "bg-muted text-muted-foreground"
-										}`}
+											: "bg-muted text-muted-foreground"
+									}`}
 								>
 									{roleCounts[opt.value]}
 								</span>
