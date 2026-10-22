@@ -491,16 +491,21 @@ def _record_extension_eval(host: str, prompt: str, files: list | None = None, pl
                     "time": now,
                 }
                 _RECENT_EXTENSION_EVALS.append(entry)
-            tmp_path = cache_path + f".tmp.{os.getpid()}"
-            with open(tmp_path, "w", encoding="utf-8") as fp:
-                json.dump(_RECENT_EXTENSION_EVALS, fp)
-            try:
-                os.replace(tmp_path, cache_path)
-            except Exception:
+            cache_paths = [cache_path]
+            yp_dir = os.path.join(os.path.dirname(os.path.dirname(cache_path)), "YP", "Raksha")
+            if os.path.isdir(yp_dir):
+                cache_paths.append(os.path.join(yp_dir, "recent_extension_evals.json"))
+            for cp in cache_paths:
                 try:
-                    os.remove(tmp_path)
+                    tmp_path = cp + f".tmp.{os.getpid()}"
+                    with open(tmp_path, "w", encoding="utf-8") as fp:
+                        json.dump(_RECENT_EXTENSION_EVALS, fp)
+                    os.replace(tmp_path, cp)
                 except Exception:
-                    pass
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
     except Exception:
         pass
 

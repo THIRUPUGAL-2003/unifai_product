@@ -937,13 +937,27 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
     If true, extension has already logged or blocked it, so proxy skips duplicate logging.
     """
     try:
-        from guard_platform import data_dir
-        cache_path = os.path.join(data_dir(), "recent_extension_evals.json")
-        if not os.path.isfile(cache_path):
-            return False
-        with open(cache_path, "r", encoding="utf-8") as f:
-            evals = json.load(f)
-        if not isinstance(evals, list):
+        if sys.platform == "win32":
+            base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        elif sys.platform == "darwin":
+            base = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
+        else:
+            base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+        candidates = [
+            os.path.join(base, "Gateway", "Guard", "recent_extension_evals.json"),
+            os.path.join(base, "YP", "Raksha", "recent_extension_evals.json"),
+        ]
+        evals = []
+        for cp in candidates:
+            if os.path.isfile(cp):
+                try:
+                    with open(cp, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            evals.extend(data)
+                except Exception:
+                    pass
+        if not evals:
             return False
         now = time.time()
         clean_d = (domain or "").lower().strip(".")
