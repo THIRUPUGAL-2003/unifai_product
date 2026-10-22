@@ -147,6 +147,8 @@ import {
 	useRotateBrowserAiAgentUninstallKeyMutation,
 	useDeleteBrowserAiAgentMutation,
 	useSendBrowserAiWarningEmailMutation,
+	useAuthorizeAiSessionMutation,
+	AuthorizeAISessionResponse,
 	useGetBrowserAiInsightStatsQuery,
 	useUpdateBrowserAiAgentContactEmailMutation,
 	BrowserAILogEntry,
@@ -807,6 +809,11 @@ export default function BrowserAiPage() {
 		search_log_retention: "7d",
 		prompt_log_auto_delete: false,
 		prompt_log_retention: "7d",
+		enforce_corporate_domains: false,
+		corporate_email_domains: "",
+		allowed_workspace_ids: "",
+		corporate_block_message: "",
+		policy_version: 1,
 	};
 
 	const { toast } = useToast();
@@ -1200,6 +1207,129 @@ export default function BrowserAiPage() {
 	const [editRuleTestSample, setEditRuleTestSample] = useState("");
 	const [editRuleTestResult, setEditRuleTestResult] = useState("");
 	const [updateControls] = useUpdateBrowserAiControlsMutation();
+	const [authorizeAiSessionMutation, { isLoading: isRunningSim }] = useAuthorizeAiSessionMutation();
+	const [corporateDomainInput, setCorporateDomainInput] = useState("");
+	const [workspaceIdInput, setWorkspaceIdInput] = useState("");
+	const [corporateBlockMsgInput, setCorporateBlockMsgInput] = useState("");
+	const [testSimEmail, setTestSimEmail] = useState("employee@company.com");
+	const [testSimWorkspace, setTestSimWorkspace] = useState("");
+	const [testSimProvider, setTestSimProvider] = useState("chatgpt");
+	const [testSimResult, setTestSimResult] = useState<AuthorizeAISessionResponse | null>(null);
+
+	useEffect(() => {
+		if (controls.corporate_block_message) {
+			setCorporateBlockMsgInput(controls.corporate_block_message);
+		}
+	}, [controls.corporate_block_message]);
+
+	const configuredCorporateDomains = useMemo(() => {
+		const raw = controls.corporate_email_domains || "";
+		return raw
+			.split(/[,\s;\n\r]+/)
+			.map((d) => d.trim().toLowerCase().replace(/^@+/, ""))
+			.filter(Boolean);
+	}, [controls.corporate_email_domains]);
+
+	const configuredWorkspaces = useMemo(() => {
+		const raw = controls.allowed_workspace_ids || "";
+		return raw
+			.split(/[,\s;\n\r]+/)
+			.map((w) => w.trim())
+			.filter(Boolean);
+	}, [controls.allowed_workspace_ids]);
+
+	const handleAddCorporateDomain = async (domainValue?: string) => {
+		const raw = (domainValue || corporateDomainInput).trim().toLowerCase().replace(/^@+/, "").replace(/^\.+/, "");
+		if (!raw) return;
+		if (configuredCorporateDomains.includes(raw)) {
+			toast({ title: "Domain already added", description: `@${raw} is already in the authorized list.` });
+			setCorporateDomainInput("");
+			return;
+		}
+		const updated = [...configuredCorporateDomains, raw];
+		const ok = await patchControl({ corporate_email_domains: updated.join(", ") });
+		if (ok) {
+			toast({ title: "Corporate domain added", description: `@${raw} added to authorized domains.` });
+			setCorporateDomainInput("");
+		} else {
+			toast({ title: "Failed to add domain", description: "Could not save corporate domain setting.", variant: "destructive" });
+		}
+	};
+
+	const handleRemoveCorporateDomain = async (domainToRemove: string) => {
+		const updated = configuredCorporateDomains.filter((d) => d !== domainToRemove);
+		const ok = await patchControl({ corporate_email_domains: updated.join(", ") });
+		if (ok) {
+			toast({ title: "Corporate domain removed", description: `@${domainToRemove} removed from authorized list.` });
+		}
+	};
+
+	const handleAddWorkspaceId = async () => {
+		const raw = workspaceIdInput.trim();
+		if (!raw) return;
+		if (configuredWorkspaces.includes(raw)) {
+			toast({ title: "Workspace already added", description: `Workspace ID ${raw} is already in the list.` });
+			setWorkspaceIdInput("");
+			return;
+		}
+		const updated = [...configuredWorkspaces, raw];
+		const ok = await patchControl({ allowed_workspace_ids: updated.join(", ") });
+		if (ok) {
+			toast({ title: "Workspace ID added", description: `Workspace ID ${raw} added to authorized list.` });
+			setWorkspaceIdInput("");
+		}
+	};
+
+	const handleRemoveWorkspaceId = async (wsToRemove: string) => {
+		const updated = configuredWorkspaces.filter((w) => w !== wsToRemove);
+		const ok = await patchControl({ allowed_workspace_ids: updated.join(", ") });
+		if (ok) {
+			toast({ title: "Workspace ID removed", description: `Workspace ID ${wsToRemove} removed.` });
+		}
+	};
+
+	const handleSaveCorporateMessage = async () => {
+		const msg = corporateBlockMsgInput.trim();
+		const ok = await patchControl({ corporate_block_message: msg });
+		if (ok) {
+			toast({ title: "Block message saved", description: "Custom warning message updated successfully." });
+		}
+	};
+
+	const handleToggleCorporateEnforcement = async (checked: boolean) => {
+		const ok = await patchControl({ enforce_corporate_domains: checked });
+		if (ok) {
+			toast({
+				title: checked ? "Corporate Enforcement Activated" : "Corporate Enforcement Deactivated",
+				description: checked
+					? "All monitored target AI websites will now strictly enforce authorized email domains."
+					: "Corporate domain restrictions are now paused.",
+			});
+		}
+	};
+
+	const handleRunSessionSimulation = async () => {
+		if (!testSimEmail.trim()) return;
+		const domain = testSimEmail.includes("@") ? testSimEmail.split("@")[1] : testSimEmail;
+		try {
+			const res = await authorizeAiSessionMutation({
+				action: "authorize_ai_session",
+				provider: testSimProvider,
+				email_domain: domain,
+				user_email: testSimEmail.trim(),
+				workspace_id: testSimWorkspace.trim() || undefined,
+				page_url: `https://${testSimProvider}.com/`,
+				policy_version: controls.policy_version || 1,
+			}).unwrap();
+			setTestSimResult(res);
+		} catch (err) {
+			toast({
+				title: "Simulation failed",
+				description: getErrorMessage(err),
+				variant: "destructive",
+			});
+		}
+	};
 	const [createTarget] = useCreateBrowserAiTargetMutation();
 	const [updateTarget] = useUpdateBrowserAiTargetMutation();
 	const [deleteTarget] = useDeleteBrowserAiTargetMutation();
@@ -5564,6 +5694,313 @@ export default function BrowserAiPage() {
 
 								{licenseMessage ? <p className="text-sm text-emerald-400 font-medium">{licenseMessage}</p> : null}
 								{licenseError ? <p className="text-sm text-red-400 font-medium">{licenseError}</p> : null}
+							</div>
+						</CardContent>
+					</Card>
+
+					{/* Corporate AI Workspace & Domain Authorization Card */}
+					<Card className="bg-card border-border shadow-sm">
+						<CardHeader>
+							<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+								<div className="flex items-start gap-3">
+									<div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+										<Building2 className="h-6 w-6" />
+									</div>
+									<div>
+										<div className="flex items-center gap-2">
+											<CardTitle className="text-lg">Corporate AI Workspace &amp; Domain Authorization</CardTitle>
+											<Badge
+												variant="outline"
+												className={
+													controls.enforce_corporate_domains
+														? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10 text-xs font-semibold"
+														: "border-muted-foreground/30 text-muted-foreground text-xs"
+												}
+											>
+												{controls.enforce_corporate_domains ? "Active Enforcement" : "Disabled (Monitor Only)"}
+											</Badge>
+										</div>
+										<CardDescription className="text-xs mt-1">
+											Restrict access across ChatGPT, Claude, Gemini, Copilot, DeepSeek, Mistral, and all monitored target AI domains to corporate accounts. Personal email accounts (@gmail.com, @yahoo.com, etc.) and unapproved workspaces are blocked from chatting.
+										</CardDescription>
+									</div>
+								</div>
+								<div className="flex items-center gap-3 shrink-0 self-start sm:self-center">
+									<div className="text-right hidden sm:block">
+										<p className="text-xs font-medium text-foreground">Enforce Policy</p>
+										<p className="text-[11px] text-muted-foreground">Block non-corporate accounts</p>
+									</div>
+									<Switch
+										checked={!!controls.enforce_corporate_domains}
+										onCheckedChange={handleToggleCorporateEnforcement}
+									/>
+								</div>
+							</div>
+						</CardHeader>
+						<CardContent className="space-y-6 pt-2">
+							{/* Domain Configuration Section */}
+							<div className="space-y-3">
+								<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+									<Label className="text-sm font-semibold flex items-center gap-1.5">
+										<Globe className="h-4 w-4 text-sky-400" />
+										Allowed Corporate Email Domains (@company.com)
+									</Label>
+									<span className="text-xs text-muted-foreground">
+										Only users logged in with these email domains will be allowed to send prompts
+									</span>
+								</div>
+
+								{/* Configured Domains Chips */}
+								<div className="min-h-[44px] p-2.5 rounded-lg border border-border bg-muted/20 flex flex-wrap items-center gap-2">
+									{configuredCorporateDomains.length === 0 ? (
+										<span className="text-xs text-muted-foreground italic px-2">
+											No corporate domains configured yet. Add your company email domain below (e.g. company.com).
+										</span>
+									) : (
+										configuredCorporateDomains.map((dom) => (
+											<Badge
+												key={dom}
+												variant="secondary"
+												className="pl-2.5 pr-1.5 py-1 text-xs font-mono bg-sky-500/10 text-sky-300 border border-sky-500/30 flex items-center gap-1.5 shadow-sm"
+											>
+												<span>@{dom}</span>
+												<button
+													type="button"
+													onClick={() => handleRemoveCorporateDomain(dom)}
+													className="h-4 w-4 rounded-full inline-flex items-center justify-center hover:bg-sky-500/20 text-sky-400 hover:text-white transition-colors"
+												>
+													<X className="h-3 w-3" />
+												</button>
+											</Badge>
+										))
+									)}
+								</div>
+
+								{/* Add Domain Input Form */}
+								<div className="flex flex-col sm:flex-row gap-2">
+									<div className="relative flex-1">
+										<span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">
+											@
+										</span>
+										<Input
+											value={corporateDomainInput}
+											onChange={(e) => setCorporateDomainInput(e.target.value)}
+											onKeyDown={(e) => {
+												if (e.key === "Enter") {
+													e.preventDefault();
+													handleAddCorporateDomain();
+												}
+											}}
+											placeholder="company.com or subsidiary.org (press Enter to add)"
+											className="pl-7 font-mono text-sm"
+										/>
+									</div>
+									<Button
+										type="button"
+										onClick={() => handleAddCorporateDomain()}
+										disabled={!corporateDomainInput.trim()}
+										className="gap-1.5 shrink-0"
+									>
+										<Plus className="h-4 w-4" />
+										Add Domain
+									</Button>
+								</div>
+							</div>
+
+							{/* Workspace IDs Section */}
+							<div className="space-y-3 pt-4 border-t border-border">
+								<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+									<Label className="text-sm font-semibold flex items-center gap-1.5">
+										<ShieldCheck className="h-4 w-4 text-indigo-400" />
+										Approved Corporate Workspace / Tenant IDs (Optional)
+									</Label>
+									<span className="text-xs text-muted-foreground">
+										Optional: Restrict access to specific corporate organization UUIDs (e.g. ChatGPT Workspace ID)
+									</span>
+								</div>
+
+								<div className="min-h-[44px] p-2.5 rounded-lg border border-border bg-muted/20 flex flex-wrap items-center gap-2">
+									{configuredWorkspaces.length === 0 ? (
+										<span className="text-xs text-muted-foreground italic px-2">
+											Any corporate workspace using an allowed email domain is permitted. Add specific UUIDs to restrict further.
+										</span>
+									) : (
+										configuredWorkspaces.map((ws) => (
+											<Badge
+												key={ws}
+												variant="secondary"
+												className="pl-2.5 pr-1.5 py-1 text-xs font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5 shadow-sm"
+											>
+												<span>{ws}</span>
+												<button
+													type="button"
+													onClick={() => handleRemoveWorkspaceId(ws)}
+													className="h-4 w-4 rounded-full inline-flex items-center justify-center hover:bg-indigo-500/20 text-indigo-400 hover:text-white transition-colors"
+												>
+													<X className="h-3 w-3" />
+												</button>
+											</Badge>
+										))
+									)}
+								</div>
+
+								<div className="flex flex-col sm:flex-row gap-2">
+									<Input
+										value={workspaceIdInput}
+										onChange={(e) => setWorkspaceIdInput(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === "Enter") {
+												e.preventDefault();
+												handleAddWorkspaceId();
+											}
+										}}
+										placeholder="e.g. 437adf77-4085-4b22-b7b1-de7b6f5ec6c0"
+										className="font-mono text-sm"
+									/>
+									<Button
+										type="button"
+										variant="outline"
+										onClick={handleAddWorkspaceId}
+										disabled={!workspaceIdInput.trim()}
+										className="gap-1.5 shrink-0"
+									>
+										<Plus className="h-4 w-4" />
+										Add Workspace ID
+									</Button>
+								</div>
+							</div>
+
+							{/* Custom Block Message Section */}
+							<div className="space-y-3 pt-4 border-t border-border">
+								<div className="flex items-center justify-between">
+									<Label className="text-sm font-semibold">Custom Block Warning Message</Label>
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										className="h-7 text-xs text-muted-foreground hover:text-foreground"
+										onClick={() => {
+											const def = "Personal accounts are blocked by corporate security policy. Please switch to your corporate account to continue.";
+											setCorporateBlockMsgInput(def);
+											void patchControl({ corporate_block_message: def });
+										}}
+									>
+										Reset to Default
+									</Button>
+								</div>
+								<div className="flex flex-col sm:flex-row gap-2">
+									<Input
+										value={corporateBlockMsgInput}
+										onChange={(e) => setCorporateBlockMsgInput(e.target.value)}
+										placeholder="Personal accounts are restricted by corporate security policy. Please log in with your company account."
+										className="text-sm"
+									/>
+									<Button
+										type="button"
+										variant="outline"
+										onClick={handleSaveCorporateMessage}
+										className="gap-1.5 shrink-0"
+									>
+										<Save className="h-4 w-4" />
+										Save Message
+									</Button>
+								</div>
+							</div>
+
+							{/* Real-time Policy Authorization Simulator */}
+							<div className="space-y-3 pt-4 border-t border-border">
+								<div className="flex items-center justify-between">
+									<div className="flex items-center gap-2">
+										<Play className="h-4 w-4 text-emerald-400" />
+										<Label className="text-sm font-semibold">Live Policy Verification Simulator</Label>
+									</div>
+									<span className="text-xs text-muted-foreground">
+										Test how the authorization endpoint evaluates employee sessions in real time
+									</span>
+								</div>
+
+								<div className="p-3.5 rounded-lg border border-border bg-card/60 space-y-3">
+									<div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+										<div>
+											<Label className="text-[11px] text-muted-foreground">Test Email Address</Label>
+											<Input
+												value={testSimEmail}
+												onChange={(e) => setTestSimEmail(e.target.value)}
+												placeholder="alice@gmail.com or bob@company.com"
+												className="h-8 text-xs font-mono mt-1"
+											/>
+										</div>
+										<div>
+											<Label className="text-[11px] text-muted-foreground">Target AI Platform</Label>
+											<Select value={testSimProvider} onValueChange={setTestSimProvider}>
+												<SelectTrigger className="h-8 text-xs mt-1">
+													<SelectValue placeholder="Select platform" />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="chatgpt">ChatGPT (chatgpt.com)</SelectItem>
+													<SelectItem value="claude">Claude (claude.ai)</SelectItem>
+													<SelectItem value="copilot">Microsoft Copilot</SelectItem>
+													<SelectItem value="gemini">Google Gemini</SelectItem>
+													<SelectItem value="deepseek">DeepSeek</SelectItem>
+													<SelectItem value="mistral">Mistral AI</SelectItem>
+													<SelectItem value="perplexity">Perplexity AI</SelectItem>
+												</SelectContent>
+											</Select>
+										</div>
+										<div>
+											<Label className="text-[11px] text-muted-foreground">Workspace ID (Optional)</Label>
+											<div className="flex gap-1.5 mt-1">
+												<Input
+													value={testSimWorkspace}
+													onChange={(e) => setTestSimWorkspace(e.target.value)}
+													placeholder="437adf77-4085-4b22-b7b1-de7b6f5ec6c0"
+													className="h-8 text-xs font-mono flex-1"
+												/>
+												<Button
+													type="button"
+													size="sm"
+													onClick={handleRunSessionSimulation}
+													disabled={isRunningSim || !testSimEmail.trim()}
+													className="h-8 px-3 text-xs gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white shrink-0"
+												>
+													{isRunningSim ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+													Test
+												</Button>
+											</div>
+										</div>
+									</div>
+
+									{/* Simulation Result Box */}
+									{testSimResult ? (
+										<div
+											className={`p-3 rounded-md border text-xs space-y-2 ${
+												testSimResult.decision === "allow"
+													? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+													: "border-red-500/40 bg-red-500/10 text-red-300"
+											}`}
+										>
+											<div className="flex items-center justify-between">
+												<div className="flex items-center gap-2">
+													{testSimResult.decision === "allow" ? (
+														<CheckCircle2 className="h-4 w-4 text-emerald-400" />
+													) : (
+														<X className="h-4 w-4 text-red-400" />
+													)}
+													<span className="font-semibold uppercase tracking-wider text-[11px]">
+														Decision: {testSimResult.decision}
+													</span>
+													<Badge variant="outline" className="text-[10px] font-mono">
+														{testSimResult.reason_code}
+													</Badge>
+												</div>
+												<span className="text-[10px] text-muted-foreground font-mono">
+													Policy v{testSimResult.policy_version}
+												</span>
+											</div>
+											<p className="text-foreground text-xs">{testSimResult.message}</p>
+										</div>
+									) : null}
+								</div>
 							</div>
 						</CardContent>
 					</Card>

@@ -53,6 +53,21 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = (self.path or "/").split("?", 1)[0]
+        if path in ("/extension/authorize_session", "/authorize_ai_session"):
+            try:
+                length = int(self.headers.get("Content-Length") or "0")
+            except Exception:
+                length = 0
+            raw = self.rfile.read(min(length, 100_000)) if length > 0 else b""
+            try:
+                data = json.loads(raw.decode("utf-8", errors="ignore") or "{}")
+            except Exception:
+                data = {}
+            from agent_extension import authorize_ai_session
+            result = authorize_ai_session(data)
+            self._json(200, result)
+            return
+
         if path != "/extension/check":
             self.send_error(404)
             return
@@ -78,6 +93,7 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             rule=str(data.get("rule") or ""),
         )
         self._json(200, result)
+
 
     def do_GET(self) -> None:
         path = (self.path or "/").split("?", 1)[0]

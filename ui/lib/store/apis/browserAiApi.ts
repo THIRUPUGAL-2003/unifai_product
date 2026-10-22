@@ -180,7 +180,36 @@ export interface BrowserControlSettings {
 	prompt_log_auto_delete?: boolean;
 	/** Retention window: 1d | 7d | 30d | 90d | 180d | 365d */
 	prompt_log_retention?: "1d" | "7d" | "30d" | "90d" | "180d" | "365d" | string;
+
+	/** Corporate AI Domain & Workspace Enforcement */
+	enforce_corporate_domains?: boolean;
+	/** Comma-separated or tag list of allowed email domains (e.g. company.com, @yespanchi.com) */
+	corporate_email_domains?: string;
+	/** Optional comma-separated list of approved corporate workspace/tenant IDs */
+	allowed_workspace_ids?: string;
+	/** Custom warning message shown when personal accounts are blocked */
+	corporate_block_message?: string;
+	/** Active policy version */
+	policy_version?: number;
+
 	updated_at?: string;
+}
+
+export interface AuthorizeAISessionRequest {
+	action: "authorize_ai_session" | string;
+	provider: string;
+	email_domain: string;
+	user_email?: string;
+	workspace_id?: string;
+	page_url?: string;
+	policy_version?: number;
+}
+
+export interface AuthorizeAISessionResponse {
+	decision: "allow" | "block";
+	reason_code: "APPROVED_WORKSPACE" | "POLICY_NOT_ENFORCED" | "UNAUTHORIZED_DOMAIN" | "UNAUTHORIZED_WORKSPACE" | "NO_DOMAINS_CONFIGURED" | "PENDING_AUTHENTICATION" | string;
+	message: string;
+	policy_version: number;
 }
 
 export interface BrowserGuardRebuildLog {
@@ -554,6 +583,14 @@ export const browserAiApi = baseApi.injectEndpoints({
 				body,
 			}),
 			invalidatesTags: ["BrowserAiControls" as any],
+		}),
+
+		authorizeAiSession: builder.mutation<AuthorizeAISessionResponse, AuthorizeAISessionRequest>({
+			query: (body) => ({
+				url: "/browser-ai/session/authorize",
+				method: "POST",
+				body,
+			}),
 		}),
 
 		getBrowserAiTargets: builder.query<{ targets: BrowserTargetWebsite[] }, void>({
@@ -933,6 +970,7 @@ export const {
 	useGenerateBrowserAiRegexFromPolicyMutation,
 	useGetBrowserAiControlsQuery,
 	useUpdateBrowserAiControlsMutation,
+	useAuthorizeAiSessionMutation,
 	useGetBrowserAiTargetsQuery,
 	useCreateBrowserAiTargetMutation,
 	useImportBrowserAiTargetsMutation,

@@ -84,3 +84,26 @@ func (h *BrowserAIHandler) updateControls(ctx *fasthttp.RequestCtx) {
 	}
 	SendJSON(ctx, map[string]any{"status": "success", "controls": ctrl})
 }
+
+func (h *BrowserAIHandler) authorizeAISession(ctx *fasthttp.RequestCtx) {
+	h.ensureDB(ctx)
+	if h.manager == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "Browser AI manager not initialized")
+		return
+	}
+
+	var req logstore.AuthorizeAISessionRequest
+	if err := sonic.Unmarshal(ctx.PostBody(), &req); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	resp, err := h.manager.AuthorizeAISession(ctx, req)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())
+		return
+	}
+
+	SendJSON(ctx, resp)
+}
+

@@ -1536,3 +1536,33 @@ def local_base_url() -> str:
         return url.split("/proxy.pac", 1)[0].rstrip("/")
     return ""
 
+
+def authorize_ai_session(payload: dict) -> dict:
+    """Forward an AI session authorization check to the Gateway backend."""
+    if not isinstance(payload, dict):
+        payload = {}
+    backend = GATEWAY_BACKEND_URL.rstrip("/") if GATEWAY_BACKEND_URL else ""
+    if not backend:
+        return {
+            "decision": "allow",
+            "reason_code": "OFFLINE_FALLBACK",
+            "message": "Gateway offline, allowing session.",
+            "policy_version": 1,
+        }
+    url = f"{backend}/api/browser-ai/session/authorize"
+    status, resp = _http_json("POST", url, payload, timeout=6)
+    if status == 200 and isinstance(resp, dict) and "decision" in resp:
+        return resp
+    if status == 404:
+        url_direct = f"{backend}/authorize_ai_session"
+        status2, resp2 = _http_json("POST", url_direct, payload, timeout=6)
+        if status2 == 200 and isinstance(resp2, dict) and "decision" in resp2:
+            return resp2
+    return {
+        "decision": "allow",
+        "reason_code": "BACKEND_UNREACHABLE",
+        "message": "Backend session verification unavailable; defaulting to allow.",
+        "policy_version": int(payload.get("policy_version") or 1),
+    }
+
+

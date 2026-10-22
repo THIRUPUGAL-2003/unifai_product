@@ -115,6 +115,8 @@ func (h *BrowserAIHandler) RegisterRoutes(r *router.Router, middlewares ...schem
 
 	r.GET("/api/browser-ai/controls", lib.ChainMiddlewares(h.getControls, middlewares...))
 	r.PUT("/api/browser-ai/controls", lib.ChainMiddlewares(h.updateControls, middlewares...))
+	r.POST("/api/browser-ai/session/authorize", lib.ChainMiddlewares(h.authorizeAISession, middlewares...))
+	r.POST("/authorize_ai_session", h.authorizeAISession)
 
 	r.GET("/api/browser-ai/targets", lib.ChainMiddlewares(h.getTargets, middlewares...))
 	r.POST("/api/browser-ai/targets/import", lib.ChainMiddlewares(h.importTargets, middlewares...))

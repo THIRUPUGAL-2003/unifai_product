@@ -399,34 +399,35 @@ export function ApiKeySelectorView({
 							? "Direct API key is turned OFF because Virtual Key is selected."
 							: `Direct provider API key configured for ${providerLabel || "the selected provider"}.`}
 					</p>
-					{onApiKeyValuesChange ? (
-						<ComboboxSelect
-							multiple
-							compactTrigger
-							options={apiKeyOptions}
-							value={(apiKeyValues ?? []).filter((value) => apiKeyOptions.some((option) => option.value === value))}
-							onValueChange={(next) => {
-								if (next.length > 0) setUserPreferredMode("api");
+					<ComboboxSelect
+						multiple
+						compactTrigger
+						options={apiKeyOptions}
+						value={
+							apiKeyValues && apiKeyValues.length > 0
+								? apiKeyValues.filter((value) => apiKeyOptions.some((option) => option.value === value))
+								: (!isMember || activeMode === "api") && selectApiKeyValue !== "__auto__" && selectApiKeyValue !== "__none__" && selectApiKeyValue
+									? [selectApiKeyValue]
+									: []
+						}
+						onValueChange={(next) => {
+							if (next.length > 0) setUserPreferredMode("api");
+							if (onApiKeyValuesChange) {
 								onApiKeyValuesChange(next);
-							}}
-							disabled={disabled || (isMember && activeMode !== "api") || apiKeyOptions.length === 0}
-							placeholder={isMember && activeMode !== "api" ? "OFF (Virtual Key is active)" : apiKeyOptions.length === 0 ? "No API keys" : "Select API keys"}
-							searchPlaceholder="Search..."
-							selectAllValue="*"
-							selectAllLabel="Select all"
-							data-testid="admin-provider-key-select"
-						/>
-					) : (
-						<ComboboxSelect
-							options={apiKeyOptions}
-							value={(!isMember || activeMode === "api") && selectApiKeyValue !== "__auto__" && selectApiKeyValue !== "__none__" && selectApiKeyValue ? selectApiKeyValue : null}
-							onValueChange={(v) => handleApiKeyChange(v && v !== "__none__" ? v : "")}
-							disabled={disabled || (isMember && activeMode !== "api") || apiKeyOptions.length === 0}
-							placeholder={isMember && activeMode !== "api" ? "OFF (Virtual Key is active)" : apiKeyOptions.length === 0 ? "No API keys available" : "Select API Key"}
-							searchPlaceholder="Search..."
-							data-testid={isMember ? "member-provider-key-select" : "admin-provider-key-select"}
-						/>
-					)}
+							}
+							if (next.length === 0) {
+								handleApiKeyChange("");
+							} else if (!next.includes(selectApiKeyValue)) {
+								handleApiKeyChange(next[0]);
+							}
+						}}
+						disabled={disabled || (isMember && activeMode !== "api") || apiKeyOptions.length === 0}
+						placeholder={isMember && activeMode !== "api" ? "OFF (Virtual Key is active)" : apiKeyOptions.length === 0 ? "No API keys" : "Select API keys"}
+						searchPlaceholder="Search API keys..."
+						selectAllValue="*"
+						selectAllLabel="Select all"
+						data-testid={isMember ? "member-provider-key-select" : "admin-provider-key-select"}
+					/>
 
 					{isMember && activeMode !== "api" && hasVirtualKeysToShow && (
 						<button
@@ -586,34 +587,29 @@ export function ApiKeySelectorView({
 									: "Governance virtual key assigned to you (user, team, or customer). Routing, models, and budgets apply."
 								: "Governance virtual keys. Routing, allowed models, budgets, and rate limits apply."}
 					</p>
-					{onVirtualKeyValuesChange ? (
-						<ComboboxSelect
-							multiple
-							compactTrigger
-							options={vkOptions}
-							value={effectiveVkValues}
-							onValueChange={(next) => {
-								if (next.length > 0) setUserPreferredMode("vk");
+					<ComboboxSelect
+						multiple
+						compactTrigger
+						options={vkOptions}
+						value={effectiveVkValues}
+						onValueChange={(next) => {
+							if (next.length > 0) setUserPreferredMode("vk");
+							if (onVirtualKeyValuesChange) {
 								onVirtualKeyValuesChange(next);
-							}}
-							disabled={disabled || (isMember && activeMode !== "vk") || vkOptions.length === 0}
-							placeholder={isMember && activeMode !== "vk" ? "OFF (Direct API Key is active)" : vkOptions.length === 0 ? "No active virtual keys" : "Select virtual keys"}
-							searchPlaceholder="Search..."
-							selectAllValue="*"
-							selectAllLabel="Select all"
-							data-testid="admin-vk-select"
-						/>
-					) : (
-						<ComboboxSelect
-							options={vkOptions}
-							value={(!isMember || activeMode === "vk") && selectVkValue !== "__auto__" && selectVkValue !== "__none__" && selectVkValue ? selectVkValue : null}
-							onValueChange={(v) => handleVkChange(v && v !== "__none__" ? v : "")}
-							disabled={disabled || (isMember && activeMode !== "vk") || vkOptions.length === 0}
-							placeholder={isMember && activeMode !== "vk" ? "OFF (Direct API Key is active)" : (placeholder ?? (vkOptions.length === 0 ? (isMember ? "No assigned keys" : "No active virtual keys") : "Select Virtual Key"))}
-							searchPlaceholder="Search..."
-							data-testid={isMember ? "member-vk-select" : "admin-vk-select"}
-						/>
-					)}
+							}
+							if (next.length === 0) {
+								handleVkChange("__none__");
+							} else if (!next.includes(selectVkValue)) {
+								handleVkChange(next[0]);
+							}
+						}}
+						disabled={disabled || (isMember && activeMode !== "vk") || vkOptions.length === 0}
+						placeholder={isMember && activeMode !== "vk" ? "OFF (Direct API Key is active)" : (placeholder ?? (vkOptions.length === 0 ? (isMember ? "No assigned keys" : "No active virtual keys") : "Select Virtual Key"))}
+						searchPlaceholder="Search virtual keys..."
+						selectAllValue="*"
+						selectAllLabel="Select all"
+						data-testid={isMember ? "member-vk-select" : "admin-vk-select"}
+					/>
 
 					{isMember && activeMode !== "vk" && showProviderKeySection && (
 						<button

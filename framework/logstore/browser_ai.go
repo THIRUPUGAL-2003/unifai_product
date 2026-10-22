@@ -581,7 +581,34 @@ type BrowserControlSettings struct {
 	// PromptLogRetention (1d|7d|30d|90d|180d|365d) are purged automatically.
 	PromptLogAutoDelete bool      `json:"prompt_log_auto_delete"`
 	PromptLogRetention  string    `json:"prompt_log_retention"` // "1d" | "7d" | "30d" | "90d" | "180d" | "365d"
+
+	// Corporate Domain & Workspace Enforcement
+	EnforceCorporateDomains bool   `json:"enforce_corporate_domains"`
+	CorporateEmailDomains   string `gorm:"type:text" json:"corporate_email_domains"`
+	AllowedWorkspaceIDs     string `gorm:"type:text" json:"allowed_workspace_ids"`
+	CorporateBlockMessage   string `gorm:"type:text" json:"corporate_block_message"`
+	PolicyVersion           int    `json:"policy_version"`
+
 	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+// AuthorizeAISessionRequest specifies an inbound session authorization query from an extension or agent.
+type AuthorizeAISessionRequest struct {
+	Action        string `json:"action"`
+	Provider      string `json:"provider"`
+	EmailDomain   string `json:"email_domain"`
+	UserEmail     string `json:"user_email,omitempty"`
+	WorkspaceID   string `json:"workspace_id,omitempty"`
+	PageURL       string `json:"page_url,omitempty"`
+	PolicyVersion int    `json:"policy_version,omitempty"`
+}
+
+// AuthorizeAISessionResponse returns the policy decision for the employee session.
+type AuthorizeAISessionResponse struct {
+	Decision      string `json:"decision"`       // "allow" | "block"
+	ReasonCode    string `json:"reason_code"`    // "APPROVED_WORKSPACE", "POLICY_NOT_ENFORCED", "UNAUTHORIZED_DOMAIN", "UNAUTHORIZED_WORKSPACE"
+	Message       string `json:"message"`        // human readable explanation
+	PolicyVersion int    `json:"policy_version"` // active policy version
 }
 
 type BrowserTargetWebsite struct {
@@ -1343,6 +1370,7 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 			SearchLogRetention:  "7d",
 			PromptLogAutoDelete: false,
 			PromptLogRetention:  "7d",
+			PolicyVersion:        1,
 			UpdatedAt:           time.Now(),
 		}, nil
 	}
@@ -1358,6 +1386,7 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 			SearchLogRetention:  "7d",
 			PromptLogAutoDelete: false,
 			PromptLogRetention:  "7d",
+			PolicyVersion:        1,
 			UpdatedAt:           time.Now(),
 		}
 		if createErr := db.WithContext(ctx).Create(&ctrl).Error; createErr != nil {
@@ -1372,6 +1401,9 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 	}
 	if ctrl.PromptLogRetention == "" {
 		ctrl.PromptLogRetention = "7d"
+	}
+	if ctrl.PolicyVersion <= 0 {
+		ctrl.PolicyVersion = 1
 	}
 	if unifySharedLogAutoDelete(&ctrl) {
 		_ = db.WithContext(ctx).Model(&BrowserControlSettings{}).Where("id = ?", BrowserControlSettingsID).Updates(map[string]any{
@@ -1409,25 +1441,39 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 	}
 
 	allowed := map[string]bool{
-		"enabled":                true,
-		"block_upload":           true,
-		"upload_warning":         true,
-		"attachment_retention":   true,
-		"search_log_auto_delete": true,
-		"search_log_retention":   true,
-		"prompt_log_auto_delete": true,
-		"prompt_log_retention":   true,
+		"enabled":                   true,
+		"block_upload":              true,
+		"upload_warning":            true,
+		"attachment_retention":      true,
+		"search_log_auto_delete":    true,
+		"search_log_retention":      true,
+		"prompt_log_auto_delete":    true,
+		"prompt_log_retention":      true,
+		"enforce_corporate_domains": true,
+		"corporate_email_domains":   true,
+		"allowed_workspace_ids":     true,
+		"corporate_block_message":   true,
+		"policy_version":            true,
 	}
 	filtered := map[string]any{}
 	for k, v := range updates {
 		if !allowed[k] {
 			continue
 		}
-		if k == "upload_warning" {
+		if k == "upload_warning" || k == "corporate_email_domains" || k == "allowed_workspace_ids" || k == "corporate_block_message" {
 			if s, ok := v.(string); ok {
 				filtered[k] = strings.TrimSpace(s)
 				continue
 			}
+		}
+		if k == "policy_version" {
+			switch pv := v.(type) {
+			case float64:
+				filtered[k] = int(pv)
+			case int:
+				filtered[k] = pv
+			}
+			continue
 		}
 		if k == "attachment_retention" {
 			if s, ok := v.(string); ok {
@@ -1492,7 +1538,156 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 	if ctrl.PromptLogRetention == "" {
 		ctrl.PromptLogRetention = "7d"
 	}
+	if ctrl.PolicyVersion <= 0 {
+		ctrl.PolicyVersion = 1
+	}
 	return &ctrl, nil
+}
+
+// AuthorizeAISession evaluates an employee's logged-in AI session against configured corporate domains and workspace IDs.
+func (m *BrowserAIManager) AuthorizeAISession(ctx context.Context, req AuthorizeAISessionRequest) (*AuthorizeAISessionResponse, error) {
+	ctrl, err := m.GetControls(ctx)
+	if err != nil {
+		return nil, err
+	}
+	policyVer := 1
+	if ctrl.PolicyVersion > 0 {
+		policyVer = ctrl.PolicyVersion
+	}
+
+	// 1. If corporate domain enforcement is turned off, always allow
+	if !ctrl.EnforceCorporateDomains {
+		return &AuthorizeAISessionResponse{
+			Decision:      "allow",
+			ReasonCode:    "POLICY_NOT_ENFORCED",
+			Message:       "Corporate domain enforcement is currently inactive.",
+			PolicyVersion: policyVer,
+		}, nil
+	}
+
+	// 2. Parse configured corporate domains
+	var configuredDomains []string
+	allowedDomainMap := make(map[string]bool)
+	rawDomains := strings.FieldsFunc(ctrl.CorporateEmailDomains, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == ' ' || r == '\t'
+	})
+	for _, d := range rawDomains {
+		clean := strings.TrimSpace(strings.ToLower(d))
+		clean = strings.TrimPrefix(clean, "@")
+		clean = strings.TrimPrefix(clean, ".")
+		if clean != "" && !allowedDomainMap[clean] {
+			allowedDomainMap[clean] = true
+			configuredDomains = append(configuredDomains, clean)
+		}
+	}
+
+	// If no corporate domains are configured yet, do not block
+	if len(configuredDomains) == 0 {
+		return &AuthorizeAISessionResponse{
+			Decision:      "allow",
+			ReasonCode:    "NO_DOMAINS_CONFIGURED",
+			Message:       "No corporate email domains have been configured yet.",
+			PolicyVersion: policyVer,
+		}, nil
+	}
+
+	// 3. Extract and normalize the incoming user's email domain
+	emailDomain := strings.TrimSpace(strings.ToLower(req.EmailDomain))
+	emailDomain = strings.TrimPrefix(emailDomain, "@")
+	emailDomain = strings.TrimPrefix(emailDomain, ".")
+	if emailDomain == "" && req.UserEmail != "" {
+		parts := strings.Split(strings.TrimSpace(strings.ToLower(req.UserEmail)), "@")
+		if len(parts) > 1 {
+			emailDomain = strings.TrimSpace(parts[1])
+		}
+	}
+
+	// 4. Parse configured allowed workspace IDs
+	var allowedWorkspaceMap map[string]bool
+	rawWorkspaces := strings.FieldsFunc(ctrl.AllowedWorkspaceIDs, func(r rune) bool {
+		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == ' ' || r == '\t'
+	})
+	if len(rawWorkspaces) > 0 {
+		allowedWorkspaceMap = make(map[string]bool)
+		for _, w := range rawWorkspaces {
+			wClean := strings.TrimSpace(w)
+			if wClean != "" {
+				allowedWorkspaceMap[strings.ToLower(wClean)] = true
+			}
+		}
+	}
+
+	reqWorkspace := strings.TrimSpace(strings.ToLower(req.WorkspaceID))
+
+	// If session domain is not yet detected (e.g. login/landing page), allow through so they can authenticate
+	if emailDomain == "" {
+		if reqWorkspace != "" && allowedWorkspaceMap != nil {
+			if !allowedWorkspaceMap[reqWorkspace] {
+				return &AuthorizeAISessionResponse{
+					Decision:      "block",
+					ReasonCode:    "UNAUTHORIZED_WORKSPACE",
+					Message:       fmt.Sprintf("Workspace '%s' is not authorized for corporate use.", req.WorkspaceID),
+					PolicyVersion: policyVer,
+				}, nil
+			}
+		}
+		return &AuthorizeAISessionResponse{
+			Decision:      "allow",
+			ReasonCode:    "PENDING_AUTHENTICATION",
+			Message:       "Awaiting user authentication to verify domain.",
+			PolicyVersion: policyVer,
+		}, nil
+	}
+
+	// 5. Check if domain is authorized
+	domainAllowed := allowedDomainMap[emailDomain]
+	if !domainAllowed {
+		for cd := range allowedDomainMap {
+			if strings.HasSuffix(emailDomain, "."+cd) {
+				domainAllowed = true
+				break
+			}
+		}
+	}
+
+	if !domainAllowed {
+		blockMsg := strings.TrimSpace(ctrl.CorporateBlockMessage)
+		if blockMsg == "" {
+			blockMsg = fmt.Sprintf("Corporate policy restricts access to authorized domains (@%s). Personal account (@%s) is blocked.", strings.Join(configuredDomains, ", @"), emailDomain)
+		}
+		return &AuthorizeAISessionResponse{
+			Decision:      "block",
+			ReasonCode:    "UNAUTHORIZED_DOMAIN",
+			Message:       blockMsg,
+			PolicyVersion: policyVer,
+		}, nil
+	}
+
+	// 6. Check workspace restriction if configured
+	if allowedWorkspaceMap != nil && len(allowedWorkspaceMap) > 0 && reqWorkspace != "" {
+		if !allowedWorkspaceMap[reqWorkspace] {
+			return &AuthorizeAISessionResponse{
+				Decision:      "block",
+				ReasonCode:    "UNAUTHORIZED_WORKSPACE",
+				Message:       fmt.Sprintf("Workspace '%s' is not on the corporate approved list.", req.WorkspaceID),
+				PolicyVersion: policyVer,
+			}, nil
+		}
+	}
+
+	provTitle := strings.TrimSpace(req.Provider)
+	if provTitle == "" {
+		provTitle = "AI"
+	} else if len(provTitle) > 1 {
+		provTitle = strings.ToUpper(provTitle[:1]) + provTitle[1:]
+	}
+
+	return &AuthorizeAISessionResponse{
+		Decision:      "allow",
+		ReasonCode:    "APPROVED_WORKSPACE",
+		Message:       fmt.Sprintf("Corporate %s workspace verified.", provTitle),
+		PolicyVersion: policyVer,
+	}, nil
 }
 
 func (m *BrowserAIManager) GetTargets(ctx context.Context) ([]BrowserTargetWebsite, error) {

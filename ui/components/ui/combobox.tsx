@@ -515,7 +515,9 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 							) : options.length > 0 && options.every((option) => selectedValues.includes(option.value)) && selectAllTriggerLabel ? (
 								<span className="text-foreground truncate text-sm font-medium">{selectAllTriggerLabel}</span>
 							) : compactTrigger ? (
-								<span className="text-foreground truncate text-sm">{selectedValues.length} selected</span>
+								<span className="text-foreground truncate text-sm">
+									{selectedValues.length === 1 ? getLabel(selectedValues[0]) : `${selectedValues.length} selected`}
+								</span>
 							) : (
 								selectedValues.map((val) => (
 									<Badge key={val} variant="secondary" className="text-xs">
@@ -568,27 +570,25 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 							</div>
 						)}
 						<CommandPrimitive.List className="max-h-[300px] overflow-y-auto p-1">
-							{selectAllValue && !query && (
+							{selectAllValue && (
 								<CommandPrimitive.Item
 									value={selectAllValue}
-									className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
+									className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none border-b border-border/40 mb-1"
 									onSelect={() => {
-										const all = options.map((option) => option.value);
-										const everySelected = all.length > 0 && all.every((value) => selectedValues.includes(value));
-										props.onValueChange?.(everySelected ? [] : all);
-									}}
-									onClick={(e) => {
-										e.preventDefault();
-										e.stopPropagation();
-										const all = options.map((option) => option.value);
-										const everySelected = all.length > 0 && all.every((value) => selectedValues.includes(value));
-										props.onValueChange?.(everySelected ? [] : all);
+										const targetOptions = query ? filtered : options;
+										const targetValues = targetOptions.map((option) => option.value);
+										const allTargetSelected = targetValues.length > 0 && targetValues.every((value) => selectedValues.includes(value));
+										if (allTargetSelected) {
+											props.onValueChange?.(selectedValues.filter((v) => !targetValues.includes(v)));
+										} else {
+											props.onValueChange?.(Array.from(new Set([...selectedValues, ...targetValues])));
+										}
 									}}
 								>
 									<span
 										className={cn(
-											"border-primary flex size-4 items-center justify-center rounded-sm border",
-											options.length > 0 && options.every((option) => selectedValues.includes(option.value))
+											"border-primary flex size-4 shrink-0 items-center justify-center rounded-sm border",
+											options.length > 0 && (query ? filtered : options).length > 0 && (query ? filtered : options).every((option) => selectedValues.includes(option.value))
 												? "bg-primary text-primary-foreground"
 												: "opacity-50",
 										)}
@@ -596,11 +596,11 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 										<CheckIcon
 											className={cn(
 												"size-3",
-												options.length > 0 && options.every((option) => selectedValues.includes(option.value)) ? "" : "invisible",
+												options.length > 0 && (query ? filtered : options).length > 0 && (query ? filtered : options).every((option) => selectedValues.includes(option.value)) ? "" : "invisible",
 											)}
 										/>
 									</span>
-									<span>{selectAllLabel}</span>
+									<span className="font-medium">{query ? `Select all matching (${filtered.length})` : selectAllLabel}</span>
 								</CommandPrimitive.Item>
 							)}
 							{filtered.map((option) => {
@@ -611,12 +611,6 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 										value={option.value}
 										className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
 										onSelect={() => {
-											const next = isSelected ? selectedValues.filter((v) => v !== option.value) : [...selectedValues, option.value];
-											props.onValueChange?.(next);
-										}}
-										onClick={(e) => {
-											e.preventDefault();
-											e.stopPropagation();
 											const next = isSelected ? selectedValues.filter((v) => v !== option.value) : [...selectedValues, option.value];
 											props.onValueChange?.(next);
 										}}
@@ -716,13 +710,6 @@ function ComboboxSelect(props: ComboboxSelectProps) {
 								value={selectAllValue}
 								className="data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none"
 								onSelect={() => {
-									const next = props.value === selectAllValue ? "" : selectAllValue;
-									props.onValueChange?.(next);
-									setOpen(false);
-								}}
-								onClick={(e) => {
-									e.preventDefault();
-									e.stopPropagation();
 									const next = props.value === selectAllValue ? "" : selectAllValue;
 									props.onValueChange?.(next);
 									setOpen(false);

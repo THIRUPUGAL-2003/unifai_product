@@ -334,6 +334,45 @@
     // Verify anti-tamper nonce
     if (msg.nonce && msg.nonce !== guardNonce) return;
 
+    if (msg.type === "authorize_ai_session") {
+      var authPayload = {
+        action: "authorize_ai_session",
+        provider: msg.provider || "",
+        email_domain: msg.email_domain || "",
+        user_email: msg.user_email || "",
+        workspace_id: msg.workspace_id || "",
+        page_url: msg.page_url || location.href,
+        policy_version: msg.policy_version || 1
+      };
+      withBase(function () {
+        fetch(base + "/extension/authorize_session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(authPayload)
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (result) {
+            window.postMessage({
+              source: "gateway-guard",
+              nonce: guardNonce,
+              type: "session_authorization_result",
+              id: msg.id,
+              result: result || { decision: "allow" }
+            }, "*");
+          })
+          .catch(function () {
+            window.postMessage({
+              source: "gateway-guard",
+              nonce: guardNonce,
+              type: "session_authorization_result",
+              id: msg.id,
+              result: { decision: "allow", reason_code: "LOCAL_AGENT_UNAVAILABLE" }
+            }, "*");
+          });
+      });
+      return;
+    }
+
     var hasContent = Boolean(
       (msg.prompt && msg.prompt.trim()) ||
       (Array.isArray(msg.files) && msg.files.length) ||

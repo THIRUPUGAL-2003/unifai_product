@@ -160,13 +160,17 @@ export function SettingsPanel() {
 	const onProviderChange = useCallback(
 		(p: string) => {
 			setProvider(p);
+			setApiKeyId("__auto__");
+			if (!isMemberOnly) {
+				setAllowedApiKeys([]);
+			}
 			onModelParamsChange((prev) => ({
 				stream: true,
 				temperature: typeof prev?.temperature === "number" ? prev.temperature : 0.7,
 				max_tokens: typeof prev?.max_tokens === "number" ? prev.max_tokens : 4096,
 			}));
 		},
-		[setProvider, onModelParamsChange],
+		[setProvider, setApiKeyId, isMemberOnly, setAllowedApiKeys, onModelParamsChange],
 	);
 
 	const onVirtualKeyChange = useCallback(
@@ -237,22 +241,69 @@ export function SettingsPanel() {
 		return opts;
 	}, [skillsData, skillId, isMemberOnly, allowedSkills]);
 
-	const isInitialLoading = isLoadingProviders;
+	const isInitialLoading = isLoadingProviders || !hasLoadedAllKeys;
 
 	const configuredProviders = useMemo(() => {
-		const activeVirtualKeys = virtualKeysData?.virtual_keys?.filter((vk) => vk.is_active) ?? [];
 		if (!hasLoadedAllKeys) {
-			return providers ?? [];
+			return [];
 		}
-		const keyedProviders = new Set((allKeys ?? []).map((k) => k.provider));
-		return (providers ?? []).filter((p) => {
-			if (keyedProviders.has(p.name)) return true;
-			// Include providers that have active virtual keys (wildcard or explicitly targeting this provider)
-			return activeVirtualKeys.some(
-				(vk) => !vk.provider_configs || vk.provider_configs.length === 0 || vk.provider_configs.some((pc) => pc.provider === p.name),
-			);
+		// A provider is only configured/connected if it has at least one valid API key in allKeys
+		const keyedProviders = new Set(
+			(allKeys ?? [])
+				.map((k) => (k.provider || "").trim().toLowerCase())
+				.filter(Boolean)
+		);
+		// Or if an active Virtual Key specifically configures this provider
+		const activeVirtualKeys = virtualKeysData?.virtual_keys?.filter((vk) => vk.is_active) ?? [];
+		const vkConfiguredProviders = new Set<string>();
+		for (const vk of activeVirtualKeys) {
+			for (const pc of vk.provider_configs ?? []) {
+				const prov = (pc.provider || "").trim().toLowerCase();
+				if (prov && prov !== "*") {
+					vkConfiguredProviders.add(prov);
+				}
+			}
+		}
+
+		const isConnected = (name: string) => {
+			const lower = (name || "").toLowerCase();
+			return keyedProviders.has(lower) || vkConfiguredProviders.has(lower);
+		};
+
+		const list = (providers ?? []).filter((p) => {
+			if (p.provider_status === "deleted") return false;
+			return isConnected(p.name);
 		});
+
+		// Also ensure any provider present in allKeys is included even if omitted from providers array
+		const existingNames = new Set(list.map((p) => (p.name || "").toLowerCase()));
+		for (const pName of keyedProviders) {
+			if (!existingNames.has(pName)) {
+				list.push({
+					name: pName as ModelProviderName,
+					provider_status: "active" as any,
+				});
+				existingNames.add(pName);
+			}
+		}
+
+		return list.sort((a, b) => a.name.localeCompare(b.name));
 	}, [providers, virtualKeysData, allKeys, hasLoadedAllKeys]);
+
+	// Clean up any stale or unconfigured providers from allowedProviders (e.g. from previously selecting all 93)
+	useEffect(() => {
+		if (isMemberOnly || !hasLoadedAllKeys || configuredProviders.length === 0) return;
+		if (!allowedProviders || allowedProviders.length === 0) return;
+		const validNames = new Set(configuredProviders.map((p) => p.name.toLowerCase()));
+		const validList = allowedProviders.filter((p) => p !== "*" && validNames.has(p.toLowerCase()));
+		if (validList.length !== allowedProviders.length) {
+			const next = validList.length > 0 ? validList : [configuredProviders[0].name];
+			setAllowedProviders(next);
+			if (!next.includes(provider)) {
+				onProviderChange(next[0]);
+			}
+		}
+	}, [isMemberOnly, hasLoadedAllKeys, configuredProviders, allowedProviders, setAllowedProviders, provider, onProviderChange]);
 
 	// Collect all VKs that are currently selected (from allowedVirtualKeys or virtualKeyId)
 	const selectedVirtualKeys = useMemo(() => {
@@ -347,18 +398,21 @@ export function SettingsPanel() {
 	}, [virtualKeysData, isMemberOnly, allowedVirtualKeys, virtualKeyId, focusUserKeys]);
 
 	// Provider options:
-	// For member: strictly the provider(s) committed by admin on this prompt, OR from the assigned VK!
-	// For admin: full gateway catalog.
+	// Strictly only providers that are enabled and have a connected API key or active Virtual Key!
 	const providerOptions = useMemo(() => {
+		const list: { label: string; value: string }[] = configuredProviders.map((p) => ({
+			label: getProviderLabel(p.name),
+			value: p.name as ModelProviderName,
+		}));
+
 		if (isMemberOnly) {
 			let allowed: string[] = [];
 			if (allowedProviders && allowedProviders.length > 0) {
 				allowed = allowedProviders;
 			} else if (providerVirtualKeys.length > 0) {
-				// Inherit allowed providers from the assigned Virtual Key(s)!
 				const { providers: vkProviders, wildcardProviders } = providersFromVirtualKeys(providerVirtualKeys);
 				if (wildcardProviders) {
-					return configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
+					return list;
 				}
 				if (vkProviders.length > 0) {
 					allowed = vkProviders;
@@ -366,18 +420,14 @@ export function SettingsPanel() {
 			} else if (provider) {
 				allowed = [provider];
 			}
-			if (allowed.length === 0) {
-				return [];
-			}
-			if (allowed.includes("*")) {
-				return configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
+			if (allowed.length === 0 || allowed.includes("*")) {
+				return list;
 			}
 			const allowedSet = new Set(allowed.map((p) => p.toLowerCase()));
-			return configuredProviders
-				.filter((p) => allowedSet.has(p.name.toLowerCase()))
-				.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
+			return list.filter((p) => allowedSet.has(p.value.toLowerCase()));
 		}
-		return configuredProviders.map((p) => ({ label: getProviderLabel(p.name), value: p.name as ModelProviderName }));
+
+		return list;
 	}, [configuredProviders, isMemberOnly, allowedProviders, providerVirtualKeys, provider]);
 
 	// For member: auto-select single/first provider if none selected
@@ -502,19 +552,20 @@ export function SettingsPanel() {
 	const hasKeyFilter = Boolean((filterKeys && filterKeys.length > 0) || (filterVks && filterVks.length > 0));
 
 	const effectiveProviderQuery = useMemo(() => {
-		if (isMemberOnly) return provider || undefined;
-		if (allowedProviders && allowedProviders.length > 0) {
-			if (allowedProviders.includes("*")) return undefined;
-			return allowedProviders.join(",");
+		const activeProviders = (allowedProviders && allowedProviders.length > 0)
+			? allowedProviders
+			: (provider ? [provider] : []);
+		if (activeProviders.length === 0) return undefined;
+		if (activeProviders.includes("*")) {
+			return configuredProviders.map((p) => p.name).join(",");
 		}
-		return provider || undefined;
-	}, [isMemberOnly, allowedProviders, provider]);
+		return activeProviders.join(",");
+	}, [allowedProviders, provider, configuredProviders]);
 
 	const shouldSkipModels = useMemo(() => {
-		if (isMemberOnly) return !provider;
 		const hasProv = (allowedProviders && allowedProviders.length > 0) || Boolean(provider);
 		return !hasProv;
-	}, [isMemberOnly, allowedProviders, provider]);
+	}, [allowedProviders, provider]);
 
 	// Models come only from /models via provider + real API key and/or VK — never hardcoded defaults.
 	const { data: modelsData } = useGetModelsQuery(
@@ -529,16 +580,23 @@ export function SettingsPanel() {
 	);
 
 	const hasProviderSelected = useMemo(() => {
-		if (isMemberOnly) return Boolean(provider);
 		return (allowedProviders && allowedProviders.length > 0) || Boolean(provider);
-	}, [isMemberOnly, allowedProviders, provider]);
+	}, [allowedProviders, provider]);
 
 	const modelOptions = useMemo(() => {
 		if (!hasProviderSelected) return [];
+		const activeProviders = (allowedProviders && allowedProviders.length > 0 ? allowedProviders : provider ? [provider] : []);
+		const selectedProviderSet = new Set(
+			activeProviders.map((p) => p.toLowerCase())
+		);
+		const isWildcard = selectedProviderSet.has("*");
+
 		let opts = (modelsData?.models ?? [])
 			.filter((item) => {
-				if (provider && item.provider && item.provider.toLowerCase() !== provider.toLowerCase()) {
-					return false;
+				if (!isWildcard && selectedProviderSet.size > 0 && item.provider) {
+					if (!selectedProviderSet.has(item.provider.toLowerCase())) {
+						return false;
+					}
 				}
 				return true;
 			})
@@ -547,6 +605,18 @@ export function SettingsPanel() {
 				const label = prov ? `${prov} --- ${item.name}` : item.name;
 				return { label, value: item.name };
 			});
+
+		// Deduplicate models by label (provider --- model name) so models from different providers are preserved
+		const seenLabels = new Set<string>();
+		const uniqueOpts: { label: string; value: string }[] = [];
+		for (const opt of opts) {
+			if (!seenLabels.has(opt.label)) {
+				seenLabels.add(opt.label);
+				uniqueOpts.push(opt);
+			}
+		}
+		opts = uniqueOpts;
+
 		if (model && opts.length > 0 && !opts.some((option) => option.value === model)) {
 			const prov = provider ? `${String(provider).toLowerCase()} --- ` : "";
 			opts.unshift({ label: `${prov}${model}`, value: model });
@@ -569,21 +639,28 @@ export function SettingsPanel() {
 			}
 		}
 		return opts;
-	}, [hasProviderSelected, modelsData, model, provider, isMemberOnly, allowedModels]);
+	}, [hasProviderSelected, modelsData, model, provider, isMemberOnly, allowedModels, allowedProviders]);
 
-	// Auto-select valid model when model is empty, wildcard "*", or invalid
+	// Auto-select valid model only on initial load or if user selected models in allowedModels
 	useEffect(() => {
 		if (modelOptions.length > 0) {
-			if (!model || model === "*" || !modelOptions.some((o) => o.value === model)) {
-				const firstAllowed = (allowedModels ?? []).find((m) => m && m !== "*" && modelOptions.some((o) => o.value === m));
-				if (firstAllowed) {
-					onModelChange(firstAllowed);
-				} else {
+			if (isMemberOnly) {
+				if (!model || model === "*" || !modelOptions.some((o) => o.value === model)) {
+					const firstAllowed = (allowedModels ?? []).find((m) => m && m !== "*" && modelOptions.some((o) => o.value === m));
+					if (firstAllowed) {
+						onModelChange(firstAllowed);
+					} else {
+						onModelChange(modelOptions[0].value);
+					}
+				}
+			} else {
+				// Admin: only auto-select on initial prompt load when nothing has been selected yet
+				if (allowedModels === null && (!model || model === "*")) {
 					onModelChange(modelOptions[0].value);
 				}
 			}
 		}
-	}, [modelOptions, model, allowedModels, onModelChange]);
+	}, [modelOptions, model, allowedModels, onModelChange, isMemberOnly]);
 
 	const mcpToolOptions = useMemo(() => {
 		const clientsToUse = isMemberOnly
@@ -814,21 +891,31 @@ export function SettingsPanel() {
 								<div className="flex flex-col gap-1.5" data-testid="settings-provider">
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Provider</Label>
 									<ComboboxSelect
+										multiple
+										compactTrigger
 										options={providerOptions}
-										value={provider || null}
-										onValueChange={(v) => {
-											onProviderChange(v ?? "");
+										value={
+											allowedProviders !== null
+												? allowedProviders
+												: (provider ? [provider] : [])
+										}
+										onValueChange={(next) => {
 											if (!isMemberOnly) {
-												setAllowedProviders(v ? [v] : []);
-												if (!v) {
-													onModelChange("");
-													setAllowedModels([]);
-												}
+												setAllowedProviders(next);
+											}
+											if (next.length === 0) {
+												onProviderChange("");
+												onModelChange("");
+												if (!isMemberOnly) setAllowedModels([]);
+											} else if (!next.includes(provider)) {
+												onProviderChange(next[0]);
 											}
 										}}
 										placeholder="Select provider"
-										searchPlaceholder="Search..."
-										disabled={!canUpdate}
+										searchPlaceholder="Search providers..."
+										selectAllValue="*"
+										selectAllLabel="Select all"
+										disabled={!canUpdate || providerOptions.length === 0}
 										data-testid="settings-provider-select"
 									/>
 								</div>
@@ -836,17 +923,37 @@ export function SettingsPanel() {
 								<div className="flex flex-col gap-1.5" data-testid="settings-model">
 									<Label className="text-muted-foreground text-xs font-medium uppercase">Model</Label>
 									<ComboboxSelect
+										multiple
+										compactTrigger
 										options={modelOptions}
-										value={model || null}
-										onValueChange={(v) => {
-											onModelChange(v ?? "");
+										value={
+											allowedModels !== null
+												? allowedModels
+												: (model ? [model] : [])
+										}
+										onValueChange={(next) => {
 											if (!isMemberOnly) {
-												setAllowedModels(v ? [v] : []);
+												setAllowedModels(next);
+											}
+											if (next.length === 0) {
+												onModelChange("");
+											} else {
+												const activeM = next.includes(model) ? model : (next[next.length - 1] || next[0] || "");
+												onModelChange(activeM);
+												// Auto-sync provider to this model's provider if belonging to another selected provider
+												if (activeM) {
+													const found = (modelsData?.models ?? []).find((m) => m.name === activeM);
+													if (found?.provider && found.provider.toLowerCase() !== (provider || "").toLowerCase()) {
+														onProviderChange(found.provider.toLowerCase());
+													}
+												}
 											}
 										}}
 										placeholder={!hasProviderSelected ? "Select a provider first" : "Select model"}
-										searchPlaceholder="Search..."
-										disabled={!hasProviderSelected || !canUpdate}
+										searchPlaceholder="Search models..."
+										selectAllValue="*"
+										selectAllLabel="Select all"
+										disabled={!hasProviderSelected || !canUpdate || modelOptions.length === 0}
 										data-testid="settings-model-select"
 									/>
 								</div>
@@ -882,7 +989,7 @@ export function SettingsPanel() {
 												value={selectedMcpTools}
 												onValueChange={(next) => setMcpIncludeTools(next)}
 												placeholder="Select MCP tools"
-												searchPlaceholder="Search..."
+												searchPlaceholder="Search MCP tools..."
 												selectAllValue="*"
 												selectAllLabel="Select all"
 												disabled={!canUpdate}

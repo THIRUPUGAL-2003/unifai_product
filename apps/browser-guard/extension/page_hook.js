@@ -117,11 +117,184 @@
     if (ev.data.type === "sync_rules") {
       setDynamicRules(ev.data.rules || []);
     }
+    if (ev.data.type === "session_authorization_result") {
+      handleSessionAuthDecision(ev.data.result || {});
+    }
     if (ev.data.type === "decision" && pending[ev.data.id]) {
       pending[ev.data.id](ev.data.decision || { blocked: false });
       delete pending[ev.data.id];
     }
   });
+
+  // --- Corporate AI Domain & Workspace Authorization Engine ---
+  var sessionBlocked = false;
+  var sessionBlockedReason = "";
+  var detectedEmail = "";
+  var detectedWorkspace = "";
+  var lastCheckedKey = "";
+
+  function handleSessionAuthDecision(authRes) {
+    if (!authRes) return;
+    if (authRes.decision === "block") {
+      sessionBlocked = true;
+      sessionBlockedReason = authRes.message || "Personal accounts are blocked by corporate security policy.";
+      renderCorporateBanner(true, sessionBlockedReason, detectedEmail);
+    } else {
+      sessionBlocked = false;
+      sessionBlockedReason = "";
+      renderCorporateBanner(false);
+    }
+  }
+
+  function renderCorporateBanner(isBlocked, message, email) {
+    var existing = document.getElementById("yp-corp-policy-banner");
+    if (!isBlocked) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) {
+      var msgEl = existing.querySelector(".yp-corp-msg");
+      if (msgEl && message) msgEl.textContent = message;
+      return;
+    }
+    var banner = document.createElement("div");
+    banner.id = "yp-corp-policy-banner";
+    banner.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+      "max-width:680px;width:calc(100% - 32px);background:#111827;color:#f8fafc;border:2px solid #ef4444;" +
+      "border-radius:12px;padding:12px 18px;box-shadow:0 20px 40px rgba(0,0,0,0.75);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
+      "display:flex;align-items:flex-start;gap:12px;animation:ypFadeIn 0.3s ease-out;";
+    var emailTag = email ? ' <span style="font-size:11px;background:#1e293b;color:#f87171;padding:2px 8px;border-radius:4px;border:1px solid rgba(239,68,68,0.4);font-family:monospace;">' + email + '</span>' : '';
+    banner.innerHTML = '<div style="background:rgba(239,68,68,0.18);color:#ef4444;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;flex-shrink:0;">✕</div>' +
+      '<div style="flex:1;min-width:0;">' +
+      '  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">' +
+      '    <strong style="font-size:12px;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;">Corporate Policy Restriction</strong>' +
+      emailTag +
+      '  </div>' +
+      '  <p class="yp-corp-msg" style="font-size:12.5px;color:#cbd5e1;line-height:1.45;margin:0;">' + (message || "Personal accounts are restricted. Please sign in with your corporate account.") + '</p>' +
+      '</div>';
+    (document.body || document.documentElement).appendChild(banner);
+  }
+
+  function detectProviderName() {
+    var h = (location.hostname || "").toLowerCase();
+    if (h.includes("chatgpt.com") || h.includes("openai.com")) return "chatgpt";
+    if (h.includes("claude.ai") || h.includes("anthropic.com")) return "claude";
+    if (h.includes("copilot.microsoft.com") || h.includes("bing.com")) return "copilot";
+    if (h.includes("gemini.google.com") || h.includes("bard.google.com")) return "gemini";
+    if (h.includes("deepseek.com")) return "deepseek";
+    if (h.includes("mistral.ai")) return "mistral";
+    if (h.includes("perplexity.ai")) return "perplexity";
+    if (h.includes("poe.com")) return "poe";
+    if (h.includes("lovable.dev")) return "lovable";
+    var parts = h.replace(/^www\./, "").split(".");
+    return parts[0] || "ai";
+  }
+
+  function triggerSessionAuth(email, workspaceId) {
+    if (!email) return;
+    email = String(email).trim().toLowerCase();
+    var domain = email.indexOf("@") >= 0 ? email.split("@")[1].trim() : email;
+    var ws = workspaceId ? String(workspaceId).trim() : "";
+    var key = email + "::" + ws;
+    if (key === lastCheckedKey) return;
+    lastCheckedKey = key;
+    detectedEmail = email;
+    detectedWorkspace = ws;
+
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      type: "authorize_ai_session",
+      id: "auth_" + Date.now().toString(36),
+      provider: detectProviderName(),
+      email_domain: domain,
+      user_email: email,
+      workspace_id: ws,
+      page_url: location.href,
+      policy_version: 1
+    }, "*");
+  }
+
+  // Universal deep object search for email and workspace keys
+  function scanObjectForSession(obj, depth) {
+    if (!obj || typeof obj !== "object" || (depth || 0) > 4) return;
+    try {
+      if (typeof obj.email === "string" && obj.email.includes("@")) {
+        var ws = obj.workspace_id || obj.org_id || obj.organization_id || obj.account_id || obj.accountId || obj.tenant_id || "";
+        triggerSessionAuth(obj.email, ws);
+        return;
+      }
+      if (typeof obj.email_address === "string" && obj.email_address.includes("@")) {
+        triggerSessionAuth(obj.email_address, obj.workspace_id || obj.org_id);
+        return;
+      }
+      if (typeof obj.user_email === "string" && obj.user_email.includes("@")) {
+        triggerSessionAuth(obj.user_email, obj.workspace_id);
+        return;
+      }
+      if (typeof obj.upn === "string" && obj.upn.includes("@")) {
+        triggerSessionAuth(obj.upn, obj.tenant_id || obj.tenantId);
+        return;
+      }
+      for (var k in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, k) && typeof obj[k] === "object" && obj[k] !== null) {
+          scanObjectForSession(obj[k], (depth || 0) + 1);
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Scan LocalStorage and SessionStorage for JWT or user profiles
+  function scanStorageForSession() {
+    try {
+      var storages = [localStorage, sessionStorage];
+      for (var s = 0; s < storages.length; s++) {
+        var st = storages[s];
+        if (!st) continue;
+        for (var i = 0; i < st.length; i++) {
+          var k = st.key(i);
+          if (!k) continue;
+          var kLow = k.toLowerCase();
+          if (kLow.includes("user") || kLow.includes("auth") || kLow.includes("account") || kLow.includes("session") || kLow.includes("token") || kLow.includes("profile") || kLow.includes("oidc")) {
+            var val = st.getItem(k);
+            if (!val || typeof val !== "string") continue;
+            if (val.startsWith("{") && val.endsWith("}")) {
+              try {
+                scanObjectForSession(JSON.parse(val), 0);
+              } catch (je) {}
+            }
+            if (val.startsWith("ey") && val.includes(".")) {
+              try {
+                var parts = val.split(".");
+                if (parts.length >= 2) {
+                  var payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+                  scanObjectForSession(payload, 0);
+                }
+              } catch (jte) {}
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Scan DOM for visible user email (e.g. profile avatars, user menus)
+  function scanDOMForSession() {
+    try {
+      var elements = querySelectorAllDeep("[aria-label*='@'], [title*='@'], [alt*='@']");
+      var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
+      for (var i = 0; i < elements.length; i++) {
+        var el = elements[i];
+        if (!el) continue;
+        var txt = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "") + " " + (el.getAttribute("alt") || "");
+        var m = txt.match(emailRegex);
+        if (m && m[0]) {
+          triggerSessionAuth(m[0], "");
+          return;
+        }
+      }
+    } catch (e) {}
+  }
 
   // Client-Side Fast Evaluation against live DB rules
   function evaluateClientRules(text, files) {
@@ -764,6 +937,13 @@
   document.addEventListener("keydown", function (e) {
     if (!armed || passKey) return;
     if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
+
+    if (sessionBlocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      return;
+    }
     var actualTarget = (e.composedPath && e.composedPath()[0]) || e.target;
     var text = stripInvisible(composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement()));
     var effectiveFiles = mergeStagedAndDomFiles();
@@ -871,6 +1051,13 @@
       (Boolean(btn.querySelector("svg")) && Boolean(btn.closest("fieldset, form, footer, [class*='composer' i], [class*='chat' i]")));
 
     if (!sendLike) return;
+
+    if (sessionBlocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      return;
+    }
     var text = stripInvisible(composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
@@ -937,6 +1124,13 @@
     if (!armed || passClick) return;
     var form = e.target;
     if (!form) return;
+
+    if (sessionBlocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      return;
+    }
     var text = stripInvisible(composerFrom(form) || composerFrom(document.activeElement));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
@@ -1306,6 +1500,18 @@
   XMLHttpRequest.prototype.open = function (method, url) {
     this._ggMethod = method;
     this._ggUrl = url;
+    try {
+      var lowU = String(url || "").toLowerCase();
+      if (lowU.includes("session") || lowU.includes("account") || lowU.includes("user") || lowU.includes("auth") || lowU.includes("me") || lowU.includes("organization") || lowU.includes("profile")) {
+        this.addEventListener("load", function () {
+          try {
+            if (this.responseText && this.responseText.startsWith("{")) {
+              scanObjectForSession(JSON.parse(this.responseText), 0);
+            }
+          } catch (xe) {}
+        });
+      }
+    } catch (e) {}
     return origXHROpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function (body) {
@@ -1416,5 +1622,18 @@
     };
   }
 
-  console.log("[YP-Raksha] In-Browser DLP Engine Active: Prompts, Images, Files, WebSockets & Beacons Protected.");
+  // Periodic and load session inspection
+  setTimeout(function () {
+    scanStorageForSession();
+    scanDOMForSession();
+  }, 1200);
+  setInterval(function () {
+    if (armed) {
+      scanStorageForSession();
+      scanDOMForSession();
+    }
+  }, 5000);
+
+  console.log("[YP-Raksha] In-Browser DLP Engine Active: Prompts, Images, Files, WebSockets & Corporate AI Sessions Protected.");
 })();
+
