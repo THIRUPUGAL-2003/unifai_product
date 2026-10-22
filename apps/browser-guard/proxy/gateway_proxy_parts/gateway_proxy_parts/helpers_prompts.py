@@ -155,7 +155,7 @@ def _copilot_frame_is_user_send(body: str) -> bool:
     ):
         return True
     # File-only Send (empty caption) still has a chat envelope + attachment refs.
-    if chat_carries_attachment(body) and any(
+    if _send_carries_attachment(body) and any(
         k in bl
         for k in (
             '"messagetype":"chat"',
@@ -170,7 +170,7 @@ def _copilot_frame_is_user_send(body: str) -> bool:
 
 
 def _signalr_control_frame(obj) -> bool:
-    """Handshake, ping, and Metrics frames are not a typed chat Send."""
+    """Handshake, ping, metrics, session attach, and telemetry frames are not user chat."""
     if not isinstance(obj, dict):
         return False
     if not obj:
@@ -179,7 +179,12 @@ def _signalr_control_frame(obj) -> bool:
     if keys <= {"protocol", "version"}:
         return True
     target = str(obj.get("target") or "").lower()
-    if target in ("metrics", "ping", "pong"):
+    if target in (
+        "metrics", "ping", "pong", "attachtosession", "challengeproof",
+        "handshake", "heartbeat", "system", "telemetry", "keepalive",
+        "log", "ack", "connect", "connected", "disconnect", "close",
+        "startnewconversation", "sequence", "cancelinvocation",
+    ):
         return True
     raw_type = obj.get("type")
     try:
@@ -187,6 +192,14 @@ def _signalr_control_frame(obj) -> bool:
     except (TypeError, ValueError):
         type_num = None
     if type_num in (6, 7):
+        return True
+    args = obj.get("arguments")
+    if isinstance(args, list):
+        if any(isinstance(a, dict) and str(a.get("type", "")).lower() in ("challengeproof", "challenge", "handshake") for a in args):
+            return True
+        if target not in ("chat", "send", "newmessage", "message", "stream") and all(isinstance(a, str) and len(a) in (32, 36) for a in args):
+            return True
+    if any(k in keys for k in ("timezone", "startnewconversation", "clientlogs", "usersettings")):
         return True
     return False
 
@@ -197,7 +210,7 @@ def _signalr_user_frame(obj) -> bool:
         return False
     event = str(obj.get("event") or "").lower()
     target = str(obj.get("target") or "").lower()
-    if event == "send" or target == "chat":
+    if event == "send" or target in ("chat", "send", "newmessage", "message"):
         return True
     return False
 
@@ -238,11 +251,17 @@ def is_event_sync_noise_content(content: str) -> bool:
         if all(_signalr_control_frame(frame) for frame in frames):
             return True
     cl = content.lower()
-    if '"event":"typing"' in cl or '"event": "typing"' in cl:
-        return True
-    if '"event":"ping"' in cl or '"event": "ping"' in cl:
-        return True
-    if "messagetype\":\"internal" in cl or "messagetype\": \"internal" in cl:
+    if any(k in cl for k in (
+        '"target":"attachtosession"', '"target": "attachtosession"',
+        '"challengeproof"',
+        '"timezone":', '"startnewconversation":',
+        '"event":"typing"', '"event": "typing"',
+        '"event":"ping"', '"event": "ping"',
+        '"messagetype":"internal"', '"messagetype": "internal"',
+    )):
+        frames = _signalr_dicts(content)
+        if frames and any(_signalr_user_frame(f) for f in frames):
+            return False
         return True
     if "\x1e" in content or '"target":' in cl or '"arguments":' in cl:
         if '"event":"send"' not in cl and '"event": "send"' not in cl:

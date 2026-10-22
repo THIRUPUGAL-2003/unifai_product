@@ -72,4 +72,4 @@ chrome.runtime.onStartup.addListener(function () {
 });
 
 ensureSyncAlarm();
-setInterval(syncBackgroundRules, 30000);
+setInterval(syncBackgroundRules, 10000);

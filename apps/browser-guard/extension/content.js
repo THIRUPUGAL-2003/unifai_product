@@ -318,11 +318,11 @@
     });
   }
 
-  // Periodic site and rule refresh every 15 seconds and on tab focus
+  // Periodic site and rule refresh every 10 seconds and on tab focus
   setInterval(function () {
     armIfMonitored();
     syncRules();
-  }, 15000);
+  }, 10000);
   window.addEventListener("focus", function () {
     armIfMonitored();
     syncRules();

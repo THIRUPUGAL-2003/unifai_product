@@ -205,6 +205,9 @@ class BrowserAIInterceptor:
         prompt = (prompt or "").strip()
         if not prompt:
             return
+        if is_already_handled_by_extension(domain, prompt):
+            print(f"[Gateway Proxy] Prompt already handled by extension for {domain}. Skipping duplicate proxy evaluation.")
+            return
         # Same-text browser double-fire: reuse decision (never silent skip).
         if is_duplicate_event(domain, prompt, ttl=DEDUPE_TTL, mark=False):
             self._apply_duplicate_http_prompt(flow, domain, platform, prompt, client_ip, raw_text)
@@ -1267,13 +1270,15 @@ class BrowserAIInterceptor:
                 prompt = stable
 
 
+        # Extension coordination: skip duplicate evaluation and logging if browser extension handled it
+        if is_already_handled_by_extension(domain, prompt):
+            print(f"[Gateway Proxy] Prompt already handled by extension for {domain}. Skipping duplicate proxy evaluation.")
+            return
+
         # Collapse browser double-fire — MUST still enforce the same guard decision
         # (silent return here previously let the 2nd request bypass BLOCK).
         if is_duplicate_event(domain, prompt, ttl=DEDUPE_TTL, mark=False):
             self._apply_duplicate_http_prompt(flow, domain, platform, prompt, client_ip, raw_text)
-        # Extension coordination: skip duplicate evaluation and logging if browser extension handled it
-        if is_already_handled_by_extension(domain, prompt):
-            print(f"[Gateway Proxy] Prompt already handled by extension for {domain}. Skipping duplicate proxy evaluation.")
             return
 
         try:
@@ -1443,6 +1448,9 @@ class BrowserAIInterceptor:
             return
         # History/settings batchexecute over WS — pass through before extract/inject.
         if "batchexecute" in ws_path.lower() and not is_batchexecute_chat_submit(ws_path, content):
+            return
+
+        if is_event_sync_noise_content(content):
             return
 
         client_ip = get_client_ip(flow)
@@ -1618,9 +1626,20 @@ class BrowserAIInterceptor:
         ):
             return
 
+        if is_event_sync_noise_content(content):
+            return
+
         prompt = extract_prompt_universal(content.encode("utf-8"), "application/json", host=host, url=flow.request.url)
         if not prompt or prompt.strip() in ("{}", "[]", "ping", "pong"):
             return
+        if not looks_like_user_prompt(prompt):
+            return
+
+        ws_p_clean = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ').strip()
+        if is_already_handled_by_extension(domain, ws_p_clean):
+            print(f"[Gateway Proxy] WebSocket prompt already handled by extension for {domain}. Skipping duplicate proxy log.")
+            return
+
         ws_bytes = content.encode("utf-8", errors="ignore")
         if not _should_intercept_extracted_prompt(
             prompt, flow.request.path, content, domain, host=host, raw_bytes=ws_bytes
@@ -1638,6 +1657,10 @@ class BrowserAIInterceptor:
             if stable is None:
                 return
             prompt = stable
+
+        if is_already_handled_by_extension(domain, prompt):
+            print(f"[Gateway Proxy] WebSocket prompt already handled by extension for {domain}. Skipping duplicate proxy log.")
+            return
 
         if is_duplicate_event(domain, prompt, ttl=DEDUPE_TTL, mark=False):
             decision = get_remembered_guard_decision(domain, prompt)

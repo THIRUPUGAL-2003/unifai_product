@@ -618,8 +618,8 @@ def _apply_targets_from_data(data: dict) -> None:
     new_roles = {}
     for t in targets:
         domain = _normalize_domain(t.get("domain", ""))
-        monitored = bool(t.get("monitored")) or str(t.get("status") or "").upper() in ("MONITORED", "BLOCKED")
-        block_site = bool(t.get("block_site")) or str(t.get("status") or "").upper() == "BLOCKED"
+        monitored = bool(t.get("monitored")) or str(t.get("status") or "").upper() in ("MONITORED", "BLOCKED") or str(t.get("action") or "").lower() in ("monitor", "monitored", "block")
+        block_site = bool(t.get("block_site")) or str(t.get("status") or "").upper() == "BLOCKED" or str(t.get("action") or "").lower() == "block"
         platform = t.get("platform_name") or domain or "AI Platform"
         role = (t.get("host_role") or "").strip().lower()
         if role not in ("ui", "chat", "file"):

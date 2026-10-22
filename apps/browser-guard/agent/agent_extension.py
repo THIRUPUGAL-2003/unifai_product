@@ -214,7 +214,7 @@ def monitored_hosts() -> list[str]:
     now = time.time()
     with _sites_lock:
         cached_at, cached = _sites_cache
-        if cached and now - cached_at < 15:
+        if cached and now - cached_at < 5:
             return list(cached)
     hosts: list[str] = []
     b_hosts: list[str] = []
@@ -243,8 +243,8 @@ def monitored_hosts() -> list[str]:
         for row in rows:
             if not isinstance(row, dict):
                 continue
-            is_mon = bool(row.get("monitored")) or str(row.get("status") or "").upper() in ("MONITORED", "BLOCKED")
-            is_blk = bool(row.get("block_site")) or str(row.get("status") or "").upper() == "BLOCKED"
+            is_mon = bool(row.get("monitored")) or str(row.get("status") or "").upper() in ("MONITORED", "BLOCKED") or str(row.get("action") or "").lower() in ("monitor", "monitored", "block")
+            is_blk = bool(row.get("block_site")) or str(row.get("status") or "").upper() == "BLOCKED" or str(row.get("action") or "").lower() == "block"
             if not is_mon and not is_blk:
                 continue
             domain = str(row.get("domain") or "").strip().lower()
@@ -315,7 +315,7 @@ def dynamic_rules() -> list[dict]:
     now = time.time()
     with _rules_lock:
         cached_at, cached = _rules_cache
-        if cached is not None and (now - cached_at) < 15:
+        if cached is not None and (now - cached_at) < 5:
             return list(cached)
     active_rules = []
     fetch_ok = False
