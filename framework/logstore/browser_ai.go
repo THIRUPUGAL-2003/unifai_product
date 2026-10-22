@@ -2303,9 +2303,10 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 			trimmedLower, previewLower, strings.ToLower(cleanAttachmentName), "%"+strings.ToLower(cleanAttachmentName)+"%",
 		)
 	} else {
+		rawTrimmed := strings.ToLower(trimmedPrompt)
 		dedupQuery = dedupQuery.Where(
-			"(LOWER(TRIM(user_prompt_full)) = ? OR LOWER(TRIM(user_prompt_preview)) = ? OR TRIM(user_prompt_full) = ? OR TRIM(user_prompt_preview) = ?)",
-			trimmedLower, previewLower, SanitizeDBString(trimmedPrompt), cleanPreview,
+			"(LOWER(TRIM(user_prompt_full)) = ? OR LOWER(TRIM(user_prompt_preview)) = ? OR LOWER(TRIM(user_prompt_full)) = ? OR LOWER(TRIM(user_prompt_preview)) = ? OR user_prompt_full LIKE ? OR user_prompt_preview LIKE ? OR user_prompt_full LIKE ? OR user_prompt_preview LIKE ?)",
+			trimmedLower, previewLower, rawTrimmed, rawTrimmed, trimmedLower+"%", previewLower+"%", rawTrimmed+"%", rawTrimmed+"%",
 		)
 	}
 
@@ -2330,8 +2331,11 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		if existing.ADUpn == "" && cleanADUpn != "" {
 			updates["ad_upn"] = cleanADUpn
 		}
-		if existing.Domain == "" && cleanDomain != "" {
+		if cleanDomain != "" && (existing.Domain == "" || strings.Contains(existing.Domain, "substrate.office") || strings.Contains(existing.Domain, "edgeservices") || strings.Contains(existing.Domain, "sydneyp")) {
 			updates["domain"] = cleanDomain
+		}
+		if metaURL != "" {
+			updates["metadata"] = cleanMeta
 		}
 		if existing.AttachmentName == "" && cleanAttachmentName != "" {
 			updates["attachment_name"] = cleanAttachmentName
