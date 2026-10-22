@@ -965,7 +965,7 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
             if not isinstance(item, dict):
                 continue
             item_time = float(item.get("time") or 0)
-            if now - item_time > 15:
+            if now - item_time > 30:
                 continue
             item_host = (item.get("host") or "").lower().strip(".")
             if item_host.startswith("www."):

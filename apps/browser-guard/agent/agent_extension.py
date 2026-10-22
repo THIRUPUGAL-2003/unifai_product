@@ -610,7 +610,8 @@ def check_prompt(
                 "message": f"Access to {clean_h} is blocked by company security policy."
             }
 
-    text = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ').strip()
+    prompt = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ').strip()
+    text = prompt
     files_list = files if isinstance(files, list) else []
     images_list = upload_images if isinstance(upload_images, list) else []
 

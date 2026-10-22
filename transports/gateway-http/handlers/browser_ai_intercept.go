@@ -141,6 +141,52 @@ func savePromptDedupe(keys []string, responseBytes []byte) {
 	}
 }
 
+var (
+	promptInFlightLock sync.Mutex
+	promptInFlightMap  = make(map[string]chan struct{})
+)
+
+func reservePromptInFlight(keys []string) (waitCh chan struct{}, isFirst bool) {
+	if len(keys) == 0 {
+		return nil, true
+	}
+	promptInFlightLock.Lock()
+	defer promptInFlightLock.Unlock()
+
+	for _, k := range keys {
+		if ch, exists := promptInFlightMap[k]; exists {
+			return ch, false
+		}
+	}
+
+	ch := make(chan struct{})
+	for _, k := range keys {
+		promptInFlightMap[k] = ch
+	}
+	return ch, true
+}
+
+func releasePromptInFlight(keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+	promptInFlightLock.Lock()
+	defer promptInFlightLock.Unlock()
+
+	var chToClose chan struct{}
+	for _, k := range keys {
+		if ch, exists := promptInFlightMap[k]; exists {
+			if chToClose == nil {
+				chToClose = ch
+			}
+			delete(promptInFlightMap, k)
+		}
+	}
+	if chToClose != nil {
+		close(chToClose)
+	}
+}
+
 func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 	if !h.verifyGuardSecurity(ctx) {
 		return
@@ -312,6 +358,21 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 			ctx.SetContentType("application/json; charset=utf-8")
 			ctx.SetBody(cachedBytes)
 			return
+		}
+		waitCh, isFirst := reservePromptInFlight(dedupeKeys)
+		if !isFirst && waitCh != nil {
+			select {
+			case <-waitCh:
+				if cachedBytes, hit := checkPromptDedupe(dedupeKeys, 15*time.Second); hit {
+					ctx.SetStatusCode(fasthttp.StatusOK)
+					ctx.SetContentType("application/json; charset=utf-8")
+					ctx.SetBody(cachedBytes)
+					return
+				}
+			case <-time.After(6 * time.Second):
+			}
+		} else if isFirst {
+			defer releasePromptInFlight(dedupeKeys)
 		}
 	}
 
@@ -1109,6 +1170,21 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		ctx.SetContentType("application/json; charset=utf-8")
 		ctx.SetBody(cachedBytes)
 		return
+	}
+	waitChF, isFirstF := reservePromptInFlight(fileDedupeKeys)
+	if !isFirstF && waitChF != nil {
+		select {
+		case <-waitChF:
+			if cachedBytes, hit := checkPromptDedupe(fileDedupeKeys, 8*time.Second); hit {
+				ctx.SetStatusCode(fasthttp.StatusOK)
+				ctx.SetContentType("application/json; charset=utf-8")
+				ctx.SetBody(cachedBytes)
+				return
+			}
+		case <-time.After(6 * time.Second):
+		}
+	} else if isFirstF {
+		defer releasePromptInFlight(fileDedupeKeys)
 	}
 
 	logEntry, ruleWarning, err := h.manager.InterceptPrompt(ctx, platform, prompt, clientIP, metadata)

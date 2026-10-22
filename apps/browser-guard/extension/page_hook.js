@@ -37,6 +37,7 @@
   var stagedImages = [];
   var _lastHandledPromptTime = 0;
   var _lastHandledPromptText = "";
+  var _lastHandledPromptId = "";
   var lastDecisionCache = { text: "", time: 0, decision: null };
 
   function stripInvisible(str) {
@@ -386,8 +387,24 @@
     }
     if (candidates.length) {
       var last = candidates[candidates.length - 1];
-      return (last.tagName === "TEXTAREA" || last.tagName === "INPUT") ? (last.value || "") : (last.innerText || last.textContent || "");
+      var lastVal = (last.tagName === "TEXTAREA" || last.tagName === "INPUT") ? (last.value || "") : (last.innerText || last.textContent || "");
+      if (lastVal && lastVal.trim()) return lastVal.trim();
     }
+
+    // Universal Target Domain fallback: search all visible textareas & contenteditables with text
+    try {
+      var allEditors = querySelectorAllDeep("textarea, [contenteditable='true'], [role='textbox']");
+      for (var k = allEditors.length - 1; k >= 0; k--) {
+        var ed = allEditors[k];
+        if (!ed) continue;
+        if (ed.closest && ed.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group")) {
+          continue;
+        }
+        var ev = (ed.tagName === "TEXTAREA" || ed.tagName === "INPUT") ? (ed.value || "") : (ed.innerText || ed.textContent || "");
+        if (ev && ev.trim()) return ev.trim();
+      }
+    } catch (e) {}
+
     return "";
   }
 
@@ -835,17 +852,23 @@
       label.indexOf("draw") >= 0 ||
       label.indexOf("message") >= 0 ||
       label.indexOf("chat") >= 0 ||
+      label.indexOf("post") >= 0 ||
+      label.indexOf("search") >= 0 ||
       btnText === "generate" ||
       btnText === "create" ||
       btnText === "send" ||
       btnText === "submit" ||
       btnText === "ask" ||
       btnText === "run" ||
+      btnText === "post" ||
+      btnText === "search" ||
+      btnText === "go" ||
       btn.getAttribute("type") === "submit" ||
       btn.type === "submit" ||
       btn.getAttribute("data-testid") === "send-button" ||
       (form && form.contains(getDeepActiveElement())) ||
-      Boolean(btn.closest("fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]"));
+      Boolean(btn.closest("fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]")) ||
+      (Boolean(btn.querySelector("svg")) && Boolean(btn.closest("fieldset, form, footer, [class*='composer' i], [class*='chat' i]")));
 
     if (!sendLike) return;
     var text = stripInvisible(composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement));
@@ -984,21 +1007,34 @@
             !reqUrlEarly.includes("/files") &&
             !reqUrlEarly.includes("/upload")
           ) {
+            var handledHeaders = {
+              "X-Guard-Handled": "1",
+              "X-Gateway-Guard-Handled": "1",
+              "X-Guard-Eval-Id": _lastHandledPromptId || "eval_done",
+              "X-Prompt-Id": _lastHandledPromptId || "eval_done"
+            };
             if (typeof Request !== "undefined" && input instanceof Request) {
               try {
                 input.headers.set("X-Guard-Handled", "1");
                 input.headers.set("X-Gateway-Guard-Handled", "1");
+                if (_lastHandledPromptId) {
+                  input.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                  input.headers.set("X-Prompt-Id", _lastHandledPromptId);
+                }
               } catch (e1) {}
             } else if (init && init.headers) {
               if (typeof Headers !== "undefined" && init.headers instanceof Headers) {
                 init.headers.set("X-Guard-Handled", "1");
                 init.headers.set("X-Gateway-Guard-Handled", "1");
+                if (_lastHandledPromptId) {
+                  init.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                  init.headers.set("X-Prompt-Id", _lastHandledPromptId);
+                }
               } else if (typeof init.headers === "object") {
-                init.headers["X-Guard-Handled"] = "1";
-                init.headers["X-Gateway-Guard-Handled"] = "1";
+                Object.assign(init.headers, handledHeaders);
               }
             } else if (init) {
-              init.headers = { "X-Guard-Handled": "1", "X-Gateway-Guard-Handled": "1" };
+              init.headers = Object.assign({}, handledHeaders);
             }
           }
         } catch (e) { }
@@ -1286,6 +1322,10 @@
         ) {
           this.setRequestHeader("X-Guard-Handled", "1");
           this.setRequestHeader("X-Gateway-Guard-Handled", "1");
+          if (_lastHandledPromptId) {
+            this.setRequestHeader("X-Guard-Eval-Id", _lastHandledPromptId);
+            this.setRequestHeader("X-Prompt-Id", _lastHandledPromptId);
+          }
         }
       } catch (e) { }
     }

@@ -681,12 +681,33 @@ func cleanDomainInput(raw string) string {
 	return strings.TrimSpace(domain)
 }
 
+// StripInvisibleRunes removes zero-width formatting characters (U+200B..U+200F, U+202A..U+202E, U+2060..U+206F, U+FEFF)
+// and normalizes non-breaking spaces (U+00A0) to ASCII spaces.
+func StripInvisibleRunes(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 0x200B && r <= 0x200F) || (r >= 0x202A && r <= 0x202E) || (r >= 0x2060 && r <= 0x206F) || r == 0xFEFF {
+			continue
+		}
+		if r == 0x00A0 {
+			b.WriteRune(' ')
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
+}
+
 // SanitizeDBString strips NUL bytes (0x00) which PostgreSQL strictly rejects in
 // text/varchar columns (SQLSTATE 22021) and ensures valid UTF-8 encoding.
 func SanitizeDBString(s string) string {
 	if s == "" {
 		return ""
 	}
+	s = StripInvisibleRunes(s)
 	if strings.ContainsRune(s, '\x00') {
 		s = strings.ReplaceAll(s, "\x00", "")
 	}
@@ -2248,8 +2269,15 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	dedupCutoffUTC := time.Now().UTC().Add(-dedupDuration)
 	dedupCutoffLocal := time.Now().Add(-dedupDuration)
 
+	platName := cleanPlatform
+	lowPlat := strings.ToLower(cleanPlatform)
+	lowDom := strings.ToLower(cleanDomain)
+	if strings.Contains(lowPlat, "copilot") || strings.Contains(lowDom, "copilot") || strings.Contains(lowDom, "substrate.office") {
+		platName = "Copilot"
+	}
+
 	dedupQuery := db.WithContext(ctx).
-		Where("(LOWER(platform) = LOWER(?) OR platform = ?)", cleanPlatform, cleanPlatform)
+		Where("(LOWER(platform) = LOWER(?) OR platform = ? OR LOWER(platform) LIKE ? OR LOWER(domain) LIKE ?)", platName, platName, "%"+strings.ToLower(platName)+"%", "%"+strings.ToLower(platName)+"%")
 
 	if dbDialect == "postgres" || dbDialect == "postgresql" {
 		if isSiteBlockPrompt {

@@ -777,8 +777,12 @@ class BrowserAIInterceptor:
             or flow.request.headers.get("x-gateway-guard-handled")
             or flow.request.headers.get("X-Guard-Handled")
             or flow.request.headers.get("X-Gateway-Guard-Handled")
+            or flow.request.headers.get("x-guard-eval-id")
+            or flow.request.headers.get("X-Guard-Eval-Id")
+            or flow.request.headers.get("x-prompt-id")
+            or flow.request.headers.get("X-Prompt-Id")
         ):
-            print(f"[Gateway Proxy] Request carries X-Guard-Handled from extension for {host}. Skipping duplicate proxy prompt evaluation.")
+            print(f"[Gateway Proxy] Request carries X-Guard-Handled/Eval-Id from extension for {host}. Skipping duplicate proxy prompt evaluation.")
             return
 
         # requestheaders already marked page/script/settings calls to stream.
@@ -1267,6 +1271,9 @@ class BrowserAIInterceptor:
         # (silent return here previously let the 2nd request bypass BLOCK).
         if is_duplicate_event(domain, prompt, ttl=DEDUPE_TTL, mark=False):
             self._apply_duplicate_http_prompt(flow, domain, platform, prompt, client_ip, raw_text)
+        # Extension coordination: skip duplicate evaluation and logging if browser extension handled it
+        if is_already_handled_by_extension(domain, prompt):
+            print(f"[Gateway Proxy] Prompt already handled by extension for {domain}. Skipping duplicate proxy evaluation.")
             return
 
         try:
@@ -1541,8 +1548,8 @@ class BrowserAIInterceptor:
                     return
                 ws_prompt = stable
 
-            print(f"[Gateway Proxy] WebSocket prompt | {client_ip} -> {platform} ({domain}) | {ws_prompt[:80]!r}")
-            if is_already_handled_by_extension(domain, ws_prompt):
+            ws_p_clean = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', ws_prompt or '').replace('\u00A0', ' ').strip()
+            if is_already_handled_by_extension(domain, ws_p_clean):
                 print(f"[Gateway Proxy] WebSocket prompt already handled by extension for {domain}. Skipping duplicate proxy log.")
                 return
             mark_duplicate_event(domain, ws_prompt)
