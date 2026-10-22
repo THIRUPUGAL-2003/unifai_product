@@ -2149,6 +2149,18 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	if v, ok := metadata["domain"].(string); ok {
 		domain = NormalizeDomain(v)
 	}
+	lowDom := strings.ToLower(domain)
+	lowPlat := strings.ToLower(platform)
+	if strings.Contains(lowDom, "copilot") || strings.Contains(lowDom, "substrate.office") || strings.Contains(lowDom, "edgeservices.bing") || strings.Contains(lowDom, "sydneyp.bing") || strings.Contains(lowPlat, "copilot") {
+		domain = "copilot.com"
+		platform = "Copilot"
+	} else if strings.Contains(lowDom, "chatgpt") || strings.Contains(lowPlat, "chatgpt") {
+		domain = "chatgpt.com"
+		platform = "ChatGPT"
+	} else if strings.Contains(lowDom, "claude") || strings.Contains(lowPlat, "claude") {
+		domain = "claude.ai"
+		platform = "Claude"
+	}
 	attachmentName := ""
 	if v, ok := metadata["file_name"].(string); ok {
 		attachmentName = strings.TrimSpace(v)
@@ -2270,8 +2282,8 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	dedupCutoffLocal := time.Now().Add(-dedupDuration)
 
 	platName := cleanPlatform
-	lowPlat := strings.ToLower(cleanPlatform)
-	lowDom := strings.ToLower(cleanDomain)
+	lowPlat = strings.ToLower(cleanPlatform)
+	lowDom = strings.ToLower(cleanDomain)
 	if strings.Contains(lowPlat, "copilot") || strings.Contains(lowDom, "copilot") || strings.Contains(lowDom, "substrate.office") {
 		platName = "Copilot"
 	}
