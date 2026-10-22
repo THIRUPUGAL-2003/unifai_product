@@ -510,19 +510,23 @@ _CLIENT_TARGET_STICKY_TTL = 10 * 60
 
 
 def _fetch_json(url: str, timeout: float | None = None) -> dict | None:
-    """Generic GET JSON fetch from backend."""
+    """Generic GET JSON fetch from backend with local fallback."""
     if not url or not (url.startswith("http://") or url.startswith("https://")):
         return None
-    try:
-        req = urllib.request.Request(url, headers=_backend_headers(), method="GET")
-        with urllib.request.urlopen(req, timeout=timeout or _BACKEND_FETCH_TIMEOUT) as resp:
-            if resp.status == 200:
-                raw = resp.read().decode("utf-8")
-                if raw.lstrip().lower().startswith("<!doctype") or raw.lstrip().lower().startswith("<html"):
-                    return None
-                return json.loads(raw)
-    except Exception as e:
-        print(f"[Gateway Proxy] backend GET failed | {url.split('?', 1)[0]} | {e}")
+    candidate_urls = [url]
+    if GATEWAY_BACKEND_URL and GATEWAY_BACKEND_URL in url and "127.0.0.1:6000" not in GATEWAY_BACKEND_URL:
+        candidate_urls.append(url.replace(GATEWAY_BACKEND_URL, "http://127.0.0.1:6000"))
+    for target_url in candidate_urls:
+        try:
+            req = urllib.request.Request(target_url, headers=_backend_headers(), method="GET")
+            with urllib.request.urlopen(req, timeout=timeout or _BACKEND_FETCH_TIMEOUT) as resp:
+                if resp.status == 200:
+                    raw = resp.read().decode("utf-8")
+                    if raw.lstrip().lower().startswith("<!doctype") or raw.lstrip().lower().startswith("<html"):
+                        continue
+                    return json.loads(raw)
+        except Exception:
+            continue
     return None
 
 

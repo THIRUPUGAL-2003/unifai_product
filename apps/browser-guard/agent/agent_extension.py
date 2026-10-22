@@ -221,18 +221,25 @@ def monitored_hosts() -> list[str]:
     platform_map: dict[str, str] = {}
     fetch_ok = False
     body = ""
-    if GATEWAY_BACKEND_URL:
+    candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000"] if b]
+    seen_urls = set()
+    for base in candidates:
+        if base in seen_urls:
+            continue
+        seen_urls.add(base)
         body = _http_get_text(
-            f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent",
+            f"{base}/api/browser-ai/targets?for=agent",
             "application/json",
-            timeout=6,
+            timeout=3,
         ) or ""
         if "targets" not in body:
             body = _http_get_text(
-                f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets",
+                f"{base}/api/browser-ai/targets",
                 "application/json",
-                timeout=6,
+                timeout=3,
             ) or ""
+        if "targets" in body:
+            break
     try:
         data = json.loads(body) if body else {}
     except Exception:
@@ -319,10 +326,17 @@ def dynamic_rules() -> list[dict]:
             return list(cached)
     active_rules = []
     fetch_ok = False
-    if GATEWAY_BACKEND_URL:
-        from agent_http import _http_json
+    candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000"] if b]
+    seen_urls = set()
+    from agent_http import _http_json
+    for base in candidates:
+        if base in seen_urls:
+            continue
+        seen_urls.add(base)
         try:
-            code, data = _http_json("GET", f"{GATEWAY_BACKEND_URL}/api/browser-ai/rules?for=agent", timeout=3)
+            code, data = _http_json("GET", f"{base}/api/browser-ai/rules?for=agent", timeout=3)
+            if code != 200 or not isinstance(data, dict):
+                code, data = _http_json("GET", f"{base}/api/browser-ai/rules", timeout=3)
             if code == 200 and isinstance(data, dict):
                 fetch_ok = True
                 raw_rules = data.get("rules") or []
@@ -337,6 +351,7 @@ def dynamic_rules() -> list[dict]:
                                 "action": str(r.get("action") or "BLOCK"),
                                 "warning_message": str(r.get("warning_message") or ""),
                             })
+                break
         except Exception:
             pass
 
@@ -831,13 +846,23 @@ def check_prompt(
         "upload_images": images_list[:5],
         "metadata": meta,
     }
+    candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000"] if b]
+    seen_bases = set()
+    unique_candidates = []
+    for b in candidates:
+        if b not in seen_bases:
+            seen_bases.add(b)
+            unique_candidates.append(b)
+
     if is_blocked:
-        threading.Thread(
-            target=_http_json,
-            args=("POST", f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept", payload),
-            kwargs=dict(timeout=5),
-            daemon=True,
-        ).start()
+        for base in unique_candidates:
+            threading.Thread(
+                target=_http_json,
+                args=("POST", f"{base}/api/browser-ai/intercept", payload),
+                kwargs=dict(timeout=5),
+                daemon=True,
+            ).start()
+            break
         return {
             "blocked": True,
             "action": "Blocked",
@@ -858,15 +883,20 @@ def check_prompt(
     if _is_duplicate_file_post("prompt|" + prompt_dedupe_key, ttl=8.0):
         return {"blocked": False, "action": "Allowed", "message": "", "rule": ""}
 
-    try:
-        code, data = _http_json(
-            "POST",
-            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
-            payload,
-            timeout=12,
-        )
-    except Exception:
-        return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
+    code = 0
+    data = None
+    for base in unique_candidates:
+        try:
+            code, data = _http_json(
+                "POST",
+                f"{base}/api/browser-ai/intercept",
+                payload,
+                timeout=5,
+            )
+            if code == 200 and isinstance(data, dict):
+                break
+        except Exception:
+            continue
     if code != 200 or not isinstance(data, dict):
         return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
     return interpret_guard_decision(data, text, rule)
