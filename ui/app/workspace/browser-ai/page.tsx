@@ -169,7 +169,7 @@ import { RegexLiveTestPanel } from "./regexLiveTestPanel";
 import { GuardRuleImportDialog, downloadGuardRulesTemplate } from "./guardRuleImportDialog";
 import { TargetImportDialog, downloadTargetsTemplate } from "./targetImportDialog";
 
-const BROWSER_AI_TABS = ["overview", "targets", "rules", "settings", "logs", "search-logs", "setup", "agents", "telemetry"] as const;
+const BROWSER_AI_TABS = ["overview", "targets", "rules", "logs", "search-logs", "setup", "agents", "telemetry", "settings"] as const;
 type BrowserAiTab = (typeof BROWSER_AI_TABS)[number];
 
 /** Numeric dotted-version compare ("1.1.13" vs "1.1.9"); non-numeric parts count as 0. */
@@ -3983,192 +3983,6 @@ export default function BrowserAiPage() {
 
 				{/* TAB 3: GUARD RULES */}
 				<TabsContent value="rules" className="space-y-4">
-					{/* Browser Interaction Controls */}
-					<Card className="bg-card border-border overflow-hidden">
-						<CardHeader className="pb-4">
-							<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-								<div className="space-y-1">
-									<div className="flex flex-wrap items-center gap-2">
-										<CardTitle className="text-lg">File upload policy</CardTitle>
-										{controls.enabled && controls.block_upload ? (
-											<Badge variant="destructive">
-												Block all uploads
-											</Badge>
-										) : (
-											<Badge variant="outline" className="border-border text-muted-foreground">
-												Paused
-											</Badge>
-										)}
-									</div>
-									<CardDescription>
-										When this is on, every file or attachment sent to a monitored AI site is blocked.
-									</CardDescription>
-								</div>
-							</div>
-						</CardHeader>
-						<CardContent className="pt-0">
-							<div className="overflow-hidden rounded-lg border border-border divide-y divide-border">
-								{/* Option 1: Block all uploads */}
-								<div
-									className={`flex items-center justify-between gap-4 px-4 py-3.5 transition-colors ${controls.enabled && controls.block_upload ? "bg-rose-950/20" : "bg-card"
-										}`}
-								>
-									<div className="min-w-0 flex items-start gap-3">
-										<div
-											className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${controls.enabled && controls.block_upload
-													? "border-rose-800/60 bg-rose-950/50 text-rose-400"
-													: "border-border bg-background text-muted-foreground"
-												}`}
-										>
-											<Upload className="h-4 w-4" />
-										</div>
-										<div className="min-w-0 space-y-1">
-											<div className="flex flex-wrap items-center gap-2">
-												<p className="text-sm font-semibold">Block all uploads</p>
-												{controls.enabled && controls.block_upload ? (
-													<Badge className="bg-rose-950/80 text-rose-300 border-rose-800/70 text-[10px] px-2 py-0.5">
-														Active: All files blocked
-													</Badge>
-												) : (
-													<Badge variant="outline" className="text-[10px] px-2 py-0.5 text-muted-foreground">
-														Disabled
-													</Badge>
-												)}
-											</div>
-											<p className="text-xs text-muted-foreground leading-relaxed">
-												Every file or attachment uploaded to AI chats is completely blocked, regardless of file content.
-											</p>
-										</div>
-									</div>
-									<Switch
-										checked={!!(controls.enabled && controls.block_upload)}
-										onCheckedChange={(val) => {
-											if (val) {
-												patchControl({ enabled: true, block_upload: true });
-											} else {
-												patchControl({ enabled: false, block_upload: false });
-											}
-										}}
-										aria-label="Block all uploads"
-									/>
-								</div>
-
-								<div className="space-y-2 bg-card px-4 py-3.5">
-									<div className="flex items-center justify-between gap-2">
-										<Label>Upload policy warning</Label>
-										{!uploadWarningEditing && (controls.upload_warning || "").trim() ? (
-											<Button
-												type="button"
-												size="sm"
-												variant="ghost"
-												className="h-8 shrink-0 text-muted-foreground hover:text-foreground"
-												onClick={() => {
-													setUploadWarningError("");
-													setUploadWarningDraft(controls.upload_warning || "");
-													setUploadWarningEditing(true);
-												}}
-											>
-												<Pencil className="h-3.5 w-3.5 mr-1.5" />
-												Edit
-											</Button>
-										) : null}
-									</div>
-									{uploadWarningEditing || !(controls.upload_warning || "").trim() ? (
-										<>
-											<Textarea
-												placeholder="e.g. UPLOAD BLOCK — shown in Prompt Logs and to employees..."
-												value={uploadWarningDraft}
-												onChange={(e) => setUploadWarningDraft(e.target.value)}
-												rows={3}
-											/>
-											<div className="flex items-center justify-between gap-2">
-												<p className="text-xs text-muted-foreground">
-													Block all uploads → this text in Prompt Logs. A Guard Rule hit inside a file → this text (or that rule&apos;s warning) plus &quot; -- policy name&quot;. Leave blank to use &quot;Upload block&quot;.
-												</p>
-												<div className="flex items-center gap-2 shrink-0">
-													{uploadWarningEditing && (controls.upload_warning || "").trim() ? (
-														<Button
-															type="button"
-															size="sm"
-															variant="ghost"
-															disabled={uploadWarningSaving}
-															onClick={() => {
-																setUploadWarningError("");
-																setUploadWarningDraft(controls.upload_warning || "");
-																setUploadWarningEditing(false);
-															}}
-														>
-															Cancel
-														</Button>
-													) : null}
-													<Button
-														type="button"
-														size="sm"
-														variant="outline"
-														className="shrink-0"
-														disabled={uploadWarningSaving}
-														onClick={saveUploadWarning}
-													>
-														<Save className="h-3.5 w-3.5 mr-1.5" />
-														{uploadWarningSaving ? "Saving..." : "Save warning"}
-													</Button>
-												</div>
-											</div>
-											{uploadWarningError ? (
-												<p className="text-xs text-destructive">{uploadWarningError}</p>
-											) : null}
-										</>
-									) : (
-										<div className="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 dark:border-amber-800/40 dark:bg-amber-950/20">
-											<p className="text-xs text-amber-950 whitespace-pre-wrap break-words dark:text-amber-100">
-												{(controls.upload_warning || "").trim()}
-											</p>
-										</div>
-									)}
-								</div>
-
-								{/* Option 3: Temporary file storage retention */}
-								<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3.5 bg-card">
-									<div className="min-w-0 space-y-1">
-										<div className="flex items-center gap-2">
-											<Clock className="h-4 w-4 text-muted-foreground" />
-											<p className="text-sm font-semibold">Temporary file binary storage retention</p>
-											<Badge variant="outline" className="text-[10px] px-2 py-0.5">
-												Disk auto-purge
-											</Badge>
-										</div>
-										<p className="text-xs text-muted-foreground leading-relaxed">
-											How long temporary uploaded files remain viewable/downloadable from disk. Filename and metadata in Prompt Logs are preserved permanently.
-										</p>
-									</div>
-									<div className="flex items-center gap-2 shrink-0">
-										<Select
-											value={
-												["10m", "1h", "2h", "1d", "7d"].includes(controls.attachment_retention || "")
-													? controls.attachment_retention
-													: "1h"
-											}
-											onValueChange={(val) => {
-												void patchControl({ attachment_retention: val });
-											}}
-										>
-											<SelectTrigger className="h-8 w-[140px] text-xs border-border bg-background">
-												<SelectValue />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="10m">10 minutes</SelectItem>
-												<SelectItem value="1h">1 hour (Default)</SelectItem>
-												<SelectItem value="2h">2 hours</SelectItem>
-												<SelectItem value="1d">1 day (24h)</SelectItem>
-												<SelectItem value="7d">7 days (1w)</SelectItem>
-											</SelectContent>
-										</Select>
-									</div>
-								</div>
-							</div>
-						</CardContent>
-					</Card>
-
 					<Card className="bg-card border-border">
 						<CardHeader>
 							<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -4755,11 +4569,11 @@ export default function BrowserAiPage() {
 										<div className="space-y-0.5">
 											<div className="flex items-center gap-1.5">
 												<Clock className="h-3.5 w-3.5 text-muted-foreground" />
-												<p className="text-xs font-semibold">Temporary File Storage Retention</p>
+												<p className="text-xs font-semibold">Temporary file binary storage retention</p>
 												<Badge variant="outline" className="text-[9px] px-1.5 py-0">Disk auto-purge</Badge>
 											</div>
 											<p className="text-[11px] text-muted-foreground">
-												How long temporary uploaded files remain viewable from disk before automatic purge.
+												How long temporary uploaded files remain viewable/downloadable from disk. Filename and metadata in Prompt Logs are preserved permanently.
 											</p>
 										</div>
 										<Select
