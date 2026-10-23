@@ -2994,9 +2994,9 @@ export default function BrowserAiPage() {
 	const agentTotalPages = Math.ceil(totalAgents / agentPageLimit) || 1;
 
 	return (
-		<div className="space-y-6 p-2 md:p-6 text-foreground max-w-7xl mx-auto">
+		<div className="space-y-6 p-2 md:p-6 text-foreground w-full">
 			{/* Header View */}
-			<div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-4 border-b border-border pb-5">
+			<div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-4 border-b border-border pb-5 w-full">
 				<div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
 					<div className="flex items-center gap-2 bg-card border border-border px-3 py-1.5 rounded-md text-xs">
 						<Switch
@@ -3200,10 +3200,10 @@ export default function BrowserAiPage() {
 			) : null}
 
 			{/* Section content — nav is sidebar dropdown (Observability / Models style) */}
-			<Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+			<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-6">
 
 				{/* TAB 1: OVERVIEW */}
-				<TabsContent value="overview" className="space-y-6">
+				<TabsContent value="overview" className="w-full space-y-6">
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 						<Card className="bg-card border-border">
 							<CardHeader className="pb-2">
@@ -3376,8 +3376,8 @@ export default function BrowserAiPage() {
 				</TabsContent>
 
 				{/* TAB 2: PROMPT LOGS */}
-				<TabsContent value="logs" className="space-y-4">
-					<Card className="bg-card border-border">
+				<TabsContent value="logs" className="w-full space-y-4">
+					<Card className="bg-card border-border w-full">
 						<CardHeader className="pb-4">
 							<div>
 								<CardTitle className="text-lg">Prompt & Chat History</CardTitle>
@@ -3589,7 +3589,7 @@ export default function BrowserAiPage() {
 				</TabsContent>
 
 				{/* TAB: SEARCH LOGS */}
-				<TabsContent value="search-logs" className="space-y-4">
+				<TabsContent value="search-logs" className="w-full space-y-4">
 					{/* KPI Summary Cards */}
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 						<Card className="bg-card border-border">
@@ -3922,10 +3922,10 @@ export default function BrowserAiPage() {
 				</TabsContent>
 
 				{/* TAB 3: GUARD RULES */}
-				<TabsContent value="rules" className="space-y-4">
-					<Card className="bg-card border-border">
+				<TabsContent value="rules" className="w-full space-y-4">
+					<Card className="bg-card border-border w-full">
 						<CardHeader>
-							<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+							<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 w-full">
 								<div className="min-w-0 flex-1">
 									<CardTitle className="text-lg">DLP Guard Rules ({rules.length} Configured)</CardTitle>
 									<CardDescription>
@@ -4329,7 +4329,7 @@ export default function BrowserAiPage() {
 				</TabsContent>
 
 				{/* TAB: BROWSER SETTINGS (Upload Policy, Clipboard, Drag-and-Drop & Download Data Governance) */}
-				<TabsContent value="settings" className="space-y-6">
+				<TabsContent value="settings" className="w-full space-y-6">
 					{/* The 4 Accordion / Dropdown Policy Cards */}
 					<div className="space-y-4">
 						{/* POLICY 1: File Upload Policy */}
@@ -4725,10 +4725,10 @@ export default function BrowserAiPage() {
 				</TabsContent>
 
 				{/* TAB 4: TARGET WEBSITES */}
-				<TabsContent value="targets" className="space-y-4">
-					<Card className="bg-card border-border">
+				<TabsContent value="targets" className="w-full space-y-4">
+					<Card className="bg-card border-border w-full">
 						<CardHeader>
-							<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+							<div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 w-full">
 								<div className="min-w-0 flex-1">
 									<CardTitle className="text-lg">Target Web AI Platforms ({targets.length} Monitored)</CardTitle>
 									<CardDescription>
@@ -5391,7 +5391,7 @@ export default function BrowserAiPage() {
 				</Dialog>
 
 				{/* TAB 5: GUARD AGENTS */}
-				<TabsContent value="agents" className="space-y-6">
+				<TabsContent value="agents" className="w-full space-y-6">
 					<div className="flex flex-col sm:flex-row gap-3">
 						<div className="relative flex-1 max-w-md">
 							<Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -5816,9 +5816,9 @@ export default function BrowserAiPage() {
 				</TabsContent>
 
 				{/* TAB 6: SETUP */}
-				<TabsContent value="setup" className="space-y-6">
+				<TabsContent value="setup" className="w-full space-y-6">
 					{/* Enterprise On-Premise License Card */}
-					<Card className="bg-card border-border">
+					<Card className="bg-card border-border w-full">
 						<CardHeader>
 							<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 								<div className="flex items-center gap-3">
@@ -6656,7 +6656,7 @@ export default function BrowserAiPage() {
 				</TabsContent>
 
 				{/* TAB: AGENT SECURITY TELEMETRY */}
-				<TabsContent value="telemetry" className="space-y-6">
+				<TabsContent value="telemetry" className="w-full space-y-6">
 					{/* Top Section Filter Cards */}
 					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
 						<Card
