@@ -4393,20 +4393,20 @@ export default function BrowserAiPage() {
 					{/* The 4 Accordion / Dropdown Policy Cards */}
 					<div className="space-y-4">
 						{/* POLICY 1: File Upload Policy */}
-						<Card className={`border transition-all overflow-hidden ${controls.enabled && controls.block_upload ? "border-rose-800/60 bg-rose-950/10 shadow-sm" : "border-border bg-card"}`}>
+						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
 								onClick={() => togglePolicyExpanded("upload")}
 							>
 								<div className="flex items-center gap-3.5 min-w-0">
-									<div className={`p-2.5 rounded-lg border ${controls.enabled && controls.block_upload ? "bg-rose-500/20 text-rose-300 border-rose-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
 										<Upload className="h-5 w-5" />
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
 											<p className="text-sm font-semibold">1. File Upload Policy</p>
 											{controls.enabled && controls.block_upload ? (
-												<Badge className="bg-rose-950 text-rose-300 border-rose-800 text-[10px] px-2 py-0.5">Active: All Files Blocked</Badge>
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
@@ -4505,8 +4505,8 @@ export default function BrowserAiPage() {
 												</div>
 											</>
 										) : (
-											<div className="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 dark:border-amber-800/40 dark:bg-amber-950/20">
-												<p className="text-xs text-amber-950 whitespace-pre-wrap break-words dark:text-amber-100 font-mono">
+											<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+												<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
 													{(controls.upload_warning || "").trim()}
 												</p>
 											</div>
@@ -4545,20 +4545,20 @@ export default function BrowserAiPage() {
 						</Card>
 
 						{/* POLICY 2: Copy-Paste Strict Blocking */}
-						<Card className={`border transition-all overflow-hidden ${controls.block_clipboard ? "border-purple-800/60 bg-purple-950/10 shadow-sm" : "border-border bg-card"}`}>
+						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
 								onClick={() => togglePolicyExpanded("clipboard")}
 							>
 								<div className="flex items-center gap-3.5 min-w-0">
-									<div className={`p-2.5 rounded-lg border ${controls.block_clipboard ? "bg-purple-500/20 text-purple-300 border-purple-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
 										<Copy className="h-5 w-5" />
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
 											<p className="text-sm font-semibold">2. Copy-Paste Strict Blocking</p>
 											{controls.block_clipboard ? (
-												<Badge className="bg-purple-950 text-purple-300 border-purple-800 text-[10px] px-2 py-0.5">Enforced: Clipboard Locked</Badge>
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
@@ -4589,7 +4589,7 @@ export default function BrowserAiPage() {
 
 							{expandedPolicies.clipboard && (
 								<div className="p-4 pt-0 border-t border-border/60 space-y-3 mt-2">
-									<div className="rounded-lg bg-muted/40 p-3 border border-border/60 space-y-2 mt-2">
+									<div className="rounded-lg bg-muted/20 p-3 border border-border/50 space-y-2 mt-2">
 										<p className="text-xs text-muted-foreground leading-relaxed">
 											• <strong className="text-foreground">Paste Interception:</strong> Blocks <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Ctrl+V</kbd>, <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Cmd+V</kbd>, and Right-Click Paste into prompt textareas and contenteditable inputs.<br/>
 											• <strong className="text-foreground">Copy Interception:</strong> Blocks <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Ctrl+C</kbd>, <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Cmd+C</kbd>, and Right-Click Copy from AI response streams to prevent unauthorized exfiltration.<br/>
@@ -4601,20 +4601,20 @@ export default function BrowserAiPage() {
 						</Card>
 
 						{/* POLICY 3: Drag-and-Drop Ingestion Blocking */}
-						<Card className={`border transition-all overflow-hidden ${controls.block_drag_drop ? "border-indigo-800/60 bg-indigo-950/10 shadow-sm" : "border-border bg-card"}`}>
+						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
 								onClick={() => togglePolicyExpanded("drag_drop")}
 							>
 								<div className="flex items-center gap-3.5 min-w-0">
-									<div className={`p-2.5 rounded-lg border ${controls.block_drag_drop ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
 										<FileSpreadsheet className="h-5 w-5" />
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
 											<p className="text-sm font-semibold">3. Drag-and-Drop Ingestion Blocking</p>
 											{controls.block_drag_drop ? (
-												<Badge className="bg-indigo-950 text-indigo-300 border-indigo-800 text-[10px] px-2 py-0.5">Enforced: Drag-Drop Blocked</Badge>
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
@@ -4645,7 +4645,7 @@ export default function BrowserAiPage() {
 
 							{expandedPolicies.drag_drop && (
 								<div className="p-4 pt-0 border-t border-border/60 space-y-3 mt-2">
-									<div className="rounded-lg bg-muted/40 p-3 border border-border/60 space-y-2 mt-2">
+									<div className="rounded-lg bg-muted/20 p-3 border border-border/50 space-y-2 mt-2">
 										<p className="text-xs text-muted-foreground leading-relaxed">
 											• <strong className="text-foreground">Drag &amp; Drop Interception:</strong> Hooks into the browser DOM <code className="text-[10px] font-mono">dragover</code> and <code className="text-[10px] font-mono">drop</code> events on AI tool interfaces.<br/>
 											• <strong className="text-foreground">File Inspection:</strong> Detects and aborts dragged desktop documents, customer spreadsheets (.xlsx, .csv), and PDFs before browser memory processes them.<br/>
@@ -4657,20 +4657,20 @@ export default function BrowserAiPage() {
 						</Card>
 
 						{/* POLICY 4: File Download & Export Blocking */}
-						<Card className={`border transition-all overflow-hidden ${controls.block_download ? "border-sky-800/60 bg-sky-950/10 shadow-sm" : "border-border bg-card"}`}>
+						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
 								onClick={() => togglePolicyExpanded("download")}
 							>
 								<div className="flex items-center gap-3.5 min-w-0">
-									<div className={`p-2.5 rounded-lg border ${controls.block_download ? "bg-sky-500/20 text-sky-300 border-sky-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
 										<HardDriveDownload className="h-5 w-5" />
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
 											<p className="text-sm font-semibold">4. File Download &amp; Export Blocking</p>
 											{controls.block_download ? (
-												<Badge className="bg-sky-950 text-sky-300 border-sky-800 text-[10px] px-2 py-0.5">Enforced: Downloads Blocked</Badge>
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
@@ -4701,7 +4701,7 @@ export default function BrowserAiPage() {
 
 							{expandedPolicies.download && (
 								<div className="p-4 pt-0 border-t border-border/60 space-y-3 mt-2">
-									<div className="rounded-lg bg-muted/40 p-3 border border-border/60 space-y-2 mt-2">
+									<div className="rounded-lg bg-muted/20 p-3 border border-border/50 space-y-2 mt-2">
 										<p className="text-xs text-muted-foreground leading-relaxed">
 											• <strong className="text-foreground">Download Link Interception:</strong> Monitors and intercepts clicks on HTML <code className="text-[10px] font-mono">&lt;a download&gt;</code> anchors and Blob URLs.<br/>
 											• <strong className="text-foreground">Format Blocking:</strong> Blocks exports of <code className="text-[10px] font-mono">.pdf, .csv, .docx, .py, .js, .json, .zip</code> directly generated by AI chats.<br/>
@@ -4718,7 +4718,7 @@ export default function BrowserAiPage() {
 						<CardHeader className="pb-3">
 							<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
 								<div className="flex items-center gap-3">
-									<div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
+									<div className="p-2 rounded-lg border border-border bg-muted/40 text-muted-foreground">
 										<Globe className="h-5 w-5" />
 									</div>
 									<div>
@@ -4789,15 +4789,15 @@ export default function BrowserAiPage() {
 													onClick={() => handleToggleGovernanceTargetWebsite(tgt.domain)}
 													className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs transition-all ${
 														isSelected
-															? "bg-purple-500/15 border-purple-500/40 text-purple-200 hover:bg-purple-500/25 shadow-sm"
+															? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 shadow-sm"
 															: "bg-background border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground"
 													}`}
 												>
-													<span className={`h-2 w-2 rounded-full ${isSelected ? "bg-purple-400" : "bg-muted-foreground/40"}`} />
+													<span className={`h-2 w-2 rounded-full ${isSelected ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
 													<span className="font-medium">{tgt.platform_name || tgt.domain}</span>
 													<span className="text-[10px] font-mono text-muted-foreground">({tgt.domain})</span>
 													{isSelected ? (
-														<Check className="h-3 w-3 text-purple-400 ml-0.5" />
+														<Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400 ml-0.5" />
 													) : (
 														<Plus className="h-3 w-3 text-muted-foreground/60 ml-0.5 group-hover:text-foreground" />
 													)}
@@ -4820,7 +4820,7 @@ export default function BrowserAiPage() {
 					<Card className="bg-card border-border shadow-sm">
 						<CardHeader className="pb-3">
 							<div className="flex items-center gap-3">
-								<div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
+								<div className="p-2 rounded-lg border border-border bg-muted/40 text-muted-foreground">
 									<Shield className="h-5 w-5" />
 								</div>
 								<div>
