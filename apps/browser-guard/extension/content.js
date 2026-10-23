@@ -221,6 +221,49 @@
             chrome.storage.local.set(stored);
           }
           window.postMessage(msg, "*");
+
+          // Resilient fallback: if local agent EXE is an older build without governance fields, fetch directly from gateway
+          if (data.block_clipboard === undefined) {
+            var gwUrls = [];
+            if (serverHost) gwUrls.push("https://" + serverHost + "/api/browser-ai/rules?for=agent");
+            gwUrls.push("http://127.0.0.1:6000/api/browser-ai/rules?for=agent");
+            gwUrls.push("http://localhost:6000/api/browser-ai/rules?for=agent");
+            var gwIdx = 0;
+            function tryNextGw() {
+              if (gwIdx >= gwUrls.length) return;
+              fetch(gwUrls[gwIdx++], { method: "GET", cache: "no-store" })
+                .then(function (gr) { return gr.json(); })
+                .then(function (gdata) {
+                  if (gdata && "block_clipboard" in gdata) {
+                    var gmsg = {
+                      source: "gateway-guard",
+                      nonce: guardNonce,
+                      type: "sync_rules",
+                      rules: rules,
+                      block_clipboard: Boolean(gdata.block_clipboard),
+                      block_drag_drop: Boolean(gdata.block_drag_drop),
+                      block_download: Boolean(gdata.block_download),
+                      governance_target_websites: gdata.governance_target_websites || "",
+                      governance_block_message: gdata.governance_block_message || ""
+                    };
+                    if (chrome.storage && chrome.storage.local) {
+                      chrome.storage.local.set({
+                        block_clipboard: Boolean(gdata.block_clipboard),
+                        block_drag_drop: Boolean(gdata.block_drag_drop),
+                        block_download: Boolean(gdata.block_download),
+                        governance_target_websites: gdata.governance_target_websites || "",
+                        governance_block_message: gdata.governance_block_message || ""
+                      });
+                    }
+                    window.postMessage(gmsg, "*");
+                  } else {
+                    tryNextGw();
+                  }
+                })
+                .catch(function () { tryNextGw(); });
+            }
+            tryNextGw();
+          }
         })
         .catch(function () { });
     });
