@@ -595,6 +595,10 @@ type BrowserControlSettings struct {
 	BlockDownload            bool   `json:"block_download"`
 	GovernanceTargetWebsites string `gorm:"type:text" json:"governance_target_websites"`
 	GovernanceBlockMessage   string `gorm:"type:text" json:"governance_block_message"`
+	UploadTargetWebsites     string `gorm:"type:text" json:"upload_target_websites"`
+	ClipboardTargetWebsites  string `gorm:"type:text" json:"clipboard_target_websites"`
+	DragDropTargetWebsites   string `gorm:"type:text" json:"drag_drop_target_websites"`
+	DownloadTargetWebsites   string `gorm:"type:text" json:"download_target_websites"`
 
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -1466,13 +1470,17 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 		"block_download":             true,
 		"governance_target_websites": true,
 		"governance_block_message":   true,
+		"upload_target_websites":     true,
+		"clipboard_target_websites":  true,
+		"drag_drop_target_websites":   true,
+		"download_target_websites":   true,
 	}
 	filtered := map[string]any{}
 	for k, v := range updates {
 		if !allowed[k] {
 			continue
 		}
-		if k == "upload_warning" || k == "corporate_email_domains" || k == "allowed_workspace_ids" || k == "corporate_block_message" || k == "governance_target_websites" || k == "governance_block_message" {
+		if k == "upload_warning" || k == "corporate_email_domains" || k == "allowed_workspace_ids" || k == "corporate_block_message" || k == "governance_target_websites" || k == "governance_block_message" || k == "upload_target_websites" || k == "clipboard_target_websites" || k == "drag_drop_target_websites" || k == "download_target_websites" {
 			if s, ok := v.(string); ok {
 				filtered[k] = strings.TrimSpace(s)
 				continue

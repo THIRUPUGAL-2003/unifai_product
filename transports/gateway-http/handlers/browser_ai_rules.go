@@ -55,6 +55,10 @@ func (h *BrowserAIHandler) getRules(ctx *fasthttp.RequestCtx) {
 			resp["block_download"] = ctrl.BlockDownload
 			resp["governance_target_websites"] = ctrl.GovernanceTargetWebsites
 			resp["governance_block_message"] = ctrl.GovernanceBlockMessage
+			resp["upload_target_websites"] = ctrl.UploadTargetWebsites
+			resp["clipboard_target_websites"] = ctrl.ClipboardTargetWebsites
+			resp["drag_drop_target_websites"] = ctrl.DragDropTargetWebsites
+			resp["download_target_websites"] = ctrl.DownloadTargetWebsites
 		}
 		SendJSON(ctx, resp)
 		return

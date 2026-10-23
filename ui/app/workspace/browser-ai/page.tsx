@@ -88,6 +88,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdownMenu";
 import { Textarea } from "@/components/ui/textarea";
+import { PolicyTargetWebsitesSelector } from "./PolicyTargetWebsitesSelector";
 import { normalizeTargetDomain, groupTargetsByParent, relatedHostsForDomain, relatedHostOptions, HOST_ROLE_OPTIONS, hostRoleLabel, type HostRole } from "./relatedHosts";
 import { buildAttachmentPreview, type AttachmentPreviewKind, type AttachmentSheetPreview } from "./attachmentPreview";
 import { GUARD_BOT_OLLAMA_PROVIDER } from "./browserAiConstants";
@@ -1317,17 +1318,6 @@ export default function BrowserAiPage() {
 		}
 	}, [controls.governance_block_message]);
 
-	const configuredGovWebsites = useMemo(() => {
-		const raw = controls.governance_target_websites || "";
-		if (!raw.trim() || raw.trim().toLowerCase() === "all" || raw.trim().toLowerCase() === "*") {
-			return ["all"];
-		}
-		return raw
-			.split(/[,\s;]+/)
-			.map((s) => s.trim().toLowerCase())
-			.filter(Boolean);
-	}, [controls.governance_target_websites]);
-
 	const handleToggleClipboardGovernance = async (checked: boolean) => {
 		const ok = await patchControl({ block_clipboard: checked });
 		if (ok) {
@@ -1360,56 +1350,6 @@ export default function BrowserAiPage() {
 				description: checked
 					? "Exporting and downloading files from AI chats is strictly blocked."
 					: "File downloads are now allowed.",
-			});
-		}
-	};
-
-	const handleToggleSelectAllGovernance = async (enableAll: boolean) => {
-		const ok = await patchControl({
-			block_clipboard: enableAll,
-			block_drag_drop: enableAll,
-			block_download: enableAll,
-		});
-		if (ok) {
-			toast({
-				title: enableAll ? "All Governance Protections Enabled" : "All Governance Protections Disabled",
-				description: enableAll
-					? "Clipboard, Drag-Drop, and File Downloads are now strictly blocked."
-					: "All data governance restrictions disabled.",
-			});
-		}
-	};
-
-	const handleToggleGovernanceTargetWebsite = async (domain: string) => {
-		const targetDom = domain.trim().toLowerCase();
-		let next: string[];
-		if (configuredGovWebsites.includes("all")) {
-			// Currently protecting all websites, toggling this domain starts selective scoping
-			next = [targetDom];
-		} else if (configuredGovWebsites.includes(targetDom)) {
-			next = configuredGovWebsites.filter((d) => d !== targetDom);
-			if (next.length === 0) {
-				next = ["all"];
-			}
-		} else {
-			next = [...configuredGovWebsites, targetDom];
-		}
-		const val = next.includes("all") ? "all" : next.join(", ");
-		const ok = await patchControl({ governance_target_websites: val });
-		if (ok) {
-			toast({
-				title: "Governance Target Scoping Updated",
-				description: val === "all" ? "Protections apply to all monitored target websites." : `Protections scoped to: ${val}`,
-			});
-		}
-	};
-
-	const handleSetAllGovernanceWebsites = async () => {
-		const ok = await patchControl({ governance_target_websites: "all" });
-		if (ok) {
-			toast({
-				title: "Governance Target Scoping Updated",
-				description: "Protections now apply to all monitored target websites.",
 			});
 		}
 	};
@@ -4540,6 +4480,13 @@ export default function BrowserAiPage() {
 											</SelectContent>
 										</Select>
 									</div>
+
+									<PolicyTargetWebsitesSelector
+										policyName="File Upload Policy"
+										value={controls.upload_target_websites}
+										targets={targets}
+										onChange={(val) => patchControl({ upload_target_websites: val })}
+									/>
 								</div>
 							)}
 						</Card>
@@ -4596,6 +4543,13 @@ export default function BrowserAiPage() {
 											• <strong className="text-foreground">JIT Coaching:</strong> Employees receive an immediate in-browser policy coaching modal explaining company data governance.
 										</p>
 									</div>
+
+									<PolicyTargetWebsitesSelector
+										policyName="Copy-Paste Blocking"
+										value={controls.clipboard_target_websites || controls.governance_target_websites}
+										targets={targets}
+										onChange={(val) => patchControl({ clipboard_target_websites: val, governance_target_websites: val })}
+									/>
 								</div>
 							)}
 						</Card>
@@ -4652,6 +4606,13 @@ export default function BrowserAiPage() {
 											• <strong className="text-foreground">Desktop Guard Agent:</strong> Local agent driver monitors desktop-to-browser drag operations as a dual-layer defense.
 										</p>
 									</div>
+
+									<PolicyTargetWebsitesSelector
+										policyName="Drag-and-Drop Blocking"
+										value={controls.drag_drop_target_websites || controls.governance_target_websites}
+										targets={targets}
+										onChange={(val) => patchControl({ drag_drop_target_websites: val })}
+									/>
 								</div>
 							)}
 						</Card>
@@ -4708,113 +4669,17 @@ export default function BrowserAiPage() {
 											• <strong className="text-foreground">API Egress Guard:</strong> Desktop agent PAC proxy cancels HTTP responses with <code className="text-[10px] font-mono">Content-Disposition: attachment</code> on monitored target domains.
 										</p>
 									</div>
+
+									<PolicyTargetWebsitesSelector
+										policyName="File Download Blocking"
+										value={controls.download_target_websites || controls.governance_target_websites}
+										targets={targets}
+										onChange={(val) => patchControl({ download_target_websites: val })}
+									/>
 								</div>
 							)}
 						</Card>
 					</div>
-
-					{/* Target Website Scoping Card (Dropdown + Chips) */}
-					<Card className="bg-card border-border shadow-sm">
-						<CardHeader className="pb-3">
-							<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-								<div className="flex items-center gap-3">
-									<div className="p-2 rounded-lg border border-border bg-muted/40 text-muted-foreground">
-										<Globe className="h-5 w-5" />
-									</div>
-									<div>
-										<CardTitle className="text-base">Target Website Scoping</CardTitle>
-										<CardDescription className="text-xs mt-0.5">
-											Choose whether these browser settings &amp; data governance rules apply to all target websites or specific platforms.
-										</CardDescription>
-									</div>
-								</div>
-								<Button
-									type="button"
-									variant={configuredGovWebsites.includes("all") ? "default" : "outline"}
-									size="sm"
-									className="h-8 text-xs gap-1.5 shrink-0"
-									onClick={handleSetAllGovernanceWebsites}
-								>
-									<Check className="h-3.5 w-3.5" />
-									Enforce on All Target Websites ({targets.length})
-								</Button>
-							</div>
-						</CardHeader>
-						<CardContent className="space-y-4 pt-1">
-							{/* Dropdown Selector */}
-							<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-								<div className="flex-1">
-									<Select
-										value={configuredGovWebsites.includes("all") ? "all" : (configuredGovWebsites[0] || "all")}
-										onValueChange={(val) => {
-											if (val === "all") {
-												void handleSetAllGovernanceWebsites();
-											} else {
-												void handleToggleGovernanceTargetWebsite(val);
-											}
-										}}
-									>
-										<SelectTrigger className="h-9 text-xs">
-											<SelectValue placeholder="Select target website to toggle governance..." />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="all">
-												🌐 All Monitored Target Websites ({targets.length} websites)
-											</SelectItem>
-											{targets.map((tgt) => (
-												<SelectItem key={tgt.id || tgt.domain} value={tgt.domain.toLowerCase()}>
-													{tgt.platform_name || tgt.domain} ({tgt.domain})
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-							</div>
-
-							{/* Active Target Websites Chips */}
-							<div className="space-y-2">
-								<Label className="text-xs text-muted-foreground font-medium">Configured Target AI Platforms (Click to toggle):</Label>
-								<div className="min-h-[50px] p-3 rounded-xl border border-border bg-muted/20 flex flex-wrap items-center gap-2">
-									{targets.length === 0 ? (
-										<span className="text-xs text-muted-foreground italic px-1">
-											No target websites configured yet. Add target domains in the &quot;Target Websites&quot; tab.
-										</span>
-									) : (
-										targets.map((tgt) => {
-											const isSelected = configuredGovWebsites.includes("all") || configuredGovWebsites.includes(tgt.domain.toLowerCase());
-											return (
-												<button
-													key={tgt.id || tgt.domain}
-													type="button"
-													onClick={() => handleToggleGovernanceTargetWebsite(tgt.domain)}
-													className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs transition-all ${
-														isSelected
-															? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 shadow-sm"
-															: "bg-background border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-													}`}
-												>
-													<span className={`h-2 w-2 rounded-full ${isSelected ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
-													<span className="font-medium">{tgt.platform_name || tgt.domain}</span>
-													<span className="text-[10px] font-mono text-muted-foreground">({tgt.domain})</span>
-													{isSelected ? (
-														<Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400 ml-0.5" />
-													) : (
-														<Plus className="h-3 w-3 text-muted-foreground/60 ml-0.5 group-hover:text-foreground" />
-													)}
-												</button>
-											);
-										})
-									)}
-								</div>
-								<p className="text-[11px] text-muted-foreground">
-									Currently active scope:{" "}
-									<span className="font-mono text-foreground font-semibold">
-										{configuredGovWebsites.includes("all") ? "All Monitored Target Websites" : configuredGovWebsites.join(", ")}
-									</span>
-								</p>
-							</div>
-						</CardContent>
-					</Card>
 
 					{/* JIT Coaching Warning Banner Editor */}
 					<Card className="bg-card border-border shadow-sm">

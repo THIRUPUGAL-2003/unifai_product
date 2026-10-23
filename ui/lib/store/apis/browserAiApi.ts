@@ -198,6 +198,10 @@ export interface BrowserControlSettings {
 	block_download?: boolean;
 	governance_target_websites?: string;
 	governance_block_message?: string;
+	upload_target_websites?: string;
+	clipboard_target_websites?: string;
+	drag_drop_target_websites?: string;
+	download_target_websites?: string;
 
 	updated_at?: string;
 }
