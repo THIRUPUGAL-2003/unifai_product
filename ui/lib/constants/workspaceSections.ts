@@ -327,6 +327,14 @@ function findBestCatalogMatch(
 
 export function isPathAllowedForUser(pathname: string, allowedSections: Set<WorkspaceGrantKey>): boolean {
 	const grants = normalizeGrants(allowedSections);
+	// Normalise legacy redirect routes to their canonical target paths
+	if (pathname === "/workspace/virtual-keys" || pathname.startsWith("/workspace/virtual-keys/")) {
+		pathname = "/workspace/governance/virtual-keys";
+	} else if (pathname === "/workspace/rbac" || pathname.startsWith("/workspace/rbac/")) {
+		pathname = "/workspace/governance/rbac";
+	} else if (pathname === "/workspace/mcp-gateway" || pathname.startsWith("/workspace/mcp-gateway/")) {
+		pathname = "/workspace/mcp-registry";
+	}
 	// Prefer exact catalog match including ?tab=… (Browser AI child grants).
 	const best = findBestCatalogMatch(pathname);
 	if (!best) {

@@ -270,6 +270,9 @@ func (s *RDBConfigStore) EnsureRBACRoles(ctx context.Context) error {
 			if perm.Operation == "View" || perm.Operation == "Read" {
 				subAdminIDs = append(subAdminIDs, perm.ID)
 			}
+		default:
+			// Full control for sub-admin on all other workspace feature resources
+			subAdminIDs = append(subAdminIDs, perm.ID)
 		}
 	}
 
@@ -953,12 +956,35 @@ type RBACPermission struct {
 
 // RBACResourceNames is the workspace resource catalog.
 var RBACResourceNames = []string{
+	// Core & legacy resources (preserved at indices 0-31 for 100% backward compatibility)
 	"GuardrailsConfig", "GuardrailsProviders", "GuardrailRules", "UserProvisioning", "Cluster",
 	"Settings", "Users", "Logs", "Observability", "Dashboard", "VirtualKeys", "ModelProvider",
 	"Plugins", "MCPGateway", "MCPToolGroups", "MCPLogs", "AdaptiveRouter", "AuditLogs",
 	"Customers", "Teams", "RBAC", "Governance", "RoutingRules", "PromptRepository",
 	"PromptDeploymentStrategy", "SkillsRepository", "AccessProfiles", "APIKeys",
 	"Inference", "Metrics", "FeatureFlags", "CircuitBreaker",
+
+	// Observability sub-features
+	"LogsSettings",
+
+	// Browser AI sub-features
+	"BrowserAIOverview", "BrowserAITargets", "BrowserAIRules", "BrowserAILogs",
+	"BrowserAISearchLogs", "BrowserAISetup", "BrowserAIAgents", "BrowserAIInsights",
+
+	// Models sub-features
+	"ModelCatalog", "BudgetsLimits", "ComplexityRouter", "PricingOverrides", "ModelSettings",
+
+	// MCP Gateway sub-features
+	"MCPCatalog", "MCPLibrary", "MCPAuthSessions", "MCPOAuthGrants", "MCPSettings",
+
+	// Governance sub-features
+	"BusinessUnits",
+
+	// Adaptive Routing sub-features
+	"AdaptiveRoutingDashboard", "AdaptiveRoutingSettings",
+
+	// Settings sub-features
+	"ClientSettings", "Compatibility", "Caching", "Security", "PerformanceTuning",
 }
 
 // RBACOperationNames is the workspace operation catalog.

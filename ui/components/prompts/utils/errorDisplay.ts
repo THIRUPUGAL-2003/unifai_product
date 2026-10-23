@@ -51,7 +51,11 @@ export function formatPromptWarningMessage(message?: string | null): string {
 		return "";
 	}
 	if (isRateLimitMessage(message)) {
-		return shortenRateLimitMessage(message);
+		const shortened = shortenRateLimitMessage(message);
+		if (/provider|upstream|429/i.test(message)) {
+			return `${shortened} from upstream AI provider. The provider's free queue is currently busy — please wait a moment or switch to another model.`;
+		}
+		return shortened;
 	}
 
 	if (BUDGET_WARNING_PATTERN.test(message)) {

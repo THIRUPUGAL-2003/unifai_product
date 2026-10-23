@@ -925,6 +925,8 @@ export function SettingsPanel() {
 									<ComboboxSelect
 										multiple
 										compactTrigger
+										creatable={!isMemberOnly}
+										createLabel={(q) => `Add "${q}"`}
 										options={modelOptions}
 										value={
 											allowedModels !== null

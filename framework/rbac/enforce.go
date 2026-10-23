@@ -170,13 +170,9 @@ func readRequirement(path string) *PathRequirement {
 		return &PathRequirement{Resource: "AuditLogs", Operation: "View"}
 	case strings.HasPrefix(path, "/api/access-profiles"):
 		return &PathRequirement{Resource: "AccessProfiles", Operation: "View"}
-	case strings.HasPrefix(path, "/api/roles"):
-		return &PathRequirement{
-			Resource:       "RBAC",
-			Operation:      "View",
-			AnyOfResources: []string{"RBAC", "Governance"},
-		}
-	case strings.HasPrefix(path, "/api/permissions"), strings.HasPrefix(path, "/api/resources"), strings.HasPrefix(path, "/api/operations"), strings.HasPrefix(path, "/api/rbac"):
+	case strings.HasPrefix(path, "/api/users"):
+		return &PathRequirement{Resource: "Users", Operation: "View", AnyOfResources: []string{"Users", "RBAC", "Governance"}}
+	case strings.HasPrefix(path, "/api/roles"), strings.HasPrefix(path, "/api/permissions"), strings.HasPrefix(path, "/api/resources"), strings.HasPrefix(path, "/api/operations"), strings.HasPrefix(path, "/api/rbac"):
 		return &PathRequirement{Resource: "RBAC", Operation: "View"}
 	case strings.HasPrefix(path, "/api/circuit-breaker"):
 		return &PathRequirement{Resource: "CircuitBreaker", Operation: "View"}
@@ -252,10 +248,14 @@ func isDashboardMCPAggregatePath(path string) bool {
 func governanceRequirement(path, op string) *PathRequirement {
 	dedicated := ""
 	switch {
+	case strings.HasPrefix(path, "/api/governance/business-units"):
+		return &PathRequirement{Resource: "BusinessUnits", Operation: op, AnyOfResources: []string{"BusinessUnits", "Teams", "Governance"}}
 	case strings.HasPrefix(path, "/api/governance/teams"):
 		dedicated = "Teams"
 	case strings.HasPrefix(path, "/api/governance/customers"):
 		dedicated = "Customers"
+	case strings.HasPrefix(path, "/api/governance/users"):
+		dedicated = "Users"
 	case strings.HasPrefix(path, "/api/governance/routing-rules"),
 		strings.HasPrefix(path, "/api/governance/complexity-analyzer-config"):
 		dedicated = "RoutingRules"
@@ -314,8 +314,10 @@ func writeRequirement(method, path string) *PathRequirement {
 		return &PathRequirement{Resource: "AuditLogs", Operation: "Update"}
 	case strings.HasPrefix(path, "/api/access-profiles"):
 		return &PathRequirement{Resource: "AccessProfiles", Operation: op}
-	case strings.HasPrefix(path, "/api/roles"), strings.HasPrefix(path, "/api/permissions"), strings.HasPrefix(path, "/api/rbac"), strings.HasPrefix(path, "/api/users"):
+	case strings.HasPrefix(path, "/api/roles"), strings.HasPrefix(path, "/api/permissions"), strings.HasPrefix(path, "/api/rbac"), strings.HasSuffix(path, "/role"), strings.HasSuffix(path, "/roles"):
 		return &PathRequirement{Resource: "RBAC", Operation: op}
+	case strings.HasPrefix(path, "/api/users"):
+		return &PathRequirement{Resource: "Users", Operation: op, AnyOfResources: []string{"Users", "RBAC", "Governance"}}
 	case strings.HasPrefix(path, "/api/circuit-breaker"):
 		return &PathRequirement{Resource: "CircuitBreaker", Operation: op}
 	case strings.HasPrefix(path, "/api/mcp/tool-groups"):

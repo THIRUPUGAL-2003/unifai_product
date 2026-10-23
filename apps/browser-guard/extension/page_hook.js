@@ -532,16 +532,30 @@
       "textarea[placeholder*='Copilot' i], " +
       "[placeholder*='Message Copilot' i], " +
       "[aria-label*='Message Copilot' i], " +
+      "[placeholder*='Ask Copilot' i], " +
+      "[aria-label*='Ask Copilot' i], " +
+      "[placeholder*='Ask me anything' i], " +
+      "[aria-label*='Ask me anything' i], " +
       "[placeholder*='Message' i], " +
       "[aria-label*='Message' i], " +
       "textarea#userInput, " +
+      "textarea[id*='userInput' i], " +
+      "textarea#searchbox, " +
+      "textarea[id*='chat' i], " +
+      "copilot-chat-container textarea, " +
+      "copilot-text-input textarea, " +
+      "copilot-composer textarea, " +
+      "[data-testid*='copilot' i], " +
+      "[aria-label*='copilot' i] textarea, " +
+      "[aria-label*='copilot' i] [contenteditable='true'], " +
+      "cib-text-input textarea, " +
+      "cib-serp textarea, " +
       "fieldset div.ProseMirror, " +
       "fieldset [contenteditable='true'], " +
       "form div.ProseMirror, " +
       "div#prompt-textarea, " +
       "div.ProseMirror, " +
       "rich-textarea div[contenteditable], " +
-      "textarea#searchbox, " +
       "textarea[placeholder*='Ask' i], " +
       "textarea[placeholder*='prompt' i], " +
       "textarea[placeholder*='describe' i], " +
@@ -551,6 +565,7 @@
       "textarea[placeholder*='music' i], " +
       "textarea[placeholder*='DeepSeek'], " +
       "[data-testid*='chat-input' i], " +
+      "[data-testid*='composer' i], " +
       "[data-testid*='prompt' i], " +
       "[contenteditable='true'][role='textbox']"
     );
@@ -606,9 +621,11 @@
         "div[class*='attachment' i]",
         "div[class*='file-tile' i]",
         "div[class*='file-preview' i]",
-        "span[class*='file-name' i]"
+        "span[class*='file-name' i]",
+        "[class*='upload-preview' i]",
+        "[class*='uploaded-file' i]"
       ];
-      var nodes = activeContainer.querySelectorAll(selectors.join(", "));
+      var nodes = querySelectorAllDeep(selectors.join(", "));
       for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i];
         if (!n) continue;
@@ -987,7 +1004,10 @@
           _lastHandledPromptTime = Date.now();
           _lastHandledPromptText = text;
           try {
-            var sendBtn = document.querySelector("button[aria-label*='Send' i], button.send-button, [data-testid*='send-button' i]");
+            var sendBtns = querySelectorAllDeep(
+              "button[aria-label*='Send' i], button[aria-label*='Submit' i], button[aria-label*='Ask' i], button.send-button, [data-testid*='send-button' i], [data-testid*='submit' i], cib-serp button, button[title*='Send' i], button[title*='Submit' i], button[type='submit']"
+            );
+            var sendBtn = sendBtns.length ? sendBtns[sendBtns.length - 1] : null;
             if (sendBtn) {
               sendBtn.click();
             } else {
@@ -1158,11 +1178,13 @@
           stagedImages = [];
           passClick = true;
           try {
-            if (typeof form.requestSubmit === "function") {
+            if (form && typeof form.requestSubmit === "function") {
               form.requestSubmit();
-            } else {
+            } else if (form && typeof form.submit === "function") {
               form.submit();
             }
+          } catch (subErr) {
+            console.warn("[Gateway Guard] form submit replay error:", subErr);
           } finally {
             passClick = false;
           }
@@ -1629,6 +1651,17 @@
             }, "*");
             return;
           }
+          // Coordinate with extension and desktop proxy: record allowed WebSocket prompt so proxy skips duplicate logging
+          window.postMessage({
+            source: "gateway-guard-page",
+            nonce: guardNonce,
+            id: "ws_allow_" + Date.now().toString(36),
+            prompt: promptText.slice(0, 500),
+            host: location.hostname,
+            url: location.href,
+            is_blocked: false,
+            rule: (wsDecision && wsDecision.rule) || ""
+          }, "*");
         }
       }
       return origWSSend.apply(this, arguments);

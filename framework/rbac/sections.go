@@ -56,7 +56,7 @@ func SectionRequirementFor(method, path string) []string {
 		return []string{"governance/access-profiles"}
 	case strings.HasPrefix(path, "/api/roles"), strings.HasPrefix(path, "/api/permissions"), strings.HasPrefix(path, "/api/rbac"):
 		return []string{"governance/roles-permissions"}
-	case strings.HasPrefix(path, "/api/users/"), strings.HasPrefix(path, "/api/session/users"):
+	case path == "/api/users" || strings.HasPrefix(path, "/api/users/"), strings.HasPrefix(path, "/api/session/users"):
 		return []string{"governance/users", "governance/roles-permissions"}
 	case path == "/api/guardrails/rules":
 		return []string{"guardrails/rules"}

@@ -6,6 +6,7 @@ import { createContext, useCallback, useContext, useMemo } from "react";
 
 // RBAC Resource Names (must match backend definitions)
 export enum RbacResource {
+	// Core & legacy resources
 	GuardrailsConfig = "GuardrailsConfig",
 	GuardrailsProviders = "GuardrailsProviders",
 	GuardrailRules = "GuardrailRules",
@@ -38,6 +39,47 @@ export enum RbacResource {
 	Metrics = "Metrics",
 	FeatureFlags = "FeatureFlags",
 	CircuitBreaker = "CircuitBreaker",
+
+	// Observability sub-features
+	LogsSettings = "LogsSettings",
+
+	// Browser AI sub-features
+	BrowserAIOverview = "BrowserAIOverview",
+	BrowserAITargets = "BrowserAITargets",
+	BrowserAIRules = "BrowserAIRules",
+	BrowserAILogs = "BrowserAILogs",
+	BrowserAISearchLogs = "BrowserAISearchLogs",
+	BrowserAISetup = "BrowserAISetup",
+	BrowserAIAgents = "BrowserAIAgents",
+	BrowserAIInsights = "BrowserAIInsights",
+
+	// Models sub-features
+	ModelCatalog = "ModelCatalog",
+	BudgetsLimits = "BudgetsLimits",
+	ComplexityRouter = "ComplexityRouter",
+	PricingOverrides = "PricingOverrides",
+	ModelSettings = "ModelSettings",
+
+	// MCP Gateway sub-features
+	MCPCatalog = "MCPCatalog",
+	MCPLibrary = "MCPLibrary",
+	MCPAuthSessions = "MCPAuthSessions",
+	MCPOAuthGrants = "MCPOAuthGrants",
+	MCPSettings = "MCPSettings",
+
+	// Governance sub-features
+	BusinessUnits = "BusinessUnits",
+
+	// Adaptive Routing sub-features
+	AdaptiveRoutingDashboard = "AdaptiveRoutingDashboard",
+	AdaptiveRoutingSettings = "AdaptiveRoutingSettings",
+
+	// Settings sub-features
+	ClientSettings = "ClientSettings",
+	Compatibility = "Compatibility",
+	Caching = "Caching",
+	Security = "Security",
+	PerformanceTuning = "PerformanceTuning",
 }
 
 // RBAC Operation Names (must match backend definitions)

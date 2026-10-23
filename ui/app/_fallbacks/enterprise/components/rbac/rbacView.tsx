@@ -66,60 +66,136 @@ type SelectionTarget =
 // Resource → the sidebar entries (keys from WORKSPACE_SECTIONS) its API backs. Only the
 // specific children are listed: a parent section is granted when all its children are
 // (see allowedSectionsToString), never because one child was selected.
+// Resource → the sidebar entries (keys from WORKSPACE_SECTIONS) its API backs.
 const RESOURCE_TO_SECTION_MAP: Record<string, string[]> = {
-	Logs: ["observability/llm-logs", "browser-ai"],
-	Observability: ["observability/connectors"],
+	// Observability
 	Dashboard: ["observability/dashboard"],
+	Logs: ["observability/llm-logs"],
 	MCPLogs: ["observability/mcp-logs"],
-	Metrics: ["observability/dashboard"],
+	Observability: ["observability/connectors"],
+	LogsSettings: ["observability/logs-settings"],
+
+	// Browser AI
+	BrowserAIOverview: ["browser-ai/overview", "browser-ai"],
+	BrowserAITargets: ["browser-ai/targets"],
+	BrowserAIRules: ["browser-ai/rules"],
+	BrowserAILogs: ["browser-ai/logs"],
+	BrowserAISearchLogs: ["browser-ai/search-logs"],
+	BrowserAISetup: ["browser-ai/setup"],
+	BrowserAIAgents: ["browser-ai/agents"],
+	BrowserAIInsights: ["browser-ai/telemetry"],
+
+	// Models
+	ModelProvider: ["models/model-providers"],
+	ModelCatalog: ["models/model-catalog"],
+	BudgetsLimits: ["models/budgets-limits"],
+	ComplexityRouter: ["models/complexity-router"],
+	RoutingRules: ["models/routing-rules"],
+	CircuitBreaker: ["models/circuit-breaker"],
+	PricingOverrides: ["models/pricing-overrides"],
+	ModelSettings: ["models/model-settings"],
+
+	// MCP Gateway
+	MCPCatalog: ["mcp-gateway/mcp-catalog"],
+	MCPLibrary: ["mcp-gateway/mcp-library"],
+	MCPToolGroups: ["mcp-gateway/tool-groups"],
+	MCPAuthSessions: ["mcp-gateway/auth-sessions"],
+	MCPOAuthGrants: ["mcp-gateway/oauth-grants"],
+	MCPSettings: ["mcp-gateway/mcp-settings"],
+	Plugins: ["plugins"],
+
+	// Governance
 	VirtualKeys: ["governance/virtual-keys"],
-	Governance: ["governance"],
 	Users: ["governance/users"],
-	Teams: ["governance/teams", "governance/business-units"],
+	Teams: ["governance/teams"],
+	BusinessUnits: ["governance/business-units"],
 	Customers: ["governance/customers"],
 	UserProvisioning: ["governance/user-provisioning"],
 	RBAC: ["governance/roles-permissions"],
 	AccessProfiles: ["governance/access-profiles"],
 	AuditLogs: ["governance/audit-logs"],
-	ModelProvider: ["models/model-providers", "models/model-catalog", "models/budgets-limits", "models/pricing-overrides", "models/model-settings"],
-	RoutingRules: ["models/routing-rules", "models/complexity-router"],
-	CircuitBreaker: ["models/circuit-breaker"],
-	MCPGateway: [
-		"mcp-gateway/mcp-catalog",
-		"mcp-gateway/mcp-library",
-		"mcp-gateway/auth-sessions",
-		"mcp-gateway/oauth-grants",
-		"mcp-gateway/mcp-settings",
-	],
-	MCPToolGroups: ["mcp-gateway/tool-groups"],
-	Plugins: ["plugins"],
-	GuardrailsConfig: ["guardrails/rules"],
+
+	// Guardrails
 	GuardrailRules: ["guardrails/rules"],
 	GuardrailsProviders: ["guardrails/providers"],
 	Cluster: ["guardrails/cluster-config"],
-	Settings: ["settings", "observability/logs-settings"],
-	FeatureFlags: ["settings/feature-flags"],
-	APIKeys: ["settings/api-keys"],
-	AdaptiveRouter: ["adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings"],
+
+	// Adaptive Routing
+	AdaptiveRoutingDashboard: ["adaptive-routing/dashboard", "adaptive-routing"],
+	AdaptiveRoutingSettings: ["adaptive-routing/settings"],
 	PromptRepository: ["prompt-repository"],
-	PromptDeploymentStrategy: ["prompt-repository"],
 	SkillsRepository: ["skills-repository"],
+
+	// Settings
+	ClientSettings: ["settings/client-settings"],
+	Compatibility: ["settings/compatibility"],
+	Caching: ["settings/caching"],
+	Security: ["settings/security"],
+	APIKeys: ["settings/api-keys"],
+	PerformanceTuning: ["settings/performance-tuning"],
+	FeatureFlags: ["settings/feature-flags"],
+
+	// Aliases & legacy mappings for backward compatibility
+	Governance: ["governance"],
+	GuardrailsConfig: ["guardrails/rules"],
+	Settings: ["settings"],
+	AdaptiveRouter: ["adaptive-routing"],
+	PromptDeploymentStrategy: ["prompt-repository"],
 	Inference: ["prompt-repository"],
+	Metrics: ["observability/dashboard"],
 };
 
-/** Sidebar-aligned groups so every RBAC resource is visible (not buried under Guardrails). */
+/** Sidebar-aligned groups matching the 8 primary workspace categories. */
 const RESOURCE_GROUPS: { title: string; resources: string[] }[] = [
-	{ title: "Observability", resources: ["Dashboard", "Logs", "MCPLogs", "Observability", "Metrics"] },
-	{ title: "Models", resources: ["ModelProvider", "RoutingRules", "CircuitBreaker"] },
-	{ title: "MCP Gateway", resources: ["MCPGateway", "MCPToolGroups"] },
-	{ title: "Plugins", resources: ["Plugins"] },
+	{
+		title: "Observability",
+		resources: ["Dashboard", "Logs", "MCPLogs", "Observability", "LogsSettings"],
+	},
+	{
+		title: "Browser AI",
+		resources: [
+			"BrowserAIOverview",
+			"BrowserAITargets",
+			"BrowserAIRules",
+			"BrowserAILogs",
+			"BrowserAISearchLogs",
+			"BrowserAISetup",
+			"BrowserAIAgents",
+			"BrowserAIInsights",
+		],
+	},
+	{
+		title: "Models",
+		resources: [
+			"ModelProvider",
+			"ModelCatalog",
+			"BudgetsLimits",
+			"ComplexityRouter",
+			"RoutingRules",
+			"CircuitBreaker",
+			"PricingOverrides",
+			"ModelSettings",
+		],
+	},
+	{
+		title: "MCP Gateway",
+		resources: [
+			"MCPCatalog",
+			"MCPLibrary",
+			"MCPToolGroups",
+			"MCPAuthSessions",
+			"MCPOAuthGrants",
+			"MCPSettings",
+			"Plugins",
+		],
+	},
 	{
 		title: "Governance",
 		resources: [
-			"Governance",
 			"VirtualKeys",
 			"Users",
 			"Teams",
+			"BusinessUnits",
 			"Customers",
 			"UserProvisioning",
 			"RBAC",
@@ -127,46 +203,108 @@ const RESOURCE_GROUPS: { title: string; resources: string[] }[] = [
 			"AuditLogs",
 		],
 	},
-	{ title: "Guardrails", resources: ["GuardrailsConfig", "GuardrailRules", "GuardrailsProviders", "Cluster"] },
-	{ title: "Adaptive Routing", resources: ["AdaptiveRouter"] },
-	{ title: "Prompt Repository", resources: ["PromptRepository", "PromptDeploymentStrategy", "Inference"] },
-	{ title: "Skills Repository", resources: ["SkillsRepository"] },
-	{ title: "Settings", resources: ["Settings", "APIKeys", "FeatureFlags"] },
+	{
+		title: "Guardrails",
+		resources: ["GuardrailRules", "GuardrailsProviders", "Cluster"],
+	},
+	{
+		title: "Adaptive Routing",
+		resources: [
+			"AdaptiveRoutingDashboard",
+			"AdaptiveRoutingSettings",
+			"PromptRepository",
+			"SkillsRepository",
+		],
+	},
+	{
+		title: "Settings",
+		resources: [
+			"ClientSettings",
+			"Compatibility",
+			"Caching",
+			"Security",
+			"APIKeys",
+			"PerformanceTuning",
+			"FeatureFlags",
+		],
+	},
 ];
 
 const RESOURCE_LABELS: Record<string, string> = {
-	Logs: "LLM Logs",
+	// Observability
+	Dashboard: "Dashboard",
+	Logs: "LLM Log",
 	MCPLogs: "MCP Logs",
 	Observability: "Connectors",
-	Dashboard: "Dashboard",
-	Metrics: "Metrics",
-	ModelProvider: "Model Providers / Catalog",
-	RoutingRules: "Routing Rules / Complexity Router",
+	LogsSettings: "Logs Settings",
+
+	// Browser AI
+	BrowserAIOverview: "Overview",
+	BrowserAITargets: "Target Websites",
+	BrowserAIRules: "Guard Rules",
+	BrowserAILogs: "Prompt Logs",
+	BrowserAISearchLogs: "Search Logs",
+	BrowserAISetup: "Setup",
+	BrowserAIAgents: "Guard Agents",
+	BrowserAIInsights: "Guard Insights",
+
+	// Models
+	ModelProvider: "Model Providers",
+	ModelCatalog: "Model Catalog",
+	BudgetsLimits: "Budgets & Limits",
+	ComplexityRouter: "Complexity Router",
+	RoutingRules: "Routing Rules",
 	CircuitBreaker: "Circuit Breaker",
-	MCPGateway: "MCP Catalog / Library / Settings",
+	PricingOverrides: "Pricing Overrides",
+	ModelSettings: "Model Settings",
+
+	// MCP Gateway
+	MCPCatalog: "MCP Catalog",
+	MCPLibrary: "MCP Library",
 	MCPToolGroups: "Tool Groups",
+	MCPAuthSessions: "Auth Sessions",
+	MCPOAuthGrants: "OAuth Grants",
+	MCPSettings: "MCP Settings",
 	Plugins: "Plugins",
-	Governance: "Governance (all)",
+
+	// Governance
 	VirtualKeys: "Virtual Keys",
 	Users: "Users",
-	Teams: "Teams / Business Units",
+	Teams: "Teams",
+	BusinessUnits: "Business Units",
 	Customers: "Customers",
 	UserProvisioning: "User Provisioning",
 	RBAC: "Roles & Permissions",
 	AccessProfiles: "Access Profiles",
 	AuditLogs: "Audit Logs",
-	GuardrailsConfig: "Guardrails Config",
-	GuardrailRules: "Guardrail Rules",
+
+	// Guardrails
+	GuardrailRules: "Rules",
 	GuardrailsProviders: "Rule Providers",
 	Cluster: "Cluster Config",
-	AdaptiveRouter: "Adaptive Routing",
+
+	// Adaptive Routing
+	AdaptiveRoutingDashboard: "Dashboard",
+	AdaptiveRoutingSettings: "Settings",
 	PromptRepository: "Prompt Repository",
+	SkillsRepository: "Skills Repository",
+
+	// Settings
+	ClientSettings: "Client Settings",
+	Compatibility: "Compatibility",
+	Caching: "Caching",
+	Security: "Security",
+	APIKeys: "API Keys",
+	PerformanceTuning: "Performance Tuning",
+	FeatureFlags: "Feature Flags",
+
+	// Legacy aliases
+	Metrics: "Metrics",
+	Governance: "Governance (all)",
+	GuardrailsConfig: "Guardrails Config",
+	AdaptiveRouter: "Adaptive Routing",
 	PromptDeploymentStrategy: "Prompt Deployments",
 	Inference: "Inference",
-	SkillsRepository: "Skills Repository",
-	Settings: "Settings",
-	APIKeys: "API Keys",
-	FeatureFlags: "Feature Flags",
 };
 
 // A saved section grants a mapped entry directly or through its parent section.
@@ -271,7 +409,26 @@ export default function RBACView() {
 	const { data: scopeGrants, isError: scopeGrantsFailed, error: scopeGrantsError } = useGetRBACScopeGrantsQuery();
 
 	const roles = useMemo(() => roleData?.roles ?? [], [roleData]);
-	const permissions = useMemo(() => permData?.permissions ?? [], [permData]);
+	const rawPermissions = useMemo(() => permData?.permissions ?? [], [permData]);
+	const permissions = useMemo(() => {
+		const existingKeys = new Set(rawPermissions.map((p) => `${p.resource}:${p.operation}`));
+		const extended = [...rawPermissions];
+		let syntheticId = 3000;
+		const ops = ["Read", "View", "Create", "Update", "Delete", "Download"];
+		for (const group of RESOURCE_GROUPS) {
+			for (const res of group.resources) {
+				for (const op of ops) {
+					const key = `${res}:${op}`;
+					if (!existingKeys.has(key)) {
+						extended.push({ id: syntheticId++, resource: res, operation: op });
+						existingKeys.add(key);
+					}
+				}
+			}
+		}
+		return extended;
+	}, [rawPermissions]);
+
 	const teams = useMemo(() => teamsData?.teams ?? [], [teamsData]);
 	const customers = useMemo(() => customersData?.customers ?? [], [customersData]);
 
@@ -281,6 +438,17 @@ export default function RBACView() {
 		() => (target.type === "user" ? sessionUsers.find((u) => u.id === target.user.id) ?? target.user : null),
 		[target, sessionUsers],
 	);
+
+	// Check if current target is a regular User role
+	const isTargetUserRole = useMemo(() => {
+		if (target.type === "all_users") return true;
+		if (target.type === "user") {
+			const uRole = (targetUser?.role || target.user.role || "").toLowerCase();
+			return uRole !== "admin" && !isSubAdminRole(uRole);
+		}
+		if (target.type === "role" && target.role.name?.toLowerCase() === "user") return true;
+		return false;
+	}, [target, targetUser]);
 
 	// Determine active role ID for fetching role permissions query
 	const activeRoleId = useMemo(() => {
@@ -720,17 +888,16 @@ export default function RBACView() {
 	};
 
 	// Quick Select Helpers
-	const handleSelectAllReadView = () => {
-		if (!canUpdateRbac) return;
-		const readViewIds = permissions
-			.filter((p) => p.operation === "Read" || p.operation === "View")
-			.map((p) => p.id);
-		setSelectedPerms(readViewIds);
-		toast.info("Set to View Only permissions");
-	};
-
 	const handleSelectAll = () => {
 		if (!canUpdateRbac) return;
+		if (isTargetUserRole) {
+			const userAllowedIds = permissions
+				.filter((p) => p.resource === "PromptRepository" || p.operation === "Read" || p.operation === "View" || p.operation === "Download")
+				.map((p) => p.id);
+			setSelectedPerms(userAllowedIds);
+			toast.info("Granted View access across features (Full Access on Prompt Repository)");
+			return;
+		}
 		setSelectedPerms(permissions.map((p) => p.id));
 		toast.info("Granted all permissions");
 	};
@@ -779,12 +946,12 @@ export default function RBACView() {
 		}
 	};
 
-	// Badge Helper
+	// Badge Helper (monochrome enterprise styling, no rainbow colors)
 	const getRoleBadgeClass = (rName: string) => {
 		const r = rName.toLowerCase();
-		if (r === "admin") return "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30";
-		if (r === "sub_admin" || r === "subadmin") return "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30";
-		return "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30";
+		if (r === "admin") return "border-border/80 bg-muted/60 text-foreground font-semibold";
+		if (r === "sub_admin" || r === "subadmin") return "border-border/70 bg-muted/40 text-foreground/80 font-medium";
+		return "border-border/60 bg-muted/20 text-muted-foreground font-normal";
 	};
 
 	return (
@@ -793,7 +960,7 @@ export default function RBACView() {
 			<div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
 				<div>
 					<h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-						<Shield className="h-6 w-6 text-emerald-500" />
+						<Shield className="h-6 w-6 text-foreground" />
 						Roles & Scoped Permissions (RBAC)
 					</h1>
 					<p className="text-muted-foreground text-xs sm:text-sm">
@@ -843,7 +1010,7 @@ export default function RBACView() {
 							>
 								<div className="flex items-center gap-1.5">
 									{expandedSections.admins ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-									<Shield className="h-3.5 w-3.5 text-emerald-500" />
+									<Shield className="h-3.5 w-3.5 text-muted-foreground" />
 									<span>Admins</span>
 								</div>
 								<Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
@@ -857,11 +1024,11 @@ export default function RBACView() {
 										onClick={() => setTarget({ type: "all_admins" })}
 										className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
 											target.type === "all_admins"
-												? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold"
+												? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 												: "hover:bg-muted text-muted-foreground hover:text-foreground"
 										}`}
 									>
-										<Globe className="h-3.5 w-3.5 text-emerald-500" />
+										<Globe className="h-3.5 w-3.5 text-muted-foreground" />
 										<span>All Admins (Default Full Access)</span>
 									</div>
 
@@ -877,7 +1044,7 @@ export default function RBACView() {
 														onClick={() => setTarget({ type: "user", user })}
 														className={`flex cursor-pointer items-center justify-between rounded-md px-2 py-1 text-xs transition-colors ${
 															isSelected
-																? "bg-emerald-500/20 text-emerald-900 dark:text-emerald-200 font-semibold"
+																? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 																: "hover:bg-muted text-muted-foreground hover:text-foreground"
 														}`}
 													>
@@ -907,7 +1074,7 @@ export default function RBACView() {
 							>
 								<div className="flex items-center gap-1.5">
 									{expandedSections.subAdmins ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-									<Shield className="h-3.5 w-3.5 text-sky-500" />
+									<Shield className="h-3.5 w-3.5 text-muted-foreground" />
 									<span>Sub Admins</span>
 								</div>
 								<Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
@@ -921,11 +1088,11 @@ export default function RBACView() {
 										onClick={() => setTarget({ type: "all_sub_admins" })}
 										className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
 											target.type === "all_sub_admins"
-												? "bg-sky-500/15 text-sky-800 dark:text-sky-300 font-bold"
+												? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 												: "hover:bg-muted text-muted-foreground hover:text-foreground"
 										}`}
 									>
-										<Globe className="h-3.5 w-3.5 text-sky-500" />
+										<Globe className="h-3.5 w-3.5 text-muted-foreground" />
 										<span>All Sub Admins (Role Policy)</span>
 									</div>
 
@@ -941,7 +1108,7 @@ export default function RBACView() {
 														onClick={() => setTarget({ type: "user", user })}
 														className={`flex cursor-pointer items-center justify-between rounded-md px-2 py-1 text-xs transition-colors ${
 															isSelected
-																? "bg-sky-500/20 text-sky-900 dark:text-sky-200 font-semibold"
+																? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 																: "hover:bg-muted text-muted-foreground hover:text-foreground"
 														}`}
 													>
@@ -970,7 +1137,7 @@ export default function RBACView() {
 							>
 								<div className="flex items-center gap-1.5">
 									{expandedSections.users ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-									<Users className="h-3.5 w-3.5 text-blue-500" />
+									<Users className="h-3.5 w-3.5 text-muted-foreground" />
 									<span>Users</span>
 								</div>
 								<Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
@@ -985,11 +1152,11 @@ export default function RBACView() {
 										onClick={() => setTarget({ type: "all_users" })}
 										className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
 											target.type === "all_users"
-												? "bg-blue-500/15 text-blue-800 dark:text-blue-300 font-bold"
+												? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 												: "hover:bg-muted text-muted-foreground hover:text-foreground"
 										}`}
 									>
-										<Globe className="h-3.5 w-3.5 text-blue-500" />
+										<Globe className="h-3.5 w-3.5 text-muted-foreground" />
 										<span>All Users (Bulk Global Policy)</span>
 									</div>
 
@@ -1004,7 +1171,7 @@ export default function RBACView() {
 													onClick={() => setTarget({ type: "user", user })}
 													className={`flex cursor-pointer items-center justify-between rounded-md px-2 py-1 text-xs transition-colors ${
 														isSelected
-															? "bg-blue-500/20 text-blue-900 dark:text-blue-200 font-semibold"
+															? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 															: "hover:bg-muted text-muted-foreground hover:text-foreground"
 													}`}
 												>
@@ -1032,7 +1199,7 @@ export default function RBACView() {
 							>
 								<div className="flex items-center gap-1.5">
 									{expandedSections.teams ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-									<Building2 className="h-3.5 w-3.5 text-purple-500" />
+									<Building2 className="h-3.5 w-3.5 text-muted-foreground" />
 									<span>Teams</span>
 								</div>
 								<Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
@@ -1047,13 +1214,13 @@ export default function RBACView() {
 										onClick={() => setTarget({ type: "all_teams" })}
 										className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
 											target.type === "all_teams"
-												? "bg-purple-500/15 text-purple-800 dark:text-purple-300 font-bold"
+												? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 												: "hover:bg-muted text-muted-foreground hover:text-foreground"
 										}`}
 									>
-										<Globe className="h-3.5 w-3.5 text-purple-500" />
+										<Globe className="h-3.5 w-3.5 text-muted-foreground" />
 										<span>All Teams</span>
-										{scopeGrants?.all_teams && <Check className="ml-auto h-3 w-3 text-emerald-500" />}
+										{scopeGrants?.all_teams && <Check className="ml-auto h-3 w-3 text-foreground" />}
 									</div>
 
 									{/* Individual Teams */}
@@ -1067,7 +1234,7 @@ export default function RBACView() {
 													onClick={() => setTarget({ type: "team", team })}
 													className={`flex cursor-pointer items-center justify-between rounded-md px-2 py-1 text-xs transition-colors ${
 														isSelected
-															? "bg-purple-500/20 text-purple-900 dark:text-purple-200 font-semibold"
+															? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 															: "hover:bg-muted text-muted-foreground hover:text-foreground"
 													}`}
 												>
@@ -1077,7 +1244,7 @@ export default function RBACView() {
 													</div>
 													<span className="flex items-center gap-1 text-[10px] text-muted-foreground">
 														{team.customer?.name ? team.customer.name.slice(0, 10) : "Team"}
-														{scopeGrants?.teams?.[team.id] && <Check className="h-3 w-3 text-emerald-500" />}
+														{scopeGrants?.teams?.[team.id] && <Check className="h-3 w-3 text-foreground" />}
 													</span>
 												</div>
 											);
@@ -1096,7 +1263,7 @@ export default function RBACView() {
 							>
 								<div className="flex items-center gap-1.5">
 									{expandedSections.customers ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-									<Landmark className="h-3.5 w-3.5 text-amber-500" />
+									<Landmark className="h-3.5 w-3.5 text-muted-foreground" />
 									<span>Customers</span>
 								</div>
 								<Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
@@ -1110,13 +1277,13 @@ export default function RBACView() {
 										onClick={() => setTarget({ type: "all_customers" })}
 										className={`flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
 											target.type === "all_customers"
-												? "bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold"
+												? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 												: "hover:bg-muted text-muted-foreground hover:text-foreground"
 										}`}
 									>
-										<Globe className="h-3.5 w-3.5 text-amber-500" />
+										<Globe className="h-3.5 w-3.5 text-muted-foreground" />
 										<span>All Customers</span>
-										{scopeGrants?.all_customers && <Check className="ml-auto h-3 w-3 text-emerald-500" />}
+										{scopeGrants?.all_customers && <Check className="ml-auto h-3 w-3 text-foreground" />}
 									</div>
 
 									<div className="border-t pt-1 pl-2 space-y-0.5">
@@ -1129,7 +1296,7 @@ export default function RBACView() {
 													onClick={() => setTarget({ type: "customer", customer: cust })}
 													className={`flex cursor-pointer items-center justify-between rounded-md px-2 py-1 text-xs transition-colors ${
 														isSelected
-															? "bg-amber-500/20 text-amber-900 dark:text-amber-200 font-semibold"
+															? "bg-muted text-foreground font-semibold ring-1 ring-border shadow-2xs"
 															: "hover:bg-muted text-muted-foreground hover:text-foreground"
 													}`}
 												>
@@ -1137,7 +1304,7 @@ export default function RBACView() {
 														<Landmark className="h-3 w-3 shrink-0 text-muted-foreground" />
 														<span className="truncate">{cust.name}</span>
 													</div>
-													{scopeGrants?.customers?.[cust.id] && <Check className="h-3 w-3 shrink-0 text-emerald-500" />}
+													{scopeGrants?.customers?.[cust.id] && <Check className="h-3 w-3 shrink-0 text-foreground" />}
 												</div>
 											);
 										})}
@@ -1193,7 +1360,7 @@ export default function RBACView() {
 											</select>
 											<span>• Email: {targetUser.email || "No email"}</span>
 											{inheritedForUser && (
-												<span className="text-purple-600 dark:text-purple-400">
+												<span className="text-muted-foreground">
 													• Also inherits {inheritedForUser.count} section{inheritedForUser.count === 1 ? "" : "s"} from{" "}
 													{inheritedForUser.sources.join(", ")}
 												</span>
@@ -1227,9 +1394,6 @@ export default function RBACView() {
 
 							{/* Action Buttons */}
 							<div className="flex flex-wrap items-center gap-2">
-								<Button variant="outline" size="sm" onClick={handleSelectAllReadView} disabled={!canUpdateRbac} className="h-8 text-xs font-medium">
-									View Only
-								</Button>
 								<Button variant="outline" size="sm" onClick={handleSelectAll} disabled={!canUpdateRbac} className="h-8 text-xs font-medium">
 									Full Access (All)
 								</Button>
@@ -1248,7 +1412,7 @@ export default function RBACView() {
 						</div>
 
 						{!canUpdateRbac && (
-							<div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium mt-3" data-testid="rbac-view-only-banner">
+							<div className="flex items-center gap-2 rounded-md bg-muted/50 border border-border px-3 py-2 text-xs text-muted-foreground font-medium mt-3" data-testid="rbac-view-only-banner">
 								<Eye className="h-4 w-4 shrink-0" />
 								<span>View-only access: roles and permissions cannot be modified.</span>
 							</div>
@@ -1267,12 +1431,16 @@ export default function RBACView() {
 					</div>
 
 					{/* Explanation Notice */}
-					<div className="border-b bg-muted/30 px-4 py-2 text-xs flex items-center gap-2 text-muted-foreground">
-						<Info className="h-4 w-4 shrink-0 text-emerald-500" />
+					<div className="border-b bg-muted/30 px-4 py-2.5 text-xs flex items-center gap-2 text-muted-foreground">
+						<Info className="h-4 w-4 shrink-0 text-muted-foreground" />
 						<span>
-							Permissions are configured into 4 clear levels: <strong>View</strong> (read-only), <strong>Edit</strong> (view + create/update),{" "}
-							<strong>Delete</strong> (remove records), or <strong>Full Access</strong> (complete control). Showing{" "}
-							<strong>{groupedPermissions.length}</strong> workspace features (scroll for Observability, Models, Governance, Prompt Repo, and more).
+							Permissions are configured into 4 clear levels: <strong>View</strong> (read-only & exports), <strong>Create</strong> (add new records), <strong>Edit</strong> (modify existing data), <strong>Delete</strong> (remove records), or <strong>Full Access</strong>. Showing{" "}
+							<strong>{groupedPermissions.length}</strong> workspace features across 8 primary categories.
+							{isTargetUserRole && (
+								<span className="ml-1 text-foreground/80 font-medium">
+									• User role is restricted to View-only across workspace features (Full Access is active on Prompt Repository).
+								</span>
+							)}
 						</span>
 					</div>
 
@@ -1293,208 +1461,251 @@ export default function RBACView() {
 									</div>
 									{section.items.map(([resource, perms]) => {
 										const resourceLabel = RESOURCE_LABELS[resource] || resource;
-								const viewPerms = perms.filter((p) => p.operation === "Read" || p.operation === "View");
-								const editPerms = perms.filter((p) => p.operation === "Create" || p.operation === "Update");
-								const deletePerms = perms.filter((p) => p.operation === "Delete");
-								const allPermIds = perms.map((p) => p.id);
-								const viewIds = viewPerms.map((p) => p.id);
-								const editIds = editPerms.map((p) => p.id);
-								const deleteIds = deletePerms.map((p) => p.id);
+										const isUserRestricted = isTargetUserRole && resource !== "PromptRepository";
 
-								const isViewActive = viewIds.length > 0 && viewIds.some((id) => selectedPerms.includes(id));
-								const isEditActive = editIds.length > 0 && editIds.some((id) => selectedPerms.includes(id)) && isViewActive;
-								const isDeleteActive = deleteIds.length > 0 && deleteIds.every((id) => selectedPerms.includes(id));
-								const isFullAccessActive = allPermIds.length > 0 && allPermIds.every((id) => selectedPerms.includes(id));
+										const viewPerms = perms.filter((p) => p.operation === "Read" || p.operation === "View" || p.operation === "Download");
+										const createPerms = perms.filter((p) => p.operation === "Create");
+										const editPerms = perms.filter((p) => p.operation === "Update");
+										const deletePerms = perms.filter((p) => p.operation === "Delete");
 
-								const toggleView = () => {
-									if (isViewActive) {
-										const toRemove = new Set(allPermIds);
-										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
-									} else {
-										setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds])));
-									}
-								};
+										const allPermIds = perms.map((p) => p.id);
+										const viewIds = viewPerms.map((p) => p.id);
+										const createIds = createPerms.map((p) => p.id);
+										const editIds = editPerms.map((p) => p.id);
+										const deleteIds = deletePerms.map((p) => p.id);
 
-								const toggleEdit = () => {
-									if (isEditActive) {
-										const toRemove = new Set(editIds);
-										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
-									} else {
-										setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds, ...editIds])));
-									}
-								};
+										const isViewActive = viewIds.length > 0 && viewIds.some((id) => selectedPerms.includes(id));
+										const isCreateActive = createIds.length > 0 && createIds.some((id) => selectedPerms.includes(id));
+										const isEditActive = editIds.length > 0 && editIds.some((id) => selectedPerms.includes(id));
+										const isDeleteActive = deleteIds.length > 0 && deleteIds.some((id) => selectedPerms.includes(id));
+										const isFullAccessActive = allPermIds.length > 0 && allPermIds.every((id) => selectedPerms.includes(id));
 
-								const toggleDelete = () => {
-									if (isDeleteActive) {
-										const toRemove = new Set(deleteIds);
-										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
-									} else {
-										setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds, ...deleteIds])));
-									}
-								};
+										const toggleView = () => {
+											if (isViewActive) {
+												const toRemove = new Set(allPermIds);
+												setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
+											} else {
+												setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds])));
+											}
+										};
 
-								const toggleFullAccess = () => {
-									if (isFullAccessActive) {
-										const toRemove = new Set(allPermIds);
-										setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
-									} else {
-										setSelectedPerms((prev) => Array.from(new Set([...prev, ...allPermIds])));
-									}
-								};
+										const toggleCreate = () => {
+											if (isUserRestricted) return;
+											if (isCreateActive) {
+												const toRemove = new Set(createIds);
+												setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
+											} else {
+												setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds, ...createIds])));
+											}
+										};
 
-								const renderStatusBadge = () => {
-									if (isFullAccessActive) {
+										const toggleEdit = () => {
+											if (isUserRestricted) return;
+											if (isEditActive) {
+												const toRemove = new Set(editIds);
+												setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
+											} else {
+												setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds, ...editIds])));
+											}
+										};
+
+										const toggleDelete = () => {
+											if (isUserRestricted) return;
+											if (isDeleteActive) {
+												const toRemove = new Set(deleteIds);
+												setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
+											} else {
+												setSelectedPerms((prev) => Array.from(new Set([...prev, ...viewIds, ...deleteIds])));
+											}
+										};
+
+										const toggleFullAccess = () => {
+											if (isUserRestricted) return;
+											if (isFullAccessActive) {
+												const toRemove = new Set(allPermIds);
+												setSelectedPerms((prev) => prev.filter((id) => !toRemove.has(id)));
+											} else {
+												setSelectedPerms((prev) => Array.from(new Set([...prev, ...allPermIds])));
+											}
+										};
+
+										const renderStatusBadge = () => {
+											if (isFullAccessActive) {
+												return (
+													<Badge variant="outline" className="bg-foreground/10 text-foreground border-foreground/30 text-[11px] font-semibold gap-1">
+														<Check className="h-3 w-3 text-foreground" />
+														Full Access
+													</Badge>
+												);
+											}
+											if (isCreateActive && isEditActive && isDeleteActive) {
+												return (
+													<Badge variant="outline" className="bg-muted/60 text-foreground border-border/80 text-[11px] font-medium">
+														Create, Edit & Delete
+													</Badge>
+												);
+											}
+											if (isCreateActive && isEditActive) {
+												return (
+													<Badge variant="outline" className="bg-muted/60 text-foreground border-border/80 text-[11px] font-medium">
+														Create & Edit
+													</Badge>
+												);
+											}
+											if (isEditActive && isDeleteActive) {
+												return (
+													<Badge variant="outline" className="bg-muted/60 text-foreground border-border/80 text-[11px] font-medium">
+														Edit & Delete
+													</Badge>
+												);
+											}
+											if (isCreateActive) {
+												return (
+													<Badge variant="outline" className="bg-muted/60 text-foreground border-border/80 text-[11px] font-medium">
+														View & Create
+													</Badge>
+												);
+											}
+											if (isEditActive) {
+												return (
+													<Badge variant="outline" className="bg-muted/60 text-foreground border-border/80 text-[11px] font-medium">
+														View & Edit
+													</Badge>
+												);
+											}
+											if (isDeleteActive) {
+												return (
+													<Badge variant="outline" className="bg-muted/60 text-foreground border-border/80 text-[11px] font-medium">
+														View & Delete
+													</Badge>
+												);
+											}
+											if (isViewActive) {
+												return (
+													<Badge variant="outline" className="bg-muted/60 text-foreground border-border/80 text-[11px] font-medium">
+														View Only
+													</Badge>
+												);
+											}
+											return (
+												<Badge variant="outline" className="text-muted-foreground/60 text-[11px] font-normal border-border/50">
+													No Access
+												</Badge>
+											);
+										};
+
 										return (
-											<Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[11px] font-semibold gap-1">
-												<Check className="h-3 w-3 text-emerald-500" />
-												Full Access
-											</Badge>
-										);
-									}
-									if (isEditActive && isDeleteActive) {
-										return (
-											<Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[11px] font-medium">
-												Edit & Delete
-											</Badge>
-										);
-									}
-									if (isEditActive) {
-										return (
-											<Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30 text-[11px] font-medium">
-												Edit Only
-											</Badge>
-										);
-									}
-									if (isDeleteActive) {
-										return (
-											<Badge className="bg-rose-500/15 text-rose-700 dark:text-rose-400 border-rose-500/30 text-[11px] font-medium">
-												Delete Only
-											</Badge>
-										);
-									}
-									if (isViewActive) {
-										return (
-											<Badge className="bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30 text-[11px] font-medium">
-												View Only
-											</Badge>
-										);
-									}
-									return (
-										<Badge variant="outline" className="text-muted-foreground text-[11px] font-normal">
-											No Access
-										</Badge>
-									);
-								};
+											<div
+												key={resource}
+												className="bg-card/70 hover:bg-card/95 rounded-xl border p-3.5 transition-all shadow-2xs hover:shadow-xs"
+											>
+												{/* Resource Header */}
+												<div className="mb-2.5 flex items-center justify-between">
+													<div className="flex min-w-0 items-center gap-2">
+														<span className="truncate font-semibold text-sm tracking-tight text-foreground" title={resource}>
+															{resourceLabel}
+														</span>
+														{renderStatusBadge()}
+													</div>
+												</div>
 
-								return (
-									<div
-										key={resource}
-										className="bg-card/70 hover:bg-card/95 rounded-xl border p-3.5 transition-all shadow-2xs hover:shadow-xs"
-									>
-										{/* Resource Header */}
-										<div className="mb-2.5 flex items-center justify-between">
-											<div className="flex min-w-0 items-center gap-2">
-												<span className="truncate font-semibold text-sm tracking-tight text-foreground" title={resource}>
-													{resourceLabel}
-												</span>
-												{renderStatusBadge()}
-											</div>
-
-											<div className="flex items-center gap-2">
-												{isFullAccessActive ? (
+												{/* 5-tier clean toggle buttons: View, Create, Edit, Delete, Full Access */}
+												<div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+													{/* 1. VIEW */}
 													<button
 														type="button"
 														disabled={!canUpdateRbac}
-														onClick={canUpdateRbac ? toggleFullAccess : undefined}
-														className={`text-xs text-muted-foreground hover:text-destructive transition-colors font-medium ${
-															canUpdateRbac ? "cursor-pointer" : "opacity-40 cursor-not-allowed"
+														onClick={canUpdateRbac ? toggleView : undefined}
+														className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-2.5 ${
+															!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
+														} ${
+															isViewActive
+																? "border-foreground/30 bg-foreground/10 text-foreground font-semibold shadow-2xs ring-1 ring-foreground/15"
+																: "border-border/70 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground"
 														}`}
+														title="View data, filter and download records"
 													>
-														Clear Access
+														View
 													</button>
-												) : (
+
+													{/* 2. CREATE */}
 													<button
 														type="button"
-														disabled={!canUpdateRbac}
-														onClick={canUpdateRbac ? toggleFullAccess : undefined}
-														className={`text-xs text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors font-semibold ${
-															canUpdateRbac ? "cursor-pointer" : "opacity-40 cursor-not-allowed"
+														disabled={!canUpdateRbac || isUserRestricted}
+														onClick={canUpdateRbac && !isUserRestricted ? toggleCreate : undefined}
+														className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-2.5 ${
+															!canUpdateRbac || isUserRestricted
+																? "cursor-not-allowed opacity-35 bg-muted/20 border-border/40 text-muted-foreground/50"
+																: "cursor-pointer"
+														} ${
+															isCreateActive
+																? "border-foreground/30 bg-foreground/10 text-foreground font-semibold shadow-2xs ring-1 ring-foreground/15"
+																: "border-border/70 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground"
 														}`}
+														title={isUserRestricted ? "Regular users are restricted to View-only" : "Create new records"}
 													>
-														Grant Full Access
+														Create
 													</button>
-												)}
+
+													{/* 3. EDIT */}
+													<button
+														type="button"
+														disabled={!canUpdateRbac || isUserRestricted}
+														onClick={canUpdateRbac && !isUserRestricted ? toggleEdit : undefined}
+														className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-2.5 ${
+															!canUpdateRbac || isUserRestricted
+																? "cursor-not-allowed opacity-35 bg-muted/20 border-border/40 text-muted-foreground/50"
+																: "cursor-pointer"
+														} ${
+															isEditActive
+																? "border-foreground/30 bg-foreground/10 text-foreground font-semibold shadow-2xs ring-1 ring-foreground/15"
+																: "border-border/70 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+														}`}
+														title={isUserRestricted ? "Regular users are restricted to View-only" : "Modify existing records"}
+													>
+														Edit
+													</button>
+
+													{/* 4. DELETE */}
+													<button
+														type="button"
+														disabled={!canUpdateRbac || isUserRestricted}
+														onClick={canUpdateRbac && !isUserRestricted ? toggleDelete : undefined}
+														className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-2.5 ${
+															!canUpdateRbac || isUserRestricted
+																? "cursor-not-allowed opacity-35 bg-muted/20 border-border/40 text-muted-foreground/50"
+																: "cursor-pointer"
+														} ${
+															isDeleteActive
+																? "border-foreground/30 bg-foreground/10 text-foreground font-semibold shadow-2xs ring-1 ring-foreground/15"
+																: "border-border/70 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+														}`}
+														title={isUserRestricted ? "Regular users are restricted to View-only" : "Delete records"}
+													>
+														Delete
+													</button>
+
+													{/* 5. FULL ACCESS */}
+													<button
+														type="button"
+														disabled={!canUpdateRbac || isUserRestricted}
+														onClick={canUpdateRbac && !isUserRestricted ? toggleFullAccess : undefined}
+														className={`h-8 rounded-lg border text-xs font-semibold transition-all duration-150 flex items-center justify-center px-2.5 ${
+															!canUpdateRbac || isUserRestricted
+																? "cursor-not-allowed opacity-35 bg-muted/20 border-border/40 text-muted-foreground/50"
+																: "cursor-pointer"
+														} ${
+															isFullAccessActive
+																? "border-foreground bg-foreground text-background font-semibold shadow-xs"
+																: "border-border/70 bg-card hover:bg-muted/50 text-muted-foreground hover:text-foreground"
+														}`}
+														title={isUserRestricted ? "Regular users are restricted to View-only" : "Grant full access (View, Create, Edit, Delete)"}
+													>
+														Full Access
+													</button>
+												</div>
 											</div>
-										</div>
-
-										{/* 4-tier clean toggle buttons */}
-										<div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-											{/* 1. VIEW */}
-											<button
-												type="button"
-												disabled={!canUpdateRbac}
-												onClick={canUpdateRbac ? toggleView : undefined}
-												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-3 ${
-													!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
-												} ${
-													isViewActive
-														? "border-sky-500/60 bg-sky-500/15 text-sky-800 dark:text-sky-200 font-semibold shadow-2xs ring-1 ring-sky-500/30"
-														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-												}`}
-											>
-												View
-											</button>
-
-											{/* 2. EDIT */}
-											<button
-												type="button"
-												disabled={!canUpdateRbac}
-												onClick={canUpdateRbac ? toggleEdit : undefined}
-												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-3 ${
-													!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
-												} ${
-													isEditActive
-														? "border-blue-500/60 bg-blue-500/15 text-blue-800 dark:text-blue-200 font-semibold shadow-2xs ring-1 ring-blue-500/30"
-														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-												}`}
-											>
-												Edit
-											</button>
-
-											{/* 3. DELETE */}
-											<button
-												type="button"
-												disabled={!canUpdateRbac}
-												onClick={canUpdateRbac ? toggleDelete : undefined}
-												className={`h-8 rounded-lg border text-xs font-medium transition-all duration-150 flex items-center justify-center px-3 ${
-													!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
-												} ${
-													isDeleteActive
-														? "border-rose-500/60 bg-rose-500/15 text-rose-800 dark:text-rose-200 font-semibold shadow-2xs ring-1 ring-rose-500/30"
-														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-												}`}
-											>
-												Delete
-											</button>
-
-											{/* 4. FULL ACCESS */}
-											<button
-												type="button"
-												disabled={!canUpdateRbac}
-												onClick={canUpdateRbac ? toggleFullAccess : undefined}
-												className={`h-8 rounded-lg border text-xs font-semibold transition-all duration-150 flex items-center justify-center px-3 ${
-													!canUpdateRbac ? "cursor-not-allowed opacity-75" : "cursor-pointer"
-												} ${
-													isFullAccessActive
-														? "border-emerald-500/60 bg-emerald-500/20 text-emerald-900 dark:text-emerald-100 shadow-2xs ring-1 ring-emerald-500/30"
-														: "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-												}`}
-											>
-												Full Access
-											</button>
-										</div>
-									</div>
-								);
+										);
 									})}
 								</div>
 							))
@@ -1508,7 +1719,7 @@ export default function RBACView() {
 				<DialogContent className="sm:max-w-md no-scrollbar">
 					<DialogHeader>
 						<DialogTitle className="flex items-center gap-2">
-							<Shield className="h-5 w-5 text-emerald-500" />
+							<Shield className="h-5 w-5 text-foreground" />
 							Create New RBAC Role
 						</DialogTitle>
 					</DialogHeader>

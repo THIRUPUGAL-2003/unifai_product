@@ -25,6 +25,9 @@ func isSectionGrantedForPath(granted, path string) bool {
 				if parent, _, found := strings.Cut(key, "/"); found && g == parent {
 					return true
 				}
+				if parent, _, found := strings.Cut(g, "/"); found && key == parent {
+					return true
+				}
 			}
 		}
 		return false
@@ -49,8 +52,6 @@ func isSectionGrantedForPath(granted, path string) bool {
 		strings.HasPrefix(path, "/api/governance/users"),
 		strings.HasPrefix(path, "/api/governance/virtual-keys"),
 		strings.HasPrefix(path, "/api/governance/providers"),
-		strings.HasPrefix(path, "/api/mcp/clients"),
-		strings.HasPrefix(path, "/api/skills"),
 		strings.HasPrefix(path, "/api/governance/model-configs"),
 		strings.HasPrefix(path, "/api/governance/pricing-overrides"),
 		strings.HasPrefix(path, "/api/circuit-breaker"),
@@ -91,7 +92,7 @@ func isSectionGrantedForPath(granted, path string) bool {
 		return hasGrant("adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings")
 
 	case strings.HasPrefix(path, "/api/mcp"):
-		return hasGrant("mcp-gateway", "mcp-gateway/mcp-catalog", "mcp-gateway/mcp-library", "mcp-gateway/tool-groups", "mcp-gateway/auth-sessions", "mcp-gateway/oauth-grants", "mcp-gateway/mcp-settings")
+		return hasGrant("mcp-gateway", "mcp-gateway/mcp-catalog", "mcp-gateway/mcp-library", "mcp-gateway/tool-groups", "mcp-gateway/auth-sessions", "mcp-gateway/oauth-grants", "mcp-gateway/mcp-settings", "prompt-repository")
 
 	case strings.HasPrefix(path, "/api/plugins"):
 		return hasGrant("plugins", "observability", "observability/connectors")
@@ -158,6 +159,9 @@ func resourcesForGrantedSections(grantedSections string) []string {
 				if parent, _, found := strings.Cut(key, "/"); found && g == parent {
 					return true
 				}
+				if parent, _, found := strings.Cut(g, "/"); found && key == parent {
+					return true
+				}
 			}
 		}
 		return false
@@ -174,56 +178,116 @@ func resourcesForGrantedSections(grantedSections string) []string {
 		}
 	}
 
+	// 1. Observability (5 features)
+	if hasGrant("observability", "observability/dashboard") {
+		add("Dashboard", "Metrics")
+	}
 	if hasGrant("observability", "observability/llm-logs") {
 		add("Logs")
-	}
-	if hasGrant("observability", "observability/dashboard") {
-		add("Dashboard")
-	}
-	if hasGrant("observability", "observability/connectors") {
-		add("Observability")
 	}
 	if hasGrant("observability", "observability/mcp-logs") {
 		add("MCPLogs")
 	}
-	if hasGrant("browser-ai") {
-		add("Logs")
+	if hasGrant("observability", "observability/connectors") {
+		add("Observability")
 	}
-	if hasGrant("models", "models/model-providers", "models/model-catalog", "models/pricing-overrides", "models/model-settings") {
+	if hasGrant("observability", "observability/logs-settings") {
+		add("LogsSettings", "Settings")
+	}
+
+	// 2. Browser AI (8 features)
+	if hasGrant("browser-ai", "browser-ai/overview") {
+		add("BrowserAIOverview", "Logs")
+	}
+	if hasGrant("browser-ai", "browser-ai/targets") {
+		add("BrowserAITargets", "Logs")
+	}
+	if hasGrant("browser-ai", "browser-ai/rules") {
+		add("BrowserAIRules", "Logs")
+	}
+	if hasGrant("browser-ai", "browser-ai/logs") {
+		add("BrowserAILogs", "Logs")
+	}
+	if hasGrant("browser-ai", "browser-ai/search-logs") {
+		add("BrowserAISearchLogs", "Logs")
+	}
+	if hasGrant("browser-ai", "browser-ai/setup") {
+		add("BrowserAISetup", "Logs")
+	}
+	if hasGrant("browser-ai", "browser-ai/agents") {
+		add("BrowserAIAgents", "Logs")
+	}
+	if hasGrant("browser-ai", "browser-ai/telemetry") {
+		add("BrowserAIInsights", "Logs")
+	}
+
+	// 3. Models (8 features)
+	if hasGrant("models", "models/model-providers") {
 		add("ModelProvider")
 	}
-	if hasGrant("models", "models/budgets-limits") {
-		add("Governance", "ModelProvider")
+	if hasGrant("models", "models/model-catalog") {
+		add("ModelCatalog", "ModelProvider")
 	}
-	if hasGrant("models", "models/routing-rules", "models/complexity-router") {
+	if hasGrant("models", "models/budgets-limits") {
+		add("BudgetsLimits", "Governance", "ModelProvider")
+	}
+	if hasGrant("models", "models/complexity-router") {
+		add("ComplexityRouter", "RoutingRules", "AdaptiveRouter")
+	}
+	if hasGrant("models", "models/routing-rules") {
 		add("RoutingRules", "AdaptiveRouter")
 	}
 	if hasGrant("models", "models/circuit-breaker") {
 		add("CircuitBreaker")
 	}
-	if hasGrant("settings", "settings/client-settings", "settings/compatibility", "settings/caching", "settings/security", "settings/proxy", "settings/api-keys", "settings/performance-tuning", "settings/feature-flags", "observability/logs-settings") {
-		add("Settings", "FeatureFlags", "APIKeys")
+	if hasGrant("models", "models/pricing-overrides") {
+		add("PricingOverrides", "ModelProvider")
 	}
+	if hasGrant("models", "models/model-settings") {
+		add("ModelSettings", "ModelProvider", "Settings")
+	}
+
+	// 4. MCP Gateway (7 features)
+	if hasGrant("mcp-gateway", "mcp-gateway/mcp-catalog") {
+		add("MCPCatalog", "MCPGateway")
+	}
+	if hasGrant("mcp-gateway", "mcp-gateway/mcp-library") {
+		add("MCPLibrary", "MCPGateway")
+	}
+	if hasGrant("mcp-gateway", "mcp-gateway/tool-groups") {
+		add("MCPToolGroups", "MCPGateway")
+	}
+	if hasGrant("mcp-gateway", "mcp-gateway/auth-sessions") {
+		add("MCPAuthSessions", "MCPGateway")
+	}
+	if hasGrant("mcp-gateway", "mcp-gateway/oauth-grants") {
+		add("MCPOAuthGrants", "MCPGateway")
+	}
+	if hasGrant("mcp-gateway", "mcp-gateway/mcp-settings") {
+		add("MCPSettings", "MCPGateway")
+	}
+	if hasGrant("plugins") {
+		add("Plugins", "Observability")
+	}
+
+	// 5. Governance (9 features)
 	if hasGrant("governance") {
-		add("Governance", "VirtualKeys", "Teams", "Customers", "Users", "AuditLogs", "AccessProfiles", "UserProvisioning", "RBAC")
+		add("Governance", "VirtualKeys", "Users", "Teams", "BusinessUnits", "Customers", "UserProvisioning", "RBAC", "AccessProfiles", "AuditLogs")
 	}
 	if hasGrant("governance/virtual-keys") {
 		add("VirtualKeys", "Governance")
 	}
-	if hasGrant("governance/teams", "governance/business-units") {
-		add("Teams", "Governance")
-	}
-	if hasGrant("governance/customers") {
-		add("Customers", "Governance")
-	}
 	if hasGrant("governance/users") {
 		add("Users", "Governance")
 	}
-	if hasGrant("governance/audit-logs") {
-		add("AuditLogs", "Governance")
+	if hasGrant("governance/teams") {
+		add("Teams", "Governance")
 	}
-	if hasGrant("governance/access-profiles") {
-		add("AccessProfiles", "Governance")
+	if hasGrant("governance/business-units") {
+		add("BusinessUnits", "Teams", "Governance")
+	}
+	if hasGrant("governance/customers") {
+		add("Customers", "Governance")
 	}
 	if hasGrant("governance/user-provisioning") {
 		add("UserProvisioning", "Governance")
@@ -231,30 +295,64 @@ func resourcesForGrantedSections(grantedSections string) []string {
 	if hasGrant("governance/roles-permissions") {
 		add("RBAC", "Governance")
 	}
+	if hasGrant("governance/access-profiles") {
+		add("AccessProfiles", "Governance")
+	}
+	if hasGrant("governance/audit-logs") {
+		add("AuditLogs", "Governance")
+	}
+
+	// 6. Guardrails (3 features)
 	if hasGrant("guardrails", "guardrails/rules") {
-		add("GuardrailsConfig", "GuardrailRules")
+		add("GuardrailRules", "GuardrailsConfig")
 	}
 	if hasGrant("guardrails", "guardrails/providers") {
-		add("GuardrailsProviders")
+		add("GuardrailsProviders", "GuardrailsConfig")
 	}
 	if hasGrant("guardrails", "guardrails/cluster-config", "cluster-config") {
 		add("Cluster")
 	}
-	if hasGrant("adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings") {
-		add("AdaptiveRouter")
+
+	// 7. Adaptive Routing (4 features)
+	if hasGrant("adaptive-routing", "adaptive-routing/dashboard") {
+		add("AdaptiveRoutingDashboard", "AdaptiveRouter")
+	}
+	if hasGrant("adaptive-routing", "adaptive-routing/settings") {
+		add("AdaptiveRoutingSettings", "AdaptiveRouter")
 	}
 	if hasGrant("prompt-repository") {
-		add("PromptRepository")
+		add("PromptRepository", "PromptDeploymentStrategy", "Inference")
 	}
 	if hasGrant("skills-repository") {
 		add("SkillsRepository")
 	}
-	if hasGrant("mcp-gateway") {
-		add("MCPGateway", "MCPToolGroups")
+
+	// 8. Settings (7 features)
+	if hasGrant("settings") {
+		add("Settings", "ClientSettings", "Compatibility", "Caching", "Security", "APIKeys", "PerformanceTuning", "FeatureFlags")
 	}
-	if hasGrant("plugins") {
-		add("Plugins", "Observability")
+	if hasGrant("settings/client-settings") {
+		add("ClientSettings", "Settings")
 	}
+	if hasGrant("settings/compatibility") {
+		add("Compatibility", "Settings")
+	}
+	if hasGrant("settings/caching") {
+		add("Caching", "Settings")
+	}
+	if hasGrant("settings/security") {
+		add("Security", "Settings")
+	}
+	if hasGrant("settings/api-keys") {
+		add("APIKeys", "Settings")
+	}
+	if hasGrant("settings/performance-tuning") {
+		add("PerformanceTuning", "Settings")
+	}
+	if hasGrant("settings/feature-flags") {
+		add("FeatureFlags", "Settings")
+	}
+
 	return out
 }
 

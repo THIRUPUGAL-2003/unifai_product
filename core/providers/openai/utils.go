@@ -33,8 +33,8 @@ func ConvertOpenAIMessagesToGatewayMessages(messages []OpenAIMessage) []schemas.
 }
 
 func ConvertGatewayMessagesToOpenAIMessages(messages []schemas.ChatMessage) []OpenAIMessage {
-	openaiMessages := make([]OpenAIMessage, len(messages))
-	for i, message := range messages {
+	openaiMessages := make([]OpenAIMessage, 0, len(messages))
+	for _, message := range messages {
 		msgContent := message.Content
 		if msgContent != nil && len(msgContent.ContentBlocks) > 0 {
 			hasNonText := false
@@ -60,10 +60,29 @@ func ConvertGatewayMessagesToOpenAIMessages(messages []schemas.ChatMessage) []Op
 				msgContent = &schemas.ChatMessageContent{
 					ContentBlocks: filteredBlocks,
 				}
+			} else {
+				msgContent = nil
 			}
 		}
 
-		openaiMessages[i] = OpenAIMessage{
+		// Filter out empty messages (content is empty string/nil without tool calls)
+		// when there are multiple messages, preventing upstream 400 Bad Request errors
+		isEmpty := false
+		if msgContent == nil {
+			isEmpty = true
+		} else if msgContent.ContentStr != nil && strings.TrimSpace(*msgContent.ContentStr) == "" {
+			isEmpty = true
+		} else if len(msgContent.ContentBlocks) == 0 && msgContent.ContentStr == nil {
+			isEmpty = true
+		}
+		hasTools := (message.ChatToolMessage != nil && message.ChatToolMessage.ToolCallID != nil) ||
+			(message.ChatAssistantMessage != nil && len(message.ChatAssistantMessage.ToolCalls) > 0)
+
+		if isEmpty && !hasTools && len(messages) > 1 {
+			continue
+		}
+
+		entry := OpenAIMessage{
 			Name:            message.Name,
 			Role:            message.Role,
 			Content:         msgContent,
@@ -78,7 +97,7 @@ func ConvertGatewayMessagesToOpenAIMessages(messages []schemas.ChatMessage) []Op
 			if stripped := utils.StripThoughtSignature(*message.ChatToolMessage.ToolCallID); stripped != *message.ChatToolMessage.ToolCallID {
 				toolMsgCopy := *message.ChatToolMessage
 				toolMsgCopy.ToolCallID = &stripped
-				openaiMessages[i].ChatToolMessage = &toolMsgCopy
+				entry.ChatToolMessage = &toolMsgCopy
 			}
 		}
 		if message.ChatAssistantMessage != nil {
@@ -104,13 +123,20 @@ func ConvertGatewayMessagesToOpenAIMessages(messages []schemas.ChatMessage) []Op
 				}
 				toolCalls = cloned
 			}
-			openaiMessages[i].OpenAIChatAssistantMessage = &OpenAIChatAssistantMessage{
+			entry.OpenAIChatAssistantMessage = &OpenAIChatAssistantMessage{
 				Refusal:     message.ChatAssistantMessage.Refusal,
 				Reasoning:   message.ChatAssistantMessage.Reasoning,
 				Annotations: message.ChatAssistantMessage.Annotations,
 				ToolCalls:   toolCalls,
 			}
 		}
+		openaiMessages = append(openaiMessages, entry)
+	}
+	if len(openaiMessages) == 0 && len(messages) > 0 {
+		openaiMessages = append(openaiMessages, OpenAIMessage{
+			Role:    messages[0].Role,
+			Content: messages[0].Content,
+		})
 	}
 	return openaiMessages
 }

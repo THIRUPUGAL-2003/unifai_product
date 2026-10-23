@@ -989,6 +989,17 @@ export class Message {
 				if (p?.tool_calls && p.tool_calls.length > 0) msg.tool_calls = p.tool_calls;
 				if (p?.tool_call_id) msg.tool_call_id = p.tool_call_id;
 				return msg;
+			}).filter((msg) => {
+				// Strip empty messages (e.g. user messages with content: "") that cause providers like OpenRouter/Cohere to return 400
+				if (msg.tool_calls && msg.tool_calls.length > 0) return true;
+				if (msg.tool_call_id) return true;
+				if (Array.isArray(msg.content)) {
+					return msg.content.length > 0;
+				}
+				if (typeof msg.content === "string") {
+					return msg.content.trim().length > 0;
+				}
+				return Boolean(msg.content);
 			});
 	}
 
