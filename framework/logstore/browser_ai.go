@@ -589,6 +589,13 @@ type BrowserControlSettings struct {
 	CorporateBlockMessage   string `gorm:"type:text" json:"corporate_block_message"`
 	PolicyVersion           int    `json:"policy_version"`
 
+	// Clipboard, Drag-and-Drop & Download Data Governance
+	BlockClipboard           bool   `json:"block_clipboard"`
+	BlockDragDrop            bool   `json:"block_drag_drop"`
+	BlockDownload            bool   `json:"block_download"`
+	GovernanceTargetWebsites string `gorm:"type:text" json:"governance_target_websites"`
+	GovernanceBlockMessage   string `gorm:"type:text" json:"governance_block_message"`
+
 	UpdatedAt           time.Time `json:"updated_at"`
 }
 
@@ -1441,26 +1448,31 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 	}
 
 	allowed := map[string]bool{
-		"enabled":                   true,
-		"block_upload":              true,
-		"upload_warning":            true,
-		"attachment_retention":      true,
-		"search_log_auto_delete":    true,
-		"search_log_retention":      true,
-		"prompt_log_auto_delete":    true,
-		"prompt_log_retention":      true,
-		"enforce_corporate_domains": true,
-		"corporate_email_domains":   true,
-		"allowed_workspace_ids":     true,
-		"corporate_block_message":   true,
-		"policy_version":            true,
+		"enabled":                    true,
+		"block_upload":               true,
+		"upload_warning":             true,
+		"attachment_retention":       true,
+		"search_log_auto_delete":     true,
+		"search_log_retention":       true,
+		"prompt_log_auto_delete":     true,
+		"prompt_log_retention":       true,
+		"enforce_corporate_domains":  true,
+		"corporate_email_domains":    true,
+		"allowed_workspace_ids":      true,
+		"corporate_block_message":    true,
+		"policy_version":             true,
+		"block_clipboard":            true,
+		"block_drag_drop":            true,
+		"block_download":             true,
+		"governance_target_websites": true,
+		"governance_block_message":   true,
 	}
 	filtered := map[string]any{}
 	for k, v := range updates {
 		if !allowed[k] {
 			continue
 		}
-		if k == "upload_warning" || k == "corporate_email_domains" || k == "allowed_workspace_ids" || k == "corporate_block_message" {
+		if k == "upload_warning" || k == "corporate_email_domains" || k == "allowed_workspace_ids" || k == "corporate_block_message" || k == "governance_target_websites" || k == "governance_block_message" {
 			if s, ok := v.(string); ok {
 				filtered[k] = strings.TrimSpace(s)
 				continue

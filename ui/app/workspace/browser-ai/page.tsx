@@ -1308,6 +1308,123 @@ export default function BrowserAiPage() {
 		}
 	};
 
+	// Clipboard, Drag-and-Drop & Download Data Governance (RFP 6.3.8 VI (d))
+	const [governanceBlockMsgInput, setGovernanceBlockMsgInput] = useState("");
+
+	useEffect(() => {
+		if (controls.governance_block_message) {
+			setGovernanceBlockMsgInput(controls.governance_block_message);
+		}
+	}, [controls.governance_block_message]);
+
+	const configuredGovWebsites = useMemo(() => {
+		const raw = controls.governance_target_websites || "";
+		if (!raw.trim() || raw.trim().toLowerCase() === "all" || raw.trim().toLowerCase() === "*") {
+			return ["all"];
+		}
+		return raw
+			.split(/[,\s;]+/)
+			.map((s) => s.trim().toLowerCase())
+			.filter(Boolean);
+	}, [controls.governance_target_websites]);
+
+	const handleToggleClipboardGovernance = async (checked: boolean) => {
+		const ok = await patchControl({ block_clipboard: checked });
+		if (ok) {
+			toast({
+				title: checked ? "Clipboard Blocking Enabled" : "Clipboard Blocking Disabled",
+				description: checked
+					? "Copy, cut, and paste interactions are strictly blocked on target websites."
+					: "Clipboard operations are now allowed.",
+			});
+		}
+	};
+
+	const handleToggleDragDropGovernance = async (checked: boolean) => {
+		const ok = await patchControl({ block_drag_drop: checked });
+		if (ok) {
+			toast({
+				title: checked ? "Drag-and-Drop Blocking Enabled" : "Drag-and-Drop Blocking Disabled",
+				description: checked
+					? "Dragging and dropping files into AI chats is strictly blocked."
+					: "Drag-and-drop file ingestion is now allowed.",
+			});
+		}
+	};
+
+	const handleToggleDownloadGovernance = async (checked: boolean) => {
+		const ok = await patchControl({ block_download: checked });
+		if (ok) {
+			toast({
+				title: checked ? "File Download Blocking Enabled" : "File Download Blocking Disabled",
+				description: checked
+					? "Exporting and downloading files from AI chats is strictly blocked."
+					: "File downloads are now allowed.",
+			});
+		}
+	};
+
+	const handleToggleSelectAllGovernance = async (enableAll: boolean) => {
+		const ok = await patchControl({
+			block_clipboard: enableAll,
+			block_drag_drop: enableAll,
+			block_download: enableAll,
+		});
+		if (ok) {
+			toast({
+				title: enableAll ? "All Governance Protections Enabled" : "All Governance Protections Disabled",
+				description: enableAll
+					? "Clipboard, Drag-Drop, and File Downloads are now strictly blocked."
+					: "All data governance restrictions disabled.",
+			});
+		}
+	};
+
+	const handleToggleGovernanceTargetWebsite = async (domain: string) => {
+		const targetDom = domain.trim().toLowerCase();
+		let next: string[];
+		if (configuredGovWebsites.includes("all")) {
+			// Currently protecting all websites, toggling this domain starts selective scoping
+			next = [targetDom];
+		} else if (configuredGovWebsites.includes(targetDom)) {
+			next = configuredGovWebsites.filter((d) => d !== targetDom);
+			if (next.length === 0) {
+				next = ["all"];
+			}
+		} else {
+			next = [...configuredGovWebsites, targetDom];
+		}
+		const val = next.includes("all") ? "all" : next.join(", ");
+		const ok = await patchControl({ governance_target_websites: val });
+		if (ok) {
+			toast({
+				title: "Governance Target Scoping Updated",
+				description: val === "all" ? "Protections apply to all monitored target websites." : `Protections scoped to: ${val}`,
+			});
+		}
+	};
+
+	const handleSetAllGovernanceWebsites = async () => {
+		const ok = await patchControl({ governance_target_websites: "all" });
+		if (ok) {
+			toast({
+				title: "Governance Target Scoping Updated",
+				description: "Protections now apply to all monitored target websites.",
+			});
+		}
+	};
+
+	const handleSaveGovernanceBlockMessage = async () => {
+		const msg = governanceBlockMsgInput.trim();
+		const ok = await patchControl({ governance_block_message: msg });
+		if (ok) {
+			toast({
+				title: "Governance Coaching Message Saved",
+				description: "Custom JIT coaching banner updated successfully.",
+			});
+		}
+	};
+
 	const handleRunSessionSimulation = async () => {
 		if (!testSimEmail.trim()) return;
 		const domain = testSimEmail.includes("@") ? testSimEmail.split("@")[1] : testSimEmail;
@@ -6000,6 +6117,260 @@ export default function BrowserAiPage() {
 											<p className="text-foreground text-xs">{testSimResult.message}</p>
 										</div>
 									) : null}
+								</div>
+							</div>
+						</CardContent>
+					</Card>
+
+					{/* Clipboard, Drag-and-Drop & Download Data Governance Card (RFP 6.3.8 VI (d)) */}
+					<Card className="bg-card border-border shadow-sm overflow-hidden">
+						<CardHeader className="pb-4">
+							<div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+								<div className="flex items-start gap-3">
+									<div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
+										<ShieldCheck className="h-6 w-6" />
+									</div>
+									<div>
+										<div className="flex flex-wrap items-center gap-2">
+											<CardTitle className="text-lg">Clipboard, Drag-and-Drop &amp; Download Data Governance</CardTitle>
+											<Badge variant="outline" className="text-[10px] font-mono border-purple-500/30 text-purple-400 bg-purple-500/10">
+												RFP 6.3.8 VI (d)
+											</Badge>
+											{(() => {
+												const count = [controls.block_clipboard, controls.block_drag_drop, controls.block_download].filter(Boolean).length;
+												if (count === 3) {
+													return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs">All 3 Enforced</Badge>;
+												} else if (count > 0) {
+													return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-xs">{count} of 3 Enforced</Badge>;
+												} else {
+													return <Badge variant="outline" className="border-border text-muted-foreground text-xs">Disabled (Monitor Only)</Badge>;
+												}
+											})()}
+										</div>
+										<CardDescription className="text-xs mt-1">
+											Enforce strict browser-level and desktop-level controls to prevent Copy-Paste, Drag-and-Drop file ingestion, or unauthorized downloading of corporate data on AI platforms.
+										</CardDescription>
+									</div>
+								</div>
+
+								{/* Master Select All Toggle */}
+								<div className="flex items-center gap-3 shrink-0 self-start sm:self-center bg-muted/40 border border-border px-3.5 py-2.5 rounded-lg shadow-sm">
+									<div className="text-right">
+										<p className="text-xs font-semibold text-foreground">Select All Protections</p>
+										<p className="text-[10px] text-muted-foreground">Toggle all 3 governance rules</p>
+									</div>
+									<Switch
+										checked={!!(controls.block_clipboard && controls.block_drag_drop && controls.block_download)}
+										onCheckedChange={(checked) => handleToggleSelectAllGovernance(checked)}
+										aria-label="Select all data governance protections"
+									/>
+								</div>
+							</div>
+						</CardHeader>
+
+						<CardContent className="space-y-6 pt-2">
+							{/* 3 Individual Governance Toggles */}
+							<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+								{/* Control 1: Copy-Paste Strict Blocking */}
+								<div className={`p-4 rounded-xl border transition-all ${controls.block_clipboard ? "bg-purple-950/20 border-purple-700/50 shadow-sm" : "bg-card border-border hover:border-border/80"}`}>
+									<div className="flex items-start justify-between gap-3">
+										<div className="flex items-center gap-2.5">
+											<div className={`p-2 rounded-lg border ${controls.block_clipboard ? "bg-purple-500/20 text-purple-300 border-purple-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+												<Copy className="h-4 w-4" />
+											</div>
+											<div>
+												<p className="text-sm font-semibold">Copy-Paste Blocking</p>
+												<span className="text-[10px] text-muted-foreground font-mono">Clipboard Guard</span>
+											</div>
+										</div>
+										<Switch
+											checked={!!controls.block_clipboard}
+											onCheckedChange={handleToggleClipboardGovernance}
+											aria-label="Toggle Copy-Paste Blocking"
+										/>
+									</div>
+									<p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+										Strictly intercepts and blocks clipboard paste (<kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Ctrl+V</kbd>) and text copying (<kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Ctrl+C</kbd>) on AI chat surfaces.
+									</p>
+									<div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between">
+										<span className="text-[11px] text-muted-foreground">Status</span>
+										{controls.block_clipboard ? (
+											<span className="text-xs font-medium text-emerald-400 flex items-center gap-1">
+												<CheckCircle2 className="h-3 w-3" /> Enforced
+											</span>
+										) : (
+											<span className="text-xs text-muted-foreground">Disabled</span>
+										)}
+									</div>
+								</div>
+
+								{/* Control 2: Drag-and-Drop Ingestion Blocking */}
+								<div className={`p-4 rounded-xl border transition-all ${controls.block_drag_drop ? "bg-indigo-950/20 border-indigo-700/50 shadow-sm" : "bg-card border-border hover:border-border/80"}`}>
+									<div className="flex items-start justify-between gap-3">
+										<div className="flex items-center gap-2.5">
+											<div className={`p-2 rounded-lg border ${controls.block_drag_drop ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+												<Upload className="h-4 w-4" />
+											</div>
+											<div>
+												<p className="text-sm font-semibold">Drag-and-Drop Blocking</p>
+												<span className="text-[10px] text-muted-foreground font-mono">File Ingestion Guard</span>
+											</div>
+										</div>
+										<Switch
+											checked={!!controls.block_drag_drop}
+											onCheckedChange={handleToggleDragDropGovernance}
+											aria-label="Toggle Drag-and-Drop Blocking"
+										/>
+									</div>
+									<p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+										Prevents dragging &amp; dropping files, documents, source code, spreadsheets, or images into AI chat windows to avoid accidental data leakage.
+									</p>
+									<div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between">
+										<span className="text-[11px] text-muted-foreground">Status</span>
+										{controls.block_drag_drop ? (
+											<span className="text-xs font-medium text-emerald-400 flex items-center gap-1">
+												<CheckCircle2 className="h-3 w-3" /> Enforced
+											</span>
+										) : (
+											<span className="text-xs text-muted-foreground">Disabled</span>
+										)}
+									</div>
+								</div>
+
+								{/* Control 3: File Download & Export Blocking */}
+								<div className={`p-4 rounded-xl border transition-all ${controls.block_download ? "bg-sky-950/20 border-sky-700/50 shadow-sm" : "bg-card border-border hover:border-border/80"}`}>
+									<div className="flex items-start justify-between gap-3">
+										<div className="flex items-center gap-2.5">
+											<div className={`p-2 rounded-lg border ${controls.block_download ? "bg-sky-500/20 text-sky-300 border-sky-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+												<HardDriveDownload className="h-4 w-4" />
+											</div>
+											<div>
+												<p className="text-sm font-semibold">Download &amp; Export Blocking</p>
+												<span className="text-[10px] text-muted-foreground font-mono">Egress Prevention</span>
+											</div>
+										</div>
+										<Switch
+											checked={!!controls.block_download}
+											onCheckedChange={handleToggleDownloadGovernance}
+											aria-label="Toggle Download Blocking"
+										/>
+									</div>
+									<p className="text-xs text-muted-foreground mt-3 leading-relaxed">
+										Blocks downloading AI-generated code, CSV spreadsheets, PDFs, or files exported directly from AI platforms to local user storage.
+									</p>
+									<div className="mt-3 pt-3 border-t border-border/60 flex items-center justify-between">
+										<span className="text-[11px] text-muted-foreground">Status</span>
+										{controls.block_download ? (
+											<span className="text-xs font-medium text-emerald-400 flex items-center gap-1">
+												<CheckCircle2 className="h-3 w-3" /> Enforced
+											</span>
+										) : (
+											<span className="text-xs text-muted-foreground">Disabled</span>
+										)}
+									</div>
+								</div>
+							</div>
+
+							{/* Target Website Scoping Dropdown / Multi-Select Section */}
+							<div className="space-y-3 pt-4 border-t border-border">
+								<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+									<div>
+										<Label className="text-sm font-semibold flex items-center gap-1.5">
+											<Globe className="h-4 w-4 text-sky-400" />
+											Target Website Scoping
+										</Label>
+										<p className="text-xs text-muted-foreground mt-0.5">
+											Select which monitored AI target websites these data governance restrictions apply to.
+										</p>
+									</div>
+									<div className="flex items-center gap-2">
+										<Button
+											type="button"
+											variant={configuredGovWebsites.includes("all") ? "default" : "outline"}
+											size="sm"
+											className="h-7 text-xs gap-1.5"
+											onClick={handleSetAllGovernanceWebsites}
+										>
+											<Check className="h-3 w-3" />
+											All Monitored Target Websites ({targets.length})
+										</Button>
+									</div>
+								</div>
+
+								{/* Target Websites Multi-select Chips */}
+								<div className="min-h-[48px] p-3 rounded-lg border border-border bg-muted/20 flex flex-wrap items-center gap-2">
+									{targets.length === 0 ? (
+										<span className="text-xs text-muted-foreground italic px-1">
+											No target websites configured yet. Add target domains in the &quot;Target Websites&quot; tab.
+										</span>
+									) : (
+										targets.map((tgt) => {
+											const isSelected = configuredGovWebsites.includes("all") || configuredGovWebsites.includes(tgt.domain.toLowerCase());
+											return (
+												<button
+													key={tgt.id || tgt.domain}
+													type="button"
+													onClick={() => handleToggleGovernanceTargetWebsite(tgt.domain)}
+													className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs transition-all ${
+														isSelected
+															? "bg-purple-500/15 border-purple-500/40 text-purple-200 hover:bg-purple-500/25 shadow-sm"
+															: "bg-background border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+													}`}
+												>
+													<span className={`h-2 w-2 rounded-full ${isSelected ? "bg-purple-400" : "bg-muted-foreground/40"}`} />
+													<span className="font-medium">{tgt.platform_name || tgt.domain}</span>
+													<span className="text-[10px] font-mono text-muted-foreground">({tgt.domain})</span>
+													{isSelected ? (
+														<Check className="h-3 w-3 text-purple-400 ml-0.5" />
+													) : (
+														<Plus className="h-3 w-3 text-muted-foreground/60 ml-0.5 group-hover:text-foreground" />
+													)}
+												</button>
+											);
+										})
+									)}
+								</div>
+								<p className="text-[11px] text-muted-foreground">
+									Tip: Click any target website pill above to toggle governance enforcement specifically for that platform. Currently active for:{" "}
+									<span className="font-mono text-foreground font-semibold">
+										{configuredGovWebsites.includes("all") ? "All Monitored Target Websites" : configuredGovWebsites.join(", ")}
+									</span>
+								</p>
+							</div>
+
+							{/* Custom JIT Coaching & Warning Banner */}
+							<div className="space-y-3 pt-4 border-t border-border">
+								<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+									<Label className="text-sm font-semibold flex items-center gap-1.5">
+										<Shield className="h-4 w-4 text-amber-400" />
+										JIT Coaching &amp; Block Warning Message (RFP 6.3.8 VI (f))
+									</Label>
+									<span className="text-xs text-muted-foreground">
+										Custom banner shown to employees inside the browser modal when an action is blocked
+									</span>
+								</div>
+								<div className="flex flex-col sm:flex-row gap-2">
+									<Input
+										value={governanceBlockMsgInput}
+										onChange={(e) => setGovernanceBlockMsgInput(e.target.value)}
+										onKeyDown={(e) => {
+											if (e.key === "Enter") {
+												e.preventDefault();
+												void handleSaveGovernanceBlockMessage();
+											}
+										}}
+										placeholder="e.g. Corporate Data Governance: Copy-paste, file drag-and-drop, and downloads are restricted on this AI tool."
+										className="font-sans text-xs"
+									/>
+									<Button
+										type="button"
+										size="sm"
+										onClick={handleSaveGovernanceBlockMessage}
+										className="gap-1.5 shrink-0"
+									>
+										<Save className="h-3.5 w-3.5" />
+										Save Message
+									</Button>
 								</div>
 							</div>
 						</CardContent>

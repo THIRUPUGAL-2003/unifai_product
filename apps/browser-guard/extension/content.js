@@ -193,12 +193,25 @@
           if (data.server_host) {
             serverHost = data.server_host;
           }
-          var stored = { cached_rules: rules, server_host: serverHost };
+          var stored = {
+            cached_rules: rules,
+            server_host: serverHost,
+            block_clipboard: Boolean(data.block_clipboard),
+            block_drag_drop: Boolean(data.block_drag_drop),
+            block_download: Boolean(data.block_download),
+            governance_target_websites: data.governance_target_websites || "",
+            governance_block_message: data.governance_block_message || ""
+          };
           var msg = {
             source: "gateway-guard",
             nonce: guardNonce,
             type: "sync_rules",
-            rules: rules
+            rules: rules,
+            block_clipboard: Boolean(data.block_clipboard),
+            block_drag_drop: Boolean(data.block_drag_drop),
+            block_download: Boolean(data.block_download),
+            governance_target_websites: data.governance_target_websites || "",
+            governance_block_message: data.governance_block_message || ""
           };
           if (Array.isArray(data.restricted_extensions)) {
             stored.cached_exts = data.restricted_extensions;
@@ -216,7 +229,10 @@
   function armIfMonitored() {
     // 1. Check local cache first for zero-latency startup
     if (chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["cached_rules", "cached_sites", "cached_blocked_sites", "cached_exts", "server_host"], function (res) {
+      chrome.storage.local.get([
+        "cached_rules", "cached_sites", "cached_blocked_sites", "cached_exts", "server_host",
+        "block_clipboard", "block_drag_drop", "block_download", "governance_target_websites", "governance_block_message"
+      ], function (res) {
         if (res && res.server_host) serverHost = res.server_host;
         if (isServerHost(location.hostname)) {
           window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
@@ -235,7 +251,12 @@
             nonce: guardNonce,
             type: "sync_rules",
             rules: Array.isArray(res.cached_rules) ? res.cached_rules : [],
-            restricted_extensions: res.cached_exts || []
+            restricted_extensions: res.cached_exts || [],
+            block_clipboard: Boolean(res && res.block_clipboard),
+            block_drag_drop: Boolean(res && res.block_drag_drop),
+            block_download: Boolean(res && res.block_download),
+            governance_target_websites: (res && res.governance_target_websites) || "",
+            governance_block_message: (res && res.governance_block_message) || ""
           }, "*");
         } else {
           // Domain is not monitored or was deleted

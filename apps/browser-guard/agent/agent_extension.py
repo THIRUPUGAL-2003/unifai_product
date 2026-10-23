@@ -313,6 +313,24 @@ def blocked_hosts() -> list[str]:
 
 _rules_lock = threading.Lock()
 _rules_cache: tuple[float, list[dict]] = (0.0, [])
+_governance_cache: dict = {
+    "block_clipboard": False,
+    "block_drag_drop": False,
+    "block_download": False,
+    "governance_target_websites": "",
+    "governance_block_message": "",
+}
+
+
+def get_governance_controls() -> dict:
+    """Return live data governance settings (clipboard, drag-drop, download)."""
+    global _governance_cache
+    # Ensure cache is refreshed by calling dynamic_rules() if empty or old
+    try:
+        dynamic_rules()
+    except Exception:
+        pass
+    return dict(_governance_cache)
 
 
 def dynamic_rules() -> list[dict]:
@@ -351,6 +369,15 @@ def dynamic_rules() -> list[dict]:
                                 "action": str(r.get("action") or "BLOCK"),
                                 "warning_message": str(r.get("warning_message") or ""),
                             })
+                global _governance_cache
+                if "block_clipboard" in data:
+                    _governance_cache = {
+                        "block_clipboard": bool(data.get("block_clipboard")),
+                        "block_drag_drop": bool(data.get("block_drag_drop")),
+                        "block_download": bool(data.get("block_download")),
+                        "governance_target_websites": str(data.get("governance_target_websites") or ""),
+                        "governance_block_message": str(data.get("governance_block_message") or ""),
+                    }
                 break
         except Exception:
             pass

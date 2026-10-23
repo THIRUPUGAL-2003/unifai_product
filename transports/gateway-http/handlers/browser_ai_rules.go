@@ -47,7 +47,16 @@ func (h *BrowserAIHandler) getRules(ctx *fasthttp.RequestCtx) {
 			}
 			out = append(out, row)
 		}
-		SendJSON(ctx, map[string]any{"rules": out, "has_ai_bot": hasAIBot})
+		ctrl, _ := h.manager.GetControls(ctx)
+		resp := map[string]any{"rules": out, "has_ai_bot": hasAIBot}
+		if ctrl != nil {
+			resp["block_clipboard"] = ctrl.BlockClipboard
+			resp["block_drag_drop"] = ctrl.BlockDragDrop
+			resp["block_download"] = ctrl.BlockDownload
+			resp["governance_target_websites"] = ctrl.GovernanceTargetWebsites
+			resp["governance_block_message"] = ctrl.GovernanceBlockMessage
+		}
+		SendJSON(ctx, resp)
 		return
 	}
 	SendJSON(ctx, map[string]any{"rules": rules})

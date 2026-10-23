@@ -167,13 +167,16 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
                     sh = sh[4:]
                 server_host = sh
             tamper_flag = os.path.join(data_dir(), "tamper.flag")
-            is_tampered = os.path.isfile(tamper_flag)
-            self._json(200, {
+            from agent_extension import get_governance_controls
+            gov = get_governance_controls()
+            payload = {
                 "rules": dynamic_rules(),
                 "server_host": server_host,
                 "status": "tampered" if is_tampered else "active",
                 "tampered": is_tampered,
-            })
+            }
+            payload.update(gov)
+            self._json(200, payload)
             return
         if path == "/extension/update.xml":
             from agent_extension import get_extension_id, local_base_url, update_xml

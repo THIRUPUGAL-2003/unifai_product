@@ -116,6 +116,21 @@
     }
     if (ev.data.type === "sync_rules") {
       setDynamicRules(ev.data.rules || []);
+      if (typeof ev.data.block_clipboard !== "undefined") {
+        govBlockClipboard = Boolean(ev.data.block_clipboard);
+      }
+      if (typeof ev.data.block_drag_drop !== "undefined") {
+        govBlockDragDrop = Boolean(ev.data.block_drag_drop);
+      }
+      if (typeof ev.data.block_download !== "undefined") {
+        govBlockDownload = Boolean(ev.data.block_download);
+      }
+      if (typeof ev.data.governance_target_websites === "string") {
+        govTargetWebsites = ev.data.governance_target_websites;
+      }
+      if (typeof ev.data.governance_block_message === "string") {
+        govBlockMessage = ev.data.governance_block_message;
+      }
     }
     if (ev.data.type === "session_authorization_result") {
       handleSessionAuthDecision(ev.data.result || {});
@@ -125,6 +140,30 @@
       delete pending[ev.data.id];
     }
   });
+
+  // --- Data Governance Controls (Clipboard, Drag & Drop, File Downloads) ---
+  var govBlockClipboard = false;
+  var govBlockDragDrop = false;
+  var govBlockDownload = false;
+  var govTargetWebsites = "";
+  var govBlockMessage = "";
+
+  function isGovernanceActiveForSite() {
+    if (!govTargetWebsites || !govTargetWebsites.trim() || govTargetWebsites.trim().toUpperCase() === "ALL") {
+      return true;
+    }
+    var currentHost = (location.hostname || "").toLowerCase().replace(/^www\./, "");
+    var parts = govTargetWebsites.toLowerCase().split(/[,\s;]+/);
+    for (var i = 0; i < parts.length; i++) {
+      var item = parts[i].trim();
+      if (!item) continue;
+      if (item.indexOf("www.") === 0) item = item.slice(4);
+      if (currentHost === item || currentHost.endsWith("." + item) || currentHost.includes(item)) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   // --- Corporate AI Domain & Workspace Authorization Engine ---
   var sessionBlocked = false;
@@ -889,8 +928,21 @@
   }, true);
 
   // Hook 2: Drag & Drop Files
+  window.addEventListener("dragover", function (ev) {
+    if (!armed) return;
+    if (govBlockDragDrop && isGovernanceActiveForSite()) {
+      ev.preventDefault();
+    }
+  }, true);
+
   window.addEventListener("drop", function (ev) {
     if (!armed) return;
+    if (govBlockDragDrop && isGovernanceActiveForSite()) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      showBubble(govBlockMessage || "Drag-and-drop file and data ingestion is blocked by corporate data governance policy.", "Data Governance Policy", "block");
+      return;
+    }
     if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
       var files = ev.dataTransfer.files;
       for (var i = 0; i < files.length; i++) {
@@ -906,6 +958,12 @@
   // Hook 3: Clipboard Paste (Ctrl+V Screenshots, Files & Sensitive Text Shielding)
   window.addEventListener("paste", function (ev) {
     if (!armed) return;
+    if (govBlockClipboard && isGovernanceActiveForSite()) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      showBubble(govBlockMessage || "Pasting data into this AI tool is blocked by corporate data governance policy.", "Clipboard Policy", "block");
+      return;
+    }
     var cd = ev.clipboardData;
     if (!cd) return;
     // 1. Files & Screenshots
@@ -942,6 +1000,60 @@
       }
     } catch (pasteErr) { }
   }, true);
+
+  window.addEventListener("copy", function (ev) {
+    if (!armed || !govBlockClipboard || !isGovernanceActiveForSite()) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    showBubble(govBlockMessage || "Copying responses and data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+  }, true);
+
+  window.addEventListener("cut", function (ev) {
+    if (!armed || !govBlockClipboard || !isGovernanceActiveForSite()) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    showBubble(govBlockMessage || "Cutting data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+  }, true);
+
+  // Hook 4: File Downloads & Exports Restriction
+  document.addEventListener("click", function (ev) {
+    if (!armed || !govBlockDownload || !isGovernanceActiveForSite()) return;
+    var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
+    var el = (target && target.closest) ? target.closest("a, button, [role='button']") : null;
+    if (!el) return;
+    var href = (el.getAttribute("href") || "").toLowerCase();
+    var downloadAttr = el.getAttribute("download");
+    var label = (el.getAttribute("aria-label") || "").toLowerCase();
+    var title = (el.getAttribute("title") || "").toLowerCase();
+    var text = (el.innerText || el.textContent || "").toLowerCase();
+
+    var isDownload = (downloadAttr !== null) ||
+      Boolean(href && href.match(/\.(pdf|csv|xlsx|docx|txt|zip|tar|gz|json|py|js|html)(\?.*)?$/i)) ||
+      Boolean(label && (label.includes("download") || label.includes("export") || label.includes("save as"))) ||
+      Boolean(title && (title.includes("download") || title.includes("export"))) ||
+      Boolean(text && text.length < 35 && (text.includes("download") || text.includes("export") || text.includes("save code") || text.includes("export chat")));
+
+    if (isDownload) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      showBubble(govBlockMessage || "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.", "Download Policy", "block");
+    }
+  }, true);
+
+  try {
+    var origAnchorClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (armed && govBlockDownload && isGovernanceActiveForSite()) {
+        var href = (this.getAttribute("href") || "").toLowerCase();
+        var hasDl = this.hasAttribute("download");
+        if (hasDl || href.startsWith("blob:") || href.startsWith("data:") || href.match(/\.(pdf|csv|xlsx|docx|zip|txt|json)/i)) {
+          showBubble(govBlockMessage || "File download was blocked by corporate data governance policy.", "Download Policy", "block");
+          return;
+        }
+      }
+      return origAnchorClick.apply(this, arguments);
+    };
+  } catch (e) {}
 
   // --- 3. SEND INTERCEPTION (Enter Key & Send Button) ---
 

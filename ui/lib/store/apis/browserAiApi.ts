@@ -192,6 +192,13 @@ export interface BrowserControlSettings {
 	/** Active policy version */
 	policy_version?: number;
 
+	/** Clipboard, Drag-and-Drop & Download Data Governance */
+	block_clipboard?: boolean;
+	block_drag_drop?: boolean;
+	block_download?: boolean;
+	governance_target_websites?: string;
+	governance_block_message?: string;
+
 	updated_at?: string;
 }
 
