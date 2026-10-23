@@ -895,9 +895,32 @@ func (h *SessionHandler) isSuperAdmin(ctx *fasthttp.RequestCtx) bool {
 	return session.Role == "admin"
 }
 
-// getUsers handles GET /api/session/users - Get all users (Admin only)
+func (h *SessionHandler) canReadUsers(ctx *fasthttp.RequestCtx) bool {
+	if h.isAdmin(ctx) {
+		return true
+	}
+	token := sessionToken(ctx)
+	if token == "" {
+		return false
+	}
+	session, err := h.configStore.GetSession(ctx, token)
+	if err != nil || session == nil || session.ExpiresAt.Before(time.Now()) {
+		return false
+	}
+	if session.Username == "" {
+		return false
+	}
+	user, err := h.configStore.GetUserByUsername(ctx, session.Username)
+	if err != nil || user == nil || !user.IsApproved() {
+		return false
+	}
+	sections := effectiveAllowedSections(ctx, h.configStore, user)
+	return isSectionGrantedForPath(sections, "/api/session/users")
+}
+
+// getUsers handles GET /api/session/users - Get all users
 func (h *SessionHandler) getUsers(ctx *fasthttp.RequestCtx) {
-	if !h.isAdmin(ctx) {
+	if !h.canReadUsers(ctx) {
 		SendError(ctx, fasthttp.StatusForbidden, "Forbidden")
 		return
 	}

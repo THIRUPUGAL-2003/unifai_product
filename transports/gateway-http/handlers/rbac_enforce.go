@@ -120,25 +120,35 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 				return
 			}
 
+			// Sub-Admin with no custom RBAC and no section restrictions stays unrestricted (has full workspace management).
+			if session.Role == "sub_admin" && strings.TrimSpace(userRbacIDs) == "" && strings.TrimSpace(grantedSections) == "" {
+				next(ctx)
+				return
+			}
+
 			// Built-in users always keep Prompt Repository (chat / folders / sessions / prompts).
 			if strings.EqualFold(session.Role, "user") && (path == "/api/prompt-repo" || strings.HasPrefix(path, "/api/prompt-repo/")) {
 				next(ctx)
 				return
 			}
 
-			// Playground helpers: VKs are row-filtered; providers/models/skills feed the chat UI.
-			if strings.EqualFold(session.Role, "user") {
-				if isRead && (strings.HasPrefix(path, "/api/governance/virtual-keys") ||
-					strings.HasPrefix(path, "/api/governance/providers") ||
-					strings.HasPrefix(path, "/api/governance/users") ||
-					strings.HasPrefix(path, "/api/providers") ||
-					strings.HasPrefix(path, "/api/keys") ||
-					strings.HasPrefix(path, "/api/models") ||
-					strings.HasPrefix(path, "/api/mcp/clients") ||
-					strings.HasPrefix(path, "/api/skills")) {
-					next(ctx)
-					return
-				}
+			// Shared read-only helpers: VKs are row-filtered; providers/models/skills/users/teams/customers/roles feed dropdowns and UI forms across all pages.
+			if isRead && (strings.HasPrefix(path, "/api/governance/virtual-keys") ||
+				strings.HasPrefix(path, "/api/governance/providers") ||
+				strings.HasPrefix(path, "/api/governance/users") ||
+				strings.HasPrefix(path, "/api/session/users") ||
+				strings.HasPrefix(path, "/api/users") ||
+				strings.HasPrefix(path, "/api/providers") ||
+				strings.HasPrefix(path, "/api/keys") ||
+				strings.HasPrefix(path, "/api/models") ||
+				strings.HasPrefix(path, "/api/mcp/clients") ||
+				strings.HasPrefix(path, "/api/teams") ||
+				strings.HasPrefix(path, "/api/customers") ||
+				strings.HasPrefix(path, "/api/roles") ||
+				strings.HasPrefix(path, "/api/permissions") ||
+				strings.HasPrefix(path, "/api/skills")) {
+				next(ctx)
+				return
 			}
 
 			// When no custom RBAC is configured, uncustomized admin and sub_admin get section-based access.
@@ -178,7 +188,7 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 						SendError(ctx, fasthttp.StatusForbidden, "this section is not enabled for your account")
 						return
 					}
-				} else if strings.EqualFold(session.Role, "user") || strings.EqualFold(session.Role, "sub_admin") {
+				} else if strings.EqualFold(session.Role, "user") {
 					if !rbac.SectionsAllow("prompt-repository", sections) {
 						SendError(ctx, fasthttp.StatusForbidden, "this section is not enabled for your account")
 						return
@@ -193,17 +203,16 @@ func RBACMiddleware(store configstore.ConfigStore) func(fasthttp.RequestHandler)
 					SendError(ctx, fasthttp.StatusInternalServerError, "failed to resolve permissions")
 					return
 				}
-				if strings.TrimSpace(userRbacIDs) != "" {
+				if strings.EqualFold(session.Role, "user") {
+					applyUserRolePermissions(perms, grantedSections, userRbacIDs)
+				} else if strings.TrimSpace(userRbacIDs) != "" {
 					perms = rbac.PermissionSet{}
 					applyRbacPermissionIDs(perms, parseRbacPermissionIDs(userRbacIDs))
-					if strings.EqualFold(session.Role, "user") {
-						ensureUserPromptRepositoryAccess(perms)
-					}
-				} else if strings.EqualFold(session.Role, "user") {
-					applyUserRolePermissions(perms, grantedSections, userRbacIDs)
 				} else if strings.EqualFold(session.Role, "sub_admin") {
-					perms = rbac.PermissionSet{}
-					applySectionFullPermissions(perms, grantedSections)
+					if strings.TrimSpace(grantedSections) != "" {
+						perms = rbac.PermissionSet{}
+						applySectionFullPermissions(perms, grantedSections)
+					}
 				} else if grantedSections != "" && strings.EqualFold(session.Role, "admin") {
 					perms = rbac.PermissionSet{}
 					applySectionFullPermissions(perms, grantedSections)
@@ -306,7 +315,7 @@ func (h *WorkspaceHandler) getMyRBACPermissions(ctx *fasthttp.RequestCtx) {
 		if strings.TrimSpace(userRbacIDs) != "" {
 			perms = rbac.PermissionSet{}
 			applyRbacPermissionIDs(perms, parseRbacPermissionIDs(userRbacIDs))
-		} else {
+		} else if strings.TrimSpace(granted) != "" {
 			perms = rbac.PermissionSet{}
 			applySectionFullPermissions(perms, granted)
 		}

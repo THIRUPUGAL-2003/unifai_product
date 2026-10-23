@@ -44,21 +44,64 @@ func isSectionGrantedForPath(granted, path string) bool {
 		return hasGrant("observability", "observability/llm-logs", "observability/dashboard", "observability/connectors", "observability/mcp-logs", "observability/logs-settings")
 
 	case strings.HasPrefix(path, "/api/browser-ai"):
-		return hasGrant("browser-ai", "observability", "observability/llm-logs")
+		return hasGrant("browser-ai", "browser-ai/overview", "browser-ai/targets", "browser-ai/rules", "browser-ai/logs", "browser-ai/search-logs", "browser-ai/agents", "browser-ai/telemetry", "browser-ai/setup", "observability", "observability/llm-logs")
+
+	case strings.HasPrefix(path, "/api/governance/virtual-keys"):
+		return hasGrant("governance", "governance/virtual-keys", "prompt-repository")
+
+	case strings.HasPrefix(path, "/api/governance/users"),
+		strings.HasPrefix(path, "/api/session/users"),
+		strings.HasPrefix(path, "/api/users"):
+		return hasGrant("governance", "governance/users", "governance/roles-permissions", "governance/virtual-keys", "governance/teams", "prompt-repository")
+
+	case strings.HasPrefix(path, "/api/governance/teams"),
+		strings.HasPrefix(path, "/api/teams"):
+		return hasGrant("governance", "governance/teams", "governance/business-units")
+
+	case strings.HasPrefix(path, "/api/governance/business-units"),
+		strings.HasPrefix(path, "/api/business-units"):
+		return hasGrant("governance", "governance/business-units", "governance/teams")
+
+	case strings.HasPrefix(path, "/api/governance/customers"),
+		strings.HasPrefix(path, "/api/customers"):
+		return hasGrant("governance", "governance/customers")
+
+	case strings.HasPrefix(path, "/api/audit-logs"):
+		return hasGrant("governance", "governance/audit-logs")
+
+	case strings.HasPrefix(path, "/api/scim"):
+		return hasGrant("governance", "governance/user-provisioning")
+
+	case strings.HasPrefix(path, "/api/access-profiles"):
+		return hasGrant("governance", "governance/access-profiles")
+
+	case strings.HasPrefix(path, "/api/roles"),
+		strings.HasPrefix(path, "/api/permissions"),
+		strings.HasPrefix(path, "/api/operations"),
+		strings.HasPrefix(path, "/api/resources"),
+		strings.HasPrefix(path, "/api/rbac"):
+		return hasGrant("governance", "governance/roles-permissions")
+
+	case strings.HasPrefix(path, "/api/circuit-breaker"):
+		return hasGrant("models", "models/circuit-breaker", "adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings")
+
+	case strings.HasPrefix(path, "/api/governance/routing-rules"),
+		strings.HasPrefix(path, "/api/governance/complexity-analyzer-config"):
+		return hasGrant("models", "models/routing-rules", "models/complexity-router", "adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings")
+
+	case strings.HasPrefix(path, "/api/governance/pricing-overrides"),
+		strings.HasPrefix(path, "/api/governance/billing-blocks"),
+		strings.HasPrefix(path, "/api/governance/model-configs"):
+		return hasGrant("models", "models/pricing-overrides", "models/model-settings", "models/budgets-limits", "governance", "prompt-repository")
 
 	case strings.HasPrefix(path, "/api/models"),
 		strings.HasPrefix(path, "/api/providers"),
 		strings.HasPrefix(path, "/api/keys"),
-		strings.HasPrefix(path, "/api/governance/users"),
-		strings.HasPrefix(path, "/api/governance/virtual-keys"),
-		strings.HasPrefix(path, "/api/governance/providers"),
-		strings.HasPrefix(path, "/api/governance/model-configs"),
-		strings.HasPrefix(path, "/api/governance/pricing-overrides"),
-		strings.HasPrefix(path, "/api/circuit-breaker"),
-		strings.HasPrefix(path, "/api/governance/routing-rules"),
-		strings.HasPrefix(path, "/api/governance/complexity-analyzer-config"),
-		strings.HasPrefix(path, "/api/governance/billing-blocks"):
-		return hasGrant("prompt-repository", "models", "models/model-providers", "models/model-catalog", "models/budgets-limits", "models/routing-rules", "models/circuit-breaker", "models/complexity-router", "models/pricing-overrides", "models/model-settings", "observability")
+		strings.HasPrefix(path, "/api/governance/providers"):
+		return hasGrant("models", "models/model-providers", "models/model-catalog", "models/budgets-limits", "models/routing-rules", "models/circuit-breaker", "models/complexity-router", "models/pricing-overrides", "models/model-settings", "prompt-repository", "governance", "governance/virtual-keys", "observability", "browser-ai")
+
+	case strings.HasPrefix(path, "/api/governance"):
+		return hasGrant("governance", "governance/virtual-keys", "governance/teams", "governance/business-units", "governance/customers", "governance/users", "governance/audit-logs", "governance/access-profiles", "governance/user-provisioning", "governance/roles-permissions")
 
 	case strings.HasPrefix(path, "/api/config"),
 		strings.HasPrefix(path, "/api/core/config"),
@@ -68,28 +111,12 @@ func isSectionGrantedForPath(granted, path string) bool {
 		strings.HasPrefix(path, "/api/smtp-config"):
 		return hasGrant("settings", "settings/client-settings", "settings/compatibility", "settings/caching", "settings/security", "settings/proxy", "settings/api-keys", "settings/performance-tuning", "settings/feature-flags", "observability/logs-settings", "models")
 
-	case strings.HasPrefix(path, "/api/session/users"),
-		strings.HasPrefix(path, "/api/governance"),
-		strings.HasPrefix(path, "/api/users"),
-		strings.HasPrefix(path, "/api/teams"),
-		strings.HasPrefix(path, "/api/customers"),
-		strings.HasPrefix(path, "/api/business-units"),
-		strings.HasPrefix(path, "/api/audit-logs"),
-		strings.HasPrefix(path, "/api/scim"),
-		strings.HasPrefix(path, "/api/access-profiles"),
-		strings.HasPrefix(path, "/api/roles"),
-		strings.HasPrefix(path, "/api/permissions"),
-		strings.HasPrefix(path, "/api/operations"),
-		strings.HasPrefix(path, "/api/resources"),
-		strings.HasPrefix(path, "/api/rbac"):
-		return hasGrant("governance", "governance/virtual-keys", "governance/teams", "governance/business-units", "governance/customers", "governance/users", "governance/audit-logs", "governance/access-profiles", "governance/user-provisioning", "governance/roles-permissions")
-
 	case strings.HasPrefix(path, "/api/guardrails"),
 		strings.HasPrefix(path, "/api/cluster"):
 		return hasGrant("guardrails", "guardrails/rules", "guardrails/providers", "guardrails/cluster-config", "cluster-config")
 
 	case strings.HasPrefix(path, "/api/load-balancer"):
-		return hasGrant("adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings")
+		return hasGrant("adaptive-routing", "adaptive-routing/dashboard", "adaptive-routing/settings", "models")
 
 	case strings.HasPrefix(path, "/api/mcp"):
 		return hasGrant("mcp-gateway", "mcp-gateway/mcp-catalog", "mcp-gateway/mcp-library", "mcp-gateway/tool-groups", "mcp-gateway/auth-sessions", "mcp-gateway/oauth-grants", "mcp-gateway/mcp-settings", "prompt-repository")
@@ -345,6 +372,9 @@ func resourcesForGrantedSections(grantedSections string) []string {
 	}
 	if hasGrant("settings/api-keys") {
 		add("APIKeys", "Settings")
+	}
+	if hasGrant("settings/proxy") {
+		add("Settings")
 	}
 	if hasGrant("settings/performance-tuning") {
 		add("PerformanceTuning", "Settings")

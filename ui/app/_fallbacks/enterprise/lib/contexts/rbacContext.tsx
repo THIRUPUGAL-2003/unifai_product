@@ -147,7 +147,7 @@ export function RbacProvider({ children }: { children: React.ReactNode }) {
 				if (permissions && Object.keys(permissions).length > 0) {
 					return hasPermission(permissions, resource, operation);
 				}
-				if (role === "admin") {
+				if (role === "admin" || role === "sub_admin") {
 					return true;
 				}
 				return false;

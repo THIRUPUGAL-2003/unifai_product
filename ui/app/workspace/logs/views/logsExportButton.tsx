@@ -40,7 +40,7 @@ const fmtLatency = (ms?: number) => (ms == null ? "" : `${Math.round(ms)}ms`);
 
 export function LlmLogsExportButton({ filters, className }: { filters: LogFilters; className?: string }) {
 	const { data: authStatus } = useIsAuthEnabledQuery();
-	const isAdmin = authStatus?.role === "admin";
+	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
 	const hasDownloadAccess = useRbac(RbacResource.Logs, RbacOperation.Download) || isAdmin;
 	const [triggerGetLogs] = useLazyGetLogsQuery();
 
@@ -103,7 +103,7 @@ export function LlmLogsExportButton({ filters, className }: { filters: LogFilter
 
 export function McpLogsExportButton({ filters, className }: { filters: MCPToolLogFilters; className?: string }) {
 	const { data: authStatus } = useIsAuthEnabledQuery();
-	const isAdmin = authStatus?.role === "admin";
+	const isAdmin = authStatus?.role === "admin" || authStatus?.role === "sub_admin";
 	const hasDownloadAccess = useRbac(RbacResource.MCPLogs, RbacOperation.Download) || isAdmin;
 	const [triggerGetLogs] = useLazyGetMCPLogsQuery();
 
