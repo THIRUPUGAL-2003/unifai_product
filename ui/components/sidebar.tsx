@@ -712,6 +712,14 @@ export default function AppSidebar() {
 						queryParam: "rules",
 					},
 					{
+						title: "Browser Settings",
+						url: "/workspace/browser-ai",
+						icon: SlidersHorizontal,
+						description: "Upload policy, clipboard governance & browser controls",
+						hasAccess: hasBrowserAiAccess,
+						queryParam: "settings",
+					},
+					{
 						title: "Prompt Logs",
 						url: "/workspace/browser-ai",
 						icon: FileText,

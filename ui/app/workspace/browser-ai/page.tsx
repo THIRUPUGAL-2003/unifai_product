@@ -169,7 +169,7 @@ import { RegexLiveTestPanel } from "./regexLiveTestPanel";
 import { GuardRuleImportDialog, downloadGuardRulesTemplate } from "./guardRuleImportDialog";
 import { TargetImportDialog, downloadTargetsTemplate } from "./targetImportDialog";
 
-const BROWSER_AI_TABS = ["overview", "targets", "rules", "logs", "search-logs", "setup", "agents", "telemetry"] as const;
+const BROWSER_AI_TABS = ["overview", "targets", "rules", "settings", "logs", "search-logs", "setup", "agents", "telemetry"] as const;
 type BrowserAiTab = (typeof BROWSER_AI_TABS)[number];
 
 /** Numeric dotted-version compare ("1.1.13" vs "1.1.9"); non-numeric parts count as 0. */
@@ -1421,6 +1421,42 @@ export default function BrowserAiPage() {
 			toast({
 				title: "Governance Coaching Message Saved",
 				description: "Custom JIT coaching banner updated successfully.",
+			});
+		}
+	};
+
+	// Browser Settings Policy Accordion state (Upload, Clipboard, Drag-Drop, Download)
+	const [expandedPolicies, setExpandedPolicies] = useState<Record<string, boolean>>({
+		upload: true,
+		clipboard: true,
+		drag_drop: true,
+		download: true,
+	});
+
+	const togglePolicyExpanded = (key: string) => {
+		setExpandedPolicies((prev) => ({ ...prev, [key]: !prev[key] }));
+	};
+
+	const handleToggleSelectAllPolicies = async (enableAll: boolean) => {
+		const ok = await patchControl({
+			enabled: enableAll,
+			block_upload: enableAll,
+			block_clipboard: enableAll,
+			block_drag_drop: enableAll,
+			block_download: enableAll,
+		});
+		if (ok) {
+			setExpandedPolicies({
+				upload: enableAll,
+				clipboard: enableAll,
+				drag_drop: enableAll,
+				download: enableAll,
+			});
+			toast({
+				title: enableAll ? "All 4 Protections Enforced" : "All Protections Disabled",
+				description: enableAll
+					? "File Uploads, Copy-Paste, Drag-and-Drop, and File Downloads are now strictly blocked."
+					: "All browser security restrictions are now paused.",
 			});
 		}
 	};
@@ -4536,6 +4572,529 @@ export default function BrowserAiPage() {
 						onOpenChange={setRuleImportDialogOpen}
 						onImportSuccess={refetchRules}
 					/>
+				</TabsContent>
+
+				{/* TAB: BROWSER SETTINGS (Upload Policy, Clipboard, Drag-and-Drop & Download Data Governance) */}
+				<TabsContent value="settings" className="space-y-6">
+					{/* Top Header Card with Select All */}
+					<Card className="bg-card border-border shadow-sm">
+						<CardHeader className="pb-4">
+							<div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+								<div className="flex items-start gap-3">
+									<div className="p-2.5 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
+										<SlidersHorizontal className="h-6 w-6" />
+									</div>
+									<div>
+										<div className="flex flex-wrap items-center gap-2">
+											<CardTitle className="text-xl">Browser Settings &amp; Data Governance</CardTitle>
+											<Badge variant="outline" className="text-[10px] font-mono border-purple-500/30 text-purple-400 bg-purple-500/10">
+												RFP 6.3.8 VI (d)
+											</Badge>
+											{(() => {
+												const activeCount = [
+													controls.enabled && controls.block_upload,
+													controls.block_clipboard,
+													controls.block_drag_drop,
+													controls.block_download,
+												].filter(Boolean).length;
+												if (activeCount === 4) {
+													return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs">All 4 Protections Enforced</Badge>;
+												} else if (activeCount > 0) {
+													return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-xs">{activeCount} of 4 Active</Badge>;
+												} else {
+													return <Badge variant="outline" className="border-border text-muted-foreground text-xs">All Disabled (Monitor Only)</Badge>;
+												}
+											})()}
+										</div>
+										<CardDescription className="text-xs mt-1.5 leading-relaxed">
+											Configure granular browser-level security policies. Control file uploads, clipboard interactions, drag-and-drop ingestion, and file downloads with strict domain-based enforcement.
+										</CardDescription>
+									</div>
+								</div>
+
+								{/* Master Select All Toggle */}
+								<div className="flex items-center gap-3 shrink-0 self-start sm:self-center bg-muted/40 border border-border px-4 py-2.5 rounded-xl shadow-sm">
+									<div className="text-right">
+										<p className="text-xs font-semibold text-foreground">Select All Protections</p>
+										<p className="text-[10px] text-muted-foreground">Toggle all 4 policies</p>
+									</div>
+									<Switch
+										checked={!!(controls.enabled && controls.block_upload && controls.block_clipboard && controls.block_drag_drop && controls.block_download)}
+										onCheckedChange={handleToggleSelectAllPolicies}
+										aria-label="Select all data governance protections"
+									/>
+								</div>
+							</div>
+						</CardHeader>
+					</Card>
+
+					{/* The 4 Accordion / Dropdown Policy Cards */}
+					<div className="space-y-4">
+						{/* POLICY 1: File Upload Policy */}
+						<Card className={`border transition-all overflow-hidden ${controls.enabled && controls.block_upload ? "border-rose-800/60 bg-rose-950/10 shadow-sm" : "border-border bg-card"}`}>
+							<div
+								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+								onClick={() => togglePolicyExpanded("upload")}
+							>
+								<div className="flex items-center gap-3.5 min-w-0">
+									<div className={`p-2.5 rounded-lg border ${controls.enabled && controls.block_upload ? "bg-rose-500/20 text-rose-300 border-rose-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+										<Upload className="h-5 w-5" />
+									</div>
+									<div>
+										<div className="flex items-center gap-2">
+											<p className="text-sm font-semibold">1. File Upload Policy</p>
+											{controls.enabled && controls.block_upload ? (
+												<Badge className="bg-rose-950 text-rose-300 border-rose-800 text-[10px] px-2 py-0.5">Active: All Files Blocked</Badge>
+											) : (
+												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
+											)}
+										</div>
+										<p className="text-xs text-muted-foreground mt-0.5">
+											When enabled, every file or attachment uploaded to monitored AI tools is intercepted and blocked.
+										</p>
+									</div>
+								</div>
+								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+									<Switch
+										checked={!!(controls.enabled && controls.block_upload)}
+										onCheckedChange={(val) => {
+											if (val) {
+												setExpandedPolicies((p) => ({ ...p, upload: true }));
+												patchControl({ enabled: true, block_upload: true });
+											} else {
+												patchControl({ enabled: false, block_upload: false });
+											}
+										}}
+										aria-label="Toggle file upload blocking"
+									/>
+									<button
+										type="button"
+										onClick={() => togglePolicyExpanded("upload")}
+										className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
+									>
+										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.upload ? "rotate-180" : ""}`} />
+									</button>
+								</div>
+							</div>
+
+							{expandedPolicies.upload && (
+								<div className="p-4 pt-0 border-t border-border/60 space-y-4 mt-2">
+									<div className="space-y-2 pt-3">
+										<div className="flex items-center justify-between">
+											<Label className="text-xs font-semibold">Upload Policy Warning Banner</Label>
+											{!uploadWarningEditing && (controls.upload_warning || "").trim() ? (
+												<Button
+													type="button"
+													size="sm"
+													variant="ghost"
+													className="h-7 text-xs text-muted-foreground hover:text-foreground"
+													onClick={() => {
+														setUploadWarningError("");
+														setUploadWarningDraft(controls.upload_warning || "");
+														setUploadWarningEditing(true);
+													}}
+												>
+													<Pencil className="h-3 w-3 mr-1" />
+													Edit
+												</Button>
+											) : null}
+										</div>
+										{uploadWarningEditing || !(controls.upload_warning || "").trim() ? (
+											<>
+												<Textarea
+													placeholder="e.g. UPLOAD BLOCK — shown in Prompt Logs and to employees..."
+													value={uploadWarningDraft}
+													onChange={(e) => setUploadWarningDraft(e.target.value)}
+													rows={2}
+													className="text-xs font-sans"
+												/>
+												<div className="flex items-center justify-between gap-2">
+													<p className="text-[11px] text-muted-foreground">
+														Message displayed when an employee attempts to upload a file to monitored AI sites.
+													</p>
+													<div className="flex items-center gap-2">
+														{uploadWarningEditing && (controls.upload_warning || "").trim() ? (
+															<Button
+																type="button"
+																size="sm"
+																variant="ghost"
+																className="h-7 text-xs"
+																onClick={() => {
+																	setUploadWarningError("");
+																	setUploadWarningDraft(controls.upload_warning || "");
+																	setUploadWarningEditing(false);
+																}}
+															>
+																Cancel
+															</Button>
+														) : null}
+														<Button
+															type="button"
+															size="sm"
+															variant="outline"
+															className="h-7 text-xs"
+															disabled={uploadWarningSaving}
+															onClick={saveUploadWarning}
+														>
+															<Save className="h-3 w-3 mr-1" />
+															{uploadWarningSaving ? "Saving..." : "Save warning"}
+														</Button>
+													</div>
+												</div>
+											</>
+										) : (
+											<div className="rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 dark:border-amber-800/40 dark:bg-amber-950/20">
+												<p className="text-xs text-amber-950 whitespace-pre-wrap break-words dark:text-amber-100 font-mono">
+													{(controls.upload_warning || "").trim()}
+												</p>
+											</div>
+										)}
+									</div>
+
+									<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3 border-t border-border/40">
+										<div className="space-y-0.5">
+											<div className="flex items-center gap-1.5">
+												<Clock className="h-3.5 w-3.5 text-muted-foreground" />
+												<p className="text-xs font-semibold">Temporary File Storage Retention</p>
+												<Badge variant="outline" className="text-[9px] px-1.5 py-0">Disk auto-purge</Badge>
+											</div>
+											<p className="text-[11px] text-muted-foreground">
+												How long temporary uploaded files remain viewable from disk before automatic purge.
+											</p>
+										</div>
+										<Select
+											value={["10m", "1h", "2h", "1d", "7d"].includes(controls.attachment_retention || "") ? controls.attachment_retention : "1h"}
+											onValueChange={(val) => void patchControl({ attachment_retention: val })}
+										>
+											<SelectTrigger className="h-8 w-[140px] text-xs">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="10m">10 minutes</SelectItem>
+												<SelectItem value="1h">1 hour (Default)</SelectItem>
+												<SelectItem value="2h">2 hours</SelectItem>
+												<SelectItem value="1d">1 day (24h)</SelectItem>
+												<SelectItem value="7d">7 days (1w)</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+								</div>
+							)}
+						</Card>
+
+						{/* POLICY 2: Copy-Paste Strict Blocking */}
+						<Card className={`border transition-all overflow-hidden ${controls.block_clipboard ? "border-purple-800/60 bg-purple-950/10 shadow-sm" : "border-border bg-card"}`}>
+							<div
+								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+								onClick={() => togglePolicyExpanded("clipboard")}
+							>
+								<div className="flex items-center gap-3.5 min-w-0">
+									<div className={`p-2.5 rounded-lg border ${controls.block_clipboard ? "bg-purple-500/20 text-purple-300 border-purple-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+										<Copy className="h-5 w-5" />
+									</div>
+									<div>
+										<div className="flex items-center gap-2">
+											<p className="text-sm font-semibold">2. Copy-Paste Strict Blocking</p>
+											{controls.block_clipboard ? (
+												<Badge className="bg-purple-950 text-purple-300 border-purple-800 text-[10px] px-2 py-0.5">Enforced: Clipboard Locked</Badge>
+											) : (
+												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
+											)}
+										</div>
+										<p className="text-xs text-muted-foreground mt-0.5">
+											Prevents pasting corporate secrets into AI prompts and copying AI responses to local clipboard.
+										</p>
+									</div>
+								</div>
+								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+									<Switch
+										checked={!!controls.block_clipboard}
+										onCheckedChange={(val) => {
+											if (val) setExpandedPolicies((p) => ({ ...p, clipboard: true }));
+											handleToggleClipboardGovernance(val);
+										}}
+										aria-label="Toggle Copy-Paste Blocking"
+									/>
+									<button
+										type="button"
+										onClick={() => togglePolicyExpanded("clipboard")}
+										className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
+									>
+										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.clipboard ? "rotate-180" : ""}`} />
+									</button>
+								</div>
+							</div>
+
+							{expandedPolicies.clipboard && (
+								<div className="p-4 pt-0 border-t border-border/60 space-y-3 mt-2">
+									<div className="rounded-lg bg-muted/40 p-3 border border-border/60 space-y-2 mt-2">
+										<p className="text-xs text-muted-foreground leading-relaxed">
+											• <strong className="text-foreground">Paste Interception:</strong> Blocks <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Ctrl+V</kbd>, <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Cmd+V</kbd>, and Right-Click Paste into prompt textareas and contenteditable inputs.<br/>
+											• <strong className="text-foreground">Copy Interception:</strong> Blocks <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Ctrl+C</kbd>, <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Cmd+C</kbd>, and Right-Click Copy from AI response streams to prevent unauthorized exfiltration.<br/>
+											• <strong className="text-foreground">JIT Coaching:</strong> Employees receive an immediate in-browser policy coaching modal explaining company data governance.
+										</p>
+									</div>
+								</div>
+							)}
+						</Card>
+
+						{/* POLICY 3: Drag-and-Drop Ingestion Blocking */}
+						<Card className={`border transition-all overflow-hidden ${controls.block_drag_drop ? "border-indigo-800/60 bg-indigo-950/10 shadow-sm" : "border-border bg-card"}`}>
+							<div
+								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+								onClick={() => togglePolicyExpanded("drag_drop")}
+							>
+								<div className="flex items-center gap-3.5 min-w-0">
+									<div className={`p-2.5 rounded-lg border ${controls.block_drag_drop ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+										<FileSpreadsheet className="h-5 w-5" />
+									</div>
+									<div>
+										<div className="flex items-center gap-2">
+											<p className="text-sm font-semibold">3. Drag-and-Drop Ingestion Blocking</p>
+											{controls.block_drag_drop ? (
+												<Badge className="bg-indigo-950 text-indigo-300 border-indigo-800 text-[10px] px-2 py-0.5">Enforced: Drag-Drop Blocked</Badge>
+											) : (
+												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
+											)}
+										</div>
+										<p className="text-xs text-muted-foreground mt-0.5">
+											Prevents dragging and dropping confidential files, spreadsheets, source code, and PDFs into AI chat windows.
+										</p>
+									</div>
+								</div>
+								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+									<Switch
+										checked={!!controls.block_drag_drop}
+										onCheckedChange={(val) => {
+											if (val) setExpandedPolicies((p) => ({ ...p, drag_drop: true }));
+											handleToggleDragDropGovernance(val);
+										}}
+										aria-label="Toggle Drag-and-Drop Blocking"
+									/>
+									<button
+										type="button"
+										onClick={() => togglePolicyExpanded("drag_drop")}
+										className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
+									>
+										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.drag_drop ? "rotate-180" : ""}`} />
+									</button>
+								</div>
+							</div>
+
+							{expandedPolicies.drag_drop && (
+								<div className="p-4 pt-0 border-t border-border/60 space-y-3 mt-2">
+									<div className="rounded-lg bg-muted/40 p-3 border border-border/60 space-y-2 mt-2">
+										<p className="text-xs text-muted-foreground leading-relaxed">
+											• <strong className="text-foreground">Drag &amp; Drop Interception:</strong> Hooks into the browser DOM <code className="text-[10px] font-mono">dragover</code> and <code className="text-[10px] font-mono">drop</code> events on AI tool interfaces.<br/>
+											• <strong className="text-foreground">File Inspection:</strong> Detects and aborts dragged desktop documents, customer spreadsheets (.xlsx, .csv), and PDFs before browser memory processes them.<br/>
+											• <strong className="text-foreground">Desktop Guard Agent:</strong> Local agent driver monitors desktop-to-browser drag operations as a dual-layer defense.
+										</p>
+									</div>
+								</div>
+							)}
+						</Card>
+
+						{/* POLICY 4: File Download & Export Blocking */}
+						<Card className={`border transition-all overflow-hidden ${controls.block_download ? "border-sky-800/60 bg-sky-950/10 shadow-sm" : "border-border bg-card"}`}>
+							<div
+								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+								onClick={() => togglePolicyExpanded("download")}
+							>
+								<div className="flex items-center gap-3.5 min-w-0">
+									<div className={`p-2.5 rounded-lg border ${controls.block_download ? "bg-sky-500/20 text-sky-300 border-sky-500/40" : "bg-muted text-muted-foreground border-border"}`}>
+										<HardDriveDownload className="h-5 w-5" />
+									</div>
+									<div>
+										<div className="flex items-center gap-2">
+											<p className="text-sm font-semibold">4. File Download &amp; Export Blocking</p>
+											{controls.block_download ? (
+												<Badge className="bg-sky-950 text-sky-300 border-sky-800 text-[10px] px-2 py-0.5">Enforced: Downloads Blocked</Badge>
+											) : (
+												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
+											)}
+										</div>
+										<p className="text-xs text-muted-foreground mt-0.5">
+											Blocks downloading AI-generated code files, CSV reports, PDFs, and exported artifacts from AI tools.
+										</p>
+									</div>
+								</div>
+								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+									<Switch
+										checked={!!controls.block_download}
+										onCheckedChange={(val) => {
+											if (val) setExpandedPolicies((p) => ({ ...p, download: true }));
+											handleToggleDownloadGovernance(val);
+										}}
+										aria-label="Toggle Download Blocking"
+									/>
+									<button
+										type="button"
+										onClick={() => togglePolicyExpanded("download")}
+										className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
+									>
+										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.download ? "rotate-180" : ""}`} />
+									</button>
+								</div>
+							</div>
+
+							{expandedPolicies.download && (
+								<div className="p-4 pt-0 border-t border-border/60 space-y-3 mt-2">
+									<div className="rounded-lg bg-muted/40 p-3 border border-border/60 space-y-2 mt-2">
+										<p className="text-xs text-muted-foreground leading-relaxed">
+											• <strong className="text-foreground">Download Link Interception:</strong> Monitors and intercepts clicks on HTML <code className="text-[10px] font-mono">&lt;a download&gt;</code> anchors and Blob URLs.<br/>
+											• <strong className="text-foreground">Format Blocking:</strong> Blocks exports of <code className="text-[10px] font-mono">.pdf, .csv, .docx, .py, .js, .json, .zip</code> directly generated by AI chats.<br/>
+											• <strong className="text-foreground">API Egress Guard:</strong> Desktop agent PAC proxy cancels HTTP responses with <code className="text-[10px] font-mono">Content-Disposition: attachment</code> on monitored target domains.
+										</p>
+									</div>
+								</div>
+							)}
+						</Card>
+					</div>
+
+					{/* Target Website Scoping Card (Dropdown + Chips) */}
+					<Card className="bg-card border-border shadow-sm">
+						<CardHeader className="pb-3">
+							<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+								<div className="flex items-center gap-3">
+									<div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
+										<Globe className="h-5 w-5" />
+									</div>
+									<div>
+										<CardTitle className="text-base">Target Website Scoping</CardTitle>
+										<CardDescription className="text-xs mt-0.5">
+											Choose whether these browser settings &amp; data governance rules apply to all target websites or specific platforms.
+										</CardDescription>
+									</div>
+								</div>
+								<Button
+									type="button"
+									variant={configuredGovWebsites.includes("all") ? "default" : "outline"}
+									size="sm"
+									className="h-8 text-xs gap-1.5 shrink-0"
+									onClick={handleSetAllGovernanceWebsites}
+								>
+									<Check className="h-3.5 w-3.5" />
+									Enforce on All Target Websites ({targets.length})
+								</Button>
+							</div>
+						</CardHeader>
+						<CardContent className="space-y-4 pt-1">
+							{/* Dropdown Selector */}
+							<div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+								<div className="flex-1">
+									<Select
+										value={configuredGovWebsites.includes("all") ? "all" : (configuredGovWebsites[0] || "all")}
+										onValueChange={(val) => {
+											if (val === "all") {
+												void handleSetAllGovernanceWebsites();
+											} else {
+												void handleToggleGovernanceTargetWebsite(val);
+											}
+										}}
+									>
+										<SelectTrigger className="h-9 text-xs">
+											<SelectValue placeholder="Select target website to toggle governance..." />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="all">
+												🌐 All Monitored Target Websites ({targets.length} websites)
+											</SelectItem>
+											{targets.map((tgt) => (
+												<SelectItem key={tgt.id || tgt.domain} value={tgt.domain.toLowerCase()}>
+													{tgt.platform_name || tgt.domain} ({tgt.domain})
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+							</div>
+
+							{/* Active Target Websites Chips */}
+							<div className="space-y-2">
+								<Label className="text-xs text-muted-foreground font-medium">Configured Target AI Platforms (Click to toggle):</Label>
+								<div className="min-h-[50px] p-3 rounded-xl border border-border bg-muted/20 flex flex-wrap items-center gap-2">
+									{targets.length === 0 ? (
+										<span className="text-xs text-muted-foreground italic px-1">
+											No target websites configured yet. Add target domains in the &quot;Target Websites&quot; tab.
+										</span>
+									) : (
+										targets.map((tgt) => {
+											const isSelected = configuredGovWebsites.includes("all") || configuredGovWebsites.includes(tgt.domain.toLowerCase());
+											return (
+												<button
+													key={tgt.id || tgt.domain}
+													type="button"
+													onClick={() => handleToggleGovernanceTargetWebsite(tgt.domain)}
+													className={`group flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs transition-all ${
+														isSelected
+															? "bg-purple-500/15 border-purple-500/40 text-purple-200 hover:bg-purple-500/25 shadow-sm"
+															: "bg-background border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+													}`}
+												>
+													<span className={`h-2 w-2 rounded-full ${isSelected ? "bg-purple-400" : "bg-muted-foreground/40"}`} />
+													<span className="font-medium">{tgt.platform_name || tgt.domain}</span>
+													<span className="text-[10px] font-mono text-muted-foreground">({tgt.domain})</span>
+													{isSelected ? (
+														<Check className="h-3 w-3 text-purple-400 ml-0.5" />
+													) : (
+														<Plus className="h-3 w-3 text-muted-foreground/60 ml-0.5 group-hover:text-foreground" />
+													)}
+												</button>
+											);
+										})
+									)}
+								</div>
+								<p className="text-[11px] text-muted-foreground">
+									Currently active scope:{" "}
+									<span className="font-mono text-foreground font-semibold">
+										{configuredGovWebsites.includes("all") ? "All Monitored Target Websites" : configuredGovWebsites.join(", ")}
+									</span>
+								</p>
+							</div>
+						</CardContent>
+					</Card>
+
+					{/* JIT Coaching Warning Banner Editor */}
+					<Card className="bg-card border-border shadow-sm">
+						<CardHeader className="pb-3">
+							<div className="flex items-center gap-3">
+								<div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400">
+									<Shield className="h-5 w-5" />
+								</div>
+								<div>
+									<CardTitle className="text-base">JIT Coaching &amp; Policy Banner (RFP 6.3.8 VI (f))</CardTitle>
+									<CardDescription className="text-xs mt-0.5">
+										Custom message displayed in the browser modal when clipboard, drag-drop, or download is blocked.
+									</CardDescription>
+								</div>
+							</div>
+						</CardHeader>
+						<CardContent className="pt-1">
+							<div className="flex flex-col sm:flex-row gap-2">
+								<Input
+									value={governanceBlockMsgInput}
+									onChange={(e) => setGovernanceBlockMsgInput(e.target.value)}
+									onKeyDown={(e) => {
+										if (e.key === "Enter") {
+											e.preventDefault();
+											void handleSaveGovernanceBlockMessage();
+										}
+									}}
+									placeholder="e.g. Corporate Data Governance: Copy-paste, file drag-and-drop, and downloads are restricted on this AI tool."
+									className="font-sans text-xs flex-1"
+								/>
+								<Button
+									type="button"
+									size="sm"
+									onClick={handleSaveGovernanceBlockMessage}
+									className="gap-1.5 shrink-0"
+								>
+									<Save className="h-3.5 w-3.5" />
+									Save Message
+								</Button>
+							</div>
+						</CardContent>
+					</Card>
 				</TabsContent>
 
 				{/* TAB 4: TARGET WEBSITES */}

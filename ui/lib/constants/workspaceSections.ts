@@ -54,6 +54,7 @@ export const WORKSPACE_SECTIONS: readonly WorkspaceSection[] = [
 			{ key: "overview", label: "Overview", path: "/workspace/browser-ai?tab=overview" },
 			{ key: "targets", label: "Target Websites", path: "/workspace/browser-ai?tab=targets" },
 			{ key: "rules", label: "Guard Rules", path: "/workspace/browser-ai?tab=rules" },
+			{ key: "settings", label: "Browser Settings", path: "/workspace/browser-ai?tab=settings" },
 			{ key: "logs", label: "Prompt Logs", path: "/workspace/browser-ai?tab=logs" },
 			{ key: "search-logs", label: "Search Logs", path: "/workspace/browser-ai?tab=search-logs" },
 			{ key: "agents", label: "Guard Agents", path: "/workspace/browser-ai?tab=agents" },
