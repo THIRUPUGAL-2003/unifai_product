@@ -1,7 +1,15 @@
-# UnifAI — Product Analysis & Documentation Set
+# YP-Raksha — Product Analysis & Documentation Set
 
 > Source of truth: this repository at commit `16d4c3e` (`cline/708c4`).
 > Everything below is derived from the code that is actually in this repo — no invented features.
+
+## Banking deployment document set
+
+- [YP-Raksha Technical Documentation — Word](bank-deployment-pack/01-yp-raksha-technical-documentation.docx) · [PDF](bank-deployment-pack/01-yp-raksha-technical-documentation.pdf) · [Markdown source](bank-deployment-pack/01-technical-documentation.md)
+- [YP-Raksha Product Datasheet — Word](bank-deployment-pack/02-yp-raksha-product-datasheet.docx) · [PDF](bank-deployment-pack/02-yp-raksha-product-datasheet.pdf) · [Markdown source](bank-deployment-pack/02-product-datasheet.md)
+- [On-Premises Deployment Architecture — Word](bank-deployment-pack/03-on-premises-deployment-architecture.docx) · [PDF](bank-deployment-pack/03-on-premises-deployment-architecture.pdf) · [Markdown source](bank-deployment-pack/03-on-premises-deployment-architecture.md)
+
+The document set covers the Gateway and Browser AI Guard, the supported platform evidence, the DC/DR/UAT reference design for 120,000 endpoints, and the controls and evidence required to keep prompts, logs and telemetry within the bank-controlled India boundary.
 
 ---
 
@@ -9,7 +17,7 @@
 
 This monorepo ships **two products that share one backend, one database and one dashboard**:
 
-### A. UnifAI Gateway — "The Fastest LLM Gateway" (Go)
+### A. YP-Raksha Gateway — "The Fastest LLM Gateway" (Go)
 A single Go binary (`transports/unifai-http`) built on `fasthttp`, with the built React
 admin UI embedded into the binary via `go:embed`. It provides:
 
@@ -30,7 +38,7 @@ admin UI embedded into the binary via `go:embed`. It provides:
   MCP Gateway (catalog/library/clients/tool groups/OAuth sessions), Complexity Router,
   Routing Rules, Circuit Breaker, Adaptive/Load-Balancer routing, cluster/HA, feature flags, plugins.
 
-### B. UnifAI Guard — "Browser AI" (Python desktop agent + optional network proxy)
+### B. YP-Raksha Browser AI Guard — "Browser AI" (Python desktop agent + optional network proxy)
 An endpoint DLP control plane for **employee use of public AI websites in browsers**:
 
 * A Python desktop agent (`apps/browser-guard/agent`, PyInstaller → Windows EXE / macOS `.app` / `.pkg`)
@@ -90,7 +98,7 @@ React UI (embedded, served by the Go binary)
 1. Load `config.json` from the app dir (`APP_DIR`, default `/app/data`).
 2. Build ConfigStore + LogsStore (+ VectorStore) from config (Postgres via `env.DB_*`).
 3. Start the log-retention cleaner (if `log_retention_days > 0`) and async-job cleaner.
-4. Load plugins (built-ins + `.so` dynamic plugins), then the UnifAI core client.
+4. Load plugins (built-ins + `.so` dynamic plugins), then the Gateway core client.
 5. Seed the model catalog from every configured provider and fetch live models.
 6. Build middlewares: auth, workspace audit, RBAC, CORS, decompression, tracing.
 7. Register API routes → inference routes → MCP clients → `/robots.txt` → UI routes.
@@ -118,7 +126,7 @@ React UI (embedded, served by the Go binary)
 
 | Item | Value |
 |---|---|
-| Brand | UnifAI; sample branding `UNIFAI_COMPANY_NAME=YesPanchi Group of Companies` |
+| Brand | YP-Raksha; sample company branding `UNIFAI_COMPANY_NAME=YesPanchi Group of Companies` |
 | Gateway runtime | Go 1.26.4 workspace (`go.work`, 15 modules) |
 | HTTP framework | `valyala/fasthttp` + `fasthttp/router` |
 | Server default host/port | `localhost` / `8001`; env `APP_HOST`, `APP_PORT` (`.env.example` uses `6000`) |
@@ -161,7 +169,7 @@ React UI (embedded, served by the Go binary)
 * Guard EXE/.app and the Docker **network proxy** must not both MITM the same browser session
   (double-MITM). Typical split: office network → corporate PAC, remote/home → laptop Guard.
 * Excel/CSV Guard Rule import supports **regex rules only**; `ai_bot` rules must be created in the UI.
-* The in-app **Docs** page (`ui/lib/constants/docs.ts`) links to external UnifAI documentation;
+* The in-app **Docs** page (`ui/lib/constants/docs.ts`) links to external YP-Raksha documentation;
   it is not generated from this `docs/` folder.
 * The repo contains large sample/build artifacts (`Makefile` ~115 KB, `scratch_targets_backup.json`
   ~127 KB, `release/*.exe|.pkg|.zip`) — treat `apps/browser-guard/release/` as a build output directory.

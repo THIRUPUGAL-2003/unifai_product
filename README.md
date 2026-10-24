@@ -1,12 +1,12 @@
-# UnifAI Enterprise AI Gateway & Governance Platform
+# YP-Raksha Enterprise AI Gateway & Governance Platform
 
-Welcome to the **UnifAI Platform Documentation Suite**. This repository contains the source code, backend services, and enterprise documentation for the UnifAI AI Gateway, Observability, and Governance infrastructure.
+Welcome to the **YP-Raksha Platform Documentation Suite**. This repository contains the source code, backend services, and enterprise documentation for the YP-Raksha AI Gateway, Observability, and Governance infrastructure.
 
 ---
 
 ## Complete Section Documentation Sitemap
 
-Every module in the UnifAI platform has a dedicated, production-grade architectural and operational guide:
+Every module in the YP-Raksha platform has a dedicated, production-grade architectural and operational guide:
 
 | Section | Documentation File | Description & Capabilities |
 | :--- | :--- | :--- |
@@ -58,6 +58,14 @@ flowchart TD
         Tracing --> Response[Unified Client Response]
     end
 ```
+
+---
+
+## Banking deployment pack
+
+- [YP-Raksha Technical Documentation — Word](docs/bank-deployment-pack/01-yp-raksha-technical-documentation.docx) · [PDF](docs/bank-deployment-pack/01-yp-raksha-technical-documentation.pdf) · [Markdown](docs/bank-deployment-pack/01-technical-documentation.md)
+- [YP-Raksha Product Datasheet — Word](docs/bank-deployment-pack/02-yp-raksha-product-datasheet.docx) · [PDF](docs/bank-deployment-pack/02-yp-raksha-product-datasheet.pdf) · [Markdown](docs/bank-deployment-pack/02-product-datasheet.md)
+- [On-Premises Deployment Architecture — Word](docs/bank-deployment-pack/03-on-premises-deployment-architecture.docx) · [PDF](docs/bank-deployment-pack/03-on-premises-deployment-architecture.pdf) · [Markdown](docs/bank-deployment-pack/03-on-premises-deployment-architecture.md) — DC, DR, UAT, 120,000-endpoint sizing, platform support, and India-only data flow.
 
 ---
 
