@@ -33,8 +33,9 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
         # reaches the EXE, and the prompt is allowed through.
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Access-Control-Request-Private-Network, *")
         self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Access-Control-Max-Age", "86400")
 
     def _json(self, code: int, payload: dict) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -94,18 +95,11 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
         )
         self._json(200, result)
 
-
     def do_GET(self) -> None:
         path = (self.path or "/").split("?", 1)[0]
-        if path in ("/status", "/health"):
-            report = agent_state._LAST_HEALTH if isinstance(agent_state._LAST_HEALTH, dict) and agent_state._LAST_HEALTH else {"status": "starting", "agent_version": AGENT_VERSION}
-            body = json.dumps(report, indent=2).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+        if path in ("/status", "/health", "/ping", "/extension/ping"):
+            report = agent_state._LAST_HEALTH if isinstance(agent_state._LAST_HEALTH, dict) and agent_state._LAST_HEALTH else {"status": "ok", "agent_version": AGENT_VERSION, "connected": True}
+            self._json(200, report)
             return
         if path in ("/", "/status.html"):
             report = agent_state._LAST_HEALTH if isinstance(agent_state._LAST_HEALTH, dict) else {}

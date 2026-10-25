@@ -81,6 +81,7 @@ export interface BrowserAIAgent {
 	ad_groups?: string;
 	domain_user?: string;
 	is_domain_joined?: boolean;
+	is_online?: boolean;
 	last_seen_at: string;
 	installed_at: string;
 	/** First heartbeat on the current agent_version (fresh install or auto-update). */
@@ -771,6 +772,7 @@ export const browserAiApi = baseApi.injectEndpoints({
 				latest_version?: string;
 				latest_mac_version?: string;
 				active_count?: number;
+				offline_count?: number;
 				uninstalled_count?: number;
 				paused_count?: number;
 			},

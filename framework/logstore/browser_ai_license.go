@@ -320,7 +320,7 @@ func VerifyLicenseEnvelope(raw []byte) (*EnterpriseLicensePayload, *EnterpriseLi
 
 // GetActiveLicense returns the current license status and seats usage.
 func (m *BrowserAIManager) GetActiveLicense(ctx context.Context) (*LicenseStatusInfo, error) {
-	activeCount, _, _, _ := m.CountAgentsStatus(ctx, "", "")
+	activeCount, _, _, _, _ := m.CountAgentsStatus(ctx, "", "")
 	allocatedSeats := int(activeCount)
 
 	db := m.GetDB()

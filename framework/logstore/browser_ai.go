@@ -472,6 +472,7 @@ type BrowserAIAgent struct {
 	UninstallKeyHash      string     `gorm:"type:varchar(128)" json:"-"`
 	UninstallKeyEnc       string     `gorm:"type:text" json:"-"`
 	HasUninstallKey       bool       `gorm:"-" json:"has_uninstall_key"`
+	IsOnline              bool       `gorm:"-" json:"is_online"`
 	UninstallKeyRotatedAt *time.Time `gorm:"index" json:"uninstall_key_rotated_at,omitempty"`
 	LastSeenAt            time.Time  `gorm:"index" json:"last_seen_at"`
 	InstalledAt           time.Time  `json:"installed_at"`
@@ -540,6 +541,7 @@ type BrowserAIAgentSettings struct {
 }
 
 const BrowserAIAgentSettingsID = "browser-agent-settings-default"
+const AgentHeartbeatLiveWindow = 2 * time.Minute // 120 seconds (agent sends heartbeat every 30s)
 const AgentStatusActive = "active"
 const AgentStatusPaused = "paused"
 const AgentStatusInactive = "inactive"
@@ -3712,9 +3714,18 @@ func (m *BrowserAIManager) ListAgents(ctx context.Context, status, search string
 		return nil, 0, fmt.Errorf("browser AI database is not connected")
 	}
 
+	liveCutoff := time.Now().Add(-AgentHeartbeatLiveWindow)
 	query := db.WithContext(ctx).Model(&BrowserAIAgent{})
 	if status != "" && strings.ToLower(status) != "all" {
-		query = query.Where("LOWER(status) = ?", strings.ToLower(status))
+		st := strings.ToLower(status)
+		if st == "active" {
+			// ONLY agents actively running and heartbeating within live window are Active
+			query = query.Where("LOWER(status) = ? AND last_seen_at >= ?", AgentStatusActive, liveCutoff)
+		} else if st == "offline" {
+			query = query.Where("LOWER(status) = ? AND (last_seen_at < ? OR last_seen_at IS NULL)", AgentStatusActive, liveCutoff)
+		} else {
+			query = query.Where("LOWER(status) = ?", st)
+		}
 	}
 	typeFilter := ""
 	if len(agentType) > 0 {
@@ -3739,14 +3750,19 @@ func (m *BrowserAIManager) ListAgents(ctx context.Context, status, search string
 	err := query.Order("last_seen_at DESC").Limit(limit).Offset(offset).Find(&agents).Error
 	for i := range agents {
 		markAgentUninstallKeyFlag(&agents[i])
+		if agents[i].Status == AgentStatusActive && !agents[i].LastSeenAt.IsZero() && agents[i].LastSeenAt.After(liveCutoff) {
+			agents[i].IsOnline = true
+		} else {
+			agents[i].IsOnline = false
+		}
 	}
 	return agents, total, err
 }
 
-func (m *BrowserAIManager) CountAgentsStatus(ctx context.Context, search string, agentType ...string) (active int64, uninstalled int64, paused int64, err error) {
+func (m *BrowserAIManager) CountAgentsStatus(ctx context.Context, search string, agentType ...string) (active int64, uninstalled int64, paused int64, offline int64, err error) {
 	db := m.GetDB()
 	if db == nil {
-		return 0, 0, 0, nil
+		return 0, 0, 0, 0, nil
 	}
 	buildBase := func() *gorm.DB {
 		q := db.WithContext(ctx).Model(&BrowserAIAgent{})
@@ -3766,10 +3782,13 @@ func (m *BrowserAIManager) CountAgentsStatus(ctx context.Context, search string,
 		}
 		return q
 	}
-	_ = buildBase().Where("LOWER(status) = ?", AgentStatusActive).Count(&active).Error
+	liveCutoff := time.Now().Add(-AgentHeartbeatLiveWindow)
+	// Only count agents that are currently live on employee machines (heartbeat within 2 min) as Active
+	_ = buildBase().Where("LOWER(status) = ? AND last_seen_at >= ?", AgentStatusActive, liveCutoff).Count(&active).Error
+	_ = buildBase().Where("LOWER(status) = ? AND (last_seen_at < ? OR last_seen_at IS NULL)", AgentStatusActive, liveCutoff).Count(&offline).Error
 	_ = buildBase().Where("LOWER(status) = ?", AgentStatusPaused).Count(&paused).Error
 	_ = buildBase().Where("LOWER(status) = ?", AgentStatusUninstalled).Count(&uninstalled).Error
-	return active, uninstalled, paused, nil
+	return active, uninstalled, paused, offline, nil
 }
 
 func (m *BrowserAIManager) GetAgent(ctx context.Context, agentID string) (*BrowserAIAgent, error) {
@@ -3781,6 +3800,9 @@ func (m *BrowserAIManager) GetAgent(ctx context.Context, agentID string) (*Brows
 	if err := db.WithContext(ctx).Where("id = ?", strings.TrimSpace(agentID)).First(&agent).Error; err != nil {
 		return nil, err
 	}
+	markAgentUninstallKeyFlag(&agent)
+	liveCutoff := time.Now().Add(-AgentHeartbeatLiveWindow)
+	agent.IsOnline = agent.Status == AgentStatusActive && !agent.LastSeenAt.IsZero() && agent.LastSeenAt.After(liveCutoff)
 	return &agent, nil
 }
 

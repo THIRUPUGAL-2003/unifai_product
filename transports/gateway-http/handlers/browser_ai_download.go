@@ -484,6 +484,10 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 		platform = "windows"
 	} else if strings.Contains(path, "download-mac") {
 		platform = "mac"
+	} else if strings.Contains(path, "download-extension") {
+		platform = "extension"
+	} else if strings.HasSuffix(path, ".crx") {
+		platform = "crx"
 	}
 	if ctx.IsGet() && string(ctx.QueryArgs().Peek("build")) == "1" {
 		h.buildAndServeSetupPackage(ctx, platform)
@@ -505,6 +509,47 @@ func (h *BrowserAIHandler) downloadSetupPackage(ctx *fasthttp.RequestCtx) {
 			setGuardVersionHeaders(ctx, winVer)
 		}
 		ctx.SendFile(suitePath)
+		return
+	}
+
+	// 0. BROWSER EXTENSION DEDICATED DOWNLOAD (unpacked ZIP or CRX)
+	if platform == "crx" {
+		crxPath, crxOK := findFirstExisting([]string{
+			filepath.Join("apps", "browser-guard", "release", "yp-raksha.crx"),
+			filepath.Join("release", "yp-raksha.crx"),
+			"/app/release/yp-raksha.crx",
+		})
+		if !crxOK {
+			SendError(ctx, fasthttp.StatusNotFound, "No .crx extension found on server — package extensions first")
+			return
+		}
+		ctx.SetStatusCode(fasthttp.StatusOK)
+		ctx.SetContentType("application/x-chrome-extension")
+		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="yp-raksha.crx"`)
+		if winVer != "" {
+			setGuardVersionHeaders(ctx, winVer)
+		}
+		ctx.SendFile(crxPath)
+		return
+	}
+
+	if platform == "extension" || platform == "ext" || platform == "browser-extension" {
+		extZipPath, extOK := findFirstExisting([]string{
+			filepath.Join("apps", "browser-guard", "release", "yp-raksha.zip"),
+			filepath.Join("release", "yp-raksha.zip"),
+			"/app/release/yp-raksha.zip",
+		})
+		if !extOK {
+			SendError(ctx, fasthttp.StatusNotFound, "No Browser Extension package found on server — package extensions first")
+			return
+		}
+		ctx.SetStatusCode(fasthttp.StatusOK)
+		ctx.SetContentType("application/zip")
+		ctx.Response.Header.Set("Content-Disposition", `attachment; filename="YP_Raksha_Extension.zip"`)
+		if winVer != "" {
+			setGuardVersionHeaders(ctx, winVer)
+		}
+		ctx.SendFile(extZipPath)
 		return
 	}
 

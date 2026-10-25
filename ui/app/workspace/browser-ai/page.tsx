@@ -279,6 +279,7 @@ export default function BrowserAiPage() {
 	const [copiedPrompt, setCopiedPrompt] = useState(false);
 	const [downloadingWindows, setDownloadingWindows] = useState(false);
 	const [downloadingMac, setDownloadingMac] = useState(false);
+	const [downloadingExtension, setDownloadingExtension] = useState(false);
 	const [downloadingSuite, setDownloadingSuite] = useState(false);
 	const [rebuildingPackages, setRebuildingPackages] = useState(false);
 	const [setupPackageError, setSetupPackageError] = useState("");
@@ -559,7 +560,7 @@ export default function BrowserAiPage() {
 			}
 
 			const lastSeen = agent.last_seen_at ? new Date(agent.last_seen_at).getTime() : 0;
-			const isOnline = Date.now() - lastSeen < 5 * 60 * 1000 && agent.status === "active";
+			const isOnline = Boolean(agent.last_seen_at) && (Date.now() - lastSeen < 2 * 60 * 1000) && (agent.status || "").toLowerCase() === "active";
 
 			return {
 				agent,
@@ -977,7 +978,19 @@ export default function BrowserAiPage() {
 		});
 	}, [agents, agentSortKey, agentSortDir]);
 	const totalAgents = agentsData?.total || 0;
-	const activeAgentsCount = agentsData?.active_count ?? agents.filter((a) => a.status === "active").length;
+	const isAgentLive = (a: any) => {
+		if ((a?.status || "").toLowerCase() !== "active") return false;
+		if (typeof a?.is_online === "boolean") return a.is_online;
+		if (!a?.last_seen_at) return false;
+		const diff = Date.now() - new Date(a.last_seen_at).getTime();
+		return !isNaN(diff) && diff >= 0 && diff <= 2 * 60 * 1000;
+	};
+	const activeAgentsCount = agentsData?.active_count !== undefined
+		? agentsData.active_count
+		: agents.filter(isAgentLive).length;
+	const offlineAgentsCount = agentsData?.offline_count !== undefined
+		? agentsData.offline_count
+		: agents.filter((a) => (a?.status || "").toLowerCase() === "active" && !isAgentLive(a)).length;
 	const pausedAgentsCount = agentsData?.paused_count ?? agents.filter((a) => a.status === "paused").length;
 	const uninstalledAgentsCount = agentsData?.uninstalled_count ?? agents.filter((a) => a.status === "uninstalled").length;
 	const agentSettings = agentSettingsData?.settings;
@@ -2320,11 +2333,13 @@ export default function BrowserAiPage() {
 		setTimeout(() => setCopiedPrompt(false), 2000);
 	};
 
-	const handleDownloadSetupPackage = async (platform: "all" | "windows" | "mac" = "all") => {
+	const handleDownloadSetupPackage = async (platform: "all" | "windows" | "mac" | "extension" = "all") => {
 		if (platform === "windows") {
 			setDownloadingWindows(true);
 		} else if (platform === "mac") {
 			setDownloadingMac(true);
+		} else if (platform === "extension") {
+			setDownloadingExtension(true);
 		} else {
 			setDownloadingSuite(true);
 		}
@@ -2351,7 +2366,14 @@ export default function BrowserAiPage() {
 			const url = window.URL.createObjectURL(blob);
 			const link = document.createElement("a");
 			link.href = url;
-			link.download = platform === "all" ? "UnifAI_Guard_Suite.zip" : (platform === "mac" ? "YP_Raksha_macOS.zip" : "YP_Raksha_Windows.zip");
+			link.download =
+				platform === "all"
+					? "UnifAI_Guard_Suite.zip"
+					: platform === "mac"
+						? "YP_Raksha_macOS.zip"
+						: platform === "extension"
+							? "YP_Raksha_Extension.zip"
+							: "YP_Raksha_Windows.zip";
 			document.body.appendChild(link);
 			link.click();
 			link.remove();
@@ -2363,6 +2385,8 @@ export default function BrowserAiPage() {
 				setDownloadingWindows(false);
 			} else if (platform === "mac") {
 				setDownloadingMac(false);
+			} else if (platform === "extension") {
+				setDownloadingExtension(false);
 			} else {
 				setDownloadingSuite(false);
 			}
@@ -2631,21 +2655,27 @@ export default function BrowserAiPage() {
 			return <Badge className="bg-amber-950 text-amber-300 border border-amber-800 text-xs" title="Uninstall pending">Uninstalling</Badge>;
 		}
 		if (s === "active") {
-			const isOffline = lastSeenAt ? Date.now() - new Date(lastSeenAt).getTime() > 3 * 60 * 1000 : false;
-			if (isOffline) {
+			const diff = lastSeenAt ? Date.now() - new Date(lastSeenAt).getTime() : Infinity;
+			const isLive = Boolean(lastSeenAt) && !isNaN(diff) && diff >= 0 && diff <= 2 * 60 * 1000;
+			if (!isLive) {
 				return (
 					<Badge
-						className="bg-amber-950 text-amber-300 border border-amber-800 gap-1 inline-flex items-center text-xs"
-						title="Process Killed / Offline (No heartbeat for > 3 minutes)"
+						className="bg-slate-900 text-slate-400 border border-slate-700 gap-1 inline-flex items-center text-xs"
+						title="Process Offline (No live heartbeat from employee laptop in > 2 minutes)"
 					>
-						<AlertTriangle className="h-3 w-3 shrink-0" />
+						<AlertTriangle className="h-3 w-3 shrink-0 text-amber-400" />
 						Offline
 					</Badge>
 				);
 			}
-			return <Badge className="bg-emerald-950 text-emerald-400 border border-emerald-800 text-xs">Active</Badge>;
+			return (
+				<Badge className="bg-emerald-950 text-emerald-400 border border-emerald-800 gap-1.5 inline-flex items-center text-xs" title="Live: Guard is actively running and protecting this laptop">
+					<span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+					Active (Live)
+				</Badge>
+			);
 		}
-		return <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-xs">{status || "unknown"}</Badge>;
+		return <Badge className="bg-slate-800 text-slate-300 border border-slate-700 text-xs">{status || "offline"}</Badge>;
 	};
 
 	const nicGuidOnly = (raw?: string) => {
@@ -6098,7 +6128,8 @@ export default function BrowserAiPage() {
 							</SelectTrigger>
 							<SelectContent>
 								<SelectItem value="all">All statuses</SelectItem>
-								<SelectItem value="active">Active</SelectItem>
+								<SelectItem value="active">Active (Live)</SelectItem>
+								<SelectItem value="offline">Offline</SelectItem>
 								<SelectItem value="paused">Paused (Standby)</SelectItem>
 								<SelectItem value="uninstall_pending">Uninstall pending</SelectItem>
 								<SelectItem value="uninstalled">Uninstalled</SelectItem>
@@ -6122,7 +6153,7 @@ export default function BrowserAiPage() {
 						</Select>
 					</div>
 
-					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+					<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
 						<Card className="bg-card border-border">
 							<CardHeader className="pb-2">
 								<CardDescription>Total registered</CardDescription>
@@ -6131,8 +6162,14 @@ export default function BrowserAiPage() {
 						</Card>
 						<Card className="bg-card border-border">
 							<CardHeader className="pb-2">
-								<CardDescription>Active</CardDescription>
+								<CardDescription>Active (Live)</CardDescription>
 								<CardTitle className="text-2xl text-emerald-400">{activeAgentsCount}</CardTitle>
+							</CardHeader>
+						</Card>
+						<Card className="bg-card border-border">
+							<CardHeader className="pb-2">
+								<CardDescription>Offline</CardDescription>
+								<CardTitle className="text-2xl text-slate-400">{offlineAgentsCount}</CardTitle>
 							</CardHeader>
 						</Card>
 						<Card className="bg-card border-border">
@@ -6837,6 +6874,20 @@ export default function BrowserAiPage() {
 								</div>
 								<div className="flex shrink-0 items-center gap-2">
 									<Button
+										onClick={() => handleDownloadSetupPackage("extension")}
+										disabled={downloadingExtension}
+										variant="outline"
+										size="default"
+										className="h-10 px-4 gap-2 font-medium border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 shadow-sm transition-all"
+									>
+										{downloadingExtension ? (
+											<RefreshCw className="h-4 w-4 animate-spin text-emerald-400" />
+										) : (
+											<Download className="h-4 w-4" />
+										)}
+										{downloadingExtension ? "Downloading..." : "Download Extension (.ZIP)"}
+									</Button>
+									<Button
 										onClick={() => handleDownloadSetupPackage("all")}
 										disabled={downloadingSuite}
 										size="default"
@@ -6889,14 +6940,26 @@ export default function BrowserAiPage() {
 									</p>
 								</div>
 
-								<div className="rounded-md border border-border bg-card p-3 space-y-1.5">
-									<div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-										<span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
-										3. All Browser Extensions
+								<div className="rounded-md border border-border bg-card p-3 space-y-2 flex flex-col justify-between">
+									<div>
+										<div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+											<span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
+											3. All Browser Extensions
+										</div>
+										<p className="text-[11px] text-muted-foreground mt-1">
+											<code>.crx</code> &amp; unpacked folder for Chrome, Brave, Edge, Opera; <code>.xpi</code> for Firefox; Safari guide.
+										</p>
 									</div>
-									<p className="text-[11px] text-muted-foreground">
-										<code>.crx</code> &amp; unpacked folder for Chrome, Brave, Edge, Opera; <code>.xpi</code> for Firefox; Safari guide.
-									</p>
+									<Button
+										onClick={() => handleDownloadSetupPackage("extension")}
+										disabled={downloadingExtension}
+										variant="outline"
+										size="sm"
+										className="h-7 text-xs px-2.5 gap-1.5 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 w-fit"
+									>
+										<Download className="h-3 w-3" />
+										Download Extension ZIP
+									</Button>
 								</div>
 							</div>
 						</CardContent>

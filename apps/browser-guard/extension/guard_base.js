@@ -15,6 +15,9 @@ function guardBaseCandidates() {
   add(GUARD_BASE_FALLBACK);
   add("http://127.0.0.1:18196");
   add("http://127.0.0.1:18197");
+  add("http://localhost:18195");
+  add("http://localhost:18196");
+  add("http://localhost:18197");
   return list;
 }
 
@@ -68,7 +71,7 @@ function resolveGuardBase(done) {
           return r.json();
         })
         .then(function (data) {
-          if (data && Array.isArray(data.rules)) finish(base, true);
+          if (data && (Array.isArray(data.rules) || data.status === "ok")) finish(base, true);
           else next();
         })
         .catch(function () {
