@@ -116,6 +116,35 @@
     }
     if (ev.data.type === "sync_rules") {
       setDynamicRules(ev.data.rules || []);
+      if (typeof ev.data.block_upload !== "undefined") {
+        govBlockUpload = Boolean(ev.data.block_upload);
+      }
+      if (typeof ev.data.upload_warning === "string") {
+        govUploadWarning = ev.data.upload_warning;
+      }
+      if (typeof ev.data.upload_target_websites === "string") {
+        govUploadTargetWebsites = ev.data.upload_target_websites;
+      }
+      if (typeof ev.data.file_extension_mode === "string") {
+        govFileExtensionMode = ev.data.file_extension_mode;
+      }
+      if (typeof ev.data.restricted_file_extensions === "string") {
+        govRestrictedExtensions = parseExtensionList(ev.data.restricted_file_extensions);
+      } else if (Array.isArray(ev.data.restricted_extensions)) {
+        govRestrictedExtensions = ev.data.restricted_extensions.map(function (x) { return String(x).toLowerCase().replace(/^\./, "").trim(); });
+      }
+      if (typeof ev.data.allowed_file_extensions === "string") {
+        govAllowedExtensions = parseExtensionList(ev.data.allowed_file_extensions);
+      }
+      if (typeof ev.data.block_file_extension !== "undefined") {
+        govBlockFileExtension = Boolean(ev.data.block_file_extension);
+      }
+      if (typeof ev.data.file_extension_block_message === "string") {
+        govFileExtensionBlockMessage = ev.data.file_extension_block_message;
+      }
+      if (typeof ev.data.file_extension_target_websites === "string") {
+        govFileExtensionTargetWebsites = ev.data.file_extension_target_websites;
+      }
       if (typeof ev.data.block_clipboard !== "undefined") {
         govBlockClipboard = Boolean(ev.data.block_clipboard);
       }
@@ -131,6 +160,34 @@
       if (typeof ev.data.governance_block_message === "string") {
         govBlockMessage = ev.data.governance_block_message;
       }
+      if (typeof ev.data.clipboard_target_websites === "string") {
+        govClipboardTargetWebsites = ev.data.clipboard_target_websites;
+      }
+      if (typeof ev.data.drag_drop_target_websites === "string") {
+        govDragDropTargetWebsites = ev.data.drag_drop_target_websites;
+      }
+      if (typeof ev.data.download_target_websites === "string") {
+        govDownloadTargetWebsites = ev.data.download_target_websites;
+      }
+      if (typeof ev.data.clipboard_block_message === "string") {
+        govClipboardBlockMessage = ev.data.clipboard_block_message;
+      }
+      if (typeof ev.data.drag_drop_block_message === "string") {
+        govDragDropBlockMessage = ev.data.drag_drop_block_message;
+      }
+      if (typeof ev.data.download_block_message === "string") {
+        govDownloadBlockMessage = ev.data.download_block_message;
+      }
+      if (typeof ev.data.block_screenshot !== "undefined") {
+        govBlockScreenshot = Boolean(ev.data.block_screenshot);
+        applyScreenshotProtection();
+      }
+      if (typeof ev.data.screenshot_block_message === "string") {
+        govScreenshotBlockMessage = ev.data.screenshot_block_message;
+      }
+      if (typeof ev.data.screenshot_target_websites === "string") {
+        govScreenshotTargetWebsites = ev.data.screenshot_target_websites;
+      }
     }
     if (ev.data.type === "session_authorization_result") {
       handleSessionAuthDecision(ev.data.result || {});
@@ -141,29 +198,203 @@
     }
   });
 
-  // --- Data Governance Controls (Clipboard, Drag & Drop, File Downloads) ---
+  // --- Data Governance Controls (Uploads, File Types, Clipboard, Drag & Drop, Downloads, Screenshots) ---
+  var govBlockUpload = false;
+  var govUploadWarning = "";
+  var govUploadTargetWebsites = "";
+  var govBlockFileExtension = false;
+  var govFileExtensionMode = "block_listed";
+  var govRestrictedExtensions = [];
+  var govAllowedExtensions = [];
+  var govFileExtensionBlockMessage = "";
+  var govFileExtensionTargetWebsites = "";
   var govBlockClipboard = false;
+  var govClipboardTargetWebsites = "";
   var govBlockDragDrop = false;
+  var govDragDropTargetWebsites = "";
   var govBlockDownload = false;
+  var govDownloadTargetWebsites = "";
   var govTargetWebsites = "";
   var govBlockMessage = "";
+  var govClipboardBlockMessage = "";
+  var govDragDropBlockMessage = "";
+  var govDownloadBlockMessage = "";
+  var govBlockScreenshot = false;
+  var govScreenshotBlockMessage = "";
+  var govScreenshotTargetWebsites = "";
 
-  function isGovernanceActiveForSite() {
-    if (!govTargetWebsites || !govTargetWebsites.trim() || govTargetWebsites.trim().toUpperCase() === "ALL") {
+  function parseExtensionList(str) {
+    if (!str || typeof str !== "string") return [];
+    var parts = str.toLowerCase().split(/[,\s;]+/);
+    var list = [];
+    for (var i = 0; i < parts.length; i++) {
+      var item = parts[i].replace(/^\./, "").trim();
+      if (item && list.indexOf(item) === -1) {
+        list.push(item);
+      }
+    }
+    return list;
+  }
+
+  function isControlActiveForSite(configuredSites) {
+    var raw = (configuredSites && typeof configuredSites === "string") ? configuredSites.trim() : "";
+    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
       return true;
     }
     var currentHost = (location.hostname || "").toLowerCase().replace(/^www\./, "");
-    var parts = govTargetWebsites.toLowerCase().split(/[,\s;]+/);
+    var parts = raw.toLowerCase().split(/[,\s;]+/);
     for (var i = 0; i < parts.length; i++) {
       var item = parts[i].trim();
       if (!item) continue;
       if (item.indexOf("www.") === 0) item = item.slice(4);
-      if (currentHost === item || currentHost.endsWith("." + item) || currentHost.includes(item)) {
+      if (item.indexOf(":") >= 0) item = item.split(":")[0];
+      if (currentHost === item || currentHost.endsWith("." + item) || item.endsWith("." + currentHost) || currentHost.includes(item) || item.includes(currentHost)) {
         return true;
       }
     }
     return false;
   }
+
+  function isGovernanceActiveForSite() {
+    return isControlActiveForSite(govTargetWebsites);
+  }
+
+  function checkFileUploadAllowed(file) {
+    if (!file) return true;
+    var fileName = file.name || "";
+    // Check 1: Master upload block - applies to any target domain if govUploadTargetWebsites is empty/all or matches
+    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+      return false;
+    }
+    // Check 2: File extension restrictions (independent policy)
+    var fileExtTarget = govFileExtensionTargetWebsites || govUploadTargetWebsites;
+    var extPolicyActive = govBlockFileExtension || (govRestrictedExtensions.length > 0) || (govAllowedExtensions.length > 0 && govFileExtensionMode === "allow_listed");
+    if (extPolicyActive && isControlActiveForSite(fileExtTarget)) {
+      var ext = "";
+      if (fileName.lastIndexOf(".") !== -1) {
+        ext = fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase().trim();
+      }
+      if (ext) {
+        var hasRestricted = (govRestrictedExtensions && govRestrictedExtensions.length > 0);
+        var hasAllowed = (govAllowedExtensions && govAllowedExtensions.length > 0);
+        if (govFileExtensionMode === "allow_listed" && hasAllowed) {
+          var isAllowed = govAllowedExtensions.some(function (a) {
+            return a.replace(/^\./, "").toLowerCase().trim() === ext;
+          });
+          if (!isAllowed) {
+            var msg = govFileExtensionBlockMessage || ("File type '." + ext + "' is not permitted. Only approved file types (" + govAllowedExtensions.map(function (e) { return "." + e; }).join(", ") + ") may be uploaded.");
+            showBubble(msg, "File Extension Policy", "block");
+            return false;
+          }
+        } else if (hasRestricted) {
+          var isBlocked = govRestrictedExtensions.some(function (b) {
+            return b.replace(/^\./, "").toLowerCase().trim() === ext;
+          });
+          if (isBlocked) {
+            var msg2 = govFileExtensionBlockMessage || ("Uploading '." + ext + "' files is restricted by corporate DLP policy.");
+            showBubble(msg2, "File Extension Policy", "block");
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  // --- Anti-Screenshot & Screen Capture Protection ---
+  var _screenshotShieldEl = null;
+  function triggerScreenshotAlert() {
+    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+
+    // 1. Wipe clipboard to destroy snip buffer
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText("");
+      }
+    } catch (e) {}
+
+    // 2. Display full-screen Privacy Shield overlay
+    if (!_screenshotShieldEl) {
+      _screenshotShieldEl = document.createElement("div");
+      _screenshotShieldEl.id = "yp-screenshot-shield";
+      _screenshotShieldEl.style.cssText =
+        "position:fixed;inset:0;z-index:2147483647;background:rgba(10,15,29,0.98);backdrop-filter:blur(40px);" +
+        "-webkit-backdrop-filter:blur(40px);display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#f8fafc;padding:24px;text-align:center;" +
+        "transition:opacity 0.25s ease-out;opacity:0;pointer-events:none;";
+      _screenshotShieldEl.innerHTML =
+        '<div style="width:72px;height:72px;border-radius:50%;background:rgba(239,68,68,0.18);border:2px solid #ef4444;display:flex;align-items:center;justify-content:center;font-size:36px;margin-bottom:16px;">🛡️</div>' +
+        '<h2 style="font-size:22px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;margin:0 0 8px 0;">SCREENSHOT RESTRICTED</h2>' +
+        '<p style="font-size:14px;color:#cbd5e1;max-width:440px;line-height:1.5;margin:0 0 16px 0;">' +
+        (govScreenshotBlockMessage || "Screen capturing, recording, or taking screenshots on this AI workspace is prohibited by corporate DLP policy.") +
+        '</p>' +
+        '<div style="font-size:11px;color:#94a3b8;border:1px solid rgba(148,163,184,0.3);padding:4px 12px;border-radius:6px;background:rgba(30,41,59,0.6);">' +
+        'Monitored &amp; Protected by YP-Raksha Browser Guard' +
+        '</div>';
+      (document.body || document.documentElement).appendChild(_screenshotShieldEl);
+    }
+    _screenshotShieldEl.style.opacity = "1";
+    _screenshotShieldEl.style.pointerEvents = "all";
+
+    // Show toast alert
+    showBubble(govScreenshotBlockMessage || "Screenshots and screen capture are prohibited by corporate security policy.", "Anti-Screenshot Policy", "block");
+
+    // Fade out after 2.5 seconds
+    setTimeout(function () {
+      if (_screenshotShieldEl) {
+        _screenshotShieldEl.style.opacity = "0";
+        _screenshotShieldEl.style.pointerEvents = "none";
+      }
+    }, 2500);
+  }
+
+  function applyScreenshotProtection() {
+    var printStyleId = "yp-print-shield-style";
+    var existingPrintStyle = document.getElementById(printStyleId);
+    if (govBlockScreenshot && isControlActiveForSite(govScreenshotTargetWebsites)) {
+      if (!existingPrintStyle) {
+        var style = document.createElement("style");
+        style.id = printStyleId;
+        style.textContent = "@media print { body, html { display: none !important; visibility: hidden !important; } }";
+        (document.head || document.documentElement).appendChild(style);
+      }
+    } else {
+      if (existingPrintStyle) existingPrintStyle.remove();
+    }
+  }
+
+  // Intercept PrintScreen key, Snipping tool shortcuts (Win+Shift+S), Mac Cmd+Shift+3/4
+  window.addEventListener("keyup", function (e) {
+    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+    if (e.key === "PrintScreen" || e.keyCode === 44) {
+      triggerScreenshotAlert();
+    }
+  }, true);
+
+  window.addEventListener("keydown", function (e) {
+    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+    if (e.key === "PrintScreen" || e.keyCode === 44) {
+      e.preventDefault();
+      triggerScreenshotAlert();
+      return;
+    }
+    if ((e.key === "s" || e.key === "S") && e.shiftKey && (e.metaKey || e.altKey)) {
+      e.preventDefault();
+      triggerScreenshotAlert();
+      return;
+    }
+    if (e.metaKey && e.shiftKey && (e.key === "3" || e.key === "4" || e.key === "5")) {
+      e.preventDefault();
+      triggerScreenshotAlert();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P")) {
+      e.preventDefault();
+      triggerScreenshotAlert();
+      return;
+    }
+  }, true);
 
   // --- Corporate AI Domain & Workspace Authorization Engine ---
   var sessionBlocked = false;
@@ -452,6 +683,9 @@
         _lastAskSig = sig;
         _lastAskTime = Date.now();
         _lastAskDecision = res;
+        _lastHandledPromptId = id;
+        _lastHandledPromptTime = Date.now();
+        _lastHandledPromptText = trimmed;
         if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
           lastDecisionCache = { text: trimmed, time: Date.now(), decision: res };
         }
@@ -844,7 +1078,10 @@
   // --- 2. ALL FILE TYPES & IMAGE INTERCEPTION ENGINE ---
 
   function inspectAndStageFile(file) {
-    if (!file) return;
+    if (!file) return false;
+    if (!checkFileUploadAllowed(file)) {
+      return false;
+    }
     var name = file.name || "file";
     var size = file.size || 0;
     var type = file.type || "";
@@ -909,10 +1146,56 @@
     return true;
   }
 
-  // Hook 1: File Input Selector (<input type="file">)
+  // Hook 1: File Input Selector (<input type="file">) and Attach Button Click Blocking
+  try {
+    var origInputClick = HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click = function () {
+      if (armed && this.type === "file" && govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+      return origInputClick.apply(this, arguments);
+    };
+  } catch (e) {}
+
+  document.addEventListener("click", function (ev) {
+    if (!armed || !govBlockUpload || !isControlActiveForSite(govUploadTargetWebsites)) return;
+    var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
+    if (!target) return;
+    if (target.tagName === "INPUT" && target.type === "file") {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+      return;
+    }
+    var btn = target.closest("button, [role='button'], label");
+    if (btn) {
+      var aria = (btn.getAttribute("aria-label") || "").toLowerCase();
+      var title = (btn.getAttribute("title") || "").toLowerCase();
+      var testid = (btn.getAttribute("data-testid") || "").toLowerCase();
+      var isAttachBtn =
+        aria.includes("attach") || aria.includes("upload") || aria.includes("add file") || aria.includes("add photo") ||
+        title.includes("attach") || title.includes("upload") ||
+        testid.includes("attach") || testid.includes("upload") || testid.includes("file-upload");
+      if (isAttachBtn) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+    }
+  }, true);
+
   document.addEventListener("change", function (ev) {
     if (!armed) return;
     if (ev.target && ev.target.tagName === "INPUT" && ev.target.type === "file") {
+      if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+        ev.target.value = "";
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
       var files = ev.target.files;
       if (files && files.length) {
         for (var i = 0; i < files.length; i++) {
@@ -930,18 +1213,30 @@
   // Hook 2: Drag & Drop Files
   window.addEventListener("dragover", function (ev) {
     if (!armed) return;
-    if (govBlockDragDrop && isGovernanceActiveForSite()) {
+    var uploadActive = govBlockUpload && isControlActiveForSite(govUploadTargetWebsites);
+    var dragDropActive = govBlockDragDrop && isControlActiveForSite(govDragDropTargetWebsites);
+    if (uploadActive || dragDropActive) {
       ev.preventDefault();
     }
   }, true);
 
   window.addEventListener("drop", function (ev) {
     if (!armed) return;
-    if (govBlockDragDrop && isGovernanceActiveForSite()) {
+    var uploadActive = govBlockUpload && isControlActiveForSite(govUploadTargetWebsites);
+    var dragDropActive = govBlockDragDrop && isControlActiveForSite(govDragDropTargetWebsites);
+    if (dragDropActive) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
-      showBubble(govBlockMessage || "Drag-and-drop file and data ingestion is blocked by corporate data governance policy.", "Data Governance Policy", "block");
+      showBubble(govDragDropBlockMessage || govBlockMessage || "Drag-and-drop file and data ingestion is blocked by corporate data governance policy.", "Data Governance Policy", "block");
       return;
+    }
+    if (uploadActive) {
+      if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
     }
     if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
       var files = ev.dataTransfer.files;
@@ -958,15 +1253,56 @@
   // Hook 3: Clipboard Paste (Ctrl+V Screenshots, Files & Sensitive Text Shielding)
   window.addEventListener("paste", function (ev) {
     if (!armed) return;
-    if (govBlockClipboard && isGovernanceActiveForSite()) {
+    if (govBlockClipboard && isControlActiveForSite(govClipboardTargetWebsites)) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
-      showBubble(govBlockMessage || "Pasting data into this AI tool is blocked by corporate data governance policy.", "Clipboard Policy", "block");
+      var pastedSnippet = "";
+      try {
+        if (ev.clipboardData) pastedSnippet = ev.clipboardData.getData("text/plain") || "";
+      } catch (e) {}
+      showBubble(govClipboardBlockMessage || govBlockMessage || "Pasting data into this AI tool is blocked by corporate data governance policy.", "Clipboard Policy", "block");
+      var promptLogText = "--copy paste [CLIPBOARD PASTE]";
+      if (pastedSnippet && pastedSnippet.trim()) {
+        promptLogText += " " + pastedSnippet.trim().slice(0, 1000);
+      }
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: "paste_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: promptLogText,
+        host: location.hostname,
+        url: location.href,
+        is_blocked: true,
+        rule: "Clipboard Policy",
+        blocked_reason: "Clipboard Policy",
+        status: "Blocked (Clipboard Policy)"
+      }, "*");
       return;
     }
     var cd = ev.clipboardData;
     if (!cd) return;
-    // 1. Files & Screenshots
+
+    // Master upload block on pasting files / images / screenshots
+    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      if (cd.files && cd.files.length > 0) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and image pasting are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+      if (cd.items && cd.items.length) {
+        for (var pki = 0; pki < cd.items.length; pki++) {
+          if (cd.items[pki].kind === "file") {
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            showBubble(govUploadWarning || "File uploads and image pasting are blocked by corporate policy.", "File Upload Policy", "block");
+            return;
+          }
+        }
+      }
+    }
+
+    // 1. Files & Screenshots inspection
     if (cd.files && cd.files.length) {
       for (var i = 0; i < cd.files.length; i++) {
         if (!inspectAndStageFile(cd.files[i])) {
@@ -989,11 +1325,13 @@
             source: "gateway-guard-page",
             nonce: guardNonce,
             id: "paste_log_" + Date.now().toString(36),
-            prompt: pastedText.slice(0, 500),
+            prompt: "--copy paste [CLIPBOARD PASTE] " + pastedText.slice(0, 500),
             host: location.hostname,
             url: location.href,
             is_blocked: true,
-            rule: pasteDecision.rule || ""
+            rule: pasteDecision.rule || "Clipboard Policy",
+            blocked_reason: pasteDecision.rule || "Clipboard Policy",
+            status: "Blocked (Clipboard Policy)"
           }, "*");
           return;
         }
@@ -1002,22 +1340,64 @@
   }, true);
 
   window.addEventListener("copy", function (ev) {
-    if (!armed || !govBlockClipboard || !isGovernanceActiveForSite()) return;
+    if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
     ev.preventDefault();
     ev.stopImmediatePropagation();
-    showBubble(govBlockMessage || "Copying responses and data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+    var copiedSnippet = "";
+    try {
+      var sel = window.getSelection ? window.getSelection().toString() : "";
+      if (sel) copiedSnippet = sel;
+    } catch (e) {}
+    showBubble(govClipboardBlockMessage || govBlockMessage || "Copying responses and data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+    var promptLogText = "--copy paste [CLIPBOARD COPY]";
+    if (copiedSnippet && copiedSnippet.trim()) {
+      promptLogText += " " + copiedSnippet.trim().slice(0, 1000);
+    }
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: "copy_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      prompt: promptLogText,
+      host: location.hostname,
+      url: location.href,
+      is_blocked: true,
+      rule: "Clipboard Policy",
+      blocked_reason: "Clipboard Policy",
+      status: "Blocked (Clipboard Policy)"
+    }, "*");
   }, true);
 
   window.addEventListener("cut", function (ev) {
-    if (!armed || !govBlockClipboard || !isGovernanceActiveForSite()) return;
+    if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
     ev.preventDefault();
     ev.stopImmediatePropagation();
-    showBubble(govBlockMessage || "Cutting data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+    var cutSnippet = "";
+    try {
+      var sel = window.getSelection ? window.getSelection().toString() : "";
+      if (sel) cutSnippet = sel;
+    } catch (e) {}
+    showBubble(govClipboardBlockMessage || govBlockMessage || "Cutting data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+    var promptLogText = "--copy paste [CLIPBOARD CUT]";
+    if (cutSnippet && cutSnippet.trim()) {
+      promptLogText += " " + cutSnippet.trim().slice(0, 1000);
+    }
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: "cut_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      prompt: promptLogText,
+      host: location.hostname,
+      url: location.href,
+      is_blocked: true,
+      rule: "Clipboard Policy",
+      blocked_reason: "Clipboard Policy",
+      status: "Blocked (Clipboard Policy)"
+    }, "*");
   }, true);
 
   // Hook 4: File Downloads & Exports Restriction
   document.addEventListener("click", function (ev) {
-    if (!armed || !govBlockDownload || !isGovernanceActiveForSite()) return;
+    if (!armed || !govBlockDownload || !isControlActiveForSite(govDownloadTargetWebsites)) return;
     var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
     var el = (target && target.closest) ? target.closest("a, button, [role='button']") : null;
     if (!el) return;
@@ -1036,18 +1416,18 @@
     if (isDownload) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
-      showBubble(govBlockMessage || "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.", "Download Policy", "block");
+      showBubble(govDownloadBlockMessage || govBlockMessage || "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.", "Download Policy", "block");
     }
   }, true);
 
   try {
     var origAnchorClick = HTMLAnchorElement.prototype.click;
     HTMLAnchorElement.prototype.click = function () {
-      if (armed && govBlockDownload && isGovernanceActiveForSite()) {
+      if (armed && govBlockDownload && isControlActiveForSite(govDownloadTargetWebsites)) {
         var href = (this.getAttribute("href") || "").toLowerCase();
         var hasDl = this.hasAttribute("download");
         if (hasDl || href.startsWith("blob:") || href.startsWith("data:") || href.match(/\.(pdf|csv|xlsx|docx|zip|txt|json)/i)) {
-          showBubble(govBlockMessage || "File download was blocked by corporate data governance policy.", "Download Policy", "block");
+          showBubble(govDownloadBlockMessage || govBlockMessage || "File download was blocked by corporate data governance policy.", "Download Policy", "block");
           return;
         }
       }
@@ -1084,6 +1464,23 @@
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
+    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+    }
+
+    for (var fi = 0; fi < effectiveFiles.length; fi++) {
+      if (!checkFileUploadAllowed(effectiveFiles[fi])) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+    }
+
     var clientDecision = evaluateClientRules(text, effectiveFiles);
     if (clientDecision && clientDecision.blocked) {
       e.preventDefault();
@@ -1113,6 +1510,8 @@
           stagedFiles = [];
           stagedImages = [];
           passKey = true;
+          var pId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+          _lastHandledPromptId = pId;
           _lastHandledPromptTime = Date.now();
           _lastHandledPromptText = text;
           try {
@@ -1134,19 +1533,21 @@
     }
 
     // Fast path: Clean text prompt without files sends instantly with native Enter (0ms delay)
+    var fastId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+    _lastHandledPromptId = fastId;
     _lastHandledPromptTime = Date.now();
     _lastHandledPromptText = text;
     window.postMessage({
       source: "gateway-guard-page",
       nonce: guardNonce,
-      id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      id: fastId,
+      eval_id: fastId,
       prompt: text,
       files: [],
       upload_images: [],
       host: location.hostname,
       url: location.href,
       is_blocked: false,
-      rule: ""
     }, "*");
   }, true);
 
@@ -1200,6 +1601,23 @@
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
 
+    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+    }
+
+    for (var fi2 = 0; fi2 < effectiveFiles.length; fi2++) {
+      if (!checkFileUploadAllowed(effectiveFiles[fi2])) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+    }
+
     var clientDecision = evaluateClientRules(text, effectiveFiles);
     if (clientDecision && clientDecision.blocked) {
       e.preventDefault();
@@ -1228,6 +1646,8 @@
           stagedFiles = [];
           stagedImages = [];
           passClick = true;
+          var clickId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+          _lastHandledPromptId = clickId;
           _lastHandledPromptTime = Date.now();
           _lastHandledPromptText = text;
           try {
@@ -1241,12 +1661,15 @@
     }
 
     // Fast path: Clean text prompt without files proceeds with native click instantly (0ms delay)
+    var fastClickId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+    _lastHandledPromptId = fastClickId;
     _lastHandledPromptTime = Date.now();
     _lastHandledPromptText = text;
     window.postMessage({
       source: "gateway-guard-page",
       nonce: guardNonce,
-      id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      id: fastClickId,
+      eval_id: fastClickId,
       prompt: text,
       files: [],
       upload_images: [],
@@ -1337,9 +1760,14 @@
             !reqUrlEarly.includes("blob.core.windows.net") &&
             !reqUrlEarly.includes("amazonaws.com") &&
             !reqUrlEarly.includes("storage.googleapis.com") &&
+            !reqUrlEarly.includes("oaiusercontent.com") &&
+            !reqUrlEarly.includes("claudeusercontent.com") &&
+            !reqUrlEarly.includes("clients6.google.com") &&
+            !reqUrlEarly.includes("content-push.googleapis.com") &&
             !reqUrlEarly.includes("/backend-api/files") &&
             !reqUrlEarly.includes("/files") &&
-            !reqUrlEarly.includes("/upload")
+            !reqUrlEarly.includes("/upload") &&
+            !reqUrlEarly.includes("/file/upload")
           ) {
             var handledHeaders = {
               "X-Guard-Handled": "1",
@@ -1539,13 +1967,20 @@
       // Handle FormData body (File uploads)
       else if (body && typeof body.forEach === "function") {
         try {
+          var formUploadBlocked = false;
           body.forEach(function (val, key) {
             if (val && typeof val.name === "string") {
+              if (!checkFileUploadAllowed(val)) {
+                formUploadBlocked = true;
+              }
               netFiles.push({ name: val.name, size: val.size, type: val.type });
             } else if (typeof val === "string" && (key.indexOf("prompt") >= 0 || key.indexOf("query") >= 0 || key.indexOf("message") >= 0)) {
               promptText = val;
             }
           });
+          if (formUploadBlocked) {
+            return Promise.resolve(new Response(null, { status: 204 }));
+          }
         } catch (err) { }
       }
 
@@ -1559,7 +1994,16 @@
         lowUrl.includes("amazonaws.com") ||
         lowUrl.includes("storage.googleapis.com") ||
         lowUrl.includes("/media/upload") ||
-        lowUrl.includes("/convert_document");
+        lowUrl.includes("/convert_document") ||
+        lowUrl.includes("/attachments");
+
+      // Check if master upload block is active on this site
+      if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+        if (isPureUploadEndpoint || (body && typeof body.forEach === "function") || (netFiles && netFiles.length > 0)) {
+          showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+          return Promise.reject(new TypeError("File uploads and attachments to this AI platform are blocked by corporate policy."));
+        }
+      }
 
       // Pure file uploads without a typed prompt MUST pass through immediately with zero delay and unmodified headers!
       // (The file was already staged via inspectAndStageFile, and full DLP scanning runs when the user clicks Send)
@@ -1618,23 +2062,46 @@
                 try {
                   input.headers.set("X-Guard-Handled", "1");
                   input.headers.set("X-Gateway-Guard-Handled", "1");
+                  if (_lastHandledPromptId) {
+                    input.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                    input.headers.set("X-Prompt-Id", _lastHandledPromptId);
+                  }
                 } catch (hdrErr) {
                   var safeH = new Headers(input.headers);
                   safeH.set("X-Guard-Handled", "1");
                   safeH.set("X-Gateway-Guard-Handled", "1");
+                  if (_lastHandledPromptId) {
+                    safeH.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                    safeH.set("X-Prompt-Id", _lastHandledPromptId);
+                  }
                   nextInit.headers = safeH;
                   nextArgs = [input, nextInit];
                 }
-              } else if (nextInit.headers) {
+              } else {
+                if (!nextInit.headers) {
+                  nextInit.headers = {};
+                }
                 if (typeof Headers !== "undefined" && nextInit.headers instanceof Headers) {
                   nextInit.headers.set("X-Guard-Handled", "1");
                   nextInit.headers.set("X-Gateway-Guard-Handled", "1");
+                  if (_lastHandledPromptId) {
+                    nextInit.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                    nextInit.headers.set("X-Prompt-Id", _lastHandledPromptId);
+                  }
                 } else if (Array.isArray(nextInit.headers)) {
                   nextInit.headers.push(["X-Guard-Handled", "1"]);
                   nextInit.headers.push(["X-Gateway-Guard-Handled", "1"]);
+                  if (_lastHandledPromptId) {
+                    nextInit.headers.push(["X-Guard-Eval-Id", _lastHandledPromptId]);
+                    nextInit.headers.push(["X-Prompt-Id", _lastHandledPromptId]);
+                  }
                 } else if (typeof nextInit.headers === "object") {
                   nextInit.headers["X-Guard-Handled"] = "1";
                   nextInit.headers["X-Gateway-Guard-Handled"] = "1";
+                  if (_lastHandledPromptId) {
+                    nextInit.headers["X-Guard-Eval-Id"] = _lastHandledPromptId;
+                    nextInit.headers["X-Prompt-Id"] = _lastHandledPromptId;
+                  }
                 }
                 nextArgs = [input, nextInit];
               }
@@ -1691,6 +2158,29 @@
       } catch (e) { }
     }
     if (!armed || !body) return origXHRSend.apply(this, arguments);
+
+    var xhrUrl = String(this._ggUrl || "").toLowerCase();
+    var isXhrUpload =
+      xhrUrl.includes("/backend-api/files") ||
+      xhrUrl.includes("/files") ||
+      xhrUrl.includes("/upload") ||
+      xhrUrl.includes("blob.core.windows.net") ||
+      xhrUrl.includes("amazonaws.com") ||
+      xhrUrl.includes("storage.googleapis.com") ||
+      xhrUrl.includes("/media/upload") ||
+      xhrUrl.includes("/convert_document") ||
+      xhrUrl.includes("/attachments");
+
+    if (armed && govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      if (isXhrUpload || (body && (typeof FormData !== "undefined" && body instanceof FormData || typeof Blob !== "undefined" && body instanceof Blob || typeof File !== "undefined" && body instanceof File || typeof body.forEach === "function"))) {
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        try {
+          this.abort();
+        } catch (e) {}
+        return;
+      }
+    }
+
     var promptText = "";
     if (typeof body === "string") {
       try {

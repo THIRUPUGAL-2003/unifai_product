@@ -53,6 +53,8 @@ import {
 	ArrowUpDown,
 	ArrowUp,
 	ArrowDown,
+	Camera,
+	FileCode,
 } from "lucide-react";
 import { PRODUCT_NAME } from "@/lib/constants/config";
 import { getDeploymentOrigin } from "@/lib/utils/port";
@@ -169,6 +171,7 @@ import { formatLogDate, formatLogTime } from "./browserAiFormat";
 import { RegexLiveTestPanel } from "./regexLiveTestPanel";
 import { GuardRuleImportDialog, downloadGuardRulesTemplate } from "./guardRuleImportDialog";
 import { TargetImportDialog, downloadTargetsTemplate } from "./targetImportDialog";
+import { CorporateAIWorkspaceCard } from "./CorporateAIWorkspaceCard";
 
 const BROWSER_AI_TABS = ["overview", "targets", "rules", "logs", "search-logs", "setup", "agents", "telemetry", "settings"] as const;
 type BrowserAiTab = (typeof BROWSER_AI_TABS)[number];
@@ -1208,115 +1211,25 @@ export default function BrowserAiPage() {
 	const [editRuleTestSample, setEditRuleTestSample] = useState("");
 	const [editRuleTestResult, setEditRuleTestResult] = useState("");
 	const [updateControls] = useUpdateBrowserAiControlsMutation();
-	const [authorizeAiSessionMutation, { isLoading: isRunningSim }] = useAuthorizeAiSessionMutation();
-	const [corporateDomainInput, setCorporateDomainInput] = useState("");
-	const [workspaceIdInput, setWorkspaceIdInput] = useState("");
-	const [corporateBlockMsgInput, setCorporateBlockMsgInput] = useState("");
-	const [testSimEmail, setTestSimEmail] = useState("employee@company.com");
-	const [testSimWorkspace, setTestSimWorkspace] = useState("");
-	const [testSimProvider, setTestSimProvider] = useState("chatgpt");
-	const [testSimResult, setTestSimResult] = useState<AuthorizeAISessionResponse | null>(null);
+	// Clipboard, Drag-and-Drop & Download Data Governance (Individual Policy Block Messages)
+	const [clipboardMsgDraft, setClipboardMsgDraft] = useState("");
+	const [clipboardMsgEditing, setClipboardMsgEditing] = useState(false);
+	const [dragDropMsgDraft, setDragDropMsgDraft] = useState("");
+	const [dragDropMsgEditing, setDragDropMsgEditing] = useState(false);
+	const [downloadMsgDraft, setDownloadMsgDraft] = useState("");
+	const [downloadMsgEditing, setDownloadMsgEditing] = useState(false);
 
 	useEffect(() => {
-		if (controls.corporate_block_message) {
-			setCorporateBlockMsgInput(controls.corporate_block_message);
-		}
-	}, [controls.corporate_block_message]);
-
-	const configuredCorporateDomains = useMemo(() => {
-		const raw = controls.corporate_email_domains || "";
-		return raw
-			.split(/[,\s;\n\r]+/)
-			.map((d) => d.trim().toLowerCase().replace(/^@+/, ""))
-			.filter(Boolean);
-	}, [controls.corporate_email_domains]);
-
-	const configuredWorkspaces = useMemo(() => {
-		const raw = controls.allowed_workspace_ids || "";
-		return raw
-			.split(/[,\s;\n\r]+/)
-			.map((w) => w.trim())
-			.filter(Boolean);
-	}, [controls.allowed_workspace_ids]);
-
-	const handleAddCorporateDomain = async (domainValue?: string) => {
-		const raw = (domainValue || corporateDomainInput).trim().toLowerCase().replace(/^@+/, "").replace(/^\.+/, "");
-		if (!raw) return;
-		if (configuredCorporateDomains.includes(raw)) {
-			toast({ title: "Domain already added", description: `@${raw} is already in the authorized list.` });
-			setCorporateDomainInput("");
-			return;
-		}
-		const updated = [...configuredCorporateDomains, raw];
-		const ok = await patchControl({ corporate_email_domains: updated.join(", ") });
-		if (ok) {
-			toast({ title: "Corporate domain added", description: `@${raw} added to authorized domains.` });
-			setCorporateDomainInput("");
-		} else {
-			toast({ title: "Failed to add domain", description: "Could not save corporate domain setting.", variant: "destructive" });
-		}
-	};
-
-	const handleRemoveCorporateDomain = async (domainToRemove: string) => {
-		const updated = configuredCorporateDomains.filter((d) => d !== domainToRemove);
-		const ok = await patchControl({ corporate_email_domains: updated.join(", ") });
-		if (ok) {
-			toast({ title: "Corporate domain removed", description: `@${domainToRemove} removed from authorized list.` });
-		}
-	};
-
-	const handleAddWorkspaceId = async () => {
-		const raw = workspaceIdInput.trim();
-		if (!raw) return;
-		if (configuredWorkspaces.includes(raw)) {
-			toast({ title: "Workspace already added", description: `Workspace ID ${raw} is already in the list.` });
-			setWorkspaceIdInput("");
-			return;
-		}
-		const updated = [...configuredWorkspaces, raw];
-		const ok = await patchControl({ allowed_workspace_ids: updated.join(", ") });
-		if (ok) {
-			toast({ title: "Workspace ID added", description: `Workspace ID ${raw} added to authorized list.` });
-			setWorkspaceIdInput("");
-		}
-	};
-
-	const handleRemoveWorkspaceId = async (wsToRemove: string) => {
-		const updated = configuredWorkspaces.filter((w) => w !== wsToRemove);
-		const ok = await patchControl({ allowed_workspace_ids: updated.join(", ") });
-		if (ok) {
-			toast({ title: "Workspace ID removed", description: `Workspace ID ${wsToRemove} removed.` });
-		}
-	};
-
-	const handleSaveCorporateMessage = async () => {
-		const msg = corporateBlockMsgInput.trim();
-		const ok = await patchControl({ corporate_block_message: msg });
-		if (ok) {
-			toast({ title: "Block message saved", description: "Custom warning message updated successfully." });
-		}
-	};
-
-	const handleToggleCorporateEnforcement = async (checked: boolean) => {
-		const ok = await patchControl({ enforce_corporate_domains: checked });
-		if (ok) {
-			toast({
-				title: checked ? "Corporate Enforcement Activated" : "Corporate Enforcement Deactivated",
-				description: checked
-					? "All monitored target AI websites will now strictly enforce authorized email domains."
-					: "Corporate domain restrictions are now paused.",
-			});
-		}
-	};
-
-	// Clipboard, Drag-and-Drop & Download Data Governance (RFP 6.3.8 VI (d))
-	const [governanceBlockMsgInput, setGovernanceBlockMsgInput] = useState("");
+		setClipboardMsgDraft(controls.clipboard_block_message || "");
+	}, [controls.clipboard_block_message]);
 
 	useEffect(() => {
-		if (controls.governance_block_message) {
-			setGovernanceBlockMsgInput(controls.governance_block_message);
-		}
-	}, [controls.governance_block_message]);
+		setDragDropMsgDraft(controls.drag_drop_block_message || "");
+	}, [controls.drag_drop_block_message]);
+
+	useEffect(() => {
+		setDownloadMsgDraft(controls.download_block_message || "");
+	}, [controls.download_block_message]);
 
 	const handleToggleClipboardGovernance = async (checked: boolean) => {
 		const ok = await patchControl({ block_clipboard: checked });
@@ -1354,75 +1267,162 @@ export default function BrowserAiPage() {
 		}
 	};
 
-	const handleSaveGovernanceBlockMessage = async () => {
-		const msg = governanceBlockMsgInput.trim();
-		const ok = await patchControl({ governance_block_message: msg });
+	const saveClipboardMsg = async () => {
+		const ok = await patchControl({ clipboard_block_message: clipboardMsgDraft.trim() });
 		if (ok) {
-			toast({
-				title: "Governance Coaching Message Saved",
-				description: "Custom JIT coaching banner updated successfully.",
-			});
+			setClipboardMsgEditing(false);
+			toast({ title: "Copy-Paste Warning message saved" });
 		}
 	};
 
-	// Browser Settings Policy Accordion state (Upload, Clipboard, Drag-Drop, Download)
+	const saveDragDropMsg = async () => {
+		const ok = await patchControl({ drag_drop_block_message: dragDropMsgDraft.trim() });
+		if (ok) {
+			setDragDropMsgEditing(false);
+			toast({ title: "Drag & Drop Warning message saved" });
+		}
+	};
+
+	const saveDownloadMsg = async () => {
+		const ok = await patchControl({ download_block_message: downloadMsgDraft.trim() });
+		if (ok) {
+			setDownloadMsgEditing(false);
+			toast({ title: "Download & Export Warning message saved" });
+		}
+	};
+
+	// Browser Settings Policy Accordion state (Upload, File Type, Retention, Clipboard, Drag-Drop, Download, Screenshot)
 	const [expandedPolicies, setExpandedPolicies] = useState<Record<string, boolean>>({
 		upload: true,
+		file_type: true,
+		retention: true,
 		clipboard: true,
 		drag_drop: true,
 		download: true,
+		screenshot: true,
 	});
 
 	const togglePolicyExpanded = (key: string) => {
 		setExpandedPolicies((prev) => ({ ...prev, [key]: !prev[key] }));
 	};
 
+	// File Type & Extension Protection State
+	const [fileExtensionMsgDraft, setFileExtensionMsgDraft] = useState("");
+	const [fileExtensionMsgEditing, setFileExtensionMsgEditing] = useState(false);
+	const [customFileExtensionInput, setCustomFileExtensionInput] = useState("");
+
+	useEffect(() => {
+		setFileExtensionMsgDraft(controls.file_extension_block_message || "");
+	}, [controls.file_extension_block_message]);
+
+	const saveFileExtensionMsg = async () => {
+		const ok = await patchControl({ file_extension_block_message: fileExtensionMsgDraft.trim() });
+		if (ok) {
+			setFileExtensionMsgEditing(false);
+			toast({ title: "File Extension Warning message saved" });
+		}
+	};
+
+	// Anti-Screenshot & Screen Capture Protection
+	const [screenshotMsgDraft, setScreenshotMsgDraft] = useState("");
+	const [screenshotMsgEditing, setScreenshotMsgEditing] = useState(false);
+
+	useEffect(() => {
+		setScreenshotMsgDraft(controls.screenshot_block_message || "");
+	}, [controls.screenshot_block_message]);
+
+	const saveScreenshotMsg = async () => {
+		const ok = await patchControl({ screenshot_block_message: screenshotMsgDraft.trim() });
+		if (ok) {
+			setScreenshotMsgEditing(false);
+			toast({ title: "Anti-Screenshot Warning message saved" });
+		}
+	};
+
+	const handleToggleScreenshotProtection = async (checked: boolean) => {
+		const ok = await patchControl({ block_screenshot: checked });
+		if (ok) {
+			toast({
+				title: checked ? "Anti-Screenshot Protection Enforced" : "Anti-Screenshot Protection Disabled",
+				description: checked
+					? "PrintScreen, screen recordings, and capture tools are strictly blocked on target AI platforms."
+					: "Screen captures are now allowed.",
+			});
+		}
+	};
+
+	// File Extension & Type Restrictions
+	const configuredRestrictedExts = useMemo(() => {
+		const raw = controls.restricted_file_extensions || "";
+		return raw
+			.split(/[,\s;\n\r]+/)
+			.map((x) => x.trim().toLowerCase().replace(/^\./, ""))
+			.filter(Boolean);
+	}, [controls.restricted_file_extensions]);
+
+	const configuredAllowedExts = useMemo(() => {
+		const raw = controls.allowed_file_extensions || "";
+		return raw
+			.split(/[,\s;\n\r]+/)
+			.map((x) => x.trim().toLowerCase().replace(/^\./, ""))
+			.filter(Boolean);
+	}, [controls.allowed_file_extensions]);
+
+	const handleToggleFileExtension = async (ext: string) => {
+		const clean = ext.replace(/^\./, "").toLowerCase().trim();
+		if (!clean) return;
+		const isAllowMode = controls.file_extension_mode === "allow_listed";
+		const currentList = isAllowMode ? [...configuredAllowedExts] : [...configuredRestrictedExts];
+		const idx = currentList.indexOf(clean);
+		if (idx >= 0) {
+			currentList.splice(idx, 1);
+		} else {
+			currentList.push(clean);
+		}
+		const joined = currentList.join(", ");
+		if (isAllowMode) {
+			await patchControl({ allowed_file_extensions: joined });
+		} else {
+			await patchControl({ restricted_file_extensions: joined });
+		}
+	};
+
+	const handleAddCustomFileExtension = async () => {
+		const clean = customFileExtensionInput.replace(/^\./, "").toLowerCase().trim();
+		if (!clean) return;
+		await handleToggleFileExtension(clean);
+		setCustomFileExtensionInput("");
+	};
+
 	const handleToggleSelectAllPolicies = async (enableAll: boolean) => {
 		const ok = await patchControl({
 			enabled: enableAll,
 			block_upload: enableAll,
+			block_file_extension: enableAll,
 			block_clipboard: enableAll,
 			block_drag_drop: enableAll,
 			block_download: enableAll,
+			block_screenshot: enableAll,
 		});
 		if (ok) {
 			setExpandedPolicies({
 				upload: enableAll,
+				file_type: enableAll,
+				retention: enableAll,
 				clipboard: enableAll,
 				drag_drop: enableAll,
 				download: enableAll,
+				screenshot: enableAll,
 			});
 			toast({
-				title: enableAll ? "All 4 Protections Enforced" : "All Protections Disabled",
+				title: enableAll ? "All 6 Protections Enforced" : "All Protections Disabled",
 				description: enableAll
-					? "File Uploads, Copy-Paste, Drag-and-Drop, and File Downloads are now strictly blocked."
+					? "File Uploads, File Types & Extensions, Copy-Paste, Drag-and-Drop, File Downloads, and Anti-Screenshot are now strictly enforced."
 					: "All browser security restrictions are now paused.",
 			});
 		}
 	};
 
-	const handleRunSessionSimulation = async () => {
-		if (!testSimEmail.trim()) return;
-		const domain = testSimEmail.includes("@") ? testSimEmail.split("@")[1] : testSimEmail;
-		try {
-			const res = await authorizeAiSessionMutation({
-				action: "authorize_ai_session",
-				provider: testSimProvider,
-				email_domain: domain,
-				user_email: testSimEmail.trim(),
-				workspace_id: testSimWorkspace.trim() || undefined,
-				page_url: `https://${testSimProvider}.com/`,
-				policy_version: controls.policy_version || 1,
-			}).unwrap();
-			setTestSimResult(res);
-		} catch (err) {
-			toast({
-				title: "Simulation failed",
-				description: getErrorMessage(err),
-				variant: "destructive",
-			});
-		}
-	};
 	const [createTarget] = useCreateBrowserAiTargetMutation();
 	const [updateTarget] = useUpdateBrowserAiTargetMutation();
 	const [deleteTarget] = useDeleteBrowserAiTargetMutation();
@@ -2995,156 +2995,160 @@ export default function BrowserAiPage() {
 
 	return (
 		<div className="space-y-6 p-2 md:p-6 text-foreground w-full">
-			{/* Header View */}
-			<div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-4 border-b border-border pb-5 w-full">
-				<div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-					<div className="flex items-center gap-2 bg-card border border-border px-3 py-1.5 rounded-md text-xs">
-						<Switch
-							checked={liveUpdatesEnabled}
-							onCheckedChange={setLiveUpdatesEnabled}
-							id="live-update-switch"
-						/>
-						<Label htmlFor="live-update-switch" className="cursor-pointer font-medium text-xs">
-							Live Update
-						</Label>
-					</div>
+			{/* Header View — logs, search-logs, agents, overview toolbar (not needed for Browser Settings/Policies) */}
+			{activeTab !== "settings" ? (
+				<div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-4 border-b border-border pb-5 w-full">
+					<div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+						{activeTab !== "setup" ? (
+							<div className="flex items-center gap-2 bg-card border border-border px-3 py-1.5 rounded-md text-xs">
+								<Switch
+									checked={liveUpdatesEnabled}
+									onCheckedChange={setLiveUpdatesEnabled}
+									id="live-update-switch"
+								/>
+								<Label htmlFor="live-update-switch" className="cursor-pointer font-medium text-xs">
+									Live Update
+								</Label>
+							</div>
+						) : null}
 
-					{activeTab !== "setup" ? (
-						<ExportFormatsDropdown
+						{activeTab !== "setup" ? (
+							<ExportFormatsDropdown
+								size="sm"
+								className="h-8 text-xs gap-2 border-border"
+								getPayload={getBrowserAiExportPayload}
+								testId="browser-ai-export-trigger"
+							/>
+						) : null}
+
+						{activeTab === "logs" ? (
+							<div className="flex items-center gap-2">
+								<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
+									<Switch
+										checked={sharedLogAutoDelete}
+										onCheckedChange={(on) => patchSharedLogAutoDelete(on)}
+										id="prompt-log-auto-delete"
+									/>
+									<Label htmlFor="prompt-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
+										Auto-delete
+									</Label>
+									{sharedLogAutoDelete ? (
+										<Select
+											value={sharedLogRetention}
+											onValueChange={(v) => patchSharedLogAutoDelete(true, v)}
+										>
+											<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="1d">1 day</SelectItem>
+												<SelectItem value="7d">7 days (1w)</SelectItem>
+												<SelectItem value="30d">30 days (1m)</SelectItem>
+												<SelectItem value="90d">90 days (3m)</SelectItem>
+												<SelectItem value="180d">180 days (6m)</SelectItem>
+												<SelectItem value="365d">365 days (1y)</SelectItem>
+											</SelectContent>
+										</Select>
+									) : null}
+								</div>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => setClearLogsDialogOpen(true)}
+									className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+									data-testid="browser-ai-clear-logs"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									Clear Logs
+								</Button>
+								{selectedLogIds.size > 0 ? (
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={() => setDeleteSelectedTarget("logs")}
+										className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+										data-testid="browser-ai-delete-selected-logs"
+									>
+										<Trash2 className="h-3.5 w-3.5" />
+										Delete selected ({selectedLogIds.size})
+									</Button>
+								) : null}
+							</div>
+						) : null}
+
+						{activeTab === "search-logs" ? (
+							<div className="flex items-center gap-2">
+								<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
+									<Switch
+										checked={sharedLogAutoDelete}
+										onCheckedChange={(on) => patchSharedLogAutoDelete(on)}
+										id="search-log-auto-delete"
+									/>
+									<Label htmlFor="search-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
+										Auto-delete
+									</Label>
+									{sharedLogAutoDelete ? (
+										<Select
+											value={sharedLogRetention}
+											onValueChange={(v) => patchSharedLogAutoDelete(true, v)}
+										>
+											<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="1d">1 day</SelectItem>
+												<SelectItem value="7d">7 days (1w)</SelectItem>
+												<SelectItem value="30d">30 days (1m)</SelectItem>
+												<SelectItem value="90d">90 days (3m)</SelectItem>
+												<SelectItem value="180d">180 days (6m)</SelectItem>
+												<SelectItem value="365d">365 days (1y)</SelectItem>
+											</SelectContent>
+										</Select>
+									) : null}
+								</div>
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={() => setClearSearchLogsDialogOpen(true)}
+									className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+									data-testid="browser-ai-clear-search-logs"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									Clear Logs
+								</Button>
+								{selectedSearchLogIds.size > 0 ? (
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={() => setDeleteSelectedTarget("search-logs")}
+										className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+										data-testid="browser-ai-delete-selected-search-logs"
+									>
+										<Trash2 className="h-3.5 w-3.5" />
+										Delete selected ({selectedSearchLogIds.size})
+									</Button>
+								) : null}
+							</div>
+						) : null}
+
+						<Button
+							variant="outline"
 							size="sm"
-							className="h-8 text-xs gap-2 border-border"
-							getPayload={getBrowserAiExportPayload}
-							testId="browser-ai-export-trigger"
-						/>
-					) : null}
-
-					{activeTab === "logs" ? (
-						<div className="flex items-center gap-2">
-							<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
-								<Switch
-									checked={sharedLogAutoDelete}
-									onCheckedChange={(on) => patchSharedLogAutoDelete(on)}
-									id="prompt-log-auto-delete"
-								/>
-								<Label htmlFor="prompt-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
-									Auto-delete
-								</Label>
-								{sharedLogAutoDelete ? (
-									<Select
-										value={sharedLogRetention}
-										onValueChange={(v) => patchSharedLogAutoDelete(true, v)}
-									>
-										<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="1d">1 day</SelectItem>
-											<SelectItem value="7d">7 days (1w)</SelectItem>
-											<SelectItem value="30d">30 days (1m)</SelectItem>
-											<SelectItem value="90d">90 days (3m)</SelectItem>
-											<SelectItem value="180d">180 days (6m)</SelectItem>
-											<SelectItem value="365d">365 days (1y)</SelectItem>
-										</SelectContent>
-									</Select>
-								) : null}
-							</div>
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => setClearLogsDialogOpen(true)}
-								className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
-								data-testid="browser-ai-clear-logs"
-							>
-								<Trash2 className="h-3.5 w-3.5" />
-								Clear Logs
-							</Button>
-							{selectedLogIds.size > 0 ? (
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={() => setDeleteSelectedTarget("logs")}
-									className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
-									data-testid="browser-ai-delete-selected-logs"
-								>
-									<Trash2 className="h-3.5 w-3.5" />
-									Delete selected ({selectedLogIds.size})
-								</Button>
-							) : null}
-						</div>
-					) : null}
-
-					{activeTab === "search-logs" ? (
-						<div className="flex items-center gap-2">
-							<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
-								<Switch
-									checked={sharedLogAutoDelete}
-									onCheckedChange={(on) => patchSharedLogAutoDelete(on)}
-									id="search-log-auto-delete"
-								/>
-								<Label htmlFor="search-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
-									Auto-delete
-								</Label>
-								{sharedLogAutoDelete ? (
-									<Select
-										value={sharedLogRetention}
-										onValueChange={(v) => patchSharedLogAutoDelete(true, v)}
-									>
-										<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="1d">1 day</SelectItem>
-											<SelectItem value="7d">7 days (1w)</SelectItem>
-											<SelectItem value="30d">30 days (1m)</SelectItem>
-											<SelectItem value="90d">90 days (3m)</SelectItem>
-											<SelectItem value="180d">180 days (6m)</SelectItem>
-											<SelectItem value="365d">365 days (1y)</SelectItem>
-										</SelectContent>
-									</Select>
-								) : null}
-							</div>
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={() => setClearSearchLogsDialogOpen(true)}
-								className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
-								data-testid="browser-ai-clear-search-logs"
-							>
-								<Trash2 className="h-3.5 w-3.5" />
-								Clear Logs
-							</Button>
-							{selectedSearchLogIds.size > 0 ? (
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={() => setDeleteSelectedTarget("search-logs")}
-									className="h-8 gap-2 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
-									data-testid="browser-ai-delete-selected-search-logs"
-								>
-									<Trash2 className="h-3.5 w-3.5" />
-									Delete selected ({selectedSearchLogIds.size})
-								</Button>
-							) : null}
-						</div>
-					) : null}
-
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={() => {
-							refetchLogs();
-							refetchSearchLogs();
-							refetchRules();
-							refetchTargets();
-							refetchAgents();
-						}}
-						className="gap-2 border-border hover:bg-accent h-8 text-xs"
-					>
-						<RefreshCw className={`h-3.5 w-3.5 ${logsLoading || agentsLoading || searchLogsLoading ? "animate-spin" : ""}`} />
-						Refresh
-					</Button>
+							onClick={() => {
+								refetchLogs();
+								refetchSearchLogs();
+								refetchRules();
+								refetchTargets();
+								refetchAgents();
+							}}
+							className="gap-2 border-border hover:bg-accent h-8 text-xs"
+						>
+							<RefreshCw className={`h-3.5 w-3.5 ${logsLoading || agentsLoading || searchLogsLoading ? "animate-spin" : ""}`} />
+							Refresh
+						</Button>
+					</div>
 				</div>
-			</div>
+			) : null}
 
 			{(logsFailed ||
 				rulesFailed ||
@@ -4330,7 +4334,13 @@ export default function BrowserAiPage() {
 
 				{/* TAB: BROWSER SETTINGS (Upload Policy, Clipboard, Drag-and-Drop & Download Data Governance) */}
 				<TabsContent value="settings" className="w-full space-y-6">
-					{/* The 4 Accordion / Dropdown Policy Cards */}
+					{/* Corporate AI Workspace & Domain Authorization Card */}
+
+					<CorporateAIWorkspaceCard controls={controls} targets={targets} patchControl={patchControl} />
+
+
+
+					{/* Individual Data Loss Prevention Policies */}
 					<div className="space-y-4">
 						{/* POLICY 1: File Upload Policy */}
 						<Card className="border border-border bg-card overflow-hidden">
@@ -4345,7 +4355,7 @@ export default function BrowserAiPage() {
 									<div>
 										<div className="flex items-center gap-2">
 											<p className="text-sm font-semibold">1. File Upload Policy</p>
-											{controls.enabled && controls.block_upload ? (
+											{controls.block_upload ? (
 												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Active</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
@@ -4358,13 +4368,13 @@ export default function BrowserAiPage() {
 								</div>
 								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
 									<Switch
-										checked={!!(controls.enabled && controls.block_upload)}
+										checked={!!controls.block_upload}
 										onCheckedChange={(val) => {
 											if (val) {
 												setExpandedPolicies((p) => ({ ...p, upload: true }));
 												patchControl({ enabled: true, block_upload: true });
 											} else {
-												patchControl({ enabled: false, block_upload: false });
+												patchControl({ block_upload: false });
 											}
 										}}
 										aria-label="Toggle file upload blocking"
@@ -4453,22 +4463,321 @@ export default function BrowserAiPage() {
 										)}
 									</div>
 
-									<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3 border-t border-border/40">
+									<PolicyTargetWebsitesSelector
+										value={controls.upload_target_websites || "all"}
+										targets={targets}
+										onChange={(val) => patchControl({ upload_target_websites: val })}
+									/>
+								</div>
+							)}
+						</Card>
+
+						{/* POLICY 2: File Type & Extension Filter Policy (Standalone Section) */}
+						<Card className="border border-border bg-card overflow-hidden">
+							<div
+								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+								onClick={() => togglePolicyExpanded("file_type")}
+							>
+								<div className="flex items-center gap-3.5 min-w-0">
+									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
+										<FileCode className="h-5 w-5" />
+									</div>
+									<div>
+										<div className="flex items-center gap-2">
+											<p className="text-sm font-semibold">2. File Type &amp; Extension Filter Policy</p>
+											{controls.block_file_extension ? (
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
+													{controls.file_extension_mode === "allow_listed" ? "Allowlist Active" : "Blocklist Active"}
+												</Badge>
+											) : (
+												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
+											)}
+										</div>
+										<p className="text-xs text-muted-foreground mt-0.5">
+											Control and filter which file extensions can be imported, uploaded, or sent to monitored AI platforms.
+										</p>
+									</div>
+								</div>
+								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+									<Switch
+										checked={!!controls.block_file_extension}
+										onCheckedChange={(val) => {
+											if (val) {
+												setExpandedPolicies((p) => ({ ...p, file_type: true }));
+												patchControl({ block_file_extension: true });
+											} else {
+												patchControl({ block_file_extension: false });
+											}
+										}}
+										aria-label="Toggle file type and extension filter"
+									/>
+									<button
+										type="button"
+										onClick={() => togglePolicyExpanded("file_type")}
+										className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
+									>
+										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.file_type ? "rotate-180" : ""}`} />
+									</button>
+								</div>
+							</div>
+
+							{expandedPolicies.file_type && (
+								<div className="p-4 pt-0 border-t border-border/60 space-y-4 mt-2">
+									{/* Mode Switcher */}
+									<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3">
 										<div className="space-y-0.5">
 											<div className="flex items-center gap-1.5">
-												<Clock className="h-3.5 w-3.5 text-muted-foreground" />
-												<p className="text-xs font-semibold">Temporary file binary storage retention</p>
-												<Badge variant="outline" className="text-[9px] px-1.5 py-0">Disk auto-purge</Badge>
+												<Label className="text-xs font-semibold">Enforcement Mode</Label>
+												{controls.file_extension_mode === "allow_listed" ? (
+													<Badge variant="outline" className="text-[9px] px-1.5 py-0 border-blue-500/40 text-blue-500 bg-blue-500/10">Whitelist (Allow Only Selected)</Badge>
+												) : (
+													<Badge variant="outline" className="text-[9px] px-1.5 py-0 border-amber-500/40 text-amber-500 bg-amber-500/10">Blacklist (Block Selected)</Badge>
+												)}
 											</div>
 											<p className="text-[11px] text-muted-foreground">
-												How long temporary uploaded files remain viewable/downloadable from disk. Filename and metadata in Prompt Logs are preserved permanently.
+												Choose whether selected extensions should be strictly blocked, or if only selected extensions are permitted.
+											</p>
+										</div>
+										<div className="flex items-center gap-2 bg-muted/30 border border-border p-1 rounded-lg text-xs shrink-0">
+											<Button
+												type="button"
+												size="sm"
+												variant={controls.file_extension_mode !== "allow_listed" ? "default" : "ghost"}
+												className="h-6 text-[11px] px-2.5 py-0"
+												onClick={() => patchControl({ file_extension_mode: "block_listed" })}
+											>
+												Block Selected
+											</Button>
+											<Button
+												type="button"
+												size="sm"
+												variant={controls.file_extension_mode === "allow_listed" ? "default" : "ghost"}
+												className="h-6 text-[11px] px-2.5 py-0"
+												onClick={() => patchControl({ file_extension_mode: "allow_listed" })}
+											>
+												Allow Only Selected
+											</Button>
+										</div>
+									</div>
+
+									{/* File Extension Warning Banner */}
+									<div className="space-y-2 pt-1 border-t border-border/40">
+										<div className="flex items-center justify-between">
+											<Label className="text-xs font-semibold">File Restriction Warning Banner</Label>
+											{!fileExtensionMsgEditing && (controls.file_extension_block_message || "").trim() ? (
+												<Button
+													type="button"
+													size="sm"
+													variant="ghost"
+													className="h-7 text-xs text-muted-foreground hover:text-foreground"
+													onClick={() => {
+														setFileExtensionMsgDraft(controls.file_extension_block_message || "");
+														setFileExtensionMsgEditing(true);
+													}}
+												>
+													<Pencil className="h-3 w-3 mr-1" />
+													Edit
+												</Button>
+											) : null}
+										</div>
+										{fileExtensionMsgEditing || !(controls.file_extension_block_message || "").trim() ? (
+											<>
+												<Textarea
+													placeholder="e.g. Uploading files with this extension is prohibited by corporate policy..."
+													value={fileExtensionMsgDraft}
+													onChange={(e) => setFileExtensionMsgDraft(e.target.value)}
+													rows={2}
+													className="text-xs font-sans"
+												/>
+												<div className="flex items-center justify-between gap-2">
+													<p className="text-[11px] text-muted-foreground">
+														Custom notification banner displayed to the employee when a restricted file format is blocked.
+													</p>
+													<div className="flex items-center gap-2">
+														{fileExtensionMsgEditing && (controls.file_extension_block_message || "").trim() ? (
+															<Button
+																type="button"
+																size="sm"
+																variant="ghost"
+																className="h-7 text-xs"
+																onClick={() => {
+																	setFileExtensionMsgDraft(controls.file_extension_block_message || "");
+																	setFileExtensionMsgEditing(false);
+																}}
+															>
+																Cancel
+															</Button>
+														) : null}
+														<Button
+															type="button"
+															size="sm"
+															variant="outline"
+															className="h-7 text-xs"
+															onClick={saveFileExtensionMsg}
+														>
+															<Save className="h-3 w-3 mr-1" />
+															Save warning
+														</Button>
+													</div>
+												</div>
+											</>
+										) : (
+											<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+												<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
+													{(controls.file_extension_block_message || "").trim()}
+												</p>
+											</div>
+										)}
+									</div>
+
+									{/* Quick Select Buttons & Custom Adder */}
+									<div className="space-y-3 bg-muted/20 border border-border/60 rounded-lg p-3.5">
+										<p className="text-[11px] font-medium text-muted-foreground">
+											Quick Select Standard Extensions:
+										</p>
+										<div className="flex flex-wrap gap-1.5">
+											{[
+												{ cat: "Docs", exts: ["pdf", "docx", "xlsx", "pptx", "csv", "txt"] },
+												{ cat: "Code", exts: ["py", "js", "ts", "sh", "sql", "json"] },
+												{ cat: "Exec/Archive", exts: ["exe", "msi", "zip", "tar", "gz"] },
+												{ cat: "Media", exts: ["png", "jpg", "jpeg", "webp"] },
+											].map((group) => (
+												<div key={group.cat} className="flex items-center gap-1 border-r border-border/50 pr-2 mr-1">
+													<span className="text-[10px] text-muted-foreground font-semibold mr-0.5">{group.cat}:</span>
+													{group.exts.map((ext) => {
+														const isSelected = controls.file_extension_mode === "allow_listed"
+															? configuredAllowedExts.includes(ext)
+															: configuredRestrictedExts.includes(ext);
+														return (
+															<Badge
+																key={ext}
+																variant={isSelected ? "default" : "outline"}
+																className={`cursor-pointer text-[10px] px-2 py-0.5 transition-all select-none ${
+																	isSelected
+																		? (controls.file_extension_mode === "allow_listed" ? "bg-blue-600 text-white" : "bg-destructive text-destructive-foreground")
+																		: "hover:bg-muted text-muted-foreground"
+																}`}
+																onClick={() => handleToggleFileExtension(ext)}
+															>
+																.{ext}
+															</Badge>
+														);
+													})}
+												</div>
+											))}
+										</div>
+
+										{/* Custom extension adder */}
+										<div className="flex items-center gap-2 pt-2 border-t border-border/40">
+											<Input
+												placeholder="Add custom extension (e.g. env, pem, key)..."
+												value={customFileExtensionInput}
+												onChange={(e) => setCustomFileExtensionInput(e.target.value)}
+												className="h-7 text-xs font-mono max-w-[240px]"
+												onKeyDown={(e) => {
+													if (e.key === "Enter") {
+														e.preventDefault();
+														void handleAddCustomFileExtension();
+													}
+												}}
+											/>
+											<Button
+												type="button"
+												size="sm"
+												variant="outline"
+												className="h-7 text-xs"
+												onClick={handleAddCustomFileExtension}
+											>
+												+ Add Extension
+											</Button>
+										</div>
+
+										{/* Active configured extensions pills */}
+										{((controls.file_extension_mode === "allow_listed" ? configuredAllowedExts : configuredRestrictedExts).length > 0) && (
+											<div className="flex items-center gap-1.5 flex-wrap pt-2">
+												<span className="text-[11px] text-muted-foreground">
+													{controls.file_extension_mode === "allow_listed" ? "Permitted only:" : "Restricted types:"}
+												</span>
+												{(controls.file_extension_mode === "allow_listed" ? configuredAllowedExts : configuredRestrictedExts).map((ext) => (
+													<Badge
+														key={ext}
+														variant="secondary"
+														className="text-[11px] font-mono px-2 py-0.5 gap-1 inline-flex items-center"
+													>
+														.{ext}
+														<button
+															type="button"
+															onClick={() => handleToggleFileExtension(ext)}
+															className="text-muted-foreground hover:text-foreground text-[10px] ml-0.5"
+														>
+															✕
+														</button>
+													</Badge>
+												))}
+											</div>
+										)}
+									</div>
+
+									{/* Target Websites */}
+									<PolicyTargetWebsitesSelector
+										value={controls.file_extension_target_websites || "all"}
+										targets={targets}
+										onChange={(val) => patchControl({ file_extension_target_websites: val })}
+									/>
+								</div>
+							)}
+						</Card>
+
+						{/* POLICY 3: Temporary File Storage & Retention Policy */}
+						<Card className="border border-border bg-card overflow-hidden">
+							<div
+								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+								onClick={() => togglePolicyExpanded("retention")}
+							>
+								<div className="flex items-center gap-3.5 min-w-0">
+									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
+										<Clock className="h-5 w-5" />
+									</div>
+									<div>
+										<div className="flex items-center gap-2">
+											<p className="text-sm font-semibold">3. Temporary File Storage &amp; Retention Policy</p>
+											<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
+												Auto-Purge: {controls.attachment_retention || "1h"}
+											</Badge>
+										</div>
+										<p className="text-xs text-muted-foreground mt-0.5">
+											How long temporary uploaded files remain viewable/downloadable from disk. Filename and metadata in Prompt Logs are preserved permanently.
+										</p>
+									</div>
+								</div>
+								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+									<button
+										type="button"
+										onClick={() => togglePolicyExpanded("retention")}
+										className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
+									>
+										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.retention ? "rotate-180" : ""}`} />
+									</button>
+								</div>
+							</div>
+
+							{expandedPolicies.retention && (
+								<div className="p-4 pt-0 border-t border-border/60 space-y-4 mt-2">
+									<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3">
+										<div className="space-y-0.5">
+											<div className="flex items-center gap-1.5">
+												<Label className="text-xs font-semibold">Binary Storage Retention Lifecycle</Label>
+												<Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/40 text-emerald-600 dark:text-emerald-400">Disk auto-purge</Badge>
+											</div>
+											<p className="text-[11px] text-muted-foreground">
+												Select how long temporary uploaded files and attachments stay cached on local disk before being permanently purged.
 											</p>
 										</div>
 										<Select
 											value={["10m", "1h", "2h", "1d", "7d"].includes(controls.attachment_retention || "") ? controls.attachment_retention : "1h"}
 											onValueChange={(val) => void patchControl({ attachment_retention: val })}
 										>
-											<SelectTrigger className="h-8 w-[140px] text-xs">
+											<SelectTrigger className="h-8 w-[160px] text-xs">
 												<SelectValue />
 											</SelectTrigger>
 											<SelectContent>
@@ -4481,17 +4790,53 @@ export default function BrowserAiPage() {
 										</Select>
 									</div>
 
-									<PolicyTargetWebsitesSelector
-										policyName="File Upload Policy"
-										value={controls.upload_target_websites}
-										targets={targets}
-										onChange={(val) => patchControl({ upload_target_websites: val })}
-									/>
+									{/* Quick Select Retention Presets */}
+									<div className="space-y-2.5 bg-muted/20 border border-border/60 rounded-lg p-3.5">
+										<p className="text-[11px] font-medium text-muted-foreground">
+											Quick Select Retention Presets:
+										</p>
+										<div className="flex flex-wrap gap-2">
+											{[
+												{ label: "10 Minutes", val: "10m", badge: "Shortest" },
+												{ label: "1 Hour", val: "1h", badge: "Default" },
+												{ label: "2 Hours", val: "2h", badge: "Standard" },
+												{ label: "1 Day (24h)", val: "1d", badge: "Extended" },
+												{ label: "7 Days (1w)", val: "7d", badge: "Weekly" },
+											].map((item) => {
+												const isSelected = (controls.attachment_retention || "1h") === item.val;
+												return (
+													<Button
+														key={item.val}
+														type="button"
+														size="sm"
+														variant={isSelected ? "default" : "outline"}
+														className={`h-7 text-xs px-3 transition-all ${
+															isSelected
+																? "bg-primary text-primary-foreground font-semibold"
+																: "hover:bg-muted text-muted-foreground"
+														}`}
+														onClick={() => patchControl({ attachment_retention: item.val })}
+													>
+														{item.label}
+														{item.badge ? (
+															<span className="ml-1 opacity-70 text-[10px]">({item.badge})</span>
+														) : null}
+													</Button>
+												);
+											})}
+										</div>
+										<div className="rounded border border-border/50 bg-background/50 p-2.5 text-[11px] text-muted-foreground space-y-1">
+											<p className="font-medium text-foreground">Data Residency &amp; Compliance Guarantee:</p>
+											<p>
+												When temporary storage expires, raw file binaries and attachment contents are automatically shredded from disk. File metadata, filenames, user identifiers, SHA256 cryptographic hashes, and security logs remain permanently in Prompt Logs for compliance and audits.
+											</p>
+										</div>
+									</div>
 								</div>
 							)}
 						</Card>
 
-						{/* POLICY 2: Copy-Paste Strict Blocking */}
+						{/* POLICY 4: Copy-Paste Strict Blocking */}
 						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
@@ -4503,7 +4848,7 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">2. Copy-Paste Strict Blocking</p>
+											<p className="text-sm font-semibold">4. Copy-Paste Strict Blocking</p>
 											{controls.block_clipboard ? (
 												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
 											) : (
@@ -4535,18 +4880,82 @@ export default function BrowserAiPage() {
 							</div>
 
 							{expandedPolicies.clipboard && (
-								<div className="p-4 pt-0 border-t border-border/60 space-y-3 mt-2">
-									<div className="rounded-lg bg-muted/20 p-3 border border-border/50 space-y-2 mt-2">
-										<p className="text-xs text-muted-foreground leading-relaxed">
-											• <strong className="text-foreground">Paste Interception:</strong> Blocks <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Ctrl+V</kbd>, <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Cmd+V</kbd>, and Right-Click Paste into prompt textareas and contenteditable inputs.<br/>
-											• <strong className="text-foreground">Copy Interception:</strong> Blocks <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Ctrl+C</kbd>, <kbd className="px-1 py-0.5 rounded bg-muted text-[10px] font-mono">Cmd+C</kbd>, and Right-Click Copy from AI response streams to prevent unauthorized exfiltration.<br/>
-											• <strong className="text-foreground">JIT Coaching:</strong> Employees receive an immediate in-browser policy coaching modal explaining company data governance.
-										</p>
+								<div className="p-4 pt-3 border-t border-border/60 space-y-3">
+									<div className="space-y-1.5">
+										<div className="flex items-center justify-between">
+											<p className="text-xs font-semibold text-foreground">Copy-Paste Warning message</p>
+											{clipboardMsgEditing || !(controls.clipboard_block_message || "").trim() ? null : (
+												<Button
+													type="button"
+													size="sm"
+													variant="ghost"
+													className="h-6 text-xs text-muted-foreground hover:text-foreground"
+													onClick={() => {
+														setClipboardMsgDraft(controls.clipboard_block_message || "");
+														setClipboardMsgEditing(true);
+													}}
+												>
+													Edit
+												</Button>
+											)}
+										</div>
+										{clipboardMsgEditing || !(controls.clipboard_block_message || "").trim() ? (
+											<div className="space-y-2">
+												<Input
+													placeholder="e.g. Copy-paste is blocked on monitored AI platforms according to corporate policy."
+													value={clipboardMsgDraft}
+													onChange={(e) => setClipboardMsgDraft(e.target.value)}
+													className="text-xs font-sans"
+													onKeyDown={(e) => {
+														if (e.key === "Enter") {
+															e.preventDefault();
+															void saveClipboardMsg();
+														}
+													}}
+												/>
+												<div className="flex items-center justify-between gap-2">
+													<p className="text-[11px] text-muted-foreground">
+														Custom message shown in the in-browser modal when copy or paste is blocked.
+													</p>
+													<div className="flex items-center gap-2">
+														{clipboardMsgEditing && (controls.clipboard_block_message || "").trim() ? (
+															<Button
+																type="button"
+																size="sm"
+																variant="ghost"
+																className="h-7 text-xs"
+																onClick={() => {
+																	setClipboardMsgDraft(controls.clipboard_block_message || "");
+																	setClipboardMsgEditing(false);
+																}}
+															>
+																Cancel
+															</Button>
+														) : null}
+														<Button
+															type="button"
+															size="sm"
+															variant="outline"
+															className="h-7 text-xs"
+															onClick={saveClipboardMsg}
+														>
+															<Save className="h-3 w-3 mr-1" />
+															Save message
+														</Button>
+													</div>
+												</div>
+											</div>
+										) : (
+											<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+												<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
+													{(controls.clipboard_block_message || "").trim()}
+												</p>
+											</div>
+										)}
 									</div>
 
 									<PolicyTargetWebsitesSelector
-										policyName="Copy-Paste Blocking"
-										value={controls.clipboard_target_websites || controls.governance_target_websites}
+										value={controls.clipboard_target_websites || "all"}
 										targets={targets}
 										onChange={(val) => patchControl({ clipboard_target_websites: val, governance_target_websites: val })}
 									/>
@@ -4554,7 +4963,7 @@ export default function BrowserAiPage() {
 							)}
 						</Card>
 
-						{/* POLICY 3: Drag-and-Drop Ingestion Blocking */}
+						{/* POLICY 5: Drag-and-Drop Ingestion Blocking */}
 						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
@@ -4566,7 +4975,7 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">3. Drag-and-Drop Ingestion Blocking</p>
+											<p className="text-sm font-semibold">5. Drag-and-Drop Ingestion Blocking</p>
 											{controls.block_drag_drop ? (
 												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
 											) : (
@@ -4598,18 +5007,82 @@ export default function BrowserAiPage() {
 							</div>
 
 							{expandedPolicies.drag_drop && (
-								<div className="p-4 pt-0 border-t border-border/60 space-y-3 mt-2">
-									<div className="rounded-lg bg-muted/20 p-3 border border-border/50 space-y-2 mt-2">
-										<p className="text-xs text-muted-foreground leading-relaxed">
-											• <strong className="text-foreground">Drag &amp; Drop Interception:</strong> Hooks into the browser DOM <code className="text-[10px] font-mono">dragover</code> and <code className="text-[10px] font-mono">drop</code> events on AI tool interfaces.<br/>
-											• <strong className="text-foreground">File Inspection:</strong> Detects and aborts dragged desktop documents, customer spreadsheets (.xlsx, .csv), and PDFs before browser memory processes them.<br/>
-											• <strong className="text-foreground">Desktop Guard Agent:</strong> Local agent driver monitors desktop-to-browser drag operations as a dual-layer defense.
-										</p>
+								<div className="p-4 pt-3 border-t border-border/60 space-y-3">
+									<div className="space-y-1.5">
+										<div className="flex items-center justify-between">
+											<p className="text-xs font-semibold text-foreground">Drag &amp; Drop Warning message</p>
+											{dragDropMsgEditing || !(controls.drag_drop_block_message || "").trim() ? null : (
+												<Button
+													type="button"
+													size="sm"
+													variant="ghost"
+													className="h-6 text-xs text-muted-foreground hover:text-foreground"
+													onClick={() => {
+														setDragDropMsgDraft(controls.drag_drop_block_message || "");
+														setDragDropMsgEditing(true);
+													}}
+												>
+													Edit
+												</Button>
+											)}
+										</div>
+										{dragDropMsgEditing || !(controls.drag_drop_block_message || "").trim() ? (
+											<div className="space-y-2">
+												<Input
+													placeholder="e.g. Drag-and-drop file and data ingestion is not allowed on this AI tool."
+													value={dragDropMsgDraft}
+													onChange={(e) => setDragDropMsgDraft(e.target.value)}
+													className="text-xs font-sans"
+													onKeyDown={(e) => {
+														if (e.key === "Enter") {
+															e.preventDefault();
+															void saveDragDropMsg();
+														}
+													}}
+												/>
+												<div className="flex items-center justify-between gap-2">
+													<p className="text-[11px] text-muted-foreground">
+														Custom message shown when dragging and dropping files or text is blocked.
+													</p>
+													<div className="flex items-center gap-2">
+														{dragDropMsgEditing && (controls.drag_drop_block_message || "").trim() ? (
+															<Button
+																type="button"
+																size="sm"
+																variant="ghost"
+																className="h-7 text-xs"
+																onClick={() => {
+																	setDragDropMsgDraft(controls.drag_drop_block_message || "");
+																	setDragDropMsgEditing(false);
+																}}
+															>
+																Cancel
+															</Button>
+														) : null}
+														<Button
+															type="button"
+															size="sm"
+															variant="outline"
+															className="h-7 text-xs"
+															onClick={saveDragDropMsg}
+														>
+															<Save className="h-3 w-3 mr-1" />
+															Save message
+														</Button>
+													</div>
+												</div>
+											</div>
+										) : (
+											<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+												<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
+													{(controls.drag_drop_block_message || "").trim()}
+												</p>
+											</div>
+										)}
 									</div>
 
 									<PolicyTargetWebsitesSelector
-										policyName="Drag-and-Drop Blocking"
-										value={controls.drag_drop_target_websites || controls.governance_target_websites}
+										value={controls.drag_drop_target_websites || "all"}
 										targets={targets}
 										onChange={(val) => patchControl({ drag_drop_target_websites: val })}
 									/>
@@ -4617,7 +5090,7 @@ export default function BrowserAiPage() {
 							)}
 						</Card>
 
-						{/* POLICY 4: File Download & Export Blocking */}
+						{/* POLICY 6: File Download & Export Blocking */}
 						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
@@ -4629,7 +5102,7 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">4. File Download &amp; Export Blocking</p>
+											<p className="text-sm font-semibold">6. File Download &amp; Export Blocking</p>
 											{controls.block_download ? (
 												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
 											) : (
@@ -4661,67 +5134,216 @@ export default function BrowserAiPage() {
 							</div>
 
 							{expandedPolicies.download && (
-								<div className="p-4 pt-0 border-t border-border/60 space-y-3 mt-2">
-									<div className="rounded-lg bg-muted/20 p-3 border border-border/50 space-y-2 mt-2">
-										<p className="text-xs text-muted-foreground leading-relaxed">
-											• <strong className="text-foreground">Download Link Interception:</strong> Monitors and intercepts clicks on HTML <code className="text-[10px] font-mono">&lt;a download&gt;</code> anchors and Blob URLs.<br/>
-											• <strong className="text-foreground">Format Blocking:</strong> Blocks exports of <code className="text-[10px] font-mono">.pdf, .csv, .docx, .py, .js, .json, .zip</code> directly generated by AI chats.<br/>
-											• <strong className="text-foreground">API Egress Guard:</strong> Desktop agent PAC proxy cancels HTTP responses with <code className="text-[10px] font-mono">Content-Disposition: attachment</code> on monitored target domains.
-										</p>
+								<div className="p-4 pt-3 border-t border-border/60 space-y-3">
+									<div className="space-y-1.5">
+										<div className="flex items-center justify-between">
+											<p className="text-xs font-semibold text-foreground">Download &amp; Export Warning message</p>
+											{downloadMsgEditing || !(controls.download_block_message || "").trim() ? null : (
+												<Button
+													type="button"
+													size="sm"
+													variant="ghost"
+													className="h-6 text-xs text-muted-foreground hover:text-foreground"
+													onClick={() => {
+														setDownloadMsgDraft(controls.download_block_message || "");
+														setDownloadMsgEditing(true);
+													}}
+												>
+													Edit
+												</Button>
+											)}
+										</div>
+										{downloadMsgEditing || !(controls.download_block_message || "").trim() ? (
+											<div className="space-y-2">
+												<Input
+													placeholder="e.g. Downloading files and exporting artifacts from this AI tool is blocked."
+													value={downloadMsgDraft}
+													onChange={(e) => setDownloadMsgDraft(e.target.value)}
+													className="text-xs font-sans"
+													onKeyDown={(e) => {
+														if (e.key === "Enter") {
+															e.preventDefault();
+															void saveDownloadMsg();
+														}
+													}}
+												/>
+												<div className="flex items-center justify-between gap-2">
+													<p className="text-[11px] text-muted-foreground">
+														Custom message shown when downloading files or exporting code/chats is blocked.
+													</p>
+													<div className="flex items-center gap-2">
+														{downloadMsgEditing && (controls.download_block_message || "").trim() ? (
+															<Button
+																type="button"
+																size="sm"
+																variant="ghost"
+																className="h-7 text-xs"
+																onClick={() => {
+																	setDownloadMsgDraft(controls.download_block_message || "");
+																	setDownloadMsgEditing(false);
+																}}
+															>
+																Cancel
+															</Button>
+														) : null}
+														<Button
+															type="button"
+															size="sm"
+															variant="outline"
+															className="h-7 text-xs"
+															onClick={saveDownloadMsg}
+														>
+															<Save className="h-3 w-3 mr-1" />
+															Save message
+														</Button>
+													</div>
+												</div>
+											</div>
+										) : (
+											<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+												<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
+													{(controls.download_block_message || "").trim()}
+												</p>
+											</div>
+										)}
 									</div>
 
 									<PolicyTargetWebsitesSelector
-										policyName="File Download Blocking"
-										value={controls.download_target_websites || controls.governance_target_websites}
+										value={controls.download_target_websites || "all"}
 										targets={targets}
 										onChange={(val) => patchControl({ download_target_websites: val })}
 									/>
 								</div>
 							)}
 						</Card>
-					</div>
 
-					{/* JIT Coaching Warning Banner Editor */}
-					<Card className="bg-card border-border shadow-sm">
-						<CardHeader className="pb-3">
-							<div className="flex items-center gap-3">
-								<div className="p-2 rounded-lg border border-border bg-muted/40 text-muted-foreground">
-									<Shield className="h-5 w-5" />
+						{/* POLICY 7: Anti-Screenshot & Screen Capture Protection */}
+						<Card className="border border-border bg-card overflow-hidden">
+							<div
+								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+								onClick={() => togglePolicyExpanded("screenshot")}
+							>
+								<div className="flex items-center gap-3.5 min-w-0">
+									<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground">
+										<Camera className="h-5 w-5" />
+									</div>
+									<div>
+										<div className="flex items-center gap-2">
+											<p className="text-sm font-semibold">7. Anti-Screenshot &amp; Screen Capture Protection</p>
+											{controls.block_screenshot ? (
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
+											) : (
+												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
+											)}
+										</div>
+										<p className="text-xs text-muted-foreground mt-0.5">
+											Blocks PrintScreen, Snipping tool shortcuts, and screen recordings on monitored AI platforms with auto-blur and clipboard wiping.
+										</p>
+									</div>
 								</div>
-								<div>
-									<CardTitle className="text-base">JIT Coaching &amp; Policy Banner (RFP 6.3.8 VI (f))</CardTitle>
-									<CardDescription className="text-xs mt-0.5">
-										Custom message displayed in the browser modal when clipboard, drag-drop, or download is blocked.
-									</CardDescription>
+								<div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
+									<Switch
+										checked={!!controls.block_screenshot}
+										onCheckedChange={(val) => {
+											if (val) setExpandedPolicies((p) => ({ ...p, screenshot: true }));
+											handleToggleScreenshotProtection(val);
+										}}
+										aria-label="Toggle Anti-Screenshot Protection"
+									/>
+									<button
+										type="button"
+										onClick={() => togglePolicyExpanded("screenshot")}
+										className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
+									>
+										<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${expandedPolicies.screenshot ? "rotate-180" : ""}`} />
+									</button>
 								</div>
 							</div>
-						</CardHeader>
-						<CardContent className="pt-1">
-							<div className="flex flex-col sm:flex-row gap-2">
-								<Input
-									value={governanceBlockMsgInput}
-									onChange={(e) => setGovernanceBlockMsgInput(e.target.value)}
-									onKeyDown={(e) => {
-										if (e.key === "Enter") {
-											e.preventDefault();
-											void handleSaveGovernanceBlockMessage();
-										}
-									}}
-									placeholder="e.g. Corporate Data Governance: Copy-paste, file drag-and-drop, and downloads are restricted on this AI tool."
-									className="font-sans text-xs flex-1"
-								/>
-								<Button
-									type="button"
-									size="sm"
-									onClick={handleSaveGovernanceBlockMessage}
-									className="gap-1.5 shrink-0"
-								>
-									<Save className="h-3.5 w-3.5" />
-									Save Message
-								</Button>
-							</div>
-						</CardContent>
-					</Card>
+
+							{expandedPolicies.screenshot && (
+								<div className="p-4 pt-3 border-t border-border/60 space-y-3">
+									<div className="space-y-1.5">
+										<div className="flex items-center justify-between">
+											<p className="text-xs font-semibold text-foreground">Anti-Screenshot Warning message</p>
+											{screenshotMsgEditing || !(controls.screenshot_block_message || "").trim() ? null : (
+												<Button
+													type="button"
+													size="sm"
+													variant="ghost"
+													className="h-6 text-xs text-muted-foreground hover:text-foreground"
+													onClick={() => {
+														setScreenshotMsgDraft(controls.screenshot_block_message || "");
+														setScreenshotMsgEditing(true);
+													}}
+												>
+													Edit
+												</Button>
+											)}
+										</div>
+										{screenshotMsgEditing || !(controls.screenshot_block_message || "").trim() ? (
+											<div className="space-y-2">
+												<Input
+													placeholder="e.g. Screen capture, recording, or taking screenshots on this AI workspace is strictly prohibited."
+													value={screenshotMsgDraft}
+													onChange={(e) => setScreenshotMsgDraft(e.target.value)}
+													className="text-xs font-sans"
+													onKeyDown={(e) => {
+														if (e.key === "Enter") {
+															e.preventDefault();
+															void saveScreenshotMsg();
+														}
+													}}
+												/>
+												<div className="flex items-center justify-between gap-2">
+													<p className="text-[11px] text-muted-foreground">
+														Custom message shown when an employee attempts to capture or screenshot monitored AI workspaces.
+													</p>
+													<div className="flex items-center gap-2">
+														{screenshotMsgEditing && (controls.screenshot_block_message || "").trim() ? (
+															<Button
+																type="button"
+																size="sm"
+																variant="ghost"
+																className="h-7 text-xs"
+																onClick={() => {
+																	setScreenshotMsgDraft(controls.screenshot_block_message || "");
+																	setScreenshotMsgEditing(false);
+																}}
+															>
+																Cancel
+															</Button>
+														) : null}
+														<Button
+															type="button"
+															size="sm"
+															variant="outline"
+															className="h-7 text-xs"
+															onClick={saveScreenshotMsg}
+														>
+															<Save className="h-3 w-3 mr-1" />
+															Save message
+														</Button>
+													</div>
+												</div>
+											</div>
+										) : (
+											<div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+												<p className="text-xs text-foreground whitespace-pre-wrap break-words font-mono">
+													{(controls.screenshot_block_message || "").trim()}
+												</p>
+											</div>
+										)}
+									</div>
+
+									<PolicyTargetWebsitesSelector
+										value={controls.screenshot_target_websites || "all"}
+										targets={targets}
+										onChange={(val) => patchControl({ screenshot_target_websites: val })}
+									/>
+								</div>
+							)}
+						</Card>
+					</div>
 				</TabsContent>
 
 				{/* TAB 4: TARGET WEBSITES */}
@@ -5997,313 +6619,6 @@ export default function BrowserAiPage() {
 
 								{licenseMessage ? <p className="text-sm text-emerald-400 font-medium">{licenseMessage}</p> : null}
 								{licenseError ? <p className="text-sm text-red-400 font-medium">{licenseError}</p> : null}
-							</div>
-						</CardContent>
-					</Card>
-
-					{/* Corporate AI Workspace & Domain Authorization Card */}
-					<Card className="bg-card border-border shadow-sm">
-						<CardHeader>
-							<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-								<div className="flex items-start gap-3">
-									<div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-										<Building2 className="h-6 w-6" />
-									</div>
-									<div>
-										<div className="flex items-center gap-2">
-											<CardTitle className="text-lg">Corporate AI Workspace &amp; Domain Authorization</CardTitle>
-											<Badge
-												variant="outline"
-												className={
-													controls.enforce_corporate_domains
-														? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10 text-xs font-semibold"
-														: "border-muted-foreground/30 text-muted-foreground text-xs"
-												}
-											>
-												{controls.enforce_corporate_domains ? "Active Enforcement" : "Disabled (Monitor Only)"}
-											</Badge>
-										</div>
-										<CardDescription className="text-xs mt-1">
-											Restrict access across ChatGPT, Claude, Gemini, Copilot, DeepSeek, Mistral, and all monitored target AI domains to corporate accounts. Personal email accounts (@gmail.com, @yahoo.com, etc.) and unapproved workspaces are blocked from chatting.
-										</CardDescription>
-									</div>
-								</div>
-								<div className="flex items-center gap-3 shrink-0 self-start sm:self-center">
-									<div className="text-right hidden sm:block">
-										<p className="text-xs font-medium text-foreground">Enforce Policy</p>
-										<p className="text-[11px] text-muted-foreground">Block non-corporate accounts</p>
-									</div>
-									<Switch
-										checked={!!controls.enforce_corporate_domains}
-										onCheckedChange={handleToggleCorporateEnforcement}
-									/>
-								</div>
-							</div>
-						</CardHeader>
-						<CardContent className="space-y-6 pt-2">
-							{/* Domain Configuration Section */}
-							<div className="space-y-3">
-								<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-									<Label className="text-sm font-semibold flex items-center gap-1.5">
-										<Globe className="h-4 w-4 text-sky-400" />
-										Allowed Corporate Email Domains (@company.com)
-									</Label>
-									<span className="text-xs text-muted-foreground">
-										Only users logged in with these email domains will be allowed to send prompts
-									</span>
-								</div>
-
-								{/* Configured Domains Chips */}
-								<div className="min-h-[44px] p-2.5 rounded-lg border border-border bg-muted/20 flex flex-wrap items-center gap-2">
-									{configuredCorporateDomains.length === 0 ? (
-										<span className="text-xs text-muted-foreground italic px-2">
-											No corporate domains configured yet. Add your company email domain below (e.g. company.com).
-										</span>
-									) : (
-										configuredCorporateDomains.map((dom) => (
-											<Badge
-												key={dom}
-												variant="secondary"
-												className="pl-2.5 pr-1.5 py-1 text-xs font-mono bg-sky-500/10 text-sky-300 border border-sky-500/30 flex items-center gap-1.5 shadow-sm"
-											>
-												<span>@{dom}</span>
-												<button
-													type="button"
-													onClick={() => handleRemoveCorporateDomain(dom)}
-													className="h-4 w-4 rounded-full inline-flex items-center justify-center hover:bg-sky-500/20 text-sky-400 hover:text-white transition-colors"
-												>
-													<X className="h-3 w-3" />
-												</button>
-											</Badge>
-										))
-									)}
-								</div>
-
-								{/* Add Domain Input Form */}
-								<div className="flex flex-col sm:flex-row gap-2">
-									<div className="relative flex-1">
-										<span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">
-											@
-										</span>
-										<Input
-											value={corporateDomainInput}
-											onChange={(e) => setCorporateDomainInput(e.target.value)}
-											onKeyDown={(e) => {
-												if (e.key === "Enter") {
-													e.preventDefault();
-													handleAddCorporateDomain();
-												}
-											}}
-											placeholder="company.com or subsidiary.org (press Enter to add)"
-											className="pl-7 font-mono text-sm"
-										/>
-									</div>
-									<Button
-										type="button"
-										onClick={() => handleAddCorporateDomain()}
-										disabled={!corporateDomainInput.trim()}
-										className="gap-1.5 shrink-0"
-									>
-										<Plus className="h-4 w-4" />
-										Add Domain
-									</Button>
-								</div>
-							</div>
-
-							{/* Workspace IDs Section */}
-							<div className="space-y-3 pt-4 border-t border-border">
-								<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-									<Label className="text-sm font-semibold flex items-center gap-1.5">
-										<ShieldCheck className="h-4 w-4 text-indigo-400" />
-										Approved Corporate Workspace / Tenant IDs (Optional)
-									</Label>
-									<span className="text-xs text-muted-foreground">
-										Optional: Restrict access to specific corporate organization UUIDs (e.g. ChatGPT Workspace ID)
-									</span>
-								</div>
-
-								<div className="min-h-[44px] p-2.5 rounded-lg border border-border bg-muted/20 flex flex-wrap items-center gap-2">
-									{configuredWorkspaces.length === 0 ? (
-										<span className="text-xs text-muted-foreground italic px-2">
-											Any corporate workspace using an allowed email domain is permitted. Add specific UUIDs to restrict further.
-										</span>
-									) : (
-										configuredWorkspaces.map((ws) => (
-											<Badge
-												key={ws}
-												variant="secondary"
-												className="pl-2.5 pr-1.5 py-1 text-xs font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 flex items-center gap-1.5 shadow-sm"
-											>
-												<span>{ws}</span>
-												<button
-													type="button"
-													onClick={() => handleRemoveWorkspaceId(ws)}
-													className="h-4 w-4 rounded-full inline-flex items-center justify-center hover:bg-indigo-500/20 text-indigo-400 hover:text-white transition-colors"
-												>
-													<X className="h-3 w-3" />
-												</button>
-											</Badge>
-										))
-									)}
-								</div>
-
-								<div className="flex flex-col sm:flex-row gap-2">
-									<Input
-										value={workspaceIdInput}
-										onChange={(e) => setWorkspaceIdInput(e.target.value)}
-										onKeyDown={(e) => {
-											if (e.key === "Enter") {
-												e.preventDefault();
-												handleAddWorkspaceId();
-											}
-										}}
-										placeholder="e.g. 437adf77-4085-4b22-b7b1-de7b6f5ec6c0"
-										className="font-mono text-sm"
-									/>
-									<Button
-										type="button"
-										variant="outline"
-										onClick={handleAddWorkspaceId}
-										disabled={!workspaceIdInput.trim()}
-										className="gap-1.5 shrink-0"
-									>
-										<Plus className="h-4 w-4" />
-										Add Workspace ID
-									</Button>
-								</div>
-							</div>
-
-							{/* Custom Block Message Section */}
-							<div className="space-y-3 pt-4 border-t border-border">
-								<div className="flex items-center justify-between">
-									<Label className="text-sm font-semibold">Custom Block Warning Message</Label>
-									<Button
-										type="button"
-										variant="ghost"
-										size="sm"
-										className="h-7 text-xs text-muted-foreground hover:text-foreground"
-										onClick={() => {
-											const def = "Personal accounts are blocked by corporate security policy. Please switch to your corporate account to continue.";
-											setCorporateBlockMsgInput(def);
-											void patchControl({ corporate_block_message: def });
-										}}
-									>
-										Reset to Default
-									</Button>
-								</div>
-								<div className="flex flex-col sm:flex-row gap-2">
-									<Input
-										value={corporateBlockMsgInput}
-										onChange={(e) => setCorporateBlockMsgInput(e.target.value)}
-										placeholder="Personal accounts are restricted by corporate security policy. Please log in with your company account."
-										className="text-sm"
-									/>
-									<Button
-										type="button"
-										variant="outline"
-										onClick={handleSaveCorporateMessage}
-										className="gap-1.5 shrink-0"
-									>
-										<Save className="h-4 w-4" />
-										Save Message
-									</Button>
-								</div>
-							</div>
-
-							{/* Real-time Policy Authorization Simulator */}
-							<div className="space-y-3 pt-4 border-t border-border">
-								<div className="flex items-center justify-between">
-									<div className="flex items-center gap-2">
-										<Play className="h-4 w-4 text-emerald-400" />
-										<Label className="text-sm font-semibold">Live Policy Verification Simulator</Label>
-									</div>
-									<span className="text-xs text-muted-foreground">
-										Test how the authorization endpoint evaluates employee sessions in real time
-									</span>
-								</div>
-
-								<div className="p-3.5 rounded-lg border border-border bg-card/60 space-y-3">
-									<div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-										<div>
-											<Label className="text-[11px] text-muted-foreground">Test Email Address</Label>
-											<Input
-												value={testSimEmail}
-												onChange={(e) => setTestSimEmail(e.target.value)}
-												placeholder="alice@gmail.com or bob@company.com"
-												className="h-8 text-xs font-mono mt-1"
-											/>
-										</div>
-										<div>
-											<Label className="text-[11px] text-muted-foreground">Target AI Platform</Label>
-											<Select value={testSimProvider} onValueChange={setTestSimProvider}>
-												<SelectTrigger className="h-8 text-xs mt-1">
-													<SelectValue placeholder="Select platform" />
-												</SelectTrigger>
-												<SelectContent>
-													<SelectItem value="chatgpt">ChatGPT (chatgpt.com)</SelectItem>
-													<SelectItem value="claude">Claude (claude.ai)</SelectItem>
-													<SelectItem value="copilot">Microsoft Copilot</SelectItem>
-													<SelectItem value="gemini">Google Gemini</SelectItem>
-													<SelectItem value="deepseek">DeepSeek</SelectItem>
-													<SelectItem value="mistral">Mistral AI</SelectItem>
-													<SelectItem value="perplexity">Perplexity AI</SelectItem>
-												</SelectContent>
-											</Select>
-										</div>
-										<div>
-											<Label className="text-[11px] text-muted-foreground">Workspace ID (Optional)</Label>
-											<div className="flex gap-1.5 mt-1">
-												<Input
-													value={testSimWorkspace}
-													onChange={(e) => setTestSimWorkspace(e.target.value)}
-													placeholder="437adf77-4085-4b22-b7b1-de7b6f5ec6c0"
-													className="h-8 text-xs font-mono flex-1"
-												/>
-												<Button
-													type="button"
-													size="sm"
-													onClick={handleRunSessionSimulation}
-													disabled={isRunningSim || !testSimEmail.trim()}
-													className="h-8 px-3 text-xs gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white shrink-0"
-												>
-													{isRunningSim ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-													Test
-												</Button>
-											</div>
-										</div>
-									</div>
-
-									{/* Simulation Result Box */}
-									{testSimResult ? (
-										<div
-											className={`p-3 rounded-md border text-xs space-y-2 ${
-												testSimResult.decision === "allow"
-													? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-													: "border-red-500/40 bg-red-500/10 text-red-300"
-											}`}
-										>
-											<div className="flex items-center justify-between">
-												<div className="flex items-center gap-2">
-													{testSimResult.decision === "allow" ? (
-														<CheckCircle2 className="h-4 w-4 text-emerald-400" />
-													) : (
-														<X className="h-4 w-4 text-red-400" />
-													)}
-													<span className="font-semibold uppercase tracking-wider text-[11px]">
-														Decision: {testSimResult.decision}
-													</span>
-													<Badge variant="outline" className="text-[10px] font-mono">
-														{testSimResult.reason_code}
-													</Badge>
-												</div>
-												<span className="text-[10px] text-muted-foreground font-mono">
-													Policy v{testSimResult.policy_version}
-												</span>
-											</div>
-											<p className="text-foreground text-xs">{testSimResult.message}</p>
-										</div>
-									) : null}
-								</div>
 							</div>
 						</CardContent>
 					</Card>

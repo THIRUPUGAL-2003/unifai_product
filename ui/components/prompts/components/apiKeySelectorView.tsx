@@ -72,7 +72,7 @@ export function ApiKeySelectorView({
 		skip: !isMember,
 	});
 
-	const { data: providerGovData, error: providerGovError } = useGetProviderGovernanceQuery(undefined, {
+	const { data: providerGovData, error: providerGovError } = useGetProviderGovernanceQuery({ fromMemory: true }, {
 		pollingInterval: provGovPollMs,
 	});
 
@@ -208,7 +208,7 @@ export function ApiKeySelectorView({
 		const n = v ?? 0;
 		if (n === 0) return "$0.00";
 		if (n < 0.001) return `$${n.toFixed(6)}`;
-		if (n < 0.01) return `$${n.toFixed(4)}`;
+		if (n < 1000) return `$${n.toFixed(4)}`;
 		if (n >= 1_000_000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 		return `$${n.toFixed(2)}`;
 	};

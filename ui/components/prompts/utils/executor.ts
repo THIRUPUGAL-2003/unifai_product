@@ -769,8 +769,9 @@ export async function executePrompt(
 		if (rawParams.temperature !== undefined && rawParams.temperature !== null && !isNaN(Number(rawParams.temperature))) {
 			payload.temperature = Number(rawParams.temperature);
 		}
-		if (rawParams.max_tokens !== undefined && rawParams.max_tokens !== null && !isNaN(Number(rawParams.max_tokens))) {
-			const tokens = Math.max(1, Math.round(Number(rawParams.max_tokens)));
+		const rawMaxTokens = rawParams.max_tokens ?? 4096;
+		if (rawMaxTokens !== undefined && rawMaxTokens !== null && !isNaN(Number(rawMaxTokens))) {
+			const tokens = Math.max(1, Math.round(Number(rawMaxTokens)));
 			payload.max_tokens = tokens;
 			payload.max_completion_tokens = tokens;
 		}

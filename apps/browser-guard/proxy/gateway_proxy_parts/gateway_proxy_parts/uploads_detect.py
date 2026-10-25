@@ -2545,15 +2545,17 @@ def upload_domain_aliases(domain: str) -> list[str]:
             "claude.ai", "anthropic.com", "api.anthropic.com", "console.anthropic.com",
             "claudeusercontent.com", "files.claudeusercontent.com",
         ])
-    elif any(x in d for x in ("gemini", "bard", "googleusercontent")):
+    elif any(x in d for x in ("gemini", "bard", "googleusercontent", "clients6.google.com")):
         fam_set.update([
             "gemini.google.com", "bard.google.com", "google.com",
             "generativelanguage.googleapis.com", "googleusercontent.com",
+            "clients6.google.com", "alkalimakersuite-pa.clients6.google.com",
+            "content-push.googleapis.com", "push.gemini.google.com",
         ])
     elif "perplexity" in d:
         fam_set.update(["perplexity.ai", "www.perplexity.ai", "api.perplexity.ai"])
     elif "deepseek" in d:
-        fam_set.update(["deepseek.com", "chat.deepseek.com", "api.deepseek.com"])
+        fam_set.update(["deepseek.com", "chat.deepseek.com", "api.deepseek.com", "cdn.deepseek.com"])
     elif any(x in d for x in ("copilot", "sydney", "edgeservices", "substrate.office.com")):
         fam_set.update([
             "copilot.com", "www.copilot.com", "copilot.microsoft.com", "copilot.cloud.microsoft",
@@ -2646,6 +2648,7 @@ def _is_finished_user_file_send(
     raw_text: str,
     raw_bytes: bytes = b"",
     host: str = "",
+    domain: str = "",
 ) -> bool:
     """True only for a finished chat Send that may carry a file — not attach/create-file."""
     path_l = (path or "").lower().split("?", 1)[0]
@@ -2668,8 +2671,8 @@ def _is_finished_user_file_send(
         return True
     if is_event_send_chat_submit(path, body):
         return True
-    if not _is_confident_chat_send(path, body, raw_bytes or b""):
-        return False
+    if _is_confident_chat_send(path, body, raw_bytes or b""):
+        return True
     data = None
     stripped = body.lstrip()
     if stripped[:1] in "{[":
@@ -2684,7 +2687,8 @@ def _is_finished_user_file_send(
     ):
         return True
     # File-only Send (no caption): user role + file pointer on a conversation path.
-    if chat_carries_attachment(body) or messages_parts_carries_file(body):
+    has_pending = bool(domain and _domain_has_pending_upload_cache(domain))
+    if chat_carries_attachment(body) or messages_parts_carries_file(body) or has_pending:
         low = body.lower()
         userish = bool(re.search(
             r'"author"\s*:\s*\{[^}]{0,240}"role"\s*:\s*"user"'
@@ -2705,7 +2709,7 @@ def _is_finished_user_file_send(
             r'|"prompt"\s*:\s*"',
             low,
         ))
-        if userish and (
+        if (userish or has_pending) and (
             _is_messages_conversation_path(path_l)
             or _path_has_chat_marker(path_l)
             or is_chat_path(path, host, body)
@@ -2811,6 +2815,7 @@ def cache_upload_file(
     rule_name: str = "",
     rule_action: str = "",
     file_id: str = "",
+    extracted_text: str = "",
 ) -> None:
     """Remember file at upload-time; enforcement/log waits for chat Send."""
     try:
@@ -2902,6 +2907,7 @@ def cache_upload_file(
         "file_name": final_name,
         "content_type": final_ct,
         "raw_bytes": stored,
+        "extracted_text": extracted_text or "",
         "upload_reason": upload_reason or "",
         "rule_hit": bool(rule_hit),
         "rule_name": rule_name or "",
@@ -3814,13 +3820,16 @@ def _file_policy_applies_on_send(
     if _path_looks_like_upload(path) and not (confident or (has_file and chatish)):
         return False
 
-    finished = _is_finished_user_file_send(path, raw_text, raw_bytes, host)
+    finished = _is_finished_user_file_send(path, raw_text, raw_bytes, host or domain)
 
-    # Attachment markers → scan only on a finished Send. Attach/create-file wait.
-    if has_file and chatish:
+    target_dom = domain or host or ""
+    has_pending = bool(target_dom and _domain_has_pending_upload_cache(target_dom))
+
+    # Attachment markers or pending upload cache → scan only on a finished Send. Attach/create-file wait.
+    if (has_file or has_pending) and chatish:
         return finished
 
-    # A pure text chat Send (has_file == False) MUST NEVER be treated as a file upload.
+    # A pure text chat Send (has_file == False and no pending upload) MUST NEVER be treated as a file upload.
     return False
 
 
@@ -4062,7 +4071,9 @@ def _scan_upload_for_rules(
     scan_evaluated = False
     scan_eval_error = ""
     try:
-        if raw_bytes:
+        if cached and cached.get("extracted_text"):
+            scanned = cached["extracted_text"]
+        elif raw_bytes:
             try:
                 scanned = extract_upload_text_for_rules(raw_bytes, content_type, raw_text or "", file_label) or ""
             except Exception as e:

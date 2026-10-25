@@ -80,7 +80,9 @@ def pac_restore_strict_proxy() -> None:
 
 def clear_guard_runtime(clear_startup: bool = True) -> None:
     from agent_browser_policy import set_browser_quic, set_system_proxy_pac_and_browsers
+    from guard_platform import clean_desktop_ai_environment
 
+    clean_desktop_ai_environment()
     set_system_proxy_pac_and_browsers(enable=False)
     set_browser_quic(enable_quic=True)
     if clear_startup:

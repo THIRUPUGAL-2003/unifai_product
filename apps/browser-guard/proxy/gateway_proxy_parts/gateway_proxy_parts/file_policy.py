@@ -226,10 +226,18 @@ def _pick_file_caption(*sources: str, extra: list[str] | None = None) -> str:
     return (short or pool)[-1]
 
 
-def _coalesce_file_log(domain: str, file_label: str, *, has_caption: bool, post) -> None:
+def _coalesce_file_log(domain: str, file_label: str, *, has_caption: bool, is_blocked: bool = False, post) -> None:
     """One Prompt Log row per file. A later Send within a few seconds can add the caption."""
     key = f"{(domain or '').strip().lower()}|{(file_label or '').strip().lower()}"
     _mark_file_logged(file_label)
+
+    # Immediately fire for blocked files or files that already have caption attached
+    if is_blocked or has_caption:
+        try:
+            post()
+        except Exception as e:
+            print(f"[Gateway Proxy WARNING] Immediate file log failed | {key}: {e}")
+        return
 
     def _fire(k=key) -> None:
         time.sleep(_FILE_LOG_COALESCE_SEC)
@@ -289,13 +297,15 @@ def enforce_file_send_policy(
         print(f"[Gateway Proxy] FILE SEND BLOCKED (repeat after rule hit) | {host}")
         return True, repeat_msg, "", 0, False
 
+    has_pending = bool(domain and _domain_has_pending_upload_cache(domain))
     has_attach = (
         chat_carries_attachment(raw_text)
         or messages_parts_carries_file(raw_text)
         or bool((file_name_hint or "").strip())
         or event_send_carries_binary_attach(raw_text)
+        or has_pending
     )
-    cached_list = take_all_cached_uploads_for_send(domain, raw_text, allow_latest=False)
+    cached_list = take_all_cached_uploads_for_send(domain, raw_text, allow_latest=bool(has_attach or has_pending))
     # A pure text prompt (no attachment markers and no cached upload matched by file id)
     # must NEVER be treated as a file upload or consume pending upload cache.
     if not has_attach and not cached_list:
@@ -1266,6 +1276,7 @@ def enforce_file_send_policy(
             domain,
             row["file_label"],
             has_caption=bool(caption_bit),
+            is_blocked=file_is_blocked,
             post=_post_row,
         )
 
@@ -1564,13 +1575,14 @@ def post_upload_intercept(
 
     safe_name = (file_name or "").replace('"', "").replace("\r", "").replace("\n", "")
 
-    try:
-        from config_caches_rules import is_already_handled_by_extension
-        if is_already_handled_by_extension(domain, prompt, file_name or safe_name):
-            print(f"[Gateway Proxy] Extension already handled file upload for {domain} ({file_name or safe_name}). Skipping proxy duplicate log.")
-            return True
-    except Exception:
-        pass
+    if not is_blocked:
+        try:
+            from config_caches_rules import is_already_handled_by_extension
+            if is_already_handled_by_extension(domain, prompt, file_name or safe_name):
+                print(f"[Gateway Proxy] Extension already handled file upload for {domain} ({file_name or safe_name}). Skipping proxy duplicate log.")
+                return True
+        except Exception:
+            pass
 
     if "[FILE UPLOAD] attachment" in prompt:
         prompt = prompt.replace("[FILE UPLOAD] attachment", f"[FILE UPLOAD] {safe_name}")

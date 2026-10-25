@@ -32,8 +32,8 @@ try:
         _cached_rule_catalog,
     )
 except Exception:
-    detect_target = lambda h: (False, h, "")
-    get_guard_rules = lambda: []
+    detect_target = lambda *args, **kwargs: (False, args[0] if args else "", "")
+    get_guard_rules = lambda *args, **kwargs: []
     _cached_rules = []
     _cached_rule_catalog = {}
 

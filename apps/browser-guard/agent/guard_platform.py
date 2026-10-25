@@ -499,6 +499,7 @@ def install_ca_certificate(status_path: str) -> bool:
             return False
 
         print("[Gateway Guard] Certificate trust step completed.")
+        set_desktop_ai_environment(target_cert)
         with open(status_path, "w", encoding="utf-8") as f:
             f.write("OK\n")
         return True
@@ -510,6 +511,98 @@ def install_ca_certificate(status_path: str) -> bool:
         except Exception:
             pass
         return False
+
+
+def set_desktop_ai_environment(cert_path: str) -> None:
+    """Configure environment variables so Desktop AI apps, IDEs (VS Code Copilot, Cursor),
+    and Python/Node.js CLI tools trust the interception Root CA.
+
+    Variables configured:
+      - NODE_EXTRA_CA_CERTS: For Node.js extension host (VS Code, Cursor, Copilot) & Electron (ChatGPT/Claude Desktop)
+      - REQUESTS_CA_BUNDLE: For Python requests/OpenAI/Anthropic SDKs & LangChain
+      - SSL_CERT_FILE: For Python urllib3/httpx/OpenSSL
+      - CURL_CA_BUNDLE: For curl & CLI utilities
+    """
+    if not cert_path or not os.path.exists(cert_path):
+        return
+    norm_cert = os.path.normpath(os.path.abspath(cert_path))
+    if IS_WIN:
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "NODE_EXTRA_CA_CERTS", 0, winreg.REG_SZ, norm_cert)
+            winreg.SetValueEx(key, "REQUESTS_CA_BUNDLE", 0, winreg.REG_SZ, norm_cert)
+            winreg.SetValueEx(key, "SSL_CERT_FILE", 0, winreg.REG_SZ, norm_cert)
+            winreg.SetValueEx(key, "CURL_CA_BUNDLE", 0, winreg.REG_SZ, norm_cert)
+            winreg.CloseKey(key)
+
+            # Set in current process so child processes inherit
+            os.environ["NODE_EXTRA_CA_CERTS"] = norm_cert
+            os.environ["REQUESTS_CA_BUNDLE"] = norm_cert
+            os.environ["SSL_CERT_FILE"] = norm_cert
+            os.environ["CURL_CA_BUNDLE"] = norm_cert
+
+            # Broadcast WM_SETTINGCHANGE so running and new desktop apps pick it up immediately
+            try:
+                HWND_BROADCAST = 0xFFFF
+                WM_SETTINGCHANGE = 0x001A
+                SMTO_ABORTIFHUNG = 0x0002
+                res = ctypes.c_ulong()
+                ctypes.windll.user32.SendMessageTimeoutW(
+                    HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment", SMTO_ABORTIFHUNG, 1000, ctypes.byref(res)
+                )
+            except Exception:
+                pass
+            print(f"[Gateway Guard] Desktop AI & IDE environment configured (NODE_EXTRA_CA_CERTS -> {norm_cert})")
+        except Exception as e:
+            print(f"[Gateway Guard WARNING] Failed to set Desktop AI environment: {e}")
+    elif IS_MAC:
+        try:
+            os.environ["NODE_EXTRA_CA_CERTS"] = norm_cert
+            os.environ["REQUESTS_CA_BUNDLE"] = norm_cert
+            os.environ["SSL_CERT_FILE"] = norm_cert
+            os.environ["CURL_CA_BUNDLE"] = norm_cert
+            subprocess.run(["launchctl", "setenv", "NODE_EXTRA_CA_CERTS", norm_cert], check=False)
+            subprocess.run(["launchctl", "setenv", "REQUESTS_CA_BUNDLE", norm_cert], check=False)
+            subprocess.run(["launchctl", "setenv", "SSL_CERT_FILE", norm_cert], check=False)
+            subprocess.run(["launchctl", "setenv", "CURL_CA_BUNDLE", norm_cert], check=False)
+            print("[Gateway Guard] macOS Desktop AI environment configured via launchctl setenv.")
+        except Exception as e:
+            print(f"[Gateway Guard WARNING] Failed to set macOS Desktop AI environment: {e}")
+
+
+def clean_desktop_ai_environment() -> None:
+    """Remove Desktop AI environment variables on agent shutdown or uninstall."""
+    env_vars = ("NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE")
+    for v in env_vars:
+        os.environ.pop(v, None)
+    if IS_WIN:
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_SET_VALUE)
+            for v in env_vars:
+                try:
+                    winreg.DeleteValue(key, v)
+                except FileNotFoundError:
+                    pass
+            winreg.CloseKey(key)
+            try:
+                HWND_BROADCAST = 0xFFFF
+                WM_SETTINGCHANGE = 0x001A
+                SMTO_ABORTIFHUNG = 0x0002
+                res = ctypes.c_ulong()
+                ctypes.windll.user32.SendMessageTimeoutW(
+                    HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment", SMTO_ABORTIFHUNG, 1000, ctypes.byref(res)
+                )
+            except Exception:
+                pass
+            print("[Gateway Guard] Cleaned Desktop AI environment variables.")
+        except Exception:
+            pass
+    elif IS_MAC:
+        try:
+            for v in env_vars:
+                subprocess.run(["launchctl", "unsetenv", v], check=False)
+        except Exception:
+            pass
 
 
 def _mac_network_services() -> list[str]:

@@ -587,6 +587,7 @@ type BrowserControlSettings struct {
 	CorporateEmailDomains   string `gorm:"type:text" json:"corporate_email_domains"`
 	AllowedWorkspaceIDs     string `gorm:"type:text" json:"allowed_workspace_ids"`
 	CorporateBlockMessage   string `gorm:"type:text" json:"corporate_block_message"`
+	CorporateTargetWebsites string `gorm:"type:text" json:"corporate_target_websites"`
 	PolicyVersion           int    `json:"policy_version"`
 
 	// Clipboard, Drag-and-Drop & Download Data Governance
@@ -599,6 +600,22 @@ type BrowserControlSettings struct {
 	ClipboardTargetWebsites  string `gorm:"type:text" json:"clipboard_target_websites"`
 	DragDropTargetWebsites   string `gorm:"type:text" json:"drag_drop_target_websites"`
 	DownloadTargetWebsites   string `gorm:"type:text" json:"download_target_websites"`
+	ClipboardBlockMessage    string `gorm:"type:text" json:"clipboard_block_message"`
+	DragDropBlockMessage     string `gorm:"type:text" json:"drag_drop_block_message"`
+	DownloadBlockMessage     string `gorm:"type:text" json:"download_block_message"`
+
+	// File Extension & Type Controls
+	BlockFileExtension          bool   `json:"block_file_extension"`
+	FileExtensionMode           string `gorm:"type:varchar(32)" json:"file_extension_mode"` // "block_listed" | "allow_listed"
+	RestrictedFileExtensions    string `gorm:"type:text" json:"restricted_file_extensions"` // e.g. ".pdf,.docx,.xlsx,.exe"
+	AllowedFileExtensions       string `gorm:"type:text" json:"allowed_file_extensions"`
+	FileExtensionBlockMessage   string `gorm:"type:text" json:"file_extension_block_message"`
+	FileExtensionTargetWebsites string `gorm:"type:text" json:"file_extension_target_websites"`
+
+	// Screenshot & Screen Capture Protection
+	BlockScreenshot          bool   `json:"block_screenshot"`
+	ScreenshotBlockMessage   string `gorm:"type:text" json:"screenshot_block_message"`
+	ScreenshotTargetWebsites string `gorm:"type:text" json:"screenshot_target_websites"`
 
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -1416,6 +1433,15 @@ func (m *BrowserAIManager) GetControls(ctx context.Context) (*BrowserControlSett
 	if ctrl.PolicyVersion <= 0 {
 		ctrl.PolicyVersion = 1
 	}
+	if ctrl.ClipboardBlockMessage == "" {
+		ctrl.ClipboardBlockMessage = "Copy-paste is blocked on monitored AI platforms according to corporate data governance policy."
+	}
+	if ctrl.DragDropBlockMessage == "" {
+		ctrl.DragDropBlockMessage = "Drag-and-drop file and data ingestion is not allowed on monitored AI tools."
+	}
+	if ctrl.DownloadBlockMessage == "" {
+		ctrl.DownloadBlockMessage = "File download and artifact export is blocked on monitored AI tools."
+	}
 	if unifySharedLogAutoDelete(&ctrl) {
 		_ = db.WithContext(ctx).Model(&BrowserControlSettings{}).Where("id = ?", BrowserControlSettingsID).Updates(map[string]any{
 			"prompt_log_auto_delete": ctrl.PromptLogAutoDelete,
@@ -1464,6 +1490,7 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 		"corporate_email_domains":    true,
 		"allowed_workspace_ids":      true,
 		"corporate_block_message":    true,
+		"corporate_target_websites":  true,
 		"policy_version":             true,
 		"block_clipboard":            true,
 		"block_drag_drop":            true,
@@ -1474,13 +1501,25 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 		"clipboard_target_websites":  true,
 		"drag_drop_target_websites":   true,
 		"download_target_websites":   true,
+		"clipboard_block_message":    true,
+		"drag_drop_block_message":     true,
+		"download_block_message":      true,
+		"block_file_extension":          true,
+		"file_extension_mode":           true,
+		"restricted_file_extensions":    true,
+		"allowed_file_extensions":       true,
+		"file_extension_block_message":  true,
+		"file_extension_target_websites": true,
+		"block_screenshot":              true,
+		"screenshot_block_message":      true,
+		"screenshot_target_websites":    true,
 	}
 	filtered := map[string]any{}
 	for k, v := range updates {
 		if !allowed[k] {
 			continue
 		}
-		if k == "upload_warning" || k == "corporate_email_domains" || k == "allowed_workspace_ids" || k == "corporate_block_message" || k == "governance_target_websites" || k == "governance_block_message" || k == "upload_target_websites" || k == "clipboard_target_websites" || k == "drag_drop_target_websites" || k == "download_target_websites" {
+		if k == "upload_warning" || k == "corporate_email_domains" || k == "allowed_workspace_ids" || k == "corporate_block_message" || k == "corporate_target_websites" || k == "governance_target_websites" || k == "governance_block_message" || k == "upload_target_websites" || k == "clipboard_target_websites" || k == "drag_drop_target_websites" || k == "download_target_websites" || k == "clipboard_block_message" || k == "drag_drop_block_message" || k == "download_block_message" || k == "file_extension_mode" || k == "restricted_file_extensions" || k == "allowed_file_extensions" || k == "file_extension_block_message" || k == "file_extension_target_websites" || k == "screenshot_block_message" || k == "screenshot_target_websites" {
 			if s, ok := v.(string); ok {
 				filtered[k] = strings.TrimSpace(s)
 				continue
@@ -1583,6 +1622,38 @@ func (m *BrowserAIManager) AuthorizeAISession(ctx context.Context, req Authorize
 			Message:       "Corporate domain enforcement is currently inactive.",
 			PolicyVersion: policyVer,
 		}, nil
+	}
+
+	// 1b. Check if this target website is subject to corporate domain enforcement
+	if ctrl.CorporateTargetWebsites != "" {
+		targetFilter := strings.TrimSpace(strings.ToLower(ctrl.CorporateTargetWebsites))
+		if targetFilter != "" && targetFilter != "all" && targetFilter != "*" {
+			prov := strings.TrimSpace(strings.ToLower(req.Provider))
+			pageURL := strings.TrimSpace(strings.ToLower(req.PageURL))
+			tokens := strings.FieldsFunc(targetFilter, func(r rune) bool {
+				return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+			})
+			matched := false
+			for _, tok := range tokens {
+				tokClean := strings.TrimSpace(tok)
+				if tokClean == "" {
+					continue
+				}
+				if (prov != "" && (prov == tokClean || strings.Contains(tokClean, prov) || strings.Contains(prov, tokClean))) ||
+					(pageURL != "" && strings.Contains(pageURL, tokClean)) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return &AuthorizeAISessionResponse{
+					Decision:      "allow",
+					ReasonCode:    "TARGET_NOT_RESTRICTED",
+					Message:       "Corporate domain enforcement is not required on this target website.",
+					PolicyVersion: policyVer,
+				}, nil
+			}
+		}
 	}
 
 	// 2. Parse configured corporate domains
@@ -2186,13 +2257,22 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	predictiveRisk := "LOW"
 	predictedCategory := "SAFE"
 
-	if isBlocked, ok := metadata["is_blocked"].(bool); ok && isBlocked {
+	isBlockedVal := false
+	if b, ok := metadata["is_blocked"].(bool); ok {
+		isBlockedVal = b
+	} else if s, ok := metadata["is_blocked"].(string); ok {
+		isBlockedVal = strings.EqualFold(s, "true") || s == "1"
+	}
+
+	if isBlockedVal {
 		action = "Blocked"
 		if blockedReason, ok := metadata["blocked_reason"].(string); ok && blockedReason != "" {
 			status = fmt.Sprintf("Blocked (%s)", blockedReason)
 			ruleTriggered = blockedReason
 			if strings.EqualFold(strings.TrimSpace(blockedReason), "Block Entire Website") {
 				predictedCategory = "SITE_BLOCK"
+			} else if strings.Contains(strings.ToLower(blockedReason), "clipboard") || strings.Contains(strings.ToLower(promptFull), "--copy paste") {
+				predictedCategory = "CLIPBOARD_GOVERNANCE"
 			}
 		} else if statusStr, ok := metadata["status"].(string); ok && statusStr != "" {
 			status = statusStr
@@ -2203,6 +2283,12 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 		predictiveRisk = "CRITICAL"
 		if predictedCategory == "SAFE" {
 			predictedCategory = "SECURITY_POLICY_VIOLATION"
+		}
+	} else if strings.Contains(strings.ToLower(promptFull), "--copy paste") || strings.Contains(strings.ToLower(promptFull), "[clipboard") {
+		predictedCategory = "CLIPBOARD_GOVERNANCE"
+		if riskScore < 60 {
+			riskScore = 60
+			predictiveRisk = "MEDIUM"
 		}
 	}
 
@@ -2366,13 +2452,22 @@ func (m *BrowserAIManager) InterceptPrompt(ctx context.Context, platform, prompt
 	}
 	lowDom := strings.ToLower(domain)
 	lowPlat := strings.ToLower(platform)
-	if strings.Contains(lowDom, "copilot") || strings.Contains(lowDom, "substrate.office") || strings.Contains(lowDom, "edgeservices.bing") || strings.Contains(lowDom, "sydneyp.bing") || strings.Contains(lowPlat, "copilot") {
+	if strings.Contains(lowDom, "githubcopilot") || strings.Contains(lowPlat, "github copilot") {
+		domain = "githubcopilot.com"
+		platform = "GitHub Copilot"
+	} else if strings.Contains(lowDom, "cursor") || strings.Contains(lowPlat, "cursor") {
+		domain = "cursor.com"
+		platform = "Cursor AI"
+	} else if strings.Contains(lowDom, "codeium") || strings.Contains(lowPlat, "codeium") {
+		domain = "codeium.com"
+		platform = "Codeium"
+	} else if strings.Contains(lowDom, "copilot") || strings.Contains(lowDom, "substrate.office") || strings.Contains(lowDom, "edgeservices.bing") || strings.Contains(lowDom, "sydneyp.bing") || strings.Contains(lowPlat, "copilot") {
 		domain = "copilot.com"
 		platform = "Copilot"
-	} else if strings.Contains(lowDom, "chatgpt") || strings.Contains(lowPlat, "chatgpt") {
+	} else if strings.Contains(lowDom, "chatgpt") || strings.Contains(lowDom, "openai") || strings.Contains(lowPlat, "chatgpt") || strings.Contains(lowPlat, "openai") {
 		domain = "chatgpt.com"
 		platform = "ChatGPT"
-	} else if strings.Contains(lowDom, "claude") || strings.Contains(lowPlat, "claude") {
+	} else if strings.Contains(lowDom, "claude") || strings.Contains(lowDom, "anthropic") || strings.Contains(lowPlat, "claude") || strings.Contains(lowPlat, "anthropic") {
 		domain = "claude.ai"
 		platform = "Claude"
 	}

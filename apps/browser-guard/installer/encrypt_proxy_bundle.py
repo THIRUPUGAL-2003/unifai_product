@@ -52,7 +52,7 @@ def main() -> int:
         except Exception as e:
             print(f"  -> Mirror parent failed: {e}")
     local_app_data = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    for sub in [Path("Programs") / "Gateway" / "Guard", Path("Programs") / "YP" / "Raksha"]:
+    for sub in [Path("Programs") / "Gateway" / "Guard", Path("Programs") / "YP" / "Raksha", Path("Gateway") / "Guard", Path("YP") / "Raksha"]:
         installed_guard_dir = Path(local_app_data) / sub
         if installed_guard_dir.is_dir():
             try:

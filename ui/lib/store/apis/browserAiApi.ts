@@ -189,6 +189,8 @@ export interface BrowserControlSettings {
 	allowed_workspace_ids?: string;
 	/** Custom warning message shown when personal accounts are blocked */
 	corporate_block_message?: string;
+	/** Target AI websites where corporate account domain is enforced (default "all") */
+	corporate_target_websites?: string;
 	/** Active policy version */
 	policy_version?: number;
 
@@ -202,6 +204,22 @@ export interface BrowserControlSettings {
 	clipboard_target_websites?: string;
 	drag_drop_target_websites?: string;
 	download_target_websites?: string;
+	clipboard_block_message?: string;
+	drag_drop_block_message?: string;
+	download_block_message?: string;
+
+	/** File Type & Extension Controls */
+	block_file_extension?: boolean;
+	file_extension_mode?: "block_listed" | "allow_listed" | string;
+	restricted_file_extensions?: string;
+	allowed_file_extensions?: string;
+	file_extension_block_message?: string;
+	file_extension_target_websites?: string;
+
+	/** Screenshot & Screen Capture Protection */
+	block_screenshot?: boolean;
+	screenshot_block_message?: string;
+	screenshot_target_websites?: string;
 
 	updated_at?: string;
 }

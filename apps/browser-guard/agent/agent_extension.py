@@ -314,11 +314,23 @@ def blocked_hosts() -> list[str]:
 _rules_lock = threading.Lock()
 _rules_cache: tuple[float, list[dict]] = (0.0, [])
 _governance_cache: dict = {
+    "block_upload": False,
+    "upload_warning": "",
+    "upload_target_websites": "",
+    "file_extension_mode": "block_listed",
+    "restricted_file_extensions": "",
+    "allowed_file_extensions": "",
     "block_clipboard": False,
     "block_drag_drop": False,
     "block_download": False,
     "governance_target_websites": "",
     "governance_block_message": "",
+    "clipboard_block_message": "",
+    "drag_drop_block_message": "",
+    "download_block_message": "",
+    "block_screenshot": False,
+    "screenshot_block_message": "",
+    "screenshot_target_websites": "",
 }
 
 
@@ -370,13 +382,28 @@ def dynamic_rules() -> list[dict]:
                                 "warning_message": str(r.get("warning_message") or ""),
                             })
                 global _governance_cache
-                if "block_clipboard" in data:
+                if "block_clipboard" in data or "block_upload" in data:
                     _governance_cache = {
+                        "block_upload": bool(data.get("block_upload")),
+                        "upload_warning": str(data.get("upload_warning") or ""),
+                        "upload_target_websites": str(data.get("upload_target_websites") or ""),
+                        "file_extension_mode": str(data.get("file_extension_mode") or "block_listed"),
+                        "restricted_file_extensions": str(data.get("restricted_file_extensions") or ""),
+                        "allowed_file_extensions": str(data.get("allowed_file_extensions") or ""),
+                        "block_file_extension": bool(data.get("block_file_extension")),
+                        "file_extension_block_message": str(data.get("file_extension_block_message") or ""),
+                        "file_extension_target_websites": str(data.get("file_extension_target_websites") or ""),
                         "block_clipboard": bool(data.get("block_clipboard")),
                         "block_drag_drop": bool(data.get("block_drag_drop")),
                         "block_download": bool(data.get("block_download")),
                         "governance_target_websites": str(data.get("governance_target_websites") or ""),
                         "governance_block_message": str(data.get("governance_block_message") or ""),
+                        "clipboard_block_message": str(data.get("clipboard_block_message") or ""),
+                        "drag_drop_block_message": str(data.get("drag_drop_block_message") or ""),
+                        "download_block_message": str(data.get("download_block_message") or ""),
+                        "block_screenshot": bool(data.get("block_screenshot")),
+                        "screenshot_block_message": str(data.get("screenshot_block_message") or ""),
+                        "screenshot_target_websites": str(data.get("screenshot_target_websites") or ""),
                     }
                 break
         except Exception:
@@ -487,7 +514,7 @@ _RECENT_EXTENSION_EVALS_LOCK = threading.Lock()
 _RECENT_EXTENSION_EVALS: list[dict] = []
 
 
-def _record_extension_eval(host: str, prompt: str, files: list | None = None, platform: str = "") -> None:
+def _record_extension_eval(host: str, prompt: str, files: list | None = None, platform: str = "", eval_id: str = "") -> None:
     """Record that the browser extension handled this prompt/upload for proxy deduplication."""
     try:
         from guard_platform import data_dir
@@ -531,6 +558,8 @@ def _record_extension_eval(host: str, prompt: str, files: list | None = None, pl
                     "preview": p_clean[:150],
                     "files": fnames,
                     "time": now,
+                    "eval_id": str(eval_id or "").strip(),
+                    "id": str(eval_id or "").strip(),
                 }
                 _RECENT_EXTENSION_EVALS.append(entry)
             cache_paths = [cache_path]
@@ -638,6 +667,7 @@ def check_prompt(
     upload_images: list | None = None,
     is_blocked: bool = False,
     rule: str = "",
+    eval_id: str = "",
 ) -> dict:
     """Evaluate prompt, files, and images against Gateway DLP policies."""
     # Immediate site block check
@@ -797,7 +827,7 @@ def check_prompt(
         meta["is_blocked"] = True
         meta["blocked_reason"] = rule or "Client Security Rule"
 
-    _record_extension_eval(clean_host or host, user_caption or text, file_names, platform=platform)
+    _record_extension_eval(clean_host or host, user_caption or text, file_names, platform=platform, eval_id=eval_id)
 
     # Multi-file support: If files are attached, post each file individually to /api/browser-ai/intercept-file
     if files_list:

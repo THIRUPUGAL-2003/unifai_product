@@ -938,23 +938,31 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			return params;
 		}
 		const params = { ...modelParams };
-		if (virtualKeyId && virtualKeyId !== "__auto__") {
+		if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") {
 			params.virtual_key_id = virtualKeyId;
 		}
-		if (apiKeyId && apiKeyId !== "__auto__") {
+		if (apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__") {
 			params.api_key_id = apiKeyId;
 		}
 		if (skillId.trim()) {
 			params.skill_id = skillId.trim();
 		}
-		if (allowedProviders) params.prompt_allowed_providers = allowedProviders;
-		if (allowedModels) params.prompt_allowed_models = allowedModels;
-		if (allowedVirtualKeys) params.prompt_allowed_virtual_keys = allowedVirtualKeys;
-		if (allowedApiKeys) params.prompt_allowed_api_keys = allowedApiKeys;
+		const effProviders = (allowedProviders && allowedProviders.length > 0) ? allowedProviders : (provider ? [provider] : undefined);
+		if (effProviders) params.prompt_allowed_providers = effProviders;
+
+		const effModels = (allowedModels && allowedModels.length > 0) ? allowedModels : (model ? [model] : undefined);
+		if (effModels) params.prompt_allowed_models = effModels;
+
+		const effVks = (allowedVirtualKeys && allowedVirtualKeys.length > 0) ? allowedVirtualKeys : (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__" ? [virtualKeyId] : undefined);
+		if (effVks) params.prompt_allowed_virtual_keys = effVks;
+
+		const effApiKeys = (allowedApiKeys && allowedApiKeys.length > 0) ? allowedApiKeys : (apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__" ? [apiKeyId] : undefined);
+		if (effApiKeys) params.prompt_allowed_api_keys = effApiKeys;
+
 		if (allowedSkills) params.prompt_allowed_skills = allowedSkills;
 		if (mcpIncludeTools) params.prompt_allowed_mcp_tools = mcpIncludeTools;
 		return params;
-	}, [isUserRole, selectedPrompt, modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools]);
+	}, [isUserRole, selectedPrompt, modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, provider, allowedModels, model, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools]);
 
 	const persistPlaygroundSession = useCallback(
 		async (finalMessages: Message[]) => {
@@ -998,6 +1006,9 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			const isActive = () => activeRunRef.current === runToken;
 
 			let execApiKeyId = apiKeyId;
+			if ((!execApiKeyId || execApiKeyId === "__auto__") && allowedApiKeys && allowedApiKeys.length > 0) {
+				execApiKeyId = allowedApiKeys[0];
+			}
 			const committed = selectedPrompt?.latest_version;
 			const execVkId = resolveExecVirtualKey({
 				virtualKeyId,
@@ -1099,7 +1110,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					onFinally: () => {
 						if (!isActive()) return;
 						setIsStreaming(false);
-						dispatch(baseApi.util.invalidateTags(["Logs", "MCPLogs", "VirtualKeys", "Sessions", "Budgets", "Teams", "Customers"]));
+						dispatch(baseApi.util.invalidateTags(["Logs", "MCPLogs", "VirtualKeys", "Sessions", "Budgets", "Teams", "Customers", "ProviderGovernance"]));
 					},
 				},
 				abortController.signal,
@@ -1151,6 +1162,9 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 
 			// Execute with the updated messages
 			let execApiKeyId = apiKeyId;
+			if ((!execApiKeyId || execApiKeyId === "__auto__") && allowedApiKeys && allowedApiKeys.length > 0) {
+				execApiKeyId = allowedApiKeys[0];
+			}
 			const committed = selectedPrompt?.latest_version;
 			const execVkId = resolveExecVirtualKey({
 				virtualKeyId,
@@ -1246,7 +1260,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					onFinally: () => {
 						if (!isActive()) return;
 						setIsStreaming(false);
-						dispatch(baseApi.util.invalidateTags(["Logs", "MCPLogs", "VirtualKeys", "Sessions", "Budgets", "Teams", "Customers"]));
+						dispatch(baseApi.util.invalidateTags(["Logs", "MCPLogs", "VirtualKeys", "Sessions", "Budgets", "Teams", "Customers", "ProviderGovernance"]));
 					},
 				},
 				abortController.signal,
@@ -1300,6 +1314,9 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 			setMessages(newMessages);
 
 			let execApiKeyId = apiKeyId;
+			if ((!execApiKeyId || execApiKeyId === "__auto__") && allowedApiKeys && allowedApiKeys.length > 0) {
+				execApiKeyId = allowedApiKeys[0];
+			}
 			const committed = selectedPrompt?.latest_version;
 			const execVkId = resolveExecVirtualKey({
 				virtualKeyId,
@@ -1396,6 +1413,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
 					onFinally: () => {
 						if (!isActive()) return;
 						setIsStreaming(false);
+						dispatch(baseApi.util.invalidateTags(["Logs", "MCPLogs", "VirtualKeys", "Sessions", "Budgets", "Teams", "Customers", "ProviderGovernance"]));
 					},
 				},
 				abortController.signal,

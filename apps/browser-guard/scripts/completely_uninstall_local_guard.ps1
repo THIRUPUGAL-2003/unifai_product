@@ -178,6 +178,15 @@ foreach ($rk in $registryKeysToRemove) {
     }
 }
 
+# Clean up Desktop AI & IDE environment variables
+$desktopEnvVars = @("NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "CURL_CA_BUNDLE")
+foreach ($ev in $desktopEnvVars) {
+    if (Get-ItemProperty -Path "HKCU:\Environment" -Name $ev -ErrorAction SilentlyContinue) {
+        Remove-ItemProperty -Path "HKCU:\Environment" -Name $ev -Force -ErrorAction SilentlyContinue
+        Write-Host "  -> Removed Desktop AI environment variable: $ev"
+    }
+}
+
 # 6. Delete local Gateway Guard application and extension files
 Write-Host "`n[6/6] Deleting installed Gateway Guard application files..."
 $foldersToDelete = @(

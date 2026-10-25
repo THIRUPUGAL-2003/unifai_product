@@ -196,22 +196,55 @@
           var stored = {
             cached_rules: rules,
             server_host: serverHost,
+            block_upload: Boolean(data.block_upload),
+            upload_warning: data.upload_warning || "",
+            upload_target_websites: data.upload_target_websites || "",
+            file_extension_mode: data.file_extension_mode || "block_listed",
+            restricted_file_extensions: data.restricted_file_extensions || "",
+            allowed_file_extensions: data.allowed_file_extensions || "",
             block_clipboard: Boolean(data.block_clipboard),
             block_drag_drop: Boolean(data.block_drag_drop),
             block_download: Boolean(data.block_download),
             governance_target_websites: data.governance_target_websites || "",
-            governance_block_message: data.governance_block_message || ""
+            governance_block_message: data.governance_block_message || "",
+            clipboard_target_websites: data.clipboard_target_websites || "",
+            drag_drop_target_websites: data.drag_drop_target_websites || "",
+            download_target_websites: data.download_target_websites || "",
+            clipboard_block_message: data.clipboard_block_message || "",
+            drag_drop_block_message: data.drag_drop_block_message || "",
+            download_block_message: data.download_block_message || "",
+            block_screenshot: Boolean(data.block_screenshot),
+            screenshot_block_message: data.screenshot_block_message || "",
+            screenshot_target_websites: data.screenshot_target_websites || ""
           };
           var msg = {
             source: "gateway-guard",
             nonce: guardNonce,
             type: "sync_rules",
             rules: rules,
+            block_upload: Boolean(data.block_upload),
+            upload_warning: data.upload_warning || "",
+            upload_target_websites: data.upload_target_websites || "",
+            file_extension_mode: data.file_extension_mode || "block_listed",
+            restricted_file_extensions: data.restricted_file_extensions || "",
+            allowed_file_extensions: data.allowed_file_extensions || "",
+            block_file_extension: Boolean(data.block_file_extension),
+            file_extension_block_message: data.file_extension_block_message || "",
+            file_extension_target_websites: data.file_extension_target_websites || "",
             block_clipboard: Boolean(data.block_clipboard),
             block_drag_drop: Boolean(data.block_drag_drop),
             block_download: Boolean(data.block_download),
             governance_target_websites: data.governance_target_websites || "",
-            governance_block_message: data.governance_block_message || ""
+            governance_block_message: data.governance_block_message || "",
+            clipboard_target_websites: data.clipboard_target_websites || "",
+            drag_drop_target_websites: data.drag_drop_target_websites || "",
+            download_target_websites: data.download_target_websites || "",
+            clipboard_block_message: data.clipboard_block_message || "",
+            drag_drop_block_message: data.drag_drop_block_message || "",
+            download_block_message: data.download_block_message || "",
+            block_screenshot: Boolean(data.block_screenshot),
+            screenshot_block_message: data.screenshot_block_message || "",
+            screenshot_target_websites: data.screenshot_target_websites || ""
           };
           if (Array.isArray(data.restricted_extensions)) {
             stored.cached_exts = data.restricted_extensions;
@@ -223,7 +256,7 @@
           window.postMessage(msg, "*");
 
           // Resilient fallback: if local agent EXE is an older build without governance fields, fetch directly from gateway
-          if (data.block_clipboard === undefined) {
+          if (data.block_clipboard === undefined && data.block_upload === undefined) {
             var gwUrls = [];
             if (serverHost) gwUrls.push("https://" + serverHost + "/api/browser-ai/rules?for=agent");
             gwUrls.push("http://127.0.0.1:6000/api/browser-ai/rules?for=agent");
@@ -234,26 +267,38 @@
               fetch(gwUrls[gwIdx++], { method: "GET", cache: "no-store" })
                 .then(function (gr) { return gr.json(); })
                 .then(function (gdata) {
-                  if (gdata && "block_clipboard" in gdata) {
+                  if (gdata && ("block_clipboard" in gdata || "block_upload" in gdata)) {
                     var gmsg = {
                       source: "gateway-guard",
                       nonce: guardNonce,
                       type: "sync_rules",
                       rules: rules,
+                      block_upload: Boolean(gdata.block_upload),
+                      upload_warning: gdata.upload_warning || "",
+                      upload_target_websites: gdata.upload_target_websites || "",
+                      file_extension_mode: gdata.file_extension_mode || "block_listed",
+                      restricted_file_extensions: gdata.restricted_file_extensions || "",
+                      allowed_file_extensions: gdata.allowed_file_extensions || "",
+                      block_file_extension: Boolean(gdata.block_file_extension),
+                      file_extension_block_message: gdata.file_extension_block_message || "",
+                      file_extension_target_websites: gdata.file_extension_target_websites || "",
                       block_clipboard: Boolean(gdata.block_clipboard),
                       block_drag_drop: Boolean(gdata.block_drag_drop),
                       block_download: Boolean(gdata.block_download),
                       governance_target_websites: gdata.governance_target_websites || "",
-                      governance_block_message: gdata.governance_block_message || ""
+                      governance_block_message: gdata.governance_block_message || "",
+                      clipboard_target_websites: gdata.clipboard_target_websites || "",
+                      drag_drop_target_websites: gdata.drag_drop_target_websites || "",
+                      download_target_websites: gdata.download_target_websites || "",
+                      clipboard_block_message: gdata.clipboard_block_message || "",
+                      drag_drop_block_message: gdata.drag_drop_block_message || "",
+                      download_block_message: gdata.download_block_message || "",
+                      block_screenshot: Boolean(gdata.block_screenshot),
+                      screenshot_block_message: gdata.screenshot_block_message || "",
+                      screenshot_target_websites: gdata.screenshot_target_websites || ""
                     };
                     if (chrome.storage && chrome.storage.local) {
-                      chrome.storage.local.set({
-                        block_clipboard: Boolean(gdata.block_clipboard),
-                        block_drag_drop: Boolean(gdata.block_drag_drop),
-                        block_download: Boolean(gdata.block_download),
-                        governance_target_websites: gdata.governance_target_websites || "",
-                        governance_block_message: gdata.governance_block_message || ""
-                      });
+                      chrome.storage.local.set(gmsg);
                     }
                     window.postMessage(gmsg, "*");
                   } else {
@@ -274,7 +319,12 @@
     if (chrome.storage && chrome.storage.local) {
       chrome.storage.local.get([
         "cached_rules", "cached_sites", "cached_blocked_sites", "cached_exts", "server_host",
-        "block_clipboard", "block_drag_drop", "block_download", "governance_target_websites", "governance_block_message"
+        "block_upload", "upload_warning", "upload_target_websites", "file_extension_mode", "restricted_file_extensions", "allowed_file_extensions",
+        "block_file_extension", "file_extension_block_message", "file_extension_target_websites",
+        "block_clipboard", "block_drag_drop", "block_download", "governance_target_websites", "governance_block_message",
+        "clipboard_target_websites", "drag_drop_target_websites", "download_target_websites",
+        "clipboard_block_message", "drag_drop_block_message", "download_block_message",
+        "block_screenshot", "screenshot_block_message", "screenshot_target_websites"
       ], function (res) {
         if (res && res.server_host) serverHost = res.server_host;
         if (isServerHost(location.hostname)) {
@@ -295,11 +345,29 @@
             type: "sync_rules",
             rules: Array.isArray(res.cached_rules) ? res.cached_rules : [],
             restricted_extensions: res.cached_exts || [],
+            block_upload: Boolean(res && res.block_upload),
+            upload_warning: (res && res.upload_warning) || "",
+            upload_target_websites: (res && res.upload_target_websites) || "",
+            file_extension_mode: (res && res.file_extension_mode) || "block_listed",
+            restricted_file_extensions: (res && res.restricted_file_extensions) || "",
+            allowed_file_extensions: (res && res.allowed_file_extensions) || "",
+            block_file_extension: Boolean(res && res.block_file_extension),
+            file_extension_block_message: (res && res.file_extension_block_message) || "",
+            file_extension_target_websites: (res && res.file_extension_target_websites) || "",
             block_clipboard: Boolean(res && res.block_clipboard),
             block_drag_drop: Boolean(res && res.block_drag_drop),
             block_download: Boolean(res && res.block_download),
             governance_target_websites: (res && res.governance_target_websites) || "",
-            governance_block_message: (res && res.governance_block_message) || ""
+            governance_block_message: (res && res.governance_block_message) || "",
+            clipboard_target_websites: (res && res.clipboard_target_websites) || "",
+            drag_drop_target_websites: (res && res.drag_drop_target_websites) || "",
+            download_target_websites: (res && res.download_target_websites) || "",
+            clipboard_block_message: (res && res.clipboard_block_message) || "",
+            drag_drop_block_message: (res && res.drag_drop_block_message) || "",
+            download_block_message: (res && res.download_block_message) || "",
+            block_screenshot: Boolean(res && res.block_screenshot),
+            screenshot_block_message: (res && res.screenshot_block_message) || "",
+            screenshot_target_websites: (res && res.screenshot_target_websites) || ""
           }, "*");
         } else {
           // Domain is not monitored or was deleted
@@ -492,6 +560,8 @@
     }
 
     var checkPayload = {
+      id: msg.id || "",
+      eval_id: msg.id || msg.eval_id || "",
       host: msg.host || location.hostname,
       url: msg.url || location.href,
       prompt: msg.prompt || "",
@@ -499,6 +569,7 @@
       upload_images: msg.upload_images || [],
       is_blocked: Boolean(msg.is_blocked),
       rule: msg.rule || "",
+      blocked_reason: msg.blocked_reason || msg.rule || "",
       browser: detectCurrentBrowser()
     };
 

@@ -205,8 +205,15 @@ class BrowserAIInterceptor:
         prompt = (prompt or "").strip()
         if not prompt:
             return
-        if is_already_handled_by_extension(domain, prompt):
-            print(f"[Gateway Proxy] Prompt already handled by extension for {domain}. Skipping duplicate proxy evaluation.")
+        eval_id = (
+            flow.request.headers.get("x-guard-eval-id")
+            or flow.request.headers.get("X-Guard-Eval-Id")
+            or flow.request.headers.get("x-prompt-id")
+            or flow.request.headers.get("X-Prompt-Id")
+            or ""
+        )
+        if is_already_handled_by_extension(domain, prompt, eval_id=eval_id):
+            print(f"[Gateway Proxy] Prompt already handled by extension for {domain} (eval_id={eval_id}). Skipping duplicate proxy evaluation.")
             return
         # Same-text browser double-fire: reuse decision (never silent skip).
         if is_duplicate_event(domain, prompt, ttl=DEDUPE_TTL, mark=False):
@@ -322,6 +329,107 @@ class BrowserAIInterceptor:
             except Exception as e:
                 print(f"[Gateway Proxy WARNING] FILE REDACT inject failed: {e}")
         return False, n_processed, caption_consumed
+
+    def _check_file_upload_dlp(
+        self,
+        flow: http.HTTPFlow,
+        domain: str,
+        platform: str,
+        client_ip: str,
+        raw_bytes: bytes,
+        raw_text: str,
+        content_type: str,
+        fname: str,
+    ) -> tuple[bool, str, str, str]:
+        """Check if a file upload violates corporate policies (Block Upload or Guard DLP Rules).
+        Returns (should_block, blocked_reason, reply_warning, extracted_text).
+        """
+        # 1. Master Block Upload control
+        if controls_active("block_upload"):
+            warn = (get_control_settings().get("upload_warning") or "").strip() or "File uploads are blocked by corporate upload policy."
+            p_log = f"[FILE UPLOAD] {fname} -- Blocked by corporate upload policy"
+            try:
+                post_upload_intercept(
+                    platform=platform or domain,
+                    prompt=p_log,
+                    client_ip=client_ip,
+                    domain=domain,
+                    url=flow.request.url,
+                    method=flow.request.method,
+                    file_name=fname,
+                    is_blocked=True,
+                    blocked_reason="Block Upload",
+                )
+            except Exception:
+                pass
+            return True, "Block Upload", warn, ""
+
+        # 2. Extract text from uploaded bytes
+        extracted_text = ""
+        try:
+            if raw_bytes or raw_text:
+                extracted_text = extract_upload_text_for_rules(raw_bytes, content_type, raw_text or "", fname) or ""
+        except Exception as e:
+            print(f"[Gateway Proxy] upload text extraction error: {e}")
+            extracted_text = ""
+
+        # 3. Guard Rules on Filename
+        if fname and _is_real_user_upload_name(fname):
+            try:
+                fn_hit, fn_name, fn_action = match_guard_rules_on_text(fname)
+                if fn_hit and (fn_action or "").upper() == "BLOCK":
+                    warn = f"File '{fname}' is blocked by corporate DLP policy: {fn_name}"
+                    p_log = f"[FILE UPLOAD] {fname} -- Blocked by corporate rule: {fn_name}"
+                    try:
+                        post_upload_intercept(
+                            platform=platform or domain,
+                            prompt=p_log,
+                            client_ip=client_ip,
+                            domain=domain,
+                            url=flow.request.url,
+                            method=flow.request.method,
+                            file_name=fname,
+                            is_blocked=True,
+                            blocked_reason=fn_name,
+                            raw_bytes=raw_bytes,
+                            content_type=content_type,
+                            extracted_text=extracted_text,
+                        )
+                    except Exception:
+                        pass
+                    return True, fn_name, warn, extracted_text
+            except Exception as e:
+                print(f"[Gateway Proxy] filename DLP check error: {e}")
+
+        # 4. Guard Rules on Extracted File Content
+        if extracted_text and len(extracted_text.strip()) > 0:
+            try:
+                rule_hit, rule_name, rule_action = match_guard_rules_on_text(extracted_text)
+                if rule_hit and (rule_action or "").upper() == "BLOCK":
+                    warn = f"File content of '{fname}' is blocked by corporate DLP policy: {rule_name}"
+                    p_log = f"[FILE UPLOAD] {fname} -- Blocked by corporate rule: {rule_name}"
+                    try:
+                        post_upload_intercept(
+                            platform=platform or domain,
+                            prompt=p_log,
+                            client_ip=client_ip,
+                            domain=domain,
+                            url=flow.request.url,
+                            method=flow.request.method,
+                            file_name=fname,
+                            is_blocked=True,
+                            blocked_reason=rule_name,
+                            raw_bytes=raw_bytes,
+                            content_type=content_type,
+                            extracted_text=extracted_text,
+                        )
+                    except Exception:
+                        pass
+                    return True, rule_name, warn, extracted_text
+            except Exception as e:
+                print(f"[Gateway Proxy] content DLP check error: {e}")
+
+        return False, "", "", extracted_text
 
     def _detect_search_browser(self, flow: http.HTTPFlow) -> str:
         """Label the browser. Any current or future browser is still search-logged."""
@@ -775,18 +883,29 @@ class BrowserAIInterceptor:
         # Extension Pre-Send Coordination:
         # If the request was already intercepted and evaluated by the browser extension at the Send button,
         # it carries the X-Guard-Handled header. Skip proxy duplicate evaluation and logging!
+        ext_handled = False
+        eval_id = (
+            flow.request.headers.get("x-guard-eval-id")
+            or flow.request.headers.get("X-Guard-Eval-Id")
+            or flow.request.headers.get("x-prompt-id")
+            or flow.request.headers.get("X-Prompt-Id")
+            or ""
+        )
         if (
             flow.request.headers.get("x-guard-handled")
             or flow.request.headers.get("x-gateway-guard-handled")
             or flow.request.headers.get("X-Guard-Handled")
             or flow.request.headers.get("X-Gateway-Guard-Handled")
-            or flow.request.headers.get("x-guard-eval-id")
-            or flow.request.headers.get("X-Guard-Eval-Id")
-            or flow.request.headers.get("x-prompt-id")
-            or flow.request.headers.get("X-Prompt-Id")
+            or eval_id
         ):
-            print(f"[Gateway Proxy] Request carries X-Guard-Handled/Eval-Id from extension for {host}. Skipping duplicate proxy prompt evaluation.")
-            return
+            ext_handled = True
+            if eval_id:
+                try:
+                    from config_caches_rules import consume_extension_eval_id
+                    consume_extension_eval_id(eval_id)
+                except Exception:
+                    pass
+            print(f"[Gateway Proxy] Request carries X-Guard-Handled/Eval-Id from extension for {host} (eval_id={eval_id}). Prompt will coordinate.")
 
         # requestheaders already marked page/script/settings calls to stream.
         # Do not read the body — that would hold the site again.
@@ -802,12 +921,14 @@ class BrowserAIInterceptor:
             raw_text_n = _safe_decode_body(raw_bytes_n, content_type_n)
             is_upload_n, upload_reason_n = detect_file_upload(flow, raw_text_n)
             if is_upload_n:
-                fname_n = extract_filename_from_upload(flow, raw_text_n)
+                fname_n = extract_filename_from_upload(flow, raw_text_n) or _filename_from_multipart_or_headers(raw_bytes_n, flow.request.headers, raw_text_n) or "attachment"
                 bind = _resolve_upload_bind_domain(flow, host)
-                # Block Upload must kill CDN attach too (ChatGPT/Gemini often use noise hosts).
-                if bind and controls_active("block_upload"):
-                    warn = (get_control_settings().get("upload_warning") or "").strip() or "File uploads are blocked by admin policy."
-                    make_blocked_response(flow, "Block Upload", host, reply_text=warn)
+                should_block_n, b_reason_n, b_warn_n, ext_txt_n = self._check_file_upload_dlp(
+                    flow, bind or host, bind or host, get_client_ip(flow),
+                    raw_bytes_n, raw_text_n, content_type_n, fname_n,
+                )
+                if should_block_n:
+                    make_blocked_response(flow, b_reason_n, host, reply_text=b_warn_n)
                     return
                 confident_n = is_confident_file_upload(
                     fname=fname_n,
@@ -840,6 +961,7 @@ class BrowserAIInterceptor:
                         content_type=content_type_n,
                         upload_reason=upload_reason_n or "",
                         file_id=file_ids[0] if file_ids else "",
+                        extracted_text=ext_txt_n,
                     )
                     print(
                         f"[Gateway Proxy] FILE CACHED via noise CDN bind | upload_host={host} -> "
@@ -887,8 +1009,15 @@ class BrowserAIInterceptor:
                     pass
                 is_upload_nt, upload_reason_nt = detect_file_upload(flow, raw_text_nt)
                 if is_upload_nt:
-                    fname_nt = extract_filename_from_upload(flow, raw_text_nt)
+                    fname_nt = extract_filename_from_upload(flow, raw_text_nt) or _filename_from_multipart_or_headers(raw_bytes_nt, flow.request.headers, raw_text_nt) or "attachment"
                     bind = _resolve_upload_bind_domain(flow, host)
+                    should_block_nt, b_reason_nt, b_warn_nt, ext_txt_nt = self._check_file_upload_dlp(
+                        flow, bind or host, bind or host, get_client_ip(flow),
+                        raw_bytes_nt, raw_text_nt, content_type_nt, fname_nt,
+                    )
+                    if should_block_nt:
+                        make_blocked_response(flow, b_reason_nt, host, reply_text=b_warn_nt)
+                        return
                     if remember_file_create_handshake(raw_text_nt, bind or "", raw_bytes_nt, path):
                         return
                     try:
@@ -906,11 +1035,6 @@ class BrowserAIInterceptor:
                                 fname_nt = hdr_name
                     except Exception:
                         pass
-                    # Block Upload also blocks non-target CDN attaches.
-                    if bind and controls_active("block_upload"):
-                        warn = (get_control_settings().get("upload_warning") or "").strip() or "File uploads are blocked by admin policy."
-                        make_blocked_response(flow, "Block Upload", host, reply_text=warn)
-                        return
                     confident_nt = is_confident_file_upload(
                         fname=fname_nt,
                         content_type=content_type_nt,
@@ -940,6 +1064,7 @@ class BrowserAIInterceptor:
                             content_type=content_type_nt,
                             upload_reason=upload_reason_nt or "",
                             file_id=file_ids[0] if file_ids else "",
+                            extracted_text=ext_txt_nt,
                         )
                         print(
                             f"[Gateway Proxy] FILE CACHED via Referer bind | upload_host={host} -> "
@@ -1064,13 +1189,15 @@ class BrowserAIInterceptor:
             self._apply_http_prompt(flow, domain, platform, voice_transcript, client_ip, raw_text)
             return
         if is_upload:
-            if remember_file_create_handshake(raw_text, domain or "", raw_bytes, path):
+            fname = extract_filename_from_upload(flow, raw_text) or _filename_from_multipart_or_headers(raw_bytes, flow.request.headers, raw_text) or "attachment"
+            should_block, b_reason, b_warn, ext_txt = self._check_file_upload_dlp(
+                flow, domain, platform, client_ip,
+                raw_bytes, raw_text, content_type, fname,
+            )
+            if should_block:
+                make_blocked_response(flow, b_reason, host, reply_text=b_warn)
                 return
-            fname = extract_filename_from_upload(flow, raw_text)
-            # If Block Upload control is actively enabled by admin:
-            if controls_active("block_upload"):
-                warn = (get_control_settings().get("upload_warning") or "").strip() or "File uploads are blocked by admin policy."
-                make_blocked_response(flow, "Block Upload", host, reply_text=warn)
+            if remember_file_create_handshake(raw_text, domain or "", raw_bytes, path):
                 return
 
             file_ids = _extract_upload_flow_file_ids(flow, raw_text)
@@ -1104,6 +1231,7 @@ class BrowserAIInterceptor:
                             content_type=content_type,
                             upload_reason=upload_reason or "upload_endpoint",
                             file_id=fid_part,
+                            extracted_text=ext_txt,
                         )
                     cached_label = ", ".join(p[0] for p in multi_parts)
                 else:
@@ -1114,6 +1242,7 @@ class BrowserAIInterceptor:
                         content_type=content_type,
                         upload_reason=upload_reason or "upload_endpoint",
                         file_id=file_ids[0] if file_ids else "",
+                        extracted_text=ext_txt,
                     )
             print(
                 f"[Gateway Proxy] FILE CACHED (await Send — zero predict on upload) | {domain} | "
@@ -1271,8 +1400,8 @@ class BrowserAIInterceptor:
 
 
         # Extension coordination: skip duplicate evaluation and logging if browser extension handled it
-        if is_already_handled_by_extension(domain, prompt):
-            print(f"[Gateway Proxy] Prompt already handled by extension for {domain}. Skipping duplicate proxy evaluation.")
+        if ext_handled or is_already_handled_by_extension(domain, prompt, eval_id=eval_id):
+            print(f"[Gateway Proxy] Prompt already handled by extension for {domain} (eval_id={eval_id}). Skipping duplicate proxy evaluation.")
             return
 
         # Collapse browser double-fire — MUST still enforce the same guard decision

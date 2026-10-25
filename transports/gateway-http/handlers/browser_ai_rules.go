@@ -50,15 +50,29 @@ func (h *BrowserAIHandler) getRules(ctx *fasthttp.RequestCtx) {
 		ctrl, _ := h.manager.GetControls(ctx)
 		resp := map[string]any{"rules": out, "has_ai_bot": hasAIBot}
 		if ctrl != nil {
+			resp["block_upload"] = ctrl.BlockUpload
+			resp["upload_warning"] = ctrl.UploadWarning
+			resp["upload_target_websites"] = ctrl.UploadTargetWebsites
+			resp["file_extension_mode"] = ctrl.FileExtensionMode
+			resp["restricted_file_extensions"] = ctrl.RestrictedFileExtensions
+			resp["allowed_file_extensions"] = ctrl.AllowedFileExtensions
+			resp["block_file_extension"] = ctrl.BlockFileExtension
+			resp["file_extension_block_message"] = ctrl.FileExtensionBlockMessage
+			resp["file_extension_target_websites"] = ctrl.FileExtensionTargetWebsites
 			resp["block_clipboard"] = ctrl.BlockClipboard
 			resp["block_drag_drop"] = ctrl.BlockDragDrop
 			resp["block_download"] = ctrl.BlockDownload
 			resp["governance_target_websites"] = ctrl.GovernanceTargetWebsites
 			resp["governance_block_message"] = ctrl.GovernanceBlockMessage
-			resp["upload_target_websites"] = ctrl.UploadTargetWebsites
 			resp["clipboard_target_websites"] = ctrl.ClipboardTargetWebsites
 			resp["drag_drop_target_websites"] = ctrl.DragDropTargetWebsites
 			resp["download_target_websites"] = ctrl.DownloadTargetWebsites
+			resp["clipboard_block_message"] = ctrl.ClipboardBlockMessage
+			resp["drag_drop_block_message"] = ctrl.DragDropBlockMessage
+			resp["download_block_message"] = ctrl.DownloadBlockMessage
+			resp["block_screenshot"] = ctrl.BlockScreenshot
+			resp["screenshot_block_message"] = ctrl.ScreenshotBlockMessage
+			resp["screenshot_target_websites"] = ctrl.ScreenshotTargetWebsites
 		}
 		SendJSON(ctx, resp)
 		return

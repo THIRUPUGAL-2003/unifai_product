@@ -935,12 +935,30 @@ def get_remembered_guard_decision(domain: str, prompt: str, ttl: float = BLOCK_D
     return decision
 
 
-def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: str = "") -> bool:
-    """Check if this domain/prompt/file was evaluated by the browser extension within the last 15 seconds.
+_consumed_eval_ids: set[str] = set()
+_consumed_eval_sigs: set[str] = set()
+_consumed_evals_lock = threading.Lock()
 
-    If true, extension has already logged or blocked it, so proxy skips duplicate logging.
+
+def consume_extension_eval_id(eval_id: str) -> None:
+    """Record that this evaluation ID was consumed by the proxy."""
+    if eval_id:
+        with _consumed_evals_lock:
+            _consumed_eval_ids.add(str(eval_id).strip())
+
+
+def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: str = "", eval_id: str = "") -> bool:
+    """Check if this domain/prompt/file was evaluated by the browser extension.
+
+    Only exact matches within 3.0 seconds are consumed to avoid false skips on subsequent prompts.
     """
+    global _consumed_eval_ids, _consumed_eval_sigs
     try:
+        clean_eid = (eval_id or "").strip()
+        with _consumed_evals_lock:
+            if clean_eid and clean_eid in _consumed_eval_ids:
+                return True
+
         if sys.platform == "win32":
             base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
         elif sys.platform == "darwin":
@@ -974,52 +992,65 @@ def is_already_handled_by_extension(domain: str, prompt: str = "", file_name: st
             "edgeservices.bing.com", "bing.com",
         }
 
+        # 1. Match by eval_id if provided
+        if clean_eid:
+            for item in evals:
+                if not isinstance(item, dict):
+                    continue
+                item_eid = str(item.get("eval_id") or item.get("id") or "").strip()
+                if item_eid and item_eid == clean_eid:
+                    with _consumed_evals_lock:
+                        _consumed_eval_ids.add(clean_eid)
+                    return True
+
         # Strip invisible zero-width formatting characters
         p_norm = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ')
         p_clean = " ".join(p_norm.strip().split()).lower()[:100]
         fn_clean = (file_name or "").lower().strip()
 
+        # Never match on empty prompt and empty file_name — avoids false skips on target domains!
+        if not p_clean and not fn_clean:
+            return False
+
         for item in evals:
             if not isinstance(item, dict):
                 continue
             item_time = float(item.get("time") or 0)
-            if now - item_time > 30:
-                continue
             item_host = (item.get("host") or "").lower().strip(".")
             if item_host.startswith("www."):
                 item_host = item_host[4:]
 
-            item_p_raw = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', item.get("preview") or '').replace('\u00A0', ' ')
-            item_p = " ".join(item_p_raw.strip().split()).lower()[:100]
-            item_files = [str(x).lower().strip() for x in (item.get("files") or [])]
-
-            # 1. Exact or substring prompt match on this workstation within 15 seconds:
-            # recent_extension_evals.json is machine-local. If the local browser extension
-            # just evaluated this prompt, it is guaranteed to be the same user action.
-            if p_clean and item_p:
-                p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', p_clean).strip()
-                item_p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', item_p).strip()
-                if (
-                    p_clean == item_p
-                    or p_clean in item_p
-                    or item_p in p_clean
-                    or (p_core and item_p_core and (p_core == item_p_core or p_core in item_p_core or item_p_core in p_core))
-                ):
-                    return True
-
-            # 2. File upload match
-            if fn_clean and (fn_clean in item_files or any(fn_clean in x for x in item_files)):
-                return True
-
-            # 3. Host match within 5 seconds (only when prompt is empty or just generic handshake)
             hosts_match = (
                 clean_d == item_host
                 or clean_d.endswith("." + item_host)
                 or item_host.endswith("." + clean_d)
                 or (clean_d in COPILOT_FAMILY and item_host in COPILOT_FAMILY)
             )
-            if not p_clean and not fn_clean and clean_d and item_host and hosts_match and (now - item_time < 5.0):
-                return True
+            if not hosts_match:
+                continue
+
+            item_p_raw = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', item.get("preview") or '').replace('\u00A0', ' ')
+            item_p = " ".join(item_p_raw.strip().split()).lower()[:100]
+            item_files = [str(x).lower().strip() for x in (item.get("files") or [])]
+
+            # 2. Prompt match: require tight 3.0s window and EXACT match (not substring!)
+            if p_clean and item_p and (now - item_time <= 3.0):
+                p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', p_clean).strip()
+                item_p_core = re.sub(r'\[(?:file|extracted file):.*?\]', '', item_p).strip()
+                if p_clean == item_p or (p_core and item_p_core and p_core == item_p_core):
+                    sig = f"{item_host}|p:{item_p}|{item_time:.2f}"
+                    with _consumed_evals_lock:
+                        if sig not in _consumed_eval_sigs:
+                            _consumed_eval_sigs.add(sig)
+                            return True
+
+            # 3. File upload match: require tight 5.0s window and exact filename match
+            if fn_clean and (now - item_time <= 5.0) and fn_clean in item_files:
+                sig = f"{item_host}|f:{fn_clean}|{item_time:.2f}"
+                with _consumed_evals_lock:
+                    if sig not in _consumed_eval_sigs:
+                        _consumed_eval_sigs.add(sig)
+                        return True
     except Exception:
         pass
     return False

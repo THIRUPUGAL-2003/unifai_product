@@ -65,7 +65,7 @@ export default function PromptsViewHeader() {
 		pollingInterval: vkPollMs,
 	});
 
-	const { data: providerGovData, error: provGovError } = useGetProviderGovernanceQuery(undefined, {
+	const { data: providerGovData, error: provGovError } = useGetProviderGovernanceQuery({ fromMemory: true }, {
 		pollingInterval: provGovPollMs,
 	});
 
@@ -116,7 +116,7 @@ export default function PromptsViewHeader() {
 		const n = v ?? 0;
 		if (n === 0) return "$0.00";
 		if (n < 0.001) return `$${n.toFixed(5)}`;
-		if (n < 0.01) return `$${n.toFixed(4)}`;
+		if (n < 1000) return `$${n.toFixed(4)}`;
 		if (n >= 1_000_000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 		return `$${n.toFixed(2)}`;
 	};
@@ -185,23 +185,31 @@ export default function PromptsViewHeader() {
 	// Build model_params with virtual_key_id and api_key_id for persistence
 	const buildSaveParams = useCallback((): ModelParams => {
 		const params = { ...modelParams };
-		if (virtualKeyId && virtualKeyId !== "__auto__") {
+		if (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__") {
 			params.virtual_key_id = virtualKeyId;
 		}
-		if (apiKeyId && apiKeyId !== "__auto__") {
+		if (apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__") {
 			params.api_key_id = apiKeyId;
 		}
 		if (skillId.trim()) {
 			params.skill_id = skillId.trim();
 		}
-		if (allowedProviders) params.prompt_allowed_providers = allowedProviders;
-		if (allowedModels) params.prompt_allowed_models = allowedModels;
-		if (allowedVirtualKeys) params.prompt_allowed_virtual_keys = allowedVirtualKeys;
-		if (allowedApiKeys) params.prompt_allowed_api_keys = allowedApiKeys;
+		const effProviders = (allowedProviders && allowedProviders.length > 0) ? allowedProviders : (provider ? [provider] : undefined);
+		if (effProviders) params.prompt_allowed_providers = effProviders;
+
+		const effModels = (allowedModels && allowedModels.length > 0) ? allowedModels : (model ? [model] : undefined);
+		if (effModels) params.prompt_allowed_models = effModels;
+
+		const effVks = (allowedVirtualKeys && allowedVirtualKeys.length > 0) ? allowedVirtualKeys : (virtualKeyId && virtualKeyId !== "__auto__" && virtualKeyId !== "__none__" ? [virtualKeyId] : undefined);
+		if (effVks) params.prompt_allowed_virtual_keys = effVks;
+
+		const effApiKeys = (allowedApiKeys && allowedApiKeys.length > 0) ? allowedApiKeys : (apiKeyId && apiKeyId !== "__auto__" && apiKeyId !== "__none__" ? [apiKeyId] : undefined);
+		if (effApiKeys) params.prompt_allowed_api_keys = effApiKeys;
+
 		if (allowedSkills) params.prompt_allowed_skills = allowedSkills;
 		if (mcpIncludeTools) params.prompt_allowed_mcp_tools = mcpIncludeTools;
 		return params;
-	}, [modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, allowedModels, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools]);
+	}, [modelParams, virtualKeyId, apiKeyId, skillId, allowedProviders, provider, allowedModels, model, allowedVirtualKeys, allowedApiKeys, allowedSkills, mcpIncludeTools]);
 
 	const handleSaveSession = useCallback(async () => {
 		if (!selectedPrompt || !hasChanges || isStreaming) return;
