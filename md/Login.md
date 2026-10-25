@@ -520,7 +520,7 @@ Enterprise Architecture & Solutions Team
 ```
 
 ### 10.3 Asynchronous Admin Lead Notification
-If an administrative recipient (`SMTP_USERNAME`) is configured and differs from the applicant, the server dispatches a lead notification email **asynchronously in a background goroutine (`go func()`)** with a dedicated 20-second timeout. This architecture guarantees that internal email processing never delays the client's HTTP response.
+If the SMTP username saved in **Settings → Security** differs from the applicant, the server dispatches a lead notification email **asynchronously in a background goroutine (`go func()`)** with a dedicated 20-second timeout. This architecture guarantees that internal email processing never delays the client's HTTP response.
 
 * **Subject:** `New Enterprise Demo Booking: {FullName} ({Company})`
 * **Content:** Lead name, email, company, team size, focus area, architecture notes, RFC1123 timestamp, and client IP address.

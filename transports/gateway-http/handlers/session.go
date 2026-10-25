@@ -1857,8 +1857,6 @@ func (h *SessionHandler) scheduleDemo(ctx *fasthttp.RequestCtx) {
 	adminRecipient := ""
 	if smtpRow != nil && smtpRow.Username != "" {
 		adminRecipient = smtpRow.Username
-	} else {
-		adminRecipient = os.Getenv("SMTP_USERNAME")
 	}
 	adminSubject := ""
 	adminBody := ""

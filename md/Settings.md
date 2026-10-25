@@ -335,6 +335,8 @@ All admin passwords (Super Admin and standard admins) must satisfy **all 5 requi
 ### 5.5 SMTP Configuration & Email Alerts
 Transactional email service is used for password reset OTPs, welcome credentials for new users, and login alert notifications.
 
+SMTP connection details are saved and managed in **Settings → Security**. Outgoing mail uses that saved configuration; there is no `SMTP_*` environment-variable fallback.
+
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `boolean` | `false` | Enables transactional SMTP email delivery. |
@@ -773,13 +775,6 @@ The Gateway reads initial boot credentials and hardware binds from `.env` at sta
 | **Database** | `DB_SSL_MODE` | `disable`, `require`, or `verify-full`. |
 | **Admin** | `ADMIN_EMAIL` | Super Admin initial username / email. |
 | **Admin** | `ADMIN_PASSWORD` | Super Admin initial password. |
-| **Email** | `SMTP_HOST` | SMTP server host (e.g. `smtp.gmail.com`). |
-| **Email** | `SMTP_PORT` | SMTP port (`587` STARTTLS, `465` SSL). |
-| **Email** | `SMTP_USERNAME` | SMTP login account. |
-| **Email** | `SMTP_PASSWORD` | SMTP password or App Password. |
-| **Email** | `SMTP_FROM_EMAIL` | Sender address. |
-| **Email** | `SMTP_FROM_NAME` | Sender display name. |
-| **Email** | `SMTP_USE_TLS` | `true` or `false`. |
 | **Security** | `GATEWAY_ENCRYPTION_KEY` | AES-256 GCM key for credentials at rest. |
 | **Security** | `PASSWORD_RESET_SECRET` | HMAC secret for password-reset tokens. |
 | **Cluster** | `CLUSTER_REPLICATE_SECRET` | Cryptographic secret for multi-node KV state replication. |
@@ -798,7 +793,6 @@ powershell -ExecutionPolicy Bypass -File .\scripts\get_env.ps1
 # 2. Query a specific variable value:
 powershell -ExecutionPolicy Bypass -File .\scripts\get_env.ps1 DB_HOST
 powershell -ExecutionPolicy Bypass -File .\scripts\get_env.ps1 CLUSTER_REPLICATE_SECRET
-powershell -ExecutionPolicy Bypass -File .\scripts\get_env.ps1 SMTP_HOST
 ```
 
 #### Option B: Direct PowerShell One-Liners

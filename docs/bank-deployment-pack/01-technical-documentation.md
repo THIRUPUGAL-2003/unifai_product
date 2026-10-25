@@ -958,7 +958,7 @@ The source .env.example is a template with development-oriented values. Inject p
 | Secret encryption | GATEWAY_ENCRYPTION_KEY | Keep stable and protected under dual control; losing it may make encrypted stored credentials unrecoverable |
 | Guard fleet | GATEWAY_GUARD_SECRET, GATEWAY_GUARD_REQUIRE_SECRET, GATEWAY_BACKEND_URL, GATEWAY_PROXY_ADDR, GATEWAY_AGENT_TYPE | Require strong secret in production; distribute securely and rotate through an endpoint rollout |
 | PAC behavior | GATEWAY_PAC_ALLOW_QUERY_PROXY, GATEWAY_PAC_URL, GATEWAY_PAC_SYNC_SECONDS, GATEWAY_PAC_ADVERTISE_ADDR | Keep client override disabled unless approved; validate proxy address from endpoint network |
-| Admin and mail | ADMIN_EMAIL, ADMIN_PASSWORD, SMTP_*, PASSWORD_RESET_SECRET | Change bootstrap credentials; use internal relay or disable mail; protect reset signing secret |
+| Admin and mail | ADMIN_EMAIL, ADMIN_PASSWORD, Settings → Security SMTP, PASSWORD_RESET_SECRET | Change bootstrap credentials; configure mail in Security settings or disable it; protect reset signing secret |
 | Metrics/proxy trust | GATEWAY_METRICS_TOKEN, TRUST_PROXY_HEADERS, TRUSTED_PROXIES | Restrict metrics to internal scrapers; trust forwarded headers only from ingress peers |
 | Branding | GATEWAY_COMPANY_NAME, GATEWAY_COMPANY_LOGO and product/footer settings | Set approved company/product/footer copy; validate landing, login and footer before release |
 

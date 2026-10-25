@@ -200,9 +200,6 @@ func smtpToMailer(row *tables.TableSMTPConfig) mailer.Config {
 	}
 	fromName := strings.TrimSpace(row.FromName)
 	if fromName == "" {
-		fromName = strings.TrimSpace(os.Getenv("SMTP_FROM_NAME"))
-	}
-	if fromName == "" {
 		brand := strings.TrimSpace(os.Getenv("GATEWAY_BRAND_NAME"))
 		if brand == "" {
 			brand = "Raksha"
@@ -230,52 +227,20 @@ func sendAuthEmail(store configstore.ConfigStore, ctx *fasthttp.RequestCtx, to, 
 	return err
 }
 
-// sendSMTPEmail sends through the saved SMTP config (or SMTP_* env fallback) without
-// needing an HTTP request, so background dispatchers can use it.
+// sendSMTPEmail sends through the SMTP configuration saved under Security settings
+// without needing an HTTP request, so background dispatchers can use it.
 func sendSMTPEmail(ctx context.Context, store configstore.ConfigStore, to, subject, body string) error {
 	if store == nil || strings.TrimSpace(to) == "" {
 		return fmt.Errorf("no recipient")
 	}
 	row, err := store.GetSMTPConfig(ctx)
-	if err != nil || row == nil || !row.Enabled {
-		host := strings.TrimSpace(os.Getenv("SMTP_HOST"))
-		if host != "" {
-			port, _ := strconv.Atoi(os.Getenv("SMTP_PORT"))
-			if port <= 0 {
-				port = 587
-			}
-			fromEmail := strings.TrimSpace(os.Getenv("SMTP_FROM_EMAIL"))
-			if fromEmail == "" {
-				fromEmail = strings.TrimSpace(os.Getenv("SMTP_USERNAME"))
-			}
-			fromName := strings.TrimSpace(os.Getenv("SMTP_FROM_NAME"))
-			if fromName == "" {
-				brand := strings.TrimSpace(os.Getenv("GATEWAY_BRAND_NAME"))
-				if brand == "" {
-					brand = "Raksha"
-				}
-				fromName = brand + " Security System"
-			}
-			useTLS := os.Getenv("SMTP_USE_TLS") != "false"
-			row = &tables.TableSMTPConfig{
-				Enabled:   true,
-				Host:      host,
-				Port:      port,
-				Username:  strings.TrimSpace(os.Getenv("SMTP_USERNAME")),
-				Password:  os.Getenv("SMTP_PASSWORD"),
-				FromEmail: fromEmail,
-				FromName:  fromName,
-				UseTLS:    useTLS,
-			}
-			err = nil
-		} else if err == nil {
-			err = fmt.Errorf("SMTP is not configured")
-		}
+	if err != nil {
+		return err
 	}
-	if err == nil && row != nil && row.Enabled {
-		err = authMailSend(smtpToMailer(row), mailer.Message{To: to, Subject: subject, Body: body})
+	if row == nil || !row.Enabled || strings.TrimSpace(row.Host) == "" {
+		return fmt.Errorf("SMTP is not enabled; configure it in Settings → Security")
 	}
-	return err
+	return authMailSend(smtpToMailer(row), mailer.Message{To: to, Subject: subject, Body: body})
 }
 
 // recordEmailAudit writes one audit_logs row per outgoing email. The body is never
@@ -510,8 +475,7 @@ func trySendAccountBlockStatusEmail(store configstore.ConfigStore, ctx *fasthttp
 	if err != nil {
 		return false, err.Error()
 	}
-	hasEnvSMTP := strings.TrimSpace(os.Getenv("SMTP_HOST")) != ""
-	if (smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "") && !hasEnvSMTP {
+	if smtpRow == nil || !smtpRow.Enabled || strings.TrimSpace(smtpRow.Host) == "" {
 		return false, "SMTP is not enabled. Please configure SMTP in Security settings to dispatch notification emails."
 	}
 	var subject, body string
