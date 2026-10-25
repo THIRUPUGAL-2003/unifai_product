@@ -16,6 +16,26 @@ Every section covers:
 - **Exhaustive Error Handling & Resolution Matrix**
 - **Audit & Governance Compliance Tracking**
 
+### Dedicated In-Depth Technical Guides
+- 📦 **[MCP Tool Groups Reference Guide](file:///d:/unifai_project/md/MCP_Tool_Groups.md)**
+- 🔑 **[MCP Auth Sessions Reference Guide](file:///d:/unifai_project/md/MCP_Sessions.md)**
+- 🔒 **[MCP OAuth2 Security & User Grants Guide](file:///d:/unifai_project/md/MCP_OAuth2_Security.md)**
+- 📜 **[MCP Execution Logs Guide](file:///d:/unifai_project/md/MCP_Logs.md)**
+
+---
+
+## PostgreSQL Database Schema Mapping
+
+| Sub-Module | UI Route | Database Table(s) | Primary Keys / Live Row Count |
+| :--- | :--- | :--- | :--- |
+| **MCP Catalog** | `/workspace/mcp-registry` | `config_mcp_clients` | `id` (PK), `name`, `status`, `encryption_status` |
+| **MCP Library** | `/workspace/mcp-registry/library` | `mcp_library` | `slug` (PK), `name`, `category` (291 certified servers) |
+| **Tool Groups** | `/workspace/mcp-tool-groups` | `mcp_tool_groups` | `id` (PK), `name`, `enabled`, `spec_json` |
+| **Auth Sessions** | `/workspace/mcp-sessions` | `oauth_user_tokens`, `mcp_per_user_header_credentials`, `oauth_user_sessions`, `mcp_per_user_header_flows` | `id` (PK), `mcp_client_id`, `auth_mode`, `user_id` |
+| **OAuth Grants** | `/workspace/oauth-grants` | `oauth_configs`, `oauth2_clients`, `oauth2_authorize_requests`, `oauth2_refresh_tokens` | `id` (PK), `client_id`, `uf_mode`, `uf_sub` |
+| **MCP Settings** | `/workspace/mcp-settings` | `framework_configs`, `config_client` | `id` (PK), `mcp_library_url`, `mcp_agent_depth` |
+| **MCP Tool Logs** | `/workspace/mcp-logs` | `mcp_tool_logs` | `id` (PK), `tool_name`, `server_label`, `latency`, `cost` |
+
 ---
 
 ## Table of Contents
@@ -27,7 +47,7 @@ Every section covers:
 5. [Section 4: Auth Sessions (`/workspace/mcp-sessions`)](#5-section-4-auth-sessions)
 6. [Section 5: OAuth Grants (`/workspace/oauth-grants`)](#6-section-5-oauth-grants)
 7. [Section 6: MCP Settings (`/workspace/mcp-settings`)](#7-section-6-mcp-settings)
-8. [Database Schema: MCP Gateway Persistence](#8-database-schema-mcp-gateway-persistence)
+8. [Database Schema: PostgreSQL Live Tables](#8-database-schema-postgresql-live-tables)
 9. [SOC-2 Compliance & Audit Logs Reference](#9-soc-2-compliance--audit-logs-reference)
 
 ---
@@ -304,32 +324,31 @@ curl --location 'http://localhost:3100/api/oauth2/sessions' \
 
 ---
 
-## 8. Database Schema: MCP Gateway Persistence
+## 8. Database Schema: PostgreSQL Live Tables
 
-The MCP Gateway persists configuration and session states in the following relational tables (supported across SQLite and PostgreSQL):
+The MCP Gateway persists configuration, server discovery, and session states in the following relational tables in the PostgreSQL database `Unifai_test`:
 
 ```sql
--- 1. MCP Server Connection Registrations
-CREATE TABLE IF NOT EXISTS mcp_clients (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) UNIQUE NOT NULL,
-    description TEXT,
-    transport VARCHAR(50) NOT NULL, -- 'sse' or 'stdio'
-    url TEXT,
+-- 1. Registered MCP Server Connections (config_mcp_clients)
+CREATE TABLE IF NOT EXISTS config_mcp_clients (
+    id BIGINT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    connection_type VARCHAR(50) NOT NULL, -- 'sse', 'stdio', 'stream', 'http'
+    connection_url TEXT,
     command TEXT,
-    args TEXT,                     -- JSON Array of arguments
-    env TEXT,                      -- JSON Object of environment variables
-    headers TEXT,                  -- JSON Object of HTTP headers
-    allow_on_all_virtual_keys BOOLEAN DEFAULT FALSE,
-    is_active BOOLEAN DEFAULT TRUE,
+    args_json TEXT,                       -- JSON Array of arguments
+    env_json TEXT,                        -- JSON Object of environment variables
+    headers_json TEXT,                    -- JSON Object of custom HTTP headers
+    auth_type VARCHAR(50),                -- 'none', 'headers', 'oauth'
+    status VARCHAR(50) DEFAULT 'active',
+    encryption_status VARCHAR(50),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 2. Certified Connector Library
-CREATE TABLE IF NOT EXISTS mcp_library_entries (
-    id SERIAL PRIMARY KEY,
-    slug VARCHAR(255) UNIQUE NOT NULL,
+-- 2. Certified Connector Library (mcp_library - 291 Certified Connectors)
+CREATE TABLE IF NOT EXISTS mcp_library (
+    slug VARCHAR(255) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     category VARCHAR(100),
@@ -339,28 +358,76 @@ CREATE TABLE IF NOT EXISTS mcp_library_entries (
     icon_url TEXT,
     docs_url TEXT,
     publisher VARCHAR(100),
-    source VARCHAR(50) DEFAULT 'remote'
-);
-
--- 3. Composite Tool Groups
-CREATE TABLE IF NOT EXISTS mcp_tool_groups (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) UNIQUE NOT NULL,
-    description TEXT,
-    tools TEXT,                    -- JSON Array of {client_id, tool_name}
+    source VARCHAR(50) DEFAULT 'remote',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 4. Downstream OAuth2 User Refresh Tokens
+-- 3. Composite Tool Groups (mcp_tool_groups)
+CREATE TABLE IF NOT EXISTS mcp_tool_groups (
+    id BIGINT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    enabled BOOLEAN DEFAULT TRUE,
+    spec_json TEXT,                       -- JSON: {tools, virtual_key_ids, team_ids, user_ids}
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 4. Downstream OAuth2 User Tokens (oauth_user_tokens)
+CREATE TABLE IF NOT EXISTS oauth_user_tokens (
+    id VARCHAR(255) PRIMARY KEY,
+    session_id VARCHAR(255),
+    virtual_key_id VARCHAR(255),
+    user_id VARCHAR(255),
+    mcp_client_id VARCHAR(255) NOT NULL,
+    auth_mode VARCHAR(50) NOT NULL,       -- 'user', 'vk', 'session'
+    status VARCHAR(50) NOT NULL,          -- 'active', 'expired', 'revoked'
+    access_token TEXT NOT NULL,           -- AES-256 Encrypted
+    refresh_token TEXT,                   -- AES-256 Encrypted
+    expires_at TIMESTAMP WITH TIME ZONE,
+    scopes TEXT,
+    last_refreshed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 5. Downstream OAuth Refresh Tokens (oauth2_refresh_tokens)
 CREATE TABLE IF NOT EXISTS oauth2_refresh_tokens (
     id VARCHAR(255) PRIMARY KEY,
     client_id VARCHAR(255) NOT NULL,
-    uf_mode VARCHAR(50) NOT NULL,  -- 'user', 'vk', 'session'
-    uf_sub VARCHAR(255) NOT NULL,   -- User ID or Virtual Key ID
-    refresh_token TEXT NOT NULL,   -- AES-256 Encrypted
+    uf_mode VARCHAR(50) NOT NULL,         -- 'user', 'vk', 'session'
+    uf_sub VARCHAR(255) NOT NULL,          -- User ID or Virtual Key ID
+    token_hash VARCHAR(255) NOT NULL,
     scope TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_used_at TIMESTAMP WITH TIME ZONE
+);
+
+-- 6. Per-User Custom Headers Vault (mcp_per_user_header_credentials)
+CREATE TABLE IF NOT EXISTS mcp_per_user_header_credentials (
+    id VARCHAR(255) PRIMARY KEY,
+    session_id VARCHAR(255),
+    virtual_key_id VARCHAR(255),
+    user_id VARCHAR(255),
+    mcp_client_id VARCHAR(255) NOT NULL,
+    auth_mode VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    headers_json TEXT NOT NULL,           -- AES-256 Encrypted
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 7. Tool Invocation Audit Logs (mcp_tool_logs)
+CREATE TABLE IF NOT EXISTS mcp_tool_logs (
+    id VARCHAR(255) PRIMARY KEY,
+    request_id VARCHAR(255),
+    tool_name VARCHAR(255) NOT NULL,
+    server_label VARCHAR(255),
+    virtual_key_id VARCHAR(255),
+    arguments TEXT,
+    result TEXT,
+    latency NUMERIC,
+    cost NUMERIC,
+    status VARCHAR(50),
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ```
 
@@ -380,3 +447,4 @@ All actions in the MCP Gateway write tamper-evident records to `/workspace/audit
 | Create Tool Group | `tool_group.create` | Group Name | Tool count and member server IDs. |
 
 *(End of MCP Gateway Reference Guide)*
+

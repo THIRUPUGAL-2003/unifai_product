@@ -18,6 +18,28 @@ Every section covers:
 - **Exhaustive Error Handling & Resolution Matrix**
 - **Audit & Governance Compliance Tracking**
 
+### Dedicated In-Depth Technical Guides
+- 🛡️ **[Circuit Breaker Reference Guide](file:///d:/unifai_project/md/Circuit_Breaker.md)**
+- 🧠 **[Complexity Router Reference Guide](file:///d:/unifai_project/md/Complexity_Router.md)**
+- 🔀 **[Adaptive Routing & CEL Rules Guide](file:///d:/unifai_project/md/Adaptive_Routing.md)**
+- 📊 **[Model Catalog & Limits Guide](file:///d:/unifai_project/md/Model_Catalog_Limits.md)**
+- 💰 **[Custom Pricing & Overrides Guide](file:///d:/unifai_project/md/Custom_Pricing.md)**
+
+---
+
+## PostgreSQL Database Schema Mapping
+
+| Sub-Module | UI Route | Database Table(s) | Primary Keys / Identifying Columns |
+| :--- | :--- | :--- | :--- |
+| **Model Providers** | `/workspace/providers` | `config_providers`, `config_keys` | `id`, `name`, `provider_id`, `key_id` |
+| **Model Catalog** | `/workspace/model-catalog` | `governance_model_parameters`, `governance_model_pricing`, `config_models` | `model`, `provider`, `base_model` |
+| **Budgets & Limits** | `/workspace/model-limits` | `governance_model_configs`, `governance_rate_limits` | `id`, `model_name`, `provider`, `rate_limit_id`, `budget_id` |
+| **Complexity Router** | `/workspace/complexity-router` | `governance_config` | `key = 'complexity_analyzer_config'` |
+| **Routing Rules** | `/workspace/routing-rules` | `routing_rules`, `routing_targets` | `id`, `rule_id`, `cel_expression`, `priority` |
+| **Circuit Breaker** | `/workspace/circuit-breaker` | `circuit_breaker_policies` | `name` (PK), `primary_provider`, `fallback_provider` |
+| **Pricing Overrides** | `/workspace/custom-pricing/overrides` | `governance_pricing_overrides` | `id`, `name`, `scope_kind`, `pattern` |
+| **Model Settings** | `/workspace/custom-pricing` | `framework_configs`, `config_client` | `id`, `pricing_url`, `pricing_sync_interval` |
+
 ---
 
 ## Table of Contents
