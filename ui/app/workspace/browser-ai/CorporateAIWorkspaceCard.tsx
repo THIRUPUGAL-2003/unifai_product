@@ -223,7 +223,7 @@ export function CorporateAIWorkspaceCard({
 								)}
 							</div>
 							<CardDescription className="text-xs text-muted-foreground mt-0.5">
-				Restrict selected monitored AI websites to approved company email domains. The browser extension must detect the signed-in account to apply this check.
+								Restrict access across ChatGPT, Claude, Gemini, Copilot, DeepSeek, Mistral, and monitored AI tools to corporate accounts. Personal email accounts (@gmail.com, @yahoo.com, etc.) are blocked from sending prompts.
 							</CardDescription>
 						</div>
 					</div>

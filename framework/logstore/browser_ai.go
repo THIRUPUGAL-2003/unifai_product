@@ -1649,8 +1649,13 @@ func normalizeCorporateEmailDomain(raw string) string {
 func corporateTargetFilterMatches(filter, provider, pageURL string) bool {
 	provider = strings.TrimSpace(provider)
 	pageHost := ""
-	if parsed, err := url.Parse(strings.TrimSpace(pageURL)); err == nil && parsed.IsAbs() {
-		pageHost = NormalizeDomain(parsed.Hostname())
+	trimmedURL := strings.TrimSpace(pageURL)
+	if trimmedURL != "" {
+		if parsed, err := url.Parse(trimmedURL); err == nil && parsed.IsAbs() {
+			pageHost = NormalizeDomain(parsed.Hostname())
+		} else {
+			pageHost = NormalizeDomain(trimmedURL)
+		}
 	}
 	providerHost := NormalizeDomain(provider)
 	tokens := strings.FieldsFunc(filter, func(r rune) bool {
@@ -1668,6 +1673,12 @@ func corporateTargetFilterMatches(filter, provider, pageURL string) bool {
 			}
 			continue
 		}
+		if pageHost != "" {
+			if pageHost == targetHost || strings.HasSuffix(pageHost, "."+targetHost) {
+				return true
+			}
+			continue
+		}
 		providerLabelMatches := providerHost == targetHost
 		if !providerLabelMatches {
 			labels := strings.Split(targetHost, ".")
@@ -1678,7 +1689,7 @@ func corporateTargetFilterMatches(filter, provider, pageURL string) bool {
 				}
 			}
 		}
-		if providerLabelMatches || pageHost == targetHost || (pageHost != "" && strings.HasSuffix(pageHost, "."+targetHost)) {
+		if providerLabelMatches {
 			return true
 		}
 	}
