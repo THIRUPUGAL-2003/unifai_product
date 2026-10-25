@@ -8,6 +8,6 @@
   "pac_advertise_addr": "",
   "pac_http_port": 18195,
   "pac_url": "https://unifai.yespanchi.com/api/browser-ai/pac",
-  "guard_secret": "ycsKvD5uWlL1ymRZZW/3ePHqMe7sab4ZiG9L1VRMAFo=",
+  "guard_secret": "",
   "_comment": "Auto-synchronized from root .env by sync_all_from_env.py"
 }
