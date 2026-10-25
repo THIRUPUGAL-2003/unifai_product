@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/google/uuid"
 	gateway "github.com/gateway/gateway/core"
 	"github.com/gateway/gateway/core/mcp"
 	mcputils "github.com/gateway/gateway/core/mcp/utils"
@@ -50,6 +49,7 @@ import (
 	"github.com/gateway/gateway/plugins/prompts"
 	"github.com/gateway/gateway/plugins/semanticcache"
 	"github.com/gateway/gateway/plugins/telemetry"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
