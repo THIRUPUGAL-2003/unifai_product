@@ -70,7 +70,7 @@ SEARCH_ENGINE_PAC_RULE = [
 
 
 def build_pac_from_targets(proxy_addr: str) -> str | None:
-    candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+    candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
     body = None
     for base in candidates:
         body = _http_get_text(
@@ -105,6 +105,28 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
         return None
 
     targets = data.get("targets") if isinstance(data, dict) else None
+    if not isinstance(targets, list) and isinstance(data, dict):
+        # agent_extension.monitored_hosts persists this cache shape while offline.
+        cached_hosts = data.get("hosts")
+        cached_blocked = data.get("blocked_hosts")
+        if isinstance(cached_hosts, list) or isinstance(cached_blocked, list):
+            blocked = {
+                _normalize_domain(str(host))
+                for host in (cached_blocked if isinstance(cached_blocked, list) else [])
+                if _normalize_domain(str(host))
+            }
+            domains = {
+                _normalize_domain(str(host))
+                for host in (
+                    (cached_hosts if isinstance(cached_hosts, list) else [])
+                    + (cached_blocked if isinstance(cached_blocked, list) else [])
+                )
+                if _normalize_domain(str(host))
+            }
+            targets = [
+                {"domain": host, "monitored": True, "block_site": host in blocked}
+                for host in sorted(domains)
+            ]
     if not isinstance(targets, list):
         return None
 

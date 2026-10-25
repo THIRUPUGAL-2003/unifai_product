@@ -259,8 +259,6 @@
           if (data.block_clipboard === undefined && data.block_upload === undefined) {
             var gwUrls = [];
             if (serverHost) gwUrls.push("https://" + serverHost + "/api/browser-ai/rules?for=agent");
-            gwUrls.push("http://127.0.0.1:6000/api/browser-ai/rules?for=agent");
-            gwUrls.push("http://localhost:6000/api/browser-ai/rules?for=agent");
             var gwIdx = 0;
             function tryNextGw() {
               if (gwIdx >= gwUrls.length) return;
@@ -482,23 +480,23 @@
           nonce: guardNonce,
           type: "session_authorization_result",
           id: msg.id,
-          result: result || { decision: "allow" }
+          result: result || { decision: "block", reason_code: "GATEWAY_UNREACHABLE" }
         }, "*");
       }
 
       function fallbackGatewayDirect() {
-        var endpoints = [
-          "http://127.0.0.1:6000/api/browser-ai/session/authorize",
-          "http://localhost:6000/api/browser-ai/session/authorize",
-          "http://127.0.0.1:6000/authorize_ai_session"
-        ];
+        var endpoints = [];
         if (serverHost) {
           endpoints.unshift("https://" + serverHost + "/api/browser-ai/session/authorize");
         }
         var idx = 0;
         function tryNext() {
           if (idx >= endpoints.length) {
-            sendAuthResult({ decision: "allow", reason_code: "GATEWAY_UNREACHABLE" });
+            sendAuthResult({
+              decision: "block",
+              reason_code: "GATEWAY_UNREACHABLE",
+              message: "Gateway session verification unavailable; access is blocked until verification succeeds."
+            });
             return;
           }
           var ep = endpoints[idx++];

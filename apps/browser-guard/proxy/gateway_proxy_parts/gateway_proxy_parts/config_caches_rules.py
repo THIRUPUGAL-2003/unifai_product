@@ -510,12 +510,10 @@ _CLIENT_TARGET_STICKY_TTL = 10 * 60
 
 
 def _fetch_json(url: str, timeout: float | None = None) -> dict | None:
-    """Generic GET JSON fetch from backend with local fallback."""
+    """Fetch JSON from the configured backend without redirecting credentials locally."""
     if not url or not (url.startswith("http://") or url.startswith("https://")):
         return None
     candidate_urls = [url]
-    if GATEWAY_BACKEND_URL and GATEWAY_BACKEND_URL in url and "127.0.0.1:6000" not in GATEWAY_BACKEND_URL:
-        candidate_urls.append(url.replace(GATEWAY_BACKEND_URL, "http://127.0.0.1:6000"))
     for target_url in candidate_urls:
         try:
             req = urllib.request.Request(target_url, headers=_backend_headers(), method="GET")

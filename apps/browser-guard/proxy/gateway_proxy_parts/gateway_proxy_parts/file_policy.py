@@ -1676,7 +1676,7 @@ def post_upload_intercept(
             parts.append(b"\r\n")
         parts.append(f"--{boundary}--\r\n".encode("utf-8"))
         body = b"".join(parts)
-        candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+        candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
         for base in candidates:
             try:
                 req = urllib.request.Request(
@@ -1703,7 +1703,7 @@ def post_upload_intercept(
             "upload_images": upload_images or [],
             "metadata": metadata,
         }).encode("utf-8")
-        candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+        candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
         for base in candidates:
             try:
                 req = urllib.request.Request(

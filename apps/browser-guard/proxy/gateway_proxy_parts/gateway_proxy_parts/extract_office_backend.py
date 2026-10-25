@@ -2069,7 +2069,7 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
             "metadata": metadata,
         }).encode("utf-8")
 
-        candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+        candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
         res_data = None
         for base in candidates:
             try:
@@ -2094,21 +2094,21 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
             except Exception:
                 continue
 
-        if res_data is not None:
+        if isinstance(res_data, dict):
             allowed = res_data.get("allowed", True)
             rule_triggered = res_data.get("rule_triggered", "")
             action = res_data.get("action", "Allowed")
             redacted_prompt = res_data.get("forward_prompt") or res_data.get("redacted_prompt", prompt)
             if (action or "") in ("Redacted", "Warned") and redacted_prompt == prompt:
                 redacted_prompt = _redacted_forward(prompt, res_data.get("warning_message", ""))
-                reply_text = (res_data.get("reply_text") or "").strip()
-                eval_error = (res_data.get("eval_error") or "").strip()
-                verdict = (res_data.get("security_verdict") or "").strip().lower()
-                if not eval_error and verdict == "eval_failed":
-                    eval_error = (res_data.get("security_message") or "AI Guard Bot evaluation failed").strip()
-                if eval_error:
-                    print(f"[Gateway Proxy] AI Guard Bot eval failed | {eval_error}")
-                return allowed, rule_triggered, action, redacted_prompt, reply_text, eval_error
+            reply_text = (res_data.get("reply_text") or "").strip()
+            eval_error = (res_data.get("eval_error") or "").strip()
+            verdict = (res_data.get("security_verdict") or "").strip().lower()
+            if not eval_error and verdict == "eval_failed":
+                eval_error = (res_data.get("security_message") or "AI Guard Bot evaluation failed").strip()
+            if eval_error:
+                print(f"[Gateway Proxy] AI Guard Bot eval failed | {eval_error}")
+            return allowed, rule_triggered, action, redacted_prompt, reply_text, eval_error
     except Exception as e:
         print(f"[Gateway Proxy] send_to_backend failed: {e}")
 

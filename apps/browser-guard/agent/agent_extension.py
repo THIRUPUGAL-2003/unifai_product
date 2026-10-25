@@ -221,7 +221,7 @@ def monitored_hosts() -> list[str]:
     platform_map: dict[str, str] = {}
     fetch_ok = False
     body = ""
-    candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000"] if b]
+    candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
     seen_urls = set()
     for base in candidates:
         if base in seen_urls:
@@ -356,7 +356,7 @@ def dynamic_rules() -> list[dict]:
             return list(cached)
     active_rules = []
     fetch_ok = False
-    candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000"] if b]
+    candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
     seen_urls = set()
     from agent_http import _http_json
     for base in candidates:
@@ -645,7 +645,7 @@ def _post_intercept_file(
             parts.append(b"\r\n")
         parts.append(f"--{boundary}--\r\n".encode("utf-8"))
         body = b"".join(parts)
-        candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+        candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
         seen_cands = set()
         for base in candidates:
             if base in seen_cands:
@@ -914,7 +914,7 @@ def check_prompt(
         "upload_images": images_list[:5],
         "metadata": meta,
     }
-    candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000"] if b]
+    candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
     seen_bases = set()
     unique_candidates = []
     for b in candidates:
@@ -1609,7 +1609,7 @@ def authorize_ai_session(payload: dict) -> dict:
     """Forward an AI session authorization check to the Gateway backend."""
     if not isinstance(payload, dict):
         payload = {}
-    candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+    candidates = [GATEWAY_BACKEND_URL.rstrip("/")] if GATEWAY_BACKEND_URL else []
     seen_urls = set()
     for backend in candidates:
         if backend in seen_urls:
@@ -1624,9 +1624,9 @@ def authorize_ai_session(payload: dict) -> dict:
         if status2 == 200 and isinstance(resp2, dict) and "decision" in resp2:
             return resp2
     return {
-        "decision": "allow",
+        "decision": "block",
         "reason_code": "BACKEND_UNREACHABLE",
-        "message": "Backend session verification unavailable; defaulting to allow.",
+        "message": "Backend session verification unavailable; access is blocked until verification succeeds.",
         "policy_version": int(payload.get("policy_version") or 1),
     }
 
