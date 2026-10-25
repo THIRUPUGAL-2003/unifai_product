@@ -2038,7 +2038,14 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
     Returns (allowed, rule_triggered, action, redacted_prompt, reply_text, eval_error)
     """
     if not GATEWAY_BACKEND_URL:
-        return True, "", "Allowed", prompt, "", "backend url not configured"
+        return (
+            False,
+            "Gateway Backend Unavailable",
+            "Blocked",
+            prompt,
+            "Gateway Guard cannot reach the security backend. Prompt blocked for safety.",
+            "backend url not configured",
+        )
     if not evaluation_only:
         try:
             from config_caches_rules import is_already_handled_by_extension

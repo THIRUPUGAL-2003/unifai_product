@@ -768,9 +768,6 @@ def check_prompt(
 
     if not text and not images_list and not files_list:
         return {"blocked": False, "message": "", "rule": ""}
-    if not GATEWAY_BACKEND_URL:
-        return {"blocked": is_blocked, "passthrough": not is_blocked, "message": "", "rule": rule}
-
     # Format platform cleanly from database Target Websites mapping
     clean_host = (host or "").lower().strip(".")
     if clean_host.startswith("www."):
@@ -810,6 +807,16 @@ def check_prompt(
         parts = clean_host.split(".")
         main_part = parts[0] if parts and parts[0] not in ("www", "chat", "app", "api", "m") else (parts[1] if len(parts) > 1 else clean_host)
         platform = main_part.title() if main_part else (clean_host or "Browser AI")
+
+    if not GATEWAY_BACKEND_URL:
+        return {
+            "blocked": True,
+            "action": "Blocked",
+            "passthrough": False,
+            "message": "Gateway security backend is not configured. This request is blocked until verification is available.",
+            "rule": "Gateway Backend Unavailable",
+            "redacted_prompt": "",
+        }
 
     agent_hostname = os.environ.get("GATEWAY_AGENT_HOSTNAME") or os.environ.get("COMPUTERNAME") or ""
     try:
