@@ -68,6 +68,8 @@ __pycache__/
 venv/
 venv*/
 apps/browser-guard/.venv*/
+apps/browser-guard/.secrets/
+apps/browser-guard/extension/guard_extension.pem
 apps/browser-guard/build/
 apps/browser-guard/dist/
 apps/browser-guard/installer/staging/

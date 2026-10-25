@@ -23,6 +23,8 @@ from agent_config import AGENT_VERSION, GATEWAY_BACKEND_URL, PAC_HTTP_PORT
 from agent_http import _http_json
 from guard_platform import IS_WIN, data_dir
 
+_COMPROMISED_EXTENSION_ID = "mipfhcmlcjfhmgldkokdckhndkebkllj"
+
 def extension_source_dir() -> str:
     """Dev tree, the installed EXE folder, the frozen bundle, or the Guard data dir."""
     meipass = getattr(sys, "_MEIPASS", "") or ""
@@ -121,9 +123,13 @@ _domain_platform_map: dict[str, str] = {}
 
 
 def _pem_path() -> str:
-    src_pem = os.path.join(extension_source_dir(), "guard_extension.pem")
-    if os.path.isfile(src_pem):
-        return src_pem
+    configured = os.environ.get("GATEWAY_GUARD_EXTENSION_PEM", "").strip()
+    if configured:
+        return os.path.abspath(os.path.expandvars(os.path.expanduser(configured)))
+    if IS_WIN:
+        common_pem = os.path.join(os.environ.get("ProgramData") or r"C:\ProgramData", "Gateway", "Guard", "guard_extension.pem")
+        if os.path.isfile(common_pem):
+            return common_pem
     return os.path.join(data_dir(), "guard_extension.pem")
 
 
@@ -981,7 +987,16 @@ def check_prompt(
 def _ensure_pem() -> str:
     path = _pem_path()
     if os.path.isfile(path) and os.path.getsize(path) > 0:
-        return path
+        try:
+            if extension_id_from_pem(path) != _COMPROMISED_EXTENSION_ID:
+                return path
+        except Exception:
+            if os.environ.get("GATEWAY_GUARD_EXTENSION_PEM"):
+                raise ValueError("Configured browser extension signing key is invalid.")
+        # The old repository key was exposed. Never use it to sign updates.
+        if os.environ.get("GATEWAY_GUARD_EXTENSION_PEM"):
+            raise ValueError("Configured signing key is compromised; provision a rotated key.")
+        path = os.path.join(data_dir(), "guard_extension.pem")
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -991,9 +1006,15 @@ def _ensure_pem() -> str:
         serialization.PrivateFormat.PKCS8,
         serialization.NoEncryption(),
     )
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    temp_path = path + f".tmp.{os.getpid()}"
+    with open(temp_path, "wb") as f:
         f.write(pem)
+    try:
+        os.chmod(temp_path, 0o600)
+    except OSError:
+        pass
+    os.replace(temp_path, path)
     return path
 
 
@@ -1014,26 +1035,22 @@ def extension_id_from_pem(pem_path: str) -> str:
     return "".join(out)
 
 
+def _public_key_b64(pem_path: str) -> str:
+    import base64
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+    with open(pem_path, "rb") as f:
+        key = load_pem_private_key(f.read(), password=None)
+    pub = key.public_key().public_bytes(
+        serialization_encoding(),
+        public_format(),
+    )
+    return base64.b64encode(pub).decode("ascii")
+
+
 def get_extension_id() -> str:
-    """Return stable extension ID, matching manifest.json key or fixed enterprise ID."""
-    m_path = os.path.join(extension_source_dir(), "manifest.json")
-    if os.path.isfile(m_path):
-        try:
-            with open(m_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            key_b64 = data.get("key")
-            if key_b64:
-                import base64
-                der = base64.b64decode(key_b64)
-                digest = hashlib.sha256(der).digest()
-                out = []
-                for b in digest[:16]:
-                    out.append(chr(ord("a") + ((b >> 4) & 0xF)))
-                    out.append(chr(ord("a") + (b & 0xF)))
-                return "".join(out)
-        except Exception:
-            pass
-    return "mipfhcmlcjfhmgldkokdckhndkebkllj"
+    """Return the ID for the locally provisioned, persistent signing key."""
+    return extension_id_from_pem(_ensure_pem())
 
 
 
@@ -1076,7 +1093,9 @@ def _write_unpacked(base_url: str) -> str:
     shutil.copytree(src, dst, ignore=shutil.ignore_patterns("*.pem"))
     with open(os.path.join(dst, "endpoint.js"), "w", encoding="utf-8") as f:
         f.write(f'var GATEWAY_GUARD_BASE = "{base_url}";\n')
-    # Synchronize manifest version in packed CRX with current extension version
+    # Keep the extension identity and version aligned with the private key used
+    # to sign the CRX. The private key never enters the extension bundle.
+    pem = _ensure_pem()
     cur_ver = get_extension_version()
     man_path = os.path.join(dst, "manifest.json")
     if os.path.isfile(man_path):
@@ -1084,6 +1103,7 @@ def _write_unpacked(base_url: str) -> str:
             with open(man_path, "r", encoding="utf-8") as f:
                 man_data = json.load(f)
             man_data["version"] = cur_ver
+            man_data["key"] = _public_key_b64(pem)
             with open(man_path, "w", encoding="utf-8") as f:
                 json.dump(man_data, f, indent=2)
         except Exception:
@@ -1140,14 +1160,17 @@ FIREFOX_ID = "yp-raksha@gateway.guard"
 
 
 def _extension_settings(extension_id: str, update_url: str) -> str:
-    return json.dumps({
+    settings = {
         extension_id: {
             "installation_mode": "force_installed",
             "update_url": update_url,
             "incognito": "spanning",
             "toolbar_pin": "force_unpinned",
         }
-    })
+    }
+    if extension_id != _COMPROMISED_EXTENSION_ID:
+        settings[_COMPROMISED_EXTENSION_ID] = {"installation_mode": "blocked"}
+    return json.dumps(settings)
 
 
 def _mac_managed_roots() -> list[str]:
@@ -1205,6 +1228,11 @@ def _firefox_settings(base_url: str) -> str:
 
 
 def _write_firefox_policy(base_url: str) -> None:
+    signed_xpi = os.path.join(data_dir(), "yp-raksha.xpi")
+    if not is_signed_firefox_xpi(signed_xpi):
+        _remove_firefox_policy()
+        print("[Gateway Guard WARNING] Firefox install skipped: a Mozilla-signed XPI is not provisioned.")
+        return
     raw = _firefox_settings(base_url)
     if IS_WIN:
         try:
@@ -1245,18 +1273,42 @@ def _remove_firefox_policy() -> None:
             pass
 
 
-def build_xpi(unpacked_dir: str) -> str:
-    """Firefox install package. Same files as the Chromium extension, without the signing key."""
+def is_signed_firefox_xpi(path: str) -> bool:
+    """Return true only for an XPI containing Mozilla's detached signatures."""
     import zipfile
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            names = {name.upper() for name in zf.namelist()}
+        return (
+            "META-INF/MOZILLA.RSA" in names
+            and "META-INF/MOZILLA.SF" in names
+            and "META-INF/MANIFEST.MF" in names
+        )
+    except Exception:
+        return False
+
+
+def build_xpi(unpacked_dir: str) -> str:
+    """Copy a pre-signed Mozilla XPI; never label a raw ZIP as installable."""
     dest = os.path.join(data_dir(), "yp-raksha.xpi")
-    with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for name in os.listdir(unpacked_dir):
-            if name.endswith(".pem"):
-                continue
-            path = os.path.join(unpacked_dir, name)
-            if os.path.isfile(path):
-                zf.write(path, name)
-    return dest
+    candidates = [
+        os.environ.get("GATEWAY_GUARD_SIGNED_XPI", "").strip(),
+        os.path.join(extension_source_dir(), "yp-raksha.xpi"),
+        os.path.join(os.path.dirname(extension_source_dir()), "release", "yp-raksha.xpi"),
+        os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "yp-raksha.xpi"),
+        os.path.join(getattr(sys, "_MEIPASS", "") or "", "yp-raksha.xpi"),
+    ]
+    for source in candidates:
+        if source and os.path.isfile(source) and is_signed_firefox_xpi(source):
+            if os.path.abspath(source) != os.path.abspath(dest):
+                shutil.copy2(source, dest)
+            return dest
+    if os.path.isfile(dest) and not is_signed_firefox_xpi(dest):
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+    return ""
 
 
 def install_guard_extension(base_url: str) -> None:
@@ -1556,6 +1608,13 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
     except Exception:
         return
     from agent_browser_policy import _CHROMIUM_POLICY_PATHS, _delete_reg_value, _set_reg_sz
+
+    # Block the compromised legacy identity so Chromium cannot keep accepting
+    # updates signed with the private key that was previously tracked in git.
+    for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for ext_sub in _external_extension_keys(_COMPROMISED_EXTENSION_ID):
+            for name in ("path", "version", "update_url"):
+                _delete_reg_value(root, ext_sub, name)
 
     value = f"{extension_id};{update_url}" if extension_id and update_url else ""
     settings = _extension_settings(extension_id, update_url) if value else ""

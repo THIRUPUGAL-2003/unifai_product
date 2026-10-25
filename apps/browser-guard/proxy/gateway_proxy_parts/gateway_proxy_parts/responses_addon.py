@@ -205,16 +205,6 @@ class BrowserAIInterceptor:
         prompt = (prompt or "").strip()
         if not prompt:
             return
-        eval_id = (
-            flow.request.headers.get("x-guard-eval-id")
-            or flow.request.headers.get("X-Guard-Eval-Id")
-            or flow.request.headers.get("x-prompt-id")
-            or flow.request.headers.get("X-Prompt-Id")
-            or ""
-        )
-        if is_already_handled_by_extension(domain, prompt, eval_id=eval_id):
-            print(f"[Gateway Proxy] Prompt already handled by extension for {domain} (eval_id={eval_id}). Skipping duplicate proxy evaluation.")
-            return
         # Same-text browser double-fire: reuse decision (never silent skip).
         if is_duplicate_event(domain, prompt, ttl=DEDUPE_TTL, mark=False):
             self._apply_duplicate_http_prompt(flow, domain, platform, prompt, client_ip, raw_text)
@@ -880,32 +870,8 @@ class BrowserAIInterceptor:
             make_site_blocked_response(flow, canonical_dom, b_platform)
             return
 
-        # Extension Pre-Send Coordination:
-        # If the request was already intercepted and evaluated by the browser extension at the Send button,
-        # it carries the X-Guard-Handled header. Skip proxy duplicate evaluation and logging!
-        ext_handled = False
-        eval_id = (
-            flow.request.headers.get("x-guard-eval-id")
-            or flow.request.headers.get("X-Guard-Eval-Id")
-            or flow.request.headers.get("x-prompt-id")
-            or flow.request.headers.get("X-Prompt-Id")
-            or ""
-        )
-        if (
-            flow.request.headers.get("x-guard-handled")
-            or flow.request.headers.get("x-gateway-guard-handled")
-            or flow.request.headers.get("X-Guard-Handled")
-            or flow.request.headers.get("X-Gateway-Guard-Handled")
-            or eval_id
-        ):
-            ext_handled = True
-            if eval_id:
-                try:
-                    from config_caches_rules import consume_extension_eval_id
-                    consume_extension_eval_id(eval_id)
-                except Exception:
-                    pass
-            print(f"[Gateway Proxy] Request carries X-Guard-Handled/Eval-Id from extension for {host} (eval_id={eval_id}). Prompt will coordinate.")
+        # The page can forge extension postMessages and request headers. Always
+        # enforce prompt policy in the proxy; extension markers are not proof.
 
         # requestheaders already marked page/script/settings calls to stream.
         # Do not read the body — that would hold the site again.
@@ -1399,11 +1365,6 @@ class BrowserAIInterceptor:
                 prompt = stable
 
 
-        # Extension coordination: skip duplicate evaluation and logging if browser extension handled it
-        if ext_handled or is_already_handled_by_extension(domain, prompt, eval_id=eval_id):
-            print(f"[Gateway Proxy] Prompt already handled by extension for {domain} (eval_id={eval_id}). Skipping duplicate proxy evaluation.")
-            return
-
         # Collapse browser double-fire — MUST still enforce the same guard decision
         # (silent return here previously let the 2nd request bypass BLOCK).
         if is_duplicate_event(domain, prompt, ttl=DEDUPE_TTL, mark=False):
@@ -1631,9 +1592,6 @@ class BrowserAIInterceptor:
             if ws_has_prompt:
                 pn = (ws_prompt or "").strip()
                 if pn and len(pn) <= 320 and not _looks_like_document_body_dump(pn):
-                    if is_already_handled_by_extension(domain, ws_prompt):
-                        print(f"[Gateway Proxy] WebSocket prompt already handled by extension for {domain}. Skipping duplicate proxy log.")
-                        return
                     if not is_duplicate_event(domain, pn, ttl=DEDUPE_TTL, mark=False):
                         mark_duplicate_event(domain, ws_prompt)
                         allowed, rule_triggered, action, redacted_prompt, reply_text = evaluate_prompt_coalesced(
@@ -1686,9 +1644,6 @@ class BrowserAIInterceptor:
                 ws_prompt = stable
 
             ws_p_clean = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', ws_prompt or '').replace('\u00A0', ' ').strip()
-            if is_already_handled_by_extension(domain, ws_p_clean):
-                print(f"[Gateway Proxy] WebSocket prompt already handled by extension for {domain}. Skipping duplicate proxy log.")
-                return
             mark_duplicate_event(domain, ws_prompt)
             allowed, rule_triggered, action, redacted_prompt, reply_text = evaluate_prompt_coalesced(
                 platform=platform,
@@ -1765,10 +1720,6 @@ class BrowserAIInterceptor:
             return
 
         ws_p_clean = re.sub(r'[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]', '', prompt or '').replace('\u00A0', ' ').strip()
-        if is_already_handled_by_extension(domain, ws_p_clean):
-            print(f"[Gateway Proxy] WebSocket prompt already handled by extension for {domain}. Skipping duplicate proxy log.")
-            return
-
         ws_bytes = content.encode("utf-8", errors="ignore")
         if not _should_intercept_extracted_prompt(
             prompt, flow.request.path, content, domain, host=host, raw_bytes=ws_bytes
@@ -1786,10 +1737,6 @@ class BrowserAIInterceptor:
             if stable is None:
                 return
             prompt = stable
-
-        if is_already_handled_by_extension(domain, prompt):
-            print(f"[Gateway Proxy] WebSocket prompt already handled by extension for {domain}. Skipping duplicate proxy log.")
-            return
 
         if is_duplicate_event(domain, prompt, ttl=DEDUPE_TTL, mark=False):
             decision = get_remembered_guard_decision(domain, prompt)

@@ -200,9 +200,9 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
             self.wfile.write(body)
             return
         if path == "/extension/yp-raksha.xpi":
-            from agent_extension import data_dir as _guard_data
+            from agent_extension import data_dir as _guard_data, is_signed_firefox_xpi
             xpi = os.path.join(_guard_data(), "yp-raksha.xpi")
-            if not os.path.isfile(xpi):
+            if not is_signed_firefox_xpi(xpi):
                 self.send_error(404)
                 return
             with open(xpi, "rb") as f:

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YP-Raksha",
-  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsjCVEOn2TciTknXyEB/s1AjU3LBZEnv6eZBJQyUFQbcZ/6ZTItVZIgBk++ZMLulWe8TqH4vMxTSNEGb+EJKRAYtGXnGbY+IuKs2Oyk64w1XyBx/CUin+lYLmvfnhyA+C++XegW1OtupMQIpeIREk+8m4RW8vWAHkNLWWwghfliZOs+w/3GGUlG4M75o5t59fEhcaU2KwtGWhUTd8kGWTZU6B/NMsfjaPtHbIB4ueHyD1GQYfW8hiO1kMkGzfT6XUxbBxgjtRhM64U/9Jo3fiAwb42VMc/nC0bG6wpnXAazD/OKJGICmJ+O1qU7xo/YELmmdM6RNNRL8cV8EUTxaJyQIDAQAB",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1sf4kXa0EESuhcLzeQOJVr5Ri9d5RAkt9n65arcKqqSbxGG/pQRBAv2nX6P69XJMozD65WhrwReWkfkW3iQiQPj8ldkF+QmsBQm1l4G+aYhMM9LqwnHmijHt8dVYe7+BLVeEvlNTr8FhRPivgBBAHvZXWDza+c/60AywSJgi4oG509xa9t97YfnDfrVqmI/QNzIS2q2JoiaJbhg7u9WPIlr22T+KG9ejukBr05IPUD8Mrw6MDr9N4rl86FZ6EFb65xzHVgp8i5W9nhME8q8f/alPxlkqXPddiqp9wjJF5cA2yaGTDeC279GQHkQO86HQrARdbfRGGVVTTbmoBFUBHwIDAQAB",
   "version": "1.1.31.15",
   "description": "Enterprise AI Security Guard - Real-time Data Leak Prevention (DLP) for AI browsers.",
   "icons": {
@@ -21,6 +21,9 @@
     "default_popup": "popup.html"
   },
   "background": {
+    "scripts": [
+      "background.js"
+    ],
     "service_worker": "background.js"
   },
   "incognito": "spanning",

@@ -7,7 +7,9 @@
     ? GATEWAY_GUARD_BASE.trim().replace(/\/+$/, "")
     : "http://127.0.0.1:18195";
 
-  var guardNonce = "yp_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  var nonceBytes = new Uint8Array(24);
+  crypto.getRandomValues(nonceBytes);
+  var guardNonce = "yp_" + Array.prototype.map.call(nonceBytes, function (b) { return b.toString(16).padStart(2, "0"); }).join("");
 
   function isInternalHost(host) {
     host = (host || "").toLowerCase().trim();
@@ -466,7 +468,7 @@
     if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard-page") return;
     var msg = ev.data;
     // Verify anti-tamper nonce
-    if (msg.nonce && msg.nonce !== guardNonce) return;
+    if (!msg.nonce || msg.nonce !== guardNonce) return;
 
     if (msg.type === "authorize_ai_session") {
       var authPayload = {

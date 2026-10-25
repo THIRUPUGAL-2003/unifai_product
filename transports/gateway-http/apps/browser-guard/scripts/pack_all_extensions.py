@@ -15,6 +15,7 @@ import zipfile
 import shutil
 import hashlib
 import struct
+import subprocess
 
 
 def _read_crx_manifest_version(path):
@@ -43,7 +44,15 @@ def pack_all():
     common_ext = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "Gateway", "Guard", "guard_extension")
     user_ext = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Gateway", "Guard", "guard_extension")
 
+    # Release signing key is a local ignored secret, never an extension source asset.
+    os.environ.setdefault(
+        "GATEWAY_GUARD_EXTENSION_PEM",
+        os.path.join(bg_dir, ".secrets", "guard_extension.pem"),
+    )
+
     os.makedirs(rel_dir, exist_ok=True)
+    if os.path.isdir(staging_ext):
+        shutil.rmtree(staging_ext)
     os.makedirs(staging_ext, exist_ok=True)
     try:
         os.makedirs(common_ext, exist_ok=True)
@@ -55,11 +64,23 @@ def pack_all():
     except Exception:
         pass
 
-    # Read manifest version
+    # Use the version and public key that match the CRX generated below.
     manifest_path = os.path.join(ext_src, "manifest.json")
     with open(manifest_path, "r", encoding="utf-8") as f:
         mdata = json.load(f)
-    version = mdata.get("version", "1.1.28.4")
+    agent_dir = os.path.join(bg_dir, "agent")
+    if agent_dir not in sys.path:
+        sys.path.insert(0, agent_dir)
+    from agent_extension import (
+        EXTENSION_VERSION,
+        _ensure_pem,
+        _public_key_b64,
+        is_signed_firefox_xpi,
+    )
+
+    mdata["version"] = EXTENSION_VERSION
+    mdata["key"] = _public_key_b64(_ensure_pem())
+    version = EXTENSION_VERSION
 
     # 1. WebStore Zip (manifest, content.js, page_hook.js, endpoint.js, popup, background, icons)
     store_zip = os.path.join(rel_dir, "yp-raksha.zip")
@@ -69,8 +90,14 @@ def pack_all():
                 continue
             fpath = os.path.join(ext_src, fname)
             if os.path.isfile(fpath):
-                zf.write(fpath, fname)
-                shutil.copy2(fpath, os.path.join(staging_ext, fname))
+                if fname == "manifest.json":
+                    manifest_payload = (json.dumps(mdata, indent=2) + "\n").encode("utf-8")
+                    zf.writestr(fname, manifest_payload)
+                    with open(os.path.join(staging_ext, fname), "wb") as mf:
+                        mf.write(manifest_payload)
+                else:
+                    zf.write(fpath, fname)
+                    shutil.copy2(fpath, os.path.join(staging_ext, fname))
                 try:
                     shutil.copy2(fpath, os.path.join(common_ext, fname))
                 except Exception:
@@ -83,14 +110,34 @@ def pack_all():
     # Legacy alias for WebStore zip
     shutil.copy2(store_zip, os.path.join(rel_dir, "YP_Raksha_WebStore.zip"))
 
-    # 2. Firefox XPI (same files without pem)
+    # Keep an explicitly unsigned developer XPI; only publish .xpi after Mozilla signing.
+    unsigned_xpi = os.path.join(rel_dir, "yp-raksha-unsigned.xpi")
+    shutil.copy2(store_zip, unsigned_xpi)
     xpi_path = os.path.join(rel_dir, "yp-raksha.xpi")
-    shutil.copy2(store_zip, xpi_path)
+    signed_source = os.environ.get("GATEWAY_GUARD_SIGNED_XPI", "").strip()
+    if signed_source and os.path.isfile(signed_source) and is_signed_firefox_xpi(signed_source):
+        with zipfile.ZipFile(signed_source, "r") as signed_zip:
+            signed_manifest = json.loads(signed_zip.read("manifest.json").decode("utf-8"))
+            if str(signed_manifest.get("version") or "") != str(version):
+                raise RuntimeError("The Mozilla-signed XPI is stale; sign the current extension package.")
+            for source_name in os.listdir(staging_ext):
+                source_path = os.path.join(staging_ext, source_name)
+                if os.path.isfile(source_path) and source_name != "yp-raksha.xpi":
+                    if source_name not in signed_zip.namelist() or signed_zip.read(source_name) != open(source_path, "rb").read():
+                        raise RuntimeError(f"The Mozilla-signed XPI does not match current source: {source_name}")
+        shutil.copy2(signed_source, xpi_path)
+        shutil.copy2(signed_source, os.path.join(staging_ext, "yp-raksha.xpi"))
+        if user_ext:
+            try:
+                shutil.copy2(signed_source, os.path.join(os.path.dirname(user_ext), "yp-raksha.xpi"))
+            except Exception:
+                pass
+    else:
+        if os.path.isfile(xpi_path) and not is_signed_firefox_xpi(xpi_path):
+            os.remove(xpi_path)
+        print("[pack] Firefox install XPI omitted: provision a Mozilla-signed XPI through GATEWAY_GUARD_SIGNED_XPI.")
 
     # 3. Signed Chromium CRX3 (yp-raksha.crx & legacy guard_extension.crx)
-    agent_dir = os.path.join(bg_dir, "agent")
-    if agent_dir not in sys.path:
-        sys.path.insert(0, agent_dir)
     try:
         from agent_extension import pack_extension, _crx_path, get_extension_id
         import agent_config
@@ -111,12 +158,17 @@ def pack_all():
             )
             with open(os.path.join(rel_dir, "update.xml"), "w", encoding="utf-8") as f:
                 f.write(update_xml)
+        else:
+            raise RuntimeError("Chrome did not produce a fresh signed CRX")
     except Exception as e:
-        print(f"[pack] CRX generation notice: {e}")
+        raise RuntimeError(f"Chromium extension signing failed: {e}") from e
 
     print(f"[pack] YP-Raksha v{version} successfully packed with unified naming:")
     print(f"  - Chromium (.crx): {os.path.join(rel_dir, 'yp-raksha.crx')} ({os.path.getsize(os.path.join(rel_dir, 'yp-raksha.crx'))} bytes)")
-    print(f"  - Firefox  (.xpi): {xpi_path} ({os.path.getsize(xpi_path)} bytes)")
+    if os.path.isfile(xpi_path):
+        print(f"  - Firefox  (.xpi, Mozilla-signed): {xpi_path} ({os.path.getsize(xpi_path)} bytes)")
+    else:
+        print(f"  - Firefox  (unsigned developer package only): {unsigned_xpi}")
     print(f"  - Store    (.zip): {store_zip} ({os.path.getsize(store_zip)} bytes)")
 
 if __name__ == "__main__":

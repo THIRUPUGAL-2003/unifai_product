@@ -1098,11 +1098,6 @@ def evaluate_prompt(platform: str, domain: str, prompt: str, client_ip: str, url
     local = decide_prompt_locally(prompt)
     local_allowed, local_rt, local_action, local_fwd, local_reply = local
 
-    # Extension Priority: If already evaluated/logged by browser extension, skip proxy duplicate logging
-    if is_already_handled_by_extension(domain, prompt):
-        print(f"[Gateway Proxy] Extension already handled prompt for {domain}. Skipping proxy duplicate log.")
-        return local_allowed, local_rt, local_action, local_fwd, local_reply
-
     # Instant path — do not wait on AI Guard Bot (up to ~95s) when regex already blocked.
     if (not local_allowed) or (local_action or "").lower() == "blocked":
         def _log_local_block() -> None:

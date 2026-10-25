@@ -105,7 +105,7 @@
   // Listen for messages from extension content script
   window.addEventListener("message", function (ev) {
     if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard") return;
-    if (guardNonce && ev.data.nonce && ev.data.nonce !== guardNonce) return;
+    if (!guardNonce || ev.data.nonce !== guardNonce) return;
     if (ev.data.type === "arm") {
       armed = true;
     }
@@ -1754,58 +1754,6 @@
     window.fetch = function (input, init) {
       if (!armed) return origFetch.apply(this, arguments);
 
-      // If a prompt was evaluated at the Send button within the last 4 seconds, mark any outgoing fetch
-      if (Date.now() - _lastHandledPromptTime < 4000) {
-        try {
-          var reqUrlEarly = (typeof input === "string" ? input : (input && input.url) || "").toLowerCase();
-          // Never tag external cloud storage or binary upload URLs (avoids breaking Azure Blob/S3 pre-signed signatures & CORS)
-          if (
-            !reqUrlEarly.includes("blob.core.windows.net") &&
-            !reqUrlEarly.includes("amazonaws.com") &&
-            !reqUrlEarly.includes("storage.googleapis.com") &&
-            !reqUrlEarly.includes("oaiusercontent.com") &&
-            !reqUrlEarly.includes("claudeusercontent.com") &&
-            !reqUrlEarly.includes("clients6.google.com") &&
-            !reqUrlEarly.includes("content-push.googleapis.com") &&
-            !reqUrlEarly.includes("/backend-api/files") &&
-            !reqUrlEarly.includes("/files") &&
-            !reqUrlEarly.includes("/upload") &&
-            !reqUrlEarly.includes("/file/upload")
-          ) {
-            var handledHeaders = {
-              "X-Guard-Handled": "1",
-              "X-Gateway-Guard-Handled": "1",
-              "X-Guard-Eval-Id": _lastHandledPromptId || "eval_done",
-              "X-Prompt-Id": _lastHandledPromptId || "eval_done"
-            };
-            if (typeof Request !== "undefined" && input instanceof Request) {
-              try {
-                input.headers.set("X-Guard-Handled", "1");
-                input.headers.set("X-Gateway-Guard-Handled", "1");
-                if (_lastHandledPromptId) {
-                  input.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
-                  input.headers.set("X-Prompt-Id", _lastHandledPromptId);
-                }
-              } catch (e1) {}
-            } else if (init && init.headers) {
-              if (typeof Headers !== "undefined" && init.headers instanceof Headers) {
-                init.headers.set("X-Guard-Handled", "1");
-                init.headers.set("X-Gateway-Guard-Handled", "1");
-                if (_lastHandledPromptId) {
-                  init.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
-                  init.headers.set("X-Prompt-Id", _lastHandledPromptId);
-                }
-              } else if (typeof init.headers === "object") {
-                Object.assign(init.headers, handledHeaders);
-              }
-            } else if (init) {
-              init.headers = Object.assign({}, handledHeaders);
-            }
-          }
-        } catch (e) { }
-        return origFetch.apply(this, arguments);
-      }
-
       var method = (init && init.method) || (input && input.method) || "GET";
       method = String(method).toUpperCase();
       if (method !== "POST" && method !== "PUT" && method !== "PATCH") {
@@ -2053,64 +2001,6 @@
               nextInit.body = rewritten;
             }
           }
-          // Tag header so downstream Proxy skips duplicate logging (only on chat endpoints)
-          try {
-            var chatReqUrl = (url || "").toLowerCase();
-            if (
-              !chatReqUrl.includes("blob.core.windows.net") &&
-              !chatReqUrl.includes("amazonaws.com") &&
-              !chatReqUrl.includes("storage.googleapis.com")
-            ) {
-              if (typeof Request !== "undefined" && input instanceof Request) {
-                try {
-                  input.headers.set("X-Guard-Handled", "1");
-                  input.headers.set("X-Gateway-Guard-Handled", "1");
-                  if (_lastHandledPromptId) {
-                    input.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
-                    input.headers.set("X-Prompt-Id", _lastHandledPromptId);
-                  }
-                } catch (hdrErr) {
-                  var safeH = new Headers(input.headers);
-                  safeH.set("X-Guard-Handled", "1");
-                  safeH.set("X-Gateway-Guard-Handled", "1");
-                  if (_lastHandledPromptId) {
-                    safeH.set("X-Guard-Eval-Id", _lastHandledPromptId);
-                    safeH.set("X-Prompt-Id", _lastHandledPromptId);
-                  }
-                  nextInit.headers = safeH;
-                  nextArgs = [input, nextInit];
-                }
-              } else {
-                if (!nextInit.headers) {
-                  nextInit.headers = {};
-                }
-                if (typeof Headers !== "undefined" && nextInit.headers instanceof Headers) {
-                  nextInit.headers.set("X-Guard-Handled", "1");
-                  nextInit.headers.set("X-Gateway-Guard-Handled", "1");
-                  if (_lastHandledPromptId) {
-                    nextInit.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
-                    nextInit.headers.set("X-Prompt-Id", _lastHandledPromptId);
-                  }
-                } else if (Array.isArray(nextInit.headers)) {
-                  nextInit.headers.push(["X-Guard-Handled", "1"]);
-                  nextInit.headers.push(["X-Gateway-Guard-Handled", "1"]);
-                  if (_lastHandledPromptId) {
-                    nextInit.headers.push(["X-Guard-Eval-Id", _lastHandledPromptId]);
-                    nextInit.headers.push(["X-Prompt-Id", _lastHandledPromptId]);
-                  }
-                } else if (typeof nextInit.headers === "object") {
-                  nextInit.headers["X-Guard-Handled"] = "1";
-                  nextInit.headers["X-Gateway-Guard-Handled"] = "1";
-                  if (_lastHandledPromptId) {
-                    nextInit.headers["X-Guard-Eval-Id"] = _lastHandledPromptId;
-                    nextInit.headers["X-Prompt-Id"] = _lastHandledPromptId;
-                  }
-                }
-                nextArgs = [input, nextInit];
-              }
-            }
-          } catch (he) { }
-
           result = origFetch.apply(window, nextArgs);
         });
         if (!sent) return new Response(null, { status: 204 });
@@ -2140,26 +2030,6 @@
     return origXHROpen.apply(this, arguments);
   };
   XMLHttpRequest.prototype.send = function (body) {
-    if (Date.now() - _lastHandledPromptTime < 4000) {
-      try {
-        var xhrUrl = String(this._ggUrl || "").toLowerCase();
-        if (
-          !xhrUrl.includes("blob.core.windows.net") &&
-          !xhrUrl.includes("amazonaws.com") &&
-          !xhrUrl.includes("storage.googleapis.com") &&
-          !xhrUrl.includes("/backend-api/files") &&
-          !xhrUrl.includes("/files") &&
-          !xhrUrl.includes("/upload")
-        ) {
-          this.setRequestHeader("X-Guard-Handled", "1");
-          this.setRequestHeader("X-Gateway-Guard-Handled", "1");
-          if (_lastHandledPromptId) {
-            this.setRequestHeader("X-Guard-Eval-Id", _lastHandledPromptId);
-            this.setRequestHeader("X-Prompt-Id", _lastHandledPromptId);
-          }
-        }
-      } catch (e) { }
-    }
     if (!armed || !body) return origXHRSend.apply(this, arguments);
 
     var xhrUrl = String(this._ggUrl || "").toLowerCase();
