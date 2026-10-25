@@ -21,7 +21,24 @@ function syncBackgroundRules() {
         if (!data || !Array.isArray(data.rules)) return;
         var stored = {
           cached_rules: data.rules,
-          last_sync: Date.now()
+          last_sync: Date.now(),
+          block_upload: Boolean(data.block_upload),
+          upload_warning: data.upload_warning || "",
+          upload_target_websites: data.upload_target_websites || "",
+          block_file_extension: Boolean(data.block_file_extension),
+          file_extension_mode: data.file_extension_mode || "block_listed",
+          restricted_file_extensions: data.restricted_file_extensions || "",
+          allowed_file_extensions: data.allowed_file_extensions || "",
+          file_extension_target_websites: data.file_extension_target_websites || "",
+          block_clipboard: Boolean(data.block_clipboard),
+          clipboard_target_websites: data.clipboard_target_websites || "",
+          clipboard_block_message: data.clipboard_block_message || "",
+          block_drag_drop: Boolean(data.block_drag_drop),
+          drag_drop_target_websites: data.drag_drop_target_websites || "",
+          block_download: Boolean(data.block_download),
+          download_target_websites: data.download_target_websites || "",
+          governance_target_websites: data.governance_target_websites || "",
+          governance_block_message: data.governance_block_message || ""
         };
         if (Array.isArray(data.restricted_extensions)) {
           stored.cached_exts = data.restricted_extensions;
@@ -44,6 +61,60 @@ function syncBackgroundRules() {
         }
       })
       .catch(function () { });
+  });
+}
+
+function domainFromUrl(value) {
+  try { return new URL(String(value || "")).hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, ""); }
+  catch (_) { return ""; }
+}
+
+function matchesDomain(host, domain) {
+  var h = String(host || "").toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+  var d = String(domain || "").toLowerCase().trim().replace(/^\*\./, "").replace(/^\./, "");
+  if (!h || !d) return false;
+  try { d = new URL(d.indexOf("://") >= 0 ? d : "https://" + d).hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, ""); }
+  catch (_) { return false; }
+  return h === d || h.endsWith("." + d);
+}
+
+function matchesDomainList(host, raw, monitoredSites) {
+  var value = String(raw || "").trim();
+  if (!value || value.toUpperCase() === "ALL" || value === "*") {
+    return Array.isArray(monitoredSites) && monitoredSites.some(function (site) { return matchesDomain(host, site); });
+  }
+  if (value.toLowerCase() === "none") return false;
+  return value.split(/[;,\s]+/).some(function (site) { return matchesDomain(host, site); });
+}
+
+function cancelDownloadIfGoverned(item, sourceUrl) {
+  var sourceHost = domainFromUrl(sourceUrl);
+  if (!sourceHost || !item || typeof item.id !== "number") return;
+  chrome.storage.local.get(["block_download", "download_target_websites", "cached_sites"], function (state) {
+    if (!state || !state.block_download) return;
+    var monitored = Array.isArray(state.cached_sites) && state.cached_sites.some(function (site) { return matchesDomain(sourceHost, site); });
+    if (!monitored || !matchesDomainList(sourceHost, state.download_target_websites, state.cached_sites)) return;
+    try {
+      chrome.downloads.cancel(item.id, function () {
+        if (chrome.runtime && chrome.runtime.lastError) return;
+      });
+    } catch (_) {}
+  });
+}
+
+if (chrome.downloads && chrome.downloads.onCreated) {
+  chrome.downloads.onCreated.addListener(function (item) {
+    if (!item) return;
+    function checkFrom(url) {
+      cancelDownloadIfGoverned(item, url || item.referrer || item.url);
+    }
+    if (item.tabId >= 0 && chrome.tabs && chrome.tabs.get) {
+      chrome.tabs.get(item.tabId, function (tab) {
+        checkFrom((tab && tab.url) || item.referrer || item.url);
+      });
+    } else {
+      checkFrom(item.referrer || item.url);
+    }
   });
 }
 

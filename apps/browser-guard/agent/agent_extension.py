@@ -151,27 +151,38 @@ def common_extension_dir() -> str:
     return os.path.join(data_dir(), "guard_extension")
 
 
+def _normalize_host_domain(value: str) -> str:
+    """Normalize a hostname, URL, or host:port while preserving IPv6 literals."""
+    from urllib.parse import urlsplit
+
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    if "://" in raw:
+        try:
+            raw = urlsplit(raw).hostname or ""
+        except ValueError:
+            return ""
+    else:
+        raw = raw.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+        if raw.startswith("[") and "]" in raw:
+            raw = raw[1:raw.index("]")]
+        elif raw.count(":") == 1:
+            host, port = raw.rsplit(":", 1)
+            if port.isdigit():
+                raw = host
+    raw = raw.strip().strip(".")
+    if raw.startswith("www."):
+        raw = raw[4:]
+    return raw
+
+
 def host_monitored(host: str, domains: list[str]) -> bool:
-    host = (host or "").lower().strip(".")
-    if "://" in host:
-        host = host.split("://", 1)[1]
-    host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
-    if ":" in host:
-        host = host.split(":", 1)[0]
-    if host.startswith("www."):
-        host = host[4:]
+    host = _normalize_host_domain(host)
     if not host:
         return False
     for domain in domains:
-        d = (domain or "").lower().strip(".")
-        if "://" in d:
-            d = d.split("://", 1)[1]
-        d = d.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
-        if ":" in d:
-            d = d.split(":", 1)[0]
-        d = d.lstrip("*.").strip(".")
-        if d.startswith("www."):
-            d = d[4:]
+        d = _normalize_host_domain(str(domain or "").lstrip("*."))
         if not d:
             continue
         if host == d or host.endswith("." + d):
@@ -181,11 +192,7 @@ def host_monitored(host: str, domains: list[str]) -> bool:
 
 def is_internal_host(host: str) -> bool:
     """Check if host is internal/localhost/private network or the Unifai portal itself."""
-    h = (host or "").lower().strip(".")
-    if h.startswith("www."):
-        h = h[4:]
-    if ":" in h:
-        h = h.split(":", 1)[0]
+    h = _normalize_host_domain(host)
     if not h or h in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
         return True
     if h.endswith(".local") or h.endswith(".internal") or h.endswith(".lan") or h.endswith(".home") or h.endswith(".corp"):
@@ -199,12 +206,12 @@ def is_internal_host(host: str) -> bool:
         pass
     backend = GATEWAY_BACKEND_URL or ""
     if backend:
-        b_host = backend.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+        b_host = _normalize_host_domain(backend)
         if b_host and (h == b_host or h.endswith("." + b_host)):
             return True
     server_dom = os.environ.get("SERVER_DOMAIN") or ""
     if server_dom:
-        s_host = server_dom.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+        s_host = _normalize_host_domain(server_dom)
         if s_host and (h == s_host or h.endswith("." + s_host)):
             return True
     return False
@@ -260,12 +267,7 @@ def monitored_hosts() -> list[str]:
             is_blk = bool(row.get("block_site")) or str(row.get("status") or "").upper() == "BLOCKED" or str(row.get("action") or "").lower() == "block"
             if not is_mon and not is_blk:
                 continue
-            domain = str(row.get("domain") or "").strip().lower()
-            if "://" in domain:
-                domain = domain.split("://", 1)[1]
-            domain = domain.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0].split(":", 1)[0].strip(".")
-            if domain.startswith("www."):
-                domain = domain[4:]
+            domain = _normalize_host_domain(str(row.get("domain") or "").lstrip("*."))
             if domain:
                 if domain not in hosts:
                     hosts.append(domain)
@@ -327,8 +329,11 @@ _governance_cache: dict = {
     "restricted_file_extensions": "",
     "allowed_file_extensions": "",
     "block_clipboard": False,
+    "clipboard_target_websites": "",
     "block_drag_drop": False,
+    "drag_drop_target_websites": "",
     "block_download": False,
+    "download_target_websites": "",
     "governance_target_websites": "",
     "governance_block_message": "",
     "clipboard_block_message": "",
@@ -400,8 +405,11 @@ def dynamic_rules() -> list[dict]:
                         "file_extension_block_message": str(data.get("file_extension_block_message") or ""),
                         "file_extension_target_websites": str(data.get("file_extension_target_websites") or ""),
                         "block_clipboard": bool(data.get("block_clipboard")),
+                        "clipboard_target_websites": str(data.get("clipboard_target_websites") or ""),
                         "block_drag_drop": bool(data.get("block_drag_drop")),
+                        "drag_drop_target_websites": str(data.get("drag_drop_target_websites") or ""),
                         "block_download": bool(data.get("block_download")),
+                        "download_target_websites": str(data.get("download_target_websites") or ""),
                         "governance_target_websites": str(data.get("governance_target_websites") or ""),
                         "governance_block_message": str(data.get("governance_block_message") or ""),
                         "clipboard_block_message": str(data.get("clipboard_block_message") or ""),
@@ -779,8 +787,11 @@ def check_prompt(
     if clean_host.startswith("www."):
         clean_host = clean_host[4:]
 
-    # STRICT BYPASS: Never monitor, check, or log internal websites / local portal
-    if is_internal_host(clean_host) or is_internal_host(host):
+    # An internal/private target remains protected when an administrator explicitly
+    # adds it to Target Websites. Unlisted local services still bypass inspection.
+    target_hosts = monitored_hosts()
+    is_target_host = host_monitored(clean_host, target_hosts) or host_monitored(host, target_hosts)
+    if (is_internal_host(clean_host) or is_internal_host(host)) and not is_target_host:
         return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
 
     # STRICT BLOCK: If domain is marked as "Block entire website", block immediately!
@@ -805,8 +816,7 @@ def check_prompt(
 
     # STRICT BYPASS: ONLY outside monitored websites in Target Websites are evaluated/logged!
     if not platform:
-        hosts = monitored_hosts()
-        if not host_monitored(clean_host, hosts):
+        if not is_target_host:
             # Not an outside monitored AI website — ignore completely (NO logging)
             return {"blocked": False, "passthrough": True, "message": "", "rule": ""}
         # Fallback platform name only for confirmed monitored hosts

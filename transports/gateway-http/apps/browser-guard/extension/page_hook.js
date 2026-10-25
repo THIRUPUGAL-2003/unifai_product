@@ -4,29 +4,6 @@
 (function () {
   "use strict";
 
-  // STRICT BYPASS: Never attach interceptors on internal portals, localhost, or private networks
-  var curHost = (location.hostname || "").toLowerCase().trim();
-  if (curHost.indexOf("www.") === 0) curHost = curHost.slice(4);
-  if (curHost.indexOf(":") >= 0) curHost = curHost.split(":")[0];
-  if (
-    !curHost ||
-    curHost === "localhost" ||
-    curHost === "127.0.0.1" ||
-    curHost === "::1" ||
-    curHost === "0.0.0.0" ||
-    curHost.endsWith(".local") ||
-    curHost.endsWith(".internal") ||
-    curHost.endsWith(".lan") ||
-    curHost.endsWith(".home") ||
-    curHost.endsWith(".corp") ||
-    /^10\.\d+\.\d+\.\d+$/.test(curHost) ||
-    /^192\.168\.\d+\.\d+$/.test(curHost) ||
-    /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(curHost) ||
-    /^127\.\d+\.\d+\.\d+$/.test(curHost)
-  ) {
-    return;
-  }
-
   var armed = false; // Armed only when confirmed by extension for monitored AI domains
   var curScript = document.currentScript;
   var guardNonce = (curScript && curScript.dataset && curScript.dataset.guardNonce) || "";
@@ -236,23 +213,34 @@
     return list;
   }
 
+  function normalizeDomainHost(value) {
+    var host = String(value || "").toLowerCase().trim();
+    if (!host) return "";
+    if (host.indexOf("://") >= 0) {
+      try { host = new URL(host).hostname; } catch (e) { return ""; }
+    } else {
+      host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
+      if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) host = host.replace(/:\d+$/, "");
+    }
+    if (host.charAt(0) === "[" && host.indexOf("]") >= 0) host = host.slice(1, host.indexOf("]"));
+    return host.replace(/^www\./, "").replace(/\.$/, "");
+  }
+
   function isControlActiveForSite(configuredSites) {
     var raw = (configuredSites && typeof configuredSites === "string") ? configuredSites.trim() : "";
     if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
       return true;
     }
     if (raw.toLowerCase() === "none") return false;
-    var currentHost = (location.hostname || "").toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+    var currentHost = normalizeDomainHost(location.hostname);
     var parts = raw.toLowerCase().split(/[,\s;]+/);
     for (var i = 0; i < parts.length; i++) {
       var item = parts[i].trim().replace(/^\*\./, "").replace(/^\./, "");
       if (!item) continue;
-      try {
-        var parsed = new URL(item.indexOf("://") >= 0 ? item : "https://" + item);
-        item = parsed.hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
-      } catch (e) {
-        continue;
+      if (item.indexOf("://") < 0) {
+        item = item.indexOf(":") >= 0 && (item.match(/:/g) || []).length > 1 ? "https://[" + item + "]" : "https://" + item;
       }
+      item = normalizeDomainHost(item);
       if (item && (currentHost === item || currentHost.endsWith("." + item))) {
         return true;
       }
@@ -1397,6 +1385,43 @@
       status: "Blocked (Clipboard Policy)"
     }, "*");
   }, true);
+
+  // Cover direct page Clipboard API and execCommand calls as well as DOM events.
+  // The isolated-world content script independently blocks trusted copy/paste events.
+  function clipboardPolicyActive() {
+    return armed && govBlockClipboard && isControlActiveForSite(govClipboardTargetWebsites);
+  }
+  try {
+    var clipboardApi = navigator.clipboard;
+    if (clipboardApi) {
+      ["read", "readText", "write", "writeText"].forEach(function (method) {
+        var original = clipboardApi[method];
+        if (typeof original !== "function") return;
+        try {
+          clipboardApi[method] = function () {
+            if (clipboardPolicyActive()) {
+              showBubble(govClipboardBlockMessage || govBlockMessage || "Clipboard access is blocked by corporate policy.", "Clipboard Policy", "block");
+              return Promise.reject(new DOMException("Clipboard access is blocked by corporate policy.", "NotAllowedError"));
+            }
+            return original.apply(clipboardApi, arguments);
+          };
+        } catch (e) {}
+      });
+    }
+  } catch (e) {}
+  try {
+    var originalExecCommand = document.execCommand;
+    if (typeof originalExecCommand === "function") {
+      document.execCommand = function (command) {
+        var normalized = String(command || "").toLowerCase();
+        if (clipboardPolicyActive() && (normalized === "copy" || normalized === "cut" || normalized === "paste")) {
+          showBubble(govClipboardBlockMessage || govBlockMessage || "Clipboard access is blocked by corporate policy.", "Clipboard Policy", "block");
+          return false;
+        }
+        return originalExecCommand.apply(document, arguments);
+      };
+    }
+  } catch (e) {}
 
   // Hook 4: File Downloads & Exports Restriction
   document.addEventListener("click", function (ev) {

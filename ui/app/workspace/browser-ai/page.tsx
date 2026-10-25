@@ -4945,7 +4945,7 @@ export default function BrowserAiPage() {
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											Prevents pasting corporate secrets into AI prompts and copying AI responses to local clipboard.
+										Blocks standard page copy, cut, and paste actions on selected monitored websites. Browser and operating-system clipboard routes may bypass extension controls.
 										</p>
 									</div>
 								</div>
@@ -5199,7 +5199,7 @@ export default function BrowserAiPage() {
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											Blocks common in-page download/export actions where the extension can detect them. Native browser and operating-system downloads may not be intercepted.
+										Blocks detected page export actions and cancels browser-managed downloads on selected monitored websites. A download may start before cancellation, and other browser or operating-system routes may bypass the extension.
 										</p>
 									</div>
 								</div>

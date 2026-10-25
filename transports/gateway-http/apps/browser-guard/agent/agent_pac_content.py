@@ -49,8 +49,10 @@ def _normalize_domain(raw: str) -> str:
     domain = domain.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
     if domain.startswith("[") and "]" in domain:
         domain = domain[1:domain.index("]")]
-    elif ":" in domain:
-        domain = domain.rsplit(":", 1)[0]
+    elif domain.count(":") == 1:
+        host, port = domain.rsplit(":", 1)
+        if port.isdigit():
+            domain = host
     domain = domain.lstrip("*.").strip(".")
     if domain.startswith("www."):
         domain = domain[4:]
@@ -167,6 +169,7 @@ def build_pac_from_targets(proxy_addr: str) -> str | None:
         "// High-performance O(1) hash map lookup scales to 10,000+ domains with zero lag.",
         "function FindProxyForURL(url, host) {",
         "    host = host.toLowerCase();",
+        '    if (host.charAt(0) === "[" && host.charAt(host.length - 1) === "]") host = host.slice(1, -1);',
         "",
         *(line.replace("{proxy}", proxy_addr) for line in SEARCH_ENGINE_PAC_RULE),
         "    var aiMap = {",

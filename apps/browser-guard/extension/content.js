@@ -11,25 +11,9 @@
   crypto.getRandomValues(nonceBytes);
   var guardNonce = "yp_" + Array.prototype.map.call(nonceBytes, function (b) { return b.toString(16).padStart(2, "0"); }).join("");
 
-  function isInternalHost(host) {
-    host = (host || "").toLowerCase().trim();
-    if (host.indexOf("www.") === 0) host = host.slice(4);
-    if (host.indexOf(":") >= 0) host = host.split(":")[0];
-    if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "0.0.0.0") return true;
-    if (host.endsWith(".local") || host.endsWith(".internal") || host.endsWith(".lan") || host.endsWith(".home") || host.endsWith(".corp")) return true;
-    if (/^10\.\d+\.\d+\.\d+$/.test(host)) return true;
-    if (/^192\.168\.\d+\.\d+$/.test(host)) return true;
-    if (/^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host)) return true;
-    if (/^127\.\d+\.\d+\.\d+$/.test(host)) return true;
-    return false;
-  }
-
-  // STRICT BYPASS: Never monitor, inject, or intercept on internal portals / localhost / private networks
-  if (isInternalHost(location.hostname)) {
-    return;
-  }
-
   var serverHost = "";
+  var monitoredSitesForPolicy = [];
+  var clipboardPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
 
   function isServerHost(host) {
     if (!host || !serverHost) return false;
@@ -86,23 +70,37 @@
   var blockedSitesMap = null;
   var lastBlockedSitesList = null;
 
+  function normalizeDomainHost(value) {
+    var host = String(value || "").toLowerCase().trim();
+    if (!host) return "";
+    if (host.indexOf("://") >= 0) {
+      try { host = new URL(host).hostname; } catch (e) { return ""; }
+    } else {
+      host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
+      if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) {
+        host = host.replace(/:\d+$/, "");
+      }
+    }
+    if (host.charAt(0) === "[" && host.indexOf("]") >= 0) {
+      host = host.slice(1, host.indexOf("]"));
+    }
+    host = host.replace(/^www\./, "").replace(/\.$/, "");
+    return host;
+  }
+
   function buildDomainMap(domains) {
     var map = Object.create(null);
     if (!Array.isArray(domains)) return map;
     for (var i = 0; i < domains.length; i++) {
-      var d = String(domains[i] || "").toLowerCase().trim();
-      if (d.indexOf("www.") === 0) d = d.slice(4);
-      if (d.indexOf(":") >= 0) d = d.split(":")[0];
+      var d = normalizeDomainHost(domains[i]);
       if (d) map[d] = true;
     }
     return map;
   }
 
   function matchDomainInMap(host, map, rawList) {
+    host = normalizeDomainHost(host);
     if (!host) return false;
-    host = host.toLowerCase().trim();
-    if (host.indexOf("www.") === 0) host = host.slice(4);
-    if (host.indexOf(":") >= 0) host = host.split(":")[0];
 
     if (map && map[host]) return true;
 
@@ -116,9 +114,7 @@
 
     if (Array.isArray(rawList)) {
       for (var j = 0; j < rawList.length; j++) {
-        var dom = String(rawList[j] || "").toLowerCase().trim();
-        if (dom.indexOf("www.") === 0) dom = dom.slice(4);
-        if (dom.indexOf(":") >= 0) dom = dom.split(":")[0];
+        var dom = normalizeDomainHost(rawList[j]);
         if (!dom) continue;
         if (host === dom || host.slice(-(dom.length + 1)) === "." + dom) return true;
       }
@@ -141,6 +137,85 @@
       blockedSitesMap = buildDomainMap(blockedDomains);
     }
     return matchDomainInMap(host, blockedSitesMap, blockedDomains);
+  }
+
+  function hostInConfiguredSites(host, rawSites) {
+    var raw = String(rawSites || "").trim();
+    if (!raw) return false;
+    if (raw.toUpperCase() === "ALL" || raw === "*") return true;
+    if (raw.toLowerCase() === "none") return false;
+    var current = normalizeDomainHost(host);
+    var parts = raw.split(/[;,\s]+/);
+    for (var i = 0; i < parts.length; i++) {
+      var item = parts[i].trim().replace(/^\*\./, "").replace(/^\./, "");
+      if (!item) continue;
+      item = normalizeDomainHost(item.indexOf("://") >= 0 ? item : item.indexOf(":") >= 0 && (item.match(/:/g) || []).length > 1 ? "https://[" + item + "]" : "https://" + item);
+      if (item && (current === item || current.endsWith("." + item))) return true;
+    }
+    return false;
+  }
+
+  function clipboardPolicyApplies() {
+    if (!clipboardPolicy.enabled) return false;
+    // The governance selector only applies to registered monitored targets.
+    // Keep this guard aligned with page_hook.js so a stale per-control target
+    // cannot keep blocking a site after it has been removed from Target Websites.
+    var monitoredSites = clipboardPolicy.monitoredSites || monitoredSitesForPolicy;
+    if (isServerHost(location.hostname) || !hostMatches(location.hostname, monitoredSites)) return false;
+    var raw = String(clipboardPolicy.targetSites || "").trim();
+    if (raw && raw.toLowerCase() !== "all" && raw !== "*") {
+      return hostInConfiguredSites(location.hostname, raw);
+    }
+    return true;
+  }
+
+  var clipboardNoticeAt = 0;
+  function showClipboardBlockedNotice() {
+    var now = Date.now();
+    if (now - clipboardNoticeAt < 1200) return;
+    clipboardNoticeAt = now;
+    try {
+      var host = document.getElementById("yp-raksha-isolated-clipboard-notice");
+      if (!host) {
+        host = document.createElement("div");
+        host.id = "yp-raksha-isolated-clipboard-notice";
+        var shadow = host.attachShadow ? host.attachShadow({ mode: "closed" }) : host;
+        var box = document.createElement("div");
+        box.textContent = clipboardPolicy.message || "Copying and pasting are blocked by company security policy.";
+        box.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#7f1d1d;color:white;padding:14px 22px;border-radius:10px;font:600 14px Segoe UI,Arial,sans-serif;box-shadow:0 8px 28px #0008;max-width:80vw;text-align:center;";
+        shadow.appendChild(box);
+        (document.documentElement || document).appendChild(host);
+      }
+      setTimeout(function () { try { host.remove(); } catch (e) {} }, 2600);
+    } catch (e) {}
+  }
+
+  function blockClipboardEvent(ev) {
+    if (!clipboardPolicyApplies()) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    showClipboardBlockedNotice();
+  }
+  ["copy", "cut", "paste"].forEach(function (type) {
+    window.addEventListener(type, blockClipboardEvent, true);
+    document.addEventListener(type, blockClipboardEvent, true);
+  });
+
+  function applyClipboardPolicyState(state) {
+    state = state || {};
+    if (Array.isArray(state.cached_sites)) monitoredSitesForPolicy = state.cached_sites;
+    clipboardPolicy = {
+      enabled: typeof state.block_clipboard === "boolean" ? state.block_clipboard : clipboardPolicy.enabled,
+      targetSites: typeof state.clipboard_target_websites === "string" ? state.clipboard_target_websites : clipboardPolicy.targetSites,
+      message: typeof state.clipboard_block_message === "string"
+        ? state.clipboard_block_message
+        : (typeof state.governance_block_message === "string" ? state.governance_block_message : clipboardPolicy.message),
+      monitoredSites: monitoredSitesForPolicy
+    };
+  }
+
+  if (chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(["cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message"], applyClipboardPolicyState);
   }
 
   // Accurate client-side browser detector across Chrome, Edge, Safari, Firefox, Brave, Opera, Vivaldi
@@ -198,6 +273,9 @@
           var stored = {
             cached_rules: rules,
             server_host: serverHost,
+            block_file_extension: Boolean(data.block_file_extension),
+            file_extension_block_message: data.file_extension_block_message || "",
+            file_extension_target_websites: data.file_extension_target_websites || "",
             block_upload: Boolean(data.block_upload),
             upload_warning: data.upload_warning || "",
             upload_target_websites: data.upload_target_websites || "",
@@ -252,6 +330,7 @@
             stored.cached_exts = data.restricted_extensions;
             msg.restricted_extensions = data.restricted_extensions;
           }
+          applyClipboardPolicyState(stored);
           if (data.uninstall_key_configured !== undefined) {
             stored.uninstall_key_configured = Boolean(data.uninstall_key_configured);
             stored.uninstall_key_rotated_at = data.uninstall_key_rotated_at || "";
@@ -272,6 +351,16 @@
                 .then(function (gr) { return gr.json(); })
                 .then(function (gdata) {
                   if (gdata && ("block_clipboard" in gdata || "block_upload" in gdata)) {
+                    var governanceCache = {
+                      block_clipboard: Boolean(gdata.block_clipboard),
+                      clipboard_target_websites: gdata.clipboard_target_websites || "",
+                      clipboard_block_message: gdata.clipboard_block_message || "",
+                      governance_block_message: gdata.governance_block_message || "",
+                      block_download: Boolean(gdata.block_download),
+                      download_target_websites: gdata.download_target_websites || ""
+                    };
+                    applyClipboardPolicyState(Object.assign({ cached_sites: monitoredSitesForPolicy }, governanceCache));
+                    if (chrome.storage && chrome.storage.local) chrome.storage.local.set(governanceCache);
                     var gmsg = {
                       source: "gateway-guard",
                       nonce: guardNonce,
@@ -330,6 +419,10 @@
         "clipboard_block_message", "drag_drop_block_message", "download_block_message",
         "block_screenshot", "screenshot_block_message", "screenshot_target_websites"
       ], function (res) {
+        if (Array.isArray(res && res.cached_sites)) {
+          monitoredSitesForPolicy = res.cached_sites;
+          applyClipboardPolicyState(res);
+        }
         if (res && res.server_host) serverHost = res.server_host;
         if (isServerHost(location.hostname)) {
           window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
@@ -402,6 +495,13 @@
               server_host: serverHost
             });
           }
+          monitoredSitesForPolicy = domains;
+          applyClipboardPolicyState({
+            cached_sites: domains,
+            block_clipboard: clipboardPolicy.enabled,
+            clipboard_target_websites: clipboardPolicy.targetSites,
+            clipboard_block_message: clipboardPolicy.message
+          });
           if (hostBlockedMatches(location.hostname, blockedDomains)) {
             renderBlockedPage(location.hostname);
             return;
@@ -422,6 +522,14 @@
   if (chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener(function (changes, areaName) {
       if (areaName !== "local") return;
+      var clipboardState = {};
+      ["cached_sites", "block_clipboard", "clipboard_target_websites", "clipboard_block_message", "governance_block_message"].forEach(function (key) {
+        if (changes[key]) clipboardState[key] = changes[key].newValue;
+      });
+      if (Object.keys(clipboardState).length) {
+        clipboardState.cached_sites = clipboardState.cached_sites || monitoredSitesForPolicy;
+        applyClipboardPolicyState(clipboardState);
+      }
       if (changes.cached_blocked_sites) {
         var newBlocked = Array.isArray(changes.cached_blocked_sites.newValue) ? changes.cached_blocked_sites.newValue : [];
         if (hostBlockedMatches(location.hostname, newBlocked)) {
@@ -558,7 +666,7 @@
       (Array.isArray(msg.files) && msg.files.length) ||
       (Array.isArray(msg.upload_images) && msg.upload_images.length)
     );
-    if (!base || !hasContent || isInternalHost(location.hostname) || isInternalHost(msg.host)) {
+    if (!base || !hasContent) {
       window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "decision", id: msg.id, decision: { blocked: false, passthrough: true } }, "*");
       return;
     }
