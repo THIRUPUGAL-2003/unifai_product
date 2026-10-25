@@ -539,6 +539,10 @@ def unit_checks(ns) -> list[tuple[str, bool, str]]:
 def main() -> int:
     verbose = "-v" in sys.argv
     url = start_backend()
+    # SERVER_DOMAIN takes precedence over GATEWAY_BACKEND_URL in the bundled
+    # config loader. Override both so this harness never contacts the real
+    # backend from the developer's .env file.
+    os.environ["SERVER_DOMAIN"] = url
     os.environ["GATEWAY_BACKEND_URL"] = url
     os.environ.setdefault("GATEWAY_EVAL_TIMEOUT", "5")
     TARGETS.extend({"id": str(i), "domain": d, "monitored": True, "platform_name": d} for i, d in enumerate(TARGET_DOMAINS))
