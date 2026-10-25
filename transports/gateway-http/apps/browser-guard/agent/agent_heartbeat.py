@@ -152,6 +152,8 @@ def apply_admin_uninstall(agent_id: str) -> None:
         f"{GATEWAY_BACKEND_URL}/api/browser-ai/agents/uninstall-ack",
         {"agent_id": agent_id},
     )
+    from agent_lifecycle import unlock_install_dir_for_uninstall
+    unlock_install_dir_for_uninstall()
     clear_guard_runtime(clear_startup=True)
     stop_proxy_worker()
     # Remove agent_id.txt so a future install starts with a fresh agent ID and avoids stale uninstalled lock
@@ -160,6 +162,15 @@ def apply_admin_uninstall(agent_id: str) -> None:
         p = agent_id_path()
         if os.path.isfile(p):
             os.remove(p)
+    except Exception:
+        pass
+    # Clean cached keys & tamper flag so reinstall starts in completely pristine state
+    try:
+        from guard_platform import data_dir
+        for f in ("cached_uninstall_keys.json", "tamper.flag"):
+            fp = os.path.join(data_dir(), f)
+            if os.path.isfile(fp):
+                os.remove(fp)
     except Exception:
         pass
     schedule_install_removal()

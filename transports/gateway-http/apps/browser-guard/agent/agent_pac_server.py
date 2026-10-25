@@ -176,6 +176,15 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
                 "status": "tampered" if is_tampered else "active",
                 "tampered": is_tampered,
             }
+            cache_file = os.path.join(data_dir(), "cached_uninstall_keys.json")
+            if os.path.isfile(cache_file):
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as f:
+                        cached_k = json.load(f)
+                    payload["uninstall_key_configured"] = bool(cached_k.get("agent_key_hash") or cached_k.get("company_key_hash"))
+                    payload["uninstall_key_rotated_at"] = cached_k.get("rotated_at") or ""
+                except Exception:
+                    pass
             payload.update(gov)
             self._json(200, payload)
             return

@@ -3594,7 +3594,7 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 	if existing.Status == AgentStatusUninstalled {
 		// Trailing heartbeats during uninstall stay uninstalled. A later install of the
 		// same Guard ID (agent_id.txt survived) becomes active again after the grace window.
-		if existing.UninstalledAt != nil && now.Sub(*existing.UninstalledAt) > 2*time.Minute {
+		if existing.UninstalledAt == nil || now.Sub(*existing.UninstalledAt) > 15*time.Second {
 			existing.Status = AgentStatusActive
 			existing.UninstallRequested = false
 			existing.UninstalledAt = nil

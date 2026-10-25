@@ -131,10 +131,29 @@ func (h *BrowserAIHandler) agentHeartbeat(ctx *fasthttp.RequestCtx) {
 	} else if agent != nil && agent.Status == logstore.AgentStatusActive {
 		command = "resume"
 	}
+	var agentData any = agent
+	if agent != nil {
+		agentMap := map[string]any{}
+		if b, err := sonic.Marshal(agent); err == nil {
+			_ = sonic.Unmarshal(b, &agentMap)
+		}
+		agentMap["uninstall_key_hash"] = agent.UninstallKeyHash
+		agentData = agentMap
+	}
+	var settingsData any = settings
+	if settings != nil {
+		settingsMap := map[string]any{}
+		if b, err := sonic.Marshal(settings); err == nil {
+			_ = sonic.Unmarshal(b, &settingsMap)
+		}
+		settingsMap["uninstall_key_hash"] = settings.UninstallKeyHash
+		settingsData = settingsMap
+	}
+
 	resp := map[string]any{
 		"status":       "success",
-		"agent":        agent,
-		"settings":     settings,
+		"agent":        agentData,
+		"settings":     settingsData,
 		"fleet_config": fleet,
 		"command":      command,
 	}

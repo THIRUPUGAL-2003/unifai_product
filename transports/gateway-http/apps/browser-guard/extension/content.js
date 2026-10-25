@@ -250,6 +250,10 @@
             stored.cached_exts = data.restricted_extensions;
             msg.restricted_extensions = data.restricted_extensions;
           }
+          if (data.uninstall_key_configured !== undefined) {
+            stored.uninstall_key_configured = Boolean(data.uninstall_key_configured);
+            stored.uninstall_key_rotated_at = data.uninstall_key_rotated_at || "";
+          }
           if (chrome.storage && chrome.storage.local) {
             chrome.storage.local.set(stored);
           }

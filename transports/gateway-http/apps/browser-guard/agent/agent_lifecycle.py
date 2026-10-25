@@ -269,9 +269,10 @@ def lock_install_dir_against_deletion() -> None:
             app_dir = os.environ.get("LOCALAPPDATA", "")
             dirs_to_lock = set()
             if app_dir:
-                std_guard_dir = os.path.join(app_dir, "Programs", "Gateway", "Guard")
-                if os.path.isdir(std_guard_dir):
-                    dirs_to_lock.add(std_guard_dir)
+                for sub in (os.path.join("Programs", "YP Raksha"), os.path.join("Programs", "Gateway", "Guard")):
+                    std_guard_dir = os.path.join(app_dir, sub)
+                    if os.path.isdir(std_guard_dir):
+                        dirs_to_lock.add(std_guard_dir)
 
             exe_path = os.path.abspath(sys.executable)
             exe_dir = os.path.dirname(exe_path)
@@ -292,6 +293,8 @@ def lock_install_dir_against_deletion() -> None:
         try:
             home = os.path.expanduser("~")
             candidates = [
+                "/Applications/YP_Raksha.app",
+                os.path.join(home, "Applications", "YP_Raksha.app"),
                 "/Applications/Gateway_Guard.app",
                 os.path.join(home, "Applications", "Gateway_Guard.app"),
             ]
@@ -326,9 +329,10 @@ def unlock_install_dir_for_uninstall() -> None:
             app_dir = os.environ.get("LOCALAPPDATA", "")
             dirs_to_unlock = set()
             if app_dir:
-                std_guard_dir = os.path.join(app_dir, "Programs", "Gateway", "Guard")
-                if os.path.isdir(std_guard_dir):
-                    dirs_to_unlock.add(std_guard_dir)
+                for sub in (os.path.join("Programs", "YP Raksha"), os.path.join("Programs", "Gateway", "Guard")):
+                    std_guard_dir = os.path.join(app_dir, sub)
+                    if os.path.isdir(std_guard_dir):
+                        dirs_to_unlock.add(std_guard_dir)
 
             exe_path = os.path.abspath(sys.executable)
             exe_dir = os.path.dirname(exe_path)
@@ -345,6 +349,8 @@ def unlock_install_dir_for_uninstall() -> None:
         try:
             home = os.path.expanduser("~")
             candidates = [
+                "/Applications/YP_Raksha.app",
+                os.path.join(home, "Applications", "YP_Raksha.app"),
                 "/Applications/Gateway_Guard.app",
                 os.path.join(home, "Applications", "Gateway_Guard.app"),
             ]
