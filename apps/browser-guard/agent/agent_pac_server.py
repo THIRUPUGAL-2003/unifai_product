@@ -167,6 +167,7 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
                     sh = sh[4:]
                 server_host = sh
             tamper_flag = os.path.join(data_dir(), "tamper.flag")
+            is_tampered = os.path.isfile(tamper_flag)
             from agent_extension import get_governance_controls
             gov = get_governance_controls()
             payload = {

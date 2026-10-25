@@ -2069,33 +2069,38 @@ def send_to_backend(platform: str, domain: str, prompt: str, client_ip: str, url
             "metadata": metadata,
         }).encode("utf-8")
 
-        req = urllib.request.Request(
-            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
-            data=payload,
-            headers=_backend_headers({"Content-Type": "application/json"}),
-            method="POST"
-        )
+        candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+        res_data = None
+        for base in candidates:
+            try:
+                req = urllib.request.Request(
+                    f"{base}/api/browser-ai/intercept",
+                    data=payload,
+                    headers=_backend_headers({"Content-Type": "application/json"}),
+                    method="POST"
+                )
+                try:
+                    default_to = "25" if evaluation_only and not upload_images else "35"
+                    eval_timeout = float(
+                        os.getenv("GATEWAY_EVAL_TIMEOUT") or os.getenv("GATEWAY_EVAL_TIMEOUT", default_to) or default_to
+                    )
+                except Exception:
+                    eval_timeout = 25.0 if evaluation_only else 35.0
+                eval_timeout = max(5.0, min(eval_timeout, 45.0 if evaluation_only else 95.0))
+                with urllib.request.urlopen(req, timeout=eval_timeout) as response:
+                    if response.status == 200:
+                        res_data = json.loads(response.read().decode("utf-8"))
+                        break
+            except Exception:
+                continue
 
-        # AI Guard Bot may call an LLM — keep under browser request timeouts.
-        # evaluation_only: prefer fast defaults for Send.
-        try:
-            default_to = "25" if evaluation_only and not upload_images else "35"
-            eval_timeout = float(
-                os.getenv("GATEWAY_EVAL_TIMEOUT") or os.getenv("GATEWAY_EVAL_TIMEOUT", default_to) or default_to
-            )
-        except Exception:
-            eval_timeout = 25.0 if evaluation_only else 35.0
-        eval_timeout = max(5.0, min(eval_timeout, 45.0 if evaluation_only else 95.0))
-        with urllib.request.urlopen(req, timeout=eval_timeout) as response:
-            if response.status == 200:
-                res_data = json.loads(response.read().decode("utf-8"))
-                allowed = res_data.get("allowed", True)
-                rule_triggered = res_data.get("rule_triggered", "")
-                action = res_data.get("action", "Allowed")
-                redacted_prompt = res_data.get("forward_prompt") or res_data.get("redacted_prompt", prompt)
-                # If backend says Redacted but returned the raw prompt, append notice locally.
-                if (action or "") in ("Redacted", "Warned") and redacted_prompt == prompt:
-                    redacted_prompt = _redacted_forward(prompt, res_data.get("warning_message", ""))
+        if res_data is not None:
+            allowed = res_data.get("allowed", True)
+            rule_triggered = res_data.get("rule_triggered", "")
+            action = res_data.get("action", "Allowed")
+            redacted_prompt = res_data.get("forward_prompt") or res_data.get("redacted_prompt", prompt)
+            if (action or "") in ("Redacted", "Warned") and redacted_prompt == prompt:
+                redacted_prompt = _redacted_forward(prompt, res_data.get("warning_message", ""))
                 reply_text = (res_data.get("reply_text") or "").strip()
                 eval_error = (res_data.get("eval_error") or "").strip()
                 verdict = (res_data.get("security_verdict") or "").strip().lower()

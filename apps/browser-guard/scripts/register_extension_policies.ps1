@@ -4,24 +4,18 @@
 $ErrorActionPreference = "Continue"
 
 $pacPort = $env:PAC_HTTP_PORT
-$envCandidates = @(
-    Join-Path $PSScriptRoot "..\..\..\.env",
-    Join-Path $PSScriptRoot "..\..\.env",
-    Join-Path (Get-Location) ".env"
-)
-foreach ($c in $envCandidates) {
-    if (Test-Path $c) {
-        Get-Content $c | ForEach-Object {
+if (-not $pacPort) {
+    $envFile = "D:\unifai_project\.env"
+    if (Test-Path $envFile) {
+        Get-Content $envFile | ForEach-Object {
             if ($_ -match '^\s*PAC_HTTP_PORT\s*=\s*(.+)$') {
                 $pacPort = $matches[1].Trim()
             }
         }
-        if ($pacPort) { break }
     }
 }
 if (-not $pacPort) {
-    Write-Error "PAC_HTTP_PORT is not defined in .env!"
-    exit 1
+    $pacPort = "18195"
 }
 
 $extId = "mipfhcmlcjfhmgldkokdckhndkebkllj"

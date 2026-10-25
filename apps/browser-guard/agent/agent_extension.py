@@ -645,15 +645,26 @@ def _post_intercept_file(
             parts.append(b"\r\n")
         parts.append(f"--{boundary}--\r\n".encode("utf-8"))
         body = b"".join(parts)
-        req = urllib.request.Request(
-            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept-file",
-            data=body,
-            headers=_guard_headers({"Content-Type": f"multipart/form-data; boundary={boundary}"}),
-            method="POST",
-        )
-        timeout = 10 if file_payload else 4
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return 200 <= getattr(resp, "status", 200) < 300
+        candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+        seen_cands = set()
+        for base in candidates:
+            if base in seen_cands:
+                continue
+            seen_cands.add(base)
+            try:
+                req = urllib.request.Request(
+                    f"{base}/api/browser-ai/intercept-file",
+                    data=body,
+                    headers=_guard_headers({"Content-Type": f"multipart/form-data; boundary={boundary}"}),
+                    method="POST",
+                )
+                timeout = 10 if file_payload else 4
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    if 200 <= getattr(resp, "status", 200) < 300:
+                        return True
+            except Exception as e:
+                print(f"[agent_extension] _post_intercept_file ({base}) failed: {e}")
+        return False
     except Exception as e:
         print(f"[agent_extension] _post_intercept_file failed: {e}")
         return False

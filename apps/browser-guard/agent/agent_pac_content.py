@@ -70,17 +70,32 @@ SEARCH_ENGINE_PAC_RULE = [
 
 
 def build_pac_from_targets(proxy_addr: str) -> str | None:
-    body = _http_get_text(
-        f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets?for=agent",
-        "application/json",
-        timeout=45,
-    )
-    if not body:
+    candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+    body = None
+    for base in candidates:
         body = _http_get_text(
-            f"{GATEWAY_BACKEND_URL}/api/browser-ai/targets",
+            f"{base}/api/browser-ai/targets?for=agent",
             "application/json",
-            timeout=45,
+            timeout=10,
         )
+        if not body:
+            body = _http_get_text(
+                f"{base}/api/browser-ai/targets",
+                "application/json",
+                timeout=10,
+            )
+        if body and ("targets" in body or body.strip().startswith("{")):
+            break
+
+    if not body:
+        cache_file = os.path.join(data_dir(), "targets_cache.json")
+        if os.path.isfile(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    body = f.read()
+            except Exception:
+                body = None
+
     if not body:
         return None
     try:

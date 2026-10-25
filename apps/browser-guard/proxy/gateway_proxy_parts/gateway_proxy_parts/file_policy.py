@@ -1676,17 +1676,21 @@ def post_upload_intercept(
             parts.append(b"\r\n")
         parts.append(f"--{boundary}--\r\n".encode("utf-8"))
         body = b"".join(parts)
-        req = urllib.request.Request(
-            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept-file",
-            data=body,
-            headers=_backend_headers({"Content-Type": f"multipart/form-data; boundary={boundary}"}),
-            method="POST",
-        )
-        # Larger timeout when uploading file bytes (async log path — keep modest)
-        timeout = 12 if file_payload else 4
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            if 200 <= getattr(resp, "status", 200) < 300:
-                return True
+        candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+        for base in candidates:
+            try:
+                req = urllib.request.Request(
+                    f"{base}/api/browser-ai/intercept-file",
+                    data=body,
+                    headers=_backend_headers({"Content-Type": f"multipart/form-data; boundary={boundary}"}),
+                    method="POST",
+                )
+                timeout = 12 if file_payload else 4
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    if 200 <= getattr(resp, "status", 200) < 300:
+                        return True
+            except Exception:
+                continue
     except Exception as e:
         print(f"[Gateway Proxy WARNING] intercept-file failed, falling back to JSON: {e}")
 
@@ -1699,14 +1703,21 @@ def post_upload_intercept(
             "upload_images": upload_images or [],
             "metadata": metadata,
         }).encode("utf-8")
-        req = urllib.request.Request(
-            f"{GATEWAY_BACKEND_URL}/api/browser-ai/intercept",
-            data=payload_json,
-            headers=_backend_headers({"Content-Type": "application/json"}),
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            return 200 <= getattr(resp, "status", 200) < 300
+        candidates = [b.rstrip("/") for b in [GATEWAY_BACKEND_URL, "http://127.0.0.1:6000", "http://localhost:6000"] if b]
+        for base in candidates:
+            try:
+                req = urllib.request.Request(
+                    f"{base}/api/browser-ai/intercept",
+                    data=payload_json,
+                    headers=_backend_headers({"Content-Type": "application/json"}),
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    if 200 <= getattr(resp, "status", 200) < 300:
+                        return True
+            except Exception:
+                continue
+        return False
     except Exception as e:
         print(f"[Gateway Proxy WARNING] upload intercept JSON failed: {e}")
         return False
