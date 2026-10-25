@@ -255,10 +255,17 @@ export function securityVerdictFromLog(log: BrowserAILogEntry): SecurityVerdict 
 			tone: "bad",
 		};
 	}
-	if (cat === "AI_GUARD_BOT_REDACT" || cat === "AI_GUARD_BOT_WARNING") {
+	if (cat === "AI_GUARD_BOT_REDACT") {
 		return {
 			title: "Security notice — allowed with redaction",
 			detail: `AI Guard Bot flagged this prompt${log.rule_triggered ? ` (${log.rule_triggered})` : ""}.`,
+			tone: "warn",
+		};
+	}
+	if (cat === "AI_GUARD_BOT_WARNING") {
+		return {
+			title: "Security warning — allowed",
+			detail: `AI Guard Bot flagged this prompt${log.rule_triggered ? ` (${log.rule_triggered})` : ""}. Review it before continuing.`,
 			tone: "warn",
 		};
 	}
@@ -269,6 +276,13 @@ export function securityVerdictFromLog(log: BrowserAILogEntry): SecurityVerdict 
 			tone: "bad",
 		};
 	}
+	if (cat === "UNSCANNED_FILE") {
+		return {
+			title: "File not scanned",
+			detail: log.status || "No text could be extracted from this file, so its contents were not evaluated.",
+			tone: "warn",
+		};
+	}
 	if (action === "blocked" || cat === "SECURITY_POLICY_VIOLATION") {
 		return {
 			title: "Security NOT met — blocked",
@@ -276,10 +290,17 @@ export function securityVerdictFromLog(log: BrowserAILogEntry): SecurityVerdict 
 			tone: "bad",
 		};
 	}
-	if (action === "redacted" || action === "warned") {
+	if (action === "redacted") {
 		return {
 			title: "Security redaction",
 			detail: log.rule_triggered ? `Redacted by rule: ${log.rule_triggered}` : (log.status || "Redacted by Guard policy."),
+			tone: "warn",
+		};
+	}
+	if (action === "warned") {
+		return {
+			title: "Security warning — allowed",
+			detail: log.rule_triggered ? `Flagged by rule: ${log.rule_triggered}` : (log.status || "Allowed with a Guard warning."),
 			tone: "warn",
 		};
 	}

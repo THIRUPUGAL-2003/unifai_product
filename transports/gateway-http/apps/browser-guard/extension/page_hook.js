@@ -1,0 +1,2295 @@
+/* YP-Raksha Enterprise AI Guard Hook (Page World)
+ * Full In-Browser DLP: Prompt Interception, All File Types, Images, Fast-Path Regex & Cloud AI
+ */
+(function () {
+  "use strict";
+
+  // STRICT BYPASS: Never attach interceptors on internal portals, localhost, or private networks
+  var curHost = (location.hostname || "").toLowerCase().trim();
+  if (curHost.indexOf("www.") === 0) curHost = curHost.slice(4);
+  if (curHost.indexOf(":") >= 0) curHost = curHost.split(":")[0];
+  if (
+    !curHost ||
+    curHost === "localhost" ||
+    curHost === "127.0.0.1" ||
+    curHost === "::1" ||
+    curHost === "0.0.0.0" ||
+    curHost.endsWith(".local") ||
+    curHost.endsWith(".internal") ||
+    curHost.endsWith(".lan") ||
+    curHost.endsWith(".home") ||
+    curHost.endsWith(".corp") ||
+    /^10\.\d+\.\d+\.\d+$/.test(curHost) ||
+    /^192\.168\.\d+\.\d+$/.test(curHost) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(curHost) ||
+    /^127\.\d+\.\d+\.\d+$/.test(curHost)
+  ) {
+    return;
+  }
+
+  var armed = false; // Armed only when confirmed by extension for monitored AI domains
+  var curScript = document.currentScript;
+  var guardNonce = (curScript && curScript.dataset && curScript.dataset.guardNonce) || "";
+  var passKey = false;
+  var passClick = false;
+  var pending = {};
+  var stagedFiles = [];
+  var stagedImages = [];
+  var _lastHandledPromptTime = 0;
+  var _lastHandledPromptText = "";
+  var _lastHandledPromptId = "";
+  var lastDecisionCache = { text: "", time: 0, decision: null };
+
+  function stripInvisible(str) {
+    if (!str) return "";
+    return String(str)
+      .replace(/[\u200b-\u200f\ufeff\u202a-\u202e\u2060-\u206f\u00a0]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // Rules come only from the gateway for the armed target site.
+  var dynamicRules = [];
+
+  function compileRegex(rawPattern) {
+    if (!rawPattern || typeof rawPattern !== "string") return null;
+    var pattern = rawPattern.trim();
+    var flags = "";
+    if (pattern.startsWith("(?i)")) {
+      flags += "i";
+      pattern = pattern.slice(4);
+    }
+    if (pattern.startsWith("(?m)")) {
+      flags += "m";
+      pattern = pattern.slice(4);
+    }
+    // In DLP prompt/file scanning, normalize full-string anchors ^...$ so patterns like ^[1-9][0-9]{5}$
+    // match sensitive tokens inside full sentences (e.g. "613002 this is new")
+    if (pattern.startsWith("^") && pattern.endsWith("$") && pattern.length > 2) {
+      var inner = pattern.slice(1, -1);
+      if (!/(?:^|[^\\])[\^$]/.test(inner)) {
+        pattern = "\\b(?:" + inner + ")\\b";
+      }
+    }
+    try {
+      return new RegExp(pattern, flags);
+    } catch (e) {
+      console.warn("[Gateway Guard] Invalid pattern from DB:", rawPattern, e);
+      return null;
+    }
+  }
+
+  function setDynamicRules(rules) {
+    if (!Array.isArray(rules) || rules.length === 0) {
+      dynamicRules = [];
+      return;
+    }
+    var compiled = [];
+    for (var i = 0; i < rules.length; i++) {
+      var r = rules[i];
+      if (!r || !r.pattern) continue;
+      var rx = compileRegex(r.pattern);
+      if (rx) {
+        compiled.push({
+          id: r.id || "",
+          name: r.name || "Custom Rule",
+          action: (r.action || "BLOCK").toUpperCase(),
+          msg: r.warning_message || ("Blocked by security policy: " + (r.name || "Restricted pattern")),
+          re: rx
+        });
+      }
+    }
+    dynamicRules = compiled;
+  }
+
+  // Listen for messages from extension content script
+  window.addEventListener("message", function (ev) {
+    if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard") return;
+    if (guardNonce && ev.data.nonce && ev.data.nonce !== guardNonce) return;
+    if (ev.data.type === "arm") {
+      armed = true;
+    }
+    if (ev.data.type === "disarm") {
+      armed = false;
+      dynamicRules = [];
+      lastDecisionCache = { text: "", time: 0, decision: null };
+    }
+    if (ev.data.type === "sync_rules") {
+      setDynamicRules(ev.data.rules || []);
+      if (typeof ev.data.block_upload !== "undefined") {
+        govBlockUpload = Boolean(ev.data.block_upload);
+      }
+      if (typeof ev.data.upload_warning === "string") {
+        govUploadWarning = ev.data.upload_warning;
+      }
+      if (typeof ev.data.upload_target_websites === "string") {
+        govUploadTargetWebsites = ev.data.upload_target_websites;
+      }
+      if (typeof ev.data.file_extension_mode === "string") {
+        govFileExtensionMode = ev.data.file_extension_mode;
+      }
+      if (typeof ev.data.restricted_file_extensions === "string") {
+        govRestrictedExtensions = parseExtensionList(ev.data.restricted_file_extensions);
+      } else if (Array.isArray(ev.data.restricted_extensions)) {
+        govRestrictedExtensions = ev.data.restricted_extensions.map(function (x) { return String(x).toLowerCase().replace(/^\./, "").trim(); });
+      }
+      if (typeof ev.data.allowed_file_extensions === "string") {
+        govAllowedExtensions = parseExtensionList(ev.data.allowed_file_extensions);
+      }
+      if (typeof ev.data.block_file_extension !== "undefined") {
+        govBlockFileExtension = Boolean(ev.data.block_file_extension);
+      }
+      if (typeof ev.data.file_extension_block_message === "string") {
+        govFileExtensionBlockMessage = ev.data.file_extension_block_message;
+      }
+      if (typeof ev.data.file_extension_target_websites === "string") {
+        govFileExtensionTargetWebsites = ev.data.file_extension_target_websites;
+      }
+      if (typeof ev.data.block_clipboard !== "undefined") {
+        govBlockClipboard = Boolean(ev.data.block_clipboard);
+      }
+      if (typeof ev.data.block_drag_drop !== "undefined") {
+        govBlockDragDrop = Boolean(ev.data.block_drag_drop);
+      }
+      if (typeof ev.data.block_download !== "undefined") {
+        govBlockDownload = Boolean(ev.data.block_download);
+      }
+      if (typeof ev.data.governance_target_websites === "string") {
+        govTargetWebsites = ev.data.governance_target_websites;
+      }
+      if (typeof ev.data.governance_block_message === "string") {
+        govBlockMessage = ev.data.governance_block_message;
+      }
+      if (typeof ev.data.clipboard_target_websites === "string") {
+        govClipboardTargetWebsites = ev.data.clipboard_target_websites;
+      }
+      if (typeof ev.data.drag_drop_target_websites === "string") {
+        govDragDropTargetWebsites = ev.data.drag_drop_target_websites;
+      }
+      if (typeof ev.data.download_target_websites === "string") {
+        govDownloadTargetWebsites = ev.data.download_target_websites;
+      }
+      if (typeof ev.data.clipboard_block_message === "string") {
+        govClipboardBlockMessage = ev.data.clipboard_block_message;
+      }
+      if (typeof ev.data.drag_drop_block_message === "string") {
+        govDragDropBlockMessage = ev.data.drag_drop_block_message;
+      }
+      if (typeof ev.data.download_block_message === "string") {
+        govDownloadBlockMessage = ev.data.download_block_message;
+      }
+      if (typeof ev.data.block_screenshot !== "undefined") {
+        govBlockScreenshot = Boolean(ev.data.block_screenshot);
+        applyScreenshotProtection();
+      }
+      if (typeof ev.data.screenshot_block_message === "string") {
+        govScreenshotBlockMessage = ev.data.screenshot_block_message;
+      }
+      if (typeof ev.data.screenshot_target_websites === "string") {
+        govScreenshotTargetWebsites = ev.data.screenshot_target_websites;
+      }
+    }
+    if (ev.data.type === "session_authorization_result") {
+      handleSessionAuthDecision(ev.data.result || {});
+    }
+    if (ev.data.type === "decision" && pending[ev.data.id]) {
+      pending[ev.data.id](ev.data.decision || { blocked: false });
+      delete pending[ev.data.id];
+    }
+  });
+
+  // --- Data Governance Controls (Uploads, File Types, Clipboard, Drag & Drop, Downloads, Screenshots) ---
+  var govBlockUpload = false;
+  var govUploadWarning = "";
+  var govUploadTargetWebsites = "";
+  var govBlockFileExtension = false;
+  var govFileExtensionMode = "block_listed";
+  var govRestrictedExtensions = [];
+  var govAllowedExtensions = [];
+  var govFileExtensionBlockMessage = "";
+  var govFileExtensionTargetWebsites = "";
+  var govBlockClipboard = false;
+  var govClipboardTargetWebsites = "";
+  var govBlockDragDrop = false;
+  var govDragDropTargetWebsites = "";
+  var govBlockDownload = false;
+  var govDownloadTargetWebsites = "";
+  var govTargetWebsites = "";
+  var govBlockMessage = "";
+  var govClipboardBlockMessage = "";
+  var govDragDropBlockMessage = "";
+  var govDownloadBlockMessage = "";
+  var govBlockScreenshot = false;
+  var govScreenshotBlockMessage = "";
+  var govScreenshotTargetWebsites = "";
+
+  function parseExtensionList(str) {
+    if (!str || typeof str !== "string") return [];
+    var parts = str.toLowerCase().split(/[,\s;]+/);
+    var list = [];
+    for (var i = 0; i < parts.length; i++) {
+      var item = parts[i].replace(/^\./, "").trim();
+      if (item && list.indexOf(item) === -1) {
+        list.push(item);
+      }
+    }
+    return list;
+  }
+
+  function isControlActiveForSite(configuredSites) {
+    var raw = (configuredSites && typeof configuredSites === "string") ? configuredSites.trim() : "";
+    if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
+      return true;
+    }
+    var currentHost = (location.hostname || "").toLowerCase().replace(/^www\./, "");
+    var parts = raw.toLowerCase().split(/[,\s;]+/);
+    for (var i = 0; i < parts.length; i++) {
+      var item = parts[i].trim();
+      if (!item) continue;
+      if (item.indexOf("www.") === 0) item = item.slice(4);
+      if (item.indexOf(":") >= 0) item = item.split(":")[0];
+      if (currentHost === item || currentHost.endsWith("." + item) || item.endsWith("." + currentHost) || currentHost.includes(item) || item.includes(currentHost)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isGovernanceActiveForSite() {
+    return isControlActiveForSite(govTargetWebsites);
+  }
+
+  function checkFileUploadAllowed(file) {
+    if (!file) return true;
+    var fileName = file.name || "";
+    // Check 1: Master upload block - applies to any target domain if govUploadTargetWebsites is empty/all or matches
+    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+      return false;
+    }
+    // Check 2: File extension restrictions (independent policy)
+    var fileExtTarget = govFileExtensionTargetWebsites || govUploadTargetWebsites;
+    var extPolicyActive = govBlockFileExtension || (govRestrictedExtensions.length > 0) || (govAllowedExtensions.length > 0 && govFileExtensionMode === "allow_listed");
+    if (extPolicyActive && isControlActiveForSite(fileExtTarget)) {
+      var ext = "";
+      if (fileName.lastIndexOf(".") !== -1) {
+        ext = fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase().trim();
+      }
+      if (ext) {
+        var hasRestricted = (govRestrictedExtensions && govRestrictedExtensions.length > 0);
+        var hasAllowed = (govAllowedExtensions && govAllowedExtensions.length > 0);
+        if (govFileExtensionMode === "allow_listed" && hasAllowed) {
+          var isAllowed = govAllowedExtensions.some(function (a) {
+            return a.replace(/^\./, "").toLowerCase().trim() === ext;
+          });
+          if (!isAllowed) {
+            var msg = govFileExtensionBlockMessage || ("File type '." + ext + "' is not permitted. Only approved file types (" + govAllowedExtensions.map(function (e) { return "." + e; }).join(", ") + ") may be uploaded.");
+            showBubble(msg, "File Extension Policy", "block");
+            return false;
+          }
+        } else if (hasRestricted) {
+          var isBlocked = govRestrictedExtensions.some(function (b) {
+            return b.replace(/^\./, "").toLowerCase().trim() === ext;
+          });
+          if (isBlocked) {
+            var msg2 = govFileExtensionBlockMessage || ("Uploading '." + ext + "' files is restricted by corporate DLP policy.");
+            showBubble(msg2, "File Extension Policy", "block");
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  // --- Anti-Screenshot & Screen Capture Protection ---
+  var _screenshotShieldEl = null;
+  function triggerScreenshotAlert() {
+    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+
+    // 1. Wipe clipboard to destroy snip buffer
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText("");
+      }
+    } catch (e) {}
+
+    // 2. Display full-screen Privacy Shield overlay
+    if (!_screenshotShieldEl) {
+      _screenshotShieldEl = document.createElement("div");
+      _screenshotShieldEl.id = "yp-screenshot-shield";
+      _screenshotShieldEl.style.cssText =
+        "position:fixed;inset:0;z-index:2147483647;background:rgba(10,15,29,0.98);backdrop-filter:blur(40px);" +
+        "-webkit-backdrop-filter:blur(40px);display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+        "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#f8fafc;padding:24px;text-align:center;" +
+        "transition:opacity 0.25s ease-out;opacity:0;pointer-events:none;";
+      _screenshotShieldEl.innerHTML =
+        '<div style="width:72px;height:72px;border-radius:50%;background:rgba(239,68,68,0.18);border:2px solid #ef4444;display:flex;align-items:center;justify-content:center;font-size:36px;margin-bottom:16px;">🛡️</div>' +
+        '<h2 style="font-size:22px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;margin:0 0 8px 0;">SCREENSHOT RESTRICTED</h2>' +
+        '<p style="font-size:14px;color:#cbd5e1;max-width:440px;line-height:1.5;margin:0 0 16px 0;">' +
+        (govScreenshotBlockMessage || "Screen capturing, recording, or taking screenshots on this AI workspace is prohibited by corporate DLP policy.") +
+        '</p>' +
+        '<div style="font-size:11px;color:#94a3b8;border:1px solid rgba(148,163,184,0.3);padding:4px 12px;border-radius:6px;background:rgba(30,41,59,0.6);">' +
+        'Monitored &amp; Protected by YP-Raksha Browser Guard' +
+        '</div>';
+      (document.body || document.documentElement).appendChild(_screenshotShieldEl);
+    }
+    _screenshotShieldEl.style.opacity = "1";
+    _screenshotShieldEl.style.pointerEvents = "all";
+
+    // Show toast alert
+    showBubble(govScreenshotBlockMessage || "Screenshots and screen capture are prohibited by corporate security policy.", "Anti-Screenshot Policy", "block");
+
+    // Fade out after 2.5 seconds
+    setTimeout(function () {
+      if (_screenshotShieldEl) {
+        _screenshotShieldEl.style.opacity = "0";
+        _screenshotShieldEl.style.pointerEvents = "none";
+      }
+    }, 2500);
+  }
+
+  function applyScreenshotProtection() {
+    var printStyleId = "yp-print-shield-style";
+    var existingPrintStyle = document.getElementById(printStyleId);
+    if (govBlockScreenshot && isControlActiveForSite(govScreenshotTargetWebsites)) {
+      if (!existingPrintStyle) {
+        var style = document.createElement("style");
+        style.id = printStyleId;
+        style.textContent = "@media print { body, html { display: none !important; visibility: hidden !important; } }";
+        (document.head || document.documentElement).appendChild(style);
+      }
+    } else {
+      if (existingPrintStyle) existingPrintStyle.remove();
+    }
+  }
+
+  // Intercept PrintScreen key, Snipping tool shortcuts (Win+Shift+S), Mac Cmd+Shift+3/4
+  window.addEventListener("keyup", function (e) {
+    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+    if (e.key === "PrintScreen" || e.keyCode === 44) {
+      triggerScreenshotAlert();
+    }
+  }, true);
+
+  window.addEventListener("keydown", function (e) {
+    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+    if (e.key === "PrintScreen" || e.keyCode === 44) {
+      e.preventDefault();
+      triggerScreenshotAlert();
+      return;
+    }
+    if ((e.key === "s" || e.key === "S") && e.shiftKey && (e.metaKey || e.altKey)) {
+      e.preventDefault();
+      triggerScreenshotAlert();
+      return;
+    }
+    if (e.metaKey && e.shiftKey && (e.key === "3" || e.key === "4" || e.key === "5")) {
+      e.preventDefault();
+      triggerScreenshotAlert();
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P")) {
+      e.preventDefault();
+      triggerScreenshotAlert();
+      return;
+    }
+  }, true);
+
+  // --- Corporate AI Domain & Workspace Authorization Engine ---
+  var sessionBlocked = false;
+  var sessionBlockedReason = "";
+  var detectedEmail = "";
+  var detectedWorkspace = "";
+  var lastCheckedKey = "";
+
+  function handleSessionAuthDecision(authRes) {
+    if (!authRes) return;
+    if (authRes.decision === "block") {
+      sessionBlocked = true;
+      sessionBlockedReason = authRes.message || "Personal accounts are blocked by corporate security policy.";
+      renderCorporateBanner(true, sessionBlockedReason, detectedEmail);
+    } else {
+      sessionBlocked = false;
+      sessionBlockedReason = "";
+      renderCorporateBanner(false);
+    }
+  }
+
+  function renderCorporateBanner(isBlocked, message, email) {
+    var existing = document.getElementById("yp-corp-policy-banner");
+    if (!isBlocked) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) {
+      var msgEl = existing.querySelector(".yp-corp-msg");
+      if (msgEl && message) msgEl.textContent = message;
+      return;
+    }
+    var banner = document.createElement("div");
+    banner.id = "yp-corp-policy-banner";
+    banner.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+      "max-width:680px;width:calc(100% - 32px);background:#111827;color:#f8fafc;border:2px solid #ef4444;" +
+      "border-radius:12px;padding:12px 18px;box-shadow:0 20px 40px rgba(0,0,0,0.75);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
+      "display:flex;align-items:flex-start;gap:12px;animation:ypFadeIn 0.3s ease-out;";
+    var emailTag = email ? ' <span style="font-size:11px;background:#1e293b;color:#f87171;padding:2px 8px;border-radius:4px;border:1px solid rgba(239,68,68,0.4);font-family:monospace;">' + email + '</span>' : '';
+    banner.innerHTML = '<div style="background:rgba(239,68,68,0.18);color:#ef4444;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;flex-shrink:0;">✕</div>' +
+      '<div style="flex:1;min-width:0;">' +
+      '  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">' +
+      '    <strong style="font-size:12px;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;">Corporate Policy Restriction</strong>' +
+      emailTag +
+      '  </div>' +
+      '  <p class="yp-corp-msg" style="font-size:12.5px;color:#cbd5e1;line-height:1.45;margin:0;">' + (message || "Personal accounts are restricted. Please sign in with your corporate account.") + '</p>' +
+      '</div>';
+    (document.body || document.documentElement).appendChild(banner);
+  }
+
+  function detectProviderName() {
+    var h = (location.hostname || "").toLowerCase();
+    if (h.includes("chatgpt.com") || h.includes("openai.com")) return "chatgpt";
+    if (h.includes("claude.ai") || h.includes("anthropic.com")) return "claude";
+    if (h.includes("copilot.microsoft.com") || h.includes("bing.com")) return "copilot";
+    if (h.includes("gemini.google.com") || h.includes("bard.google.com")) return "gemini";
+    if (h.includes("deepseek.com")) return "deepseek";
+    if (h.includes("mistral.ai")) return "mistral";
+    if (h.includes("perplexity.ai")) return "perplexity";
+    if (h.includes("poe.com")) return "poe";
+    if (h.includes("lovable.dev")) return "lovable";
+    var parts = h.replace(/^www\./, "").split(".");
+    return parts[0] || "ai";
+  }
+
+  function triggerSessionAuth(email, workspaceId) {
+    if (!email) return;
+    email = String(email).trim().toLowerCase();
+    var domain = email.indexOf("@") >= 0 ? email.split("@")[1].trim() : email;
+    var ws = workspaceId ? String(workspaceId).trim() : "";
+    var key = email + "::" + ws;
+    if (key === lastCheckedKey) return;
+    lastCheckedKey = key;
+    detectedEmail = email;
+    detectedWorkspace = ws;
+
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      type: "authorize_ai_session",
+      id: "auth_" + Date.now().toString(36),
+      provider: detectProviderName(),
+      email_domain: domain,
+      user_email: email,
+      workspace_id: ws,
+      page_url: location.href,
+      policy_version: 1
+    }, "*");
+  }
+
+  // Universal deep object search for email and workspace keys
+  function scanObjectForSession(obj, depth) {
+    if (!obj || typeof obj !== "object" || (depth || 0) > 4) return;
+    try {
+      if (typeof obj.email === "string" && obj.email.includes("@")) {
+        var ws = obj.workspace_id || obj.org_id || obj.organization_id || obj.account_id || obj.accountId || obj.tenant_id || "";
+        triggerSessionAuth(obj.email, ws);
+        return;
+      }
+      if (typeof obj.email_address === "string" && obj.email_address.includes("@")) {
+        triggerSessionAuth(obj.email_address, obj.workspace_id || obj.org_id);
+        return;
+      }
+      if (typeof obj.user_email === "string" && obj.user_email.includes("@")) {
+        triggerSessionAuth(obj.user_email, obj.workspace_id);
+        return;
+      }
+      if (typeof obj.upn === "string" && obj.upn.includes("@")) {
+        triggerSessionAuth(obj.upn, obj.tenant_id || obj.tenantId);
+        return;
+      }
+      for (var k in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, k) && typeof obj[k] === "object" && obj[k] !== null) {
+          scanObjectForSession(obj[k], (depth || 0) + 1);
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Scan LocalStorage and SessionStorage for JWT or user profiles
+  function scanStorageForSession() {
+    try {
+      var storages = [localStorage, sessionStorage];
+      for (var s = 0; s < storages.length; s++) {
+        var st = storages[s];
+        if (!st) continue;
+        for (var i = 0; i < st.length; i++) {
+          var k = st.key(i);
+          if (!k) continue;
+          var kLow = k.toLowerCase();
+          if (kLow.includes("user") || kLow.includes("auth") || kLow.includes("account") || kLow.includes("session") || kLow.includes("token") || kLow.includes("profile") || kLow.includes("oidc")) {
+            var val = st.getItem(k);
+            if (!val || typeof val !== "string") continue;
+            if (val.startsWith("{") && val.endsWith("}")) {
+              try {
+                scanObjectForSession(JSON.parse(val), 0);
+              } catch (je) {}
+            }
+            if (val.startsWith("ey") && val.includes(".")) {
+              try {
+                var parts = val.split(".");
+                if (parts.length >= 2) {
+                  var payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+                  scanObjectForSession(payload, 0);
+                }
+              } catch (jte) {}
+            }
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Scan DOM for visible user email (e.g. profile avatars, user menus)
+  function scanDOMForSession() {
+    try {
+      var elements = querySelectorAllDeep("[aria-label*='@'], [title*='@'], [alt*='@'], [data-testid*='profile'], [data-testid*='user'], button, div[role='button']");
+      var emailRegex = /\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/;
+      for (var i = 0; i < elements.length; i++) {
+        var el = elements[i];
+        if (!el) continue;
+        var txt = (el.getAttribute("aria-label") || "") + " " + (el.getAttribute("title") || "") + " " + (el.getAttribute("alt") || "") + " " + (el.innerText || "");
+        var m = txt.match(emailRegex);
+        if (m && m[0]) {
+          triggerSessionAuth(m[0], "");
+          return;
+        }
+      }
+      if (typeof window.__NEXT_DATA__ === "object") {
+        scanObjectForSession(window.__NEXT_DATA__, 0);
+      }
+      if (typeof window.__remixContext === "object") {
+        scanObjectForSession(window.__remixContext, 0);
+      }
+    } catch (e) {}
+  }
+
+  // Client-Side Fast Evaluation against live DB rules
+  function evaluateClientRules(text, files) {
+    // Check prompt text and file text content against the target site's rules.
+    var fullContent = text || "";
+    if (Array.isArray(files)) {
+      for (var j = 0; j < files.length; j++) {
+        if (files[j] && files[j].text) {
+          fullContent += "\n" + files[j].text;
+        }
+      }
+    }
+
+    for (var k = 0; k < dynamicRules.length; k++) {
+      var r = dynamicRules[k];
+      if (r.re && r.re.test(fullContent)) {
+        var act = String(r.action || "BLOCK").toUpperCase();
+        if (act === "BLOCK" || act === "BLOCKED") {
+          return {
+            blocked: true,
+            action: "Blocked",
+            message: r.msg || ("Blocked by security rule: " + r.name),
+            rule: r.name,
+            matchedRule: r
+          };
+        }
+        if (act === "REDACT" || act === "REDACTED") {
+          var redacted = fullContent.replace(r.re, "[REDACTED]");
+          return {
+            blocked: false,
+            action: "Redacted",
+            message: r.msg || ("Confidential text was redacted (" + r.name + ")."),
+            rule: r.name,
+            redacted_prompt: redacted,
+            matchedRule: r
+          };
+        }
+        if (act === "WARN" || act === "WARNED") {
+          return {
+            blocked: false,
+            action: "Warned",
+            message: r.msg || ("Security Warning: " + r.name + " detected."),
+            rule: r.name,
+            matchedRule: r
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  var _lastAskSig = "";
+  var _lastAskTime = 0;
+  var _lastAskDecision = null;
+
+  // Ask Gateway Guard Engine (Async verify with PAC server & Gateway backend)
+  function ask(prompt, files, images) {
+    if (!armed) {
+      return Promise.resolve({ blocked: false, passthrough: true });
+    }
+    var trimmed = (prompt || "").trim();
+    var fileNamesSig = (files || []).map(function (f) { return (f && (f.name || f)) || ""; }).sort().join(",");
+    var sig = trimmed + "||" + fileNamesSig + "||" + ((images || []).length);
+    if (sig && (Date.now() - _lastAskTime < 4000) && _lastAskSig === sig && _lastAskDecision) {
+      return Promise.resolve(_lastAskDecision);
+    }
+    if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
+      if (lastDecisionCache.text === trimmed && (Date.now() - lastDecisionCache.time < 5000) && lastDecisionCache.decision) {
+        return Promise.resolve(lastDecisionCache.decision);
+      }
+    }
+    return new Promise(function (resolve) {
+      // 1. First run fast client-side check
+      var clientDecision = evaluateClientRules(prompt, files);
+      if (clientDecision && clientDecision.blocked) {
+        _lastAskSig = sig;
+        _lastAskTime = Date.now();
+        _lastAskDecision = clientDecision;
+        if (trimmed) {
+          lastDecisionCache = { text: trimmed, time: Date.now(), decision: clientDecision };
+        }
+        // Asynchronously notify backend so the blocked prompt is recorded in PostgreSQL DB & dashboard!
+        window.postMessage({
+          source: "gateway-guard-page",
+          nonce: guardNonce,
+          id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+          prompt: prompt,
+          files: files || [],
+          upload_images: images || [],
+          host: location.hostname,
+          url: location.href,
+          is_blocked: true,
+          rule: clientDecision.rule || ""
+        }, "*");
+
+        resolve(clientDecision);
+        return;
+      }
+
+      // 2. Query Gateway Guard PAC and Cloud DLP
+      var id = Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+      var timer = setTimeout(function () {
+        delete pending[id];
+        resolve(clientDecision || { blocked: false, passthrough: true });
+      }, 5000);
+
+      pending[id] = function (decision) {
+        clearTimeout(timer);
+        var res = decision || clientDecision || { blocked: false };
+        _lastAskSig = sig;
+        _lastAskTime = Date.now();
+        _lastAskDecision = res;
+        _lastHandledPromptId = id;
+        _lastHandledPromptTime = Date.now();
+        _lastHandledPromptText = trimmed;
+        if (trimmed && (!files || files.length === 0) && (!images || images.length === 0)) {
+          lastDecisionCache = { text: trimmed, time: Date.now(), decision: res };
+        }
+        resolve(res);
+      };
+
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: id,
+        prompt: prompt,
+        files: files || [],
+        upload_images: images || [],
+        host: location.hostname,
+        url: location.href,
+        rule: clientDecision ? clientDecision.rule : ""
+      }, "*");
+    });
+  }
+
+  // Deep helper: pierce shadow roots to find currently focused element
+  function getDeepActiveElement(root) {
+    try {
+      var active = (root || document).activeElement;
+      while (active && active.shadowRoot && active.shadowRoot.activeElement) {
+        active = active.shadowRoot.activeElement;
+      }
+      return active;
+    } catch (e) {
+      return (root || document).activeElement;
+    }
+  }
+
+  // Deep helper: search selectors across light DOM and all open shadow roots
+  function querySelectorAllDeep(selector, root) {
+    root = root || document;
+    var results = [];
+    try {
+      var direct = root.querySelectorAll(selector);
+      for (var i = 0; i < direct.length; i++) results.push(direct[i]);
+    } catch (e) {}
+
+    try {
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, null, false);
+      while (walker.nextNode()) {
+        var n = walker.currentNode;
+        if (n && n.shadowRoot) {
+          var sub = querySelectorAllDeep(selector, n.shadowRoot);
+          for (var j = 0; j < sub.length; j++) results.push(sub[j]);
+        }
+      }
+    } catch (e2) {}
+    return results;
+  }
+
+  // Normalize invisible characters, zero-width spaces, and bidi control markers
+  function stripInvisible(str) {
+    if (!str || typeof str !== "string") return "";
+    return str
+      .replace(/[\u200B-\u200F\uFEFF\u202A-\u202E\u2060-\u206F]/g, "")
+      .replace(/\u00A0/g, " ")
+      .trim();
+  }
+
+  // Universal Composer Extraction across ChatGPT, Claude, Gemini, Copilot, DeepSeek, Mistral, Lovable
+  function composerFrom(el) {
+    if (!el) return "";
+    var node = el;
+
+    // Check if element itself has value property (web component, textarea, input)
+    if (typeof node.value === "string" && node.value) return node.value;
+
+    // Check inside element's shadowRoot if present
+    if (node.shadowRoot) {
+      try {
+        var shadowInput = node.shadowRoot.querySelector("textarea, [contenteditable='true'], input[type='text'], [role='textbox']");
+        if (shadowInput) {
+          var sVal = (shadowInput.tagName === "TEXTAREA" || shadowInput.tagName === "INPUT") ? (shadowInput.value || "") : (shadowInput.innerText || shadowInput.textContent || "");
+          if (sVal && sVal.trim()) return sVal.trim();
+        }
+      } catch (se) {}
+    }
+
+    for (var i = 0; node && i < 6; i++, node = (node.parentElement || (node.getRootNode && node.getRootNode().host))) {
+      if (node.tagName === "TEXTAREA" || node.tagName === "INPUT") return node.value || "";
+      if (node.isContentEditable) {
+        var root = (node.closest && node.closest("[contenteditable='true'], [role='textbox']")) || node;
+        return root.innerText || root.textContent || "";
+      }
+      if (typeof node.value === "string" && node.value) return node.value;
+    }
+
+    // Check surrounding form / fieldset / composer container of the clicked button
+    var container = (el && el.closest && el.closest("fieldset, form, [class*='composer' i], [class*='input' i], div[data-testid*='composer' i], div.relative")) || null;
+    if (container) {
+      var innerEd = container.querySelector("div.ProseMirror, [contenteditable='true'], textarea, input[type='text'], [role='textbox']");
+      if (innerEd) {
+        if (innerEd.tagName === "TEXTAREA" || innerEd.tagName === "INPUT") return innerEd.value || "";
+        var ct = (innerEd.innerText || innerEd.textContent || "").trim();
+        if (ct) return ct;
+      }
+    }
+
+    var deepActive = getDeepActiveElement();
+    if (deepActive && deepActive !== el) {
+      if (deepActive.tagName === "TEXTAREA" || deepActive.tagName === "INPUT") return deepActive.value || "";
+      if (deepActive.isContentEditable) {
+        var aroot = (deepActive.closest && deepActive.closest("[contenteditable='true'], [role='textbox']")) || deepActive;
+        return aroot.innerText || aroot.textContent || "";
+      }
+      if (typeof deepActive.value === "string" && deepActive.value) return deepActive.value;
+    }
+
+    // Specific platform selectors across document and deep shadow roots
+    var candidates = querySelectorAllDeep(
+      "textarea[placeholder*='Message' i], " +
+      "textarea[placeholder*='Copilot' i], " +
+      "[placeholder*='Message Copilot' i], " +
+      "[aria-label*='Message Copilot' i], " +
+      "[placeholder*='Ask Copilot' i], " +
+      "[aria-label*='Ask Copilot' i], " +
+      "[placeholder*='Ask me anything' i], " +
+      "[aria-label*='Ask me anything' i], " +
+      "[placeholder*='Message' i], " +
+      "[aria-label*='Message' i], " +
+      "textarea#userInput, " +
+      "textarea[id*='userInput' i], " +
+      "textarea#searchbox, " +
+      "textarea[id*='chat' i], " +
+      "copilot-chat-container textarea, " +
+      "copilot-text-input textarea, " +
+      "copilot-composer textarea, " +
+      "[data-testid*='copilot' i], " +
+      "[aria-label*='copilot' i] textarea, " +
+      "[aria-label*='copilot' i] [contenteditable='true'], " +
+      "cib-text-input textarea, " +
+      "cib-serp textarea, " +
+      "fieldset div.ProseMirror, " +
+      "fieldset [contenteditable='true'], " +
+      "form div.ProseMirror, " +
+      "div#prompt-textarea, " +
+      "div.ProseMirror, " +
+      "rich-textarea div[contenteditable], " +
+      "textarea[placeholder*='Ask' i], " +
+      "textarea[placeholder*='prompt' i], " +
+      "textarea[placeholder*='describe' i], " +
+      "textarea[placeholder*='generate' i], " +
+      "textarea[placeholder*='image' i], " +
+      "textarea[placeholder*='video' i], " +
+      "textarea[placeholder*='music' i], " +
+      "textarea[placeholder*='DeepSeek'], " +
+      "[data-testid*='chat-input' i], " +
+      "[data-testid*='composer' i], " +
+      "[data-testid*='prompt' i], " +
+      "[contenteditable='true'][role='textbox']"
+    );
+    for (var j = 0; j < candidates.length; j++) {
+      var c = candidates[j];
+      if (!c) continue;
+      // Skip editors in chat history
+      if (c.closest && c.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], div.group")) {
+        continue;
+      }
+      var t = (c.tagName === "TEXTAREA" || c.tagName === "INPUT") ? (c.value || "") : (c.innerText || c.textContent || "");
+      if (t && t.trim()) return t.trim();
+    }
+    if (candidates.length) {
+      var last = candidates[candidates.length - 1];
+      var lastVal = (last.tagName === "TEXTAREA" || last.tagName === "INPUT") ? (last.value || "") : (last.innerText || last.textContent || "");
+      if (lastVal && lastVal.trim()) return lastVal.trim();
+    }
+
+    // Universal Target Domain fallback: search all visible textareas & contenteditables with text
+    try {
+      var allEditors = querySelectorAllDeep("textarea, [contenteditable='true'], [role='textbox']");
+      for (var k = allEditors.length - 1; k >= 0; k--) {
+        var ed = allEditors[k];
+        if (!ed) continue;
+        if (ed.closest && ed.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group")) {
+          continue;
+        }
+        var ev = (ed.tagName === "TEXTAREA" || ed.tagName === "INPUT") ? (ed.value || "") : (ed.innerText || ed.textContent || "");
+        if (ev && ev.trim()) return ev.trim();
+      }
+    } catch (e) {}
+
+    return "";
+  }
+
+  // Extract file attachments currently displayed in the chat composer UI
+  function extractDOMAttachedFiles() {
+    var detected = [];
+    try {
+      // STRICT SCOPE: Only look inside the active composer/upload container (NOT in previous message history)
+      var activeContainer = document.querySelector(
+        "fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]"
+      ) || document.body;
+
+      var selectors = [
+        "[data-testid*='attachment']",
+        "[data-testid*='file']",
+        "div.file-item",
+        "div[data-testid='file-preview']",
+        "[aria-label*='attachment' i]",
+        "[aria-label*='file' i]",
+        "div[class*='attachment' i]",
+        "div[class*='file-tile' i]",
+        "div[class*='file-preview' i]",
+        "span[class*='file-name' i]",
+        "[class*='upload-preview' i]",
+        "[class*='uploaded-file' i]"
+      ];
+      var nodes = querySelectorAllDeep(selectors.join(", "));
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        if (!n) continue;
+        // Never scrape files from conversation message history
+        if (n.closest && n.closest("[data-testid*='conversation-turn'], [data-testid*='user-message'], [class*='font-claude-message'], [class*='ChatMessage'], [class*='message-content'], div.group")) {
+          continue;
+        }
+        var txt = (n.getAttribute("aria-label") || n.getAttribute("title") || n.innerText || n.textContent || "").trim();
+        if (!txt) continue;
+        var m = txt.match(/([a-zA-Z0-9_\-\. ]+\.[a-zA-Z0-9]{1,8})/);
+        if (m && m[1]) {
+          var fn = m[1].trim();
+          if (fn && !detected.some(function (x) { return x.name === fn; })) {
+            detected.push({ name: fn, size: 0, type: "application/octet-stream" });
+          }
+        }
+      }
+    } catch (e) { }
+    return detected;
+  }
+
+  // Set Composer text (for auto-redaction)
+  function setComposerText(text) {
+    var targets = [
+      document.activeElement,
+      document.querySelector("div#prompt-textarea"),
+      document.querySelector("div.ProseMirror"),
+      document.querySelector("rich-textarea div[contenteditable]"),
+      document.querySelector("textarea")
+    ];
+    for (var i = 0; i < targets.length; i++) {
+      var t = targets[i];
+      if (!t) continue;
+      if (t.tagName === "TEXTAREA" || t.tagName === "INPUT") {
+        t.value = text;
+        t.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      }
+      if (t.isContentEditable) {
+        t.innerText = text;
+        t.dispatchEvent(new Event("input", { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Sleek, compact In-Page YP-Raksha Alert Toast
+  function showBubble(message, ruleName, kind) {
+    var tone = kind === "warn" ? "warn" : (kind === "redact" ? "redact" : "block");
+    var isWarn = (tone === "warn");
+    var isRedact = (tone === "redact");
+    var borderColor = isWarn ? "#f59e0b" : (isRedact ? "#38bdf8" : "#ef4444");
+    var titleColor = isWarn ? "#fbbf24" : (isRedact ? "#38bdf8" : "#f87171");
+    var titleText = isWarn ? "YP-Raksha Warning" : (isRedact ? "YP-Raksha Redacted" : "YP-Raksha Blocked");
+    var iconText = isWarn ? "⚠️" : (isRedact ? "✂️" : "🛡️");
+    var text = (message || (isWarn ? "Security Warning: Policy match detected." : (isRedact ? "Sensitive information was redacted." : "This request was blocked by YP-Raksha."))).trim();
+    var modalId = "yp-raksha-alert-card";
+    var old = document.getElementById(modalId);
+    if (old) old.remove();
+
+    var card = document.createElement("div");
+    card.id = modalId;
+    card.setAttribute("role", "alertdialog");
+    card.style.cssText =
+      "all:initial;display:block;box-sizing:border-box;position:fixed;left:50%;bottom:95px;transform:translateX(-50%);max-width:460px;width:fit-content;min-width:280px;" +
+      "z-index:2147483647;background:rgba(15,23,42,0.96);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);" +
+      "color:#f9fafb;border:1px solid " + borderColor + ";border-radius:12px;padding:9px 14px;box-shadow:0 10px 30px rgba(0,0,0,0.5);" +
+      "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;animation:ypFadeIn 0.2s ease-out;";
+
+    // Style animation
+    if (!document.getElementById("yp-raksha-keyframes")) {
+      var kf = document.createElement("style");
+      kf.id = "yp-raksha-keyframes";
+      kf.textContent = "@keyframes ypFadeIn{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}";
+      (document.head || document.documentElement).appendChild(kf);
+    }
+
+    var header = document.createElement("div");
+    header.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;";
+
+    var titleBox = document.createElement("div");
+    titleBox.style.cssText = "display:flex;align-items:center;gap:6px;";
+
+    var icon = document.createElement("span");
+    icon.textContent = iconText;
+    icon.style.cssText = "font-size:13px;line-height:1;";
+
+    var title = document.createElement("strong");
+    title.textContent = titleText;
+    title.style.cssText = "font-size:11px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:" + titleColor + ";";
+
+    titleBox.appendChild(icon);
+    titleBox.appendChild(title);
+
+    var closeBtn = document.createElement("button");
+    closeBtn.textContent = "✕";
+    closeBtn.style.cssText = "background:none;border:none;color:#9ca3af;font-size:12px;cursor:pointer;padding:0 2px;line-height:1;";
+    closeBtn.onclick = function () { card.remove(); };
+
+    header.appendChild(titleBox);
+    header.appendChild(closeBtn);
+
+    var body = document.createElement("div");
+    body.style.cssText = "font-size:12.5px;line-height:1.4;color:#e2e8f0;font-weight:400;";
+    body.textContent = text;
+
+    card.appendChild(header);
+    card.appendChild(body);
+
+    (document.body || document.documentElement).appendChild(card);
+
+    // Auto-dismiss after 1.5 seconds (requested by user)
+    setTimeout(function () {
+      if (card && card.parentNode) {
+        card.style.transition = "opacity 0.2s ease";
+        card.style.opacity = "0";
+        setTimeout(function () { if (card.parentNode) card.remove(); }, 200);
+      }
+    }, 1500);
+  }
+
+  var lastWarnedTime = 0;
+  var lastWarnedRule = "";
+
+  function handleDecision(decision, proceed) {
+    var action = String((decision && decision.action) || "").toLowerCase();
+    var blocked = !!(decision && (decision.blocked || action === "blocked" || action === "block" || action === "bot answered" || action === "replied"));
+    if (blocked) {
+      showBubble(decision.message, decision.rule, "block");
+      return;
+    }
+    if (action === "warned" || action === "warn" || action === "alert") {
+      var now = Date.now();
+      if (now - lastWarnedTime > 4000 || lastWarnedRule !== decision.rule) {
+        lastWarnedTime = now;
+        lastWarnedRule = decision.rule || "";
+        showBubble(decision.message, decision.rule, "warn");
+      }
+      proceed(decision);
+      return;
+    }
+    if (action === "redacted" || action === "redact") {
+      if (decision.redacted_prompt) setComposerText(decision.redacted_prompt);
+      showBubble(decision.message || "Sensitive text was redacted before sending.", decision.rule, "redact");
+      proceed(decision);
+      return;
+    }
+    proceed(decision || { blocked: false });
+  }
+
+  function rewriteBody(body, nextText) {
+    if (typeof body !== "string" || !nextText) return null;
+    try {
+      var parsed = JSON.parse(body);
+      var changed = false;
+      if (parsed && typeof parsed.prompt === "string") { parsed.prompt = nextText; changed = true; }
+      if (parsed && typeof parsed.query === "string") { parsed.query = nextText; changed = true; }
+      if (parsed && typeof parsed.query_str === "string") { parsed.query_str = nextText; changed = true; }
+      if (parsed && Array.isArray(parsed.messages)) {
+        for (var m = parsed.messages.length - 1; m >= 0; m--) {
+          var msg = parsed.messages[m];
+          if (!msg) continue;
+          var role = msg.role || (msg.author && msg.author.role) || "";
+          if (role !== "user") continue;
+          if (typeof msg.content === "string") { msg.content = nextText; changed = true; }
+          else if (msg.content && Array.isArray(msg.content.parts)) { msg.content.parts = [nextText]; changed = true; }
+          break;
+        }
+      }
+      return changed ? JSON.stringify(parsed) : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // --- 2. ALL FILE TYPES & IMAGE INTERCEPTION ENGINE ---
+
+  function inspectAndStageFile(file) {
+    if (!file) return false;
+    if (!checkFileUploadAllowed(file)) {
+      return false;
+    }
+    var name = file.name || "file";
+    var size = file.size || 0;
+    var type = file.type || "";
+
+    // Read images as Base64 for Vision check
+    if (type.indexOf("image/") === 0 || /\.(png|jpg|jpeg|webp|bmp|svg)$/i.test(name)) {
+      var rImg = new FileReader();
+      rImg.onload = function (e) {
+        if (e.target && e.target.result) {
+          stagedImages.push(e.target.result);
+        }
+      };
+      rImg.readAsDataURL(file);
+    }
+    // 3. Read text/code/script/markup/config files
+    else if (
+      type.indexOf("text/") === 0 ||
+      /\.(txt|py|pyw|pyi|pyx|js|mjs|cjs|jsx|ts|tsx|mts|cts|json|jsonc|json5|csv|tsv|log|md|markdown|yaml|yml|sql|sh|bash|zsh|fish|bat|cmd|ps1|psm1|psd1|java|kt|kts|scala|sc|groovy|c|h|cpp|cc|cxx|hpp|hh|hxx|cs|csx|fs|go|rs|rlib|php|phtml|phar|rb|rake|gemspec|swift|dart|lua|r|rmd|jl|pl|pm|t|html|htm|xml|svg|xhtml|css|scss|sass|less|vue|svelte|toml|ini|conf|config|cfg|properties|env|graphql|gql|proto|dockerfile|prisma|gradle|cmake|tf|tfvars|sol|asm|s|diff|patch|ipynb)$/i.test(name) ||
+      /^(dockerfile|makefile|jenkinsfile|procfile|gemfile|rakefile|justfile|vagrantfile|license|licence|readme|\.env|\.gitignore|\.gitattributes|\.editorconfig|package\.json|cargo\.toml|go\.mod|requirements\.txt)$/i.test(name)
+    ) {
+      var rText = new FileReader();
+      rText.onload = function (e) {
+        if (e.target && typeof e.target.result === "string") {
+          var fContent = e.target.result;
+          stagedFiles.push({ name: name, size: size, type: type, text: fContent });
+
+          // Immediate DLP scan of file contents
+          var fileDecision = evaluateClientRules(null, [{ name: name, text: fContent }]);
+          if (fileDecision && fileDecision.blocked) {
+            showBubble("File '" + name + "' contains confidential data: " + fileDecision.message, fileDecision.rule);
+          }
+        }
+      };
+      rText.readAsText(file.slice(0, 500000)); // Scan first 500KB
+    }
+    // 4. Binary Documents (PDF, Word, Excel, PowerPoint, ODF, RTF, ZIP, Archives)
+    else if (
+      /\.(pdf|docx|doc|xlsx|xls|pptx|ppt|odt|ods|odp|rtf|zip|tar|gz|7z)$/i.test(name) ||
+      type.indexOf("application/pdf") >= 0 ||
+      type.indexOf("application/zip") >= 0 ||
+      type.indexOf("officedocument") >= 0
+    ) {
+      var rDoc = new FileReader();
+      rDoc.onload = function (e) {
+        if (e.target && typeof e.target.result === "string") {
+          var b64 = e.target.result.split(",")[1] || "";
+          stagedFiles.push({ name: name, size: size, type: type, base64: b64 });
+        }
+      };
+      rDoc.readAsDataURL(file.slice(0, 2000000)); // Read first 2MB for deep backend extraction
+    } else {
+      // 5. General fallback: read first 1MB as Base64 so desktop proxy/agent extracts & scans it
+      var rAny = new FileReader();
+      rAny.onload = function (e) {
+        if (e.target && typeof e.target.result === "string") {
+          var b64 = e.target.result.split(",")[1] || "";
+          stagedFiles.push({ name: name, size: size, type: type, base64: b64 });
+        }
+      };
+      rAny.readAsDataURL(file.slice(0, 1000000));
+    }
+    return true;
+  }
+
+  // Hook 1: File Input Selector (<input type="file">) and Attach Button Click Blocking
+  try {
+    var origInputClick = HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click = function () {
+      if (armed && this.type === "file" && govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+      return origInputClick.apply(this, arguments);
+    };
+  } catch (e) {}
+
+  document.addEventListener("click", function (ev) {
+    if (!armed || !govBlockUpload || !isControlActiveForSite(govUploadTargetWebsites)) return;
+    var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
+    if (!target) return;
+    if (target.tagName === "INPUT" && target.type === "file") {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+      return;
+    }
+    var btn = target.closest("button, [role='button'], label");
+    if (btn) {
+      var aria = (btn.getAttribute("aria-label") || "").toLowerCase();
+      var title = (btn.getAttribute("title") || "").toLowerCase();
+      var testid = (btn.getAttribute("data-testid") || "").toLowerCase();
+      var isAttachBtn =
+        aria.includes("attach") || aria.includes("upload") || aria.includes("add file") || aria.includes("add photo") ||
+        title.includes("attach") || title.includes("upload") ||
+        testid.includes("attach") || testid.includes("upload") || testid.includes("file-upload");
+      if (isAttachBtn) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+    }
+  }, true);
+
+  document.addEventListener("change", function (ev) {
+    if (!armed) return;
+    if (ev.target && ev.target.tagName === "INPUT" && ev.target.type === "file") {
+      if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+        ev.target.value = "";
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+      var files = ev.target.files;
+      if (files && files.length) {
+        for (var i = 0; i < files.length; i++) {
+          if (!inspectAndStageFile(files[i])) {
+            ev.target.value = ""; // Clear file input on block
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            return;
+          }
+        }
+      }
+    }
+  }, true);
+
+  // Hook 2: Drag & Drop Files
+  window.addEventListener("dragover", function (ev) {
+    if (!armed) return;
+    var uploadActive = govBlockUpload && isControlActiveForSite(govUploadTargetWebsites);
+    var dragDropActive = govBlockDragDrop && isControlActiveForSite(govDragDropTargetWebsites);
+    if (uploadActive || dragDropActive) {
+      ev.preventDefault();
+    }
+  }, true);
+
+  window.addEventListener("drop", function (ev) {
+    if (!armed) return;
+    var uploadActive = govBlockUpload && isControlActiveForSite(govUploadTargetWebsites);
+    var dragDropActive = govBlockDragDrop && isControlActiveForSite(govDragDropTargetWebsites);
+    if (dragDropActive) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      showBubble(govDragDropBlockMessage || govBlockMessage || "Drag-and-drop file and data ingestion is blocked by corporate data governance policy.", "Data Governance Policy", "block");
+      return;
+    }
+    if (uploadActive) {
+      if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+    }
+    if (ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files.length) {
+      var files = ev.dataTransfer.files;
+      for (var i = 0; i < files.length; i++) {
+        if (!inspectAndStageFile(files[i])) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          return;
+        }
+      }
+    }
+  }, true);
+
+  // Hook 3: Clipboard Paste (Ctrl+V Screenshots, Files & Sensitive Text Shielding)
+  window.addEventListener("paste", function (ev) {
+    if (!armed) return;
+    if (govBlockClipboard && isControlActiveForSite(govClipboardTargetWebsites)) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      var pastedSnippet = "";
+      try {
+        if (ev.clipboardData) pastedSnippet = ev.clipboardData.getData("text/plain") || "";
+      } catch (e) {}
+      showBubble(govClipboardBlockMessage || govBlockMessage || "Pasting data into this AI tool is blocked by corporate data governance policy.", "Clipboard Policy", "block");
+      var promptLogText = "--copy paste [CLIPBOARD PASTE]";
+      if (pastedSnippet && pastedSnippet.trim()) {
+        promptLogText += " " + pastedSnippet.trim().slice(0, 1000);
+      }
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: "paste_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: promptLogText,
+        host: location.hostname,
+        url: location.href,
+        is_blocked: true,
+        rule: "Clipboard Policy",
+        blocked_reason: "Clipboard Policy",
+        status: "Blocked (Clipboard Policy)"
+      }, "*");
+      return;
+    }
+    var cd = ev.clipboardData;
+    if (!cd) return;
+
+    // Master upload block on pasting files / images / screenshots
+    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      if (cd.files && cd.files.length > 0) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and image pasting are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+      if (cd.items && cd.items.length) {
+        for (var pki = 0; pki < cd.items.length; pki++) {
+          if (cd.items[pki].kind === "file") {
+            ev.preventDefault();
+            ev.stopImmediatePropagation();
+            showBubble(govUploadWarning || "File uploads and image pasting are blocked by corporate policy.", "File Upload Policy", "block");
+            return;
+          }
+        }
+      }
+    }
+
+    // 1. Files & Screenshots inspection
+    if (cd.files && cd.files.length) {
+      for (var i = 0; i < cd.files.length; i++) {
+        if (!inspectAndStageFile(cd.files[i])) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          return;
+        }
+      }
+    }
+    // 2. Sensitive Text Paste Shield (Blocks secret credentials directly on Ctrl+V paste)
+    try {
+      var pastedText = cd.getData("text/plain");
+      if (pastedText && pastedText.length > 5) {
+        var pasteDecision = evaluateClientRules(pastedText, []);
+        if (pasteDecision && pasteDecision.blocked) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          showBubble("Pasting confidential data is blocked by company security policy: " + pasteDecision.message, pasteDecision.rule, "block");
+          window.postMessage({
+            source: "gateway-guard-page",
+            nonce: guardNonce,
+            id: "paste_log_" + Date.now().toString(36),
+            prompt: "--copy paste [CLIPBOARD PASTE] " + pastedText.slice(0, 500),
+            host: location.hostname,
+            url: location.href,
+            is_blocked: true,
+            rule: pasteDecision.rule || "Clipboard Policy",
+            blocked_reason: pasteDecision.rule || "Clipboard Policy",
+            status: "Blocked (Clipboard Policy)"
+          }, "*");
+          return;
+        }
+      }
+    } catch (pasteErr) { }
+  }, true);
+
+  window.addEventListener("copy", function (ev) {
+    if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    var copiedSnippet = "";
+    try {
+      var sel = window.getSelection ? window.getSelection().toString() : "";
+      if (sel) copiedSnippet = sel;
+    } catch (e) {}
+    showBubble(govClipboardBlockMessage || govBlockMessage || "Copying responses and data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+    var promptLogText = "--copy paste [CLIPBOARD COPY]";
+    if (copiedSnippet && copiedSnippet.trim()) {
+      promptLogText += " " + copiedSnippet.trim().slice(0, 1000);
+    }
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: "copy_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      prompt: promptLogText,
+      host: location.hostname,
+      url: location.href,
+      is_blocked: true,
+      rule: "Clipboard Policy",
+      blocked_reason: "Clipboard Policy",
+      status: "Blocked (Clipboard Policy)"
+    }, "*");
+  }, true);
+
+  window.addEventListener("cut", function (ev) {
+    if (!armed || !govBlockClipboard || !isControlActiveForSite(govClipboardTargetWebsites)) return;
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    var cutSnippet = "";
+    try {
+      var sel = window.getSelection ? window.getSelection().toString() : "";
+      if (sel) cutSnippet = sel;
+    } catch (e) {}
+    showBubble(govClipboardBlockMessage || govBlockMessage || "Cutting data from this AI service is restricted by corporate security policy.", "Clipboard Policy", "block");
+    var promptLogText = "--copy paste [CLIPBOARD CUT]";
+    if (cutSnippet && cutSnippet.trim()) {
+      promptLogText += " " + cutSnippet.trim().slice(0, 1000);
+    }
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: "cut_block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      prompt: promptLogText,
+      host: location.hostname,
+      url: location.href,
+      is_blocked: true,
+      rule: "Clipboard Policy",
+      blocked_reason: "Clipboard Policy",
+      status: "Blocked (Clipboard Policy)"
+    }, "*");
+  }, true);
+
+  // Hook 4: File Downloads & Exports Restriction
+  document.addEventListener("click", function (ev) {
+    if (!armed || !govBlockDownload || !isControlActiveForSite(govDownloadTargetWebsites)) return;
+    var target = (ev.composedPath && ev.composedPath()[0]) || ev.target;
+    var el = (target && target.closest) ? target.closest("a, button, [role='button']") : null;
+    if (!el) return;
+    var href = (el.getAttribute("href") || "").toLowerCase();
+    var downloadAttr = el.getAttribute("download");
+    var label = (el.getAttribute("aria-label") || "").toLowerCase();
+    var title = (el.getAttribute("title") || "").toLowerCase();
+    var text = (el.innerText || el.textContent || "").toLowerCase();
+
+    var isDownload = (downloadAttr !== null) ||
+      Boolean(href && href.match(/\.(pdf|csv|xlsx|docx|txt|zip|tar|gz|json|py|js|html)(\?.*)?$/i)) ||
+      Boolean(label && (label.includes("download") || label.includes("export") || label.includes("save as"))) ||
+      Boolean(title && (title.includes("download") || title.includes("export"))) ||
+      Boolean(text && text.length < 35 && (text.includes("download") || text.includes("export") || text.includes("save code") || text.includes("export chat")));
+
+    if (isDownload) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      showBubble(govDownloadBlockMessage || govBlockMessage || "Downloading files, artifacts, and exports from this AI tool is restricted by corporate security policy.", "Download Policy", "block");
+    }
+  }, true);
+
+  try {
+    var origAnchorClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (armed && govBlockDownload && isControlActiveForSite(govDownloadTargetWebsites)) {
+        var href = (this.getAttribute("href") || "").toLowerCase();
+        var hasDl = this.hasAttribute("download");
+        if (hasDl || href.startsWith("blob:") || href.startsWith("data:") || href.match(/\.(pdf|csv|xlsx|docx|zip|txt|json)/i)) {
+          showBubble(govDownloadBlockMessage || govBlockMessage || "File download was blocked by corporate data governance policy.", "Download Policy", "block");
+          return;
+        }
+      }
+      return origAnchorClick.apply(this, arguments);
+    };
+  } catch (e) {}
+
+  // --- 3. SEND INTERCEPTION (Enter Key & Send Button) ---
+
+  function mergeStagedAndDomFiles() {
+    var domFiles = extractDOMAttachedFiles();
+    var all = stagedFiles.slice();
+    for (var i = 0; i < domFiles.length; i++) {
+      if (!all.some(function (x) { return x.name === domFiles[i].name; })) {
+        all.push(domFiles[i]);
+      }
+    }
+    return all;
+  }
+
+  // Keyboard Enter
+  document.addEventListener("keydown", function (e) {
+    if (!armed || passKey) return;
+    if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey || e.isComposing) return;
+
+    if (sessionBlocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      return;
+    }
+    var actualTarget = (e.composedPath && e.composedPath()[0]) || e.target;
+    var text = stripInvisible(composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement()));
+    var effectiveFiles = mergeStagedAndDomFiles();
+    if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
+
+    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+    }
+
+    for (var fi = 0; fi < effectiveFiles.length; fi++) {
+      if (!checkFileUploadAllowed(effectiveFiles[fi])) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+    }
+
+    var clientDecision = evaluateClientRules(text, effectiveFiles);
+    if (clientDecision && clientDecision.blocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(clientDecision.message, clientDecision.rule, "block");
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: text,
+        files: effectiveFiles || [],
+        upload_images: stagedImages || [],
+        host: location.hostname,
+        url: location.href,
+        is_blocked: true,
+        rule: clientDecision.rule || ""
+      }, "*");
+      return;
+    }
+
+    if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      var target = e.target;
+      ask(text, effectiveFiles, stagedImages).then(function (decision) {
+        handleDecision(decision, function () {
+          stagedFiles = [];
+          stagedImages = [];
+          passKey = true;
+          var pId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+          _lastHandledPromptId = pId;
+          _lastHandledPromptTime = Date.now();
+          _lastHandledPromptText = text;
+          try {
+            var sendBtns = querySelectorAllDeep(
+              "button[aria-label*='Send' i], button[aria-label*='Submit' i], button[aria-label*='Ask' i], button.send-button, [data-testid*='send-button' i], [data-testid*='submit' i], cib-serp button, button[title*='Send' i], button[title*='Submit' i], button[type='submit']"
+            );
+            var sendBtn = sendBtns.length ? sendBtns[sendBtns.length - 1] : null;
+            if (sendBtn) {
+              sendBtn.click();
+            } else {
+              target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true, cancelable: true, keyCode: 13, which: 13 }));
+            }
+          } finally {
+            passKey = false;
+          }
+        });
+      });
+      return;
+    }
+
+    // Fast path: Clean text prompt without files sends instantly with native Enter (0ms delay)
+    var fastId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+    _lastHandledPromptId = fastId;
+    _lastHandledPromptTime = Date.now();
+    _lastHandledPromptText = text;
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: fastId,
+      eval_id: fastId,
+      prompt: text,
+      files: [],
+      upload_images: [],
+      host: location.hostname,
+      url: location.href,
+      is_blocked: false,
+    }, "*");
+  }, true);
+
+  // Send Button Click
+  document.addEventListener("click", function (e) {
+    if (!armed || passClick) return;
+    var actualEl = (e.composedPath && e.composedPath()[0]) || e.target;
+    var btn = (actualEl && actualEl.closest ? actualEl.closest("button,[role='button']") : null) || (e.target && e.target.closest ? e.target.closest("button,[role='button']") : null);
+    if (!btn) return;
+
+    var label = ((btn.getAttribute("aria-label") || "") + " " + (btn.getAttribute("data-testid") || "") + " " + (btn.title || "")).toLowerCase();
+    var btnText = (btn.innerText || btn.textContent || "").toLowerCase().trim();
+    var form = btn.closest ? btn.closest("form") : null;
+    var sendLike =
+      label.indexOf("send") >= 0 ||
+      label.indexOf("submit") >= 0 ||
+      label.indexOf("ask") >= 0 ||
+      label.indexOf("generate") >= 0 ||
+      label.indexOf("create") >= 0 ||
+      label.indexOf("run") >= 0 ||
+      label.indexOf("draw") >= 0 ||
+      label.indexOf("message") >= 0 ||
+      label.indexOf("chat") >= 0 ||
+      label.indexOf("post") >= 0 ||
+      label.indexOf("search") >= 0 ||
+      btnText === "generate" ||
+      btnText === "create" ||
+      btnText === "send" ||
+      btnText === "submit" ||
+      btnText === "ask" ||
+      btnText === "run" ||
+      btnText === "post" ||
+      btnText === "search" ||
+      btnText === "go" ||
+      btn.getAttribute("type") === "submit" ||
+      btn.type === "submit" ||
+      btn.getAttribute("data-testid") === "send-button" ||
+      (form && form.contains(getDeepActiveElement())) ||
+      Boolean(btn.closest("fieldset, form, [class*='composer' i], [class*='input-container' i], div[data-testid*='composer' i], div[class*='chat-input' i]")) ||
+      (Boolean(btn.querySelector("svg")) && Boolean(btn.closest("fieldset, form, footer, [class*='composer' i], [class*='chat' i]")));
+
+    if (!sendLike) return;
+
+    if (sessionBlocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      return;
+    }
+    var text = stripInvisible(composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement));
+    var effectiveFiles = mergeStagedAndDomFiles();
+    if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
+
+    if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        return;
+      }
+    }
+
+    for (var fi2 = 0; fi2 < effectiveFiles.length; fi2++) {
+      if (!checkFileUploadAllowed(effectiveFiles[fi2])) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+    }
+
+    var clientDecision = evaluateClientRules(text, effectiveFiles);
+    if (clientDecision && clientDecision.blocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(clientDecision.message, clientDecision.rule, "block");
+      window.postMessage({
+        source: "gateway-guard-page",
+        nonce: guardNonce,
+        id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+        prompt: text,
+        files: effectiveFiles || [],
+        upload_images: stagedImages || [],
+        host: location.hostname,
+        url: location.href,
+        is_blocked: true,
+        rule: clientDecision.rule || ""
+      }, "*");
+      return;
+    }
+
+    if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      ask(text, effectiveFiles, stagedImages).then(function (decision) {
+        handleDecision(decision, function () {
+          stagedFiles = [];
+          stagedImages = [];
+          passClick = true;
+          var clickId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+          _lastHandledPromptId = clickId;
+          _lastHandledPromptTime = Date.now();
+          _lastHandledPromptText = text;
+          try {
+            btn.click();
+          } finally {
+            passClick = false;
+          }
+        });
+      });
+      return;
+    }
+
+    // Fast path: Clean text prompt without files proceeds with native click instantly (0ms delay)
+    var fastClickId = "eval_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+    _lastHandledPromptId = fastClickId;
+    _lastHandledPromptTime = Date.now();
+    _lastHandledPromptText = text;
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: fastClickId,
+      eval_id: fastClickId,
+      prompt: text,
+      files: [],
+      upload_images: [],
+      host: location.hostname,
+      url: location.href,
+      is_blocked: false,
+      rule: ""
+    }, "*");
+  }, true);
+
+  // Form Submit Interception (Catches Enter in simple forms or form.requestSubmit)
+  document.addEventListener("submit", function (e) {
+    if (!armed || passClick) return;
+    var form = e.target;
+    if (!form) return;
+
+    if (sessionBlocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(sessionBlockedReason || "Corporate policy restricts personal accounts. Please sign in with your corporate account.", "Corporate Policy Block", "block");
+      return;
+    }
+    var text = stripInvisible(composerFrom(form) || composerFrom(document.activeElement));
+    var effectiveFiles = mergeStagedAndDomFiles();
+    if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
+
+    var clientDecision = evaluateClientRules(text, effectiveFiles);
+    if (clientDecision && clientDecision.blocked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      showBubble(clientDecision.message, clientDecision.rule, "block");
+      return;
+    }
+
+    if (effectiveFiles.length > 0 || stagedImages.length > 0) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      ask(text, effectiveFiles, stagedImages).then(function (decision) {
+        handleDecision(decision, function () {
+          stagedFiles = [];
+          stagedImages = [];
+          passClick = true;
+          try {
+            if (form && typeof form.requestSubmit === "function") {
+              form.requestSubmit();
+            } else if (form && typeof form.submit === "function") {
+              form.submit();
+            }
+          } catch (subErr) {
+            console.warn("[Gateway Guard] form submit replay error:", subErr);
+          } finally {
+            passClick = false;
+          }
+        });
+      });
+      return;
+    }
+
+    _lastHandledPromptTime = Date.now();
+    _lastHandledPromptText = text;
+    window.postMessage({
+      source: "gateway-guard-page",
+      nonce: guardNonce,
+      id: "log_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2),
+      prompt: text,
+      files: [],
+      upload_images: [],
+      host: location.hostname,
+      url: location.href,
+      is_blocked: false,
+      rule: ""
+    }, "*");
+  }, true);
+
+  // --- 4. NETWORK LAYER HOOK (fetch, XMLHttpRequest & WebSocket) ---
+
+  var origFetch = window.fetch;
+  if (typeof origFetch === "function") {
+    window.fetch = function (input, init) {
+      if (!armed) return origFetch.apply(this, arguments);
+
+      // If a prompt was evaluated at the Send button within the last 4 seconds, mark any outgoing fetch
+      if (Date.now() - _lastHandledPromptTime < 4000) {
+        try {
+          var reqUrlEarly = (typeof input === "string" ? input : (input && input.url) || "").toLowerCase();
+          // Never tag external cloud storage or binary upload URLs (avoids breaking Azure Blob/S3 pre-signed signatures & CORS)
+          if (
+            !reqUrlEarly.includes("blob.core.windows.net") &&
+            !reqUrlEarly.includes("amazonaws.com") &&
+            !reqUrlEarly.includes("storage.googleapis.com") &&
+            !reqUrlEarly.includes("oaiusercontent.com") &&
+            !reqUrlEarly.includes("claudeusercontent.com") &&
+            !reqUrlEarly.includes("clients6.google.com") &&
+            !reqUrlEarly.includes("content-push.googleapis.com") &&
+            !reqUrlEarly.includes("/backend-api/files") &&
+            !reqUrlEarly.includes("/files") &&
+            !reqUrlEarly.includes("/upload") &&
+            !reqUrlEarly.includes("/file/upload")
+          ) {
+            var handledHeaders = {
+              "X-Guard-Handled": "1",
+              "X-Gateway-Guard-Handled": "1",
+              "X-Guard-Eval-Id": _lastHandledPromptId || "eval_done",
+              "X-Prompt-Id": _lastHandledPromptId || "eval_done"
+            };
+            if (typeof Request !== "undefined" && input instanceof Request) {
+              try {
+                input.headers.set("X-Guard-Handled", "1");
+                input.headers.set("X-Gateway-Guard-Handled", "1");
+                if (_lastHandledPromptId) {
+                  input.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                  input.headers.set("X-Prompt-Id", _lastHandledPromptId);
+                }
+              } catch (e1) {}
+            } else if (init && init.headers) {
+              if (typeof Headers !== "undefined" && init.headers instanceof Headers) {
+                init.headers.set("X-Guard-Handled", "1");
+                init.headers.set("X-Gateway-Guard-Handled", "1");
+                if (_lastHandledPromptId) {
+                  init.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                  init.headers.set("X-Prompt-Id", _lastHandledPromptId);
+                }
+              } else if (typeof init.headers === "object") {
+                Object.assign(init.headers, handledHeaders);
+              }
+            } else if (init) {
+              init.headers = Object.assign({}, handledHeaders);
+            }
+          }
+        } catch (e) { }
+        return origFetch.apply(this, arguments);
+      }
+
+      var method = (init && init.method) || (input && input.method) || "GET";
+      method = String(method).toUpperCase();
+      if (method !== "POST" && method !== "PUT" && method !== "PATCH") {
+        return origFetch.apply(this, arguments);
+      }
+
+      var url = typeof input === "string" ? input : (input && input.url) || "";
+      var body = init && init.body;
+      var promptText = "";
+      var netFiles = [];
+
+      // Handle JSON body
+      if (typeof body === "string") {
+        try {
+          var parsed = JSON.parse(body);
+          if (parsed) {
+            // 1. Direct prompt fields across OpenAI, Claude, Gemini, Copilot, DeepSeek, Mistral
+            if (typeof parsed.prompt === "string") promptText = parsed.prompt;
+            else if (typeof parsed.query === "string" && !parsed.query.toLowerCase().startsWith("plsenvironmentquery") && !parsed.query.toLowerCase().startsWith("query pls")) promptText = parsed.query;
+            else if (typeof parsed.text === "string") promptText = parsed.text;
+            else if (typeof parsed.input === "string") promptText = parsed.input;
+            else if (typeof parsed.userMessage === "string") promptText = parsed.userMessage;
+            else if (parsed.message && typeof parsed.message.text === "string") promptText = parsed.message.text;
+            else if (Array.isArray(parsed.arguments) && parsed.arguments[0]) {
+              var a0 = parsed.arguments[0];
+              if (a0.message && typeof a0.message.text === "string") promptText = a0.message.text;
+              else if (typeof a0.text === "string") promptText = a0.text;
+            }
+
+            // 2. Claude Connect-RPC / PerformAction format
+            var act = parsed.action || parsed;
+            var rpcMsg = (act && (act.createMessage || act.appendMessage || act.message)) || null;
+            if (rpcMsg) {
+              if (typeof rpcMsg.text === "string" && rpcMsg.text) promptText = rpcMsg.text;
+              if (Array.isArray(rpcMsg.attachments)) {
+                for (var r = 0; r < rpcMsg.attachments.length; r++) {
+                  var ra = rpcMsg.attachments[r];
+                  if (ra) {
+                    var rName = ra.fileName || ra.file_name || ra.name || "";
+                    if (rName && !netFiles.some(function (x) { return x.name === rName; })) {
+                      netFiles.push({ name: rName, size: ra.fileSize || ra.file_size || 0, type: ra.fileType || ra.file_type || "" });
+                    }
+                  }
+                }
+              }
+            }
+
+            // 3. Top-level attachments / files (Claude, etc.)
+            if (Array.isArray(parsed.attachments)) {
+              for (var a = 0; a < parsed.attachments.length; a++) {
+                var att = parsed.attachments[a];
+                if (att) {
+                  var aName = att.file_name || att.fileName || att.name || att.title || "";
+                  var aType = att.file_type || att.fileType || att.mime_type || "";
+                  var aSize = att.file_size || att.fileSize || att.size || 0;
+                  var aText = att.extracted_content || att.content || "";
+                  if (aName && !netFiles.some(function (x) { return x.name === aName; })) {
+                    netFiles.push({ name: aName, size: aSize, type: aType, text: aText });
+                  }
+                }
+              }
+            }
+            if (Array.isArray(parsed.files)) {
+              for (var f = 0; f < parsed.files.length; f++) {
+                var fl = parsed.files[f];
+                if (fl) {
+                  var fName = fl.name || fl.file_name || fl.fileName || "";
+                  var fType = fl.type || fl.mime_type || "";
+                  var fSize = fl.size || 0;
+                  if (fName && !netFiles.some(function (x) { return x.name === fName; })) {
+                    netFiles.push({ name: fName, size: fSize, type: fType });
+                  }
+                }
+              }
+            }
+
+            // 4. Conversation messages array (ChatGPT, Claude, Gemini, etc.)
+            if (Array.isArray(parsed.messages)) {
+              for (var m = parsed.messages.length - 1; m >= 0; m--) {
+                var msg = parsed.messages[m];
+                if (!msg) continue;
+                var role = msg.role || (msg.author && msg.author.role) || "";
+                if (role === "user") {
+                  if (typeof msg.content === "string") {
+                    promptText = msg.content;
+                  }
+                  // ChatGPT / Gemini parts array
+                  else if (msg.content && Array.isArray(msg.content.parts)) {
+                    var strParts = [];
+                    for (var p = 0; p < msg.content.parts.length; p++) {
+                      var pt = msg.content.parts[p];
+                      if (typeof pt === "string") {
+                        strParts.push(pt);
+                      } else if (pt && typeof pt === "object") {
+                        var ptName = pt.name || (pt.asset_pointer ? ("file_" + (pt.asset_pointer.split("/").pop() || "upload")) : "");
+                        if (ptName && !netFiles.some(function (x) { return x.name === ptName; })) {
+                          netFiles.push({ name: ptName, size: pt.size_bytes || 0, type: pt.content_type || "" });
+                        }
+                      }
+                    }
+                    if (strParts.length) promptText = strParts.join(" ");
+                  }
+                  // Claude content blocks array
+                  else if (Array.isArray(msg.content)) {
+                    var cParts = [];
+                    for (var c = 0; c < msg.content.length; c++) {
+                      var blk = msg.content[c];
+                      if (!blk) continue;
+                      if (blk.type === "text" && typeof blk.text === "string") {
+                        cParts.push(blk.text);
+                      } else if (blk.type === "document" || blk.type === "file") {
+                        var docName = blk.title || blk.name || "document";
+                        var docText = (blk.source && blk.source.data) ? blk.source.data : "";
+                        var docType = (blk.source && blk.source.media_type) || "application/pdf";
+                        if (!netFiles.some(function (x) { return x.name === docName; })) {
+                          netFiles.push({ name: docName, size: docText.length, type: docType, text: blk.text || "" });
+                        }
+                      } else if (blk.type === "image") {
+                        var imgName = blk.title || blk.name || "image.png";
+                        if (!netFiles.some(function (x) { return x.name === imgName; })) {
+                          netFiles.push({ name: imgName, size: 0, type: (blk.source && blk.source.media_type) || "image/png" });
+                        }
+                      }
+                    }
+                    if (cParts.length) promptText = cParts.join(" ");
+                  }
+
+                  // ChatGPT metadata.attachments
+                  if (msg.metadata && Array.isArray(msg.metadata.attachments)) {
+                    for (var ma = 0; ma < msg.metadata.attachments.length; ma++) {
+                      var matt = msg.metadata.attachments[ma];
+                      if (matt) {
+                        var mattName = matt.name || matt.file_name || matt.title || "";
+                        var mattSize = matt.size || 0;
+                        var mattType = matt.mime_type || matt.mimeType || matt.type || "";
+                        if (mattName && !netFiles.some(function (x) { return x.name === mattName; })) {
+                          netFiles.push({ name: mattName, size: mattSize, type: mattType });
+                        }
+                      }
+                    }
+                  }
+
+                  // Claude / generic msg.attachments
+                  if (Array.isArray(msg.attachments)) {
+                    for (var ma2 = 0; ma2 < msg.attachments.length; ma2++) {
+                      var matt2 = msg.attachments[ma2];
+                      if (matt2) {
+                        var m2Name = matt2.file_name || matt2.name || "";
+                        if (m2Name && !netFiles.some(function (x) { return x.name === m2Name; })) {
+                          netFiles.push({ name: m2Name, size: matt2.file_size || matt2.size || 0, type: matt2.file_type || "" });
+                        }
+                      }
+                    }
+                  }
+                  break;
+                }
+              }
+            }
+          }
+        } catch (err) { }
+      }
+      // Handle FormData body (File uploads)
+      else if (body && typeof body.forEach === "function") {
+        try {
+          var formUploadBlocked = false;
+          body.forEach(function (val, key) {
+            if (val && typeof val.name === "string") {
+              if (!checkFileUploadAllowed(val)) {
+                formUploadBlocked = true;
+              }
+              netFiles.push({ name: val.name, size: val.size, type: val.type });
+            } else if (typeof val === "string" && (key.indexOf("prompt") >= 0 || key.indexOf("query") >= 0 || key.indexOf("message") >= 0)) {
+              promptText = val;
+            }
+          });
+          if (formUploadBlocked) {
+            return Promise.resolve(new Response(null, { status: 204 }));
+          }
+        } catch (err) { }
+      }
+
+      // Check if URL looks like a pure file upload endpoint (ChatGPT /files, Claude upload, Azure Blob, S3, etc.)
+      var lowUrl = (url || "").toLowerCase();
+      var isPureUploadEndpoint =
+        lowUrl.includes("/backend-api/files") ||
+        lowUrl.includes("/files") ||
+        lowUrl.includes("/upload") ||
+        lowUrl.includes("blob.core.windows.net") ||
+        lowUrl.includes("amazonaws.com") ||
+        lowUrl.includes("storage.googleapis.com") ||
+        lowUrl.includes("/media/upload") ||
+        lowUrl.includes("/convert_document") ||
+        lowUrl.includes("/attachments");
+
+      // Check if master upload block is active on this site
+      if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+        if (isPureUploadEndpoint || (body && typeof body.forEach === "function") || (netFiles && netFiles.length > 0)) {
+          showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+          return Promise.reject(new TypeError("File uploads and attachments to this AI platform are blocked by corporate policy."));
+        }
+      }
+
+      // Pure file uploads without a typed prompt MUST pass through immediately with zero delay and unmodified headers!
+      // (The file was already staged via inspectAndStageFile, and full DLP scanning runs when the user clicks Send)
+      if (!promptText || isPureUploadEndpoint) {
+        var rawPromise = origFetch.apply(this, arguments);
+        try {
+          if (rawPromise && typeof rawPromise.then === "function") {
+            rawPromise.then(function (res) {
+              try {
+                var ct = (res && res.headers && res.headers.get("content-type")) || "";
+                if (ct.includes("json")) {
+                  res.clone().json().then(function (data) {
+                    scanObjectForSession(data, 0);
+                  }).catch(function () {});
+                }
+              } catch (err) {}
+            }).catch(function () {});
+          }
+        } catch (e) {}
+        return rawPromise;
+      }
+
+      if (promptText) {
+        promptText = stripInvisible(promptText);
+      }
+      var ptClean = (promptText || "").trim().toLowerCase();
+      var isNoisePrompt = !promptText || ptClean === "set" || ptClean === "ping" || ptClean === "pong" || ptClean === "heartbeat" || ptClean === "true" || ptClean === "false" || ptClean === "null" || ptClean === "me" || ptClean.indexOf("plsenvironmentquery") >= 0 || ptClean.indexOf("assign copilot license") >= 0;
+      if (isNoisePrompt) {
+        return origFetch.apply(this, arguments);
+      }
+
+      var args = arguments;
+      return ask(promptText, netFiles, []).then(function (decision) {
+        var sent = false;
+        var result = null;
+        handleDecision(decision, function (chosen) {
+          sent = true;
+          var nextArgs = args;
+          var action = String((chosen && chosen.action) || "").toLowerCase();
+          var nextInit = init ? Object.assign({}, init) : {};
+          if ((action === "redacted" || action === "redact") && chosen.redacted_prompt && init) {
+            var rewritten = rewriteBody(init.body, chosen.redacted_prompt);
+            if (rewritten) {
+              nextInit.body = rewritten;
+            }
+          }
+          // Tag header so downstream Proxy skips duplicate logging (only on chat endpoints)
+          try {
+            var chatReqUrl = (url || "").toLowerCase();
+            if (
+              !chatReqUrl.includes("blob.core.windows.net") &&
+              !chatReqUrl.includes("amazonaws.com") &&
+              !chatReqUrl.includes("storage.googleapis.com")
+            ) {
+              if (typeof Request !== "undefined" && input instanceof Request) {
+                try {
+                  input.headers.set("X-Guard-Handled", "1");
+                  input.headers.set("X-Gateway-Guard-Handled", "1");
+                  if (_lastHandledPromptId) {
+                    input.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                    input.headers.set("X-Prompt-Id", _lastHandledPromptId);
+                  }
+                } catch (hdrErr) {
+                  var safeH = new Headers(input.headers);
+                  safeH.set("X-Guard-Handled", "1");
+                  safeH.set("X-Gateway-Guard-Handled", "1");
+                  if (_lastHandledPromptId) {
+                    safeH.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                    safeH.set("X-Prompt-Id", _lastHandledPromptId);
+                  }
+                  nextInit.headers = safeH;
+                  nextArgs = [input, nextInit];
+                }
+              } else {
+                if (!nextInit.headers) {
+                  nextInit.headers = {};
+                }
+                if (typeof Headers !== "undefined" && nextInit.headers instanceof Headers) {
+                  nextInit.headers.set("X-Guard-Handled", "1");
+                  nextInit.headers.set("X-Gateway-Guard-Handled", "1");
+                  if (_lastHandledPromptId) {
+                    nextInit.headers.set("X-Guard-Eval-Id", _lastHandledPromptId);
+                    nextInit.headers.set("X-Prompt-Id", _lastHandledPromptId);
+                  }
+                } else if (Array.isArray(nextInit.headers)) {
+                  nextInit.headers.push(["X-Guard-Handled", "1"]);
+                  nextInit.headers.push(["X-Gateway-Guard-Handled", "1"]);
+                  if (_lastHandledPromptId) {
+                    nextInit.headers.push(["X-Guard-Eval-Id", _lastHandledPromptId]);
+                    nextInit.headers.push(["X-Prompt-Id", _lastHandledPromptId]);
+                  }
+                } else if (typeof nextInit.headers === "object") {
+                  nextInit.headers["X-Guard-Handled"] = "1";
+                  nextInit.headers["X-Gateway-Guard-Handled"] = "1";
+                  if (_lastHandledPromptId) {
+                    nextInit.headers["X-Guard-Eval-Id"] = _lastHandledPromptId;
+                    nextInit.headers["X-Prompt-Id"] = _lastHandledPromptId;
+                  }
+                }
+                nextArgs = [input, nextInit];
+              }
+            }
+          } catch (he) { }
+
+          result = origFetch.apply(window, nextArgs);
+        });
+        if (!sent) return new Response(null, { status: 204 });
+        return result;
+      });
+    };
+  }
+
+  // Hook XMLHttpRequest (Legacy AJAX)
+  var origXHRSend = XMLHttpRequest.prototype.send;
+  var origXHROpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url) {
+    this._ggMethod = method;
+    this._ggUrl = url;
+    try {
+      var lowU = String(url || "").toLowerCase();
+      if (lowU.includes("session") || lowU.includes("account") || lowU.includes("user") || lowU.includes("auth") || lowU.includes("me") || lowU.includes("organization") || lowU.includes("profile")) {
+        this.addEventListener("load", function () {
+          try {
+            if (this.responseText && this.responseText.startsWith("{")) {
+              scanObjectForSession(JSON.parse(this.responseText), 0);
+            }
+          } catch (xe) {}
+        });
+      }
+    } catch (e) {}
+    return origXHROpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function (body) {
+    if (Date.now() - _lastHandledPromptTime < 4000) {
+      try {
+        var xhrUrl = String(this._ggUrl || "").toLowerCase();
+        if (
+          !xhrUrl.includes("blob.core.windows.net") &&
+          !xhrUrl.includes("amazonaws.com") &&
+          !xhrUrl.includes("storage.googleapis.com") &&
+          !xhrUrl.includes("/backend-api/files") &&
+          !xhrUrl.includes("/files") &&
+          !xhrUrl.includes("/upload")
+        ) {
+          this.setRequestHeader("X-Guard-Handled", "1");
+          this.setRequestHeader("X-Gateway-Guard-Handled", "1");
+          if (_lastHandledPromptId) {
+            this.setRequestHeader("X-Guard-Eval-Id", _lastHandledPromptId);
+            this.setRequestHeader("X-Prompt-Id", _lastHandledPromptId);
+          }
+        }
+      } catch (e) { }
+    }
+    if (!armed || !body) return origXHRSend.apply(this, arguments);
+
+    var xhrUrl = String(this._ggUrl || "").toLowerCase();
+    var isXhrUpload =
+      xhrUrl.includes("/backend-api/files") ||
+      xhrUrl.includes("/files") ||
+      xhrUrl.includes("/upload") ||
+      xhrUrl.includes("blob.core.windows.net") ||
+      xhrUrl.includes("amazonaws.com") ||
+      xhrUrl.includes("storage.googleapis.com") ||
+      xhrUrl.includes("/media/upload") ||
+      xhrUrl.includes("/convert_document") ||
+      xhrUrl.includes("/attachments");
+
+    if (armed && govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
+      if (isXhrUpload || (body && (typeof FormData !== "undefined" && body instanceof FormData || typeof Blob !== "undefined" && body instanceof Blob || typeof File !== "undefined" && body instanceof File || typeof body.forEach === "function"))) {
+        showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
+        try {
+          this.abort();
+        } catch (e) {}
+        return;
+      }
+    }
+
+    var promptText = "";
+    if (typeof body === "string") {
+      try {
+        var parsed = JSON.parse(body);
+        if (parsed && typeof parsed.prompt === "string") promptText = parsed.prompt;
+      } catch (e) { }
+    }
+    if (promptText) {
+      var clientDecision = evaluateClientRules(promptText, []);
+      if (clientDecision && clientDecision.blocked) {
+        showBubble(clientDecision.message, clientDecision.rule);
+        return;
+      }
+    }
+    return origXHRSend.apply(this, arguments);
+  };
+
+  // Hook WebSocket (Streaming & Real-time AI Chatbots: Copilot SignalR, ChatGPT SSE, etc.)
+  if (typeof window.WebSocket !== "undefined" && window.WebSocket.prototype) {
+    var origWSSend = window.WebSocket.prototype.send;
+    window.WebSocket.prototype.send = function (data) {
+      if (armed && typeof data === "string" && data.length > 3) {
+        var cleanStr = data.replace(/\x1e/g, "").trim();
+        var promptText = "";
+        try {
+          var parsed = JSON.parse(cleanStr);
+          if (parsed) {
+            if (Array.isArray(parsed.arguments) && parsed.arguments[0]) {
+              var arg0 = parsed.arguments[0];
+              if (arg0.message && typeof arg0.message.text === "string") {
+                promptText = arg0.message.text;
+              } else if (arg0.message && typeof arg0.message.content === "string") {
+                promptText = arg0.message.content;
+              } else if (typeof arg0.text === "string") {
+                promptText = arg0.text;
+              } else if (typeof arg0.input === "string") {
+                promptText = arg0.input;
+              } else if (typeof arg0.prompt === "string") {
+                promptText = arg0.prompt;
+              } else if (typeof arg0.query === "string") {
+                promptText = arg0.query;
+              }
+            }
+            if (!promptText) {
+              if (typeof parsed.prompt === "string") promptText = parsed.prompt;
+              else if (typeof parsed.text === "string") promptText = parsed.text;
+              else if (typeof parsed.input === "string") promptText = parsed.input;
+              else if (typeof parsed.query === "string") promptText = parsed.query;
+              else if (parsed.message && typeof parsed.message.text === "string") promptText = parsed.message.text;
+              else if (parsed.message && typeof parsed.message.content === "string") promptText = parsed.message.content;
+            }
+          }
+        } catch (e) {}
+
+        promptText = stripInvisible(promptText);
+        // Only evaluate if real user text was extracted (NEVER evaluate raw JSON packets/timestamps)
+        if (promptText && promptText.length > 0 && !promptText.startsWith("{") && !promptText.startsWith("[")) {
+          var wsDecision = evaluateClientRules(promptText, []);
+          if (wsDecision && wsDecision.blocked) {
+            showBubble(wsDecision.message, wsDecision.rule, "block");
+            window.postMessage({
+              source: "gateway-guard-page",
+              nonce: guardNonce,
+              id: "ws_block_" + Date.now().toString(36),
+              prompt: promptText.slice(0, 500),
+              host: location.hostname,
+              url: location.href,
+              is_blocked: true,
+              rule: wsDecision.rule || ""
+            }, "*");
+            return;
+          }
+          // Coordinate with extension and desktop proxy: record allowed WebSocket prompt so proxy skips duplicate logging
+          window.postMessage({
+            source: "gateway-guard-page",
+            nonce: guardNonce,
+            id: "ws_allow_" + Date.now().toString(36),
+            prompt: promptText.slice(0, 500),
+            host: location.hostname,
+            url: location.href,
+            is_blocked: false,
+            rule: (wsDecision && wsDecision.rule) || ""
+          }, "*");
+        }
+      }
+      return origWSSend.apply(this, arguments);
+    };
+  }
+
+  // Hook navigator.sendBeacon (Safe Passthrough: background analytics/telemetry must NEVER trigger prompt block alerts)
+  if (typeof navigator.sendBeacon === "function") {
+    var origSendBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = function (url, data) {
+      return origSendBeacon(url, data);
+    };
+  }
+
+  // Periodic and load session inspection
+  setTimeout(function () {
+    scanStorageForSession();
+    scanDOMForSession();
+  }, 1200);
+  setInterval(function () {
+    if (armed) {
+      scanStorageForSession();
+      scanDOMForSession();
+    }
+  }, 5000);
+
+  console.log("[YP-Raksha] In-Browser DLP Engine Active: Prompts, Images, Files, WebSockets & Corporate AI Sessions Protected.");
+})();
+

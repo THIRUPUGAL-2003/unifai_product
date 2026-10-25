@@ -1,0 +1,13 @@
+{
+  "backend_url": "https://unifai.yespanchi.com",
+  "proxy_addr": "127.0.0.1:18103",
+  "pac_sync_seconds": 3,
+  "server_mode": false,
+  "agent_type": "endpoint",
+  "listen_host": "127.0.0.1",
+  "pac_advertise_addr": "",
+  "pac_http_port": 18195,
+  "pac_url": "https://unifai.yespanchi.com/api/browser-ai/pac",
+  "guard_secret": "ycsKvD5uWlL1ymRZZW/3ePHqMe7sab4ZiG9L1VRMAFo=",
+  "_comment": "Auto-synchronized from root .env by sync_all_from_env.py"
+}

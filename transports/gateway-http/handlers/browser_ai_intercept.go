@@ -467,6 +467,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 						}
 						logEntry.Status = fmt.Sprintf("Allowed (%s — AI Guard Bot eval failed)", res.rule.Name)
 						logEntry.PredictedCategory = "AI_GUARD_BOT_EVAL_ERROR"
+						markAIBotEvalErrorPrediction(logEntry)
 						securityVerdict = "eval_failed"
 						_ = h.manager.UpdateLogRuleViolation(ctx, logEntry.ID, logEntry.Action, logEntry.Status, logEntry.RuleTriggered, logEntry.RiskScore, logEntry.PredictiveRisk, logEntry.PredictedCategory)
 						continue
@@ -556,6 +557,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 					logEntry.Status = "Allowed (AI Guard Bot eval failed)"
 				}
 				logEntry.PredictedCategory = "AI_GUARD_BOT_EVAL_ERROR"
+				markAIBotEvalErrorPrediction(logEntry)
 				_ = h.manager.UpdateLogRuleViolation(ctx, logEntry.ID, logEntry.Action, logEntry.Status, logEntry.RuleTriggered, logEntry.RiskScore, logEntry.PredictiveRisk, logEntry.PredictedCategory)
 			}
 		} // end non-opaque AI bot evaluation
@@ -898,6 +900,113 @@ func guardActionRank(action string) int {
 	}
 }
 
+func aiBotRiskPrediction(action string, riskScore int, severity string) (int, string) {
+	severity = strings.ToUpper(strings.TrimSpace(severity))
+	switch logstore.NormalizeGuardRuleAction(action) {
+	case "BLOCK":
+		if riskScore < 80 {
+			riskScore = 90
+		}
+		if severity == "LOW" || severity == "MEDIUM" {
+			severity = "HIGH"
+		}
+		return riskScore, severity
+	case "REDACT":
+		if riskScore > 70 {
+			riskScore = 60
+		}
+		if riskScore < 40 {
+			riskScore = 45
+		}
+		if severity == "HIGH" || severity == "CRITICAL" {
+			return riskScore, "HIGH"
+		}
+		return riskScore, "MEDIUM"
+	case "WARN":
+		if riskScore > 50 {
+			riskScore = 40
+		}
+		if riskScore < 20 {
+			riskScore = 25
+		}
+		if severity == "HIGH" || severity == "CRITICAL" {
+			return riskScore, "MEDIUM"
+		}
+		return riskScore, "LOW"
+	default:
+		return riskScore, severity
+	}
+}
+
+func markUnscannedFilePrediction(logEntry *logstore.BrowserAILog) {
+	if logEntry == nil || logEntry.Action == "Blocked" {
+		return
+	}
+	logEntry.Status = "Allowed (not scanned: no extractable file content)"
+	logEntry.RiskScore = 50
+	logEntry.PredictiveRisk = "MEDIUM"
+	logEntry.PredictedCategory = "UNSCANNED_FILE"
+	logEntry.RuleTriggered = ""
+}
+
+func markAIBotEvalErrorPrediction(logEntry *logstore.BrowserAILog) {
+	if logEntry == nil {
+		return
+	}
+	if logEntry.RiskScore < 50 {
+		logEntry.RiskScore = 50
+	}
+	if logEntry.PredictiveRisk == "" || logEntry.PredictiveRisk == "LOW" {
+		logEntry.PredictiveRisk = "MEDIUM"
+	}
+}
+
+func applyScanGuardPrediction(logEntry *logstore.BrowserAILog, action, ruleName string) bool {
+	if logEntry == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(action)) {
+	case "blocked", "block":
+		logEntry.Action = "Blocked"
+		logEntry.Status = "Blocked (Guard Rule)"
+		if ruleName != "" {
+			logEntry.Status = fmt.Sprintf("Blocked (%s)", ruleName)
+		}
+		logEntry.RiskScore = 90
+		logEntry.PredictiveRisk = "HIGH"
+		logEntry.PredictedCategory = "AI_GUARD_BOT_VIOLATION"
+	case "redacted", "redact":
+		logEntry.Action = "Redacted"
+		logEntry.Status = "Redacted (Guard Rule)"
+		if ruleName != "" {
+			logEntry.Status = fmt.Sprintf("Redacted (%s)", ruleName)
+		}
+		logEntry.RiskScore = 65
+		logEntry.PredictiveRisk = "MEDIUM"
+		logEntry.PredictedCategory = "AI_GUARD_BOT_REDACT"
+	case "warned", "warn", "alert":
+		logEntry.Action = "Warned"
+		logEntry.Status = "Warned (Guard Rule)"
+		if ruleName != "" {
+			logEntry.Status = fmt.Sprintf("Warned (%s)", ruleName)
+		}
+		logEntry.RiskScore = 40
+		logEntry.PredictiveRisk = "LOW"
+		logEntry.PredictedCategory = "AI_GUARD_BOT_WARNING"
+	case "allowed", "allow":
+		logEntry.Action = "Allowed"
+		logEntry.Status = "Allowed (AI Guard Bot: security OK)"
+		logEntry.RuleTriggered = ""
+		logEntry.PredictedCategory = "AI_GUARD_BOT_CLEAR"
+	default:
+		return false
+	}
+	if logEntry.Action != "Allowed" {
+		logEntry.RuleTriggered = ruleName
+	}
+	return true
+}
+
 // applyScanGuardFromMetadata uses the proxy's guard scan result (regex + bot already evaluated on Send).
 func (h *BrowserAIHandler) applyScanGuardFromMetadata(ctx *fasthttp.RequestCtx, logEntry *logstore.BrowserAILog, metadata map[string]any, ruleWarning *string) bool {
 	if logEntry == nil || metadata == nil {
@@ -925,34 +1034,8 @@ func (h *BrowserAIHandler) applyScanGuardFromMetadata(ctx *fasthttp.RequestCtx, 
 	ruleName := getMetadataString(metadata, "scan_rule_triggered")
 	warn := getMetadataString(metadata, "scan_warning_message")
 
-	switch strings.ToLower(action) {
-	case "blocked", "block":
-		logEntry.Action = "Blocked"
-		if ruleName != "" {
-			logEntry.Status = fmt.Sprintf("Blocked (%s)", ruleName)
-		} else {
-			logEntry.Status = "Blocked (Guard Rule)"
-		}
-		logEntry.RuleTriggered = ruleName
-		logEntry.RiskScore = 90
-		logEntry.PredictiveRisk = "HIGH"
-		logEntry.PredictedCategory = "AI_GUARD_BOT_VIOLATION"
-	case "redacted", "redact", "warned", "warn":
-		logEntry.Action = "Redacted"
-		if ruleName != "" {
-			logEntry.Status = fmt.Sprintf("Redacted (%s)", ruleName)
-		} else {
-			logEntry.Status = "Redacted (Guard Rule)"
-		}
-		logEntry.RuleTriggered = ruleName
-		logEntry.RiskScore = 65
-		logEntry.PredictiveRisk = "MEDIUM"
-		logEntry.PredictedCategory = "AI_GUARD_BOT_REDACT"
-	default:
-		logEntry.Action = "Allowed"
-		logEntry.Status = "Allowed (AI Guard Bot: security OK)"
-		logEntry.RuleTriggered = ""
-		logEntry.PredictedCategory = "AI_GUARD_BOT_CLEAR"
+	if !applyScanGuardPrediction(logEntry, action, ruleName) {
+		return false
 	}
 	if warn != "" && ruleWarning != nil {
 		*ruleWarning = warn
@@ -982,6 +1065,7 @@ func (h *BrowserAIHandler) runAIBotOnLogEntry(ctx *fasthttp.RequestCtx, logEntry
 			if logEntry.Action == "Allowed" {
 				logEntry.Status = fmt.Sprintf("Allowed (%s — AI Guard Bot eval failed)", rule.Name)
 				logEntry.PredictedCategory = "AI_GUARD_BOT_EVAL_ERROR"
+				markAIBotEvalErrorPrediction(logEntry)
 				logEntry.RuleTriggered = rule.Name
 				_ = h.manager.UpdateLogRuleViolation(ctx, logEntry.ID, logEntry.Action, logEntry.Status, logEntry.RuleTriggered, logEntry.RiskScore, logEntry.PredictiveRisk, logEntry.PredictedCategory)
 			}
@@ -998,11 +1082,7 @@ func (h *BrowserAIHandler) runAIBotOnLogEntry(ctx *fasthttp.RequestCtx, logEntry
 		if ruleAction == "BLOCK" {
 			logEntry.Action = "Blocked"
 			logEntry.Status = fmt.Sprintf("Blocked (%s)", rule.Name)
-			logEntry.RiskScore = sevScore
-			if logEntry.RiskScore < 80 {
-				logEntry.RiskScore = 90
-			}
-			logEntry.PredictiveRisk = sevLabel
+			logEntry.RiskScore, logEntry.PredictiveRisk = aiBotRiskPrediction(ruleAction, sevScore, sevLabel)
 			logEntry.PredictedCategory = "AI_GUARD_BOT_VIOLATION"
 			logEntry.RuleTriggered = rule.Name
 			if ruleWarning != nil {
@@ -1014,7 +1094,7 @@ func (h *BrowserAIHandler) runAIBotOnLogEntry(ctx *fasthttp.RequestCtx, logEntry
 		if ruleAction == "REDACT" {
 			logEntry.Action = "Redacted"
 			logEntry.Status = fmt.Sprintf("Redacted (%s)", rule.Name)
-			logEntry.RiskScore = sevScore
+			logEntry.RiskScore, logEntry.PredictiveRisk = aiBotRiskPrediction(ruleAction, sevScore, sevLabel)
 			logEntry.PredictedCategory = "AI_GUARD_BOT_REDACT"
 			logEntry.RuleTriggered = rule.Name
 			if ruleWarning != nil {
@@ -1025,7 +1105,7 @@ func (h *BrowserAIHandler) runAIBotOnLogEntry(ctx *fasthttp.RequestCtx, logEntry
 		if ruleAction == "WARN" {
 			logEntry.Action = "Warned"
 			logEntry.Status = fmt.Sprintf("Warned (%s)", rule.Name)
-			logEntry.RiskScore = sevScore
+			logEntry.RiskScore, logEntry.PredictiveRisk = aiBotRiskPrediction(ruleAction, sevScore, sevLabel)
 			logEntry.PredictedCategory = "AI_GUARD_BOT_WARNING"
 			logEntry.RuleTriggered = rule.Name
 			if ruleWarning != nil {
@@ -1201,9 +1281,7 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 		evalContent := buildGuardEvalContent(prompt, extractedText)
 		h.runAIBotOnLogEntry(ctx, logEntry, evalContent, uploadImages, &ruleWarning)
 	} else if !scanApplied && logEntry.Action == "Allowed" && extractedText == "" && len(uploadImages) == 0 {
-		logEntry.Status = "Allowed (no extractable content)"
-		logEntry.PredictedCategory = "SAFE"
-		logEntry.RuleTriggered = ""
+		markUnscannedFilePrediction(logEntry)
 		_ = h.manager.UpdateLogRuleViolation(ctx, logEntry.ID, logEntry.Action, logEntry.Status, logEntry.RuleTriggered, logEntry.RiskScore, logEntry.PredictiveRisk, logEntry.PredictedCategory)
 	}
 

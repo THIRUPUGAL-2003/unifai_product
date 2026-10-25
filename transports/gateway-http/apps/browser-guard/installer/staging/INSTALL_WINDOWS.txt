@@ -1,0 +1,17 @@
+YP Raksha — Windows Desktop Agent
+=================================
+
+Company server: https://unifai.yespanchi.com
+
+1. Extract this package completely.
+2. Double-click YP_Raksha.exe to run.
+3. YP Raksha starts immediately in the background and connects to the security server.
+   (It automatically configures autostart at Windows login).
+4. Install your browser extension from the 3_Browser_Extensions folder:
+   - Chrome / Brave / Edge: Extract 'Unpacked_Extension_Chrome_Edge_Brave.zip' and click 'Load unpacked' in Developer mode.
+5. All AI prompts and file uploads are protected in real time!
+
+Uninstall:
+----------
+Run Uninstall_YP_Raksha.bat (or Windows Settings -> Apps -> YP Raksha -> Uninstall).
+Enter your company uninstall key to confirm.

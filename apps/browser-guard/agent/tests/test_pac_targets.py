@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -31,8 +32,24 @@ class LocalPacFromTargetsTest(unittest.TestCase):
             self.assertIn(f'"{host}"', body)
         self.assertNotIn('"ab.chatgpt.com"', body)
         self.assertNotIn('"paused.example"', body)
-        host_list = body.split("var aiHosts = [", 1)[1].split("];", 1)[0]
+        host_list = body.split("var aiMap = {", 1)[1].split("};", 1)[0]
         self.assertNotIn("*", host_list)
+
+    def test_offline_cache_shape_is_routed(self) -> None:
+        with tempfile.TemporaryDirectory(dir=AGENT_DIR) as cache_dir:
+            cache_path = Path(cache_dir) / "targets_cache.json"
+            cache_path.write_text(json.dumps({
+                "hosts": ["ai.acme-internal.io", "blocked.example"],
+                "blocked_hosts": ["blocked.example"],
+                "platform_map": {},
+            }), encoding="utf-8")
+            with mock.patch.object(pac, "_http_get_text", return_value=None), \
+                    mock.patch.object(pac, "data_dir", return_value=cache_dir):
+                body = pac.build_pac_from_targets("127.0.0.1:18103")
+
+        self.assertIsNotNone(body)
+        self.assertIn('"ai.acme-internal.io"', body)
+        self.assertIn('"blocked.example"', body)
 
 
 if __name__ == "__main__":
