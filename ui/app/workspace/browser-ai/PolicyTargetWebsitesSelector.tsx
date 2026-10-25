@@ -62,6 +62,7 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 
 	const selectedValues = useMemo<string[]>(() => {
 		const raw = (value || "").trim().toLowerCase();
+		if (raw === "none") return [];
 		if (!raw || raw === "all" || raw === "*") {
 			return options.map((o) => o.value);
 		}
@@ -85,7 +86,7 @@ export const PolicyTargetWebsitesSelector: React.FC<PolicyTargetWebsitesSelector
 
 	const handleValueChange = (next: string[]) => {
 		if (!next || next.length === 0) {
-			onChange("");
+			onChange("none");
 			return;
 		}
 		if (next.length === options.length) {

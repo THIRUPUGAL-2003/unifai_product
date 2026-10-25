@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -1519,6 +1520,29 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 		if !allowed[k] {
 			continue
 		}
+		if k == "corporate_email_domains" {
+			raw, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("corporate_email_domains must be a string")
+			}
+			domains := strings.FieldsFunc(raw, func(r rune) bool {
+				return r == ',' || r == ';' || r == '\n' || r == '\r' || r == ' ' || r == '\t'
+			})
+			normalized := make([]string, 0, len(domains))
+			seen := make(map[string]bool, len(domains))
+			for _, domain := range domains {
+				clean := normalizeCorporateEmailDomain(domain)
+				if clean == "" {
+					return nil, fmt.Errorf("invalid corporate email domain %q", domain)
+				}
+				if !seen[clean] {
+					seen[clean] = true
+					normalized = append(normalized, clean)
+				}
+			}
+			filtered[k] = strings.Join(normalized, ", ")
+			continue
+		}
 		if k == "upload_warning" || k == "corporate_email_domains" || k == "allowed_workspace_ids" || k == "corporate_block_message" || k == "corporate_target_websites" || k == "governance_target_websites" || k == "governance_block_message" || k == "upload_target_websites" || k == "clipboard_target_websites" || k == "drag_drop_target_websites" || k == "download_target_websites" || k == "clipboard_block_message" || k == "drag_drop_block_message" || k == "download_block_message" || k == "file_extension_mode" || k == "restricted_file_extensions" || k == "allowed_file_extensions" || k == "file_extension_block_message" || k == "file_extension_target_websites" || k == "screenshot_block_message" || k == "screenshot_target_websites" {
 			if s, ok := v.(string); ok {
 				filtered[k] = strings.TrimSpace(s)
@@ -1603,6 +1627,64 @@ func (m *BrowserAIManager) UpdateControls(ctx context.Context, updates map[strin
 	return &ctrl, nil
 }
 
+func normalizeCorporateEmailDomain(raw string) string {
+	domain := strings.TrimSpace(strings.ToLower(raw))
+	domain = strings.TrimLeft(domain, "@.")
+	domain = strings.TrimRight(domain, ".")
+	if domain == "" || strings.ContainsAny(domain, "*/:@\\ \t\r\n") {
+		return ""
+	}
+	ascii, err := idna.Lookup.ToASCII(domain)
+	if err != nil || len(ascii) > 253 || !pacHostSafe.MatchString(ascii) || strings.Contains(ascii, "..") {
+		return ""
+	}
+	for _, label := range strings.Split(ascii, ".") {
+		if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return ""
+		}
+	}
+	return ascii
+}
+
+func corporateTargetFilterMatches(filter, provider, pageURL string) bool {
+	provider = strings.TrimSpace(provider)
+	pageHost := ""
+	if parsed, err := url.Parse(strings.TrimSpace(pageURL)); err == nil && parsed.IsAbs() {
+		pageHost = NormalizeDomain(parsed.Hostname())
+	}
+	providerHost := NormalizeDomain(provider)
+	tokens := strings.FieldsFunc(filter, func(r rune) bool {
+		return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
+	})
+	for _, token := range tokens {
+		target := strings.TrimSpace(token)
+		if target == "" || strings.EqualFold(target, "none") {
+			continue
+		}
+		targetHost := NormalizeDomain(target)
+		if targetHost == "" {
+			if provider != "" && strings.EqualFold(provider, target) {
+				return true
+			}
+			continue
+		}
+		providerLabelMatches := providerHost == targetHost
+		if !providerLabelMatches {
+			labels := strings.Split(targetHost, ".")
+			for _, label := range labels[:len(labels)-1] {
+				if strings.EqualFold(provider, label) {
+					providerLabelMatches = true
+					break
+				}
+			}
+		}
+		if providerLabelMatches || pageHost == targetHost || (pageHost != "" && strings.HasSuffix(pageHost, "."+targetHost)) {
+			return true
+		}
+	}
+	return false
+}
+
 // AuthorizeAISession evaluates an employee's logged-in AI session against configured corporate domains and workspace IDs.
 func (m *BrowserAIManager) AuthorizeAISession(ctx context.Context, req AuthorizeAISessionRequest) (*AuthorizeAISessionResponse, error) {
 	ctrl, err := m.GetControls(ctx)
@@ -1627,25 +1709,8 @@ func (m *BrowserAIManager) AuthorizeAISession(ctx context.Context, req Authorize
 	// 1b. Check if this target website is subject to corporate domain enforcement
 	if ctrl.CorporateTargetWebsites != "" {
 		targetFilter := strings.TrimSpace(strings.ToLower(ctrl.CorporateTargetWebsites))
-		if targetFilter != "" && targetFilter != "all" && targetFilter != "*" {
-			prov := strings.TrimSpace(strings.ToLower(req.Provider))
-			pageURL := strings.TrimSpace(strings.ToLower(req.PageURL))
-			tokens := strings.FieldsFunc(targetFilter, func(r rune) bool {
-				return r == ',' || r == ';' || r == ' ' || r == '\t' || r == '\n' || r == '\r'
-			})
-			matched := false
-			for _, tok := range tokens {
-				tokClean := strings.TrimSpace(tok)
-				if tokClean == "" {
-					continue
-				}
-				if (prov != "" && (prov == tokClean || strings.Contains(tokClean, prov) || strings.Contains(prov, tokClean))) ||
-					(pageURL != "" && strings.Contains(pageURL, tokClean)) {
-					matched = true
-					break
-				}
-			}
-			if !matched {
+		if targetFilter != "all" && targetFilter != "*" {
+			if !corporateTargetFilterMatches(targetFilter, req.Provider, req.PageURL) {
 				return &AuthorizeAISessionResponse{
 					Decision:      "allow",
 					ReasonCode:    "TARGET_NOT_RESTRICTED",
@@ -1663,9 +1728,7 @@ func (m *BrowserAIManager) AuthorizeAISession(ctx context.Context, req Authorize
 		return r == ',' || r == ';' || r == '\n' || r == '\r' || r == ' ' || r == '\t'
 	})
 	for _, d := range rawDomains {
-		clean := strings.TrimSpace(strings.ToLower(d))
-		clean = strings.TrimPrefix(clean, "@")
-		clean = strings.TrimPrefix(clean, ".")
+		clean := normalizeCorporateEmailDomain(d)
 		if clean != "" && !allowedDomainMap[clean] {
 			allowedDomainMap[clean] = true
 			configuredDomains = append(configuredDomains, clean)
@@ -1683,14 +1746,21 @@ func (m *BrowserAIManager) AuthorizeAISession(ctx context.Context, req Authorize
 	}
 
 	// 3. Extract and normalize the incoming user's email domain
-	emailDomain := strings.TrimSpace(strings.ToLower(req.EmailDomain))
-	emailDomain = strings.TrimPrefix(emailDomain, "@")
-	emailDomain = strings.TrimPrefix(emailDomain, ".")
-	if emailDomain == "" && req.UserEmail != "" {
+	rawEmailDomain := strings.TrimSpace(req.EmailDomain)
+	if rawEmailDomain == "" && req.UserEmail != "" {
 		parts := strings.Split(strings.TrimSpace(strings.ToLower(req.UserEmail)), "@")
 		if len(parts) > 1 {
-			emailDomain = strings.TrimSpace(parts[1])
+			rawEmailDomain = strings.TrimSpace(parts[1])
 		}
+	}
+	emailDomain := normalizeCorporateEmailDomain(rawEmailDomain)
+	if rawEmailDomain != "" && emailDomain == "" {
+		return &AuthorizeAISessionResponse{
+			Decision:      "block",
+			ReasonCode:    "INVALID_EMAIL_DOMAIN",
+			Message:       "The detected account email domain is invalid and cannot be authorized.",
+			PolicyVersion: policyVer,
+		}, nil
 	}
 
 	// 4. Parse configured allowed workspace IDs
@@ -1755,12 +1825,16 @@ func (m *BrowserAIManager) AuthorizeAISession(ctx context.Context, req Authorize
 	}
 
 	// 6. Check workspace restriction if configured
-	if allowedWorkspaceMap != nil && len(allowedWorkspaceMap) > 0 && reqWorkspace != "" {
-		if !allowedWorkspaceMap[reqWorkspace] {
+	if allowedWorkspaceMap != nil && len(allowedWorkspaceMap) > 0 {
+		if reqWorkspace == "" || !allowedWorkspaceMap[reqWorkspace] {
+			workspaceLabel := strings.TrimSpace(req.WorkspaceID)
+			if workspaceLabel == "" {
+				workspaceLabel = "(not detected)"
+			}
 			return &AuthorizeAISessionResponse{
 				Decision:      "block",
 				ReasonCode:    "UNAUTHORIZED_WORKSPACE",
-				Message:       fmt.Sprintf("Workspace '%s' is not on the corporate approved list.", req.WorkspaceID),
+				Message:       fmt.Sprintf("Workspace '%s' is not on the corporate approved list.", workspaceLabel),
 				PolicyVersion: policyVer,
 			}, nil
 		}

@@ -1237,9 +1237,11 @@ export default function BrowserAiPage() {
 			toast({
 				title: checked ? "Clipboard Blocking Enabled" : "Clipboard Blocking Disabled",
 				description: checked
-					? "Copy, cut, and paste interactions are strictly blocked on target websites."
+					? "In-page copy, cut, and paste actions are blocked where the extension can intercept them."
 					: "Clipboard operations are now allowed.",
 			});
+		} else {
+			toast({ title: "Could not update clipboard policy", variant: "destructive" });
 		}
 	};
 
@@ -1249,9 +1251,11 @@ export default function BrowserAiPage() {
 			toast({
 				title: checked ? "Drag-and-Drop Blocking Enabled" : "Drag-and-Drop Blocking Disabled",
 				description: checked
-					? "Dragging and dropping files into AI chats is strictly blocked."
+					? "In-page file drag-and-drop actions are blocked where the extension can detect them."
 					: "Drag-and-drop file ingestion is now allowed.",
 			});
+		} else {
+			toast({ title: "Could not update drag-and-drop policy", variant: "destructive" });
 		}
 	};
 
@@ -1261,9 +1265,11 @@ export default function BrowserAiPage() {
 			toast({
 				title: checked ? "File Download Blocking Enabled" : "File Download Blocking Disabled",
 				description: checked
-					? "Exporting and downloading files from AI chats is strictly blocked."
+					? "Common in-page download and export actions are blocked where detected; native browser or OS downloads may not be intercepted."
 					: "File downloads are now allowed.",
 			});
+		} else {
+			toast({ title: "Could not update download policy", variant: "destructive" });
 		}
 	};
 
@@ -1272,6 +1278,8 @@ export default function BrowserAiPage() {
 		if (ok) {
 			setClipboardMsgEditing(false);
 			toast({ title: "Copy-Paste Warning message saved" });
+		} else {
+			toast({ title: "Could not save clipboard warning", variant: "destructive" });
 		}
 	};
 
@@ -1280,6 +1288,8 @@ export default function BrowserAiPage() {
 		if (ok) {
 			setDragDropMsgEditing(false);
 			toast({ title: "Drag & Drop Warning message saved" });
+		} else {
+			toast({ title: "Could not save drag-and-drop warning", variant: "destructive" });
 		}
 	};
 
@@ -1288,6 +1298,8 @@ export default function BrowserAiPage() {
 		if (ok) {
 			setDownloadMsgEditing(false);
 			toast({ title: "Download & Export Warning message saved" });
+		} else {
+			toast({ title: "Could not save download warning", variant: "destructive" });
 		}
 	};
 
@@ -1320,6 +1332,8 @@ export default function BrowserAiPage() {
 		if (ok) {
 			setFileExtensionMsgEditing(false);
 			toast({ title: "File Extension Warning message saved" });
+		} else {
+			toast({ title: "Could not save file extension warning", variant: "destructive" });
 		}
 	};
 
@@ -1336,6 +1350,8 @@ export default function BrowserAiPage() {
 		if (ok) {
 			setScreenshotMsgEditing(false);
 			toast({ title: "Anti-Screenshot Warning message saved" });
+		} else {
+			toast({ title: "Could not save screenshot warning", variant: "destructive" });
 		}
 	};
 
@@ -1345,9 +1361,11 @@ export default function BrowserAiPage() {
 			toast({
 				title: checked ? "Anti-Screenshot Protection Enforced" : "Anti-Screenshot Protection Disabled",
 				description: checked
-					? "PrintScreen, screen recordings, and capture tools are strictly blocked on target AI platforms."
-					: "Screen captures are now allowed.",
+					? "The extension deters browser print and common screenshot shortcuts and hides page content in print view. Operating system capture tools cannot be reliably blocked from a webpage."
+					: "The in-page screenshot deterrent is now off.",
 			});
+		} else {
+			toast({ title: "Could not update screenshot deterrent", variant: "destructive" });
 		}
 	};
 
@@ -1368,9 +1386,12 @@ export default function BrowserAiPage() {
 			.filter(Boolean);
 	}, [controls.allowed_file_extensions]);
 
-	const handleToggleFileExtension = async (ext: string) => {
+	const handleToggleFileExtension = async (ext: string): Promise<boolean> => {
 		const clean = ext.replace(/^\./, "").toLowerCase().trim();
-		if (!clean) return;
+		if (!/^[a-z0-9][a-z0-9._+-]*$/.test(clean)) {
+			toast({ title: "Invalid file extension", description: "Use letters, numbers, dots, underscores, hyphens, or plus signs only.", variant: "destructive" });
+			return false;
+		}
 		const isAllowMode = controls.file_extension_mode === "allow_listed";
 		const currentList = isAllowMode ? [...configuredAllowedExts] : [...configuredRestrictedExts];
 		const idx = currentList.indexOf(clean);
@@ -1380,23 +1401,34 @@ export default function BrowserAiPage() {
 			currentList.push(clean);
 		}
 		const joined = currentList.join(", ");
-		if (isAllowMode) {
-			await patchControl({ allowed_file_extensions: joined });
-		} else {
-			await patchControl({ restricted_file_extensions: joined });
+		const ok = isAllowMode
+			? await patchControl({ allowed_file_extensions: joined })
+			: await patchControl({ restricted_file_extensions: joined });
+		if (!ok) {
+			toast({ title: "Could not save file extension policy", variant: "destructive" });
 		}
+		return ok;
 	};
 
 	const handleAddCustomFileExtension = async () => {
 		const clean = customFileExtensionInput.replace(/^\./, "").toLowerCase().trim();
 		if (!clean) return;
-		await handleToggleFileExtension(clean);
-		setCustomFileExtensionInput("");
+		if (!/^[a-z0-9][a-z0-9._+-]*$/.test(clean)) {
+			toast({ title: "Invalid file extension", description: "Use letters, numbers, dots, underscores, hyphens, or plus signs only.", variant: "destructive" });
+			return;
+		}
+		const currentList = controls.file_extension_mode === "allow_listed" ? configuredAllowedExts : configuredRestrictedExts;
+		if (currentList.includes(clean)) {
+			toast({ title: "File extension already configured", description: `.${clean} is already in this policy list.` });
+			setCustomFileExtensionInput("");
+			return;
+		}
+		const ok = await handleToggleFileExtension(clean);
+		if (ok) setCustomFileExtensionInput("");
 	};
 
 	const handleToggleSelectAllPolicies = async (enableAll: boolean) => {
 		const ok = await patchControl({
-			enabled: enableAll,
 			block_upload: enableAll,
 			block_file_extension: enableAll,
 			block_clipboard: enableAll,
@@ -1405,23 +1437,28 @@ export default function BrowserAiPage() {
 			block_screenshot: enableAll,
 		});
 		if (ok) {
-			setExpandedPolicies({
+			setExpandedPolicies((previous) => ({
+				...previous,
 				upload: enableAll,
 				file_type: enableAll,
-				retention: enableAll,
 				clipboard: enableAll,
 				drag_drop: enableAll,
 				download: enableAll,
 				screenshot: enableAll,
-			});
+			}));
 			toast({
-				title: enableAll ? "All 6 Protections Enforced" : "All Protections Disabled",
+				title: enableAll ? "All 6 Browser Controls Enabled" : "All 6 Browser Controls Paused",
 				description: enableAll
-					? "File Uploads, File Types & Extensions, Copy-Paste, Drag-and-Drop, File Downloads, and Anti-Screenshot are now strictly enforced."
-					: "All browser security restrictions are now paused.",
+					? "All six browser-side policy controls are enabled. Each applies to its selected AI websites and to actions the extension can intercept."
+					: "The six browser-side policy controls are now paused.",
 			});
+		} else {
+			toast({ title: "Could not update browser policies", variant: "destructive" });
 		}
 	};
+
+	const allSixProtectionsEnabled = !!controls.block_upload && !!controls.block_file_extension &&
+		!!controls.block_clipboard && !!controls.block_drag_drop && !!controls.block_download && !!controls.block_screenshot;
 
 	const [createTarget] = useCreateBrowserAiTargetMutation();
 	const [updateTarget] = useUpdateBrowserAiTargetMutation();
@@ -1846,6 +1883,12 @@ export default function BrowserAiPage() {
 		}
 	};
 
+	const patchControlWithErrorToast = async (patch: Partial<BrowserControlSettings>, title: string) => {
+		const ok = await patchControl(patch);
+		if (!ok) toast({ title, variant: "destructive" });
+		return ok;
+	};
+
 	const sharedLogAutoDelete = !!(controls.prompt_log_auto_delete || controls.search_log_auto_delete);
 	const sharedLogRetention = ["1d", "7d", "30d", "90d", "180d", "365d"].includes(controls.prompt_log_retention || "")
 		? controls.prompt_log_retention
@@ -1853,14 +1896,18 @@ export default function BrowserAiPage() {
 			? controls.search_log_retention
 			: "7d";
 
-	const patchSharedLogAutoDelete = (on: boolean, retention?: string) => {
+	const patchSharedLogAutoDelete = async (on: boolean, retention?: string) => {
 		const period = retention || sharedLogRetention || "7d";
-		void patchControl({
+		const ok = await patchControl({
 			prompt_log_auto_delete: on,
 			search_log_auto_delete: on,
 			prompt_log_retention: period,
 			search_log_retention: period,
 		});
+		if (!ok) {
+			toast({ title: "Could not save log retention settings", variant: "destructive" });
+			return;
+		}
 		void refetchLogs();
 		void refetchSearchLogs();
 	};
@@ -3026,7 +3073,7 @@ export default function BrowserAiPage() {
 								<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
 									<Switch
 										checked={sharedLogAutoDelete}
-										onCheckedChange={(on) => patchSharedLogAutoDelete(on)}
+										onCheckedChange={(on) => void patchSharedLogAutoDelete(on)}
 										id="prompt-log-auto-delete"
 									/>
 									<Label htmlFor="prompt-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
@@ -3035,7 +3082,7 @@ export default function BrowserAiPage() {
 									{sharedLogAutoDelete ? (
 										<Select
 											value={sharedLogRetention}
-											onValueChange={(v) => patchSharedLogAutoDelete(true, v)}
+											onValueChange={(v) => void patchSharedLogAutoDelete(true, v)}
 										>
 											<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
 												<SelectValue />
@@ -3081,7 +3128,7 @@ export default function BrowserAiPage() {
 								<div className="flex items-center gap-2 bg-card border border-border px-2.5 py-1 rounded-md">
 									<Switch
 										checked={sharedLogAutoDelete}
-										onCheckedChange={(on) => patchSharedLogAutoDelete(on)}
+										onCheckedChange={(on) => void patchSharedLogAutoDelete(on)}
 										id="search-log-auto-delete"
 									/>
 									<Label htmlFor="search-log-auto-delete" className="cursor-pointer font-medium text-xs whitespace-nowrap">
@@ -3090,7 +3137,7 @@ export default function BrowserAiPage() {
 									{sharedLogAutoDelete ? (
 										<Select
 											value={sharedLogRetention}
-											onValueChange={(v) => patchSharedLogAutoDelete(true, v)}
+											onValueChange={(v) => void patchSharedLogAutoDelete(true, v)}
 										>
 											<SelectTrigger className="h-7 w-[8rem] text-xs border-border bg-background">
 												<SelectValue />
@@ -4338,6 +4385,19 @@ export default function BrowserAiPage() {
 
 					<CorporateAIWorkspaceCard controls={controls} targets={targets} patchControl={patchControl} />
 
+					<Card className="border border-border bg-card">
+						<CardContent className="p-4 flex items-center justify-between gap-4">
+							<div>
+								<p className="text-sm font-semibold">All six browser policy controls</p>
+								<p className="text-xs text-muted-foreground mt-0.5">Enable or pause uploads, file types, clipboard, drag-and-drop, downloads, and screenshot deterrence together.</p>
+							</div>
+							<Switch
+								checked={allSixProtectionsEnabled}
+								onCheckedChange={(checked) => void handleToggleSelectAllPolicies(checked)}
+								aria-label="Toggle all six browser policy controls"
+							/>
+						</CardContent>
+					</Card>
 
 
 					{/* Individual Data Loss Prevention Policies */}
@@ -4362,7 +4422,7 @@ export default function BrowserAiPage() {
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											When enabled, every file or attachment uploaded to monitored AI tools is intercepted and blocked.
+											When enabled, common in-page file upload paths are blocked where the extension can intercept them on selected AI tools.
 										</p>
 									</div>
 								</div>
@@ -4372,9 +4432,9 @@ export default function BrowserAiPage() {
 										onCheckedChange={(val) => {
 											if (val) {
 												setExpandedPolicies((p) => ({ ...p, upload: true }));
-												patchControl({ enabled: true, block_upload: true });
+												void patchControlWithErrorToast({ block_upload: true }, "Could not enable file upload blocking");
 											} else {
-												patchControl({ block_upload: false });
+												void patchControlWithErrorToast({ block_upload: false }, "Could not disable file upload blocking");
 											}
 										}}
 										aria-label="Toggle file upload blocking"
@@ -4466,7 +4526,7 @@ export default function BrowserAiPage() {
 									<PolicyTargetWebsitesSelector
 										value={controls.upload_target_websites || "all"}
 										targets={targets}
-										onChange={(val) => patchControl({ upload_target_websites: val })}
+										onChange={(val) => void patchControlWithErrorToast({ upload_target_websites: val }, "Could not save target websites")}
 									/>
 								</div>
 							)}
@@ -4504,9 +4564,9 @@ export default function BrowserAiPage() {
 										onCheckedChange={(val) => {
 											if (val) {
 												setExpandedPolicies((p) => ({ ...p, file_type: true }));
-												patchControl({ block_file_extension: true });
+											void patchControlWithErrorToast({ block_file_extension: true }, "Could not enable file type filtering");
 											} else {
-												patchControl({ block_file_extension: false });
+											void patchControlWithErrorToast({ block_file_extension: false }, "Could not disable file type filtering");
 											}
 										}}
 										aria-label="Toggle file type and extension filter"
@@ -4544,7 +4604,7 @@ export default function BrowserAiPage() {
 												size="sm"
 												variant={controls.file_extension_mode !== "allow_listed" ? "default" : "ghost"}
 												className="h-6 text-[11px] px-2.5 py-0"
-												onClick={() => patchControl({ file_extension_mode: "block_listed" })}
+												onClick={() => void patchControlWithErrorToast({ file_extension_mode: "block_listed" }, "Could not save extension mode")}
 											>
 												Block Selected
 											</Button>
@@ -4553,7 +4613,7 @@ export default function BrowserAiPage() {
 												size="sm"
 												variant={controls.file_extension_mode === "allow_listed" ? "default" : "ghost"}
 												className="h-6 text-[11px] px-2.5 py-0"
-												onClick={() => patchControl({ file_extension_mode: "allow_listed" })}
+												onClick={() => void patchControlWithErrorToast({ file_extension_mode: "allow_listed" }, "Could not save extension mode")}
 											>
 												Allow Only Selected
 											</Button>
@@ -4722,7 +4782,7 @@ export default function BrowserAiPage() {
 									<PolicyTargetWebsitesSelector
 										value={controls.file_extension_target_websites || "all"}
 										targets={targets}
-										onChange={(val) => patchControl({ file_extension_target_websites: val })}
+										onChange={(val) => void patchControlWithErrorToast({ file_extension_target_websites: val }, "Could not save target websites")}
 									/>
 								</div>
 							)}
@@ -4775,7 +4835,7 @@ export default function BrowserAiPage() {
 										</div>
 										<Select
 											value={["10m", "1h", "2h", "1d", "7d"].includes(controls.attachment_retention || "") ? controls.attachment_retention : "1h"}
-											onValueChange={(val) => void patchControl({ attachment_retention: val })}
+											onValueChange={(val) => void patchControlWithErrorToast({ attachment_retention: val }, "Could not save attachment retention")}
 										>
 											<SelectTrigger className="h-8 w-[160px] text-xs">
 												<SelectValue />
@@ -4815,7 +4875,7 @@ export default function BrowserAiPage() {
 																? "bg-primary text-primary-foreground font-semibold"
 																: "hover:bg-muted text-muted-foreground"
 														}`}
-														onClick={() => patchControl({ attachment_retention: item.val })}
+														onClick={() => void patchControlWithErrorToast({ attachment_retention: item.val }, "Could not save attachment retention")}
 													>
 														{item.label}
 														{item.badge ? (
@@ -4850,7 +4910,7 @@ export default function BrowserAiPage() {
 										<div className="flex items-center gap-2">
 											<p className="text-sm font-semibold">4. Copy-Paste Strict Blocking</p>
 											{controls.block_clipboard ? (
-												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
+												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Deterrent Active</Badge>
 											) : (
 												<Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>
 											)}
@@ -4957,7 +5017,7 @@ export default function BrowserAiPage() {
 									<PolicyTargetWebsitesSelector
 										value={controls.clipboard_target_websites || "all"}
 										targets={targets}
-										onChange={(val) => patchControl({ clipboard_target_websites: val, governance_target_websites: val })}
+										onChange={(val) => void patchControlWithErrorToast({ clipboard_target_websites: val, governance_target_websites: val }, "Could not save target websites")}
 									/>
 								</div>
 							)}
@@ -5084,7 +5144,7 @@ export default function BrowserAiPage() {
 									<PolicyTargetWebsitesSelector
 										value={controls.drag_drop_target_websites || "all"}
 										targets={targets}
-										onChange={(val) => patchControl({ drag_drop_target_websites: val })}
+										onChange={(val) => void patchControlWithErrorToast({ drag_drop_target_websites: val }, "Could not save target websites")}
 									/>
 								</div>
 							)}
@@ -5110,7 +5170,7 @@ export default function BrowserAiPage() {
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											Blocks downloading AI-generated code files, CSV reports, PDFs, and exported artifacts from AI tools.
+											Blocks common in-page download/export actions where the extension can detect them. Native browser and operating-system downloads may not be intercepted.
 										</p>
 									</div>
 								</div>
@@ -5211,13 +5271,13 @@ export default function BrowserAiPage() {
 									<PolicyTargetWebsitesSelector
 										value={controls.download_target_websites || "all"}
 										targets={targets}
-										onChange={(val) => patchControl({ download_target_websites: val })}
+										onChange={(val) => void patchControlWithErrorToast({ download_target_websites: val }, "Could not save target websites")}
 									/>
 								</div>
 							)}
 						</Card>
 
-						{/* POLICY 7: Anti-Screenshot & Screen Capture Protection */}
+						{/* POLICY 7: Screenshot Capture Deterrent */}
 						<Card className="border border-border bg-card overflow-hidden">
 							<div
 								className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
@@ -5229,7 +5289,7 @@ export default function BrowserAiPage() {
 									</div>
 									<div>
 										<div className="flex items-center gap-2">
-											<p className="text-sm font-semibold">7. Anti-Screenshot &amp; Screen Capture Protection</p>
+										<p className="text-sm font-semibold">7. Screenshot Capture Deterrent</p>
 											{controls.block_screenshot ? (
 												<Badge variant="outline" className="text-[10px] px-2 py-0.5 border-emerald-500/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">Enforced</Badge>
 											) : (
@@ -5237,7 +5297,7 @@ export default function BrowserAiPage() {
 											)}
 										</div>
 										<p className="text-xs text-muted-foreground mt-0.5">
-											Blocks PrintScreen, Snipping tool shortcuts, and screen recordings on monitored AI platforms with auto-blur and clipboard wiping.
+											Deters browser print and common screenshot shortcuts and hides page content in print view. Operating-system screenshots and recordings cannot be reliably blocked from a webpage.
 										</p>
 									</div>
 								</div>
@@ -5248,7 +5308,7 @@ export default function BrowserAiPage() {
 											if (val) setExpandedPolicies((p) => ({ ...p, screenshot: true }));
 											handleToggleScreenshotProtection(val);
 										}}
-										aria-label="Toggle Anti-Screenshot Protection"
+						aria-label="Toggle screenshot capture deterrent"
 									/>
 									<button
 										type="button"
@@ -5283,7 +5343,7 @@ export default function BrowserAiPage() {
 										{screenshotMsgEditing || !(controls.screenshot_block_message || "").trim() ? (
 											<div className="space-y-2">
 												<Input
-													placeholder="e.g. Screen capture, recording, or taking screenshots on this AI workspace is strictly prohibited."
+														placeholder="e.g. A browser capture shortcut was detected. Operating-system capture tools cannot be reliably blocked."
 													value={screenshotMsgDraft}
 													onChange={(e) => setScreenshotMsgDraft(e.target.value)}
 													className="text-xs font-sans"
@@ -5338,7 +5398,7 @@ export default function BrowserAiPage() {
 									<PolicyTargetWebsitesSelector
 										value={controls.screenshot_target_websites || "all"}
 										targets={targets}
-										onChange={(val) => patchControl({ screenshot_target_websites: val })}
+										onChange={(val) => void patchControlWithErrorToast({ screenshot_target_websites: val }, "Could not save target websites")}
 									/>
 								</div>
 							)}

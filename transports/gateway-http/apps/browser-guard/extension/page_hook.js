@@ -241,14 +241,19 @@
     if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
       return true;
     }
-    var currentHost = (location.hostname || "").toLowerCase().replace(/^www\./, "");
+    if (raw.toLowerCase() === "none") return false;
+    var currentHost = (location.hostname || "").toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
     var parts = raw.toLowerCase().split(/[,\s;]+/);
     for (var i = 0; i < parts.length; i++) {
-      var item = parts[i].trim();
+      var item = parts[i].trim().replace(/^\*\./, "").replace(/^\./, "");
       if (!item) continue;
-      if (item.indexOf("www.") === 0) item = item.slice(4);
-      if (item.indexOf(":") >= 0) item = item.split(":")[0];
-      if (currentHost === item || currentHost.endsWith("." + item) || item.endsWith("." + currentHost) || currentHost.includes(item) || item.includes(currentHost)) {
+      try {
+        var parsed = new URL(item.indexOf("://") >= 0 ? item : "https://" + item);
+        item = parsed.hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+      } catch (e) {
+        continue;
+      }
+      if (item && (currentHost === item || currentHost.endsWith("." + item))) {
         return true;
       }
     }
@@ -267,35 +272,33 @@
       showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
       return false;
     }
-    // Check 2: File extension restrictions (independent policy)
+    // Check 2: File extension restrictions apply only while their master switch is enabled.
     var fileExtTarget = govFileExtensionTargetWebsites || govUploadTargetWebsites;
-    var extPolicyActive = govBlockFileExtension || (govRestrictedExtensions.length > 0) || (govAllowedExtensions.length > 0 && govFileExtensionMode === "allow_listed");
-    if (extPolicyActive && isControlActiveForSite(fileExtTarget)) {
-      var ext = "";
-      if (fileName.lastIndexOf(".") !== -1) {
-        ext = fileName.slice(fileName.lastIndexOf(".") + 1).toLowerCase().trim();
-      }
-      if (ext) {
-        var hasRestricted = (govRestrictedExtensions && govRestrictedExtensions.length > 0);
-        var hasAllowed = (govAllowedExtensions && govAllowedExtensions.length > 0);
-        if (govFileExtensionMode === "allow_listed" && hasAllowed) {
-          var isAllowed = govAllowedExtensions.some(function (a) {
-            return a.replace(/^\./, "").toLowerCase().trim() === ext;
-          });
-          if (!isAllowed) {
-            var msg = govFileExtensionBlockMessage || ("File type '." + ext + "' is not permitted. Only approved file types (" + govAllowedExtensions.map(function (e) { return "." + e; }).join(", ") + ") may be uploaded.");
-            showBubble(msg, "File Extension Policy", "block");
-            return false;
-          }
-        } else if (hasRestricted) {
-          var isBlocked = govRestrictedExtensions.some(function (b) {
-            return b.replace(/^\./, "").toLowerCase().trim() === ext;
-          });
-          if (isBlocked) {
-            var msg2 = govFileExtensionBlockMessage || ("Uploading '." + ext + "' files is restricted by corporate DLP policy.");
-            showBubble(msg2, "File Extension Policy", "block");
-            return false;
-          }
+    if (govBlockFileExtension && isControlActiveForSite(fileExtTarget)) {
+      var lowerFileName = String(fileName).toLowerCase();
+      var hasAllowed = govAllowedExtensions && govAllowedExtensions.length > 0;
+      if (govFileExtensionMode === "allow_listed") {
+        var isAllowed = hasAllowed && govAllowedExtensions.some(function (a) {
+          var ext = String(a).replace(/^\./, "").toLowerCase().trim();
+          return ext && lowerFileName.endsWith("." + ext);
+        });
+        if (!isAllowed) {
+          var msg = govFileExtensionBlockMessage || (hasAllowed
+            ? ("File type for '" + fileName + "' is not permitted. Only approved file types (" + govAllowedExtensions.map(function (e) { return "." + e; }).join(", ") + ") may be uploaded.")
+            : "No file types are currently permitted by corporate policy.");
+          showBubble(msg, "File Extension Policy", "block");
+          return false;
+        }
+      } else {
+        var blockedExtension = govRestrictedExtensions && govRestrictedExtensions.find(function (b) {
+          var ext = String(b).replace(/^\./, "").toLowerCase().trim();
+          return ext && lowerFileName.endsWith("." + ext);
+        });
+        if (blockedExtension) {
+          var cleanBlockedExtension = String(blockedExtension).replace(/^\./, "").toLowerCase().trim();
+          var msg2 = govFileExtensionBlockMessage || ("Uploading '." + cleanBlockedExtension + "' files is restricted by corporate DLP policy.");
+          showBubble(msg2, "File Extension Policy", "block");
+          return false;
         }
       }
     }
@@ -307,7 +310,7 @@
   function triggerScreenshotAlert() {
     if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
 
-    // 1. Wipe clipboard to destroy snip buffer
+    // Best-effort clipboard clearing after a recognized browser shortcut.
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText("");
@@ -325,9 +328,9 @@
         "transition:opacity 0.25s ease-out;opacity:0;pointer-events:none;";
       _screenshotShieldEl.innerHTML =
         '<div style="width:72px;height:72px;border-radius:50%;background:rgba(239,68,68,0.18);border:2px solid #ef4444;display:flex;align-items:center;justify-content:center;font-size:36px;margin-bottom:16px;">🛡️</div>' +
-        '<h2 style="font-size:22px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;margin:0 0 8px 0;">SCREENSHOT RESTRICTED</h2>' +
+        '<h2 style="font-size:22px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;margin:0 0 8px 0;">CAPTURE SHORTCUT DETECTED</h2>' +
         '<p style="font-size:14px;color:#cbd5e1;max-width:440px;line-height:1.5;margin:0 0 16px 0;">' +
-        (govScreenshotBlockMessage || "Screen capturing, recording, or taking screenshots on this AI workspace is prohibited by corporate DLP policy.") +
+        (govScreenshotBlockMessage || "A browser print or common screenshot shortcut was detected. Operating-system capture tools cannot be reliably blocked from a webpage.") +
         '</p>' +
         '<div style="font-size:11px;color:#94a3b8;border:1px solid rgba(148,163,184,0.3);padding:4px 12px;border-radius:6px;background:rgba(30,41,59,0.6);">' +
         'Monitored &amp; Protected by YP-Raksha Browser Guard' +
@@ -338,7 +341,7 @@
     _screenshotShieldEl.style.pointerEvents = "all";
 
     // Show toast alert
-    showBubble(govScreenshotBlockMessage || "Screenshots and screen capture are prohibited by corporate security policy.", "Anti-Screenshot Policy", "block");
+    showBubble(govScreenshotBlockMessage || "A browser print or common screenshot shortcut was detected.", "Screenshot Deterrent", "block");
 
     // Fade out after 2.5 seconds
     setTimeout(function () {

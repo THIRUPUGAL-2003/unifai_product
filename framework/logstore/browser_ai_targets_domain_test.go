@@ -142,3 +142,70 @@ func TestTargets_AnyDomainAndSubdomainReachPAC(t *testing.T) {
 		t.Errorf("paused target must leave proxy.pac")
 	}
 }
+
+func TestCorporateTargetFilterUsesHostnameBoundaries(t *testing.T) {
+	filter := "https://chatgpt.com/app, claude.ai"
+	cases := []struct {
+		name, provider, pageURL string
+		want                    bool
+	}{
+		{name: "target root", provider: "chatgpt", pageURL: "https://chatgpt.com/", want: true},
+		{name: "provider label without URL", provider: "chatgpt", want: true},
+		{name: "target subdomain", provider: "chatgpt", pageURL: "https://app.chatgpt.com/", want: true},
+		{name: "unrelated suffix lookalike", provider: "chatgpt", pageURL: "https://notchatgpt.com/", want: false},
+		{name: "target in path only", provider: "chatgpt", pageURL: "https://evil.example/path/chatgpt.com", want: false},
+		{name: "unselected target", provider: "gemini", pageURL: "https://gemini.google.com/", want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := corporateTargetFilterMatches(filter, tc.provider, tc.pageURL); got != tc.want {
+				t.Fatalf("corporateTargetFilterMatches() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	if corporateTargetFilterMatches("none", "chatgpt", "https://chatgpt.com/") {
+		t.Fatal("the explicit none target selection must not match any website")
+	}
+}
+
+func TestAuthorizeAISessionRequiresConfiguredWorkspaceID(t *testing.T) {
+	ctx := context.Background()
+	m := newTargetsDomainManager(t)
+	if _, err := m.UpdateControls(ctx, map[string]any{
+		"enforce_corporate_domains": true,
+		"corporate_email_domains":   "@company.com",
+		"allowed_workspace_ids":     "tenant-allowed",
+		"corporate_target_websites": "chatgpt.com",
+	}); err != nil {
+		t.Fatalf("configure corporate authorization: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name, workspace string
+		wantDecision    string
+		wantReason      string
+	}{
+		{name: "missing workspace", wantDecision: "block", wantReason: "UNAUTHORIZED_WORKSPACE"},
+		{name: "wrong workspace", workspace: "tenant-other", wantDecision: "block", wantReason: "UNAUTHORIZED_WORKSPACE"},
+		{name: "approved workspace", workspace: "TENANT-ALLOWED", wantDecision: "allow", wantReason: "APPROVED_WORKSPACE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := m.AuthorizeAISession(ctx, AuthorizeAISessionRequest{
+				Provider:    "chatgpt",
+				EmailDomain: "company.com",
+				WorkspaceID: tc.workspace,
+				PageURL:     "https://chatgpt.com/",
+			})
+			if err != nil {
+				t.Fatalf("authorize: %v", err)
+			}
+			if got.Decision != tc.wantDecision || got.ReasonCode != tc.wantReason {
+				t.Fatalf("decision/reason = %s/%s, want %s/%s", got.Decision, got.ReasonCode, tc.wantDecision, tc.wantReason)
+			}
+		})
+	}
+
+	if _, err := m.UpdateControls(ctx, map[string]any{"corporate_email_domains": "https://company.com/path"}); err == nil {
+		t.Fatal("invalid email domain input must be rejected")
+	}
+}
