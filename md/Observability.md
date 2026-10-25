@@ -280,30 +280,134 @@ A slide-over drawer providing forensic inspection into tool execution:
 
 ---
 
-## 5. External Enterprise Telemetry Connectors
+## 5. External Enterprise Telemetry Connectors (`/workspace/observability`)
 
-The gateway features a modular forwarding pipeline (`/workspace/observability/connectors`) streaming telemetry to external enterprise observability platforms:
+The gateway features a modular forwarding pipeline (`/workspace/observability`) streaming telemetry to external enterprise observability platforms, data warehouses, SIEMs, and event streams:
 
 ```mermaid
 flowchart LR
-    GatewayEngine[UnifAI Telemetry Engine] --> FanOut{Forwarding Fan-Out}
-    FanOut --> OTel[OpenTelemetry OTLP Exporter: gRPC / HTTP :4317]
-    FanOut --> Datadog[Datadog LLM Observability API]
-    FanOut --> Prometheus[Prometheus Metrics Scrape Endpoint: /metrics]
-    FanOut --> Langfuse[Langfuse Distributed Tracing API]
-    FanOut --> Kafka[Apache Kafka Event Bus Topic: 'unifai-llm-events']
-    FanOut --> Webhook[Custom Enterprise HTTPS Webhooks]
+    GatewayEngine[UnifAI Telemetry Engine] --> FanOut{Forwarding Fan-Out Engine}
+    FanOut --> OTel[1. OpenTelemetry OTLP Exporter: gRPC / HTTP :4317]
+    FanOut --> Prometheus[2. Prometheus Metrics Scrape Endpoint: /metrics]
+    FanOut --> Datadog[3. Datadog LLM Observability API]
+    FanOut --> BigQuery[4. Google Cloud BigQuery Streaming Insert]
+    FanOut --> Kafka[5. Apache Kafka Event Bus Topic: 'unifai-llm-events']
+    FanOut --> PubSub[6. Google Cloud Pub/Sub Event Stream]
+    FanOut --> NewRelic[7. New Relic AI Monitoring Ingest]
 ```
 
-1. **OpenTelemetry (OTel)**: Emits W3C Trace Context, distributed trace spans (`parent_span_id`, `trace_id`), and GenAI semantic conventions.
-2. **Datadog LLM Observability**: Streams token counts, prompt/response pairs, latency distributions, and cost tags.
-3. **Prometheus Metrics (`/metrics`)**: Exposes native metrics for Prometheus/Grafana:
-   * `unifai_requests_total{model, provider, status}`
-   * `unifai_tokens_total{model, provider, type}`
-   * `unifai_latency_seconds_bucket{model, provider}`
-   * `unifai_spend_usd_total{team, virtual_key}`
-4. **Langfuse**: Detailed prompt engineering traces, user feedback scoring, and evaluation datasets.
-5. **Apache Kafka**: High-throughput distributed event streaming for enterprise data lakes and SIEM.
+---
+
+### 5.1. Detailed Configuration & Setup by Connector
+
+#### 1. OpenTelemetry (OTel) Exporter (`otelView.tsx`)
+* **Purpose**: Distributed tracing conforming to W3C Trace Context and OpenTelemetry GenAI Semantic Conventions.
+* **Architecture**: Implemented as a high-performance native Go plugin (`otel`).
+* **Configuration Parameters**:
+  * `Endpoint`: OTLP collector address (e.g., `otel-collector.internal:4317` for gRPC or `:4318` for HTTP).
+  * `Protocol`: `grpc` | `http/protobuf` | `http/json`.
+  * `Insecure`: `true` for plaintext internal networks, `false` for TLS.
+  * `Headers`: Custom authentication headers (e.g., `Authorization: Bearer <token>`).
+  * `Service Name`: Logical service identifier (default: `unifai-gateway`).
+* **Telemetry Emitted**: Trace spans with `gen_ai.system`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.usage.prompt_tokens`, `gen_ai.usage.completion_tokens`, and `gen_ai.request.temperature`.
+
+#### 2. Prometheus Metrics Plugin (`prometheusView.tsx`)
+* **Purpose**: Real-time time-series metrics scraping for Prometheus, VictoriaMetrics, and Grafana.
+* **Architecture**: HTTP scrape endpoint served on `/metrics`.
+* **Configuration Parameters**:
+  * `Enabled`: Master toggle.
+  * `Path`: Scrape path (default: `/metrics`).
+  * `Basic Auth`: Optional username and password for scrape authentication.
+* **Exposed Prometheus Metrics**:
+  * `unifai_requests_total{model, provider, status}`: Counter tracking inference volume.
+  * `unifai_tokens_total{model, provider, type}`: Counter tracking prompt, completion, and cached tokens.
+  * `unifai_latency_seconds_bucket{model, provider}`: Histogram tracking latency percentiles.
+  * `unifai_spend_usd_total{team, virtual_key}`: Counter tracking financial spend.
+
+#### 3. Datadog LLM Observability (`datadogView.tsx`)
+* **Purpose**: Full-lifecycle AI monitoring within the Datadog LLM Observability product suite.
+* **Configuration Parameters**:
+  * `API Key`: Datadog API ingestion key.
+  * `Site Domain`: Datadog region (`datadoghq.com`, `datadoghq.eu`, `us3.datadoghq.com`, `us5.datadoghq.com`).
+  * `Service Name`: Datadog service tag (e.g., `unifai-enterprise`).
+  * `Environment`: Environment tag (e.g., `production`, `staging`).
+* **Features**: Live trace visualization, prompt quality scoring, latency breakdown, and token consumption tracking.
+
+#### 4. Google Cloud BigQuery Streaming Exporter (`bigqueryView.tsx`)
+* **Purpose**: Long-term enterprise data warehouse ingestion for business intelligence, compliance reporting, and custom SQL analytics.
+* **Configuration Parameters**:
+  * `Project ID`: Google Cloud project identifier.
+  * `Dataset ID`: Target BigQuery dataset (e.g., `ai_gateway_logs`).
+  * `Table ID`: BigQuery table name (e.g., `llm_interaction_events`).
+  * `Service Account Credentials`: JSON private key file with `roles/bigquery.dataEditor` permissions.
+  * `Batch Size`: Number of records buffered before streaming insert (default: `100`).
+* **Automatic Table Provisioning**: Creates partitioned and clustered BigQuery tables if they do not exist.
+
+#### 5. Apache Kafka Enterprise Streaming (`kafkaView.tsx`)
+* **Purpose**: High-throughput distributed event streaming for enterprise data lakes, SIEM integration, and real-time fraud analysis.
+* **Configuration Parameters**:
+  * `Bootstrap Brokers`: Comma-separated broker addresses (e.g., `kafka-1:9092,kafka-2:9092`).
+  * `Topic Name`: Destination Kafka topic (e.g., `unifai-llm-events`).
+  * `Security Protocol`: `PLAINTEXT`, `SSL`, `SASL_PLAINTEXT`, `SASL_SSL`.
+  * `SASL Mechanism`: `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`.
+  * `Username & Password`: Kafka cluster authentication credentials.
+
+#### 6. Google Cloud Pub/Sub (`pubsubView.tsx`)
+* **Purpose**: Cloud-native asynchronous messaging on Google Cloud Platform.
+* **Configuration Parameters**:
+  * `Project ID`: GCP Project ID.
+  * `Topic ID`: Cloud Pub/Sub Topic ID.
+  * `Service Account Key`: JSON private key credentials.
+
+#### 7. New Relic AI Monitoring (`newRelicView.tsx`)
+* **Purpose**: Application performance monitoring and AI transaction traces in New Relic One.
+* **Configuration Parameters**:
+  * `Account ID`: New Relic numerical account identifier.
+  * `Ingest License Key`: 40-character New Relic ingestion key.
+  * `Region`: `US` (default) or `EU`.
+
+---
+
+### 5.2. Testing & Validating Connector Connectivity
+
+Every connector includes an interactive **"Test Connection"** button (`useTestConnectorMutation`):
+* Calls `POST /api/connectors/{name}/test`.
+* Performs a live handshake against the remote service:
+  * Verifies network connectivity and DNS resolution.
+  * Validates authentication keys and API credentials.
+  * Tests write/publish permissions on the remote topic, dataset, or collector.
+* Returns structured JSON:
+  ```json
+  {
+    "connection": {
+      "ok": true,
+      "detail": "Successfully authenticated with Datadog EU API endpoint"
+    }
+  }
+  ```
+* In case of misconfiguration, returns descriptive error diagnostics:
+  ```json
+  {
+    "connection": {
+      "ok": false,
+      "error": "AuthenticationFailed",
+      "detail": "Invalid API key provided or insufficient IAM permissions for BigQuery dataset"
+    }
+  }
+  ```
+
+---
+
+### 5.3. Connector Persistence in Database
+
+Connectors are stored in the PostgreSQL `workspace_settings` table under dedicated namespaced keys:
+```sql
+-- Storage in workspace_settings table
+SELECT key, data, updated_at, updated_by 
+FROM workspace_settings 
+WHERE key LIKE 'connector_%';
+```
+Sensitive secrets (API keys, passwords, private JSON service accounts) are encrypted at rest using AES-256-GCM before writing to the database. Redacted values (`********`) are returned in GET responses to prevent credential exposure in browser client bundles.
 
 ---
 
