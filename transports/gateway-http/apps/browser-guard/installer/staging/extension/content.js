@@ -70,23 +70,37 @@
   var blockedSitesMap = null;
   var lastBlockedSitesList = null;
 
+  function normalizeDomainHost(value) {
+    var host = String(value || "").toLowerCase().trim();
+    if (!host) return "";
+    if (host.indexOf("://") >= 0) {
+      try { host = new URL(host).hostname; } catch (e) { return ""; }
+    } else {
+      host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
+      if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) {
+        host = host.replace(/:\d+$/, "");
+      }
+    }
+    if (host.charAt(0) === "[" && host.indexOf("]") >= 0) {
+      host = host.slice(1, host.indexOf("]"));
+    }
+    host = host.replace(/^www\./, "").replace(/\.$/, "");
+    return host;
+  }
+
   function buildDomainMap(domains) {
     var map = Object.create(null);
     if (!Array.isArray(domains)) return map;
     for (var i = 0; i < domains.length; i++) {
-      var d = String(domains[i] || "").toLowerCase().trim();
-      if (d.indexOf("www.") === 0) d = d.slice(4);
-      if (d.indexOf(":") >= 0) d = d.split(":")[0];
+      var d = normalizeDomainHost(domains[i]);
       if (d) map[d] = true;
     }
     return map;
   }
 
   function matchDomainInMap(host, map, rawList) {
+    host = normalizeDomainHost(host);
     if (!host) return false;
-    host = host.toLowerCase().trim();
-    if (host.indexOf("www.") === 0) host = host.slice(4);
-    if (host.indexOf(":") >= 0) host = host.split(":")[0];
 
     if (map && map[host]) return true;
 
@@ -100,9 +114,7 @@
 
     if (Array.isArray(rawList)) {
       for (var j = 0; j < rawList.length; j++) {
-        var dom = String(rawList[j] || "").toLowerCase().trim();
-        if (dom.indexOf("www.") === 0) dom = dom.slice(4);
-        if (dom.indexOf(":") >= 0) dom = dom.split(":")[0];
+        var dom = normalizeDomainHost(rawList[j]);
         if (!dom) continue;
         if (host === dom || host.slice(-(dom.length + 1)) === "." + dom) return true;
       }
@@ -132,14 +144,12 @@
     if (!raw) return false;
     if (raw.toUpperCase() === "ALL" || raw === "*") return true;
     if (raw.toLowerCase() === "none") return false;
-    var current = String(host || "").toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+    var current = normalizeDomainHost(host);
     var parts = raw.split(/[;,\s]+/);
     for (var i = 0; i < parts.length; i++) {
       var item = parts[i].trim().replace(/^\*\./, "").replace(/^\./, "");
       if (!item) continue;
-      try {
-        item = new URL(item.indexOf("://") >= 0 ? item : "https://" + item).hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
-      } catch (e) { continue; }
+      item = normalizeDomainHost(item.indexOf("://") >= 0 ? item : item.indexOf(":") >= 0 && (item.match(/:/g) || []).length > 1 ? "https://[" + item + "]" : "https://" + item);
       if (item && (current === item || current.endsWith("." + item))) return true;
     }
     return false;

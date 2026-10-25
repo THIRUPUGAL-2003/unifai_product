@@ -1439,39 +1439,6 @@ export default function BrowserAiPage() {
 		if (ok) setCustomFileExtensionInput("");
 	};
 
-	const handleToggleSelectAllPolicies = async (enableAll: boolean) => {
-		const ok = await patchControl({
-			block_upload: enableAll,
-			block_file_extension: enableAll,
-			block_clipboard: enableAll,
-			block_drag_drop: enableAll,
-			block_download: enableAll,
-			block_screenshot: enableAll,
-		});
-		if (ok) {
-			setExpandedPolicies((previous) => ({
-				...previous,
-				upload: enableAll,
-				file_type: enableAll,
-				clipboard: enableAll,
-				drag_drop: enableAll,
-				download: enableAll,
-				screenshot: enableAll,
-			}));
-			toast({
-				title: enableAll ? "All 6 Browser Controls Enabled" : "All 6 Browser Controls Paused",
-				description: enableAll
-					? "All six browser-side policy controls are enabled. Each applies to its selected AI websites and to actions the extension can intercept."
-					: "The six browser-side policy controls are now paused.",
-			});
-		} else {
-			toast({ title: "Could not update browser policies", variant: "destructive" });
-		}
-	};
-
-	const allSixProtectionsEnabled = !!controls.block_upload && !!controls.block_file_extension &&
-		!!controls.block_clipboard && !!controls.block_drag_drop && !!controls.block_download && !!controls.block_screenshot;
-
 	const [createTarget] = useCreateBrowserAiTargetMutation();
 	const [updateTarget] = useUpdateBrowserAiTargetMutation();
 	const [deleteTarget] = useDeleteBrowserAiTargetMutation();
@@ -4413,20 +4380,6 @@ export default function BrowserAiPage() {
 					{/* Corporate AI Workspace & Domain Authorization Card */}
 
 					<CorporateAIWorkspaceCard controls={controls} targets={targets} patchControl={patchControl} />
-
-					<Card className="border border-border bg-card">
-						<CardContent className="p-4 flex items-center justify-between gap-4">
-							<div>
-								<p className="text-sm font-semibold">All six browser policy controls</p>
-								<p className="text-xs text-muted-foreground mt-0.5">Enable or pause uploads, file types, clipboard, drag-and-drop, downloads, and screenshot deterrence together.</p>
-							</div>
-							<Switch
-								checked={allSixProtectionsEnabled}
-								onCheckedChange={(checked) => void handleToggleSelectAllPolicies(checked)}
-								aria-label="Toggle all six browser policy controls"
-							/>
-						</CardContent>
-					</Card>
 
 
 					{/* Individual Data Loss Prevention Policies */}

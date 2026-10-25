@@ -213,23 +213,34 @@
     return list;
   }
 
+  function normalizeDomainHost(value) {
+    var host = String(value || "").toLowerCase().trim();
+    if (!host) return "";
+    if (host.indexOf("://") >= 0) {
+      try { host = new URL(host).hostname; } catch (e) { return ""; }
+    } else {
+      host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
+      if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) host = host.replace(/:\d+$/, "");
+    }
+    if (host.charAt(0) === "[" && host.indexOf("]") >= 0) host = host.slice(1, host.indexOf("]"));
+    return host.replace(/^www\./, "").replace(/\.$/, "");
+  }
+
   function isControlActiveForSite(configuredSites) {
     var raw = (configuredSites && typeof configuredSites === "string") ? configuredSites.trim() : "";
     if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
       return true;
     }
     if (raw.toLowerCase() === "none") return false;
-    var currentHost = (location.hostname || "").toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+    var currentHost = normalizeDomainHost(location.hostname);
     var parts = raw.toLowerCase().split(/[,\s;]+/);
     for (var i = 0; i < parts.length; i++) {
       var item = parts[i].trim().replace(/^\*\./, "").replace(/^\./, "");
       if (!item) continue;
-      try {
-        var parsed = new URL(item.indexOf("://") >= 0 ? item : "https://" + item);
-        item = parsed.hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
-      } catch (e) {
-        continue;
+      if (item.indexOf("://") < 0) {
+        item = item.indexOf(":") >= 0 && (item.match(/:/g) || []).length > 1 ? "https://[" + item + "]" : "https://" + item;
       }
+      item = normalizeDomainHost(item);
       if (item && (currentHost === item || currentHost.endsWith("." + item))) {
         return true;
       }

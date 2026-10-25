@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
 	Building2,
+	ChevronDown,
 	Globe,
 	Plus,
 	X,
@@ -31,6 +32,9 @@ export function CorporateAIWorkspaceCard({
 	patchControl,
 }: CorporateAIWorkspaceCardProps) {
 	const { toast } = useToast();
+
+	// Accordion collapse/expand state
+	const [isExpanded, setIsExpanded] = useState(false);
 
 	// Local input states
 	const [corporateDomainInput, setCorporateDomainInput] = useState("");
@@ -195,7 +199,10 @@ export function CorporateAIWorkspaceCard({
 
 	return (
 		<Card className="border border-border bg-card overflow-hidden shadow-sm">
-			<CardHeader className="p-4 pb-3">
+			<CardHeader
+				className="p-4 cursor-pointer select-none hover:bg-muted/30 transition-colors"
+				onClick={() => setIsExpanded((prev) => !prev)}
+			>
 				<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 					<div className="flex items-start gap-3.5 min-w-0">
 						<div className="p-2.5 rounded-lg border border-border bg-muted/40 text-muted-foreground shrink-0 mt-0.5">
@@ -227,21 +234,36 @@ export function CorporateAIWorkspaceCard({
 							</CardDescription>
 						</div>
 					</div>
-					<div className="flex items-center gap-3 shrink-0 self-start sm:self-center">
+					<div className="flex items-center gap-3 shrink-0 self-start sm:self-center" onClick={(e) => e.stopPropagation()}>
 						<div className="text-right hidden sm:block">
 							<p className="text-xs font-medium text-foreground">Enforce Policy</p>
 							<p className="text-[11px] text-muted-foreground">Block non-corporate accounts</p>
 						</div>
 						<Switch
 							checked={!!controls.enforce_corporate_domains}
-							onCheckedChange={handleToggleEnforcement}
+							onCheckedChange={(checked) => {
+								if (checked) setIsExpanded(true);
+								void handleToggleEnforcement(checked);
+							}}
 							aria-label="Toggle corporate domain enforcement"
 						/>
+						<button
+							type="button"
+							onClick={(e) => {
+								e.stopPropagation();
+								setIsExpanded((prev) => !prev);
+							}}
+							className="p-1 rounded-md text-muted-foreground hover:text-foreground transition-transform"
+							aria-label={isExpanded ? "Collapse corporate workspace card" : "Expand corporate workspace card"}
+						>
+							<ChevronDown className={`h-4 w-4 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+						</button>
 					</div>
 				</div>
 			</CardHeader>
 
-			<CardContent className="p-4 pt-1 space-y-4 border-t border-border/60">
+			{isExpanded && (
+				<CardContent className="p-4 pt-1 space-y-4 border-t border-border/60">
 				{/* 1. Allowed Corporate Email Domains Section */}
 				<div className="space-y-2 pt-2">
 					<div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
@@ -387,6 +409,7 @@ export function CorporateAIWorkspaceCard({
 					onChange={(val) => void handleTargetWebsitesChange(val)}
 				/>
 			</CardContent>
+			)}
 		</Card>
 	);
 }

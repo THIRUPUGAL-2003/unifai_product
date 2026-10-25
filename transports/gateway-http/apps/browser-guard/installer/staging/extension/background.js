@@ -64,17 +64,29 @@ function syncBackgroundRules() {
   });
 }
 
+function normalizeDomainHost(value) {
+  var host = String(value || "").toLowerCase().trim();
+  if (!host) return "";
+  if (host.indexOf("://") >= 0) {
+    try { host = new URL(host).hostname; } catch (_) { return ""; }
+  } else {
+    host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
+    if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) host = host.replace(/:\d+$/, "");
+  }
+  if (host.charAt(0) === "[" && host.indexOf("]") >= 0) host = host.slice(1, host.indexOf("]"));
+  return host.replace(/^www\./, "").replace(/\.$/, "");
+}
+
 function domainFromUrl(value) {
-  try { return new URL(String(value || "")).hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, ""); }
-  catch (_) { return ""; }
+  return normalizeDomainHost(value);
 }
 
 function matchesDomain(host, domain) {
-  var h = String(host || "").toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+  var h = normalizeDomainHost(host);
   var d = String(domain || "").toLowerCase().trim().replace(/^\*\./, "").replace(/^\./, "");
   if (!h || !d) return false;
-  try { d = new URL(d.indexOf("://") >= 0 ? d : "https://" + d).hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, ""); }
-  catch (_) { return false; }
+  if (d.indexOf("://") < 0) d = d.indexOf(":") >= 0 && (d.match(/:/g) || []).length > 1 ? "https://[" + d + "]" : "https://" + d;
+  d = normalizeDomainHost(d);
   return h === d || h.endsWith("." + d);
 }
 
