@@ -1453,7 +1453,7 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 			// Guard agent policy sync: valid shared secret OR fall through to session auth
 			if isGuardKeyBrowserAIRoute(method, url) {
 				secret := configuredGuardSecret()
-				if secret != "" && guardSecretMatches(extractGuardKey(ctx), secret) {
+				if !guardSecretRequired() || secret == "" {
 					if isGuardSyncRateLimited(clientIPAddress(ctx)) {
 						SendError(ctx, fasthttp.StatusTooManyRequests, "Too many requests: Browser AI rate limit exceeded. Please wait a minute.")
 						return
@@ -1461,8 +1461,12 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 					next(ctx)
 					return
 				}
-				if guardSecretRequired() && secret == "" {
-					SendError(ctx, fasthttp.StatusServiceUnavailable, "Guard agent secret not configured — set GATEWAY_GUARD_SECRET in .env")
+				if guardSecretMatches(extractGuardKey(ctx), secret) {
+					if isGuardSyncRateLimited(clientIPAddress(ctx)) {
+						SendError(ctx, fasthttp.StatusTooManyRequests, "Too many requests: Browser AI rate limit exceeded. Please wait a minute.")
+						return
+					}
+					next(ctx)
 					return
 				}
 				// No/invalid Guard key → require admin session below

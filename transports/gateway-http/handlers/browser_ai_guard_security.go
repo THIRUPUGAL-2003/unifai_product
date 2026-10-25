@@ -94,11 +94,7 @@ func configuredGuardSecret() string {
 
 func guardSecretRequired() bool {
 	v := strings.TrimSpace(gatewayEnv("GUARD_REQUIRE_SECRET"))
-	if v == "0" || strings.EqualFold(v, "false") || strings.EqualFold(v, "no") || strings.EqualFold(v, "off") {
-		return false
-	}
-	// Fail-closed by default: Guard agent shared secret is required unless explicitly disabled.
-	return true
+	return v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes") || strings.EqualFold(v, "on")
 }
 
 func guardSecretMatches(provided, configured string) bool {
@@ -167,6 +163,11 @@ func (h *BrowserAIHandler) verifyGuardSecurity(ctx *fasthttp.RequestCtx) bool {
 		}
 		if !guardSecretMatches(extractGuardKey(ctx), configuredSecret) {
 			SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized: Invalid or missing Guard agent secret key")
+			return false
+		}
+	} else if configuredSecret != "" {
+		if key := extractGuardKey(ctx); key != "" && !guardSecretMatches(key, configuredSecret) {
+			SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized: Invalid Guard agent secret key")
 			return false
 		}
 	}

@@ -266,23 +266,16 @@ def main() -> int:
     print(f"[sync_config_from_env] PAC_HTTP_PORT = {pac_http_port}")
 
     guard_secret = read_env_var(repo_root, "GATEWAY_GUARD_SECRET", "")
-    require_secret = read_env_var(repo_root, "GATEWAY_GUARD_REQUIRE_SECRET", "1").lower()
-    require_secret_on = require_secret not in ("0", "false", "no", "off")
+    require_secret = read_env_var(repo_root, "GATEWAY_GUARD_REQUIRE_SECRET", "0").lower()
+    require_secret_on = require_secret in ("1", "true", "yes", "on")
     if guard_secret:
         print("[sync_config_from_env] GATEWAY_GUARD_SECRET = (set)")
     else:
         print(
-            "[sync_config_from_env] WARNING: GATEWAY_GUARD_SECRET not set — "
-            "agent APIs stay open until you set it (required for VAPT / production)",
+            "[sync_config_from_env] NOTE: GATEWAY_GUARD_SECRET not set — "
+            "agent APIs operate in direct open mode (no secret required)",
             file=sys.stderr,
         )
-        if require_secret_on:
-            print(
-                "[sync_config_from_env] ERROR: GATEWAY_GUARD_REQUIRE_SECRET is on but "
-                "GATEWAY_GUARD_SECRET is empty — refuse to publish empty secret into packages",
-                file=sys.stderr,
-            )
-            return 1
 
     bg = os.path.join(repo_root, "apps", "browser-guard")
 

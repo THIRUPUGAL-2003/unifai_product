@@ -10,9 +10,29 @@ Pack and sign YP-Raksha browser extension for all browsers:
 import os
 import sys
 import json
+import io
 import zipfile
 import shutil
 import hashlib
+import struct
+
+
+def _read_crx_manifest_version(path):
+    """Read the extension version from the signed CRX payload for update.xml."""
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+        if raw[:4] != b"Cr24" or len(raw) < 12:
+            return ""
+        format_version, header_length = struct.unpack_from("<II", raw, 4)
+        if format_version != 3:
+            return ""
+        payload_start = 12 + header_length
+        with zipfile.ZipFile(io.BytesIO(raw[payload_start:])) as zf:
+            manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+        return str(manifest.get("version") or "").strip()
+    except Exception:
+        return ""
 
 def pack_all():
     script_dir = os.path.abspath(os.path.dirname(__file__))
@@ -77,13 +97,15 @@ def pack_all():
         pac_p = getattr(agent_config, "PAC_HTTP_PORT", 18195)
         crx_file = pack_extension(f"http://127.0.0.1:{pac_p}")
         if crx_file and os.path.isfile(crx_file):
-            shutil.copy2(crx_file, os.path.join(rel_dir, "yp-raksha.crx"))
+            release_crx = os.path.join(rel_dir, "yp-raksha.crx")
+            shutil.copy2(crx_file, release_crx)
             ext_id = get_extension_id()
+            packed_version = _read_crx_manifest_version(release_crx) or version
             update_xml = (
                 '<?xml version=\'1.0\' encoding=\'UTF-8\'?>\n'
                 '<gupdate xmlns=\'http://www.google.com/update2/response\' protocol=\'2.0\'>\n'
                 f'  <app appid=\'{ext_id}\'>\n'
-                f'    <updatecheck codebase=\'http://127.0.0.1:{pac_p}/extension/yp-raksha.crx\' version=\'{version}\' />\n'
+                f'    <updatecheck codebase=\'http://127.0.0.1:{pac_p}/extension/yp-raksha.crx\' version=\'{packed_version}\' />\n'
                 '  </app>\n'
                 '</gupdate>\n'
             )

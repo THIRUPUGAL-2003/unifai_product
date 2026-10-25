@@ -47,10 +47,11 @@ func NewSessionHandler(configStore configstore.ConfigStore, wsTicketStore *WSTic
 	if len(userGovernance) > 0 {
 		h.userGovernance = userGovernance[0]
 	}
-	// Validate PASSWORD_RESET_SECRET at startup so operators see a clear warning
-	// instead of users hitting a cryptic 500 when they try to reset their password.
+	// Validate PASSWORD_RESET_SECRET at startup — automatically falls back to GATEWAY_ENCRYPTION_KEY if unset.
 	if secret := strings.TrimSpace(os.Getenv("PASSWORD_RESET_SECRET")); len(secret) < 32 {
-		logger.Warn("PASSWORD_RESET_SECRET is missing or shorter than 32 characters — password reset via OTP will return 500 errors. Set this env var to enable the feature.")
+		if encKey := strings.TrimSpace(gatewayEnv("ENCRYPTION_KEY")); len(encKey) < 16 {
+			logger.Warn("PASSWORD_RESET_SECRET is missing or shorter than 32 characters — password reset via OTP will return 500 errors. Set this env var or GATEWAY_ENCRYPTION_KEY to enable the feature.")
+		}
 	}
 	return h
 }

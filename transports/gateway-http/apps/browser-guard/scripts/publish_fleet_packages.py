@@ -200,10 +200,9 @@ def main() -> int:
     release_cfg = os.path.join(bg, "release", "gateway_guard_config.json")
     require = (
         os.environ.get("GATEWAY_GUARD_REQUIRE_SECRET")
-        or os.environ.get("GATEWAY_GUARD_REQUIRE_SECRET")
-        or "1"
+        or "0"
     ).strip().lower()
-    if require not in ("0", "false", "no", "off") and os.path.isfile(release_cfg):
+    if require in ("1", "true", "yes", "on") and os.path.isfile(release_cfg):
         import json
 
         data = json.loads(read_text(release_cfg))
