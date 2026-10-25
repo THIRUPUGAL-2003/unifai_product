@@ -1,15 +1,11 @@
 import { PRODUCT_NAME } from "@/lib/constants/config";
-import {
-	GUARD_BOT_OLLAMA_PROVIDER,
-	GUARD_BOT_REFERENCE_IMAGE_MAX_BYTES,
-} from "./browserAiConstants";
+import { GUARD_BOT_REFERENCE_IMAGE_MAX_BYTES } from "./browserAiConstants";
 
 const PRODUCT_TAG = PRODUCT_NAME.toUpperCase();
 import type { GuardRuleAction, GuardRuleNoticeCopy } from "./browserAiTypes";
 
-export function isDownloadGuardSource(provider: string): boolean {
-	const p = (provider || "").trim().toLowerCase();
-	return !p || p === GUARD_BOT_OLLAMA_PROVIDER;
+export function isInvalidGuardBotProvider(provider: string | undefined): boolean {
+	return !provider || !provider.trim();
 }
 
 export function guardRuleNoticeCopy(action: GuardRuleAction): GuardRuleNoticeCopy {
@@ -55,7 +51,7 @@ export function isMultimodalGuardModel(model: string): boolean {
 export function isVisionOnlyGuardModel(model: string): boolean {
 	const m = (model || "").toLowerCase();
 	if (isMultimodalGuardModel(m)) return false;
-	return m.includes("llava") || m.includes("vision") || m.includes("bakllava");
+	return m.includes("llava") || m.includes("vision");
 }
 
 export function isVisionGuardModel(model: string): boolean {

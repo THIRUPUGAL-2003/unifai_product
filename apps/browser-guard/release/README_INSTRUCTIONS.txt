@@ -22,8 +22,8 @@ UnifAI Enterprise AI Security Guard - Deployment Suite
      2. Open brave://extensions, enable Developer mode, and drag-and-drop the .crx file.
 
    - Mozilla Firefox:
-     1. Open about:debugging in Firefox.
-     2. Click "This Firefox" -> "Load Temporary Add-on" and select 'Firefox_Extension.xpi'.
+     1. Install the Mozilla-signed Firefox add-on package when it is included in this suite.
+     2. Unsigned developer packages are only for temporary testing in a development Firefox build.
 
    - Apple Safari:
      1. In Safari -> Settings -> Extensions, enable YP-Raksha Guard.

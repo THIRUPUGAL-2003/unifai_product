@@ -1018,6 +1018,15 @@ def _ensure_pem() -> str:
     return path
 
 
+def _extension_id_from_public_key(pub: bytes) -> str:
+    digest = hashlib.sha256(pub).digest()
+    out = []
+    for byte in digest[:16]:
+        out.append(chr(ord("a") + ((byte >> 4) & 0xF)))
+        out.append(chr(ord("a") + (byte & 0xF)))
+    return "".join(out)
+
+
 def extension_id_from_pem(pem_path: str) -> str:
     from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
@@ -1027,12 +1036,7 @@ def extension_id_from_pem(pem_path: str) -> str:
         serialization_encoding(),
         public_format(),
     )
-    digest = hashlib.sha256(pub).digest()
-    out = []
-    for byte in digest[:16]:
-        out.append(chr(ord("a") + ((byte >> 4) & 0xF)))
-        out.append(chr(ord("a") + (byte & 0xF)))
-    return "".join(out)
+    return _extension_id_from_public_key(pub)
 
 
 def _public_key_b64(pem_path: str) -> str:
@@ -1119,20 +1123,74 @@ def pack_extension(base_url: str) -> str:
     if not chrome:
         print("[Gateway Guard] Extension files are ready. Chrome was not found to pack the install file.")
         return ""
+    packed = unpacked + ".crx"
+    try:
+        if os.path.isfile(packed):
+            os.remove(packed)
+    except OSError as e:
+        print(f"[Gateway Guard WARNING] Stale extension package could not be removed: {e}")
+        return ""
+
+    pack_args = [f"--pack-extension={unpacked}", f"--pack-extension-key={pem}", "--no-message-box"]
     try:
         pack_profile = os.path.join(data_dir(), "crx-pack-profile")
         subprocess.run(
-            [chrome, f"--user-data-dir={pack_profile}", f"--pack-extension={unpacked}", f"--pack-extension-key={pem}", "--no-message-box"],
+            [chrome, f"--user-data-dir={pack_profile}", *pack_args],
             timeout=60,
             check=False,
             capture_output=True,
         )
+        if not os.path.isfile(packed):
+            # Some managed/headless Windows hosts abort Chrome's normal startup
+            # before the pack-only task runs. Retry in a private headless profile.
+            fallback_profile = pack_profile + "-headless"
+            subprocess.run(
+                [
+                    chrome,
+                    f"--user-data-dir={fallback_profile}",
+                    *pack_args,
+                    "--no-sandbox",
+                    "--disable-gpu",
+                    "--headless=new",
+                ],
+                timeout=60,
+                check=False,
+                capture_output=True,
+            )
     except Exception as e:
         print(f"[Gateway Guard WARNING] Extension pack failed: {e}")
         return ""
-    packed = unpacked + ".crx"
     if not os.path.isfile(packed):
         print("[Gateway Guard WARNING] Chrome did not write the extension package.")
+        return ""
+    try:
+        import base64
+        import io
+        import struct
+        import zipfile
+
+        with open(packed, "rb") as f:
+            raw = f.read()
+        if raw[:4] != b"Cr24" or len(raw) < 12:
+            raise ValueError("Invalid CRX header")
+        format_version, header_length = struct.unpack_from("<II", raw, 4)
+        if format_version != 3:
+            raise ValueError("Unsupported CRX version")
+        with zipfile.ZipFile(io.BytesIO(raw[12 + header_length:]), "r") as zf:
+            packaged_manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+        packaged_key = base64.b64decode(packaged_manifest.get("key") or "", validate=True)
+        if extension_id_from_pem(pem) != _extension_id_from_public_key(packaged_key):
+            raise ValueError("CRX manifest key does not match the signing key")
+        with open(os.path.join(unpacked, "manifest.json"), "r", encoding="utf-8") as f:
+            expected_manifest = json.load(f)
+        if packaged_manifest.get("version") != expected_manifest.get("version"):
+            raise ValueError("CRX version does not match the current extension source")
+    except Exception as e:
+        print(f"[Gateway Guard WARNING] Chrome wrote an invalid or mismatched CRX: {e}")
+        try:
+            os.remove(packed)
+        except OSError:
+            pass
         return ""
     if os.path.abspath(packed) != os.path.abspath(_crx_path()):
         shutil.copy2(packed, _crx_path())
@@ -1326,10 +1384,6 @@ def remove_guard_extension_policy() -> None:
     else:
         _remove_mac_extension_policy()
     _detach_browser_shortcuts()
-    if IS_WIN:
-        _write_force_install("", "")
-    else:
-        _remove_mac_extension_policy()
     _remove_firefox_policy()
     print("[Gateway Guard] YP-Raksha removed from browser policy and shortcuts.")
 
@@ -1612,6 +1666,28 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
     # Block the compromised legacy identity so Chromium cannot keep accepting
     # updates signed with the private key that was previously tracked in git.
     for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for policy_path in _CHROMIUM_POLICY_PATHS:
+            list_path = policy_path + r"\ExtensionInstallForcelist"
+            stale_value_names = []
+            key = None
+            try:
+                key = winreg.OpenKey(root, list_path, 0, winreg.KEY_READ)
+                index = 0
+                while True:
+                    value_name, value_data, _ = winreg.EnumValue(key, index)
+                    if _COMPROMISED_EXTENSION_ID in str(value_data).lower():
+                        stale_value_names.append(value_name)
+                    index += 1
+            except OSError:
+                pass
+            finally:
+                if key is not None:
+                    try:
+                        winreg.CloseKey(key)
+                    except OSError:
+                        pass
+            for value_name in stale_value_names:
+                _delete_reg_value(root, list_path, value_name)
         for ext_sub in _external_extension_keys(_COMPROMISED_EXTENSION_ID):
             for name in ("path", "version", "update_url"):
                 _delete_reg_value(root, ext_sub, name)
@@ -1640,7 +1716,7 @@ def _write_force_install(extension_id: str, update_url: str) -> None:
 
         # update_url installs this one extension into every Chrome profile on this PC.
         # A path value is what Chrome shows as off, with Remove, so that value is removed.
-        ext_id_for_keys = extension_id or "mipfhcmlcjfhmgldkokdckhndkebkllj"
+        ext_id_for_keys = extension_id or _COMPROMISED_EXTENSION_ID
         for ext_sub in _external_extension_keys(ext_id_for_keys):
             _delete_reg_value(root, ext_sub, "path")
             _delete_reg_value(root, ext_sub, "version")

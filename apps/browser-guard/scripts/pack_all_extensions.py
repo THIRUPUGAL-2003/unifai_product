@@ -15,7 +15,7 @@ import zipfile
 import shutil
 import hashlib
 import struct
-import subprocess
+import time
 
 
 def _read_crx_manifest_version(path):
@@ -99,12 +99,12 @@ def pack_all():
                     zf.write(fpath, fname)
                     shutil.copy2(fpath, os.path.join(staging_ext, fname))
                 try:
-                    shutil.copy2(fpath, os.path.join(common_ext, fname))
+                    shutil.copy2(os.path.join(staging_ext, fname), os.path.join(common_ext, fname))
                 except Exception:
                     pass
                 try:
                     if user_ext:
-                        shutil.copy2(fpath, os.path.join(user_ext, fname))
+                        shutil.copy2(os.path.join(staging_ext, fname), os.path.join(user_ext, fname))
                 except Exception:
                     pass
     # Legacy alias for WebStore zip
@@ -115,7 +115,9 @@ def pack_all():
     shutil.copy2(store_zip, unsigned_xpi)
     xpi_path = os.path.join(rel_dir, "yp-raksha.xpi")
     signed_source = os.environ.get("GATEWAY_GUARD_SIGNED_XPI", "").strip()
-    if signed_source and os.path.isfile(signed_source) and is_signed_firefox_xpi(signed_source):
+    if signed_source:
+        if not os.path.isfile(signed_source) or not is_signed_firefox_xpi(signed_source):
+            raise RuntimeError("GATEWAY_GUARD_SIGNED_XPI must point to a valid Mozilla-signed XPI.")
         with zipfile.ZipFile(signed_source, "r") as signed_zip:
             signed_manifest = json.loads(signed_zip.read("manifest.json").decode("utf-8"))
             if str(signed_manifest.get("version") or "") != str(version):
@@ -123,7 +125,11 @@ def pack_all():
             for source_name in os.listdir(staging_ext):
                 source_path = os.path.join(staging_ext, source_name)
                 if os.path.isfile(source_path) and source_name != "yp-raksha.xpi":
-                    if source_name not in signed_zip.namelist() or signed_zip.read(source_name) != open(source_path, "rb").read():
+                    if source_name not in signed_zip.namelist():
+                        raise RuntimeError(f"The Mozilla-signed XPI does not match current source: {source_name}")
+                    with open(source_path, "rb") as sf:
+                        expected = sf.read()
+                    if signed_zip.read(source_name) != expected:
                         raise RuntimeError(f"The Mozilla-signed XPI does not match current source: {source_name}")
         shutil.copy2(signed_source, xpi_path)
         shutil.copy2(signed_source, os.path.join(staging_ext, "yp-raksha.xpi"))
@@ -133,7 +139,7 @@ def pack_all():
             except Exception:
                 pass
     else:
-        if os.path.isfile(xpi_path) and not is_signed_firefox_xpi(xpi_path):
+        if os.path.isfile(xpi_path):
             os.remove(xpi_path)
         print("[pack] Firefox install XPI omitted: provision a Mozilla-signed XPI through GATEWAY_GUARD_SIGNED_XPI.")
 
@@ -145,7 +151,14 @@ def pack_all():
         crx_file = pack_extension(f"http://127.0.0.1:{pac_p}")
         if crx_file and os.path.isfile(crx_file):
             release_crx = os.path.join(rel_dir, "yp-raksha.crx")
-            shutil.copy2(crx_file, release_crx)
+            for attempt in range(5):
+                try:
+                    shutil.copy2(crx_file, release_crx)
+                    break
+                except OSError:
+                    if attempt == 4:
+                        raise
+                    time.sleep(attempt + 1)
             ext_id = get_extension_id()
             packed_version = _read_crx_manifest_version(release_crx) or version
             update_xml = (

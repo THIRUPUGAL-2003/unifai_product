@@ -93,7 +93,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { PolicyTargetWebsitesSelector } from "./PolicyTargetWebsitesSelector";
 import { normalizeTargetDomain, groupTargetsByParent, relatedHostsForDomain, relatedHostOptions, HOST_ROLE_OPTIONS, hostRoleLabel, type HostRole } from "./relatedHosts";
 import { buildAttachmentPreview, type AttachmentPreviewKind, type AttachmentSheetPreview } from "./attachmentPreview";
-import { GUARD_BOT_OLLAMA_PROVIDER } from "./browserAiConstants";
 import type { RelatedHostEntry } from "./browserAiTypes";
 import {
 	predictReasonLabel,
@@ -460,11 +459,11 @@ export default function BrowserAiPage() {
 		error: controlsError,
 	} = useGetBrowserAiControlsQuery(undefined, { pollingInterval: activePolling });
 	const { data: providersData, isError: providersFailed, error: providersError } = useGetProvidersQuery();
-	// Guard bot uses configured Model Providers only (Ollama download models are not offered).
+	// Guard bot uses configured Model Providers.
 	const outsourceProviderOptions = useMemo(() => {
 		const opts = (providersData || [])
 			.map((p) => String(p?.name || "").trim())
-			.filter((name) => name && name.toLowerCase() !== GUARD_BOT_OLLAMA_PROVIDER)
+			.filter(Boolean)
 			.map((name) => ({ label: getProviderLabel(name), value: name }));
 		opts.sort((a, b) => a.label.localeCompare(b.label));
 		return opts;
@@ -2071,7 +2070,7 @@ export default function BrowserAiPage() {
 			return;
 		}
 		try {
-			if (!provider.trim() || provider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !model.trim()) {
+			if (!provider.trim() || !model.trim()) {
 				setResult("Select a Model Provider and model first.");
 				return;
 			}
@@ -2128,7 +2127,7 @@ export default function BrowserAiPage() {
 				return;
 			}
 			if (editRuleBotEvalMode === "ai") {
-				if (!editRuleBotProvider.trim() || editRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER) {
+				if (!editRuleBotProvider.trim()) {
 					setRuleError("Select a Model Provider for AI Guard Bot.");
 					return;
 				}
@@ -4292,12 +4291,12 @@ export default function BrowserAiPage() {
 															setEditRuleName(rule.name);
 															setEditRuleType(rule.rule_type === "ai_bot" ? "ai_bot" : "regex");
 															setEditRuleBotProvider(
-																rule.bot_provider && rule.bot_provider.trim().toLowerCase() !== GUARD_BOT_OLLAMA_PROVIDER
+																rule.bot_provider
 																	? rule.bot_provider
 																	: outsourceProviderOptions[0]?.value || "",
 															);
 															setEditRuleBotModel(
-																rule.bot_provider && rule.bot_provider.trim().toLowerCase() !== GUARD_BOT_OLLAMA_PROVIDER
+																rule.bot_provider
 																	? rule.bot_model || ""
 																	: "",
 															);
@@ -5939,12 +5938,12 @@ export default function BrowserAiPage() {
 										onClick={() => {
 											setEditRuleType("ai_bot");
 											setEditRuleBotProvider((current) =>
-												current.trim() && current.trim().toLowerCase() !== GUARD_BOT_OLLAMA_PROVIDER
+												current.trim()
 													? current
 													: outsourceProviderOptions[0]?.value || "",
 											);
 											setEditRuleBotModel((current) =>
-												editRuleBotProvider.trim().toLowerCase() === GUARD_BOT_OLLAMA_PROVIDER || !editRuleBotProvider.trim()
+												!editRuleBotProvider.trim()
 													? ""
 													: current,
 											);

@@ -18,7 +18,7 @@ import (
 )
 
 func guardBotEvalBudget() time.Duration {
-	// Per-bot LLM budget. Allows enough time for Outsource API roundtrips and local CPU Ollama inference.
+	// Per-bot LLM budget. Allows enough time for model provider API roundtrips.
 	sec := 22
 	if v := strings.TrimSpace(gatewayEnv("GUARD_BOT_TIMEOUT_SEC")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 3 && n <= 60 {
@@ -313,7 +313,7 @@ func (h *BrowserAIHandler) testAIGuardBot(ctx *fasthttp.RequestCtx) {
 }
 
 // generateRegexFromPolicy turns a security-policy prompt into a RE2 regex
-// using Download (Ollama) or Outsource (configured Model Providers) models.
+// using configured Model Providers models.
 func (h *BrowserAIHandler) generateRegexFromPolicy(ctx *fasthttp.RequestCtx) {
 	var payload struct {
 		BotProvider string `json:"bot_provider"`
@@ -386,7 +386,7 @@ Derive the pattern only from SECURITY_POLICY.`
 	)
 
 	callModel := func(systemPrompt, user string, preferJSON bool) (string, error) {
-		if isOllamaGuardProvider(provider) {
+		if strings.TrimSpace(provider) == "" {
 			return "", fmt.Errorf("select a configured model provider")
 		}
 		if h.client == nil {
@@ -1128,7 +1128,7 @@ func (h *BrowserAIHandler) evaluateAIBotRuleDetailed(rule logstore.BrowserGuardR
 	)
 	strictUserMsg := browserAIGuardBotStrictUserMessage(rule.BotPrompt, userPrompt)
 
-	if isOllamaGuardProvider(string(providerName)) {
+	if strings.TrimSpace(string(providerName)) == "" {
 		return false, "select a configured model provider and model", ""
 	}
 
@@ -1321,7 +1321,7 @@ JSON only: {"violation":true} or {"violation":false}`,
 		return false, "no vision images to evaluate"
 	}
 
-	if isOllamaGuardProvider(string(providerName)) {
+	if strings.TrimSpace(string(providerName)) == "" {
 		return false, "select a configured model provider and model"
 	}
 
@@ -1608,7 +1608,7 @@ If the question is unsafe or asks for secrets/credentials, refuse briefly and ex
 		userMsg = fmt.Sprintf("Platform: %s\nUser question:\n%s", platform, truncateRunes(userPrompt, browserAIGuardBotMaxPromptRunes))
 	}
 
-	if isOllamaGuardProvider(string(providerName)) {
+	if strings.TrimSpace(string(providerName)) == "" {
 		return "", fmt.Errorf("select a configured model provider and model")
 	}
 

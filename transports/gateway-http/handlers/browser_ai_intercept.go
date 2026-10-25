@@ -454,7 +454,7 @@ func (h *BrowserAIHandler) intercept(ctx *fasthttp.RequestCtx) {
 						ruleAction := logstore.NormalizeGuardRuleAction(res.rule.Action)
 						logEntry.RuleTriggered = res.rule.Name
 						if ruleAction == "BLOCK" {
-							// Fail closed for BLOCK bots: unreachable Ollama must not silently allow.
+							// Fail closed for BLOCK bots: unreachable model provider must not silently allow.
 							logEntry.Action = "Blocked"
 							logEntry.Status = fmt.Sprintf("Blocked (%s — AI Guard Bot eval failed)", res.rule.Name)
 							logEntry.PredictedCategory = "AI_GUARD_BOT_EVAL_ERROR"

@@ -3,7 +3,7 @@
 Build the Master Decoupled Guard Suite:
 - Windows: Standalone YP_Raksha.exe (Zero Setup Wizard, embedded config, zero extension bundling)
 - macOS: Standalone YP_Raksha_macOS.zip + install scripts
-- Extensions: Unpacked ZIP for Chrome/Brave/Edge, signed CRX, and Firefox XPI
+- Extensions: Unpacked ZIP for Chromium, signed CRX, and a Mozilla-signed Firefox XPI when supplied
 """
 
 import os

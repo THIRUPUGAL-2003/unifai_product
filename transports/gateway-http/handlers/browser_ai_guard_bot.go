@@ -12,30 +12,16 @@ const (
 	browserAIGuardBotMaxReferenceImageB = 512 * 1024 // 512 KiB raw base64 payload limit
 )
 
-func isOllamaGuardProvider(provider string) bool {
-	p := strings.ToLower(strings.TrimSpace(provider))
-	return p == "" || p == "ollama"
-}
-
 func applyAIBotDefaults(rule *logstore.BrowserGuardRule) {
 	if rule == nil || strings.ToLower(strings.TrimSpace(rule.RuleType)) != "ai_bot" {
 		return
 	}
 	rule.BotProvider = strings.TrimSpace(rule.BotProvider)
 	rule.BotModel = strings.TrimSpace(rule.BotModel)
-	if strings.EqualFold(rule.BotProvider, "ollama") {
-		rule.BotProvider = ""
-		rule.BotModel = ""
-	}
 }
 
 func applyGuardBotDefaults(provider, model string) (string, string) {
-	provider = strings.TrimSpace(provider)
-	model = strings.TrimSpace(model)
-	if strings.EqualFold(provider, "ollama") {
-		return "", ""
-	}
-	return provider, model
+	return strings.TrimSpace(provider), strings.TrimSpace(model)
 }
 
 func isMultimodalGuardModel(model string) bool {
@@ -48,7 +34,7 @@ func isVisionOnlyGuardModel(model string) bool {
 	if isMultimodalGuardModel(m) {
 		return false
 	}
-	return strings.Contains(m, "llava") || strings.Contains(m, "vision") || strings.Contains(m, "bakllava")
+	return strings.Contains(m, "llava") || strings.Contains(m, "vision")
 }
 
 func isVisionGuardModel(model string) bool {

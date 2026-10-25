@@ -70,10 +70,15 @@ venv*/
 apps/browser-guard/.venv*/
 apps/browser-guard/.secrets/
 apps/browser-guard/extension/guard_extension.pem
+apps/browser-guard/release/yp-raksha-unsigned.xpi
 apps/browser-guard/build/
 apps/browser-guard/dist/
 apps/browser-guard/installer/staging/
 apps/browser-guard/installer/staging-*/
+# Browser Guard sources are also visible through this Windows directory junction.
+/transports/gateway-http/apps/browser-guard/.secrets/
+/transports/gateway-http/apps/browser-guard/installer/staging/pack-output/
+/transports/gateway-http/apps/browser-guard/release/yp-raksha-unsigned.xpi
 # Large packaged binaries (keep unpackaged app directory ignored)
 apps/browser-guard/release/Raksha_Guard.app/
 apps/browser-guard/installer/pkg-root/

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { GUARD_BOT_REFERENCE_IMAGE_MAX_BYTES } from "./browserAiConstants";
 import type { GuardRuleAIEvaluatorFieldsProps } from "./browserAiTypes";
-import { isDownloadGuardSource, isMultimodalGuardModel, isVisionGuardModel } from "./browserAiGuardHelpers";
+import { isMultimodalGuardModel, isVisionGuardModel } from "./browserAiGuardHelpers";
 import { GuardBotOutsourceModelPicker } from "./guardBotModelPickers";
 
 export function GuardRuleAIEvaluatorFields({
@@ -40,12 +40,12 @@ export function GuardRuleAIEvaluatorFields({
 		const want = (botProvider || "").trim().toLowerCase();
 		const match = outsourceProviderOptions.find((o) => o.value.toLowerCase() === want);
 		if (match) return match.value;
-		if (isDownloadGuardSource(botProvider)) return outsourceProviderOptions[0]?.value || "";
+		if (!botProvider) return outsourceProviderOptions[0]?.value || "";
 		return botProvider || "";
 	})();
 
 	useEffect(() => {
-		if (!isDownloadGuardSource(botProvider)) return;
+		if (botProvider) return;
 		const first = outsourceProviderOptions[0]?.value || "";
 		if (botProvider !== first) onProviderChange(first);
 		if (botModel) onModelChange("");
