@@ -476,6 +476,33 @@
     }
   }
 
+  function performAutoLogout() {
+    try {
+      sessionStorage.clear();
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i) || "";
+        var kLow = k.toLowerCase();
+        if (kLow.includes("token") || kLow.includes("auth") || kLow.includes("session") || kLow.includes("user") || kLow.includes("oidc")) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch (_) {}
+    var h = (location.hostname || "").toLowerCase();
+    if (h.includes("chatgpt.com") || h.includes("openai.com")) {
+      location.href = "https://chatgpt.com/api/auth/signout";
+    } else if (h.includes("claude.ai")) {
+      location.href = "https://claude.ai/api/auth/logout";
+    } else if (h.includes("gemini.google.com")) {
+      location.href = "https://accounts.google.com/Logout";
+    } else if (h.includes("deepseek.com")) {
+      location.href = "https://chat.deepseek.com/sign_in";
+    } else if (h.includes("copilot.microsoft.com")) {
+      location.href = "https://login.microsoftonline.com/common/oauth2/v2.0/logout";
+    } else {
+      location.reload();
+    }
+  }
+
   function renderCorporateBanner(isBlocked, message, email) {
     var existing = document.getElementById("yp-corp-policy-banner");
     if (!isBlocked) {
@@ -490,19 +517,34 @@
     var banner = document.createElement("div");
     banner.id = "yp-corp-policy-banner";
     banner.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
-      "max-width:680px;width:calc(100% - 32px);background:#111827;color:#f8fafc;border:2px solid #ef4444;" +
-      "border-radius:12px;padding:12px 18px;box-shadow:0 20px 40px rgba(0,0,0,0.75);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
-      "display:flex;align-items:flex-start;gap:12px;animation:ypFadeIn 0.3s ease-out;";
+      "max-width:720px;width:calc(100% - 32px);background:#0f172a;color:#f8fafc;border:2px solid #ef4444;" +
+      "border-radius:14px;padding:16px 20px;box-shadow:0 25px 50px -12px rgba(0,0,0,0.85);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;" +
+      "display:flex;align-items:center;gap:14px;animation:ypFadeIn 0.3s ease-out;";
     var emailTag = email ? ' <span style="font-size:11px;background:#1e293b;color:#f87171;padding:2px 8px;border-radius:4px;border:1px solid rgba(239,68,68,0.4);font-family:monospace;">' + email + '</span>' : '';
-    banner.innerHTML = '<div style="background:rgba(239,68,68,0.18);color:#ef4444;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;flex-shrink:0;">✕</div>' +
+    banner.innerHTML = '<div style="background:rgba(239,68,68,0.18);color:#ef4444;border-radius:50%;width:38px;height:38px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:bold;flex-shrink:0;">✕</div>' +
       '<div style="flex:1;min-width:0;">' +
       '  <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap;">' +
       '    <strong style="font-size:12px;letter-spacing:0.04em;text-transform:uppercase;color:#f87171;">Corporate Policy Restriction</strong>' +
       emailTag +
       '  </div>' +
-      '  <p class="yp-corp-msg" style="font-size:12.5px;color:#cbd5e1;line-height:1.45;margin:0;">' + (message || "Personal accounts are restricted. Please sign in with your corporate account.") + '</p>' +
-      '</div>';
+      '  <p class="yp-corp-msg" style="font-size:12.5px;color:#cbd5e1;line-height:1.45;margin:0 0 6px 0;">' + (message || "Personal accounts are restricted. Please sign in with your corporate account.") + '</p>' +
+      '</div>' +
+      '<button id="yp-btn-signout" style="background:#ef4444;color:#ffffff;border:none;border-radius:8px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0;box-shadow:0 2px 4px rgba(239,68,68,0.3);transition:background 0.2s;">Sign Out</button>';
     (document.body || document.documentElement).appendChild(banner);
+
+    var btnSignout = document.getElementById("yp-btn-signout");
+    if (btnSignout) {
+      btnSignout.addEventListener("click", function () {
+        performAutoLogout();
+      });
+    }
+
+    // Auto-Logout after 5 seconds to prevent personal account persistence
+    setTimeout(function () {
+      if (sessionBlocked) {
+        performAutoLogout();
+      }
+    }, 5000);
   }
 
   function detectProviderName() {
