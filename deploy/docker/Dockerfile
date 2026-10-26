@@ -18,7 +18,7 @@
 
   # --- Go Build Stage: Compile the Go binary ---
   FROM golang:1.26.4-alpine3.23@sha256:f23e8b227fb4493eabe03bede4d5a32d04092da71962f1fb79b5f7d1e6c2a17f AS builder
-  WORKDIR /app
+  WORKDIR /build
 
   # Install dependencies including gcc for CGO and sqlite (with latest security patches)
   RUN apk upgrade --no-cache && \
@@ -27,25 +27,41 @@
   # Set environment for CGO-enabled build (required for go-sqlite3)
   ENV CGO_ENABLED=1 GOOS=linux
 
-  COPY transports/go.mod transports/go.sum ./
-  RUN ls
-  RUN cat go.mod
-  RUN go mod download
+  # Copy all local modules
+  COPY core/ ./core/
+  COPY framework/ ./framework/
+  COPY plugins/ ./plugins/
+  COPY transports/ ./transports/
 
-  # Copy source code and dependencies
-  COPY transports/ ./
+  # Set up go workspace to resolve local module dependencies
+  RUN go work init && \
+    go work use ./core && \
+    go work use ./framework && \
+    go work use ./plugins/compat && \
+    go work use ./plugins/governance && \
+    go work use ./plugins/jsonparser && \
+    go work use ./plugins/logging && \
+    go work use ./plugins/maxim && \
+    go work use ./plugins/mocker && \
+    go work use ./plugins/otel && \
+    go work use ./plugins/prompts && \
+    go work use ./plugins/semanticcache && \
+    go work use ./plugins/telemetry && \
+    go work use ./plugins/guardrails && \
+    go work use ./plugins/modelcatalogresolver && \
+    go work use ./transports
 
-  COPY --from=ui-builder /app/out ./gateway-http/ui
+  # Copy UI build output into transports
+  COPY --from=ui-builder /app/out ./transports/gateway-http/ui
 
   # Build the binary with CGO enabled and static SQLite linking
-  ENV GOWORK=off
   ARG VERSION=unknown
   RUN go build \
     -ldflags="-w -s -X main.Version=v${VERSION} -extldflags '-static'" \
     -a -trimpath \
     -tags "sqlite_static" \
     -o /app/main \
-    ./gateway-http
+    ./transports/gateway-http
 
   # Verify build succeeded
   RUN test -f /app/main || (echo "Build failed" && exit 1)
