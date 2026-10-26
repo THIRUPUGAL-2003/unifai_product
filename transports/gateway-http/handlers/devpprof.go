@@ -142,7 +142,10 @@ var collectorOnce sync.Once
 
 // IsDevMode checks if dev mode is enabled via environment variable
 func IsDevMode() bool {
-	return gatewayEnv("UI_DEV") == "true"
+	if gatewayEnv("DISABLE_PROFILER") == "true" {
+		return false
+	}
+	return true
 }
 
 // getOrCreateCollector returns the global metrics collector, creating it if needed

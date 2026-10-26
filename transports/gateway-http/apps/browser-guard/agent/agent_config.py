@@ -409,11 +409,9 @@ PAC_ADVERTISE_ADDR = str(_CFG.get("pac_advertise_addr") or PROXY_ADDR)
 GATEWAY_GUARD_SECRET = str(
     _CFG.get("guard_secret")
     or os.environ.get("GATEWAY_GUARD_SECRET")
-    or os.environ.get("GATEWAY_GUARD_SECRET")
     or ""
 ).strip()
 if GATEWAY_GUARD_SECRET:
-    os.environ["GATEWAY_GUARD_SECRET"] = GATEWAY_GUARD_SECRET
     os.environ["GATEWAY_GUARD_SECRET"] = GATEWAY_GUARD_SECRET
 
 _pac_port_raw = str(_CFG.get("pac_http_port") or os.environ.get("PAC_HTTP_PORT") or "").strip()

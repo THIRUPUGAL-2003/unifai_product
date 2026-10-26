@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/subtle"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -82,15 +84,18 @@ func isGuardSyncRateLimited(ip string) bool {
 }
 
 func configuredGuardSecret() string {
-	return ""
+	return strings.TrimSpace(os.Getenv("GATEWAY_GUARD_SECRET"))
 }
 
 func guardSecretRequired() bool {
-	return false
+	return true
 }
 
 func guardSecretMatches(provided, configured string) bool {
-	return true
+	if provided == "" || configured == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(configured)) == 1
 }
 
 const guardKeyHeader = "X-Gateway-Guard-Key"
@@ -138,8 +143,8 @@ func extractGuardKey(ctx *fasthttp.RequestCtx) string {
 	return ""
 }
 
-// verifyGuardSecurity checks IP rate limiting.
-// Guard agent secret key verification has been removed per user requirements (open access for all agents).
+// verifyGuardSecurity checks the per-IP intercept rate limit. Agent routes are
+// authenticated by the middleware before they reach this handler.
 func (h *BrowserAIHandler) verifyGuardSecurity(ctx *fasthttp.RequestCtx) bool {
 	clientIP := clientIPAddress(ctx)
 	if isBrowserAIRateLimited(clientIP) {

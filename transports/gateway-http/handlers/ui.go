@@ -48,6 +48,11 @@ func (h *UIHandler) serveDashboard(ctx *fasthttp.RequestCtx) {
 	// Get the request path
 	requestPath := string(ctx.Path())
 
+	if strings.HasPrefix(requestPath, "/api/") || strings.HasPrefix(requestPath, "/v1/") {
+		SendError(ctx, fasthttp.StatusNotFound, "Route not found: "+requestPath)
+		return
+	}
+
 	// Clean the path to prevent directory traversal
 	cleanPath := path.Clean(requestPath)
 

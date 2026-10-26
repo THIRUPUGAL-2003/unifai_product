@@ -146,20 +146,42 @@ if exist build\exe\YP_Raksha.exe (
 ) else if exist release\Gateway_Guard.exe (
   copy /Y release\Gateway_Guard.exe "%ZIP_STAGE%\portable\YP_Raksha.exe" >nul
 )
+if not exist "%ZIP_STAGE%\YP_Raksha_Setup.exe" (
+  echo ERROR: setup EXE is missing from the Windows package.
+  rmdir /S /Q "%ZIP_STAGE%"
+  exit /b 1
+)
+if not exist "%ZIP_STAGE%\portable\YP_Raksha.exe" (
+  echo ERROR: portable EXE is missing from the Windows package.
+  rmdir /S /Q "%ZIP_STAGE%"
+  exit /b 1
+)
 copy /Y release\gateway_guard_config.json "%ZIP_STAGE%\gateway_guard_config.json" >nul
+if errorlevel 1 (
+  echo ERROR: Guard configuration could not be staged.
+  rmdir /S /Q "%ZIP_STAGE%"
+  exit /b 1
+)
 if exist release\INSTALL_WINDOWS.txt copy /Y release\INSTALL_WINDOWS.txt "%ZIP_STAGE%\INSTALL_WINDOWS.txt" >nul
 if exist installer\EMPLOYEE_README.txt copy /Y installer\EMPLOYEE_README.txt "%ZIP_STAGE%\EMPLOYEE_README.txt" >nul
 if exist release\Uninstall_YP_Raksha.bat copy /Y release\Uninstall_YP_Raksha.bat "%ZIP_STAGE%\Uninstall_YP_Raksha.bat" >nul
 if exist release\Update_YP_Raksha.ps1 copy /Y release\Update_YP_Raksha.ps1 "%ZIP_STAGE%\Update_YP_Raksha.ps1" >nul
 if exist release\VERSION.txt copy /Y release\VERSION.txt "%ZIP_STAGE%\VERSION.txt" >nul
 
-rem -- Use PowerShell Compress-Archive (Windows 10+) to build the ZIP
-powershell -NoProfile -Command "Compress-Archive -Path '%ZIP_STAGE%\*' -DestinationPath 'release\YP_Raksha_Windows.zip' -Force; if (Test-Path 'release\Gateway_Guard_Windows.zip') { Remove-Item -Force 'release\Gateway_Guard_Windows.zip' }"
+rem -- Use .NET ZipFile so the build does not depend on PowerShell's Archive module.
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; try { Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory((Resolve-Path -LiteralPath '%ZIP_STAGE%').Path, (Join-Path (Get-Location).Path 'release\YP_Raksha_Windows.zip'), [IO.Compression.CompressionLevel]::Optimal, $false); exit 0 } catch { Write-Error $_; exit 1 }"
 if errorlevel 1 (
-  echo WARNING: PowerShell Compress-Archive failed — Windows ZIP not created.
-) else (
-  echo Windows ZIP: release\YP_Raksha_Windows.zip
+  echo ERROR: Windows ZIP creation failed.
+  rmdir /S /Q "%ZIP_STAGE%"
+  exit /b 1
 )
+if not exist release\YP_Raksha_Windows.zip (
+  echo ERROR: ZIP creation reported success but no archive exists.
+  rmdir /S /Q "%ZIP_STAGE%"
+  exit /b 1
+)
+if exist release\Gateway_Guard_Windows.zip del /F /Q release\Gateway_Guard_Windows.zip
+rmdir /S /Q "%ZIP_STAGE%"
 rmdir /S /Q "%ZIP_STAGE%"
 
 echo.

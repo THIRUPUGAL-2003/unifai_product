@@ -18,12 +18,10 @@ def _guard_headers(extra: dict | None = None) -> dict:
     secret = (
         GATEWAY_GUARD_SECRET
         or os.environ.get("GATEWAY_GUARD_SECRET")
-        or os.environ.get("GATEWAY_GUARD_SECRET")
         or ""
     ).strip()
     if secret:
         headers["X-Gateway-Guard-Key"] = secret
-        headers["X-Gateway-Guard-Key"] = secret  # legacy backends / older gateway builds
     if extra:
         headers.update(extra)
     return headers

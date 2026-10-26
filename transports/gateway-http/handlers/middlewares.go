@@ -1375,21 +1375,8 @@ func (m *AuthMiddleware) APIMiddleware() schemas.GatewayHTTPMiddleware {
 func isPublicBrowserAIRoute(method, path string) bool {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	switch path {
-	case "/api/browser-ai/intercept", "/api/browser-ai/intercept-file":
-		return method == fasthttp.MethodPost
-	case "/api/browser-ai/session/authorize", "/authorize_ai_session":
-		return method == fasthttp.MethodPost
-	case "/api/browser-ai/search-logs":
-		return method == fasthttp.MethodPost
 	case "/api/browser-ai/proxy.pac", "/api/browser-ai/pac":
 		return method == fasthttp.MethodGet
-	case "/api/browser-ai/agents/heartbeat",
-		"/api/browser-ai/agents/wait-command",
-		"/api/browser-ai/agents/uninstall-verify",
-		"/api/browser-ai/agents/uninstall",
-		"/api/browser-ai/agents/uninstall-ack",
-		"/api/browser-ai/agents/uninstall-status":
-		return method == fasthttp.MethodPost
 	default:
 		return false
 	}
@@ -1399,6 +1386,16 @@ func isPublicBrowserAIRoute(method, path string) bool {
 func isGuardKeyBrowserAIRoute(method, path string) bool {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	switch path {
+	case "/api/browser-ai/intercept", "/api/browser-ai/intercept-file",
+		"/api/browser-ai/session/authorize", "/authorize_ai_session",
+		"/api/browser-ai/search-logs",
+		"/api/browser-ai/agents/heartbeat",
+		"/api/browser-ai/agents/wait-command",
+		"/api/browser-ai/agents/uninstall-verify",
+		"/api/browser-ai/agents/uninstall",
+		"/api/browser-ai/agents/uninstall-ack",
+		"/api/browser-ai/agents/uninstall-status":
+		return method == fasthttp.MethodPost
 	case "/api/browser-ai/targets",
 		"/api/browser-ai/rules",
 		"/api/browser-ai/controls",
@@ -1423,13 +1420,36 @@ func isGuardKeyBrowserAIRoute(method, path string) bool {
 func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, string) bool) schemas.GatewayHTTPMiddleware {
 	return func(next fasthttp.RequestHandler) fasthttp.RequestHandler {
 		return func(ctx *fasthttp.RequestCtx) {
+			url := string(ctx.Path())
+			method := string(ctx.Method())
+			guardKeyRoute := isGuardKeyBrowserAIRoute(method, url)
 			// We will first check if its API key auth
 			// If yes; we will skip this middleware
-			if isAPIKeyAuth, ok := ctx.UserValue(schemas.IsAPIKeyAuthContextKey).(bool); ok && isAPIKeyAuth {
+			if isAPIKeyAuth, ok := ctx.UserValue(schemas.IsAPIKeyAuthContextKey).(bool); ok && isAPIKeyAuth && !guardKeyRoute {
 				next(ctx)
 				return
 			}
 			authConfig := m.authConfig.Load()
+			if guardKeyRoute {
+				secret := configuredGuardSecret()
+				if secret != "" && guardSecretMatches(extractGuardKey(ctx), secret) {
+					if isGuardSyncRateLimited(clientIPAddress(ctx)) {
+						SendError(ctx, fasthttp.StatusTooManyRequests, "Too many requests: Browser AI rate limit exceeded. Please wait a minute.")
+						return
+					}
+					next(ctx)
+					return
+				}
+				// Guard requests fail closed when general session auth is disabled.
+				if authConfig == nil || !authConfig.IsEnabled {
+					if secret == "" {
+						SendError(ctx, fasthttp.StatusServiceUnavailable, "Guard authentication is not configured")
+					} else {
+						SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
+					}
+					return
+				}
+			}
 			if authConfig == nil || !authConfig.IsEnabled {
 				if !allowOpenAuthWhenDisabled(ctx) {
 					SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
@@ -1443,34 +1463,12 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 				return
 			}
 			// Match the whitelist against the path only
-			url := string(ctx.Path())
-			method := string(ctx.Method())
 			// We skip authorization for the login route and public branding
-			if url == "/api/branding" || url == "/api/system/branding" || shouldSkip(authConfig, url) || isPublicBrowserAIRoute(method, url) {
+			if url == "/api/branding" || url == "/api/system/branding" || (!guardKeyRoute && shouldSkip(authConfig, url)) || isPublicBrowserAIRoute(method, url) {
 				next(ctx)
 				return
 			}
-			// Guard agent policy sync: valid shared secret OR fall through to session auth
-			if isGuardKeyBrowserAIRoute(method, url) {
-				secret := configuredGuardSecret()
-				if !guardSecretRequired() || secret == "" {
-					if isGuardSyncRateLimited(clientIPAddress(ctx)) {
-						SendError(ctx, fasthttp.StatusTooManyRequests, "Too many requests: Browser AI rate limit exceeded. Please wait a minute.")
-						return
-					}
-					next(ctx)
-					return
-				}
-				if guardSecretMatches(extractGuardKey(ctx), secret) {
-					if isGuardSyncRateLimited(clientIPAddress(ctx)) {
-						SendError(ctx, fasthttp.StatusTooManyRequests, "Too many requests: Browser AI rate limit exceeded. Please wait a minute.")
-						return
-					}
-					next(ctx)
-					return
-				}
-				// No/invalid Guard key → require admin session below
-			}
+			// Missing/invalid Guard key falls through to normal session auth.
 			if isRealtimeTransportEndpoint(url) {
 				next(ctx)
 				return

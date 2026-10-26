@@ -4,6 +4,9 @@
 !.env.example
 *.env
 !.env.example
+/.secrets/
+apps/browser-guard/config/gateway_guard_config.json
+apps/browser-guard/release/gateway_guard_config.json
 
 # Runtime data
 /data/
