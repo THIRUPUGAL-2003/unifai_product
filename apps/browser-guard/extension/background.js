@@ -91,6 +91,18 @@ function fetchJson(url) {
 
 // Older agent EXE builds return rules without governance fields: read them
 // directly from the gateway server instead.
+function isLoopbackHost(host) {
+  return host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1" ||
+    /^127\./.test(host) || /\.localhost$/.test(host);
+}
+
+// Gateway domain only: the agent may report its own loopback address as
+// server_host, which must never replace the real gateway domain.
+function gatewayHost(value) {
+  var host = normalizeDomainHost(value);
+  return host && !isLoopbackHost(host) ? host : "";
+}
+
 function withGovernanceFallback(data, serverHost) {
   if (data.block_clipboard !== undefined || data.block_upload !== undefined || !serverHost) {
     return Promise.resolve(data);
@@ -121,12 +133,13 @@ function syncBackgroundRules(done) {
 
   resolveGuardBase(function (base) {
     chrome.storage.local.get(["server_host"], function (saved) {
-      var serverHost = normalizeDomainHost((saved && saved.server_host) || (typeof GATEWAY_SERVER_HOST === "string" ? GATEWAY_SERVER_HOST : ""));
+      var serverHost = gatewayHost(saved && saved.server_host) ||
+        gatewayHost(typeof GATEWAY_SERVER_HOST === "string" ? GATEWAY_SERVER_HOST : "");
 
       var sitesTask = fetchJson(base + "/extension/sites")
         .then(function (data) {
           if (!data || !Array.isArray(data.hosts)) return;
-          if (data.server_host) serverHost = normalizeDomainHost(data.server_host);
+          serverHost = gatewayHost(data.server_host) || serverHost;
           storeIfChanged({
             cached_sites: data.hosts,
             cached_blocked_sites: Array.isArray(data.blocked_hosts) ? data.blocked_hosts : [],
@@ -138,7 +151,7 @@ function syncBackgroundRules(done) {
       var rulesTask = fetchJson(base + "/extension/rules")
         .then(function (data) {
           if (!data || !Array.isArray(data.rules)) throw new Error("rules");
-          if (data.server_host) serverHost = normalizeDomainHost(data.server_host);
+          serverHost = gatewayHost(data.server_host) || serverHost;
           return withGovernanceFallback(data, serverHost);
         })
         .then(function (data) {

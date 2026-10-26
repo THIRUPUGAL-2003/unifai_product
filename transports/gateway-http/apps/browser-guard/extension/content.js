@@ -318,7 +318,9 @@
 
   function evaluateSite(state) {
     state = state || {};
-    if (state.server_host) serverHost = normalizeDomainHost(state.server_host);
+    // Loopback values are already covered by isServerHost and are never the gateway domain.
+    var storedHost = normalizeDomainHost(state.server_host);
+    if (storedHost && !isServerHost(storedHost.replace(serverHost, "")) && !/^127\./.test(storedHost)) serverHost = storedHost;
     if (isServerHost(location.hostname)) {
       disarmPage();
       return;
