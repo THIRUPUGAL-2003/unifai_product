@@ -38,7 +38,6 @@ export function CorporateAIWorkspaceCard({
 
 	// Local input states
 	const [corporateDomainInput, setCorporateDomainInput] = useState("");
-	const [workspaceIdInput, setWorkspaceIdInput] = useState("");
 	const [corporateBlockMsgInput, setCorporateBlockMsgInput] = useState(
 		controls.corporate_block_message || DEFAULT_BLOCK_MESSAGE
 	);
@@ -59,12 +58,7 @@ export function CorporateAIWorkspaceCard({
 			.filter(Boolean);
 	}, [controls.corporate_email_domains]);
 
-	const configuredWorkspaceIds = useMemo(() => {
-		return (controls.allowed_workspace_ids || "")
-			.split(/[ ,\s;\n\r]+/)
-			.map((id) => id.trim())
-			.filter(Boolean);
-	}, [controls.allowed_workspace_ids]);
+
 
 	// Toggle Enforcement
 	const handleToggleEnforcement = async (checked: boolean) => {
@@ -123,35 +117,7 @@ export function CorporateAIWorkspaceCard({
 		}
 	};
 
-	const handleAddWorkspaceId = async () => {
-		const id = workspaceIdInput.trim();
-		if (!id) return;
-		if (/[\s,;]/.test(id)) {
-			toast({ title: "Enter one workspace ID", description: "Add one workspace or tenant ID at a time.", variant: "destructive" });
-			return;
-		}
-		if (configuredWorkspaceIds.some((item) => item.toLowerCase() === id.toLowerCase())) {
-			toast({ title: "Workspace ID already added" });
-			setWorkspaceIdInput("");
-			return;
-		}
-		const updated = [...configuredWorkspaceIds, id];
-		const ok = await patchControl({ allowed_workspace_ids: updated.join(", ") });
-		if (ok) {
-			setWorkspaceIdInput("");
-			toast({ title: "Workspace ID added", description: "The corporate policy now requires a matching workspace ID." });
-		} else {
-			toast({ title: "Failed to add workspace ID", description: "Could not save the workspace restriction.", variant: "destructive" });
-		}
-	};
 
-	const handleRemoveWorkspaceId = async (id: string) => {
-		const updated = configuredWorkspaceIds.filter((item) => item.toLowerCase() !== id.toLowerCase());
-		const ok = await patchControl({ allowed_workspace_ids: updated.join(", ") });
-		if (!ok) {
-			toast({ title: "Failed to remove workspace ID", description: "Could not save the workspace restriction.", variant: "destructive" });
-		}
-	};
 
 	// Remove Domain
 	const handleRemoveDomain = async (domainToRemove: string) => {
@@ -336,39 +302,9 @@ export function CorporateAIWorkspaceCard({
 					</div>
 				</div>
 
-				{/* 2. Optional Approved Workspace IDs */}
-				<div className="space-y-2 pt-3 border-t border-border/40">
-					<div className="space-y-0.5">
-						<Label className="text-xs font-semibold text-foreground">Optional Approved Workspace / Tenant IDs</Label>
-						<p className="text-[11px] text-muted-foreground">When configured, the session must provide one of these IDs as well as an allowed email domain. Sessions without a detected ID are blocked.</p>
-					</div>
-					<div className="min-h-[34px] p-2 rounded-md border border-border bg-muted/20 flex flex-wrap items-center gap-1.5">
-						{configuredWorkspaceIds.length === 0 ? (
-							<span className="text-xs text-muted-foreground italic px-1">No workspace restriction configured.</span>
-						) : configuredWorkspaceIds.map((id) => (
-							<Badge key={id.toLowerCase()} variant="secondary" className="pl-2.5 pr-1.5 py-0.5 text-xs font-mono bg-muted border border-border text-foreground flex items-center gap-1.5 font-normal">
-								<span>{id}</span>
-								<button type="button" onClick={() => void handleRemoveWorkspaceId(id)} className="h-3.5 w-3.5 rounded-full inline-flex items-center justify-center hover:bg-muted-foreground/20 text-muted-foreground hover:text-foreground" title={`Remove ${id}`}>
-									<X className="h-3 w-3" />
-								</button>
-							</Badge>
-						))}
-					</div>
-					<div className="flex flex-col sm:flex-row gap-2">
-						<Input
-							value={workspaceIdInput}
-							onChange={(e) => setWorkspaceIdInput(e.target.value)}
-							onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleAddWorkspaceId(); } }}
-							placeholder="Workspace or tenant ID (press Enter to add)"
-							className="font-mono text-xs h-8"
-						/>
-						<Button type="button" variant="outline" size="sm" onClick={() => void handleAddWorkspaceId()} disabled={!workspaceIdInput.trim()} className="h-8 text-xs gap-1.5 shrink-0">
-							<Plus className="h-3.5 w-3.5" /> Add Workspace ID
-						</Button>
-					</div>
-				</div>
 
-				{/* 3. Custom Block Warning Message Section */}
+
+				{/* 2. Custom Block Warning Message Section */}
 				<div className="space-y-2 pt-3 border-t border-border/40">
 					<div className="flex items-center justify-between">
 						<Label className="text-xs font-semibold text-foreground">Custom Block Warning Message</Label>
@@ -402,7 +338,7 @@ export function CorporateAIWorkspaceCard({
 					</div>
 				</div>
 
-				{/* 4. Target Websites Selector */}
+				{/* 3. Target Websites Selector */}
 				<PolicyTargetWebsitesSelector
 					value={controls.corporate_target_websites || "all"}
 					targets={targets}

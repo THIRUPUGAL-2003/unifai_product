@@ -394,10 +394,21 @@ func (h *BrowserAIHandler) updateLogUsage(ctx *fasthttp.RequestCtx) {
 		TotalTokens      int     `json:"total_tokens"`
 		AudioDurationSec float64 `json:"audio_duration_sec"`
 		Cost             float64 `json:"cost"`
+		ReplyText        string  `json:"reply_text"`
+		ResponseText     string  `json:"response_text"`
+		Provider         string  `json:"provider"`
+		Model            string  `json:"model"`
 	}
 	if err := sonic.Unmarshal(ctx.PostBody(), &payload); err != nil {
 		SendError(ctx, fasthttp.StatusBadRequest, "Invalid JSON payload")
 		return
+	}
+	reply := strings.TrimSpace(payload.ReplyText)
+	if reply == "" {
+		reply = strings.TrimSpace(payload.ResponseText)
+	}
+	if reply != "" {
+		_ = h.manager.UpdateLogReplyBot(context.Background(), id, payload.Provider, payload.Model, reply)
 	}
 	if err := h.manager.UpdateLogTokensAndCost(context.Background(), id, payload.PromptTokens, payload.CompletionTokens, payload.TotalTokens, payload.AudioDurationSec, payload.Cost); err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, err.Error())

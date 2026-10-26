@@ -7670,6 +7670,32 @@ export default function BrowserAiPage() {
 									) : null}
 								</div>
 
+								{selectedLog.reply_bot_text ? (
+									<div className="space-y-2">
+										<div className="flex justify-between items-center gap-2">
+											<Label className="text-[11px] uppercase tracking-wide text-emerald-400 font-semibold flex items-center gap-1.5">
+												<Bot className="h-3.5 w-3.5 text-emerald-400" />
+												<span>AI Response / Model Output</span>
+												{selectedLog.reply_bot_model ? (
+													<span className="text-[10px] text-muted-foreground font-mono">({selectedLog.reply_bot_model})</span>
+												) : null}
+											</Label>
+											<Button
+												variant="ghost"
+												size="sm"
+												onClick={() => handleCopyPrompt(selectedLog.reply_bot_text || "")}
+												className="h-7 text-xs gap-1 shrink-0"
+											>
+												<Copy className="h-3 w-3" />
+												Copy Response
+											</Button>
+										</div>
+										<div className="p-3.5 bg-emerald-950/20 border border-emerald-800/40 rounded-lg font-mono text-xs max-h-52 overflow-y-auto whitespace-pre-wrap leading-relaxed no-scrollbar text-foreground">
+											{selectedLog.reply_bot_text}
+										</div>
+									</div>
+								) : null}
+
 								{isFileUploadLog(selectedLog) ? (
 									<div className="rounded-lg border border-sky-900/50 bg-sky-950/20 p-3.5 flex flex-wrap items-center justify-between gap-3">
 										<div className="flex min-w-0 items-center gap-2">
