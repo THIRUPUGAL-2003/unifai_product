@@ -1298,6 +1298,9 @@ func (h *BrowserAIHandler) interceptFile(ctx *fasthttp.RequestCtx) {
 			ttl, _ := getBrowserAIAttachmentTTL(h.manager)
 			exp := time.Now().Add(ttl)
 			rel := "attachments/" + stored
+			if ctype == "application/pdf" || strings.HasSuffix(strings.ToLower(stored), ".pdf") {
+				rel = "pdf/" + stored
+			}
 			if err := h.manager.UpdateLogAttachmentMeta(ctx, logEntry.ID, safeName, stored, ctype, int64(len(uploadBytes)), rel, &exp); err == nil {
 				logEntry.AttachmentStoredName = stored
 				logEntry.AttachmentContentType = ctype

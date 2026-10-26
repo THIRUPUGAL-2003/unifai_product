@@ -399,7 +399,13 @@ func storeBrowserAIAttachment(logID, originalName string, data []byte, contentTy
 	}
 	ctype := sniffAttachmentContentType(payload, originalName, contentTypeHint)
 	safe := ensureAttachmentExt(originalName, ctype)
-	dir, err := ensureBrowserAIAttachmentDir()
+	isPDF := ctype == "application/pdf" || strings.HasSuffix(strings.ToLower(safe), ".pdf")
+	var dir string
+	if isPDF {
+		dir, err = ensureBrowserAIPdfDir()
+	} else {
+		dir, err = ensureBrowserAIAttachmentDir()
+	}
 	if err != nil {
 		return "", "", err
 	}
