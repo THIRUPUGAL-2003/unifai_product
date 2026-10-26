@@ -541,7 +541,7 @@ type BrowserAIAgentSettings struct {
 }
 
 const BrowserAIAgentSettingsID = "browser-agent-settings-default"
-const AgentHeartbeatLiveWindow = 2 * time.Minute // 120 seconds (agent sends heartbeat every 30s)
+const AgentHeartbeatLiveWindow = 5 * time.Minute // 300 seconds (resilient to network/sleep drops)
 const AgentStatusActive = "active"
 const AgentStatusPaused = "paused"
 const AgentStatusInactive = "inactive"
@@ -1910,7 +1910,7 @@ func searchEnginePACRule(proxyAddr string) string {
         host === "bing.com" || host === "www.bing.com" ||
         host === "duckduckgo.com" || host === "html.duckduckgo.com" ||
         dnsDomainIs(host, "search.yahoo.com") || host === "search.brave.com") {
-        return "PROXY ` + proxyAddr + `; DIRECT";
+        return "PROXY ` + proxyAddr + `";
     }
 
 `

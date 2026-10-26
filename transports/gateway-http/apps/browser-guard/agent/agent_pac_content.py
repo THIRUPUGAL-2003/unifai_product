@@ -65,7 +65,7 @@ SEARCH_ENGINE_PAC_RULE = [
     '        host === "bing.com" || host === "www.bing.com" ||',
     '        host === "duckduckgo.com" || host === "html.duckduckgo.com" ||',
     '        dnsDomainIs(host, "search.yahoo.com") || host === "search.brave.com") {',
-    '        return "PROXY {proxy}; DIRECT";',
+    '        return "PROXY {proxy}";',
     "    }",
     "",
 ]

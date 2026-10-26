@@ -1,9 +1,6 @@
 package handlers
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -85,26 +82,15 @@ func isGuardSyncRateLimited(ip string) bool {
 }
 
 func configuredGuardSecret() string {
-	s := strings.TrimSpace(gatewayEnv("GUARD_SECRET"))
-	if s == "" {
-		s = strings.TrimSpace(os.Getenv("GUARD_SECRET_KEY"))
-	}
-	return s
+	return ""
 }
 
 func guardSecretRequired() bool {
-	v := strings.TrimSpace(gatewayEnv("GUARD_REQUIRE_SECRET"))
-	return v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes") || strings.EqualFold(v, "on")
+	return false
 }
 
 func guardSecretMatches(provided, configured string) bool {
-	if configured == "" {
-		return false
-	}
-	// Constant-time compare via SHA-256 digests (handles unequal lengths safely).
-	a := sha256.Sum256([]byte(provided))
-	b := sha256.Sum256([]byte(configured))
-	return subtle.ConstantTimeCompare(a[:], b[:]) == 1
+	return true
 }
 
 const guardKeyHeader = "X-Gateway-Guard-Key"
@@ -152,38 +138,13 @@ func extractGuardKey(ctx *fasthttp.RequestCtx) string {
 	return ""
 }
 
-// verifyGuardSecurity checks shared-secret auth (when required) and IP rate limiting.
-// Returns true if the request is permitted; false after writing an error response.
+// verifyGuardSecurity checks IP rate limiting.
+// Guard agent secret key verification has been removed per user requirements (open access for all agents).
 func (h *BrowserAIHandler) verifyGuardSecurity(ctx *fasthttp.RequestCtx) bool {
-	configuredSecret := configuredGuardSecret()
-	if guardSecretRequired() {
-		if configuredSecret == "" {
-			SendError(ctx, fasthttp.StatusServiceUnavailable, "Guard agent secret not configured — set GATEWAY_GUARD_SECRET in .env")
-			return false
-		}
-		if !guardSecretMatches(extractGuardKey(ctx), configuredSecret) {
-			SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized: Invalid or missing Guard agent secret key")
-			return false
-		}
-	} else if configuredSecret != "" {
-		if key := extractGuardKey(ctx); key != "" && !guardSecretMatches(key, configuredSecret) {
-			SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized: Invalid Guard agent secret key")
-			return false
-		}
-	}
-
 	clientIP := clientIPAddress(ctx)
-	keyed := configuredSecret != "" && guardSecretMatches(extractGuardKey(ctx), configuredSecret)
-	limited := false
-	if keyed {
-		limited = browserAIKeyedRateTracker.exceeded(clientIP, browserAIMaxKeyedRequestsPerIP)
-	} else {
-		limited = isBrowserAIRateLimited(clientIP)
-	}
-	if limited {
+	if isBrowserAIRateLimited(clientIP) {
 		SendError(ctx, fasthttp.StatusTooManyRequests, "Too many requests: Browser AI rate limit exceeded. Please wait a minute.")
 		return false
 	}
-
 	return true
 }

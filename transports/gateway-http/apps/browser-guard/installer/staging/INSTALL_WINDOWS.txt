@@ -1,7 +1,7 @@
 YP Raksha — Windows Desktop Agent
 =================================
 
-Company server: http://127.0.0.1:6000
+Company server: https://unifai.yespanchi.com
 
 1. Extract this package completely.
 2. Double-click YP_Raksha.exe to run.

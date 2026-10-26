@@ -277,9 +277,7 @@ def load_runtime_config() -> dict:
 
     server_dom = (os.environ.get("SERVER_DOMAIN") or "").strip().rstrip("/")
     backend = pick("GATEWAY_BACKEND_URL", "backend_url", "").rstrip("/")
-    if server_dom and (not backend or "localhost" in backend or "127.0.0.1" in backend):
-        backend = server_dom
-    elif not backend:
+    if not backend:
         backend = (server_dom or DEFAULT_BACKEND or "").strip().rstrip("/")
     if not backend:
         print(
@@ -303,6 +301,8 @@ def load_runtime_config() -> dict:
             "or proxy_addr in gateway_guard_config.json (run sync_config_from_env.py)"
         )
     pac_url = pick("GATEWAY_PAC_URL", "pac_url", f"{backend}/api/browser-ai/pac")
+    if backend and ("127.0.0.1" in pac_url and "127.0.0.1" not in backend):
+        pac_url = f"{backend}/api/browser-ai/pac"
     # Default 3s: Monitor/Block host list enters PAC same few seconds (not 10–30s wait).
     sync_secs = pick("GATEWAY_PAC_SYNC_SECONDS", "pac_sync_seconds", "3")
     try:

@@ -31,14 +31,16 @@
   function compileRegex(rawPattern) {
     if (!rawPattern || typeof rawPattern !== "string") return null;
     var pattern = rawPattern.trim();
-    var flags = "";
-    if (pattern.startsWith("(?i)")) {
-      flags += "i";
-      pattern = pattern.slice(4);
-    }
-    if (pattern.startsWith("(?m)")) {
-      flags += "m";
-      pattern = pattern.slice(4);
+    var flags = "i";
+    while (pattern.startsWith("(?i)") || pattern.startsWith("(?m)")) {
+      if (pattern.startsWith("(?i)")) {
+        if (flags.indexOf("i") === -1) flags += "i";
+        pattern = pattern.slice(4);
+      }
+      if (pattern.startsWith("(?m)")) {
+        if (flags.indexOf("m") === -1) flags += "m";
+        pattern = pattern.slice(4);
+      }
     }
     // In DLP prompt/file scanning, normalize full-string anchors ^...$ so patterns like ^[1-9][0-9]{5}$
     // match sensitive tokens inside full sentences (e.g. "613002 this is new")
@@ -577,7 +579,9 @@
 
     for (var k = 0; k < dynamicRules.length; k++) {
       var r = dynamicRules[k];
-      if (r.re && r.re.test(fullContent)) {
+      if (r.re) {
+        r.re.lastIndex = 0;
+        if (r.re.test(fullContent)) {
         var act = String(r.action || "BLOCK").toUpperCase();
         if (act === "BLOCK" || act === "BLOCKED") {
           return {
@@ -1002,14 +1006,14 @@
 
     (document.body || document.documentElement).appendChild(card);
 
-    // Auto-dismiss after 1.5 seconds (requested by user)
+    // Auto-dismiss after 5 seconds
     setTimeout(function () {
       if (card && card.parentNode) {
         card.style.transition = "opacity 0.2s ease";
         card.style.opacity = "0";
         setTimeout(function () { if (card.parentNode) card.remove(); }, 200);
       }
-    }, 1500);
+    }, 5000);
   }
 
   var lastWarnedTime = 0;
@@ -1772,6 +1776,81 @@
     }, "*");
   }, true);
 
+  // Helper: Return clean platform-native SSE or structured JSON block response
+  function createBlockedFetchResponse(decision, reqUrl) {
+    var blockMsg = (decision && decision.message) || "Blocked by security policy.";
+    var u = String(reqUrl || (typeof location !== "undefined" ? location.href : "") || "").toLowerCase();
+    var isChatGpt = u.includes("chatgpt.com") || u.includes("openai.com") || u.includes("/conversation") || u.includes("backend-api");
+    var isClaude = u.includes("claude.ai") || u.includes("anthropic.com");
+
+    if (isChatGpt) {
+      var msgId = "block_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2);
+      var sseBody =
+        "data: " + JSON.stringify({
+          message: {
+            id: msgId,
+            author: { role: "assistant", name: null, metadata: {} },
+            create_time: Math.floor(Date.now() / 1000),
+            update_time: null,
+            content: { content_type: "text", parts: [blockMsg] },
+            status: "finished_successfully",
+            end_turn: true,
+            weight: 1.0,
+            metadata: { finish_details: { type: "stop" }, model_slug: "gpt-4" },
+            recipient: "all"
+          },
+          conversation_id: null,
+          error: null
+        }) + "\n\n" +
+        "data: [DONE]\n\n";
+
+      return new Response(sseBody, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "X-Accel-Buffering": "no"
+        }
+      });
+    }
+
+    if (isClaude) {
+      var cSse =
+        'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_blk_' + Date.now().toString(36) + '","type":"message","role":"assistant","content":[],"model":"claude","stop_reason":null}}\n\n' +
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n' +
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":' + JSON.stringify(blockMsg) + '}}\n\n' +
+        'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n' +
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}\n\n' +
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n';
+
+      return new Response(cSse, {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache"
+        }
+      });
+    }
+
+    var genSse =
+      "data: " + JSON.stringify({
+        text: blockMsg,
+        message: blockMsg,
+        content: blockMsg,
+        role: "assistant",
+        choices: [{ delta: { content: blockMsg }, finish_reason: "stop" }]
+      }) + "\n\n" +
+      "data: [DONE]\n\n";
+
+    return new Response(genSse, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache"
+      }
+    });
+  }
+
   // --- 4. NETWORK LAYER HOOK (fetch, XMLHttpRequest & WebSocket) ---
 
   var origFetch = window.fetch;
@@ -2012,6 +2091,7 @@
       }
 
       var args = arguments;
+      var targetUrl = url;
       return ask(promptText, netFiles, []).then(function (decision) {
         var sent = false;
         var result = null;
@@ -2028,7 +2108,7 @@
           }
           result = origFetch.apply(window, nextArgs);
         });
-        if (!sent) return new Response(null, { status: 204 });
+        if (!sent) return createBlockedFetchResponse(decision, targetUrl);
         return result;
       });
     };
