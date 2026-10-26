@@ -284,6 +284,8 @@ def lock_install_dir_against_deletion() -> None:
                     dirs_to_lock.add(exe_dir)
 
             for d in dirs_to_lock:
+                # Drop the previous deny first: icacls /deny appends a new entry on every start.
+                subprocess.run(["icacls", d, "/remove:d", user], capture_output=True, text=True, creationflags=flags)
                 subprocess.run(["icacls", d, "/deny", f"{user}:(OI)(CI)(DE,DC)"], capture_output=True, text=True, creationflags=flags)
         except Exception:
             pass

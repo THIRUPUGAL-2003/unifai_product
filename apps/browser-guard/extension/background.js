@@ -117,9 +117,19 @@ function withGovernanceFallback(data, serverHost) {
     .catch(function () { return data; });
 }
 
+var _syncQueued = false;
+
 function syncBackgroundRules(done) {
   var now = Date.now();
   if (_syncInFlight || now - _lastSyncAt < SYNC_MIN_INTERVAL_MS) {
+    // Trailing sync so a second change inside the throttle window is not lost.
+    if (!_syncQueued) {
+      _syncQueued = true;
+      setTimeout(function () {
+        _syncQueued = false;
+        syncBackgroundRules();
+      }, Math.max(200, SYNC_MIN_INTERVAL_MS - (now - _lastSyncAt)));
+    }
     if (done) done();
     return;
   }
@@ -240,11 +250,88 @@ if (chrome.downloads && chrome.downloads.onCreated) {
 if (chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     if (!msg || msg.type !== "guard_sync_now") return false;
+    watchAgent();
     syncBackgroundRules(function () {
       try { sendResponse({ ok: true }); } catch (_) {}
     });
     return true;
   });
+}
+
+// Live link to the EXE. The background parks on /extension/wait; the EXE answers as
+// soon as the website changes Target Websites, rules or controls (server pushes a
+// "policy" event to the EXE), so the new policy lands in chrome.storage in ~1s.
+// While the EXE is not running yet, it retries every second, so a freshly installed
+// EXE and extension find each other within about a second in either install order.
+var WATCH_WAIT_SECONDS = 20; // under the 30s MV3 service worker idle limit
+var WATCH_RETRY_MS = 1000;
+var _watchRunning = false;
+var _watchVersion = -1;
+
+function fetchJsonWithTimeout(url, ms) {
+  var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+  var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, ms) : null;
+  return fetch(url, { method: "GET", cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
+    .then(function (r) {
+      if (timer) clearTimeout(timer);
+      if (!r.ok) throw new Error("status " + r.status);
+      return r.json();
+    }, function (err) {
+      if (timer) clearTimeout(timer);
+      throw err;
+    });
+}
+
+// Guard was uninstalled from the website: drop all cached policy so no page stays
+// armed and no governance control keeps blocking. A reinstalled EXE restores it.
+function clearPolicyOnUninstall() {
+  var empty = policyFromRules({ rules: [] });
+  empty.cached_exts = [];
+  empty.cached_sites = [];
+  empty.cached_blocked_sites = [];
+  storeIfChanged(empty);
+}
+
+function watchAgent() {
+  if (_watchRunning) return;
+  _watchRunning = true;
+
+  function next(delayMs) {
+    setTimeout(loop, delayMs);
+  }
+
+  function loop() {
+    // Any extension API call resets the service worker idle timer, keeping this loop alive.
+    chrome.storage.local.get(["last_sync"], function () {
+      resolveGuardBase(function (base) {
+        var url = base + "/extension/wait?v=" + _watchVersion + "&t=" + WATCH_WAIT_SECONDS;
+        fetchJsonWithTimeout(url, (WATCH_WAIT_SECONDS + 5) * 1000)
+          .then(function (data) {
+            if (data && data.uninstalling) {
+              _watchVersion = -1;
+              clearPolicyOnUninstall();
+              next(WATCH_RETRY_MS);
+              return;
+            }
+            var version = Number(data && data.policy_version);
+            if (isFinite(version) && version !== _watchVersion) {
+              _watchVersion = version;
+              _lastSyncAt = 0;
+              syncBackgroundRules();
+            }
+            next(0);
+          })
+          .catch(function () {
+            // EXE not running (yet) or moved port: probe all candidate ports next time.
+            _watchVersion = -1;
+            if (typeof _guardResolved !== "undefined") _guardResolved = "";
+            next(WATCH_RETRY_MS);
+          });
+      });
+    });
+  }
+
+  loop();
 }
 
 function ensureSyncAlarm() {
@@ -255,7 +342,10 @@ function ensureSyncAlarm() {
 
 if (chrome.alarms && chrome.alarms.onAlarm) {
   chrome.alarms.onAlarm.addListener(function (alarm) {
-    if (alarm && alarm.name === "guard-sync") syncBackgroundRules();
+    if (alarm && alarm.name === "guard-sync") {
+      syncBackgroundRules();
+      watchAgent();
+    }
   });
 }
 
@@ -273,3 +363,4 @@ chrome.runtime.onStartup.addListener(function () {
 
 ensureSyncAlarm();
 setInterval(syncBackgroundRules, 10000);
+watchAgent();

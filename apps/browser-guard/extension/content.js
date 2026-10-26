@@ -350,6 +350,8 @@
       armedHere = true;
       window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
       postPolicyToPage();
+      // Wakes a sleeping background worker so its live link to the EXE is running.
+      requestBackgroundSync();
     });
   }
 

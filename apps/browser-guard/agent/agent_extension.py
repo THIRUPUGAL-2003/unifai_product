@@ -312,6 +312,15 @@ def monitored_hosts() -> list[str]:
     return []
 
 
+def invalidate_policy_caches() -> None:
+    """Force the next sites/rules read to hit the backend (keeps data for offline fallback)."""
+    global _sites_cache, _rules_cache
+    with _sites_lock:
+        _sites_cache = (0.0, _sites_cache[1])
+    with _rules_lock:
+        _rules_cache = (0.0, _rules_cache[1])
+
+
 def blocked_hosts() -> list[str]:
     """Return all target domains marked with block_site = True."""
     monitored_hosts()

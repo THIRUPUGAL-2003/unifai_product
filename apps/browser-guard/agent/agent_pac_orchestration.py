@@ -7,6 +7,7 @@ import threading
 import time
 
 import agent_config
+import agent_policy_sync
 import agent_state
 from agent_config import PROXY_ADDR
 from agent_pac_content import build_pac_from_targets, fetch_proxy_pac, local_pac_path, write_local_pac
@@ -104,4 +105,6 @@ def sync_pac_loop(stop_event: threading.Event) -> None:
             last = pac
             n = pac.count('",') if "aiHosts" in pac else 0
             print(f"[Gateway Guard] PAC refreshed (~{n} domain entries).")
-        stop_event.wait(agent_config.PAC_SYNC_SECONDS)
+        # A server "policy" event wakes this early so Target Website edits apply in ~1s.
+        agent_policy_sync.pac_nudge.wait(agent_config.PAC_SYNC_SECONDS)
+        agent_policy_sync.pac_nudge.clear()

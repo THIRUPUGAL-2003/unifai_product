@@ -16,7 +16,7 @@ from pathlib import Path
 
 AGENT_DIR = Path(__file__).resolve().parents[1]
 PROXY_DIR = AGENT_DIR.parent / "proxy"
-_TMP = tempfile.mkdtemp(prefix="gateway-bundle-test-")
+_TMP = tempfile.mkdtemp(prefix="gateway-bundle-test-", dir=str(AGENT_DIR / "tests"))
 os.environ["LOCALAPPDATA"] = _TMP
 os.environ["HOME"] = _TMP
 os.environ.pop("GATEWAY_GUARD_CODE_DIR", None)

@@ -25,9 +25,9 @@ type buildAsset struct {
 	path string
 }
 
-// commitTempFile prefers an atomic rename. On Windows filesystems that deny a
-// same-directory rename for a new file, it falls back to an exclusive copy;
-// existing files are never overwritten through the fallback.
+// commitTempFile prefers an atomic rename. Some Windows sandboxed filesystems
+// deny MoveFileEx even within the same directory, so it falls back to a copy
+// and restores the previous destination if that copy fails.
 func commitTempFile(tempPath, path string) error {
 	if err := os.Rename(tempPath, path); err == nil {
 		return nil
@@ -35,24 +35,52 @@ func commitTempFile(tempPath, path string) error {
 		return err
 	} else {
 		renameErr := err
-		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
-			return renameErr
+		var (
+			oldData []byte
+			oldMode os.FileMode = 0o644
+			hadOld  bool
+		)
+		if info, statErr := os.Stat(path); statErr == nil {
+			if !info.Mode().IsRegular() {
+				return renameErr
+			}
+			oldMode = info.Mode().Perm()
+			oldData, err = os.ReadFile(path)
+			if err != nil {
+				return errors.Join(renameErr, err)
+			}
+			hadOld = true
+			if err := os.Remove(path); err != nil {
+				return errors.Join(renameErr, err)
+			}
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return errors.Join(renameErr, statErr)
 		}
 
 		src, openErr := os.Open(tempPath)
 		if openErr != nil {
+			if hadOld {
+				_ = os.WriteFile(path, oldData, oldMode)
+			}
 			return errors.Join(renameErr, openErr)
 		}
 		defer src.Close()
 
-		dst, createErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		dst, createErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, oldMode)
 		if createErr != nil {
+			if hadOld {
+				_ = os.WriteFile(path, oldData, oldMode)
+			}
 			return errors.Join(renameErr, createErr)
 		}
 		_, copyErr := io.Copy(dst, src)
 		closeErr := dst.Close()
 		if copyErr != nil || closeErr != nil {
 			_ = os.Remove(path)
+			if hadOld {
+				restoreErr := os.WriteFile(path, oldData, oldMode)
+				return errors.Join(renameErr, copyErr, closeErr, restoreErr)
+			}
 			return errors.Join(renameErr, copyErr, closeErr)
 		}
 		_ = os.Remove(tempPath)

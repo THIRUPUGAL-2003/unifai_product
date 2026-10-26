@@ -135,7 +135,26 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
             self.end_headers()
             self.wfile.write(body)
             return
+        if path == "/extension/wait":
+            # Long-poll: the extension background and the MitM worker park here and
+            # re-pull policy as soon as the version changes (admin edit on the website).
+            import agent_policy_sync
+            from urllib.parse import parse_qs
+
+            query = parse_qs((self.path or "").split("?", 1)[1] if "?" in (self.path or "") else "")
+            try:
+                since = int((query.get("v") or ["-1"])[0])
+            except ValueError:
+                since = -1
+            try:
+                timeout = float((query.get("t") or [str(agent_policy_sync.WAIT_MAX_SECONDS)])[0])
+            except ValueError:
+                timeout = agent_policy_sync.WAIT_MAX_SECONDS
+            version, uninstalling = agent_policy_sync.wait_for_change(since, timeout)
+            self._json(200, {"policy_version": version, "uninstalling": uninstalling})
+            return
         if path == "/extension/sites":
+            import agent_policy_sync
             from agent_extension import monitored_hosts, blocked_hosts
             from agent_config import GATEWAY_BACKEND_URL
             server_host = ""
@@ -148,9 +167,12 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
                 "hosts": monitored_hosts(),
                 "blocked_hosts": blocked_hosts(),
                 "server_host": server_host,
+                "policy_version": agent_policy_sync.current_version(),
+                "uninstalling": agent_policy_sync.is_uninstalling(),
             })
             return
         if path == "/extension/rules":
+            import agent_policy_sync
             from agent_extension import dynamic_rules
             from agent_config import GATEWAY_BACKEND_URL
             from guard_platform import data_dir
@@ -169,6 +191,8 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}} td,th{{border-botto
                 "server_host": server_host,
                 "status": "tampered" if is_tampered else "active",
                 "tampered": is_tampered,
+                "policy_version": agent_policy_sync.current_version(),
+                "uninstalling": agent_policy_sync.is_uninstalling(),
             }
             cache_file = os.path.join(data_dir(), "cached_uninstall_keys.json")
             if os.path.isfile(cache_file):
@@ -254,6 +278,8 @@ def start_local_pac_http_server() -> str:
             thread = threading.Thread(target=httpd.serve_forever, daemon=True)
             thread.start()
             agent_state._PAC_HTTP_URL = f"http://{PAC_HTTP_HOST}:{port}/proxy.pac"
+            # The MitM worker inherits this and long-polls /extension/wait for instant policy.
+            os.environ["GATEWAY_GUARD_LOCAL_BASE"] = f"http://{PAC_HTTP_HOST}:{port}"
             print(f"[Gateway Guard] Local PAC HTTP server: {agent_state._PAC_HTTP_URL}")
             return agent_state._PAC_HTTP_URL
         except Exception as e:

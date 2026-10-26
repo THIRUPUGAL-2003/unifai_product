@@ -665,6 +665,8 @@ def _ensure_background_config_refresh() -> None:
         return
     _bg_config_refresh_started = True
 
+    wake = threading.Event()
+
     def _loop() -> None:
         while True:
             try:
@@ -679,9 +681,35 @@ def _ensure_background_config_refresh() -> None:
                 get_control_settings(force_network=True)
             except Exception as e:
                 print(f"[Gateway Proxy] bg controls refresh: {e}")
-            time.sleep(5.0)
+            wake.wait(5.0)
+            wake.clear()
+
+    def _watch_local_policy() -> None:
+        """Long-poll the Guard agent: an admin edit on the website wakes the refresh in ~1s.
+
+        Works with or without the browser extension. The 5s loop above stays the fallback.
+        """
+        base = (os.environ.get("GATEWAY_GUARD_LOCAL_BASE") or "").rstrip("/")
+        if not base:
+            return
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        version = -1
+        while True:
+            try:
+                with opener.open(f"{base}/extension/wait?v={version}&t=20", timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8") or "{}")
+                new_version = int(data.get("policy_version", version))
+                if new_version != version:
+                    if version != -1:
+                        wake.set()
+                    version = new_version
+                if data.get("uninstalling"):
+                    time.sleep(2.0)
+            except Exception:
+                time.sleep(2.0)
 
     threading.Thread(target=_loop, name="gateway-config-refresh", daemon=True).start()
+    threading.Thread(target=_watch_local_policy, name="gateway-policy-watch", daemon=True).start()
 
     def _first_pull() -> None:
         try:

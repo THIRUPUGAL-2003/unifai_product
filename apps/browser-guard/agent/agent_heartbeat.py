@@ -9,6 +9,7 @@ import threading
 import time
 
 import agent_config
+import agent_policy_sync
 from agent_autoupdate import check_and_update_if_needed, nudge_update_check
 from agent_browser_policy import set_browser_quic
 from agent_config import HEARTBEAT_SECONDS, SERVER_MODE, GATEWAY_BACKEND_URL
@@ -174,6 +175,10 @@ def apply_admin_uninstall(agent_id: str) -> None:
     except Exception:
         pass
     schedule_install_removal()
+    # Tell the browser extension Guard is gone so it drops cached policy, then let
+    # the parked /extension/wait requests answer before the process exits.
+    agent_policy_sync.signal_uninstalling()
+    time.sleep(1.0)
     os._exit(0)
 
 
@@ -226,6 +231,13 @@ def command_wait_loop(agent_id: str, stop_event: threading.Event) -> None:
         if code == 200:
             failures = 0
             event = str((data or {}).get("event") or "").strip().lower() if isinstance(data, dict) else ""
+            if event == "policy":
+                # Target Websites / rules / controls changed on the website: re-pull now.
+                # Short jitter keeps a whole fleet from hitting the backend in the same instant.
+                stop_event.wait(random.uniform(0.0, 0.5))
+                agent_policy_sync.on_server_policy_event()
+                stop_event.wait(0.2)
+                continue
             if event:
                 print(f"[Gateway Guard] Server event: {event}")
                 if event == "rebuild":

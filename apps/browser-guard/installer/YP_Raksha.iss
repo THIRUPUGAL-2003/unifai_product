@@ -1,5 +1,5 @@
 #define MyAppName "YP Raksha"
-#define MyAppVersion "1.1.32"
+#define MyAppVersion "1.1.33"
 #define MyAppPublisher "YesPanchi"
 
 [Setup]
@@ -23,7 +23,7 @@ SetupIconFile=yp_raksha.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-VersionInfoVersion=1.1.32.0
+VersionInfoVersion=1.1.33.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=YP Raksha Setup
 VersionInfoProductName={#MyAppName}
@@ -54,4 +54,18 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Uninstall\{{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}"; ValueType: dword; ValueName: "NoRepair"; ValueData: "1"
 
 [Run]
-Filename: "{app}\YP_Raksha.exe"; Description: "Launch YP Raksha"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\YP_Raksha.exe"; Description: "Launch YP Raksha"; WorkingDir: "{app}"; Flags: postinstall nowait
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  { Upgrade / reinstall over a running Guard: stop it (and its MitM worker), then drop the
+    deny-delete rule it puts on its own folder, or replacing YP_Raksha.exe fails. }
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM YP_Raksha.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(800);
+  if DirExists(ExpandConstant('{app}')) then
+    Exec(ExpandConstant('{sys}\icacls.exe'), '"' + ExpandConstant('{app}') + '" /remove:d "' + GetUserNameString + '" /T /C /Q', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;

@@ -21,6 +21,7 @@ import threading
 import time
 
 import agent_config
+import agent_policy_sync
 from agent_certs import install_ca_certificate
 from agent_config import (
     AGENT_TYPE,
@@ -245,6 +246,7 @@ def main() -> None:
     if not SERVER_MODE:
         threading.Thread(target=proxy_ready_watch, daemon=True).start()
         threading.Thread(target=sync_pac_loop, args=(stop_event,), daemon=True).start()
+        threading.Thread(target=agent_policy_sync.refresh_loop, args=(stop_event,), daemon=True).start()
     # Cap AI Guard Bot hold so browsers do not drop the request (felt as connection cut).
     os.environ.setdefault("GATEWAY_EVAL_TIMEOUT", "18")
     threading.Thread(target=heartbeat_loop, args=(agent_id, stop_event), daemon=True).start()
