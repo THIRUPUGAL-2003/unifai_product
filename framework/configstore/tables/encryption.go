@@ -86,13 +86,15 @@ func restoreKeptCiphertext(table, row, column, value string, isEmpty bool) (stri
 		return value, false
 	}
 	key := rowCiphertextKey(table, row, column)
-	if !isEmpty {
-		keptRowCiphertext.Delete(key)
+	kept, ok := keptRowCiphertext.Load(key)
+	if !ok {
 		return value, false
 	}
-	if kept, ok := keptRowCiphertext.Load(key); ok {
+	if isEmpty || value == kept.(string) {
+		// Empty, or the same undecryptable ciphertext written back: keep it as stored.
 		return kept.(string), true
 	}
+	keptRowCiphertext.Delete(key)
 	return value, false
 }
 

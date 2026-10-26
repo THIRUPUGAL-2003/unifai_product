@@ -29,6 +29,12 @@ VersionInfoDescription=YP Raksha Setup
 VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}
 
+[InstallDelete]
+; The agent reads an encrypted config before the .json shipped here, so a leftover .enc from an
+; earlier install (old backend, missing Guard secret) would override the company config.
+Type: files; Name: "{app}\gateway_guard_config.enc"
+Type: files; Name: "{localappdata}\Gateway\Guard\gateway_guard_config.enc"
+
 [Files]
 Source: "staging\YP_Raksha.exe"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 Source: "staging\gateway_guard_config.json"; DestDir: "{app}"; Flags: ignoreversion
