@@ -32,7 +32,8 @@ func TestBuildNowWindowsPackageUsesFreshConfig(t *testing.T) {
 	t.Setenv("SERVER_DOMAIN", "https://new.example/")
 	t.Setenv("GATEWAY_PROXY_ADDR", "127.0.0.1:18103")
 	t.Setenv("PAC_HTTP_PORT", "18195")
-	t.Setenv("GATEWAY_GUARD_SECRET", "s3cret")
+	testGuardSecret := "test-guard-secret-that-is-at-least-32-bytes"
+	t.Setenv("GATEWAY_GUARD_SECRET", testGuardSecret)
 
 	cfg, err := freshGuardConfig()
 	if err != nil {
@@ -68,7 +69,7 @@ func TestBuildNowWindowsPackageUsesFreshConfig(t *testing.T) {
 		"pac_url":       "https://new.example/api/browser-ai/pac",
 		"proxy_addr":    "127.0.0.1:18103",
 		"pac_http_port": float64(18195),
-		"guard_secret":  "s3cret",
+		"guard_secret":  testGuardSecret,
 		"listen_host":   "127.0.0.1",
 	}
 	for k, v := range want {
