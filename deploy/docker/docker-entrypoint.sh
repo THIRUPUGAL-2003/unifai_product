@@ -57,6 +57,10 @@ ensure_config_json() {
         echo "Error: $CONFIG_FILE is not writable. Remove any file-level Docker bind mount for config.json and use ./data:/app/data only."
         exit 1
     fi
+
+    if [ ! -f /app/gateway_guard_config.json ] && [ -f /app/release/gateway_guard_config.json ]; then
+        cp /app/release/gateway_guard_config.json /app/gateway_guard_config.json
+    fi
 }
 
 # Fix permissions before starting the application
