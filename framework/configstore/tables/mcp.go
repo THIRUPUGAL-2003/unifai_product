@@ -226,16 +226,18 @@ func (c *TableMCPClient) AfterFind(tx *gorm.DB) error {
 		if c.HeadersJSON != "" && c.HeadersJSON != "{}" {
 			decrypted, err := encrypt.Decrypt(c.HeadersJSON)
 			if err != nil {
-				return fmt.Errorf("failed to decrypt mcp headers: %w", err)
+				c.HeadersJSON = "{}"
+			} else {
+				c.HeadersJSON = decrypted
 			}
-			c.HeadersJSON = decrypted
 		}
 		if c.ConnectionString != nil && !c.ConnectionString.IsFromSecret() && c.ConnectionString.GetValue() != "" {
 			decrypted, err := encrypt.Decrypt(c.ConnectionString.Val)
 			if err != nil {
-				return fmt.Errorf("failed to decrypt mcp connection string: %w", err)
+				c.ConnectionString.Val = ""
+			} else {
+				c.ConnectionString.Val = decrypted
 			}
-			c.ConnectionString.Val = decrypted
 		}
 	}
 	if c.StdioConfigJSON != nil {

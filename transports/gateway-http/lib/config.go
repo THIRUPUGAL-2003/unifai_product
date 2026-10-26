@@ -4294,19 +4294,22 @@ func initFrameworkConfig(ctx context.Context, config *Config, configData *Config
 // initEncryption initializes encryption from config data or environment variables.
 // When configData.EncryptionKey is nil (no config file), falls through to env var check.
 func initEncryption(configData *ConfigData) error {
-	if configData.EncryptionKey == nil || configData.EncryptionKey.GetValue() == "" {
-		// Prefer GATEWAY_ENCRYPTION_KEY; legacy GATEWAY_ENCRYPTION_KEY still works via GatewayEnv.
-		if GatewayEnv("ENCRYPTION_KEY") != "" {
-			if strings.TrimSpace(os.Getenv("GATEWAY_ENCRYPTION_KEY")) != "" {
-				configData.EncryptionKey = schemas.NewSecretVar("env.GATEWAY_ENCRYPTION_KEY")
-			} else {
-				configData.EncryptionKey = schemas.NewSecretVar("env.GATEWAY_ENCRYPTION_KEY")
-			}
-		}
-	}
-	// Checking if encryption key is set
+	rawKey := ""
 	if configData.EncryptionKey != nil && configData.EncryptionKey.GetValue() != "" {
-		encrypt.Init(configData.EncryptionKey.GetValue(), logger)
+		rawKey = configData.EncryptionKey.GetValue()
+	}
+	if rawKey == "" {
+		rawKey = GatewayEnv("ENCRYPTION_KEY")
+	}
+	if rawKey == "" {
+		rawKey = strings.TrimSpace(os.Getenv("GATEWAY_ENCRYPTION_KEY"))
+	}
+	if rawKey == "" {
+		rawKey = strings.TrimSpace(os.Getenv("UNIFAI_ENCRYPTION_KEY"))
+	}
+	if rawKey != "" {
+		configData.EncryptionKey = schemas.NewSecretVar(rawKey)
+		encrypt.Init(rawKey, logger)
 	}
 	return nil
 }

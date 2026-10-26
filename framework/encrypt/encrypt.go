@@ -30,12 +30,14 @@ func Init(key string, _logger schemas.Logger) {
 	logger = _logger
 	if key == "" {
 		encryptionKey = nil
-		logger.Warn("encryption key is not set, encryption will be disabled. To set encryption key: use the encryption_key field in the configuration file or set the GATEWAY_ENCRYPTION_KEY environment variable. Note that - once encryption key is set, it cannot be changed later unless you clean up the database.")
+		if logger != nil {
+			logger.Warn("encryption key is not set, encryption will be disabled. To set encryption key: use the encryption_key field in the configuration file or set the GATEWAY_ENCRYPTION_KEY environment variable. Note that - once encryption key is set, it cannot be changed later unless you clean up the database.")
+		}
 		return
 	}
 
 	// Warn if passphrase is too short
-	if len(key) < 16 {
+	if len(key) < 16 && logger != nil {
 		logger.Warn("encryption passphrase is shorter than 16 bytes, consider using a longer passphrase for better security")
 	}
 

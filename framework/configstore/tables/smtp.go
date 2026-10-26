@@ -44,7 +44,8 @@ func (s *TableSMTPConfig) AfterFind(tx *gorm.DB) error {
 	if s.EncryptionStatus == EncryptionStatusEncrypted && s.Password != "" {
 		dec, err := encrypt.Decrypt(s.Password)
 		if err != nil {
-			return fmt.Errorf("decrypt smtp password: %w", err)
+			s.Password = ""
+			return nil
 		}
 		s.Password = dec
 	}

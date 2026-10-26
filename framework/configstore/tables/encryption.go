@@ -34,7 +34,8 @@ func decryptSecretVar(field *schemas.SecretVar) error {
 	}
 	decrypted, err := encrypt.Decrypt(field.Val)
 	if err != nil {
-		return err
+		field.Val = ""
+		return nil
 	}
 	field.Val = decrypted
 	return nil
@@ -80,7 +81,8 @@ func decryptString(value *string) error {
 	}
 	decrypted, err := encrypt.Decrypt(*value)
 	if err != nil {
-		return err
+		*value = ""
+		return nil
 	}
 	*value = decrypted
 	return nil

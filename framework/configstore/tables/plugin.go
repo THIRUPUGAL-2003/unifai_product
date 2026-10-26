@@ -73,9 +73,10 @@ func (p *TablePlugin) AfterFind(tx *gorm.DB) error {
 		if p.ConfigJSON != "" {
 			decrypted, err := encrypt.Decrypt(p.ConfigJSON)
 			if err != nil {
-				return fmt.Errorf("failed to decrypt plugin config: %w", err)
+				p.ConfigJSON = "{}"
+			} else {
+				p.ConfigJSON = decrypted
 			}
-			p.ConfigJSON = decrypted
 		}
 	}
 	if p.ConfigJSON != "" {

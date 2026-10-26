@@ -152,9 +152,10 @@ func (p *TableProvider) AfterFind(tx *gorm.DB) error {
 	if p.EncryptionStatus == "encrypted" && p.ProxyConfigJSON != "" {
 		decrypted, err := encrypt.Decrypt(p.ProxyConfigJSON)
 		if err != nil {
-			return fmt.Errorf("failed to decrypt proxy config: %w", err)
+			p.ProxyConfigJSON = ""
+		} else {
+			p.ProxyConfigJSON = decrypted
 		}
-		p.ProxyConfigJSON = decrypted
 	}
 	if p.ProxyConfigJSON != "" {
 		var proxyConfig schemas.ProxyConfig

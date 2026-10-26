@@ -184,9 +184,11 @@ func (c *TableAlertChannel) AfterFind(tx *gorm.DB) error {
 	if c.EncryptionStatus == EncryptionStatusEncrypted && c.ConfigJSON != nil && *c.ConfigJSON != "" {
 		dec, err := encrypt.Decrypt(*c.ConfigJSON)
 		if err != nil {
-			return err
+			empty := "{}"
+			c.ConfigJSON = &empty
+		} else {
+			c.ConfigJSON = &dec
 		}
-		c.ConfigJSON = &dec
 	}
 	return readJSON(c.ConfigJSON, &c.ParsedConfig)
 }
