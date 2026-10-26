@@ -225,6 +225,11 @@ def collect_agent_info(agent_id: str, status: str = "active") -> dict:
     if pac_mode and pac_mode not in detail_s:
         detail_s = f"pac={pac_mode}" + (f"; {detail_s}" if detail_s else "")
     ad = detect_ad_identity()
+    try:
+        from agent_extension import get_extension_status
+        ext_status = get_extension_status()
+    except Exception:
+        ext_status = "not_installed"
     return {
         "id": agent_id,
         "hostname": hostname,
@@ -239,6 +244,7 @@ def collect_agent_info(agent_id: str, status: str = "active") -> dict:
         "health_status": hs or "unknown",
         "health_detail": detail_s,
         "pac_mode": pac_mode or "unknown",
+        "extension_status": ext_status or "not_installed",
         "status": status or "active",
         "is_domain_joined": ad.get("is_domain_joined", False),
         "ad_domain": ad.get("ad_domain", ""),

@@ -26,7 +26,39 @@ def html_escape(s: str) -> str:
     )
 
 
+def _check_and_record_extension_activity(handler: object, path: str) -> None:
+    try:
+        headers = getattr(handler, "headers", None)
+        get_hdr = getattr(headers, "get", None) if headers is not None else None
+        if not callable(get_hdr):
+            get_hdr = lambda k, default=None: None
+        if get_hdr("X-Browser-Guard-Extension"):
+            from agent_extension import record_extension_activity
+            record_extension_activity()
+            return
+        origin = str(get_hdr("Origin") or "").lower()
+        if "chrome-extension://" in origin or "moz-extension://" in origin:
+            from agent_extension import record_extension_activity
+            record_extension_activity()
+            return
+        if path in ("/extension/check", "/extension/authorize_session", "/authorize_ai_session", "/extension/ping", "/extension/status"):
+            from agent_extension import record_extension_activity
+            record_extension_activity()
+            return
+        if path in ("/extension/wait", "/extension/sites", "/extension/rules"):
+            ua = str(get_hdr("User-Agent") or "").lower()
+            if "python" not in ua:
+                from agent_extension import record_extension_activity
+                record_extension_activity()
+                return
+    except Exception:
+        pass
+
+
 class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
+    def _check_and_record_extension_activity(self, path: str) -> None:
+        _check_and_record_extension_activity(self, path)
+
     def _cors(self) -> None:
         # Chrome treats an https AI site calling 127.0.0.1 as a private-network
         # request. Without this opt-in the extension's /extension/check never
@@ -48,12 +80,15 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_OPTIONS(self) -> None:
+        path = (self.path or "/").split("?", 1)[0]
+        _check_and_record_extension_activity(self, path)
         self.send_response(204)
         self._cors()
         self.end_headers()
 
     def do_POST(self) -> None:
         path = (self.path or "/").split("?", 1)[0]
+        _check_and_record_extension_activity(self, path)
         if path in ("/extension/authorize_session", "/authorize_ai_session"):
             try:
                 length = int(self.headers.get("Content-Length") or "0")
@@ -97,7 +132,17 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = (self.path or "/").split("?", 1)[0]
-        if path in ("/status", "/health", "/ping", "/extension/ping"):
+        _check_and_record_extension_activity(self, path)
+        if path in ("/extension/ping", "/extension/status"):
+            from agent_extension import get_extension_status
+            self._json(200, {
+                "status": "ok",
+                "connected": True,
+                "extension_status": get_extension_status(),
+                "agent_version": AGENT_VERSION,
+            })
+            return
+        if path in ("/status", "/health", "/ping"):
             report = agent_state._LAST_HEALTH if isinstance(agent_state._LAST_HEALTH, dict) and agent_state._LAST_HEALTH else {"status": "ok", "agent_version": AGENT_VERSION, "connected": True}
             self._json(200, report)
             return

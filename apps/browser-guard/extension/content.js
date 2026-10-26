@@ -482,7 +482,7 @@
       withBase(function () {
         fetch(base + "/extension/authorize_session", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Browser-Guard-Extension": "1" },
           body: JSON.stringify(authPayload)
         })
           .then(function (r) {
@@ -545,7 +545,7 @@
       withBase(function () {
         fetch(base + "/extension/check", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "X-Browser-Guard-Extension": "1" },
           body: JSON.stringify(checkPayload)
         })
           .then(function (r) { return r.json(); })

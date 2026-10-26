@@ -1818,3 +1818,73 @@ def authorize_ai_session(payload: dict) -> dict:
     }
 
 
+_last_extension_ping: float = 0.0
+_extension_status_lock = threading.Lock()
+
+
+def record_extension_activity() -> None:
+    """Record that the browser extension just communicated with the Guard agent."""
+    global _last_extension_ping
+    now = time.time()
+    with _extension_status_lock:
+        _last_extension_ping = now
+    try:
+        seen_file = os.path.join(data_dir(), "extension_last_seen.txt")
+        with open(seen_file, "w", encoding="utf-8") as f:
+            f.write(str(int(now)))
+    except Exception:
+        pass
+
+
+def get_extension_status() -> str:
+    """Determine browser extension connection status for the agent heartbeat.
+
+    Returns:
+      'connected': Extension actively polling/checking in (within last 90s).
+      'installed': Extension installed/detected on laptop (seen previously or policy present), but browser inactive.
+      'not_installed': No extension activity or installation detected.
+    """
+    global _last_extension_ping
+    now = time.time()
+    with _extension_status_lock:
+        last = _last_extension_ping
+
+    # Check in-memory ping
+    if last > 0 and (now - last) <= 90:
+        return "connected"
+
+    # Check persisted last seen file
+    try:
+        seen_file = os.path.join(data_dir(), "extension_last_seen.txt")
+        if os.path.isfile(seen_file):
+            with open(seen_file, "r", encoding="utf-8") as f:
+                ts = float(f.read().strip())
+                if (now - ts) <= 90:
+                    with _extension_status_lock:
+                        _last_extension_ping = ts
+                    return "connected"
+                # If seen within the last 14 days, it is installed on this machine
+                if (now - ts) <= 14 * 86400:
+                    return "installed"
+    except Exception:
+        pass
+
+    # Check enterprise policy or common unpacked extension presence
+    try:
+        ext_id = get_extension_id() if callable(globals().get("get_extension_id")) else ""
+        if ext_id and _machine_policy_installed(ext_id):
+            return "installed"
+    except Exception:
+        pass
+
+    try:
+        comm_dir = common_extension_dir() if callable(globals().get("common_extension_dir")) else ""
+        if comm_dir and os.path.isfile(os.path.join(comm_dir, "manifest.json")):
+            return "installed"
+    except Exception:
+        pass
+
+    return "not_installed"
+
+
+

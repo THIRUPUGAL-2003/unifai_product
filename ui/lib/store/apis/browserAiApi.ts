@@ -72,6 +72,9 @@ export interface BrowserAIAgent {
 	health_detail?: string;
 	status: "active" | "paused" | "uninstalled" | "uninstall_pending" | string;
 	uninstall_requested?: boolean;
+	/** Extension connection status: connected (live ping), installed (standby), not_installed */
+	extension_status?: "connected" | "installed" | "not_installed" | string;
+	extension_last_seen_at?: string;
 	/** True when this Guard has an auto-generated per-device uninstall key. */
 	has_uninstall_key?: boolean;
 	uninstall_key_rotated_at?: string;

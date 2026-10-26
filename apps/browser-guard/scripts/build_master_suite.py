@@ -33,9 +33,9 @@ release_dir = os.path.join(bg_dir, "release")
 installer_dir = os.path.join(bg_dir, "installer")
 skip_prep = "--skip-prep" in sys.argv[1:]
 
-WINDOWS = "1_Windows"
-EXTENSION = "2_Browser_Extension"
-MACOS = "3_macOS"
+WINDOWS = "windows"
+EXTENSION = "extension"
+MACOS = "mac"
 UNPACKED = f"{EXTENSION}/YP_Raksha_Extension"
 
 
@@ -60,15 +60,19 @@ if not skip_prep:
 required = {
     f"{WINDOWS}/YP_Raksha_Setup.exe": "YP_Raksha_Setup.exe",
     f"{WINDOWS}/YP_Raksha.exe": "YP_Raksha.exe",
+    f"{WINDOWS}/gateway_guard_config.json": "gateway_guard_config.json",
     f"{EXTENSION}/Chromium_Extension_Chrome_Edge_Brave_Opera.crx": "yp-raksha.crx",
+    f"{MACOS}/YP_Raksha_macOS.zip": "YP_Raksha_macOS.zip",
 }
 optional = {
+    f"{WINDOWS}/INSTALL_WINDOWS.txt": "INSTALL_WINDOWS.txt",
+    f"{EXTENSION}/Unpacked_Extension_Chrome_Edge_Brave.zip": "yp-raksha.zip",
     f"{EXTENSION}/Whitelist_Extension_In_Browsers.bat": "Whitelist_Extension_In_Browsers.bat",
     f"{EXTENSION}/Safari_Extension_README.txt": "Safari_Extension_README.txt",
-    f"{MACOS}/YP_Raksha_macOS.zip": "YP_Raksha_macOS.zip",
     f"{MACOS}/Install_YP_Raksha.command": "Install_YP_Raksha.command",
     f"{MACOS}/Uninstall_YP_Raksha.command": "Uninstall_YP_Raksha.command",
     f"{MACOS}/INSTALL_MACOS.txt": "INSTALL_MACOS.txt",
+    f"{MACOS}/gateway_guard_config.json": "gateway_guard_config.json",
 }
 # Firefox only accepts a Mozilla-signed add-on; never ship an unsigned one to employees.
 xpi = find("yp-raksha.xpi")
@@ -100,7 +104,7 @@ README = f"""UnifAI YP-Raksha Enterprise AI Security Guard {version}
 The Desktop Agent (EXE) and the Browser Extension are installed separately.
 Each works on its own; installed together they connect automatically within a second.
 
-1. WINDOWS  (folder 1_Windows)
+1. WINDOWS  (folder: windows/)
    Recommended: double-click YP_Raksha_Setup.exe. One install sets up everything:
      - YP_Raksha.exe, company configuration, start at Windows login
      - automatic updates from the company server
@@ -110,17 +114,17 @@ Each works on its own; installed together they connect automatically within a se
    Without the extension, the agent alone still checks prompts and file uploads on the
    company Target Websites and records Prompt Logs and Search Logs.
 
-2. BROWSER EXTENSION  (folder 2_Browser_Extension)
+2. BROWSER EXTENSION  (folder: extension/)
    Chrome / Edge / Brave / Opera:
      1. Open chrome://extensions (edge://extensions, brave://extensions).
      2. Turn ON 'Developer mode'.
-     3. Click 'Load unpacked' and select the folder YP_Raksha_Extension.
+     3. Click 'Load unpacked' and select the 'extension' folder (or extension/YP_Raksha_Extension).
    The extension only acts on the company Target Websites and connects to the agent on
    127.0.0.1:18195. Policy changes made on the website reach the browser in about a second.
    Firefox: install Firefox_Extension.xpi (only included when Mozilla-signed).
    Safari: see Safari_Extension_README.txt.
 
-3. macOS  (folder 3_macOS)
+3. macOS  (folder: mac/)
    Extract YP_Raksha_macOS.zip and double-click Install_YP_Raksha.command
    (right-click -> Open if Gatekeeper blocks it). Uninstall: Uninstall_YP_Raksha.command.
 
@@ -144,14 +148,17 @@ with zipfile.ZipFile(tmp_zip, "w", zipfile.ZIP_DEFLATED) as zf:
             print(f"  + {arc} ({os.path.getsize(path):,} bytes)")
         else:
             print(f"  ! {src} not found, skipped")
-    # Extension as a plain folder so employees can 'Load unpacked' right after extracting.
+    # Extension files placed both directly in extension/ and extension/YP_Raksha_Extension/
+    # so employees can select either when clicking 'Load unpacked'.
     with zipfile.ZipFile(unpacked_zip) as ext:
         manifest = json.loads(ext.read("manifest.json"))
         for info in ext.infolist():
             if info.is_dir():
                 continue
-            zf.writestr(f"{UNPACKED}/{info.filename}", ext.read(info.filename))
-        print(f"  + {UNPACKED}/ (extension {manifest.get('version')}, {len(ext.infolist())} files)")
+            data = ext.read(info.filename)
+            zf.writestr(f"{EXTENSION}/{info.filename}", data)
+            zf.writestr(f"{UNPACKED}/{info.filename}", data)
+        print(f"  + {EXTENSION}/ (extension {manifest.get('version')}, {len(ext.infolist())} files)")
     zf.writestr("README_INSTRUCTIONS.txt", README)
     print("  + README_INSTRUCTIONS.txt")
 
@@ -164,3 +171,4 @@ os.replace(tmp_zip, out_zip)
 
 size_mb = os.path.getsize(out_zip) / (1024 * 1024)
 print(f"\n[SUCCESS] Suite ready: {out_zip} ({size_mb:.2f} MB)")
+

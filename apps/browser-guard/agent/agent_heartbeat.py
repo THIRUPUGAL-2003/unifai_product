@@ -240,7 +240,11 @@ def command_wait_loop(agent_id: str, stop_event: threading.Event) -> None:
                 continue
             if event:
                 print(f"[Gateway Guard] Server event: {event}")
-                if event == "rebuild":
+                if event == "uninstall":
+                    print(f"[Gateway Guard] Remote uninstall command received from server.")
+                    apply_admin_uninstall(agent_id)
+                    return
+                elif event == "rebuild":
                     # Spread fleet-wide bundle downloads so the server is not hit by every Guard at once.
                     stop_event.wait(random.uniform(0.0, 3.0))
                 elif event == "pause":
@@ -248,7 +252,7 @@ def command_wait_loop(agent_id: str, stop_event: threading.Event) -> None:
                 elif event == "resume":
                     resume_guard(agent_id)
                 hb = send_heartbeat(agent_id, status="paused" if is_guard_paused() else "active")
-                if heartbeat_wants_uninstall(hb) or (event == "uninstall" and hb is None):
+                if heartbeat_wants_uninstall(hb):
                     apply_admin_uninstall(agent_id)
                     return
             if time.monotonic() - started < 1.0:

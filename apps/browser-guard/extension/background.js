@@ -83,7 +83,11 @@ function storeIfChanged(next, done) {
 }
 
 function fetchJson(url) {
-  return fetch(url, { method: "GET", cache: "no-store" }).then(function (r) {
+  return fetch(url, {
+    method: "GET",
+    cache: "no-store",
+    headers: { "X-Browser-Guard-Extension": "1" }
+  }).then(function (r) {
     if (!r.ok) throw new Error("status " + r.status);
     return r.json();
   });
@@ -271,7 +275,12 @@ var _watchVersion = -1;
 function fetchJsonWithTimeout(url, ms) {
   var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
   var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (_) {} }, ms) : null;
-  return fetch(url, { method: "GET", cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
+  return fetch(url, {
+    method: "GET",
+    cache: "no-store",
+    headers: { "X-Browser-Guard-Extension": "1" },
+    signal: ctrl ? ctrl.signal : undefined
+  })
     .then(function (r) {
       if (timer) clearTimeout(timer);
       if (!r.ok) throw new Error("status " + r.status);

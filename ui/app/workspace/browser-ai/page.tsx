@@ -2762,6 +2762,7 @@ export default function BrowserAiPage() {
 					{ key: "mac", header: "Physical Address (MAC)" },
 					{ key: "transport", header: "Transport Name" },
 					{ key: "version", header: "Version" },
+					{ key: "extension", header: "Extension" },
 					{ key: "agent_type", header: "Source" },
 					{ key: "status", header: "Status" },
 					{ key: "last_seen", header: "Last seen" },
@@ -2774,6 +2775,7 @@ export default function BrowserAiPage() {
 					mac: a.mac_address || "—",
 					transport: a.transport_name || (a.agent_type === "network" ? "Network Proxy" : `${PRODUCT_NAME} Guard`),
 					version: `v${a.agent_version || "1.0"}`,
+					extension: a.extension_status === "connected" ? "Connected" : a.extension_status === "installed" ? "Installed" : "Not Installed",
 					agent_type: a.agent_type || "endpoint",
 					status: a.status || "",
 					last_seen: a.last_seen_at ? new Date(a.last_seen_at).toLocaleString() : "—",
@@ -6180,7 +6182,7 @@ export default function BrowserAiPage() {
 							</div>
 						</CardHeader>
 						<CardContent className="p-0 overflow-x-auto">
-							<Table className="table-fixed min-w-[1400px]">
+							<Table className="table-fixed min-w-[1530px]">
 								<TableHeader>
 									<TableRow className="hover:bg-transparent border-border">
 										<TableHead className="w-[44px]">
@@ -6198,6 +6200,7 @@ export default function BrowserAiPage() {
 										<TableHead className="w-[180px] pr-4">Physical address (MAC)</TableHead>
 										<TableHead className="w-[200px] px-4">Transport name</TableHead>
 										<TableHead className="w-[190px]"><SortHeader label="Version" sortKey="agent_version" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
+										<TableHead className="w-[130px]"><SortHeader label="Extension" sortKey="extension_status" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
 										<TableHead className="w-[140px]"><SortHeader label="Status" sortKey="status" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
 										<TableHead className="w-[160px]"><SortHeader label="Last seen" sortKey="last_seen_at" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
 										<TableHead className="w-[160px]"><SortHeader label="Installed" sortKey="installed_at" currentKey={agentSortKey} currentDir={agentSortDir} onSort={toggleAgentSort} /></TableHead>
@@ -6303,6 +6306,45 @@ export default function BrowserAiPage() {
 													);
 												})()}
 											</TableCell>
+											<TableCell className="align-top whitespace-nowrap overflow-hidden">
+												{(() => {
+													const extStatus = (agent.extension_status || "not_installed").toLowerCase();
+													if (extStatus === "connected") {
+														return (
+															<Badge
+																variant="outline"
+																className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
+																title="Browser extension is actively paired with Guard EXE on localhost:18195 (monitoring & blocking live)"
+															>
+																<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+																Connected
+															</Badge>
+														);
+													}
+													if (extStatus === "installed") {
+														return (
+															<Badge
+																variant="outline"
+																className="border-sky-500/40 bg-sky-500/10 text-sky-400 flex items-center gap-1.5 w-fit font-medium text-xs py-0.5"
+																title="Extension installed on this machine, standby (waiting for browser to connect)"
+															>
+																<span className="h-1.5 w-1.5 rounded-full bg-sky-400 inline-block" />
+																Installed
+															</Badge>
+														);
+													}
+													return (
+														<Badge
+															variant="outline"
+															className="border-slate-500/30 bg-slate-500/10 text-slate-400 flex items-center gap-1.5 w-fit font-normal text-xs py-0.5"
+															title="No extension connected on this device. (Standalone EXE proxy still intercepts prompts if PAC is active)"
+														>
+															<span className="h-1.5 w-1.5 rounded-full bg-slate-500 inline-block" />
+															Not Installed
+														</Badge>
+													);
+												})()}
+											</TableCell>
 											<TableCell className="align-top whitespace-nowrap overflow-hidden">{getAgentStatusBadge(agent.status, agent.uninstall_requested, agent.last_seen_at, agent.health_status)}</TableCell>
 											<TableCell className="align-top text-xs text-muted-foreground whitespace-nowrap">
 												{agent.last_seen_at ? new Date(agent.last_seen_at).toLocaleString() : "—"}
@@ -6366,13 +6408,39 @@ export default function BrowserAiPage() {
 														)}
 
 														{/* Permanent Uninstall */}
-														{agent.status !== "uninstalled" && (
+														{agent.status !== "uninstalled" && agent.status !== "uninstall_pending" && (
 															<DropdownMenuItem
 																onClick={() => handleOpenRemoteUninstall(agent)}
 																className="text-red-400 focus:text-red-400 focus:bg-red-950/40 cursor-pointer gap-2"
 															>
 																<PowerOff className="h-4 w-4 text-red-400" />
 																Uninstall Guard (Permanent)
+															</DropdownMenuItem>
+														)}
+
+														{/* Stuck in Uninstalling? Allow clear from fleet */}
+														{agent.status === "uninstall_pending" && (
+															<DropdownMenuItem
+																onClick={async () => {
+																	try {
+																		await deleteSingleAgent(agent.id).unwrap();
+																		refetchAgents();
+																		toast({
+																			title: "Record Removed",
+																			description: `Cleared ${agent.hostname || agent.id} from fleet.`,
+																		});
+																	} catch (err: any) {
+																		toast({
+																			variant: "destructive",
+																			title: "Error",
+																			description: err?.data?.message || err?.message || "Failed to remove agent",
+																		});
+																	}
+																}}
+																className="text-amber-400 focus:text-amber-400 focus:bg-amber-950/40 cursor-pointer gap-2"
+															>
+																<CheckCircle2 className="h-4 w-4 text-amber-400" />
+																Dismiss / Clear Record
 															</DropdownMenuItem>
 														)}
 
@@ -6416,7 +6484,7 @@ export default function BrowserAiPage() {
 									))}
 									{agentsLoading && agents.length === 0 ? (
 										<TableRow>
-											<TableCell colSpan={12} className="text-center py-12 text-muted-foreground text-sm">
+											<TableCell colSpan={13} className="text-center py-12 text-muted-foreground text-sm">
 												<div className="flex flex-col items-center justify-center gap-2">
 													<RefreshCw className="h-5 w-5 animate-spin text-primary" />
 													<span>Loading Guard fleet...</span>
@@ -6425,7 +6493,7 @@ export default function BrowserAiPage() {
 										</TableRow>
 									) : agents.length === 0 ? (
 										<TableRow>
-											<TableCell colSpan={12} className="text-center py-10 text-muted-foreground text-sm">
+											<TableCell colSpan={13} className="text-center py-10 text-muted-foreground text-sm">
 												No Guard agents yet. Install YP_Raksha_Setup.exe (Windows) or YP_Raksha_macOS.zip (Mac) on laptops and/or run the network proxy: docker compose --profile network-proxy up -d gateway_browser_ai_proxy (or Guard with server_mode). Same dashboard for both.
 											</TableCell>
 										</TableRow>
@@ -6865,7 +6933,7 @@ export default function BrowserAiPage() {
 										1. Windows Desktop
 									</div>
 									<p className="text-[11px] text-muted-foreground">
-										<code>1_Windows/</code>: <code>YP_Raksha_Setup.exe</code> (install, updates, secure uninstall) and portable <code>YP_Raksha.exe</code>.
+										<code>windows/</code>: <code>YP_Raksha_Setup.exe</code> (install, updates, secure uninstall), portable <code>YP_Raksha.exe</code>, and config.
 									</p>
 								</div>
 
@@ -6875,7 +6943,7 @@ export default function BrowserAiPage() {
 										2. Browser Extension
 									</div>
 									<p className="text-[11px] text-muted-foreground">
-										<code>2_Browser_Extension/</code>: <code>YP_Raksha_Extension</code> folder for Chrome, Edge, Brave, Opera; <code>.crx</code>; Safari guide.
+										<code>extension/</code>: Unpacked extension files for Chrome, Edge, Brave, Opera; <code>.crx</code>; Safari guide.
 									</p>
 								</div>
 
@@ -6885,7 +6953,7 @@ export default function BrowserAiPage() {
 										3. macOS Desktop
 									</div>
 									<p className="text-[11px] text-muted-foreground">
-										<code>3_macOS/</code>: <code>YP_Raksha_macOS.zip</code> with Install and Uninstall scripts.
+										<code>mac/</code>: <code>YP_Raksha_macOS.zip</code> with Install and Uninstall scripts.
 									</p>
 								</div>
 							</div>
@@ -6921,7 +6989,7 @@ export default function BrowserAiPage() {
 											<span>Windows Setup</span>
 										</div>
 										<p className="text-xs text-foreground/80 leading-relaxed">
-											Go to <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">1_Windows/</code> and double-click{" "}
+											Go to <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">windows/</code> and double-click{" "}
 											<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono font-semibold">
 												YP_Raksha_Setup.exe
 											</code>
@@ -6938,7 +7006,7 @@ export default function BrowserAiPage() {
 											<span>macOS Desktop Daemon</span>
 										</div>
 										<p className="text-xs text-foreground/80 leading-relaxed">
-											Go to <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">3_macOS/</code>, extract{" "}
+											Go to <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">mac/</code>, extract{" "}
 											<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono font-semibold">
 												YP_Raksha_macOS.zip
 											</code>
@@ -6961,10 +7029,10 @@ export default function BrowserAiPage() {
 									<span>Add Browser Extension</span>
 								</div>
 								<div className="pl-8 space-y-2 text-xs text-foreground/80 leading-relaxed">
-									<p>Open the <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">2_Browser_Extension/</code> folder:</p>
+									<p>Open the <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">extension/</code> folder:</p>
 									<ul className="list-disc pl-5 space-y-1 text-muted-foreground">
 										<li>
-											<strong className="text-foreground">Chrome / Brave / Edge / Opera:</strong> In browser extensions (<code className="font-mono text-[11px]">chrome://extensions</code> or <code className="font-mono text-[11px]">brave://extensions</code>), toggle <strong>Developer mode ON</strong>, click <strong>Load unpacked</strong> and select the <code className="font-mono text-[11px]">YP_Raksha_Extension</code> folder.
+											<strong className="text-foreground">Chrome / Brave / Edge / Opera:</strong> In browser extensions (<code className="font-mono text-[11px]">chrome://extensions</code> or <code className="font-mono text-[11px]">brave://extensions</code>), toggle <strong>Developer mode ON</strong>, click <strong>Load unpacked</strong> and select the <code className="font-mono text-[11px]">extension</code> folder.
 										</li>
 										<li>
 											<strong className="text-foreground">Firefox:</strong> Install <code className="font-mono text-[11px]">Firefox_Extension.xpi</code> (included only when Mozilla-signed).
@@ -6994,21 +7062,21 @@ export default function BrowserAiPage() {
 								<ul className="list-disc pl-5 text-foreground/80 space-y-1.5 text-xs">
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">
-											1_Windows/
+											windows/
 										</code>{" "}
-										— <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha_Setup.exe</code> (recommended) and portable <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha.exe</code>
+										— <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha_Setup.exe</code> (installer), portable <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha.exe</code>, and config
 									</li>
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">
-											3_macOS/YP_Raksha_macOS.zip
+											mac/
 										</code>{" "}
-										— macOS <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha.app</code> + Install &amp; Uninstall scripts
+										— macOS <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha_macOS.zip</code> + Install &amp; Uninstall scripts
 									</li>
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">
-											2_Browser_Extension/
+											extension/
 										</code>{" "}
-										— <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha_Extension</code> folder for Chrome, Edge, Brave, Opera, plus .crx and Safari guide
+										— Unpacked extension files for Chrome, Edge, Brave, Opera, plus .crx and Safari guide
 									</li>
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">README_INSTRUCTIONS.txt</code> — Complete employee deployment &amp; setup guide
@@ -8173,6 +8241,24 @@ export default function BrowserAiPage() {
 									<span className="inline-flex items-center gap-1.5 text-xs text-emerald-400">
 										<span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
 										Active
+									</span>
+								</div>
+								<div>
+									<span className="text-[10px] uppercase font-semibold text-muted-foreground block">Browser Extension</span>
+									<span className="font-mono text-xs">
+										{selectedAgentDetails.extension_status === "connected" ? (
+											<span className="text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
+												<span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Connected
+											</span>
+										) : selectedAgentDetails.extension_status === "installed" ? (
+											<span className="text-sky-400 font-medium flex items-center gap-1 mt-0.5">
+												<span className="h-1.5 w-1.5 rounded-full bg-sky-400" /> Installed
+											</span>
+										) : (
+											<span className="text-slate-400 flex items-center gap-1 mt-0.5">
+												<span className="h-1.5 w-1.5 rounded-full bg-slate-500" /> Not Installed
+											</span>
+										)}
 									</span>
 								</div>
 								<div>

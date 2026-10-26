@@ -468,6 +468,9 @@ type BrowserAIAgent struct {
 	HealthDetail       string `gorm:"type:text" json:"health_detail"`
 	Status             string `gorm:"index" json:"status"` // active | uninstall_pending | uninstalled
 	UninstallRequested bool   `json:"uninstall_requested"`
+	// ExtensionStatus: connected | installed | not_installed
+	ExtensionStatus     string     `gorm:"type:varchar(32);default:'not_installed'" json:"extension_status"`
+	ExtensionLastSeenAt *time.Time `json:"extension_last_seen_at,omitempty"`
 	// Per-Guard uninstall key (auto-generated). Hash for verify; Enc for admin reveal.
 	UninstallKeyHash      string     `gorm:"type:varchar(128)" json:"-"`
 	UninstallKeyEnc       string     `gorm:"type:text" json:"-"`
@@ -3519,18 +3522,22 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 			OSVersion:      strings.TrimSpace(incoming.OSVersion),
 			AgentVersion:   strings.TrimSpace(incoming.AgentVersion),
 			AgentType:      NormalizeBrowserAIAgentType(incoming.AgentType),
-			HealthStatus:   strings.TrimSpace(incoming.HealthStatus),
-			HealthDetail:   strings.TrimSpace(incoming.HealthDetail),
-			Status:         AgentStatusActive,
-			ADDomain:       strings.TrimSpace(incoming.ADDomain),
-			ADUpn:          strings.TrimSpace(incoming.ADUpn),
-			ADGroups:       strings.TrimSpace(incoming.ADGroups),
-			DomainUser:     firstNonEmpty(strings.TrimSpace(incoming.DomainUser), strings.TrimSpace(incoming.Username)),
-			IsDomainJoined: incoming.IsDomainJoined,
-			LastSeenAt:     now,
-			InstalledAt:    now,
-			CreatedAt:      now,
-			UpdatedAt:      now,
+			HealthStatus:       strings.TrimSpace(incoming.HealthStatus),
+			HealthDetail:       strings.TrimSpace(incoming.HealthDetail),
+			Status:             AgentStatusActive,
+			ExtensionStatus:    firstNonEmpty(strings.TrimSpace(incoming.ExtensionStatus), "not_installed"),
+			ADDomain:           strings.TrimSpace(incoming.ADDomain),
+			ADUpn:              strings.TrimSpace(incoming.ADUpn),
+			ADGroups:           strings.TrimSpace(incoming.ADGroups),
+			DomainUser:         firstNonEmpty(strings.TrimSpace(incoming.DomainUser), strings.TrimSpace(incoming.Username)),
+			IsDomainJoined:     incoming.IsDomainJoined,
+			LastSeenAt:         now,
+			InstalledAt:        now,
+			CreatedAt:          now,
+			UpdatedAt:          now,
+		}
+		if incoming.ExtensionStatus == "connected" {
+			agent.ExtensionLastSeenAt = &now
 		}
 		if agent.ContactEmail == "" && agent.ADUpn != "" {
 			agent.ContactEmail = agent.ADUpn
@@ -3612,6 +3619,14 @@ func (m *BrowserAIManager) UpsertAgentHeartbeat(ctx context.Context, incoming *B
 	}
 	if hd := strings.TrimSpace(incoming.HealthDetail); hd != "" {
 		existing.HealthDetail = hd
+	}
+	if es := strings.TrimSpace(incoming.ExtensionStatus); es != "" {
+		existing.ExtensionStatus = es
+		if es == "connected" {
+			existing.ExtensionLastSeenAt = &now
+		}
+	} else if existing.ExtensionStatus == "" {
+		existing.ExtensionStatus = "not_installed"
 	}
 	existing.LastSeenAt = now
 	existing.UpdatedAt = now
@@ -3777,6 +3792,12 @@ func (m *BrowserAIManager) ListAgents(ctx context.Context, status, search string
 		} else {
 			agents[i].IsOnline = false
 		}
+		if !agents[i].IsOnline && agents[i].ExtensionStatus == "connected" {
+			agents[i].ExtensionStatus = "installed"
+		}
+		if agents[i].ExtensionStatus == "" {
+			agents[i].ExtensionStatus = "not_installed"
+		}
 	}
 	return agents, total, err
 }
@@ -3825,6 +3846,12 @@ func (m *BrowserAIManager) GetAgent(ctx context.Context, agentID string) (*Brows
 	markAgentUninstallKeyFlag(&agent)
 	liveCutoff := time.Now().Add(-AgentHeartbeatLiveWindow)
 	agent.IsOnline = agent.Status == AgentStatusActive && !agent.LastSeenAt.IsZero() && agent.LastSeenAt.After(liveCutoff)
+	if !agent.IsOnline && agent.ExtensionStatus == "connected" {
+		agent.ExtensionStatus = "installed"
+	}
+	if agent.ExtensionStatus == "" {
+		agent.ExtensionStatus = "not_installed"
+	}
 	return &agent, nil
 }
 
@@ -3899,8 +3926,14 @@ func (m *BrowserAIManager) RequestRemoteUninstall(ctx context.Context, agentID s
 		return &agent, nil
 	}
 	now := time.Now()
-	agent.UninstallRequested = true
-	agent.Status = AgentStatusUninstallPending
+	if agent.LastSeenAt.IsZero() || now.Sub(agent.LastSeenAt) > 2*time.Minute {
+		agent.Status = AgentStatusUninstalled
+		agent.UninstallRequested = true
+		agent.UninstalledAt = &now
+	} else {
+		agent.UninstallRequested = true
+		agent.Status = AgentStatusUninstallPending
+	}
 	agent.UpdatedAt = now
 	if err := db.WithContext(ctx).Save(&agent).Error; err != nil {
 		return nil, err

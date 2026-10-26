@@ -1,20 +1,19 @@
 UnifAI Enterprise AI Security Guard - Deployment Suite
 ==============================================================
 
-1. DESKTOP AGENT (Standalone Executable - Zero Setup Wizard):
-   - Windows: Go to 1_Windows/ and run YP_Raksha.exe.
-     It runs directly in the background (no setup wizard, no installer errors).
+1. DESKTOP AGENT (Standalone Executable or Installer):
+   - Windows: Go to windows/ and run YP_Raksha_Setup.exe (installer) or YP_Raksha.exe (portable).
      It connects to your UnifAI Security website and starts protection on 127.0.0.1:18195.
-   - macOS: Go to 2_macOS/ and run Install_YP_Raksha.command (or double-click YP_Raksha.app).
+   - macOS: Go to mac/ and run Install_YP_Raksha.command (or extract YP_Raksha_macOS.zip).
 
 2. BROWSER EXTENSION (Independent Installation):
    - Google Chrome / Brave / Microsoft Edge / Opera:
      ============================================================
      RECOMMENDED METHOD (Instant, 0 Warnings, Never Blocked):
-     1. In 3_Browser_Extensions/, extract 'Unpacked_Extension_Chrome_Edge_Brave.zip'.
+     1. In extension/, the extension files are already unpacked and ready!
      2. Open brave://extensions (or chrome://extensions, edge://extensions).
      3. Ensure 'Developer mode' is toggled ON (top-right corner).
-     4. Click 'Load unpacked' (top-left button) and select the extracted folder.
+     4. Click 'Load unpacked' (top-left button) and select the 'extension' folder (or extension/YP_Raksha_Extension).
      5. Done! The extension is permanently active, enabled, and 100% functional.
      ============================================================
      ALTERNATIVE METHOD (.CRX Whitelist):
