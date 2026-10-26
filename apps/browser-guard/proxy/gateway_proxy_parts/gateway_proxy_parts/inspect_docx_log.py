@@ -17,8 +17,8 @@ def get_db_conn():
             break
     host = env_vars.get("DB_HOST") or os.environ.get("DB_HOST", "127.0.0.1")
     port = int(env_vars.get("DB_PORT") or os.environ.get("DB_PORT", "5432"))
-    dbname = env_vars.get("DB_NAME") or os.environ.get("DB_NAME", "Unifai_test")
-    user = env_vars.get("DB_USER") or os.environ.get("DB_USER", "postgres")
+    dbname = env_vars.get("DB_NAME") or os.environ.get("DB_NAME", "")
+    user = env_vars.get("DB_USER") or os.environ.get("DB_USER", "")
     password = env_vars.get("DB_PASSWORD") or os.environ.get("DB_PASSWORD", "")
     return psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password)
 

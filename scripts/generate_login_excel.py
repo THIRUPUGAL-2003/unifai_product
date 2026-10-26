@@ -51,6 +51,18 @@ ws_setup["B2"].font = title_font
 ws_setup["B3"] = "End-to-End Test Plan for Authentication, User Lifecycle (Approve, Reject, Delete), and Account Block/Unblock Flows"
 ws_setup["B3"].font = subtitle_font
 
+server_domain = os.getenv("SERVER_DOMAIN", "")
+if not server_domain and os.path.isfile(".env"):
+    try:
+        with open(".env", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("SERVER_DOMAIN="):
+                    server_domain = line.split("=", 1)[1].strip().strip("'\"")
+    except Exception:
+        pass
+if not server_domain:
+    server_domain = "https://<SERVER_DOMAIN>"
+
 setup_sections = [
     ("1. GENERAL PROJECT INFORMATION", [
         ("Project Name", "UnifAI Enterprise AI Control Plane & Browser Guard"),
@@ -60,9 +72,9 @@ setup_sections = [
         ("QA Objective", "Validate all 8 authentication & user management sub-models, error handling, and security session lifecycle."),
     ]),
     ("2. TEST ENVIRONMENT & ENDPOINTS", [
-        ("Login URL", "http://localhost:3000/login (or production: https://unifai.yespanchi.com/login)"),
+        ("Login URL", f"http://localhost:3000/login (or production: {server_domain}/login)"),
         ("Users Management URL", "http://localhost:3000/workspace/users"),
-        ("Backend Gateway API", "http://localhost:6000 (or production: https://unifai.yespanchi.com)"),
+        ("Backend Gateway API", f"http://localhost:6000 (or production: {server_domain})"),
         ("Supported Browsers", "Google Chrome (Latest), Microsoft Edge (Latest), Brave (Latest)"),
         ("Operating Systems", "Windows 11 / Windows 10, macOS, Linux"),
     ]),

@@ -182,11 +182,10 @@ if not exist release\YP_Raksha_Windows.zip (
 )
 if exist release\Gateway_Guard_Windows.zip del /F /Q release\Gateway_Guard_Windows.zip
 rmdir /S /Q "%ZIP_STAGE%"
-rmdir /S /Q "%ZIP_STAGE%"
 
 echo.
 echo ============================================================
-echo  SUCCESS — YP Raksha 1.1
+echo  SUCCESS — YP Raksha 1.1.33
 echo  Employee installer (Setup EXE):
 echo    release\YP_Raksha_Setup.exe
 echo  Employee download package (Windows ZIP):
