@@ -29,16 +29,12 @@
     return host;
   }
 
-  var serverHost = "";
+  var serverHost = (typeof GATEWAY_SERVER_HOST === "string" && GATEWAY_SERVER_HOST.trim()) ? normalizeDomainHost(GATEWAY_SERVER_HOST) : "";
   function isServerHost(host) {
     if (!host) return false;
     host = normalizeDomainHost(host);
     if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1") return true;
-    if (host === "unifai.yespanchi.com" || host.endsWith(".unifai.yespanchi.com")) return true;
-    if (serverHost) {
-      var sHost = normalizeDomainHost(serverHost);
-      if (host === sHost || host.endsWith("." + sHost)) return true;
-    }
+    if (serverHost && (host === serverHost || host.endsWith("." + serverHost))) return true;
     return false;
   }
 

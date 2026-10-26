@@ -9,7 +9,12 @@
     else { h = h.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]; if ((h.match(/:/g) || []).length === 1 && /:\d+$/.test(h)) h = h.replace(/:\d+$/, ""); }
     if (h.charAt(0) === "[" && h.indexOf("]") >= 0) h = h.slice(1, h.indexOf("]"));
     h = h.replace(/^www\./, "").replace(/\.$/, "");
-    return h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1" || h === "unifai.yespanchi.com" || h.endsWith(".unifai.yespanchi.com");
+    if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1") return true;
+    var targetServer = (typeof GATEWAY_SERVER_HOST === "string" && GATEWAY_SERVER_HOST.trim())
+      ? GATEWAY_SERVER_HOST.toLowerCase().trim().replace(/^www\./, "").replace(/\.$/, "")
+      : "";
+    if (targetServer && (h === targetServer || h.endsWith("." + targetServer))) return true;
+    return false;
   }
   if (isProductHost(location.hostname)) {
     return;
@@ -246,8 +251,11 @@
   function isProductOrServerHost(host) {
     if (!host) return false;
     var h = normalizeDomainHost(host);
-    if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0") return true;
-    if (h === "unifai.yespanchi.com" || h.endsWith(".unifai.yespanchi.com")) return true;
+    if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1") return true;
+    var targetServer = (typeof GATEWAY_SERVER_HOST === "string" && GATEWAY_SERVER_HOST.trim())
+      ? normalizeDomainHost(GATEWAY_SERVER_HOST)
+      : "";
+    if (targetServer && (h === targetServer || h.endsWith("." + targetServer))) return true;
     return false;
   }
 

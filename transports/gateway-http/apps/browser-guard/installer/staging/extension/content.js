@@ -11,21 +11,40 @@
   crypto.getRandomValues(nonceBytes);
   var guardNonce = "yp_" + Array.prototype.map.call(nonceBytes, function (b) { return b.toString(16).padStart(2, "0"); }).join("");
 
-  var serverHost = "";
-  var monitoredSitesForPolicy = [];
-  var clipboardPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
+  function normalizeDomainHost(value) {
+    var host = String(value || "").toLowerCase().trim();
+    if (!host) return "";
+    if (host.indexOf("://") >= 0) {
+      try { host = new URL(host).hostname; } catch (e) { return ""; }
+    } else {
+      host = host.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0];
+      if ((host.match(/:/g) || []).length === 1 && /:\d+$/.test(host)) {
+        host = host.replace(/:\d+$/, "");
+      }
+    }
+    if (host.charAt(0) === "[" && host.indexOf("]") >= 0) {
+      host = host.slice(1, host.indexOf("]"));
+    }
+    host = host.replace(/^www\./, "").replace(/\.$/, "");
+    return host;
+  }
 
+  var serverHost = (typeof GATEWAY_SERVER_HOST === "string" && GATEWAY_SERVER_HOST.trim()) ? normalizeDomainHost(GATEWAY_SERVER_HOST) : "";
   function isServerHost(host) {
     if (!host) return false;
     host = normalizeDomainHost(host);
-    if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") return true;
-    if (host === "unifai.yespanchi.com" || host.endsWith(".unifai.yespanchi.com")) return true;
-    if (serverHost) {
-      var sHost = normalizeDomainHost(serverHost);
-      if (host === sHost || host.endsWith("." + sHost)) return true;
-    }
+    if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1") return true;
+    if (serverHost && (host === serverHost || host.endsWith("." + serverHost))) return true;
     return false;
   }
+
+  // EARLY RETURN: Never run or hook inside our product dashboard, local UI, or gateway portal!
+  if (isServerHost(location.hostname)) {
+    return;
+  }
+
+  var monitoredSitesForPolicy = [];
+  var clipboardPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
 
   function renderBlockedPage(hostname) {
     try {
@@ -237,8 +256,14 @@
     return "Browser";
   }
 
+  var hookInjected = false;
   function injectHook(done) {
+    if (hookInjected) {
+      if (done) done();
+      return;
+    }
     try {
+      hookInjected = true;
       var s = document.createElement("script");
       s.src = chrome.runtime.getURL("page_hook.js");
       s.dataset.guardNonce = guardNonce;
@@ -439,40 +464,44 @@
         }
         var sites = (res && Array.isArray(res.cached_sites)) ? res.cached_sites : [];
         if (hostMatches(location.hostname, sites)) {
-          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
-          window.postMessage({
-            source: "gateway-guard",
-            nonce: guardNonce,
-            type: "sync_rules",
-            rules: Array.isArray(res.cached_rules) ? res.cached_rules : [],
-            restricted_extensions: res.cached_exts || [],
-            block_upload: Boolean(res && res.block_upload),
-            upload_warning: (res && res.upload_warning) || "",
-            upload_target_websites: (res && res.upload_target_websites) || "",
-            file_extension_mode: (res && res.file_extension_mode) || "block_listed",
-            restricted_file_extensions: (res && res.restricted_file_extensions) || "",
-            allowed_file_extensions: (res && res.allowed_file_extensions) || "",
-            block_file_extension: Boolean(res && res.block_file_extension),
-            file_extension_block_message: (res && res.file_extension_block_message) || "",
-            file_extension_target_websites: (res && res.file_extension_target_websites) || "",
-            block_clipboard: Boolean(res && res.block_clipboard),
-            block_drag_drop: Boolean(res && res.block_drag_drop),
-            block_download: Boolean(res && res.block_download),
-            governance_target_websites: (res && res.governance_target_websites) || "",
-            governance_block_message: (res && res.governance_block_message) || "",
-            clipboard_target_websites: (res && res.clipboard_target_websites) || "",
-            drag_drop_target_websites: (res && res.drag_drop_target_websites) || "",
-            download_target_websites: (res && res.download_target_websites) || "",
-            clipboard_block_message: (res && res.clipboard_block_message) || "",
-            drag_drop_block_message: (res && res.drag_drop_block_message) || "",
-            download_block_message: (res && res.download_block_message) || "",
-            block_screenshot: Boolean(res && res.block_screenshot),
-            screenshot_block_message: (res && res.screenshot_block_message) || "",
-            screenshot_target_websites: (res && res.screenshot_target_websites) || ""
-          }, "*");
+          injectHook(function () {
+            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
+            window.postMessage({
+              source: "gateway-guard",
+              nonce: guardNonce,
+              type: "sync_rules",
+              rules: Array.isArray(res.cached_rules) ? res.cached_rules : [],
+              restricted_extensions: res.cached_exts || [],
+              block_upload: Boolean(res && res.block_upload),
+              upload_warning: (res && res.upload_warning) || "",
+              upload_target_websites: (res && res.upload_target_websites) || "",
+              file_extension_mode: (res && res.file_extension_mode) || "block_listed",
+              restricted_file_extensions: (res && res.restricted_file_extensions) || "",
+              allowed_file_extensions: (res && res.allowed_file_extensions) || "",
+              block_file_extension: Boolean(res && res.block_file_extension),
+              file_extension_block_message: (res && res.file_extension_block_message) || "",
+              file_extension_target_websites: (res && res.file_extension_target_websites) || "",
+              block_clipboard: Boolean(res && res.block_clipboard),
+              block_drag_drop: Boolean(res && res.block_drag_drop),
+              block_download: Boolean(res && res.block_download),
+              governance_target_websites: (res && res.governance_target_websites) || "",
+              governance_block_message: (res && res.governance_block_message) || "",
+              clipboard_target_websites: (res && res.clipboard_target_websites) || "",
+              drag_drop_target_websites: (res && res.drag_drop_target_websites) || "",
+              download_target_websites: (res && res.download_target_websites) || "",
+              clipboard_block_message: (res && res.clipboard_block_message) || "",
+              drag_drop_block_message: (res && res.drag_drop_block_message) || "",
+              download_block_message: (res && res.download_block_message) || "",
+              block_screenshot: Boolean(res && res.block_screenshot),
+              screenshot_block_message: (res && res.screenshot_block_message) || "",
+              screenshot_target_websites: (res && res.screenshot_target_websites) || ""
+            }, "*");
+          });
         } else {
-          // Domain is not monitored or was deleted
-          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+          // Domain is not monitored or was deleted: do not inject hook
+          if (hookInjected) {
+            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+          }
         }
       });
     }
@@ -512,11 +541,15 @@
           }
           if (isServerHost(location.hostname) || !hostMatches(location.hostname, domains)) {
             // Server portal or domain not in target websites: disarm immediately
-            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+            if (hookInjected) {
+              window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+            }
             return;
           }
-          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
-          syncRules();
+          injectHook(function () {
+            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
+            syncRules();
+          });
         })
         .catch(function () { });
     });
@@ -557,23 +590,25 @@
       if (changes.cached_sites) {
         var newSites = Array.isArray(changes.cached_sites.newValue) ? changes.cached_sites.newValue : [];
         if (hostMatches(location.hostname, newSites)) {
-          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
+          injectHook(function () {
+            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "arm" }, "*");
+          });
         } else {
           // Domain was deleted from target sites list: disarm immediately
-          window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+          if (hookInjected) {
+            window.postMessage({ source: "gateway-guard", nonce: guardNonce, type: "disarm" }, "*");
+          }
         }
       }
     });
   }
 
-  // Periodic site and rule refresh every 10 seconds and on tab focus
+  // Periodic site refresh every 10 seconds and on tab focus
   setInterval(function () {
     armIfMonitored();
-    syncRules();
   }, 10000);
   window.addEventListener("focus", function () {
     armIfMonitored();
-    syncRules();
   });
 
   window.addEventListener("message", function (ev) {
@@ -760,5 +795,5 @@
     }
   });
 
-  injectHook(armIfMonitored);
+  armIfMonitored();
 })();

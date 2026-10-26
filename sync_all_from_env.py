@@ -145,10 +145,15 @@ def update_extension_files(repo_root: Path, env_vars: dict[str, str]) -> int:
     updated = 0
 
     # 1. endpoint.js
+    server_domain = env_vars.get("SERVER_DOMAIN", "") or env_vars.get("GATEWAY_BACKEND_URL", "")
+    sh = server_domain.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].strip().lower()
+    if sh.startswith("www."):
+        sh = sh[4:]
     endpoint_js = ext_dir / "endpoint.js"
     endpoint_content = (
         "/* Auto-synchronized from root .env by sync_all_from_env.py */\n"
         f'var GATEWAY_GUARD_BASE = "http://127.0.0.1:{pac_http_port}";\n'
+        f'var GATEWAY_SERVER_HOST = "{sh}";\n'
     )
     with open(endpoint_js, "w", encoding="utf-8", newline="\n") as f:
         f.write(endpoint_content)
