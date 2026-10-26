@@ -3,6 +3,8 @@ package handlers
 import (
 	"testing"
 	"time"
+
+	"github.com/valyala/fasthttp"
 )
 
 func TestGuardEventHubNotifyTargetsOneAgent(t *testing.T) {

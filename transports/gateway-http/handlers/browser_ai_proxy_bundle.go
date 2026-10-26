@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -170,11 +171,10 @@ func guardBundleVersions() []string {
 }
 
 func writeFileAtomic(path string, data []byte) error {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	return writeReleaseFileAtomic(path, func(w io.Writer) error {
+		_, err := w.Write(data)
 		return err
-	}
-	return os.Rename(tmp, path)
+	})
 }
 
 // publishGuardProxyBundle snapshots the server's proxy sources for Guard hot-update.

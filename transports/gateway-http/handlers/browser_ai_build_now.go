@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,41 @@ const guardConfigFileName = "gateway_guard_config.json"
 type buildAsset struct {
 	name string
 	path string
+}
+
+// commitTempFile prefers an atomic rename. On Windows filesystems that deny a
+// same-directory rename for a new file, it falls back to an exclusive copy;
+// existing files are never overwritten through the fallback.
+func commitTempFile(tempPath, path string) error {
+	if err := os.Rename(tempPath, path); err == nil {
+		return nil
+	} else if runtime.GOOS != "windows" {
+		return err
+	} else {
+		renameErr := err
+		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+			return renameErr
+		}
+
+		src, openErr := os.Open(tempPath)
+		if openErr != nil {
+			return errors.Join(renameErr, openErr)
+		}
+		defer src.Close()
+
+		dst, createErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if createErr != nil {
+			return errors.Join(renameErr, createErr)
+		}
+		_, copyErr := io.Copy(dst, src)
+		closeErr := dst.Close()
+		if copyErr != nil || closeErr != nil {
+			_ = os.Remove(path)
+			return errors.Join(renameErr, copyErr, closeErr)
+		}
+		_ = os.Remove(tempPath)
+		return nil
+	}
 }
 
 // guardBuildMu serializes "Build now" so two admins cannot write the same release ZIP at once.
@@ -84,7 +120,7 @@ func writeReleaseFileAtomic(path string, write func(io.Writer) error) error {
 	}
 	if werr == nil {
 		_ = os.Chmod(tmpName, 0o644)
-		werr = os.Rename(tmpName, path)
+		werr = commitTempFile(tmpName, path)
 	}
 	if werr != nil {
 		_ = os.Remove(tmpName)

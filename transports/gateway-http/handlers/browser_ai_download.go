@@ -954,6 +954,6 @@ func (h *BrowserAIHandler) downloadSetupExe(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusNotFound, "Windows Guard installer (.exe) not found on server")
 		return
 	}
-	ctx.Response.Header.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, targetName))
+	ctx.Response.Header.Set("Content-Disposition", `attachment; filename="`+targetName+`"`)
 	ctx.SendFile(setupPath)
 }

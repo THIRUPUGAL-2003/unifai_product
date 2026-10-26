@@ -22,7 +22,7 @@ func TestBuildNowWindowsPackageUsesFreshConfig(t *testing.T) {
 	for name, body := range map[string]string{
 		"Gateway_Guard_Setup.exe":   "MZ setup",
 		"Gateway_Guard.exe":         "MZ portable",
-		"VERSION.txt":              "1.1.16\n",
+		"VERSION.txt":               "1.1.16\n",
 		"gateway_guard_config.json": `{"backend_url":"https://old.example","proxy_addr":"127.0.0.1:1","listen_host":"127.0.0.1"}`,
 	} {
 		if err := os.WriteFile(filepath.Join(rel, name), []byte(body), 0o644); err != nil {
@@ -188,9 +188,9 @@ func TestWriteMacZipWithHelpersAddsUpdaterAndExecBits(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	for name, body := range map[string]string{
-		"Install_Gateway_Guard.command":                 "#!/bin/bash\necho install\n",
+		"Install_Gateway_Guard.command":                  "#!/bin/bash\necho install\n",
 		"Gateway_Guard.app/Contents/MacOS/Gateway_Guard": "binary",
-		"INSTALL_MACOS.txt":                            "docs",
+		"INSTALL_MACOS.txt":                              "docs",
 	} {
 		fh := &zip.FileHeader{Name: name, Method: zip.Deflate}
 		fh.SetMode(0o644)
@@ -223,10 +223,10 @@ func TestWriteMacZipWithHelpersAddsUpdaterAndExecBits(t *testing.T) {
 		got[f.Name] = f
 	}
 	wantMode := map[string]os.FileMode{
-		"Install_Gateway_Guard.command":                 0o755,
+		"Install_Gateway_Guard.command":                  0o755,
 		"Gateway_Guard.app/Contents/MacOS/Gateway_Guard": 0o755,
-		"INSTALL_MACOS.txt":                            0o644,
-		"Update_Gateway_Guard_macOS.command":            0o755,
+		"INSTALL_MACOS.txt":                              0o644,
+		"Update_Gateway_Guard_macOS.command":             0o755,
 	}
 	for name, mode := range wantMode {
 		f := got[name]
