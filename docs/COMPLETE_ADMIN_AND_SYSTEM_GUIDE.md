@@ -84,8 +84,8 @@ d:/unifai_project/
 ### 2.1 Sign-In Portal
 * **URL:** `<SERVER_DOMAIN>/login` (configured in `.env`)
 * **Default Admin Credentials:**
-  * **Email:** `admin@yespanchi.com`
-  * **Password:** Configured via `ADMIN_PASSWORD` in `.env` (Default: `YP2025-2026yp`)
+  * **Email:** Configured via `ADMIN_EMAIL` in `.env`
+  * **Password:** Configured via `ADMIN_PASSWORD` in `.env`
 
 ### 2.2 First-Run Security Checklist
 1. **Change Default Credentials:** Navigate to **Governance -> Users**, select the `admin@yespanchi.com` profile, and update to a secure corporate master password.
