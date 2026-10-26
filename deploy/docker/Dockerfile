@@ -86,8 +86,9 @@
   COPY apps/browser-guard/proxy/browser_ai_proxy.py /app/guard-proxy/browser_ai_proxy.py
   COPY apps/browser-guard/proxy/gateway_proxy_parts/ /app/guard-proxy/gateway_proxy_parts/
   COPY apps/browser-guard/agent/*.py /app/guard-agent/
-  COPY apps/browser-guard/config/gateway_guard_config.json* /app/
-  COPY apps/browser-guard/release/gateway_guard_config.json* /app/
+  # gateway_guard_config.json is gitignored (contains secrets);
+  # release/ is already copied above, so symlink it from there at runtime.
+  RUN if [ -f /app/release/gateway_guard_config.json ]; then cp /app/release/gateway_guard_config.json /app/gateway_guard_config.json; fi
 
 
   # Getting arguments
