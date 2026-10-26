@@ -1303,14 +1303,14 @@
 
     (document.body || document.documentElement).appendChild(card);
 
-    // Auto-dismiss after 5 seconds
+    // Auto-dismiss after 1.5 seconds (User requested 1.5s only)
     setTimeout(function () {
       if (card && card.parentNode) {
         card.style.transition = "opacity 0.2s ease";
         card.style.opacity = "0";
         setTimeout(function () { if (card.parentNode) card.remove(); }, 200);
       }
-    }, 5000);
+    }, 1500);
   }
 
   var lastWarnedTime = 0;
@@ -1881,6 +1881,9 @@
     var text = stripInvisible(composerFrom(actualTarget) || composerFrom(e.target) || composerFrom(getDeepActiveElement()));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
+    if (text && _lastHandledPromptText === text && (Date.now() - _lastHandledPromptTime < 1500)) {
+      return;
+    }
 
     if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
       if (effectiveFiles.length > 0 || stagedImages.length > 0) {
@@ -1901,6 +1904,8 @@
 
     var clientDecision = evaluateClientRules(text, effectiveFiles);
     if (clientDecision && clientDecision.blocked) {
+      _lastHandledPromptTime = Date.now();
+      _lastHandledPromptText = text;
       e.preventDefault();
       e.stopImmediatePropagation();
       showBubble(clientDecision.message, clientDecision.rule, "block");
@@ -2079,6 +2084,9 @@
     var text = stripInvisible(composerFrom(btn) || composerFrom(getDeepActiveElement()) || composerFrom(document.activeElement));
     var effectiveFiles = mergeStagedAndDomFiles();
     if (!text && effectiveFiles.length === 0 && stagedImages.length === 0) return;
+    if (text && _lastHandledPromptText === text && (Date.now() - _lastHandledPromptTime < 1500)) {
+      return;
+    }
 
     if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
       if (effectiveFiles.length > 0 || stagedImages.length > 0) {
@@ -2099,6 +2107,8 @@
 
     var clientDecision = evaluateClientRules(text, effectiveFiles);
     if (clientDecision && clientDecision.blocked) {
+      _lastHandledPromptTime = Date.now();
+      _lastHandledPromptText = text;
       e.preventDefault();
       e.stopImmediatePropagation();
       showBubble(clientDecision.message, clientDecision.rule, "block");
@@ -2353,11 +2363,25 @@
 
       var method = (init && init.method) || (input && input.method) || "GET";
       method = String(method).toUpperCase();
-      if (method !== "POST" && method !== "PUT" && method !== "PATCH") {
-        return origFetch.apply(this, arguments);
-      }
-
       var url = typeof input === "string" ? input : (input && input.url) || "";
+
+      if (method !== "POST" && method !== "PUT" && method !== "PATCH") {
+        var pGet = origFetch.apply(this, arguments);
+        if (typeof url === "string" && (url.indexOf("/session") >= 0 || url.indexOf("/me") >= 0 || url.indexOf("/user") >= 0 || url.indexOf("/auth") >= 0 || url.indexOf("/account") >= 0 || url.indexOf("/profile") >= 0)) {
+          pGet.then(function (r) {
+            try {
+              if (r && r.ok && typeof r.clone === "function") {
+                r.clone().json().then(function (data) {
+                  if (data && typeof data === "object") {
+                    scanObjectForSession(data, 0);
+                  }
+                }).catch(function () {});
+              }
+            } catch (_) {}
+          }).catch(function () {});
+        }
+        return pGet;
+      }
       var body = init && init.body;
       var promptText = "";
       var netFiles = [];
