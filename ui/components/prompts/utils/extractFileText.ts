@@ -375,7 +375,11 @@ function extractRtfText(rtf: string): string {
 		.replace(/\\par[d]?/g, "\n")
 		.replace(/\\tab/g, "\t")
 		.replace(/\\line/g, "\n")
-		.replace(/\\'[0-9a-fA-F]{2}/g, " ")
+		.replace(/\\u(-?\d+)\??/g, (_match, rawCode) => {
+			const code = Number(rawCode);
+			return String.fromCharCode(code < 0 ? code + 0x10000 : code);
+		})
+		.replace(/\\'([0-9a-fA-F]{2})/g, (_match, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
 		.replace(/\\[a-zA-Z]+-?\d* ?/g, "")
 		.replace(/[{}]/g, "")
 		.replace(/\n\s*\n+/g, "\n\n")
@@ -519,7 +523,7 @@ export async function extractPromptFileText(file: File, mimeType: string): Promi
 
 		const wordOoxml = /\.(docx|docm|dotx|dotm)$/i.test(name) || mime.includes("wordprocessingml");
 		const sheetOoxml =
-			/\.(xlsx|xlsm|xlsb|xltx|xltm|xlt|xls|ods|ots)$/i.test(name) ||
+			/\.(xlsx|xlsm|xlsb|xltx|xltm|xlt|xls|ods|ots|fods|numbers|dbf|dif|slk|sylk|wk1|wk3|wk2|wk4|wks|123|wq1|wq2|wb1|wb2|wb3|qpw|xlr|eth|prn)$/i.test(name) ||
 			mime.includes("spreadsheetml") ||
 			mime.includes("opendocument.spreadsheet") ||
 			mime.includes("excel");

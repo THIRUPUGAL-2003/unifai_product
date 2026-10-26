@@ -83,26 +83,7 @@ export function isPromptArchive(file: File, mimeType: string): boolean {
 	const name = file.name.toLowerCase();
 	const mime = (mimeType || "").toLowerCase();
 	return (
-		name.endsWith(".zip") ||
-		name.endsWith(".tar") ||
-		name.endsWith(".tar.gz") ||
-		name.endsWith(".tgz") ||
-		name.endsWith(".gz") ||
-		name.endsWith(".gzip") ||
-		name.endsWith(".bz2") ||
-		name.endsWith(".xz") ||
-		name.endsWith(".7z") ||
-		name.endsWith(".rar") ||
-		name.endsWith(".tbz2") ||
-		name.endsWith(".txz") ||
-		name.endsWith(".cab") ||
-		name.endsWith(".iso") ||
-		name.endsWith(".jar") ||
-		name.endsWith(".war") ||
-		name.endsWith(".apk") ||
-		name.endsWith(".ear") ||
-		name.endsWith(".zst") ||
-		name.endsWith(".tzst") ||
+		/\.(zip|tar|tar\.gz|tgz|gz|gzip|bz2|xz|7z|rar|tbz2|txz|cab|iso|jar|war|apk|ear|zst|tzst|whl|nupkg|msix|appx|appxbundle|aab|cbz|dmg|img|wim|msi|deb|rpm|appimage|pkg|lzh|lha|z|sfx)$/i.test(name) ||
 		mime === "application/zip" ||
 		mime === "application/x-zip-compressed" ||
 		mime.includes("gzip") ||
@@ -111,8 +92,16 @@ export function isPromptArchive(file: File, mimeType: string): boolean {
 		mime.includes("rar") ||
 		mime.includes("bzip") ||
 		mime.includes("x-xz") ||
+		mime.includes("x-iso9660") ||
+		mime.includes("apple-diskimage") ||
+		mime.includes("x-msi") ||
+		mime.includes("debian.binary") ||
+		mime.includes("x-rpm") ||
+		mime.includes("lzh-compressed") ||
 		mime.includes("java-archive") ||
-		mime.includes("vnd.android.package")
+		mime.includes("vnd.android.package") ||
+		mime.includes("msix") ||
+		mime.includes("appx")
 	);
 }
 
@@ -124,7 +113,7 @@ export async function extractArchiveInnerFiles(file: File, detectedMimeType?: st
 }> {
 	const lower = file.name.toLowerCase();
 	const mime = (detectedMimeType || file.type || "").toLowerCase();
-	const zipPackage = /\.(zip|jar|war|apk|ear|whl|nupkg)$/i.test(lower);
+	const zipPackage = /\.(zip|jar|war|apk|ear|whl|nupkg|msix|appx|appxbundle|aab|cbz)$/i.test(lower);
 	if (zipPackage || mime === "application/zip" || mime === "application/x-zip-compressed" || mime.includes("java-archive")) {
 		return extractZipInnerFiles(file);
 	}

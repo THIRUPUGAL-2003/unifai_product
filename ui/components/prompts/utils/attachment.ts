@@ -719,7 +719,7 @@ export function resolveFileMimeType(file: File): string {
 
 const ZIP_PACKAGED_DOCUMENT_EXTENSIONS = new Set([
 	"docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xlsb", "xltx", "xltm", "pptx", "pptm", "ppsx", "ppsm",
-	"potx", "potm", "odt", "ott", "ods", "ots", "odp", "otp", "odg", "epub",
+	"potx", "potm", "odt", "ott", "ods", "ots", "odp", "otp", "odg", "epub", "numbers",
 ]);
 
 /** Use file signatures when browser MIME and extension are missing or misleading. */

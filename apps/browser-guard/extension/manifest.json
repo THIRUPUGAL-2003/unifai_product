@@ -21,11 +21,6 @@
     "default_popup": "popup.html"
   },
   "background": {
-    "scripts": [
-      "endpoint.js",
-      "guard_base.js",
-      "background.js"
-    ],
     "service_worker": "background.js"
   },
   "incognito": "spanning",
