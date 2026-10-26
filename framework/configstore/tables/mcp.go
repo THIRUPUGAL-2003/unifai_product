@@ -195,18 +195,25 @@ func (c *TableMCPClient) BeforeSave(tx *gorm.DB) error {
 	// Encrypt sensitive fields after serialization.
 	// Always set EncryptionStatus when encryption is enabled so the startup
 	// batch pass does not re-process this row indefinitely.
+	// Headers the current key could not decrypt were loaded as {}: write the stored
+	// ciphertext back instead of wiping it, unless new headers were set.
+	headersRestored := false
+	c.HeadersJSON, headersRestored = restoreKeptCiphertext(c.TableName(), c.ClientID, "headers", c.HeadersJSON, c.HeadersJSON == "" || c.HeadersJSON == "{}")
+	if headersRestored {
+		c.EncryptionStatus = EncryptionStatusEncrypted
+	}
 	if encrypt.IsEnabled() {
 		if c.ConnectionString != nil && !c.ConnectionString.IsFromSecret() && c.ConnectionString.GetValue() != "" {
 			// Copy to avoid encrypting the shared ConnectionString through the pointer
 			cs := *c.ConnectionString
-			enc, err := encrypt.Encrypt(cs.Val)
+			enc, err := encryptOrKeep(cs.Val)
 			if err != nil {
 				return fmt.Errorf("failed to encrypt mcp connection string: %w", err)
 			}
 			cs.Val = enc
 			c.ConnectionString = &cs
 		}
-		if c.HeadersJSON != "" && c.HeadersJSON != "{}" {
+		if !headersRestored && c.HeadersJSON != "" && c.HeadersJSON != "{}" {
 			enc, err := encrypt.Encrypt(c.HeadersJSON)
 			if err != nil {
 				return fmt.Errorf("failed to encrypt mcp headers: %w", err)
@@ -224,20 +231,15 @@ func (c *TableMCPClient) BeforeSave(tx *gorm.DB) error {
 func (c *TableMCPClient) AfterFind(tx *gorm.DB) error {
 	if c.EncryptionStatus == EncryptionStatusEncrypted {
 		if c.HeadersJSON != "" && c.HeadersJSON != "{}" {
-			decrypted, err := encrypt.Decrypt(c.HeadersJSON)
-			if err != nil {
-				c.HeadersJSON = "{}"
-			} else {
-				c.HeadersJSON = decrypted
+			// Undecryptable headers load as {} so the server starts; BeforeSave restores them.
+			decrypted, ok := decryptRowBlob(c.TableName(), c.ClientID, "headers", c.HeadersJSON)
+			if !ok {
+				decrypted = "{}"
 			}
+			c.HeadersJSON = decrypted
 		}
 		if c.ConnectionString != nil && !c.ConnectionString.IsFromSecret() && c.ConnectionString.GetValue() != "" {
-			decrypted, err := encrypt.Decrypt(c.ConnectionString.Val)
-			if err != nil {
-				c.ConnectionString.Val = ""
-			} else {
-				c.ConnectionString.Val = decrypted
-			}
+			c.ConnectionString.Val = decryptOrKeep(c.ConnectionString.Val)
 		}
 	}
 	if c.StdioConfigJSON != nil {

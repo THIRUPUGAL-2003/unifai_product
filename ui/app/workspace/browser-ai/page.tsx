@@ -6821,25 +6821,11 @@ export default function BrowserAiPage() {
 									<div className="min-w-0">
 										<CardTitle className="text-lg">Enterprise Guard Deployment Suite</CardTitle>
 										<CardDescription>
-											Single complete download containing Windows EXE, macOS Agent, and All Browser Extensions (Chrome, Brave, Edge, Opera, Firefox, Safari).
+											One download with three folders: Windows (Setup + EXE), Browser Extension, and macOS.
 										</CardDescription>
 									</div>
 								</div>
 								<div className="flex shrink-0 items-center gap-2">
-									<Button
-										onClick={() => handleDownloadSetupPackage("extension")}
-										disabled={downloadingExtension}
-										variant="outline"
-										size="default"
-										className="h-10 px-4 gap-2 font-medium border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 shadow-sm transition-all"
-									>
-										{downloadingExtension ? (
-											<RefreshCw className="h-4 w-4 animate-spin text-emerald-400" />
-										) : (
-											<Download className="h-4 w-4" />
-										)}
-										{downloadingExtension ? "Downloading..." : "Download Extension (.ZIP)"}
-									</Button>
 									<Button
 										onClick={() => handleDownloadSetupPackage("all")}
 										disabled={downloadingSuite}
@@ -6851,7 +6837,7 @@ export default function BrowserAiPage() {
 										) : (
 											<Download className="h-4 w-4" />
 										)}
-										{downloadingSuite ? "Packaging Suite..." : "Download Complete Guard Suite (.ZIP)"}
+										{downloadingSuite ? "Downloading..." : "Download ZIP"}
 									</Button>
 								</div>
 							</div>
@@ -6864,7 +6850,7 @@ export default function BrowserAiPage() {
 										Decoupled Independent Architecture
 									</p>
 									<p className="text-muted-foreground text-[11px]">
-										Setup does not force browser registry. Run the Desktop Agent (.exe on Windows / Mac script), install your preferred browser extension, and they connect automatically on localhost (127.0.0.1:18195).
+										Install the Desktop Agent and the browser extension separately. Each works on its own; together they connect automatically on localhost (127.0.0.1:18195) within a second.
 									</p>
 								</div>
 								<Badge variant="outline" className="border-emerald-500/40 text-emerald-400 font-mono text-[11px] self-start md:self-auto shrink-0">
@@ -6879,40 +6865,28 @@ export default function BrowserAiPage() {
 										1. Windows Desktop
 									</div>
 									<p className="text-[11px] text-muted-foreground">
-										<code>YP_Raksha.exe</code> &amp; start scripts. Pure background DLP agent &amp; proxy.
+										<code>1_Windows/</code>: <code>YP_Raksha_Setup.exe</code> (install, updates, secure uninstall) and portable <code>YP_Raksha.exe</code>.
+									</p>
+								</div>
+
+								<div className="rounded-md border border-border bg-card p-3 space-y-1.5">
+									<div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+										<span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
+										2. Browser Extension
+									</div>
+									<p className="text-[11px] text-muted-foreground">
+										<code>2_Browser_Extension/</code>: <code>YP_Raksha_Extension</code> folder for Chrome, Edge, Brave, Opera; <code>.crx</code>; Safari guide.
 									</p>
 								</div>
 
 								<div className="rounded-md border border-border bg-card p-3 space-y-1.5">
 									<div className="flex items-center gap-2 text-xs font-semibold text-foreground">
 										<span className="h-2 w-2 rounded-full bg-primary shrink-0" />
-										2. macOS Desktop
+										3. macOS Desktop
 									</div>
 									<p className="text-[11px] text-muted-foreground">
-										<code>YP_Raksha.app</code> &amp; <code>Install_macOS.command</code>. Background launchd daemon.
+										<code>3_macOS/</code>: <code>YP_Raksha_macOS.zip</code> with Install and Uninstall scripts.
 									</p>
-								</div>
-
-								<div className="rounded-md border border-border bg-card p-3 space-y-2 flex flex-col justify-between">
-									<div>
-										<div className="flex items-center gap-2 text-xs font-semibold text-foreground">
-											<span className="h-2 w-2 rounded-full bg-amber-500 shrink-0" />
-											3. All Browser Extensions
-										</div>
-										<p className="text-[11px] text-muted-foreground mt-1">
-											<code>.crx</code> &amp; unpacked folder for Chrome, Brave, Edge, Opera; <code>.xpi</code> for Firefox; Safari guide.
-										</p>
-									</div>
-									<Button
-										onClick={() => handleDownloadSetupPackage("extension")}
-										disabled={downloadingExtension}
-										variant="outline"
-										size="sm"
-										className="h-7 text-xs px-2.5 gap-1.5 border-amber-500/30 text-amber-400 hover:bg-amber-500/10 w-fit"
-									>
-										<Download className="h-3 w-3" />
-										Download Extension ZIP
-									</Button>
 								</div>
 							</div>
 						</CardContent>
@@ -6930,7 +6904,7 @@ export default function BrowserAiPage() {
 									<span>Download Deployment Suite</span>
 								</div>
 								<p className="text-sm text-foreground/80 pl-8 leading-relaxed">
-									Click <strong>Download Complete Guard Suite (.ZIP)</strong> above and extract the downloaded <code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono text-xs">UnifAI_Guard_Suite.zip</code> archive.
+									Click <strong>Download ZIP</strong> above and extract the downloaded <code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono text-xs">UnifAI_Guard_Suite.zip</code> archive.
 								</p>
 							</div>
 
@@ -6944,17 +6918,17 @@ export default function BrowserAiPage() {
 									<div className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
 										<div className="flex items-center gap-2 font-medium text-sm text-foreground">
 											<span className="flex h-5 px-1.5 items-center justify-center rounded bg-sky-500/20 text-sky-400 font-bold text-xs">Win</span>
-											<span>Windows Standalone Executable</span>
+											<span>Windows Setup</span>
 										</div>
 										<p className="text-xs text-foreground/80 leading-relaxed">
 											Go to <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">1_Windows/</code> and double-click{" "}
 											<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono font-semibold">
-												YP_Raksha.exe
+												YP_Raksha_Setup.exe
 											</code>
-											. It runs directly in the background (zero installer wizard, zero conflicts). Automatically configures autostart at Windows login and handshakes with the security server.
+											. One install sets up the agent, company config, start at login, automatic updates and secure uninstall. Silent deployment: <code className="font-mono text-[11px]">/VERYSILENT /SUPPRESSMSGBOXES /NORESTART</code>. The portable <code className="font-mono text-[11px]">YP_Raksha.exe</code> is the same agent without the installer.
 										</p>
 										<p className="text-xs text-muted-foreground">
-											<strong>To uninstall:</strong> Windows Settings → Apps → Installed Apps → YP Raksha → Uninstall (or run <code className="font-mono text-[11px]">YP_Raksha.exe --uninstall &lt;key&gt;</code>). Requires company uninstall key.
+											<strong>To uninstall:</strong> Guard Agents → Uninstall on this website, or Windows Settings → Apps → YP Raksha → Uninstall with the company uninstall key.
 										</p>
 									</div>
 
@@ -6964,7 +6938,7 @@ export default function BrowserAiPage() {
 											<span>macOS Desktop Daemon</span>
 										</div>
 										<p className="text-xs text-foreground/80 leading-relaxed">
-											Go to <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">2_macOS/</code>, extract{" "}
+											Go to <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">3_macOS/</code>, extract{" "}
 											<code className="rounded border border-border bg-muted px-1.5 py-0.5 text-foreground font-mono font-semibold">
 												YP_Raksha_macOS.zip
 											</code>
@@ -6987,13 +6961,13 @@ export default function BrowserAiPage() {
 									<span>Add Browser Extension</span>
 								</div>
 								<div className="pl-8 space-y-2 text-xs text-foreground/80 leading-relaxed">
-									<p>Open the <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">3_Browser_Extensions/</code> folder:</p>
+									<p>Open the <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">2_Browser_Extension/</code> folder:</p>
 									<ul className="list-disc pl-5 space-y-1 text-muted-foreground">
 										<li>
-											<strong className="text-foreground">Chrome / Brave / Edge / Opera:</strong> Extract <code className="rounded border border-border bg-muted px-1 py-0.5 font-mono text-[11px]">Unpacked_Extension_Chrome_Edge_Brave.zip</code>. In browser extensions (<code className="font-mono text-[11px]">chrome://extensions</code> or <code className="font-mono text-[11px]">brave://extensions</code>), toggle <strong>Developer mode ON</strong> and click <strong>Load unpacked</strong>.
+											<strong className="text-foreground">Chrome / Brave / Edge / Opera:</strong> In browser extensions (<code className="font-mono text-[11px]">chrome://extensions</code> or <code className="font-mono text-[11px]">brave://extensions</code>), toggle <strong>Developer mode ON</strong>, click <strong>Load unpacked</strong> and select the <code className="font-mono text-[11px]">YP_Raksha_Extension</code> folder.
 										</li>
 										<li>
-											<strong className="text-foreground">Firefox:</strong> Open <code className="font-mono text-[11px]">about:debugging#/runtime/this-firefox</code>, click <strong>Load Temporary Add-on</strong>, and select <code className="font-mono text-[11px]">Firefox_Extension.xpi</code>.
+											<strong className="text-foreground">Firefox:</strong> Install <code className="font-mono text-[11px]">Firefox_Extension.xpi</code> (included only when Mozilla-signed).
 										</li>
 										<li>
 											<strong className="text-foreground">Safari:</strong> Open Safari → Settings → Extensions → Enable <strong>YP-Raksha Enterprise AI Guard</strong>.
@@ -7020,21 +6994,21 @@ export default function BrowserAiPage() {
 								<ul className="list-disc pl-5 text-foreground/80 space-y-1.5 text-xs">
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">
-											1_Windows/YP_Raksha.exe
+											1_Windows/
 										</code>{" "}
-										— Standalone Windows agent &amp; proxy (zero setup wizard, direct background run)
+										— <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha_Setup.exe</code> (recommended) and portable <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha.exe</code>
 									</li>
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">
-											2_macOS/YP_Raksha_macOS.zip
+											3_macOS/YP_Raksha_macOS.zip
 										</code>{" "}
 										— macOS <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha.app</code> + Install &amp; Uninstall scripts
 									</li>
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">
-											3_Browser_Extensions/
+											2_Browser_Extension/
 										</code>{" "}
-										— Extensions for Chrome, Brave, Edge, Opera, Firefox, and Safari
+										— <code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">YP_Raksha_Extension</code> folder for Chrome, Edge, Brave, Opera, plus .crx and Safari guide
 									</li>
 									<li>
 										<code className="rounded border border-border bg-card px-1.5 py-0.5 text-foreground font-mono">README_INSTRUCTIONS.txt</code> — Complete employee deployment &amp; setup guide

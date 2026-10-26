@@ -1,4 +1,0 @@
-Domain,Platform Name,Host Role,Monitored,Block Entire Website
-chat.example.com,Example AI,ui,TRUE,FALSE
-api.chat.example.com,Example AI,chat,TRUE,FALSE
-files.chat.example.com,Example AI,file,TRUE,FALSE

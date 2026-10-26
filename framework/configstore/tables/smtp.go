@@ -29,8 +29,14 @@ type TableSMTPConfig struct {
 func (TableSMTPConfig) TableName() string { return "config_smtp" }
 
 func (s *TableSMTPConfig) BeforeSave(tx *gorm.DB) error {
+	// A password the current key could not decrypt is never replaced by an empty one.
+	if restored, ok := restoreKeptCiphertext(s.TableName(), smtpRowKey(s.ID), "password", s.Password, s.Password == ""); ok {
+		s.Password = restored
+		s.EncryptionStatus = EncryptionStatusEncrypted
+		return nil
+	}
 	if encrypt.IsEnabled() && s.Password != "" {
-		enc, err := encrypt.Encrypt(s.Password)
+		enc, err := encryptOrKeep(s.Password)
 		if err != nil {
 			return fmt.Errorf("encrypt smtp password: %w", err)
 		}
@@ -42,14 +48,21 @@ func (s *TableSMTPConfig) BeforeSave(tx *gorm.DB) error {
 
 func (s *TableSMTPConfig) AfterFind(tx *gorm.DB) error {
 	if s.EncryptionStatus == EncryptionStatusEncrypted && s.Password != "" {
-		dec, err := encrypt.Decrypt(s.Password)
-		if err != nil {
-			s.Password = ""
-			return nil
+		// Undecryptable password stays as stored ciphertext so a later save keeps it.
+		if dec, ok := decryptRowBlob(s.TableName(), smtpRowKey(s.ID), "password", s.Password); ok {
+			s.Password = dec
+		} else {
+			undecryptable.Store(s.Password, struct{}{})
 		}
-		s.Password = dec
 	}
 	return nil
+}
+
+func smtpRowKey(id uint) string {
+	if id == 0 {
+		return ""
+	}
+	return fmt.Sprint(id)
 }
 
 // TableLoginLockout tracks failed dashboard logins for lockout (3 fails → 20 min).

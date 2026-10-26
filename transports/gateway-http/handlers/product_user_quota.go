@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"sync"
+	"time"
 
 	"github.com/gateway/gateway/framework/configstore"
 	"github.com/gateway/gateway/framework/configstore/tables"
@@ -9,10 +11,28 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-func loadProductUserUsage(ctx context.Context, store configstore.ConfigStore) (logstore.ProductUserUsage, error) {
+var (
+	quotaCacheMu    sync.RWMutex
+	cachedQuotaData logstore.ProductUserUsage
+	cachedQuotaAt   time.Time
+)
+
+func loadProductUserUsage(ctx context.Context, store configstore.ConfigStore, bypassCache ...bool) (logstore.ProductUserUsage, error) {
 	if store == nil {
 		return logstore.ProductUserUsage{}, nil
 	}
+
+	skipCache := len(bypassCache) > 0 && bypassCache[0]
+	if !skipCache {
+		quotaCacheMu.RLock()
+		if !cachedQuotaAt.IsZero() && time.Since(cachedQuotaAt) < 5*time.Second {
+			cached := cachedQuotaData
+			quotaCacheMu.RUnlock()
+			return cached, nil
+		}
+		quotaCacheMu.RUnlock()
+	}
+
 	maxUsers := 0
 	if db := store.DB(); db != nil {
 		mgr := logstore.NewBrowserAIManager(db)
@@ -35,11 +55,18 @@ func loadProductUserUsage(ctx context.Context, store configstore.ConfigStore) (l
 		}
 		roles = append(roles, user.Role)
 	}
-	return logstore.ProductUserUsageFromRoles(roles, maxUsers), nil
+	usage := logstore.ProductUserUsageFromRoles(roles, maxUsers)
+
+	quotaCacheMu.Lock()
+	cachedQuotaData = usage
+	cachedQuotaAt = time.Now()
+	quotaCacheMu.Unlock()
+
+	return usage, nil
 }
 
 func (h *SessionHandler) rejectIfProductUsersFull(ctx *fasthttp.RequestCtx) bool {
-	usage, err := loadProductUserUsage(ctx, h.configStore)
+	usage, err := loadProductUserUsage(ctx, h.configStore, true)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Could not read the license user limit")
 		return true
@@ -56,10 +83,11 @@ func (h *SessionHandler) getProductUserQuota(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusForbidden, "Forbidden")
 		return
 	}
-	usage, err := loadProductUserUsage(ctx, h.configStore)
+	usage, err := loadProductUserUsage(ctx, h.configStore, false)
 	if err != nil {
 		SendError(ctx, fasthttp.StatusInternalServerError, "Could not read the license user limit")
 		return
 	}
 	SendJSON(ctx, usage)
 }
+

@@ -792,10 +792,18 @@ type BrowserAIManager struct {
 	mu       sync.RWMutex
 }
 
+var (
+	browserAIDBMigrated sync.Map
+)
+
 func NewBrowserAIManager(db *gorm.DB) *BrowserAIManager {
 	m := &BrowserAIManager{db: db}
 	if db != nil {
-		_ = m.AutoMigrate(context.Background())
+		if _, ok := browserAIDBMigrated.Load(db); ok {
+			m.migrated = true
+		} else {
+			_ = m.AutoMigrate(context.Background())
+		}
 	}
 	return m
 }
@@ -804,6 +812,12 @@ func (m *BrowserAIManager) SetDB(db *gorm.DB) {
 	m.mu.Lock()
 	m.db = db
 	needsMigrate := !m.migrated && db != nil
+	if db != nil {
+		if _, ok := browserAIDBMigrated.Load(db); ok {
+			m.migrated = true
+			needsMigrate = false
+		}
+	}
 	m.mu.Unlock()
 
 	if needsMigrate {
@@ -835,6 +849,13 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 	m.mu.Unlock()
 
 	if db == nil {
+		return nil
+	}
+
+	if _, ok := browserAIDBMigrated.Load(db); ok {
+		m.mu.Lock()
+		m.migrated = true
+		m.mu.Unlock()
 		return nil
 	}
 
@@ -897,6 +918,7 @@ func (m *BrowserAIManager) AutoMigrate(ctx context.Context) error {
 	// Do NOT seed default target websites.
 	// Proxy only monitors domains the admin adds in Target Websites.
 
+	browserAIDBMigrated.Store(db, true)
 	m.mu.Lock()
 	m.migrated = true
 	m.mu.Unlock()

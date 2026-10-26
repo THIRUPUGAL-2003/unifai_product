@@ -120,6 +120,14 @@ func Key() []byte {
 	return out
 }
 
+// Warn logs through the logger passed to Init, if any. Used by callers that have no
+// logger of their own (e.g. configstore table hooks reporting undecryptable rows).
+func Warn(msg string, args ...any) {
+	if logger != nil {
+		logger.Warn(msg, args...)
+	}
+}
+
 // HashSHA256 returns a deterministic hex-encoded SHA-256 hash of the input.
 // Used for hash-based lookups on encrypted columns (e.g., virtual key value, session token).
 func HashSHA256(value string) string {

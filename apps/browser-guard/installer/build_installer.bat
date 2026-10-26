@@ -185,6 +185,17 @@ rmdir /S /Q "%ZIP_STAGE%"
 
 echo.
 echo ============================================================
+echo  5) Building the website download (UnifAI_Guard_Suite.zip)
+echo ============================================================
+rem Browser AI -^> Setup serves this one ZIP: 1_Windows, 2_Browser_Extension, 3_macOS.
+python scripts\build_master_suite.py --skip-prep
+if errorlevel 1 (
+  echo ERROR: suite ZIP build failed.
+  exit /b 1
+)
+
+echo.
+echo ============================================================
 echo  SUCCESS — YP Raksha 1.1.33
 echo  Employee installer (Setup EXE):
 echo    release\YP_Raksha_Setup.exe

@@ -117,6 +117,15 @@ func (p *TableProvider) BeforeSave(tx *gorm.DB) error {
 		return fmt.Errorf("rate_limit_id cannot be an empty string")
 	}
 
+	// A proxy config the current key could not decrypt was loaded as empty: write the
+	// stored ciphertext back instead of wiping it, unless a new proxy config was set.
+	restored := false
+	p.ProxyConfigJSON, restored = restoreKeptCiphertext(p.TableName(), p.Name, "proxy_config", p.ProxyConfigJSON, p.ProxyConfigJSON == "" || p.ProxyConfigJSON == "null")
+	if restored {
+		p.EncryptionStatus = EncryptionStatusEncrypted
+		return nil
+	}
+
 	// Encrypt proxy config after serialization (only if there's data to encrypt)
 	if encrypt.IsEnabled() && p.ProxyConfigJSON != "" {
 		encrypted, err := encrypt.Encrypt(p.ProxyConfigJSON)
@@ -150,12 +159,9 @@ func (p *TableProvider) AfterFind(tx *gorm.DB) error {
 	}
 
 	if p.EncryptionStatus == "encrypted" && p.ProxyConfigJSON != "" {
-		decrypted, err := encrypt.Decrypt(p.ProxyConfigJSON)
-		if err != nil {
-			p.ProxyConfigJSON = ""
-		} else {
-			p.ProxyConfigJSON = decrypted
-		}
+		// Undecryptable proxy config loads as empty so the server starts; BeforeSave restores it.
+		decrypted, _ := decryptRowBlob(p.TableName(), p.Name, "proxy_config", p.ProxyConfigJSON)
+		p.ProxyConfigJSON = decrypted
 	}
 	if p.ProxyConfigJSON != "" {
 		var proxyConfig schemas.ProxyConfig

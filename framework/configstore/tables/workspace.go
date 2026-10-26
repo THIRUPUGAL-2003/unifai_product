@@ -1,6 +1,7 @@
 package tables
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -164,6 +165,17 @@ func (c *TableAlertChannel) BeforeSave(tx *gorm.DB) error {
 		return err
 	}
 	c.ConfigJSON = encoded
+	// A config the current key could not decrypt was loaded as {}: write the stored
+	// ciphertext back instead of wiping it, unless a new config was set.
+	current := ""
+	if c.ConfigJSON != nil {
+		current = strings.TrimSpace(*c.ConfigJSON)
+	}
+	if kept, restored := restoreKeptCiphertext(c.TableName(), alertChannelRowKey(c.ID), "config", current, current == "" || current == "{}" || current == "null"); restored {
+		c.ConfigJSON = &kept
+		c.EncryptionStatus = EncryptionStatusEncrypted
+		return nil
+	}
 	if encrypt.IsEnabled() && c.ConfigJSON != nil && strings.TrimSpace(*c.ConfigJSON) != "" && *c.ConfigJSON != "{}" && *c.ConfigJSON != "null" {
 		enc, err := encrypt.Encrypt(*c.ConfigJSON)
 		if err != nil {
@@ -182,15 +194,21 @@ func (c *TableAlertChannel) AfterFind(tx *gorm.DB) error {
 		c.ParsedConfig = map[string]any{}
 	}
 	if c.EncryptionStatus == EncryptionStatusEncrypted && c.ConfigJSON != nil && *c.ConfigJSON != "" {
-		dec, err := encrypt.Decrypt(*c.ConfigJSON)
-		if err != nil {
-			empty := "{}"
-			c.ConfigJSON = &empty
-		} else {
-			c.ConfigJSON = &dec
+		// Undecryptable config loads as {} so the server starts; BeforeSave restores it.
+		dec, ok := decryptRowBlob(c.TableName(), alertChannelRowKey(c.ID), "config", *c.ConfigJSON)
+		if !ok {
+			dec = "{}"
 		}
+		c.ConfigJSON = &dec
 	}
 	return readJSON(c.ConfigJSON, &c.ParsedConfig)
+}
+
+func alertChannelRowKey(id uint) string {
+	if id == 0 {
+		return ""
+	}
+	return strconv.FormatUint(uint64(id), 10)
 }
 
 // TableCircuitBreakerPolicy fails over a primary provider+model when a signal matches.

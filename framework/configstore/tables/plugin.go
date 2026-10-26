@@ -52,6 +52,15 @@ func (p *TablePlugin) BeforeSave(tx *gorm.DB) error {
 		p.ConfigJSON = "{}"
 	}
 
+	// A config the current key could not decrypt was loaded as {}: write the stored
+	// ciphertext back instead of wiping it, unless a new config was set.
+	restored := false
+	p.ConfigJSON, restored = restoreKeptCiphertext(p.TableName(), p.Name, "config", p.ConfigJSON, p.ConfigJSON == "" || p.ConfigJSON == "{}" || p.ConfigJSON == "null")
+	if restored {
+		p.EncryptionStatus = EncryptionStatusEncrypted
+		return nil
+	}
+
 	// Encrypt config after serialization
 	if encrypt.IsEnabled() && p.ConfigJSON != "" && p.ConfigJSON != "{}" {
 		encrypted, err := encrypt.Encrypt(p.ConfigJSON)
@@ -71,12 +80,12 @@ func (p *TablePlugin) AfterFind(tx *gorm.DB) error {
 	switch p.EncryptionStatus {
 	case EncryptionStatusEncrypted:
 		if p.ConfigJSON != "" {
-			decrypted, err := encrypt.Decrypt(p.ConfigJSON)
-			if err != nil {
-				p.ConfigJSON = "{}"
-			} else {
-				p.ConfigJSON = decrypted
+			// Undecryptable config loads as {} so the server starts; BeforeSave restores it.
+			decrypted, ok := decryptRowBlob(p.TableName(), p.Name, "config", p.ConfigJSON)
+			if !ok {
+				decrypted = "{}"
 			}
+			p.ConfigJSON = decrypted
 		}
 	}
 	if p.ConfigJSON != "" {
