@@ -111,7 +111,7 @@ class _PACRequestHandler(http.server.BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or "0")
         except Exception:
             length = 0
-        raw = self.rfile.read(min(length, 100_000)) if length > 0 else b""
+        raw = self.rfile.read(min(length, 35_000_000)) if length > 0 else b""
         try:
             data = json.loads(raw.decode("utf-8", errors="ignore") or "{}")
         except Exception:

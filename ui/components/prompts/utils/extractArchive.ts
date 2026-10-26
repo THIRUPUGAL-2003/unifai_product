@@ -117,14 +117,15 @@ export function isPromptArchive(file: File, mimeType: string): boolean {
 }
 
 /** Inner files from a zip (JSZip) or from tar/gzip/7z/rar (libarchive). */
-export async function extractArchiveInnerFiles(file: File): Promise<{
+export async function extractArchiveInnerFiles(file: File, detectedMimeType?: string): Promise<{
 	files: File[];
 	skipped: number;
 	errors: string[];
 }> {
 	const lower = file.name.toLowerCase();
+	const mime = (detectedMimeType || file.type || "").toLowerCase();
 	const zipPackage = /\.(zip|jar|war|apk|ear|whl|nupkg)$/i.test(lower);
-	if (zipPackage || file.type === "application/zip" || file.type === "application/x-zip-compressed" || file.type.includes("java-archive")) {
+	if (zipPackage || mime === "application/zip" || mime === "application/x-zip-compressed" || mime.includes("java-archive")) {
 		return extractZipInnerFiles(file);
 	}
 	return extractWithLibarchive(file);

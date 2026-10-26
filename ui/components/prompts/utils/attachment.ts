@@ -717,6 +717,76 @@ export function resolveFileMimeType(file: File): string {
 	return EXTENSION_MIME[ext] || "application/octet-stream";
 }
 
+const ZIP_PACKAGED_DOCUMENT_EXTENSIONS = new Set([
+	"docx", "docm", "dotx", "dotm", "xlsx", "xlsm", "xlsb", "xltx", "xltm", "pptx", "pptm", "ppsx", "ppsm",
+	"potx", "potm", "odt", "ott", "ods", "ots", "odp", "otp", "odg", "epub",
+]);
+
+/** Use file signatures when browser MIME and extension are missing or misleading. */
+async function detectFileMimeType(file: File): Promise<string> {
+	const ext = file.name.split(".").pop()?.toLowerCase() || "";
+	let bytes: Uint8Array;
+	try {
+		bytes = new Uint8Array(await file.slice(0, 512).arrayBuffer());
+	} catch {
+		return resolveFileMimeType(file);
+	}
+	const ascii = (start: number, length: number) => String.fromCharCode(...bytes.subarray(start, start + length));
+	const startsWith = (...signature: number[]) => signature.every((byte, index) => bytes[index] === byte);
+	let detected: string | undefined;
+
+	if (ascii(0, 5) === "%PDF-") detected = "application/pdf";
+	else if (startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) detected = "image/png";
+	else if (startsWith(0xff, 0xd8, 0xff)) detected = "image/jpeg";
+	else if (["GIF87a", "GIF89a"].includes(ascii(0, 6))) detected = "image/gif";
+	else if (ascii(0, 2) === "BM") detected = "image/bmp";
+	else if (["II*\0", "MM\0*", "II+\0", "MM\0+"].includes(ascii(0, 4))) detected = "image/tiff";
+	else if (ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") detected = "image/webp";
+	else if (ascii(0, 4) === "RIFF" && ascii(8, 4) === "WAVE") detected = "audio/wav";
+	else if (ascii(0, 4) === "RIFF" && ascii(8, 3) === "AVI") detected = "video/x-msvideo";
+	else if (ascii(0, 4) === "fLaC") detected = "audio/flac";
+	else if (ascii(0, 4) === "OggS") detected = ext === "ogv" ? "video/ogg" : "audio/ogg";
+	else if (ascii(0, 3) === "ID3") detected = "audio/mpeg";
+	else if (bytes.length >= 2 && bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0) detected = "audio/mpeg";
+	else if (startsWith(0x1a, 0x45, 0xdf, 0xa3)) detected = ext === "webm" ? "video/webm" : "video/x-matroska";
+	else if (ascii(4, 4) === "ftyp") {
+		const brand = ascii(8, 4).trim();
+		if (/^(heic|heix|hevc|hevx|mif1|msf1)$/i.test(brand)) detected = "image/heic";
+		else if (/^(avif|avis)$/i.test(brand)) detected = "image/avif";
+		else if (ext === "weba" || /^(M4A|M4B|F4A)$/i.test(brand)) detected = "audio/mp4";
+		else detected = brand === "qt" ? "video/quicktime" : "video/mp4";
+	} else if (startsWith(0x50, 0x4b) && (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07)) detected = "application/zip";
+	else if (startsWith(0x1f, 0x8b)) detected = "application/gzip";
+	else if (ascii(0, 3) === "BZh") detected = "application/x-bzip2";
+	else if (startsWith(0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00)) detected = "application/x-xz";
+	else if (startsWith(0x28, 0xb5, 0x2f, 0xfd)) detected = "application/zstd";
+	else if (ascii(0, 6) === "7z\xbc\xaf'\x1c") detected = "application/x-7z-compressed";
+	else if (ascii(0, 7) === "Rar!\x1a\x07\x00" || ascii(0, 7) === "Rar!\x1a\x07\x01") detected = "application/vnd.rar";
+	else if (ascii(0, 4) === "MSCF") detected = "application/vnd.ms-cab-compressed";
+	else if (ascii(0, 16) === "SQLite format 3\0") detected = "application/vnd.sqlite3";
+	else if (ascii(257, 5) === "ustar") detected = "application/x-tar";
+	else if (startsWith(0x4d, 0x5a)) detected = "application/vnd.microsoft.portable-executable";
+	else if (startsWith(0x7f, 0x45, 0x4c, 0x46)) detected = "application/x-elf";
+	else if (startsWith(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1)) detected = "application/x-ole-storage";
+	else if (bytes.length > 0 && !bytes.includes(0)) {
+		try {
+			const sample = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+			const printable = [...sample].filter((char) => char === "\n" || char === "\r" || char === "\t" || char >= " ").length;
+			if (sample.length > 0 && printable / sample.length > 0.9) {
+				const trimmed = sample.trimStart();
+				detected = trimmed.startsWith("{") || trimmed.startsWith("[") ? "application/json" : "text/plain";
+			}
+		} catch {
+			// Keep the extension or browser MIME when the sample is not valid UTF-8 text.
+		}
+	}
+
+	if (detected === "application/zip" && ZIP_PACKAGED_DOCUMENT_EXTENSIONS.has(ext)) {
+		return EXTENSION_MIME[ext] || resolveFileMimeType(file);
+	}
+	return detected || resolveFileMimeType(file);
+}
+
 export function isImageFile(file: File, mimeType?: string): boolean {
 	const effectiveMime = mimeType || resolveFileMimeType(file);
 	if (effectiveMime.startsWith("image/")) return true;
@@ -891,12 +961,18 @@ export async function filesToAttachments(files: FileList | File[], opts?: Attach
 		}
 
 		try {
-			const mimeType = resolveFileMimeType(file);
+			const mimeType = await detectFileMimeType(file);
 			let res: MessageContent[] = [];
 			if (isZipFile(file, mimeType)) {
-				res = await attachmentsFromZip(file, effectiveOpts);
+				res = await attachmentsFromZip(file, effectiveOpts, mimeType);
 			} else {
-				res = await expandFileAttachments(file, effectiveOpts);
+				res = await expandFileAttachments(file, effectiveOpts, mimeType);
+			}
+			if (res.length === 0) {
+				failedFiles.push({
+					name: file.name,
+					error: `No attachments were created for "${file.name}"`,
+				});
 			}
 			completedCount++;
 			if (isBulk && (completedCount % 5 === 0 || completedCount === filesList.length)) {
@@ -933,14 +1009,15 @@ export async function filesToAttachments(files: FileList | File[], opts?: Attach
 	return attachments;
 }
 
-async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
+async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions, detectedMimeType?: string): Promise<MessageContent[]> {
 	const depth = opts?.archiveDepth ?? 0;
 	if (depth > 3) {
 		if (!opts?.silent) toast.error(`"${zipFile.name}" is nested too deeply to unpack`);
 		return [];
 	}
 	if (!opts?.silent) toast.message(`Unpacking ${zipFile.name}…`);
-	const { files, skipped, errors } = await extractArchiveInnerFiles(zipFile);
+	const archiveMimeType = detectedMimeType || (await detectFileMimeType(zipFile));
+	const { files, skipped, errors } = await extractArchiveInnerFiles(zipFile, archiveMimeType);
 	if (files.length === 0) {
 		if (!opts?.silent) {
 			toast.error(`No files found in "${zipFile.name}"`, {
@@ -959,12 +1036,13 @@ async function attachmentsFromZip(zipFile: File, opts?: AttachmentImportOptions)
 			continue;
 		}
 		try {
-			if (isPromptArchive(inner, resolveFileMimeType(inner))) {
-				out.push(...(await attachmentsFromZip(inner, nextOpts)));
-			} else if (isImageFile(inner)) {
-				out.push(...(await imageFileAttachments(inner, resolveFileMimeType(inner), nextOpts)));
+			const mimeType = await detectFileMimeType(inner);
+			if (isPromptArchive(inner, mimeType)) {
+				out.push(...(await attachmentsFromZip(inner, nextOpts, mimeType)));
+			} else if (isImageFile(inner, mimeType)) {
+				out.push(...(await imageFileAttachments(inner, mimeType, nextOpts)));
 			} else {
-				const attachment = await fileToAttachment(inner, nextOpts);
+				const attachment = await fileToAttachment(inner, nextOpts, mimeType);
 				if (attachment) out.push(attachment);
 			}
 		} catch (err) {
@@ -1205,10 +1283,10 @@ async function videoFileAttachments(file: File, mimeType: string, opts?: Attachm
 }
 
 /** One picked file can become several message parts (image + extracted text, zip members, etc.). */
-async function expandFileAttachments(file: File, opts?: AttachmentImportOptions): Promise<MessageContent[]> {
-	const mimeType = resolveFileMimeType(file);
+async function expandFileAttachments(file: File, opts?: AttachmentImportOptions, detectedMimeType?: string): Promise<MessageContent[]> {
+	const mimeType = detectedMimeType || (await detectFileMimeType(file));
 	if (isZipFile(file, mimeType)) {
-		return attachmentsFromZip(file, opts);
+		return attachmentsFromZip(file, opts, mimeType);
 	}
 	if (isImageFile(file, mimeType)) {
 		return imageFileAttachments(file, mimeType, opts);
@@ -1220,12 +1298,12 @@ async function expandFileAttachments(file: File, opts?: AttachmentImportOptions)
 	return one ? [one] : [];
 }
 
-export async function fileToAttachment(file: File, opts?: AttachmentImportOptions): Promise<MessageContent | null> {
-	const mimeType = resolveFileMimeType(file);
+export async function fileToAttachment(file: File, opts?: AttachmentImportOptions, detectedMimeType?: string): Promise<MessageContent | null> {
+	const mimeType = detectedMimeType || (await detectFileMimeType(file));
 
 	if (isZipFile(file, mimeType)) {
 		// Prefer filesToAttachments (keeps each inner file separate). Single-return path combines text.
-		const many = await attachmentsFromZip(file, opts);
+		const many = await attachmentsFromZip(file, opts, mimeType);
 		if (many.length === 0) return null;
 		if (many.length === 1) return many[0];
 		const combined = many

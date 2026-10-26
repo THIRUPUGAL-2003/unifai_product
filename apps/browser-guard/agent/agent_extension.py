@@ -693,6 +693,55 @@ def _post_intercept_file(
         return False
 
 
+def detect_real_file_type(raw_b: bytes, ftext: str = "", file_name: str = "", ctype: str = "") -> str:
+    """Detect real file type by magic bytes, MIME, and text content signatures to prevent file renaming bypass."""
+    if raw_b:
+        if raw_b.startswith(b"MZ"):
+            return "exe"
+        if raw_b.startswith(b"\x7fELF"):
+            return "elf"
+        if raw_b.startswith(b"PK\x03\x04") or raw_b.startswith(b"PK\x05\x06"):
+            if b"word/" in raw_b[:2048] or b"[Content_Types].xml" in raw_b[:2048]:
+                return "docx"
+            if b"xl/" in raw_b[:2048]:
+                return "xlsx"
+            if b"ppt/" in raw_b[:2048]:
+                return "pptx"
+            return "zip"
+        if raw_b.startswith(b"7z\xbc\xaf\x27\x1c"):
+            return "7z"
+        if raw_b.startswith(b"\x1f\x8b"):
+            return "gz"
+        if raw_b.startswith(b"Rar!\x1a\x07"):
+            return "rar"
+        if raw_b.startswith(b"%PDF-"):
+            return "pdf"
+        if raw_b.startswith(b"-----BEGIN ") or b"-----BEGIN " in raw_b[:256]:
+            return "pem"
+
+    txt = (ftext or (raw_b[:2048].decode('utf-8', errors='ignore') if raw_b else "")).strip()
+    if txt:
+        if txt.startswith("-----BEGIN ") or "-----BEGIN RSA PRIVATE KEY" in txt or "-----BEGIN PRIVATE KEY" in txt:
+            return "pem"
+        if re.search(r'^(?:--|/\*|CREATE\s+TABLE|INSERT\s+INTO|DROP\s+TABLE|ALTER\s+TABLE|USE\s+|SELECT\s+.+\s+FROM|LOCK\s+TABLES)\b', txt, re.IGNORECASE):
+            return "sql"
+        if re.search(r'^(?:export\s+)?[A-Z0-9_]{3,}\s*=\s*[\w\-\.]{4,}', txt, re.MULTILINE):
+            if any(k in txt.upper() for k in ("API_KEY", "SECRET", "PASSWORD", "DATABASE_URL", "TOKEN", "AWS_ACCESS_KEY")):
+                return "env"
+
+    ct = (ctype or "").lower().strip()
+    mime_map = {
+        "application/x-msdownload": "exe", "application/x-dosexec": "exe", "application/x-executable": "exe",
+        "application/zip": "zip", "application/x-zip-compressed": "zip", "application/x-7z-compressed": "7z",
+        "application/x-tar": "tar", "application/gzip": "gz", "application/x-gzip": "gz", "application/pdf": "pdf",
+        "application/sql": "sql", "application/x-sql": "sql", "text/x-sql": "sql",
+        "application/x-pem-file": "pem", "application/x-x509-ca-cert": "pem",
+    }
+    if ct in mime_map:
+        return mime_map[ct]
+    return os.path.splitext(file_name)[1].lstrip('.').lower()
+
+
 def check_prompt(
     host: str,
     url: str,
@@ -730,39 +779,109 @@ def check_prompt(
     for f in files_list:
         if isinstance(f, dict):
             fname = str(f.get("name") or "").strip()
+            ctype = str(f.get("type") or "application/octet-stream").strip()
             if fname and fname not in file_names:
                 file_names.append(fname)
             fext = os.path.splitext(fname)[1].lower()
+            norm_fext = fext.lstrip('.').lower()
             ftext = str(f.get("text") or "").strip()
-            if ftext:
-                text += f"\n[File: {fname}]\n" + ftext[:15000]
-            elif fname and f"[File: {fname}]" not in text:
-                text += f"\n[File: {fname}]\n"
             fb64 = str(f.get("base64") or "").strip()
-            if fb64 and not ftext:
+            raw_b = b""
+            if fb64:
                 try:
                     import base64
                     raw_b = base64.b64decode(fb64)
-                    extracted = ""
-                    try:
-                        p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
-                        if p_dir not in sys.path:
-                            sys.path.insert(0, p_dir)
-                        import browser_ai_proxy
-                        extracted = getattr(browser_ai_proxy, "extract_upload_text_for_rules", lambda *a, **k: "")(raw_b, file_name=fname)
-                    except Exception:
-                        pass
-                    if not extracted:
-                        try:
-                            extracted = raw_b.decode("utf-8", errors="ignore")
-                        except Exception:
-                            pass
-                    if extracted and len(extracted.strip()) > 3:
-                        text += f"\n[Extracted File: {fname}]\n" + extracted[:25000]
                 except Exception:
                     pass
+            if not raw_b and ftext:
+                try:
+                    raw_b = ftext.encode("utf-8", errors="ignore")
+                except Exception:
+                    pass
+
+            extracted = ""
+            if raw_b or ftext:
+                try:
+                    p_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "proxy"))
+                    if p_dir not in sys.path:
+                        sys.path.insert(0, p_dir)
+                    import browser_ai_proxy
+                    extract_fn = getattr(browser_ai_proxy, "extract_upload_text_for_rules", None)
+                    if extract_fn:
+                        try:
+                            extracted = extract_fn(raw_b, content_type=ctype, raw_text=ftext, file_name=fname)
+                        except TypeError:
+                            try:
+                                extracted = extract_fn(raw_b, file_name=fname)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+
+                # Multi-encoding fallback if primary extractors returned empty
+                if not extracted and raw_b:
+                    for enc in ("utf-8", "utf-16", "utf-16-le", "utf-16-be", "latin-1", "cp1252"):
+                        try:
+                            t_dec = raw_b.decode(enc, errors="strict").strip()
+                            if len(t_dec) > 3:
+                                extracted = t_dec
+                                break
+                        except Exception:
+                            continue
+
+                # Printable ASCII strings extraction fallback for raw binaries
+                if not extracted and raw_b and len(raw_b) >= 4:
+                    try:
+                        strs = re.findall(rb'[A-Za-z0-9_./@:\-]{4,}', raw_b)
+                        if strs:
+                            extracted = b" ".join(strs[:5000]).decode("ascii", errors="ignore")
+                    except Exception:
+                        pass
+
+            if ftext and len(ftext.strip()) > 0:
+                text += f"\n[File: {fname}]\n" + ftext[:50000]
+            if extracted and len(extracted.strip()) > 3:
+                if f"[Extracted File: {fname}]" not in text:
+                    text += f"\n[Extracted File: {fname}]\n" + extracted[:100000]
+            elif fname and f"[File: {fname}]" not in text:
+                text += f"\n[File: {fname}]\n"
+
+            # Anti-spoofing real file type check against restricted or allowed extensions
+            real_type = detect_real_file_type(raw_b, ftext or extracted, fname, ctype)
+            restricted_str = str(_governance_cache.get("restricted_file_extensions") or "")
+            allowed_str = str(_governance_cache.get("allowed_file_extensions") or "")
+            mode = str(_governance_cache.get("file_extension_mode") or "block_listed")
+
+            if mode == "allow_listed" and allowed_str:
+                allowed_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', allowed_str) if x.strip()]
+                is_allowed = (real_type and real_type in allowed_list) or (norm_fext and norm_fext in allowed_list)
+                if not is_allowed:
+                    return {
+                        "blocked": True,
+                        "action": "Blocked",
+                        "message": f"File type for '{fname}' is not permitted. Only approved file types ({', '.join('.' + e for e in allowed_list)}) may be uploaded.",
+                        "rule": "Restricted File Type",
+                        "redacted_prompt": "",
+                    }
+            elif mode != "allow_listed" and restricted_str:
+                restricted_list = [x.strip().lstrip('.').lower() for x in re.split(r'[,;\s]+', restricted_str) if x.strip()]
+                if (real_type and real_type in restricted_list) or (norm_fext and norm_fext in restricted_list):
+                    matched_ext = real_type if (real_type and real_type in restricted_list) else norm_fext
+                    is_renamed = bool(real_type and real_type in restricted_list and norm_fext != real_type)
+                    return {
+                        "blocked": True,
+                        "action": "Blocked",
+                        "message": (
+                            f"File '{fname}' matches restricted file type '.{matched_ext}' (file renaming detected). Upload blocked by security policy."
+                            if is_renamed else
+                            f"Uploading '.{matched_ext}' files is restricted by corporate DLP policy."
+                        ),
+                        "rule": f"Restricted File Type (.{matched_ext})",
+                        "redacted_prompt": "",
+                    }
+
             if fext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".svg") and fb64:
-                img_data = fb64 if fb64.startswith("data:") else f"data:image/{fext.lstrip('.')};base64,{fb64}"
+                img_data = fb64 if fb64.startswith("data:") else f"data:image/{norm_fext or 'png'};base64,{fb64}"
                 if img_data not in images_list:
                     images_list.append(img_data)
         elif isinstance(f, str) and f.strip():
@@ -788,6 +907,21 @@ def check_prompt(
                 rule = m_rule
         except Exception:
             pass
+
+        if not is_blocked:
+            for r in dynamic_rules():
+                pat = str(r.get("pattern") or "")
+                if pat:
+                    try:
+                        rx = _compile_rule_pattern(pat)
+                        if rx.search(text):
+                            act = str(r.get("action") or "BLOCK").upper()
+                            if act in ("BLOCK", "BLOCKED"):
+                                is_blocked = True
+                                rule = str(r.get("name") or "Security Policy")
+                                break
+                    except Exception:
+                        pass
 
     if not text and not images_list and not files_list:
         return {"blocked": False, "message": "", "rule": ""}

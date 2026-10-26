@@ -28,6 +28,16 @@
   var pending = {};
   var stagedFiles = [];
   var stagedImages = [];
+  function pushStagedFile(item) {
+    if (!item || !item.name) return;
+    for (var s = 0; s < stagedFiles.length; s++) {
+      if (stagedFiles[s].name === item.name) {
+        stagedFiles[s] = item;
+        return;
+      }
+    }
+    stagedFiles.push(item);
+  }
   var _lastHandledPromptTime = 0;
   var _lastHandledPromptText = "";
   var _lastHandledPromptId = "";
@@ -286,23 +296,82 @@
     return isControlActiveForSite(govTargetWebsites);
   }
 
-  function checkFileUploadAllowed(file) {
+  var MIME_TO_EXT_MAP = {
+    "application/x-msdownload": "exe",
+    "application/x-dosexec": "exe",
+    "application/x-executable": "exe",
+    "application/x-msdos-program": "exe",
+    "application/x-sh": "sh",
+    "application/x-bat": "bat",
+    "application/zip": "zip",
+    "application/x-zip-compressed": "zip",
+    "application/x-zip": "zip",
+    "application/x-7z-compressed": "7z",
+    "application/x-tar": "tar",
+    "application/gzip": "gz",
+    "application/x-gzip": "gz",
+    "application/x-bzip2": "bz2",
+    "application/vnd.rar": "rar",
+    "application/x-rar-compressed": "rar",
+    "application/pdf": "pdf",
+    "application/sql": "sql",
+    "application/x-sql": "sql",
+    "text/x-sql": "sql",
+    "text/sql": "sql",
+    "application/x-pem-file": "pem",
+    "application/x-x509-ca-cert": "pem",
+    "application/pkix-cert": "pem",
+    "application/json": "json",
+    "text/csv": "csv",
+    "text/plain": "txt"
+  };
+
+  function sniffMagicFileType(bytesOrB64, textContent) {
+    if (typeof bytesOrB64 === "string" && bytesOrB64.length > 4) {
+      if (bytesOrB64.startsWith("TVqQ")) return "exe"; // MZ header
+      if (bytesOrB64.startsWith("UEsDB") || bytesOrB64.startsWith("UEsBA")) return "zip"; // PK zip header
+      if (bytesOrB64.startsWith("N3r8")) return "7z"; // 7z header
+      if (bytesOrB64.startsWith("H4sI")) return "gz"; // gzip header
+      if (bytesOrB64.startsWith("UmFy")) return "rar"; // Rar header
+      if (bytesOrB64.startsWith("f0VMR")) return "elf"; // ELF binary
+      if (bytesOrB64.startsWith("JVBER")) return "pdf"; // %PDF-
+    }
+    if (typeof textContent === "string" && textContent.length > 5) {
+      var s = textContent.trim();
+      if (s.indexOf("-----BEGIN ") === 0 || s.indexOf("-----BEGIN RSA PRIVATE KEY") >= 0 || s.indexOf("-----BEGIN PRIVATE KEY") >= 0 || s.indexOf("-----BEGIN CERTIFICATE") >= 0) {
+        return "pem";
+      }
+      if (/^(?:--|\/\*|CREATE\s+|INSERT\s+INTO|DROP\s+TABLE|ALTER\s+TABLE|USE\s+|SELECT\s+.+\s+FROM|LOCK\s+TABLES)\b/i.test(s)) {
+        return "sql";
+      }
+      if (/(?:API_KEY|SECRET|PASSWORD|DATABASE_URL|AWS_ACCESS_KEY_ID)\s*=\s*[^\r\n]+/i.test(s)) {
+        return "env";
+      }
+    }
+    return "";
+  }
+
+  function checkFileUploadAllowed(file, sniffedType) {
     if (!file) return true;
     var fileName = file.name || "";
+    var fileType = String(file.type || "").toLowerCase().trim();
     // Check 1: Master upload block - applies to any target domain if govUploadTargetWebsites is empty/all or matches
     if (govBlockUpload && isControlActiveForSite(govUploadTargetWebsites)) {
       showBubble(govUploadWarning || "File uploads and attachments to this AI platform are blocked by corporate policy.", "File Upload Policy", "block");
       return false;
     }
-    // Check 2: File extension restrictions apply only while their master switch is enabled.
+    // Check 2: File extension and true file type restrictions (anti-spoofing)
     var fileExtTarget = govFileExtensionTargetWebsites || govUploadTargetWebsites;
     if (govBlockFileExtension && isControlActiveForSite(fileExtTarget)) {
       var lowerFileName = String(fileName).toLowerCase();
+      var mimeExt = MIME_TO_EXT_MAP[fileType] || "";
+      var effectiveType = sniffedType || mimeExt || "";
       var hasAllowed = govAllowedExtensions && govAllowedExtensions.length > 0;
+
       if (govFileExtensionMode === "allow_listed") {
         var isAllowed = hasAllowed && govAllowedExtensions.some(function (a) {
           var ext = String(a).replace(/^\./, "").toLowerCase().trim();
-          return ext && lowerFileName.endsWith("." + ext);
+          return ext && (lowerFileName.endsWith("." + ext) || mimeExt === ext || sniffedType === ext);
         });
         if (!isAllowed) {
           var msg = govFileExtensionBlockMessage || (hasAllowed
@@ -314,11 +383,14 @@
       } else {
         var blockedExtension = govRestrictedExtensions && govRestrictedExtensions.find(function (b) {
           var ext = String(b).replace(/^\./, "").toLowerCase().trim();
-          return ext && lowerFileName.endsWith("." + ext);
+          return ext && (lowerFileName.endsWith("." + ext) || mimeExt === ext || sniffedType === ext);
         });
         if (blockedExtension) {
           var cleanBlockedExtension = String(blockedExtension).replace(/^\./, "").toLowerCase().trim();
-          var msg2 = govFileExtensionBlockMessage || ("Uploading '." + cleanBlockedExtension + "' files is restricted by corporate DLP policy.");
+          var isRenamed = sniffedType && sniffedType === cleanBlockedExtension && !lowerFileName.endsWith("." + cleanBlockedExtension);
+          var msg2 = govFileExtensionBlockMessage || (isRenamed
+            ? ("File '" + fileName + "' matches restricted file type '." + cleanBlockedExtension + "' (file renaming detected). Upload blocked by security policy.")
+            : ("Uploading '." + cleanBlockedExtension + "' files is restricted by corporate DLP policy."));
           showBubble(msg2, "File Extension Policy", "block");
           return false;
         }
@@ -1383,6 +1455,11 @@
       var rImg = new FileReader();
       rImg.onload = function (e) {
         if (e.target && e.target.result) {
+          var b64Img = (e.target.result.split(",")[1] || "");
+          var sniffed = sniffMagicFileType(b64Img, "");
+          if (sniffed && sniffed !== "png" && sniffed !== "pdf" && !checkFileUploadAllowed(file, sniffed)) {
+            return;
+          }
           stagedImages.push(e.target.result);
         }
       };
@@ -1398,7 +1475,11 @@
       rText.onload = function (e) {
         if (e.target && typeof e.target.result === "string") {
           var fContent = e.target.result;
-          stagedFiles.push({ name: name, size: size, type: type, text: fContent });
+          var sniffed = sniffMagicFileType("", fContent);
+          if (sniffed && !checkFileUploadAllowed(file, sniffed)) {
+            return;
+          }
+          pushStagedFile({ name: name, size: size, type: type, text: fContent });
 
           // Immediate DLP scan of file contents
           var fileDecision = evaluateClientRules(null, [{ name: name, text: fContent }]);
@@ -1407,7 +1488,7 @@
           }
         }
       };
-      rText.readAsText(file.slice(0, 500000)); // Scan first 500KB
+      rText.readAsText(file.slice(0, 1000000)); // Scan first 1MB of text
     }
     // 4. Binary Documents (PDF, Word, Excel, PowerPoint, ODF, RTF, ZIP, Archives)
     else if (
@@ -1420,20 +1501,28 @@
       rDoc.onload = function (e) {
         if (e.target && typeof e.target.result === "string") {
           var b64 = e.target.result.split(",")[1] || "";
-          stagedFiles.push({ name: name, size: size, type: type, base64: b64 });
+          var sniffed = sniffMagicFileType(b64, "");
+          if (sniffed && !checkFileUploadAllowed(file, sniffed)) {
+            return;
+          }
+          pushStagedFile({ name: name, size: size, type: type, base64: b64 });
         }
       };
-      rDoc.readAsDataURL(file.slice(0, 2000000)); // Read first 2MB for deep backend extraction
+      rDoc.readAsDataURL(file.slice(0, 5000000)); // Read first 5MB for deep backend extraction
     } else {
-      // 5. General fallback: read first 1MB as Base64 so desktop proxy/agent extracts & scans it
+      // 5. General fallback: read first 3MB as Base64 so desktop proxy/agent extracts & scans it
       var rAny = new FileReader();
       rAny.onload = function (e) {
         if (e.target && typeof e.target.result === "string") {
           var b64 = e.target.result.split(",")[1] || "";
-          stagedFiles.push({ name: name, size: size, type: type, base64: b64 });
+          var sniffed = sniffMagicFileType(b64, "");
+          if (sniffed && !checkFileUploadAllowed(file, sniffed)) {
+            return;
+          }
+          pushStagedFile({ name: name, size: size, type: type, base64: b64 });
         }
       };
-      rAny.readAsDataURL(file.slice(0, 1000000));
+      rAny.readAsDataURL(file.slice(0, 3000000));
     }
     return true;
   }
