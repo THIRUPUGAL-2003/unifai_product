@@ -16,11 +16,15 @@
   var clipboardPolicy = { enabled: false, targetSites: "", message: "", monitoredSites: [] };
 
   function isServerHost(host) {
-    if (!host || !serverHost) return false;
-    host = (host || "").toLowerCase().trim();
-    if (host.indexOf("www.") === 0) host = host.slice(4);
-    if (host.indexOf(":") >= 0) host = host.split(":")[0];
-    return host === serverHost || host.endsWith("." + serverHost);
+    if (!host) return false;
+    host = normalizeDomainHost(host);
+    if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") return true;
+    if (host === "unifai.yespanchi.com" || host.endsWith(".unifai.yespanchi.com")) return true;
+    if (serverHost) {
+      var sHost = normalizeDomainHost(serverHost);
+      if (host === sHost || host.endsWith("." + sHost)) return true;
+    }
+    return false;
   }
 
   function renderBlockedPage(hostname) {

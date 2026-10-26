@@ -86,6 +86,10 @@
     if (ev.source !== window || !ev.data || ev.data.source !== "gateway-guard") return;
     if (!guardNonce || ev.data.nonce !== guardNonce) return;
     if (ev.data.type === "arm") {
+      if (isProductOrServerHost(location.hostname)) {
+        armed = false;
+        return;
+      }
       armed = true;
     }
     if (ev.data.type === "disarm") {
@@ -228,7 +232,16 @@
     return host.replace(/^www\./, "").replace(/\.$/, "");
   }
 
+  function isProductOrServerHost(host) {
+    if (!host) return false;
+    var h = normalizeDomainHost(host);
+    if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0") return true;
+    if (h === "unifai.yespanchi.com" || h.endsWith(".unifai.yespanchi.com")) return true;
+    return false;
+  }
+
   function isControlActiveForSite(configuredSites) {
+    if (isProductOrServerHost(location.hostname)) return false;
     var raw = (configuredSites && typeof configuredSites === "string") ? configuredSites.trim() : "";
     if (!raw || raw.toUpperCase() === "ALL" || raw === "*") {
       return true;
