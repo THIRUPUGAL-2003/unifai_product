@@ -386,8 +386,43 @@
       }
     } else {
       if (existingPrintStyle) existingPrintStyle.remove();
+      var bs = document.getElementById("yp-blur-shield-style");
+      if (bs) bs.remove();
     }
   }
+
+  // Defeat OS Snipping tools (Win+Shift+S, Lightshot, ShareX) via Window Blur Shield:
+  // When an OS screenshot tool or snip overlay opens, the browser window immediately
+  // loses focus (blur event). Blurring the page ensures the capture grabs only blurred content.
+  var _blurShieldStyleId = "yp-blur-shield-style";
+  window.addEventListener("blur", function () {
+    if (!armed || !govBlockScreenshot || !isControlActiveForSite(govScreenshotTargetWebsites)) return;
+    if (!document.getElementById(_blurShieldStyleId)) {
+      var bs = document.createElement("style");
+      bs.id = _blurShieldStyleId;
+      bs.textContent = "body, html { filter: blur(35px) !important; -webkit-filter: blur(35px) !important; user-select: none !important; }";
+      (document.head || document.documentElement).appendChild(bs);
+    }
+  }, true);
+
+  window.addEventListener("focus", function () {
+    var bs = document.getElementById(_blurShieldStyleId);
+    if (bs) bs.remove();
+  }, true);
+
+  // Intercept Screen Recording & Screen Sharing API (navigator.mediaDevices.getDisplayMedia)
+  try {
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.getDisplayMedia === "function") {
+      var _origGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getDisplayMedia = function () {
+        if (armed && govBlockScreenshot && isControlActiveForSite(govScreenshotTargetWebsites)) {
+          triggerScreenshotAlert();
+          return Promise.reject(new DOMException("Screen capture and recording are blocked by corporate security policy.", "NotAllowedError"));
+        }
+        return _origGetDisplayMedia.apply(this, arguments);
+      };
+    }
+  } catch (_) {}
 
   // Intercept PrintScreen key, Snipping tool shortcuts (Win+Shift+S), Mac Cmd+Shift+3/4
   window.addEventListener("keyup", function (e) {

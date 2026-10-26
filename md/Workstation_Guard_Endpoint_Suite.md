@@ -267,3 +267,25 @@ All workstation interactions are handled by dedicated Go routes in `transports/g
   ```
 - **Payload**: Contains intercepted prompt text, target domain, user agent, browser session metadata, and attachment SHA-256 hashes.
 - **Evaluation**: Backend runs `browser_ai_bot_eval.go` evaluating prompt content against active CEL DLP rules, returning synchronous enforcement commands (`Allow`, `Block`, `Redact`, `Alert`).
+
+---
+
+## 7. Setup Installation, Auto-Pairing & Web Remote Management
+
+### 7.1 Windows App Installation (`YP_Raksha_Setup.exe`)
+- **Modern User-Mode Installer**: Inno Setup package (`YP_Raksha_Setup.exe`) with `PrivilegesRequired=lowest` — runs without admin elevation or UAC password prompts.
+- **App Installation Path**: `%LOCALAPPDATA%\Programs\YP Raksha\`.
+- **System Registry Registration**: Registers cleanly in Windows Settings & Control Panel (`Installed Apps`) with icon, version (`1.1.33`), and publisher (`YesPanchi`).
+- **Shortcuts & Startup**: Injects Start Menu icon and registers `HKCU\...\Run` autostart key for persistence across reboots.
+
+### 7.2 Order-Independent Extension ↔ EXE Handshake (`127.0.0.1:18195`)
+- **Zero Configuration**: Endpoints auto-discover over localhost port `18195`.
+- **Order A (EXE first, Extension second)**: Handshake completes in under 1 second; extension pulls target rules and begins protecting AI sites.
+- **Order B (Extension first, EXE second)**: Extension executes a silent 1-second retry poller (`WATCH_RETRY_MS = 1000ms`); zero errors or alert dialogs. As soon as the EXE starts, they pair instantly.
+
+### 7.3 Centralized Web Remote Controls (`Workspace -> Browser AI -> Guard Agents`)
+- **Instant Detection**: First heartbeat dispatched within 0.5s of launch; UI displays agent with 🟢 **Active** status.
+- **Off / Pause**: Admin clicks **Pause** -> Backend dispatches `guardEventPause` -> Agent temporarily disables Windows PAC and enters standby.
+- **On / Resume**: Admin clicks **Resume** -> Backend dispatches `guardEventResume` -> Agent restores PAC and active DLP protection.
+- **Remote Uninstall with Key**: Admin enters daily/company uninstall key -> Backend dispatches `guardEventUninstall` -> Agent uninstalls itself cleanly and deletes runtime files.
+- **Tamper Resistance**: Local uninstallation by employees without valid Uninstall Key is denied (`valid: false`).

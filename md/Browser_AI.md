@@ -955,4 +955,44 @@ Comprehensive automated testing conducted on endpoint daemon `YP_Raksha.exe` (v1
 * **Target Scoping Principle**: Only websites registered in table `browser_target_websites` (e.g. `chatgpt.com`, `claude.ai`, `gemini.google.com`, `deepseek.com`, and custom added targets) trigger prompt evaluation, DLP scanning, or blocking.
 * **Non-Target Passthrough**: Non-monitored sites (e.g. `google.com`, `wikipedia.org`, `github.com`, internal intranet) execute a zero-latency bypass (`passthrough: true`, duration: `0.001s`), ensuring zero disruption to normal employee browsing.
 
+---
+
+### 8.7. Setup EXE Packaging, Order-Independent Auto-Connect & Web Remote Controls
+
+#### 8.7.1. Standard Windows App Installation Experience
+The Windows distribution artifact `YP_Raksha_Setup.exe` is compiled using an **Inno Setup Modern Wizard** (`installer/YP_Raksha.iss`) delivering an enterprise user-mode installation:
+* **Zero Admin Rights Required (`PrivilegesRequired=lowest`)**: Employees double-click to install without requiring UAC admin credentials or IT elevation.
+* **Standard App Directory**: Installs cleanly into `%LOCALAPPDATA%\Programs\YP Raksha\`.
+* **Windows "Installed Apps" Registry**: Automatically registers in Windows Settings / Control Panel (`Add or Remove Programs`) under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F3C2A91-6B4E-4D2F-9A71-A1B2C3D4E5F6}` with:
+  * `DisplayName`: `YP Raksha`
+  * `Publisher`: `YesPanchi`
+  * `DisplayVersion`: `1.1.33`
+  * `DisplayIcon`: `yp_raksha.ico`
+* **Start Menu Integration**: Creates a branded Start Menu folder and shortcut with the official YP Raksha icon.
+* **Auto-Start on Boot**: Injects into `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` to automatically launch daemon in background on Windows user login.
+
+#### 8.7.2. Order-Independent Extension ↔ EXE Auto-Pairing Architecture
+The desktop daemon and browser extension operate via a decoupled loopback bridge on `127.0.0.1:18195`:
+* **Zero Configuration**: No manual IP, port, or secret key entry needed by the user.
+* **Order A: EXE Installed First, Extension Installed Second**:
+  1. `YP_Raksha.exe` starts local HTTP listener on `127.0.0.1:18195`.
+  2. When the Chrome/Edge extension is loaded, its background service worker immediately probes `http://127.0.0.1:18195/extension/rules` and `/extension/sites` with header `X-Browser-Guard-Extension: 1`.
+  3. Handshake completes in under 1 second; daemon records `record_extension_activity()`, reporting `extension_status: "connected"` in next heartbeat.
+* **Order B: Extension Installed First, EXE Installed Second**:
+  1. Extension initializes and discovers no active listener on port 18195.
+  2. Rather than throwing uncaught errors or error banners, background worker enters a silent, resilient poller loop (`watchAgent()`, `WATCH_RETRY_MS = 1000ms`).
+  3. The moment `YP_Raksha_Setup.exe` completes installation and starts, the next 1-second ping successfully completes the handshake.
+  4. Rules, DLP policies, and target domains instantly hydrate into `chrome.storage.local`.
+
+#### 8.7.3. Centralized Website Remote Controls (`Workspace -> Browser AI -> Guard Agents`)
+All deployed endpoints can be remotely controlled in real time directly from the web console via server event bus (`guardEvents`) and long-polling (`/api/browser-ai/agents/wait-command`):
+
+| Action | Admin Console Trigger | Backend Route & Event | Endpoint Execution | Dashboard Status |
+| :--- | :--- | :--- | :--- | :---: |
+| **Instant Detection** | Setup completed on laptop | `POST /api/browser-ai/agents/heartbeat` | Daemon sends initial heartbeat with hostname, IP, MAC, OS within 0.5s of launch | 🟢 **Active** (Updates within 1–3s via auto-polling) |
+| **Turn Off (Pause)** | Click **Pause** button | `POST /api/browser-ai/agents/{id}/pause` (`guardEventPause`) | Daemon disables Windows PAC proxy & enters Standby mode | 🟡 **Paused** (Proxy disabled) |
+| **Turn On (Resume)** | Click **Resume** button | `POST /api/browser-ai/agents/{id}/resume` (`guardEventResume`) | Daemon re-enables Windows PAC proxy & restores active DLP interception | 🟢 **Active** |
+| **Remote Uninstall** | Click **Remote Uninstall** (requires Uninstall Key) | `POST /api/browser-ai/agents/{id}/remote-uninstall` (`guardEventUninstall`) | Daemon clears Windows PAC, deletes startup Run key, removes install folder, signals extension to clear policies, and calls `/uninstall-ack` | ⚪ **Uninstalled** |
+| **Local Tamper Protection** | User runs local uninstaller from Windows Settings | CLI prompt: `YP_Raksha.exe --uninstall-prompt` | GUI dialog requests Uninstall Key; wrong key is denied (`valid: false`), protection remains active | 🟢 **Active** (Tamper Protected) |
+
 
