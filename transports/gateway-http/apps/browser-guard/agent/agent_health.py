@@ -158,7 +158,7 @@ def run_health_check(proxy_port: int | None = None) -> dict:
     if not checks["ca_trusted"]:
         details.append("CA trust missing or not OK")
 
-    code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
+    code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
     addon = os.path.join(code_dir, "browser_ai_proxy.py") if code_dir else ""
     enc_addon = os.path.join(code_dir, "gateway_guard_code.enc") if code_dir else ""
     if enc_addon and os.path.isfile(enc_addon):

@@ -110,7 +110,6 @@ def resolve_agent_version(baked: str = AGENT_VERSION_BAKED) -> str:
 # whose baked number differs, and auto-update must compare the real installer version.
 AGENT_VERSION = (
     os.environ.get("GATEWAY_GUARD_RUNTIME_VERSION")
-    or os.environ.get("GATEWAY_GUARD_RUNTIME_VERSION")
     or ""
 ).strip() or resolve_agent_version(AGENT_VERSION_BAKED)
 
@@ -291,7 +290,7 @@ def load_runtime_config() -> dict:
         default_proxy_addr = f"127.0.0.1:{default_proxy_port}"
     else:
         default_proxy_addr = ""
-    env_proxy = (os.environ.get("GATEWAY_PROXY_ADDR") or os.environ.get("GATEWAY_PROXY_ADDR") or "").strip()
+    env_proxy = (os.environ.get("GATEWAY_PROXY_ADDR") or "").strip()
     if env_proxy:
         default_proxy_addr = env_proxy
     proxy_addr = pick("GATEWAY_PROXY_ADDR", "proxy_addr", default_proxy_addr)

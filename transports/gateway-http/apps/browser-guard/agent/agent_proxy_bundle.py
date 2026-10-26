@@ -86,13 +86,13 @@ def _sha256(data: bytes) -> str:
 
 def running_bundle_sha() -> str:
     """SHA of the server code this Guard runs now ("" = code built into its installer)."""
-    code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
-    return (os.environ.get("GATEWAY_GUARD_CODE_SHA") or os.environ.get("GATEWAY_GUARD_CODE_SHA") or "") if code_dir else ""
+    code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
+    return (os.environ.get("GATEWAY_GUARD_CODE_SHA") or "") if code_dir else ""
 
 
 def active_addon(default_addon: str) -> str:
     """Proxy addon for the MitM worker: the bundle guard_bootstrap loaded, else built-in."""
-    code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
+    code_dir = os.environ.get("GATEWAY_GUARD_CODE_DIR") or ""
     addon = os.path.join(code_dir, ENTRY) if code_dir else ""
     return addon if addon and os.path.isfile(addon) else default_addon
 

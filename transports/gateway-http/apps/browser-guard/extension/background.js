@@ -89,8 +89,6 @@ function fetchJson(url) {
   });
 }
 
-// Older agent EXE builds return rules without governance fields: read them
-// directly from the gateway server instead.
 function isLoopbackHost(host) {
   return host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1" ||
     /^127\./.test(host) || /\.localhost$/.test(host);
@@ -103,6 +101,8 @@ function gatewayHost(value) {
   return host && !isLoopbackHost(host) ? host : "";
 }
 
+// Older agent EXE builds return rules without governance fields: read them
+// directly from the gateway server instead.
 function withGovernanceFallback(data, serverHost) {
   if (data.block_clipboard !== undefined || data.block_upload !== undefined || !serverHost) {
     return Promise.resolve(data);

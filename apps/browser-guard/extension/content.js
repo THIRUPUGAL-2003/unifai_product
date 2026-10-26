@@ -29,6 +29,11 @@
     return host;
   }
 
+  function isLoopbackHost(host) {
+    return host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host === "::1" ||
+      /^127\./.test(host) || /\.localhost$/.test(host);
+  }
+
   var serverHost = (typeof GATEWAY_SERVER_HOST === "string" && GATEWAY_SERVER_HOST.trim()) ? normalizeDomainHost(GATEWAY_SERVER_HOST) : "";
   function isServerHost(host) {
     if (!host) return false;
@@ -318,9 +323,9 @@
 
   function evaluateSite(state) {
     state = state || {};
-    // Loopback values are already covered by isServerHost and are never the gateway domain.
+    // The agent may report its own loopback address; never let it replace the gateway domain.
     var storedHost = normalizeDomainHost(state.server_host);
-    if (storedHost && !isServerHost(storedHost.replace(serverHost, "")) && !/^127\./.test(storedHost)) serverHost = storedHost;
+    if (storedHost && !isLoopbackHost(storedHost)) serverHost = storedHost;
     if (isServerHost(location.hostname)) {
       disarmPage();
       return;

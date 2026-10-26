@@ -491,7 +491,7 @@ def run_uninstall_prompt() -> int:
         except Exception:
             pass
         schedule_install_removal()
-        if IS_WIN or not (os.environ.get("GATEWAY_WRAPPER_UI") or os.environ.get("GATEWAY_WRAPPER_UI")):
+        if IS_WIN or not os.environ.get("GATEWAY_WRAPPER_UI"):
             show_message(
                 "Gateway Guard Uninstalled",
                 "Gateway Guard has been successfully uninstalled.\n\nBrowser protection has been disabled and files have been removed.\nPlease restart your browsers.",
@@ -503,7 +503,7 @@ def run_uninstall_prompt() -> int:
         print("[Gateway Guard] Uninstall cancelled by user.")
         return 3
     if not key.strip():
-        if IS_WIN or not (os.environ.get("GATEWAY_WRAPPER_UI") or os.environ.get("GATEWAY_WRAPPER_UI")):
+        if IS_WIN or not os.environ.get("GATEWAY_WRAPPER_UI"):
             show_message(
                 "Uninstall Key Required",
                 "Uninstall key is required to uninstall Gateway Guard.\n\nGateway Guard remains installed and active.",
@@ -512,7 +512,7 @@ def run_uninstall_prompt() -> int:
         return 2
 
     code = run_uninstall(key, schedule_cleanup=True)
-    if IS_WIN or not (os.environ.get("GATEWAY_WRAPPER_UI") or os.environ.get("GATEWAY_WRAPPER_UI")):
+    if IS_WIN or not os.environ.get("GATEWAY_WRAPPER_UI"):
         if code == 0:
             show_message(
                 "Gateway Guard Uninstalled",

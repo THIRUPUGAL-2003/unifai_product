@@ -88,23 +88,22 @@ if not _env_backend:
 GATEWAY_BACKEND_URL = _env_backend
 if GATEWAY_BACKEND_URL and not GATEWAY_BACKEND_URL.startswith("http://") and not GATEWAY_BACKEND_URL.startswith("https://"):
 	GATEWAY_BACKEND_URL = f"http://{GATEWAY_BACKEND_URL}"
-GATEWAY_GUARD_SECRET = _env("GATEWAY_GUARD_SECRET", "GATEWAY_GUARD_SECRET", "GUARD_SECRET_KEY")
+GATEWAY_GUARD_SECRET = _env("GATEWAY_GUARD_SECRET", "GUARD_SECRET_KEY")
 
 
 def _backend_headers(extra: dict | None = None) -> dict:
 	headers = {"Accept": "application/json"}
 	if GATEWAY_GUARD_SECRET:
 		headers["X-Gateway-Guard-Key"] = GATEWAY_GUARD_SECRET
-		headers["X-Gateway-Guard-Key"] = GATEWAY_GUARD_SECRET  # legacy backends
 	if extra:
 		headers.update(extra)
 	return headers
 
 
-GATEWAY_AGENT_ID = _env("GATEWAY_AGENT_ID", "GATEWAY_AGENT_ID")
-GATEWAY_AGENT_HOSTNAME = _env("GATEWAY_AGENT_HOSTNAME", "GATEWAY_AGENT_HOSTNAME")
-GATEWAY_AGENT_TYPE = _env("GATEWAY_AGENT_TYPE", "GATEWAY_AGENT_TYPE").lower()
-GATEWAY_SERVER_MODE = _env("GATEWAY_SERVER_MODE", "GATEWAY_SERVER_MODE").lower() in (
+GATEWAY_AGENT_ID = _env("GATEWAY_AGENT_ID")
+GATEWAY_AGENT_HOSTNAME = _env("GATEWAY_AGENT_HOSTNAME")
+GATEWAY_AGENT_TYPE = _env("GATEWAY_AGENT_TYPE").lower()
+GATEWAY_SERVER_MODE = _env("GATEWAY_SERVER_MODE").lower() in (
     "1", "true", "yes", "on", "server", "network",
 )
 if GATEWAY_AGENT_TYPE in ("server", "gateway", "corp", "shared"):
@@ -152,7 +151,7 @@ def _network_proxy_heartbeat_loop() -> None:
     Opt-in only: set GATEWAY_NETWORK_AGENT_REGISTER=1 (or GATEWAY_*). Laptop Guard EXE never hits this
     path. Default off so corp-network-proxy does not keep reappearing for laptop-only setups.
     """
-    if _env("GATEWAY_NETWORK_AGENT_REGISTER", "GATEWAY_NETWORK_AGENT_REGISTER").lower() not in ("1", "true", "yes", "on"):
+    if _env("GATEWAY_NETWORK_AGENT_REGISTER").lower() not in ("1", "true", "yes", "on"):
         return
     if not (GATEWAY_SERVER_MODE or GATEWAY_AGENT_TYPE == "network"):
         return
@@ -1152,7 +1151,7 @@ def evaluate_prompt(platform: str, domain: str, prompt: str, client_ip: str, url
 
 
 def _fail_open() -> bool:
-    return _env("GATEWAY_FAIL_OPEN", "GATEWAY_FAIL_OPEN") in ("1", "true", "TRUE", "yes", "YES")
+    return _env("GATEWAY_FAIL_OPEN") in ("1", "true", "TRUE", "yes", "YES")
 
 
 def get_control_settings(force_network: bool = False) -> dict:

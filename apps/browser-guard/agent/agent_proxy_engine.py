@@ -93,7 +93,7 @@ def _run_mitmdump_inline(addon_script: str, listen_host: str, port: int) -> None
     print("[Gateway Guard] MitM upstream DNS: IPv4 only (avoids broken IPv6 CONNECT hang).")
     ssl_insecure_val = (
         "true"
-        if (os.environ.get("GATEWAY_SSL_INSECURE") or os.environ.get("GATEWAY_SSL_INSECURE") or "").lower()
+        if (os.environ.get("GATEWAY_SSL_INSECURE") or "").lower()
         in ("1", "true", "yes")
         else "false"
     )
@@ -155,7 +155,7 @@ def run_proxy_server(addon_script: str, port: int | None = None) -> None:
     listen_host = _resolve_listen_host()  # captured here, reused for health checks below
 
     # If we are already the worker child, run inline.
-    if (os.environ.get("GATEWAY_MITM_WORKER") or os.environ.get("GATEWAY_MITM_WORKER")) == "1":
+    if os.environ.get("GATEWAY_MITM_WORKER") == "1":
         _run_mitmdump_inline(addon_script, listen_host, port)
         return
 
