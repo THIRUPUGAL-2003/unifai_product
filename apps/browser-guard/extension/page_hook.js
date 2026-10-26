@@ -646,8 +646,9 @@
         }
       }
     }
-    return null;
   }
+  return null;
+}
 
   var _lastAskSig = "";
   var _lastAskTime = 0;

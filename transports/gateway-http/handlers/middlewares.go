@@ -1369,8 +1369,8 @@ func (m *AuthMiddleware) APIMiddleware() schemas.GatewayHTTPMiddleware {
 	})
 }
 
-// isPublicBrowserAIRoute allows Guard EXE (no session cookie) only for the
-// exact method+path pairs it needs. Admin mutations stay auth-protected.
+// isPublicBrowserAIRoute only allows the public PAC endpoints. Guard agent
+// requests and administrative routes require a valid Guard key or session.
 // Policy GETs (targets/rules/controls/fleet) are NOT public — Guard key or session required.
 func isPublicBrowserAIRoute(method, path string) bool {
 	method = strings.ToUpper(strings.TrimSpace(method))

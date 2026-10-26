@@ -10,7 +10,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// In-memory token-bucket rate limiter for public Browser AI endpoints
+// In-memory token-bucket rate limiter for Browser AI endpoints
 // to protect against DDoS, automated prompt flooding, and wallet drainage.
 const (
 	browserAIRateLimitWindow  = 1 * time.Minute

@@ -9,6 +9,8 @@ apps/browser-guard/config/gateway_guard_config.json
 apps/browser-guard/release/gateway_guard_config.json
 apps/browser-guard/**/gateway_guard_config.json
 transports/gateway-http/apps/browser-guard/**/gateway_guard_config.json
+apps/browser-guard/**/YP_Raksha_Windows.zip
+transports/gateway-http/apps/browser-guard/**/YP_Raksha_Windows.zip
 
 # Runtime data
 /data/
@@ -80,10 +82,8 @@ apps/browser-guard/build/
 apps/browser-guard/dist/
 apps/browser-guard/installer/staging/
 apps/browser-guard/installer/staging-*/
-# Browser Guard sources are also visible through this Windows directory junction.
-/transports/gateway-http/apps/browser-guard/.secrets/
-/transports/gateway-http/apps/browser-guard/installer/staging/pack-output/
-/transports/gateway-http/apps/browser-guard/release/yp-raksha-unsigned.xpi
+# Browser Guard sources junction (apps/ is canonical)
+/transports/gateway-http/apps/
 # Large packaged binaries (keep unpackaged app directory ignored)
 apps/browser-guard/release/Raksha_Guard.app/
 apps/browser-guard/installer/pkg-root/
