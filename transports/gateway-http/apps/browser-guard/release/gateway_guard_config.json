@@ -8,6 +8,6 @@
   "pac_advertise_addr": "127.0.0.1:18103",
   "pac_http_port": 18195,
   "pac_url": "https://unifai.yespanchi.com/api/browser-ai/pac",
-  "guard_secret": "",
+  "guard_secret": "z_mwSwAoxfxsA6cec7tVZaJh2s-xnnROA58mVTAQTjZCWZQex6cNC44Q_W7Dzb3a",
   "_comment": "Generated from .env \u2014 run sync_config_from_env.py after changing SERVER_DOMAIN / GATEWAY_PROXY_ADDR / PAC_HTTP_PORT / GATEWAY_GUARD_SECRET"
 }
